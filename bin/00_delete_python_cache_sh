@@ -1,0 +1,4 @@
+#!/bin/bash
+sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
+find /home/pifinder/PiFinder/python -name '*.pyc' -delete
+find /home/pifinder/PiFinder/python -name '__pycache__' -type d -exec rm -rf {} +
