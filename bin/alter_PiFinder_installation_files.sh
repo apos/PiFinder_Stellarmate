@@ -159,6 +159,13 @@ commented_line="from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc"
 comment_out_line "${python_file}" "${comment_out_line_content}" "${commented_line}"
 
 ############################################################
+# Alter main.py
+python_file="${pifinder_dir}/pifinder_post_update.sh"
+search_line="git submodule update --init --recursive"
+insert_lines="python3 -m venv /home/pifinder/PiFinder/python/.venv\nsource /home/pifinder/PiFinder/python/.venv/bin/activate\n"
+insert_lines_after_search "${python_file}" "${search_line}" "${insert_lines}"
+
+############################################################
 # Alter python/PiFinder/tetra3/tetra3/tetra3.py
 python_file="${pifinder_dir}/python/PiFinder/tetra3/tetra3/tetra3.py"
 
