@@ -1,95 +1,9 @@
 
 #!/bin/bash
 
-# ToDo: source...
-pifinder_stellarmate_dir="/home/pifinder/PiFinder_Stellarmate"
-pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
-pifinder_dir="/home/pifinder/PiFinder"
-python_venv="${pifinder_dir}/python/.venv"
-python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
-
 cd /home/pifinder
 
-
-############################################################
-# FUNCTIONS
-############################################################
-# Funktion zum Einfügen von Zeilen definieren
-insert_lines_after_search() {
-  local file_path="$1"
-  local search_pattern="$2"
-  local lines_to_insert="$3"
-
-  # Überprüfen, ob die Datei existiert
-  if [ -f "${file_path}" ]; then
-    # Mit sed die Zeilen nach der Zielzeile einfügen
-    sed -i "/${search_pattern}/a ${lines_to_insert}" "${file_path}"
-    echo "Zeilen erfolgreich nach '${search_pattern}' in '${file_path}' eingefügt."
-  else
-    echo "Datei '${file_path}' nicht gefunden."
-    exit 1
-  fi
-}
-
-############################################################
-# Funktion zum Erstellen der Datei und Einfügen von Zeilen definieren (korrigiert und erweitert)
-create_dir_file_and_insert_lines() {
-  local dir_path="$1"
-  local file_name="$2"
-  local lines_to_insert="$3"
-
-  # Verzeichnis erstellen, falls es nicht existiert (Korrektur 2: mkdir -p verwenden)
-  mkdir -p "${dir_path}"
-
-  # Datei erstellen, falls sie nicht existiert (Korrektur 3: Datei __init__.py erstellen)
-  if [ ! -f "${file_path}" ]; then
-    touch "${file_path}"
-  fi
-
-  # Zeilen am Anfang der Datei einfügen
-  {
-    echo -e "${lines_to_insert}"
-    cat "${file_path}"
-  } > temp_file && mv temp_file "${file_path}"
-
-  echo "Zeilen erfolgreich am Anfang der Datei '${file_path}' eingefügt."
-}
-
-############################################################
-# Funktion zum Auskommentieren einer Zeile definieren
-comment_out_line() {
-  local file_path="$1"
-  local line_to_comment="$2"
-  local commented_line="$3"
-
-  # Überprüfen, ob die Datei existiert
-  if [ -f "${file_path}" ]; then
-    # Mit sed die Zeile auskommentieren
-    sed -i "s#^${line_to_comment}#${commented_line}#" "${file_path}"
-    echo "Zeile erfolgreich in '${file_path}' auskommentiert."
-  else
-    echo "Datei '${file_path}' nicht gefunden."
-    exit 1
-  fi
-}
-
-############################################################
-append_line_to_file() {
-  local file_path="$1"
-  local line_to_append="$2"
-
-  # Check if the file exists
-  if [ -f "${file_path}" ]; then
-    # Append the line to the file
-    echo "${line_to_append}" >> "${file_path}"
-    echo "Line successfully appended to '${file_path}'."
-    return 0 # True: line appended successfully
-  else
-    echo "File '${file_path}' not found."
-    return 1 # False: file not found
-  fi
-}
-
+source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
 ############################################################
 # ALTER FILES

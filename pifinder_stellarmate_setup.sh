@@ -3,16 +3,22 @@
 # This script is an altered script of https://raw.githubusercontent.com/brickbots/PiFinder/release/pifinder_setup.sh 
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
-# ToDo: source...
-pifinder_stellarmate_dir="/home/pifinder/PiFinder_Stellarmate"
-pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
-pifinder_dir="/home/pifinder/PiFinder"
-python_venv="${pifinder_dir}/python/.venv"
-python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
+source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
+#################################
+# MAIN
+#################################
 
-# Ensure, to be in the correct directory
-cd /home/pifinder
+# Check, if there is already a PiFinder installation, if yes abort. 
+if [ -d PiFinder ]
+then
+    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
+    exit 0
+else
+    echo "Installation from scratch ..."
+    # Ensure, to be in the correct directory
+    cd /home/pifinder
+fi
 
 
 # check if user is "pifinder"
@@ -21,34 +27,45 @@ then
     echo "ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
     exit 0
 else 
-    cd ${HOME}
+    # add PiFinder user
+    if check_user_exists "pifinder"
+    then 
+      echo "continuing ..."
+    else
+      sudo useradd -m pifinder
+      sudo passwd pifinder
+      sudo usermod -aG 
+
+      # Add rights accessing hardware to user 'pifinder'
+      sudo usermod -aG spi pifinder
+      sudo usermod -aG gpio pifinder
+      sudo usermod -aG i2c pifinder
+      sudo usermod -aG video pifinder
+
+      append_file="/etc/sudoers.d/010_pi-nopasswd"
+      append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
+      if ! check_line_exists "${append_file}" "${append_line}"; then
+        append_line_to_file "${append_file}" "${append_line}"
+      else
+        echo "Line '${append_line}' already exists in '${append_file}'. No need to append."
+      fi
+
+      echo "User PiFinder had to be instantiated. Please reboot before continuing."
+      exit 0
+    fi
 fi
-
-# Check, if there is already a PiFinder installation, if yes abort. 
-if [ -d PiFinder]
-then
-    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
-    exit 0
-fi
-
-# add PiFinder user
-sudo useradd -m pifinder
-sudo passwd pifinder
-sudo usermod -aG 
-
-# Add rights accessing hardware to user 'pifinder'
-sudo usermod -aG spi pifinder
-sudo usermod -aG gpio pifinder
-sudo usermod -aG i2c pifinder
-sudo usermod -aG video pifinder
 
 # Install some package requirements
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
 
+
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+
 cd /home/pifinder/PiFinder
+
+exit 1
 
 # NOT / LATER USED BECAUSE OF VENV: sudo pip install -r python/requirements.txt
 
@@ -59,54 +76,6 @@ bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
 ############################################
 # VENV
 ############################################
-is_venv_active() {
-  local venv_path="$1"
-
-  if [ -n "${VIRTUAL_ENV}" ] && [ "${VIRTUAL_ENV}" = "${venv_path}" ]; then
-    echo "Python venv '${venv_path}' is active."
-    return 0 # True: venv is active
-  else
-    echo "Python venv '${venv_path}' is NOT active."
-    return 1 # False: venv is not active
-  fi
-}
-
-check_venv_exists() {
-  local venv_path="$1"
-  if [ -d "${venv_path}" ]; then
-    echo "Python venv directory '${venv_path}' exists."
-    return 0 # True: venv directory exists
-  else
-    echo "Python venv directory '${venv_path}' does NOT exist."
-    return 1 # False: venv directory does not exist
-  fi
-}
-
-create_venv() {
-  local venv_path="$1"
-  echo "Creating Python venv in '${venv_path}'..."
-  python3 -m venv "${venv_path}"
-  if [ $? -eq 0 ]; then
-    echo "Python venv successfully created in '${venv_path}'."
-    return 0 # True: venv created successfully
-  else
-    echo "Error creating Python venv in '${venv_path}'."
-    return 1 # False: venv creation failed
-  fi
-}
-
-install_requirements() {
-  local requirements_file="$1"
-  echo "Installing Python Requirements from '${requirements_file}'..."
-  pip install -r "${requirements_file}"
-  if [ $? -eq 0 ]; then
-    echo "Python Requirements installed successfully."
-    return 0 # True: requirements installed successfully
-  else
-    echo "Error installing Python Requirements."
-    return 1 # False: requirements installation failed
-  fi
-}
 
 ############################################################
 # Check if venv is active and install requirements
