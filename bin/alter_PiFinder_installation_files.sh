@@ -12,12 +12,12 @@ source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 # PiFinder Service
 # Copy over services
 # cp ${pifinder_stellarmate_dir}/pi_config_files ${pifinder_dir}/.
-python_file="${pifinder_dir}/python/pi_config_files/pifinder.service"
+python_file="${pifinder_dir}/pi_config_files/pifinder.service"
 comment_out_line_content="ExecStart=/usr/bin/python -m PiFinder.main"
 commented_line="ExecStart=/home/pifinder/PiFinder/python/.venv/bin/python -m PiFinder.main"
 comment_out_line "${python_file}" "${comment_out_line_content}" "${commented_line}"
 
-python_file="${pifinder_dir}/python/pi_config_files/pifinder_splash.service"
+python_file="${pifinder_dir}/pi_config_files/pifinder_splash.service"
 comment_out_line_content="ExecStart=/usr/bin/python -m PiFinder.main"
 commented_line="ExecStart=/home/pifinder/PiFinder/python/.venv/bin/python -m PiFinder_splash.main"
 comment_out_line "${python_file}" "${comment_out_line_content}" "${commented_line}"
@@ -40,6 +40,8 @@ python_file_name="__init__.py"
 python_file_init_py="${python_dir}/${python_file_name}"
 insert_lines="from .tetra3 import cedar_detect_client"
 create_dir_file_and_insert_lines "${python_dir}" "${python_file_name}" "${insert_lines_tetra3}"
+
+exit 1
 
 
 ############################################################

@@ -13,7 +13,7 @@ source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 if [ -d PiFinder ]
 then
     echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
-    exit 0
+    # exit 0
 else
     echo "Installation from scratch ..."
     # Ensure, to be in the correct directory
@@ -65,13 +65,11 @@ git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
 
 cd /home/pifinder/PiFinder
 
-exit 1
-
-# NOT / LATER USED BECAUSE OF VENV: sudo pip install -r python/requirements.txt
 
 # Make some Changes to the downloaded local installation files of PiFinder 
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
 
+exit 1
 
 ############################################
 # VENV
