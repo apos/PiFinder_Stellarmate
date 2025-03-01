@@ -3,7 +3,8 @@
 
 
 ### WARING : this is is only a basic summary. 
-The main changes are made by the script bin/pifinder_stellarmate_setup.sh
+The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
+NOT by /home/pifinder/PiFinder/pifinder_setup.sh
 
 ## Prerequisites
 - Stellarmate OS >= 1.8.1 (based on Debian Bookworm)
