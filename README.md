@@ -75,7 +75,7 @@ Then run the modified installation script (not the one from Brickbots)
 
 ## PiFinder
 
-1. python/PiFinder/main.py
+### python/PiFinder/main.py
 (problems with finding libcamera soved by adding to syspath)
 
     12,13d11
@@ -83,14 +83,15 @@ Then run the modified installation script (not the one from Brickbots)
     < sys.path.append('/usr/lib/python3/dist-packages')
 
 
-2. python/tetra3/__init__.py
+
+### python/tetra3/__init__.py
 (we create a __init__.py in python/PiFinder/tetra ... then using just "import" works)
 
     touch python/tetra3(/__init_py
     echo -n "from .tetra3 import cedar_detect_client" > python/tetra3(/__init_py
 
 
-2. PiFinder/python/solver.py 
+### PiFinder/python/solver.py 
 Alter the import and delete "match_max_error ..."
 
         24c24,25
@@ -105,7 +106,7 @@ Alter the import and delete "match_max_error ..."
 
 
 
-3. - import picamera2 fails on start
+### import picamera2 fails on start
 PiCamera is needed. Add to python/camera_pi.py at the beginning
 
     import sys
@@ -114,16 +115,13 @@ PiCamera is needed. Add to python/camera_pi.py at the beginning
     import libcamera
 
 
-4. - ui
-There are 
+### ui/marking_menus.py
 
-    nano /home/pifinder/PiFinder/ui/marking_menus.py
-
-# also import field
+#### also import field
 from dataclasses import dataclass, field 
 
 
-# definition of up changed
+#### definition of up changed
     @dataclass
     class MarkingMenu:
         down: MarkingMenuOption
@@ -135,16 +133,15 @@ from dataclasses import dataclass, field
         up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))
 
 
-# import problems: Create and fill __init__.py
+### python/PiFinder/tetra3/__init__.py
+Import problems. 
+
+    touch python/PiFinder/tetra3/__init__.py
+    echo -n "from .tetra3 import cedar_detect_client" > python/PiFinder/tetra3/__init__.py
 
 
-    myTetra3=/home/pifinder/PiFinder/python/PiFinder/tetra3
-    touch ${nmyTetra3}/__init__.py
-    echo -n "from .tetra3 import cedar_detect_client" > ${nmyTetra3}/__init__.py
-
-
-3. Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/cedar_detect_client.py
-This only works, if Tetra 3 was installed before
+### python/PiFinder/tetra3/tetra3/cedar_detect_client.py
+This "hack" only works, if Tetra 3 was installed before via git
 
         12c12,13
         < from PiFinder.tetra3.tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc
@@ -153,7 +150,7 @@ This only works, if Tetra 3 was installed before
 
 
 
-4. Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/tetra3.py
+### python/PiFinder/tetra3/tetra3/tetra3.py
 
         135,137c135,136
         < from PiFinder.tetra3.tetra3.breadth_first_combinations import breadth_first_combinations
@@ -166,7 +163,7 @@ This only works, if Tetra 3 was installed before
 
 
 
-## Use venv
+# Use venv
 The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service with thi:
 
     # rm -rf .venv # remove an old environment 
@@ -177,21 +174,26 @@ The most important change is, that because of security reasons, it is not allowe
 
 
 # PIP Additional requirements(.txt) within the venv
+This goes into requirements.txt
+
     pip install picamera2
 
 
-#########################
-## Tetra: 
+# Tetra: 
 
-1. the tetra3 import within PiFinder simply does not work
-Within the .venv environment - this was the only way to get tetra3 working
+The tetra3 import within PiFinder simply did not work
+within the .venv environment - this was the only way to get tetra3 working.
+
+Probably the structure integrating tetra3 within PiFinder module is not a good idea
 
 See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-download-and-install
+
+Please install within the venv!
 
     pip install git+https://github.com/esa/tetra3.git
 
 
-#### Alter the service to use the virtual pyhton environment
+## Alter the pifinder service to use the virtual python environment
 
 ##### pifinder.service
 
@@ -219,18 +221,3 @@ See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-downlo
     find /home/pifinder/PiFinder/python -name '*.pyc' -delete
     find /home/pifinder/PiFinder/python -name '__pycache__' -type d -exec rm -rf {} +
     /home/pifinder/PiFinder/python/.venv/bin/python3 -m PiFinder.main
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
