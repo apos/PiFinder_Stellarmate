@@ -78,9 +78,9 @@ Then run the modified installation script (not the one from Brickbots)
 1. python/PiFinder/main.py
 (problems with finding libcamera soved by adding to syspath)
 
-12,13d11
-< import sys
-< sys.path.append('/usr/lib/python3/dist-packages')
+    12,13d11
+    < import sys
+    < sys.path.append('/usr/lib/python3/dist-packages')
 
 
 2. python/tetra3/__init__.py
@@ -93,15 +93,15 @@ Then run the modified installation script (not the one from Brickbots)
 2. PiFinder/python/solver.py 
 Alter the import and delete "match_max_error ..."
 
-    24c24,25
-    < import cedar_detect_client
-    ---
-    > from tetra3 import cedar_detect_client
-    >
-    153c154
-    <                             # OBSOLET match_max_error=0.005,
-    ---
-    >                             match_max_error=0.005,
+        24c24,25
+        < import cedar_detect_client
+        ---
+        > from tetra3 import cedar_detect_client
+        >
+        153c154
+        <                             # OBSOLET match_max_error=0.005,
+        ---
+        >                             match_max_error=0.005,
 
 
 
@@ -124,43 +124,44 @@ from dataclasses import dataclass, field
 
 
 # definition of up changed
-@dataclass
-class MarkingMenu:
-    down: MarkingMenuOption
-    left: MarkingMenuOption
-    right: MarkingMenuOption
-    ''' up: MarkingMenuOption = MarkingMenuOption(label="HELP")
-    up: MarkingMenuOption = field(default_factory=MarkingMenuOption)
-    '''
-    up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))
+    @dataclass
+    class MarkingMenu:
+        down: MarkingMenuOption
+        left: MarkingMenuOption
+        right: MarkingMenuOption
+        ''' up: MarkingMenuOption = MarkingMenuOption(label="HELP")
+        up: MarkingMenuOption = field(default_factory=MarkingMenuOption)
+        '''
+        up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))
 
 
-2. - import problems: Create and fill __init__.py
+# import problems: Create and fill __init__.py
+
 
     myTetra3=/home/pifinder/PiFinder/python/PiFinder/tetra3
     touch ${nmyTetra3}/__init__.py
     echo -n "from .tetra3 import cedar_detect_client" > ${nmyTetra3}/__init__.py
 
 
-3. - Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/cedar_detect_client.py
+3. Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/cedar_detect_client.py
 This only works, if Tetra 3 was installed before
 
-12c12,13
-< from PiFinder.tetra3.tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc
----
-> from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc 
+        12c12,13
+        < from PiFinder.tetra3.tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc
+        ---
+        > from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc 
 
 
 
-4. - Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/tetra3.py
+4. Alter /home/pifinder/PiFinder/python/PiFinder/tetra3/tetra3/tetra3.py
 
-135,137c135,136
-< from PiFinder.tetra3.tetra3.breadth_first_combinations import breadth_first_combinations
-< from PiFinder.tetra3.tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
-<
----
-> from tetra3.breadth_first_combinations import breadth_first_combinations
-> from tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
+        135,137c135,136
+        < from PiFinder.tetra3.tetra3.breadth_first_combinations import breadth_first_combinations
+        < from PiFinder.tetra3.tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
+        <
+        ---
+        > from tetra3.breadth_first_combinations import breadth_first_combinations
+        > from tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
 
 
 
@@ -182,8 +183,9 @@ The most important change is, that because of security reasons, it is not allowe
 #########################
 ## Tetra: 
 
-1. - the tetra3 import within PiFinder simply does not work
+1. the tetra3 import within PiFinder simply does not work
 Within the .venv environment - this was the only way to get tetra3 working
+
 See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-download-and-install
 
     pip install git+https://github.com/esa/tetra3.git
@@ -192,10 +194,13 @@ See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-downlo
 #### Alter the service to use the virtual pyhton environment
 
 ##### pifinder.service
+
     9c9
     < ExecStart=/home/pifinder/PiFinder/python/.venv/bin/python -m PiFinder.main
     ---
     > ExecStart=/usr/bin/python -m PiFinder.main
+
+##### pifinder_splash.service
 
     ##### pifinder_flash.service
     6c6
