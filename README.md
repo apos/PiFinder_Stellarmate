@@ -2,7 +2,7 @@
 # PiFinder on Stellarmate 
 
 
-### WARING : this is is only a basic summary. 
+### WARNING : this is is only a basic summary and the project highly experimental 
 The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
 NOT by /home/pifinder/PiFinder/pifinder_setup.sh
 
@@ -37,6 +37,9 @@ Additionan installs on Stellarmate OS.
     sudo usermod -aG gpio pifinder
     sudo usermod -aG i2c pifinder
     sudo usermod -aG video pifinder
+
+### add pifinder to the sudoers group
+pifinder ALL=(ALL) NOPASSWD: ALL
 
 #### install additional Packages
 
