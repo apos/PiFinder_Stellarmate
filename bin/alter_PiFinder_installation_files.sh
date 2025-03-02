@@ -5,9 +5,19 @@ cd /home/pifinder
 
 source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
+
 ############################################################
 # ALTER FILES
 ############################################################
+
+# Copy pifinder_setup and update
+mv ${pifinder_dir}/pifinder_setup.sh ${pifinder_dir}/pifinder_setup.sh.before.stellarmate
+cp ${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh ${pifinder_dir}/pifinder_setup.sh
+mv ${pifinder_dir}/pifinder_update.sh ${pifinder_dir}/pifinder_update.sh.before.stellarmate
+cp ${pifinder_stellarmate_dir}/pifinder_update.sh ${pifinder_dir}/.
+mv ${pifinder_dir}/pifinder_post_update.sh ${pifinder_dir}/pifinder_post_update.sh.before.stellarmate
+cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
+
 
 # PiFinder Service
 # Copy over services

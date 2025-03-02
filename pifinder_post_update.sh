@@ -1,7 +1,7 @@
 git submodule update --init --recursive
 python3 -m venv /home/pifinder/PiFinder/python/.venv
 source /home/pifinder/PiFinder/python/.venv/bin/activate
-pip install -r /home/pifinder/PiFinder/python/requirements.txt
+/home/pifinder/PiFinder/python/.venv/bin/pip install -r /home/pifinder/PiFinder/python/requirements.txt
 
 # Set up migrations folder if it does not exist
 if ! [ -d "/home/pifinder/PiFinder_data/migrations" ]

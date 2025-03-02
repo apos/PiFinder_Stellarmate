@@ -70,8 +70,6 @@ cd /home/pifinder/PiFinder
 # Make some Changes to the downloaded local installation files of PiFinder 
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
 
-exit 1
-
 ############################################
 # VENV
 ############################################
@@ -86,26 +84,24 @@ if ! is_venv_active "${python_venv}"; then
     echo "Python venv directory does not exist."
     # Create venv
     if create_venv "${python_venv}"; then
-      echo "Python venv successfully created. Please activate the venv manually with:"
+      echo -e"STOP: Python venv successfully created. Please activate the venv manually with:\n vvvvvvvv"
       echo "source ${python_venv}/bin/activate"
-      echo "and run the script again to install the Requirements."
+      echo -e "\nTHEM run the script again to install the Requirements."
       exit 1 # Exit script because venv must be activated manually for Requirements installation
     else
       echo "Error creating Python venv. Aborting."
-      exit 1
+      exit 1 
     fi
   else
-     echo "Python venv directory exists. Please activate the venv manually with:"
+     echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
      echo "source ${python_venv}/bin/activate"
-     echo "and run the script again to install the Requirements."
+     echo -e "\nTHEN: run the script again to install the Requirements."
      exit 1 # Exit script because venv must be activated manually for Requirements installation
   fi
 else
   echo "Python venv is active. Installing Requirements."
   install_requirements "${python_requirements}"
 fi
-
-
 
 # install tetra from repo
 # Within the .venv environment - this was the only way to get tetra3 working
@@ -118,23 +114,22 @@ else
     pip install git+https://github.com/esa/tetra3.git
 fi  
 
-# NOT USED, PART OF STELLARMATE-OS: samba samba-common-bin dnsmasq hostapd dhcpd gpsd
-
 
 # ensure, correct rights are set
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
+# NOT USED, PART OF STELLARMATE-OS: samba samba-common-bin dnsmasq hostapd dhcpd gpsd
 # NOT USED, PART OF STELLARMATE-OS: Setup GPSD
 # NOT USED, PART OF STELLARMATE-OS: sudo dpkg-reconfigure -plow gpsd
 # NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/gpsd.conf /etc/default/gpsd
 
 # data dirs
-mkdir ~/PiFinder_data
-mkdir ~/PiFinder_data/captures
-mkdir ~/PiFinder_data/obslists
-mkdir ~/PiFinder_data/screenshots
-mkdir ~/PiFinder_data/solver_debug_dumps
-mkdir ~/PiFinder_data/logs
+mkdir -p ~/PiFinder_data
+mkdir -p ~/PiFinder_data/captures
+mkdir -p ~/PiFinder_data/obslists
+mkdir -p ~/PiFinder_data/screenshots
+mkdir -p ~/PiFinder_data/solver_debug_dumps
+mkdir -p ~/PiFinder_data/logs
 chmod -R 777 ~/PiFinder_data
 
 # Wifi config
@@ -153,7 +148,6 @@ chmod -R 777 ~/PiFinder_data
 
 # Hipparcos catalog
 wget -O /home/pifinder/PiFinder/astro_data/hip_main.dat https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
-
 
 # Enable interfaces
 echo "#Pifinder" | sudo tee -a /boot/firmware/config.txt
@@ -175,5 +169,5 @@ sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
 
 echo "##############################################"
-echo "PiFinder setup complete, please restart the Pi"
+echo "PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
 
