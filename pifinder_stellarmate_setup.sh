@@ -62,6 +62,7 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
 cd /home/pifinder/PiFinder
 
