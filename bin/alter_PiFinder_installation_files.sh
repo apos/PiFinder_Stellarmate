@@ -108,8 +108,20 @@ python_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
 comment_out_line_content='up: MarkingMenuOption = MarkingMenuOption(label="HELP")'
 commented_line='up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP")'
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's/up: MarkingMenuOption = /up: MarkingMenuOption = field(default_factory=lambda: /' "${python_file}"
+    # We need to do this manually via sed 
+    
     # comment_out_line "${python_file}" "${comment_out_line_content}" "${commented_line}"
+    sed -i 's/MarkingMenuOption(label="HELP")/MarkingMenuOption(label="HELP"))/' "${python_file}"
+else
+    echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
+fi
+
+# Alter ui/marking_menus.py
+python_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
+comment_out_line_content='from dataclasses import dataclass'
+commented_line='from dataclasses import dataclass, field'
+if ! check_line_exists "${python_file}" "${commented_line}"; then
+    comment_out_line "${python_file}" "${comment_out_line_content}" "${commented_line}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
