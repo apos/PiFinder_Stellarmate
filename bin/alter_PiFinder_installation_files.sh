@@ -44,6 +44,20 @@ else
 fi
 
 
+# KStars location service
+# Kopieren nach systemd
+sudo cp /home/pifinder/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
+
+# Aktivieren beim Boot
+sudo systemctl enable pifinder_kstars_location_writer.service
+
+# Starten (sofort)
+sudo systemctl start pifinder_kstars_location_writer.service
+
+# Status prüfen
+systemctl status pifinder_kstars_location_writer.service
+
+
 # Add requirements
 append_line_requirements="picamera2"
 if ! check_line_exists "${python_requirements}" "${append_line_requirements}"; then
@@ -97,6 +111,8 @@ if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
 fi
 
 show_diff_if_changed "$solver_py"
+
+
 
 echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
@@ -175,3 +191,60 @@ fi
 show_diff_if_changed "$python_requirements"
 
 echo "✅ All changes applied and shown."
+
+
+
+#  PiFinder  main.py
+
+echo "🔧 Patching main.py for KStars GPS support ..."
+main_py="/home/pifinder/PiFinder/python/PiFinder/main.py"
+cp "$main_py" "$main_py.bak"
+
+# Patch veraltete Prüfzeile
+if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
+    sed -i 's|gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
+    echo "✅ GPS-Kondition gepatcht in main.py"
+fi
+
+show_diff_if_changed "$main_py"
+
+
+
+# PiFinder gps_gpsd.py
+
+echo "🔧 Patching gps_gpsd.py for clean KStars-only deployment ..."
+
+gps_py="/home/pifinder/PiFinder/python/PiFinder/gps_gpsd.py"
+cp "$gps_py" "$gps_py.bak"
+
+# Entferne StreamHandler und manuelles DEBUG-Logging
+sed -i '/import sys/d' "$gps_py"
+sed -i '/StreamHandler/d' "$gps_py"
+sed -i '/logger\.addHandler/d' "$gps_py"
+sed -i '/logger\.setLevel/d' "$gps_py"
+
+# Entferne gps_locked (falls noch drin)
+sed -i 's/def read_kstars_location_file(gps_queue, gps_locked):/def read_kstars_location_file(gps_queue):/' "$gps_py"
+sed -i 's/read_kstars_location_file(gps_queue, gps_locked)/read_kstars_location_file(gps_queue)/' "$gps_py"
+
+# Ersetze vollständige gps_main() durch saubere Version
+sed -i '/async def gps_main/,/^def gps_monitor/{
+    s/.*/PLACEHOLDER_GPS_MAIN/
+}' "$gps_py"
+
+# Ergänze neue gps_main()
+sed -i "/PLACEHOLDER_GPS_MAIN/c\\
+async def gps_main(gps_queue, console_queue, log_queue):\\
+    MultiprocLogging.configurer(log_queue)\\
+    logger.info(\"GPS main started – using ONLY KStars\")\\
+\\
+    try:\\
+        await read_kstars_location_file(gps_queue)\\
+    except Exception as e:\\
+        logger.error(f\"Error in GPS monitor: {e}\")\\
+        await asyncio.sleep(5)\\
+" "$gps_py"
+
+echo "✅ gps_gpsd.py clean patched."
+
+show_diff_if_changed "$gps_py"
