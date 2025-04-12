@@ -208,6 +208,18 @@ fi
 
 show_diff_if_changed "$main_py"
 
+echo "🔧 Ensuring gps_gpsd import in main.py ..."
+main_py="/home/pifinder/PiFinder/python/PiFinder/main.py"
+
+# Import prüfen und ggf. einfügen
+if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
+    sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
+    echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
+else
+    echo "ℹ️ Import gps_gpsd bereits vorhanden"
+fi
+
+show_diff_if_changed "$main_py"
 
 
 # PiFinder gps_gpsd.py
@@ -233,7 +245,7 @@ sed -i '/async def gps_main/,/^def gps_monitor/ d' "$gps_py"
 # Füge neue gps_main() direkt vor gps_monitor ein
 sed -i '/^def gps_monitor/i \
 async def gps_main(gps_queue, console_queue, log_queue):\n\
-    MultiprocLogging.configurer(log_queue)\n\
+    MultiprocLogging.configurer(log_queue)\n\Mhm, Mhm. 
     logger.info("GPS main started – using ONLY KStars")\n\
 \n\
     try:\n\

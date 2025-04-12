@@ -145,7 +145,6 @@ sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 ###########################
 # If already installed (also service)
 ###########################
-exit 1
 
 # Wifi config
 # NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/dhcpcd.* /etc
@@ -163,15 +162,33 @@ exit 1
 
 
 
-# Enable interfaces
-echo "#Pifinder" | sudo tee -a /boot/firmware/config.txt
-echo "dtparam=spi=on" | sudo tee -a /boot/firmware/config.txt
-echo "dtparam=i2c_arm=on" | sudo tee -a /boot/firmware/config.txt
-echo "dtparam=i2c_arm_baudrate=10000" | sudo tee -a /boot/firmware/config.txt
-echo "dtoverlay=pwm,pin=13,func=4" | sudo tee -a /boot/firmware/config.txt
-echo "dtoverlay=uart3" | sudo tee -a /boot/firmware/config.txt
-# This is new for bookworm
-echo "dtoverlay=pwm-2chan" | sudo tee -a /boot/firmware/config.txt
+CONFIG_FILE="/boot/firmware/config.txt"
+
+echo "🔧 Ensuring required config.txt entries are present ..."
+
+add_if_missing() {
+    local line="$1"
+    local marker="$2"
+    if ! grep -Fxq "$line" "$CONFIG_FILE"; then
+        echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
+        echo "✅ Added: $line"
+    else
+        echo "ℹ️  Already present: $line"
+    fi
+}
+
+# Optionaler Marker, um PiFinder-Block zu kennzeichnen
+add_if_missing "#Pifinder"
+
+# Interfaces und Overlays
+add_if_missing "dtparam=spi=on"
+add_if_missing "dtparam=i2c_arm=on"
+add_if_missing "dtparam=i2c_arm_baudrate=10000"
+add_if_missing "dtoverlay=pwm,pin=13,func=4"
+add_if_missing "dtoverlay=uart3"
+add_if_missing "dtoverlay=pwm-2chan"  # Speziell für Bookworm
+
+echo "✅ config.txt checks complete."
 
 
 
