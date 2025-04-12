@@ -180,7 +180,7 @@ check_venv_exists() {
 create_venv() {
   local venv_path="$1"
   echo "Creating Python venv in '${venv_path}'..."
-  python3 -m venv "${venv_path}"
+  python3 -m venv "${venv_path}" --system-site-packages
   if [ $? -eq 0 ]; then
     echo "Python venv successfully created in '${venv_path}'."
     return 0 # True: venv created successfully

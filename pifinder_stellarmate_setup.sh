@@ -57,7 +57,7 @@ fi
 
 # Install some package requirements
 sudo apt-get update
-sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
+sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera python3-picamera2
 
 
 # Download the actual source code 
