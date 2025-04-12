@@ -65,13 +65,11 @@ git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
 
-
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
 #########################################################################
 cd /home/pifinder/PiFinder
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
-
 
 
 ############################################
@@ -94,10 +92,6 @@ if ! is_venv_active "${python_venv}"; then
       echo "" 
       echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
       echo "source ${python_venv}/bin/activate"
-      echo " "
-      echo "WHEN YOU ACTIVATED the venv, run this script again to install all the requirements."
-      echo " "
-      echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
       echo "##### GO ON #############################################################"
@@ -119,18 +113,6 @@ else
   install_requirements "${python_requirements}"
 fi
 
-
-# install tetra from repo
-# Within the .venv environment - this was the only way to get tetra3 working
-# See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-download-and-install
-# if ! is_venv_active "${python_venv}"
-# then
-#     echo "Python venv <${python_venv}> is not active. Exiting installation. Please check, why."
-#     exit 0
-# else
-#     pip install git+https://github.com/esa/tetra3.git
-# fi  
-
 # ensure, correct rights are set
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
@@ -149,7 +131,12 @@ mkdir -p ~/PiFinder_data/logs
 chmod -R 777 ~/PiFinder_data
 
 # Hipparcos catalog
-wget -O /home/pifinder/PiFinder/astro_data/hip_main.dat https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+if ls "${pifinder_dir}/astro_data/hip_main.dat"
+then
+  echo "hip_main.dat already installed"
+else
+  wget -O ${pifinder_dir}/astro_data/hip_main.dat https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+fi
 
 # ensure, correct rights are set
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
