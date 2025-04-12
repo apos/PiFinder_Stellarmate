@@ -22,7 +22,7 @@ cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
 
 # PiFinder Service
 # Copy over services
-cp ${pifinder_stellarmate_dir}/pi_config_files ${pifinder_dir}/.
+cp -r ${pifinder_stellarmate_dir}/pi_config_files ${pifinder_dir}/.
 
 python_file="${pifinder_dir}/pi_config_files/pifinder.service"
 comment_out_line_content="ExecStart=/usr/bin/python"
