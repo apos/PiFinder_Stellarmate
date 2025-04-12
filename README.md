@@ -23,7 +23,10 @@ These services will not be altered through PiFinder's installation script (pifin
 2. The installation of PiFinder within StellarMate OS is non destructive.  PiFinder service is running as "pifinder" user
 
 
-# Pre installation steps
+# Pre installation steps 
+Hint: the script "pifinder_stellarmate_setup.sh" does this for you !
+
+
 Additionan installs on Stellarmate OS. 
 
 ### add PiFinder user
@@ -76,93 +79,36 @@ Then run the modified installation script (not the one from Brickbots)
 
 # Changes to PiFinder code base 
 
-## PiFinder
+## PiFinder code 
 
-### python/PiFinder/main.py
-(problems with finding libcamera soved by adding to syspath)
+✅ Key changes:
 
-    12,13d11
-    < import sys
-    < sys.path.append('/usr/lib/python3/dist-packages')
+📁 solver.py
+- sys.path.append(...) updated to use .parent
+- "import tetra3" replaced with "from tetra3 import main"
+- Adds "from tetra3 import cedar_detect_client" if missing
 
+📁 tetra3/tetra3/__init__.py
+- from .tetra3 import ... → from .main import ...
 
+📁 tetra3/tetra3/cedar_detect_client.py
+- from tetra3 import ... → from . import ...
 
-### python/tetra3/__init__.py
-(we create a __init__.py in python/PiFinder/tetra ... then using just "import" works)
+📁 tetra3/tetra3/cedar_detect_pb2_grpc.py
+- import cedar_detect_pb2 → from . import cedar_detect_pb2
 
-    touch python/tetra3(/__init_py
-    echo -n "from .tetra3 import cedar_detect_client" > python/tetra3(/__init_py
+📄 tetra3.py → Renamed to main.py
+- Prevents conflicts with the tetra3 package name
 
+📁 ui/marking_menus.py
+- Adds "field" to dataclass import
+- Replaces HELP menu init with a default_factory lambda
 
-### PiFinder/python/solver.py 
-Alter the import and delete "match_max_error ..."
+📁 pifinder_post_update.sh
+- Adds virtual environment creation & activation after submodule init
 
-        24c24,25
-        < import cedar_detect_client
-        ---
-        > from tetra3 import cedar_detect_client
-        >
-        153c154
-        <                             # OBSOLET match_max_error=0.005,
-        ---
-        >                             match_max_error=0.005,
-
-
-
-### import picamera2 fails on start
-PiCamera is needed. Add to python/camera_pi.py at the beginning
-
-    import sys
-    print(sys.path)
-    from picamera2 import Picamera2
-    import libcamera
-
-
-### ui/marking_menus.py
-
-#### also import field
-from dataclasses import dataclass, field 
-
-
-#### definition of up changed
-    @dataclass
-    class MarkingMenu:
-        down: MarkingMenuOption
-        left: MarkingMenuOption
-        right: MarkingMenuOption
-        ''' up: MarkingMenuOption = MarkingMenuOption(label="HELP")
-        up: MarkingMenuOption = field(default_factory=MarkingMenuOption)
-        '''
-        up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))
-
-
-### python/PiFinder/tetra3/__init__.py
-Import problems. 
-
-    touch python/PiFinder/tetra3/__init__.py
-    echo -n "from .tetra3 import cedar_detect_client" > python/PiFinder/tetra3/__init__.py
-
-
-### python/PiFinder/tetra3/tetra3/cedar_detect_client.py
-This "hack" only works, if Tetra 3 was installed before via git
-
-        12c12,13
-        < from PiFinder.tetra3.tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc
-        ---
-        > from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc 
-
-
-
-### python/PiFinder/tetra3/tetra3/tetra3.py
-
-        135,137c135,136
-        < from PiFinder.tetra3.tetra3.breadth_first_combinations import breadth_first_combinations
-        < from PiFinder.tetra3.tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
-        <
-        ---
-        > from tetra3.breadth_first_combinations import breadth_first_combinations
-        > from tetra3.fov_util import fibonacci_sphere_lattice, num_fields_for_sky, separation_for_density
-
+📁 camera_pi.py
+- Adds "from picamera2 import Picamera" after numpy import
 
 
 
