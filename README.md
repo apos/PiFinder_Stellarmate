@@ -2,8 +2,8 @@
 
 > ### ⚠️ **Warning**
 > 
-> *   This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall). 
-> *   This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not respsonsible for any damage to your hard- or software by using this code.
+> *   This is is work in progress and (at the moment) highly experimental. As of 13.04.25 the script is ready for test and basically working (GPS from Stellarmate, no uninstall). 
+> *   This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not responsible for any damage to your hard- or software by using this code.
 
 > ### ℹ️ **Info**
 > 
