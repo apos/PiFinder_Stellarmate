@@ -1,35 +1,39 @@
 # PiFinder on Stellarmate - Overview
 
-### WARNING : this is is only a basic summary and the project which is (at the moment) highly experimental
+```
+ WARNING : this is is only a basic summary and the project which is (at the moment) highly experimental
+```
 
-*   The script can not update an existing PiFinder installation
+\> ℹ️ \*\*Info\*\*    
+\> The script can not update an existing PiFinder installation
+
 *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
 *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionality
 *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate
 
 # Table of Contents
 
-- [PiFinder on Stellarmate - Overview](#pifinder-on-stellarmate---overview)
-    - [WARNING : this is is only a basic summary and the project which is (at the moment) highly experimental](#warning--this-is-is-only-a-basic-summary-and-the-project-which-is-at-the-moment-highly-experimental)
-- [Table of Contents](#table-of-contents)
-- [Prerequisites](#prerequisites)
-    - [Run raspi-config](#run-raspi-config)
-  - [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
-  - [What the script does](#what-the-script-does)
-      - [3. add pifinder to the sudoers group](#3-add-pifinder-to-the-sudoers-group)
-      - [4. install additional Packages](#4-install-additional-packages)
-      - [5. add parameters to raspberry pi config.txt](#5-add-parameters-to-raspberry-pi-configtxt)
-- [Changes to PiFinder code base](#changes-to-pifinder-code-base)
-  - [PiFinder code](#pifinder-code)
-  - [Use venv](#use-venv)
-  - [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
-  - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
-        - [pifinder.service](#pifinderservice)
-        - [pifinder\_splash.service](#pifinder_splashservice)
-- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-  - [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
-  - [🧠What the Location Writer Does](#what-the-location-writer-does)
-  - [systemd Service Integration](#systemd-service-integration)
+*   [PiFinder on Stellarmate - Overview](#pifinder-on-stellarmate---overview)  
+    \- [FAQ](#faq)
+*   [Table of Contents](#table-of-contents)
+*   [Prerequisites](#prerequisites)
+    *   [Run raspi-config](#run-raspi-config)
+    *   [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
+    *   [What the script does](#what-the-script-does)
+        *   [3\. add pifinder to the sudoers group](#3-add-pifinder-to-the-sudoers-group)
+        *   [4\. install additional Packages](#4-install-additional-packages)
+        *   [5\. add parameters to raspberry pi config.txt](#5-add-parameters-to-raspberry-pi-configtxt)
+*   [Changes to PiFinder code base](#changes-to-pifinder-code-base)
+    *   [PiFinder code](#pifinder-code)
+    *   [Use venv](#use-venv)
+    *   [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
+    *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)  
+        \- [pifinder.service](#pifinderservice)  
+        \- [pifinder\_splash.service](#pifinder_splashservice)
+*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+    *   [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
+    *   [🧠What the Location Writer Does](#what-the-location-writer-does)
+    *   [systemd Service Integration](#systemd-service-integration)
 
 # Prerequisites
 
