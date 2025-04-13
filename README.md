@@ -23,7 +23,7 @@
     - [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
   - [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
   - [Changes to PiFinder code base](#changes-to-pifinder-code-base)
-    - [PiFinder code](#pifinder-code)
+    - [PiFinder code - key changes](#pifinder-code---key-changes)
     - [Use venv](#use-venv)
   - [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
   - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
@@ -132,42 +132,40 @@ This is mostly corresponding and follows the original installation guide from Pi
 
 ## Changes to PiFinder code base
 
-### PiFinder code
+### PiFinder code - key changes
 
-✅ Key changes:
-
-📁 solver.py
+`solver.py`
 
 *   sys.path.append(...) updated to use .parent
 *   "import tetra3" replaced with "from tetra3 import main"
 *   Adds "from tetra3 import cedar\_detect\_client" if missing
 
-📁 tetra3/tetra3/**init**.py
+`tetra3/tetra3/__init__.py`
 
 *   from .tetra3 import ... → from .main import ...
 
-📁 tetra3/tetra3/cedar\_detect\_client.py
+`tetra3/tetra3/cedar_detect_client.py`
 
 *   from tetra3 import ... → from . import ...
 
-📁 tetra3/tetra3/cedar\_detect\_pb2\_grpc.py
+`tetra3/tetra3/cedar_detect_pb2_grpc.py`
 
 *   import cedar\_detect\_pb2 → from . import cedar\_detect\_pb2
 
-📄 tetra3.py → Renamed to main.py
+`tetra3.py → renamed to main.py`
 
 *   Prevents conflicts with the tetra3 package name
 
-📁 ui/marking\_menus.py
+`ui/marking_menus.py`
 
 *   Adds "field" to dataclass import
 *   Replaces HELP menu init with a default\_factory lambda
 
-📁 pifinder\_post\_update.sh
+`pifinder_post_update.sh`
 
 *   Adds virtual environment creation & activation after submodule init
 
-📁 camera\_pi.py
+`camera_pi.py`
 
 *   Adds "from picamera2 import Picamera" after numpy import
 
@@ -187,7 +185,7 @@ pip install -r /home/pifinder/PiFinder/python/requirements.txt
 This goes into `requirements.txt`:
 
 ```
-e.g.   pip install picamera2
+e.g. pip install picamera2
 ```
 
 ## Alter the pifinder service to use the virtual python environment
