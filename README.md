@@ -4,12 +4,12 @@
  WARNING : this is is only a basic summary and the project which is (at the moment) highly experimental
 ```
 
-\> ℹ️ \*\*Info\*\*    
-\> The script can not update an existing PiFinder installation
-
-*   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
-*   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionality
-*   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate
+> ℹ️ **Info**  
+> 
+> *   The script can not update an existing PiFinder installation
+> *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
+> *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionality
+> *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate
 
 # Table of Contents
 
