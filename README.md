@@ -1,4 +1,4 @@
-# PiFinder on Stellarmate - Overv
+# PiFinder on Stellarmate
 
 > ### ⚠️ **Warning**
 > 
@@ -16,27 +16,24 @@
 
 # Table of Contents
 
-*   [PiFinder on Stellarmate - Overv](#pifinder-on-stellarmate---overv)
-*   [Table of Contents](#table-of-contents)
-*   [Purpose](#purpose)
-*   [Prerequisites](#prerequisites)
-    *   [Run raspi-config](#run-raspi-config)
-    *   [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
-    *   [What the script does](#what-the-script-does)
-        *   [3\. add pifinder to the sudoers group](#3-add-pifinder-to-the-sudoers-group)
-        *   [4\. install additional Packages](#4-install-additional-packages)
-        *   [5\. add parameters to raspberry pi config.txt](#5-add-parameters-to-raspberry-pi-configtxt)
-*   [Changes to PiFinder code base](#changes-to-pifinder-code-base)
-    *   [PiFinder code](#pifinder-code)
-    *   [Use venv](#use-venv)
-    *   [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
-    *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)  
-        \- [pifinder.service](#pifinderservice)  
-        \- [pifinder\_splash.service](#pifinder_splashservice)
-*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-    *   [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
-    *   [🧠What the Location Writer Does](#what-the-location-writer-does)
-    *   [systemd Service Integration](#systemd-service-integration)
+- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+- [Table of Contents](#table-of-contents)
+- [Purpose](#purpose)
+- [Prerequisites](#prerequisites)
+    - [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
+  - [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
+  - [Changes to PiFinder code base](#changes-to-pifinder-code-base)
+    - [PiFinder code](#pifinder-code)
+    - [Use venv](#use-venv)
+  - [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
+  - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
+        - [pifinder.service](#pifinderservice)
+        - [pifinder\_splash.service](#pifinder_splashservice)
+- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+  - [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
+  - [🧠What the Location Writer Does](#what-the-location-writer-does)
+  - [systemd Service Integration](#systemd-service-integration)
+- [PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)](#pifinder-stellarmate--using-pifinder-to-take-control-over-the-mount-indi)
 
 # Purpose
 
@@ -44,11 +41,11 @@
 
 [Stellarmate](https://www.stellarmate.com/) (dual license) is a software based on [KStars and EKOS](https://kstars.kde.org/de/) (open source), that enables to make professional astrophotography or EAA and control your equipment via [INDI](https://www.indilib.org/). All these technologies are based on Linux (server side) and are open to all thinkable lients, from tablets over handy up the pc. And this without any constictions to the platform (Linux, Mac, Windows). And based on a modern IoT client/server architecture. In my opion it the the most adavanced software stack usable in the field of astronomy. 
 
-Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA.   
-  
-The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-baese software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. livestacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography?   
-  
-I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform.   
+Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA. 
+
+The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-baese software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. livestacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
+
+I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform. 
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
@@ -56,10 +53,10 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 
 *   Stellarmate OS >= 1.8.1 (based on Debian Bookworm)  
     See: https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html
-*   Raspberry Pi 4
-*   PiFinder hardware (hat)
+*   Raspberry Pi 4 (Pi 5 to be tested)
+*   PiFinder hardware (PiFinder hat)
 
-### Run raspi-config
+### Run raspi-config (this is not done by the script!)
 
 Enable SPI / I2C. The screen and IMU use these to communicate.
 
@@ -71,27 +68,19 @@ Then I4 - SPI and choose Enable
 Then I5 - I2C and choose Enable
 ```
 
-## Assumptions for running PiFinder on Stellarmate
+## What Pifinder\_Stellarmate installation script does (in basic terms)
 
-1.  The following services are fully managed soleyly by StellarMate OS:
+1.  The following services are fully managed soleyly by StellarMate OS
 
-GPSD
+These services will not be used or altered through PiFinder\_Stellarmate installation script or when running PiFinder on Stellarmate.
 
-```
-WiFi (Hostap)
-```
+*   GPSD
+*   WiFi (Hostap)
+*   Network (LAN)
 
-*   IP
+The installation of PiFinder within StellarMate OS (!) is non destructive. But it can not update an existing PiFinder installation.
 
-These services will not be altered through PiFinder's installation script (pifinder\_setup.sh).
-
-1.  The installation of PiFinder within StellarMate OS is non destructive. PiFinder service is running as "pifinder" user
-
-## What the script does
-
-Hint: the script "pifinder\_stellarmate\_setup.sh" does the following tasks:
-
-1.  add PiFinder user
+1. add PiFinder user to Stellarmate OS:
 
 ```
 sudo useradd -m pifinder
@@ -100,7 +89,9 @@ sudo usermod -aG sudo pifinder
 su - pifinder
 ```
 
-2\. Add rights accessing hardware to user 'pifinder'
+Info: the PiFinder service is running as "pifinder" user.
+
+1. Add rights accessing hardware to user 'pifinder'
 
 ```
 sudo usermod -aG spi pifinder
@@ -109,20 +100,20 @@ sudo usermod -aG i2c pifinder
 sudo usermod -aG video pifinder
 ```
 
-#### 3\. add pifinder to the sudoers group
+1. add pifinder to the sudoers group
 
 ```
 pifinder ALL=(ALL) NOPASSWD: ALL
 ```
 
-#### 4\. install additional Packages
+1. install additional Packages
 
 ```
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
 ```
 
-#### 5\. add parameters to raspberry pi config.txt
+1. add parameters to raspberry pi config.txt
 
 The location of the config.txt on bookworm has changed to: `/boot/firmware/config.txt`E.g. add the following lines to the file:
 
@@ -131,13 +122,14 @@ The location of the config.txt on bookworm has changed to: `/boot/firmware/confi
 dtoverlay=pwm-2chan
 ```
 
-6\. Install PiFinder with the modified pifinder\_setup.sh
+1. Install PiFinder with the modified pifinder\_setup.sh
 
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
-# Changes to PiFinder code base
 
-## PiFinder code
+## Changes to PiFinder code base
+
+### PiFinder code
 
 ✅ Key changes:
 
@@ -176,21 +168,20 @@ This is mostly corresponding and follows the original installation guide from Pi
 
 *   Adds "from picamera2 import Picamera" after numpy import
 
-## Use venv
+### Use venv
 
-The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service with thi:
+The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service witin  virtual environmnt:
 
 ```
-# rm -rf .venv # remove an old environment 
 cd /home/pifinder/PiFinder/python
-python3 -m venv /home/pifinder/PiFinder/python/.venv
+python3 -m venv /home/pifinder/PiFinder/python/.venv --system-site-packages
 source /home/pifinder/PiFinder/python/.venv/bin/activate
 pip install -r /home/pifinder/PiFinder/python/requirements.txt
 ```
 
 ## PIP Additional requirements(.txt) within the venv
 
-This goes into requirements.txt
+This goes into `requirements.txt`:
 
 ```
 e.g.   pip install picamera2
@@ -287,3 +278,9 @@ This service ensures the writer script:
   [Install]
   WantedBy=default.targipment
 ```
+
+
+# PiFinder Stellarmate – using PiFinder to take control over the mount (INDI) 
+
+Work in progress
+- basic idea: 
