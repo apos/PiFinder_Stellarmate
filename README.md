@@ -1,9 +1,18 @@
+
+# PiFinder on Stellarmate - Overview
+
+### WARNING : this is is only a basic summary and the project which is highly experimental 
+- The script can not update an existing PiFinder installation
+- The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
+- The script downloads and installs a default PiFinder installation into /home/pifinder/PiFinder. It then makes the necessary patches and adds additional functionality
+- PiFinders GPS and WiFi/LAN  network management is NOT used, instead it uses the one from Stellarmate
+
 # Table of Contents
 
-- [Table of Contents](#table-of-contents)
 - [PiFinder on Stellarmate - Overview](#pifinder-on-stellarmate---overview)
     - [WARNING : this is is only a basic summary and the project which is highly experimental](#warning--this-is-is-only-a-basic-summary-and-the-project-which-is-highly-experimental)
-  - [Prerequisites](#prerequisites)
+- [Table of Contents](#table-of-contents)
+- [Prerequisites](#prerequisites)
     - [Run raspi-config](#run-raspi-config)
   - [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
   - [What the script does](#what-the-script-does)
@@ -29,15 +38,7 @@
 
 
 
-# PiFinder on Stellarmate - Overview
-
-### WARNING : this is is only a basic summary and the project which is highly experimental 
-- The script can not update an existing PiFinder installation
-- The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
-- The script downloads and installs a default PiFinder installation into /home/pifinder/PiFinder. It then makes the necessary patches and adds additional functionality
-- PiFinders GPS and WiFi/LAN  network management is NOT used, instead it uses the one from Stellarmate
-
-## Prerequisites
+# Prerequisites
 - Stellarmate OS >= 1.8.1 (based on Debian Bookworm)
   See: https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html 
 - Raspberry Pi 4
