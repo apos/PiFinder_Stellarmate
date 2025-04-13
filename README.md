@@ -16,24 +16,24 @@
 
 # Table of Contents
 
-*   [PiFinder on Stellarmate](#pifinder-on-stellarmate)
-*   [Table of Contents](#table-of-contents)
-*   [Purpose](#purpose)
-*   [Prerequisites](#prerequisites)
-    *   [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
-    *   [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
-    *   [Changes to PiFinder code base](#changes-to-pifinder-code-base)
-        *   [PiFinder code](#pifinder-code)
-        *   [Use venv](#use-venv)
-    *   [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
-    *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)  
-        \- [pifinder.service](#pifinderservice)  
-        \- [pifinder\_splash.service](#pifinder_splashservice)
-*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-    *   [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
-    *   [🧠What the Location Writer Does](#what-the-location-writer-does)
-    *   [systemd Service Integration](#systemd-service-integration)
-*   [PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)](#pifinder-stellarmate--using-pifinder-to-take-control-over-the-mount-indi)
+- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+- [Table of Contents](#table-of-contents)
+- [Purpose](#purpose)
+- [Prerequisites](#prerequisites)
+    - [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
+  - [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
+  - [Changes to PiFinder code base](#changes-to-pifinder-code-base)
+    - [PiFinder code](#pifinder-code)
+    - [Use venv](#use-venv)
+  - [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
+  - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
+        - [pifinder.service](#pifinderservice)
+        - [pifinder\_splash.service](#pifinder_splashservice)
+- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+  - [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
+  - [🧠What the Location Writer Does](#what-the-location-writer-does)
+  - [systemd Service Integration](#systemd-service-integration)
+- [PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)](#pifinder-stellarmate--using-pifinder-to-take-control-over-the-mount-indi)
 
 # Purpose
 
@@ -46,6 +46,10 @@ Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) th
 The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-baese software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. livestacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
 
 I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform. 
+
++ PiFinder: quickly locate objects
++ SkySafari: Observation planning an quick push to (using PiFinder)
++ Stellarmate: astrophotography and/or EAA through astrocam - or/and (if avaiable) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
