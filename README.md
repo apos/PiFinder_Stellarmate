@@ -1,13 +1,16 @@
 # PiFinder on Stellarmate - Overview
 
-```
- WARNING : this is is only a basic summary and the project which is (at the moment) highly experimental
-```
+> ⚠️ **Warning**
+> 
+> This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall). 
+> 
+> This project is not an official PiFinder
 
 > ℹ️ **Info**  
 > 
-> *   The script can not update an existing PiFinder installation
+> *   The script can not update an existing PiFinder installation!
 > *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
+> *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools
 > *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionality
 > *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate
 
