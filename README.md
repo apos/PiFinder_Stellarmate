@@ -1,5 +1,35 @@
+# Table of Contents
 
-# PiFinder on Stellarmate 
+- [Table of Contents](#table-of-contents)
+- [PiFinder on Stellarmate - Overview](#pifinder-on-stellarmate---overview)
+    - [WARNING : this is is only a basic summary and the project which is highly experimental](#warning--this-is-is-only-a-basic-summary-and-the-project-which-is-highly-experimental)
+  - [Prerequisites](#prerequisites)
+    - [Run raspi-config](#run-raspi-config)
+  - [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
+  - [What the script does](#what-the-script-does)
+    - [add PiFinder user](#add-pifinder-user)
+      - [Add rights accessing hardware to user 'pifinder'](#add-rights-accessing-hardware-to-user-pifinder)
+      - [add pifinder to the sudoers group](#add-pifinder-to-the-sudoers-group)
+      - [install additional Packages](#install-additional-packages)
+      - [add parameters to raspberry pi config.txt](#add-parameters-to-raspberry-pi-configtxt)
+    - [Install PiFinder with the modified pifinder\_setup.sh](#install-pifinder-with-the-modified-pifinder_setupsh)
+- [Changes to PiFinder code base](#changes-to-pifinder-code-base)
+  - [PiFinder code](#pifinder-code)
+- [Use venv](#use-venv)
+- [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
+  - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
+        - [pifinder.service](#pifinderservice)
+        - [pifinder\_splash.service](#pifinder_splashservice)
+- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+  - [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
+  - [🧠 What the Location Writer Does](#-what-the-location-writer-does)
+    - [📜 `/home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py`](#-homepifinderpifinder_stellarmatebinkstars_location_writerpy)
+  - [⚙️ systemd Service Integration](#️-systemd-service-integration)
+    - [📜 `/etc/systemd/system/pifinder_kstars_location_writer.service`](#-etcsystemdsystempifinder_kstars_location_writerservice)
+
+
+
+# PiFinder on Stellarmate - Overview
 
 ### WARNING : this is is only a basic summary and the project which is highly experimental 
 - The script can not update an existing PiFinder installation
@@ -182,24 +212,24 @@ This service ensures the writer script:
 
 **Example:**
 
-```ini
-[Unit]
-Description=KStars Location Writer for PiFinder
-After=graphical.target
+      ```ini
+      [Unit]
+      Description=KStars Location Writer for PiFinder
+      After=graphical.target
 
-[Service]
-Type=simple
-ExecStartPre=/bin/touch /tmp/kstars_location.txt
-ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
-ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
-Restart=always
-RestartSec=5
-User=stellarmate
-Group=pifinder
-Nice=10
-StandardOutput=journal
-StandardError=journal
+      [Service]
+      Type=simple
+      ExecStartPre=/bin/touch /tmp/kstars_location.txt
+      ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
+      ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
+      Restart=always
+      RestartSec=5
+      User=stellarmate
+      Group=pifinder
+      Nice=10
+      StandardOutput=journal
+      StandardError=journal
 
-[Install]
-WantedBy=default.target
+      [Install]
+      WantedBy=default.target
 
