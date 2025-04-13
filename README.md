@@ -282,4 +282,4 @@ This service ensures the writer script:
 
 Work in progress
 
-*   basic idea:
+*   basic idea: using PiFinder as Guide-Scope (/e.g. for a mount or S44-enabled EA
