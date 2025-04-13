@@ -49,10 +49,8 @@ Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) th
 The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-baese software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. livestacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography?   
   
 I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform.   
-  
-  
-  
- 
+
+  ****![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
 # Prerequisites
 
