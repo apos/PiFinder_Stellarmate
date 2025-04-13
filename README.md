@@ -2,9 +2,8 @@
 
 > ⚠️ **Warning**
 > 
-> This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall). 
-> 
-> This project is not an official PiFinder (R) pr
+> This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall).   
+> This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not respo
 
 > ℹ️ **Info**  
 > 
@@ -37,6 +36,10 @@
     *   [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
     *   [🧠What the Location Writer Does](#what-the-location-writer-does)
     *   [systemd Service Integration](#systemd-service-integration)
+
+# Purpose
+
+The Pi is a astonishing amount piece of hardware. [PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability
 
 # Prerequisites
 
