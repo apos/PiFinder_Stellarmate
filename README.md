@@ -11,7 +11,7 @@
 > *   The script can not (yet) update an existing PiFinder installation.
 > *   There is no uninstallation routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
 > *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
-> *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
+> *   The script downloads and installs the default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
 > *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate.
 
 # Table of Contents
