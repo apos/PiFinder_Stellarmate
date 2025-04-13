@@ -1,11 +1,11 @@
-# PiFinder on Stellarmate - Overview
+# PiFinder on Stellarmate - Overv
 
 > ### ⚠️ **Warning**
 > 
 > *   This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall). 
 > *   This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not respsonsible for any damage to your hard- or software by using this code.
 
-> ### ℹ️ **Info** 
+> ### ℹ️ **Info**
 > 
 > *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
 > *   The script can not (yet) update an existing PiFinder installation.
@@ -16,9 +16,9 @@
 
 # Table of Contents
 
-*   [PiFinder on Stellarmate - Overview](#pifinder-on-stellarmate---overview)  
-    \- [FAQ](#faq)
+*   [PiFinder on Stellarmate - Overv](#pifinder-on-stellarmate---overv)
 *   [Table of Contents](#table-of-contents)
+*   [Purpose](#purpose)
 *   [Prerequisites](#prerequisites)
     *   [Run raspi-config](#run-raspi-config)
     *   [Assumptions for running PiFinder on Stellarmate](#assumptions-for-running-pifinder-on-stellarmate)
@@ -40,7 +40,19 @@
 
 # Purpose
 
-The Pi is a astonishing amount piece of hardware. [PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability
+[PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability to plate solve in near realtime. This is great for any telscope, but at most for Dobosians, which give us the most amount of light for the price. 
+
+[Stellarmate](https://www.stellarmate.com/) (dual license) is a software based on [KStars and EKOS](https://kstars.kde.org/de/) (open source), that enables to make professional astrophotography or EAA and control your equipment via [INDI](https://www.indilib.org/). All these technologies are based on Linux (server side) and are open to all thinkable lients, from tablets over handy up the pc. And this without any constictions to the platform (Linux, Mac, Windows). And based on a modern IoT client/server architecture. In my opion it the the most adavanced software stack usable in the field of astronomy. 
+
+Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA.   
+  
+The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-baese software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. livestacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography?   
+  
+I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform.   
+  
+  
+  
+ 
 
 # Prerequisites
 
@@ -275,5 +287,5 @@ This service ensures the writer script:
   StandardError=journal
 
   [Install]
-  WantedBy=default.target
+  WantedBy=default.targipment
 ```
