@@ -39,23 +39,25 @@
 
 [PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability to plate solve in near realtime. This is great for any telescope, but at most for Dobsonians, which give us the most amount of light for the price. 
 
-[Stellarmate](https://www.stellarmate.com/) (dual license) is a software based on [KStars and EKOS](https://kstars.kde.org/de/) (open source), that enables to make professional astrophotography or EAA and control your equipment via [INDI](https://www.indilib.org/). All these technologies are based on Linux (server side) and are open to all thinkable clients, from tablets over handy up the pc. And this without any constrictions to the platform (Linux, Mac, Windows) - based on a modern IoT client/server architecture. In my opinion it the the most advanced software stack usable in the field of astronomy. 
+[Stellarmate](https://www.stellarmate.com/) (dual license) is a software based on [KStars and EKOS](https://kstars.kde.org/de/) (open source), that enables to make professional astrophotography or EAA and control your equipment via [INDI](https://www.indilib.org/). All these technologies are based on Linux (server side) and are open to all thinkable clients, from tablets over handy up the pc. And this without any constrictions to the platform (Linux, Mac, Windows) - based on a modern IoT client/server architecture. In my opinion it is the the most advanced software stack controlling your astrophotography tasks in the field of astronomy. 
 
-Combined with the powerful toll [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA. 
+Combined with the powerful tool [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA. 
 
-The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software and our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
+The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software,  our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
 
-I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experience inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform. 
+Stellarmate also runs on the Pi and also works together with Sky Safari. 
+
+I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experience inside one piece of hardware that sits right at the hat of my Dobsonian using my eq platform or other scopes I dual use for visual and EAA.
 
 *   PiFinder: quickly locate objects
-*   SkySafari: Observation planning an quick push to (using PiFinder)
+*   SkySafari: Observation planning, sky chart and quick "push to" (standalone or using PiFinder)
 *   Stellarmate: astrophotography and/or EAA through a dedicated astro camera - or/and (if available) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
 # Prerequisites
 
-*   Stellarmate OS >= 1.8.1 (based on Debian Bookworm)  
+*   Stellarmate OS >= 1.8.1 (based on Debian Bookworm) 
     See: https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html
 *   Raspberry Pi 4 (Pi 5 to be tested)
 *   PiFinder hardware (PiFinder hat)
@@ -74,17 +76,23 @@ Then I5 - I2C and choose Enable
 
 ## What Pifinder\_Stellarmate installation script does (in basic terms)
 
-**1. The following services are fully managed soleyly by StellarMate OS**
+**1. The following services are fully managed soleily by StellarMate OS**
 
-These services will not be used or altered through PiFinder\_Stellarmate installation script or when running PiFinder on Stellarmate.
+Services will not be used/disavled or altered through PiFinder in the Stellarmate encironment by the installation script or when running PiFinder on Stellarmate.
+
+This assures full functionality of both devices side-by-side. 
 
 *   GPSD
 *   WiFi (Hostap)
 *   Network (LAN)
 
-The installation of PiFinder within StellarMate OS (!) is non destructive. But it can not update an existing PiFinder installation.
+The installation of PiFinder within StellarMate OS (!) is non destructive to Stellarmate. 
+
+It can not update an existing PiFinder installation.
 
 **2. add PiFinder user to Stellarmate OS:**
+
+This is essential and creates a second home directory `/home/pifinder` in which the installation of the PiFinder software takes place. 
 
 ```
 sudo useradd -m pifinder
@@ -93,9 +101,11 @@ sudo usermod -aG sudo pifinder
 su - pifinder
 ```
 
-Info: the PiFinder service is running as "pifinder" user.
+Info: the PiFinder service is running as "pifinder" user. 
 
-**3. Add rights accessing hardware to user 'pifinder'**
+It also adds the user pifinder to rhe group `stellarmate`.
+
+**3. Add rights for hardware access to user 'pifinder'**
 
 ```
 sudo usermod -aG spi pifinder
@@ -119,7 +129,9 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 
 **6. add parameters to raspberry pi config.txt**
 
-The location of the config.txt on bookworm has changed to: `/boot/firmware/config.txt`E.g. add the following lines to the file:
+The location of the config.txt on bookworm has changed to: `/boot/firmware/config.txt`
+
+E.g. add the following lines to the file:
 
 ```
 # Pifinder main.py needs this:
@@ -169,7 +181,7 @@ This is mostly corresponding and follows the original installation guide from Pi
 
 *   Adds "from picamera2 import Picamera" after numpy import
 
-### Use venv
+### Use python venv (virtual environment)
 
 The most important change is, that because of security reasons, it is not allowed to use global python libraries in Python 3.11 any more. You can use them, if installed through the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service within virtual environment:
 
