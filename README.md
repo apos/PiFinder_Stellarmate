@@ -1,16 +1,26 @@
 
 # PiFinder on Stellarmate 
 
-
-### WARNING : this is is only a basic summary and the project highly experimental 
-The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
-NOT by /home/pifinder/PiFinder/pifinder_setup.sh
+### WARNING : this is is only a basic summary and the project which is highly experimental 
+- The script can not update an existing PiFinder installation
+- The main changes and installation of pifinder is made by the script /home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh
+- The script downloads and installs a default PiFinder installation into /home/pifinder/PiFinder. It then makes the necessary patches and adds additional functionality
+- PiFinders GPS and WiFi/LAN  network management is NOT used, instead it uses the one from Stellarmate
 
 ## Prerequisites
 - Stellarmate OS >= 1.8.1 (based on Debian Bookworm)
   See: https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html 
 - Raspberry Pi 4
 - PiFinder hardware (hat)
+
+### Run raspi-config
+Enable SPI / I2C. The screen and IMU use these to communicate.
+
+    sudo raspi-config
+
+    Select 3 - Interface Options
+    Then I4 - SPI and choose Enable
+    Then I5 - I2C and choose Enable
 
 ## Assumptions for running PiFinder on Stellarmate
 1. The following services are fully managed soleyly by StellarMate OS: 
@@ -23,11 +33,8 @@ These services will not be altered through PiFinder's installation script (pifin
 2. The installation of PiFinder within StellarMate OS is non destructive.  PiFinder service is running as "pifinder" user
 
 
-# Pre installation steps 
-Hint: the script "pifinder_stellarmate_setup.sh" does this for you !
-
-
-Additionan installs on Stellarmate OS. 
+## What the script does
+Hint: the script "pifinder_stellarmate_setup.sh" does the following tasks:
 
 ### add PiFinder user
     sudo useradd -m pifinder
@@ -41,7 +48,7 @@ Additionan installs on Stellarmate OS.
     sudo usermod -aG i2c pifinder
     sudo usermod -aG video pifinder
 
-### add pifinder to the sudoers group
+#### add pifinder to the sudoers group
 pifinder ALL=(ALL) NOPASSWD: ALL
 
 #### install additional Packages
@@ -49,32 +56,18 @@ pifinder ALL=(ALL) NOPASSWD: ALL
     sudo apt-get update
     sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
 
-
-### add raspi boot 
+#### add parameters to raspberry pi config.txt
 The location of the config.txt on bookworm has changed to:
      /boot/firmware/config.txt
 
-Add the following lines to the file:  
+E.g. add the following lines to the file:  
      # Pifinder main.py needs this: 
      dtoverlay=pwm-2chan
 
 ### Install PiFinder with the modified pifinder_setup.sh
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
-#### Run raspi-config
-Enable SPI / I2C. The screen and IMU use these to communicate.
 
-    sudo raspi-config
-
-    Select 3 - Interface Options
-    Then I4 - SPI and choose Enable
-    Then I5 - I2C and choose Enable
-
-
-Then run the modified installation script (not the one from Brickbots)
-
-    # wget -O - https://raw.githubusercontent.com/brickbots/PiFinder/release/pifinder_setup.sh
-    wget -O - 
 
 
 # Changes to PiFinder code base 
@@ -111,7 +104,6 @@ Then run the modified installation script (not the one from Brickbots)
 - Adds "from picamera2 import Picamera" after numpy import
 
 
-
 # Use venv
 The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service with thi:
 
@@ -125,21 +117,7 @@ The most important change is, that because of security reasons, it is not allowe
 # PIP Additional requirements(.txt) within the venv
 This goes into requirements.txt
 
-    pip install picamera2
-
-
-# Tetra: 
-
-The tetra3 import within PiFinder simply did not work
-within the .venv environment - this was the only way to get tetra3 working.
-
-Probably the structure integrating tetra3 within PiFinder module is not a good idea
-
-See: https://tetra3.readthedocs.io/en/latest/installation.html#use-pip-to-download-and-install
-
-Please install within the venv!
-
-    pip install git+https://github.com/esa/tetra3.git
+    e.g.   pip install picamera2
 
 
 ## Alter the pifinder service to use the virtual python environment
@@ -160,13 +138,68 @@ Please install within the venv!
     > ExecStart=/usr/bin/python -m PiFinder.splash
 
 
+# PiFinder Stellarmate – KStars Location Integration Overview
 
-# Run the install script locally to test
-## WARNING: Only tested locally as user "pifinder" - no field test
+## 🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation
 
-    cd /home/pifinder/PiFinder/python
+Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, which may be configured manually or received via INDI GPS devices. This is especially useful when Stellarmate handles GPS/time synchronization and PiFinder is running headless.
 
-    sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
-    find /home/pifinder/PiFinder/python -name '*.pyc' -delete
-    find /home/pifinder/PiFinder/python -name '__pycache__' -type d -exec rm -rf {} +
-    /home/pifinder/PiFinder/python/.venv/bin/python3 -m PiFinder.main
+---
+
+## 🧠 What the Location Writer Does
+
+### 📜 `/home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py`
+
+This Python script:
+
+- Parses the `~/.config/kstarsrc` file from the KStars user session.
+- Extracts the current location:
+  - **Latitude**
+  - **Longitude**
+  - **Altitude**
+  - **City & Country**
+- Captures the current time in:
+  - **UTC**
+  - **Local time with offset**
+- Writes all data into a plain-text file:  
+  `/tmp/kstars_location.txt`
+
+The file is updated every 10 seconds.
+
+---
+
+## ⚙️ systemd Service Integration
+
+### 📜 `/etc/systemd/system/pifinder_kstars_location_writer.service`
+
+This service ensures the writer script:
+
+- **Starts at boot** in the graphical session.
+- **Runs as user `stellarmate`** (same as the KStars session).
+- **Creates `/tmp/kstars_location.txt`** with correct permissions:
+  - Uses `Group=pifinder` so the PiFinder service (which runs as user `pifinder`) can read it.
+  - Prepares the file with `ExecStartPre` commands (`touch`, `chmod`).
+
+**Example:**
+
+```ini
+[Unit]
+Description=KStars Location Writer for PiFinder
+After=graphical.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/touch /tmp/kstars_location.txt
+ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
+ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
+Restart=always
+RestartSec=5
+User=stellarmate
+Group=pifinder
+Nice=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+
