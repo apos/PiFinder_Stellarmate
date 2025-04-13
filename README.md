@@ -16,24 +16,24 @@
 
 # Table of Contents
 
-- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
-- [Table of Contents](#table-of-contents)
-- [Purpose](#purpose)
-- [Prerequisites](#prerequisites)
-    - [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
-  - [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
-  - [Changes to PiFinder code base](#changes-to-pifinder-code-base)
-    - [PiFinder code](#pifinder-code)
-    - [Use venv](#use-venv)
-  - [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
-  - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
-        - [pifinder.service](#pifinderservice)
-        - [pifinder\_splash.service](#pifinder_splashservice)
-- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-  - [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
-  - [🧠What the Location Writer Does](#what-the-location-writer-does)
-  - [systemd Service Integration](#systemd-service-integration)
-- [PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)](#pifinder-stellarmate--using-pifinder-to-take-control-over-the-mount-indi)
+*   [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+*   [Table of Contents](#table-of-contents)
+*   [Purpose](#purpose)
+*   [Prerequisites](#prerequisites)
+    *   [Run raspi-config (this is not done by the script!)](#run-raspi-config-this-is-not-done-by-the-script)
+    *   [What Pifinder\_Stellarmate installation script does (in basic terms)](#what-pifinder_stellarmate-installation-script-does-in-basic-terms)
+    *   [Changes to PiFinder code base](#changes-to-pifinder-code-base)
+        *   [PiFinder code](#pifinder-code)
+        *   [Use venv](#use-venv)
+    *   [PIP Additional requirements(.txt) within the venv](#pip-additional-requirementstxt-within-the-venv)
+    *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)  
+        \- [pifinder.service](#pifinderservice)  
+        \- [pifinder\_splash.service](#pifinder_splashservice)
+*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+    *   [🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation](#-purpose-replace-pifinders-native-gps-with-kstars-based-geolocation)
+    *   [🧠What the Location Writer Does](#what-the-location-writer-does)
+    *   [systemd Service Integration](#systemd-service-integration)
+*   [PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)](#pifinder-stellarmate--using-pifinder-to-take-control-over-the-mount-indi)
 
 # Purpose
 
@@ -80,7 +80,7 @@ These services will not be used or altered through PiFinder\_Stellarmate install
 
 The installation of PiFinder within StellarMate OS (!) is non destructive. But it can not update an existing PiFinder installation.
 
-1. add PiFinder user to Stellarmate OS:
+1.  add PiFinder user to Stellarmate OS:
 
 ```
 sudo useradd -m pifinder
@@ -91,7 +91,7 @@ su - pifinder
 
 Info: the PiFinder service is running as "pifinder" user.
 
-1. Add rights accessing hardware to user 'pifinder'
+1.  Add rights accessing hardware to user 'pifinder'
 
 ```
 sudo usermod -aG spi pifinder
@@ -100,20 +100,20 @@ sudo usermod -aG i2c pifinder
 sudo usermod -aG video pifinder
 ```
 
-1. add pifinder to the sudoers group
+1.  add pifinder to the sudoers group
 
 ```
 pifinder ALL=(ALL) NOPASSWD: ALL
 ```
 
-1. install additional Packages
+1.  install additional Packages
 
 ```
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
 ```
 
-1. add parameters to raspberry pi config.txt
+1.  add parameters to raspberry pi config.txt
 
 The location of the config.txt on bookworm has changed to: `/boot/firmware/config.txt`E.g. add the following lines to the file:
 
@@ -122,10 +122,9 @@ The location of the config.txt on bookworm has changed to: `/boot/firmware/confi
 dtoverlay=pwm-2chan
 ```
 
-1. Install PiFinder with the modified pifinder\_setup.sh
+1.  Install PiFinder with the modified pifinder\_setup.sh
 
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
-
 
 ## Changes to PiFinder code base
 
@@ -170,7 +169,7 @@ This is mostly corresponding and follows the original installation guide from Pi
 
 ### Use venv
 
-The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service witin  virtual environmnt:
+The most important change is, that because of security reasons, it is not allowed to use global pyhton libraries in Python 3.11 any more. You can use them, if installed throught the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service witin virtual environmnt:
 
 ```
 cd /home/pifinder/PiFinder/python
@@ -279,8 +278,8 @@ This service ensures the writer script:
   WantedBy=default.targipment
 ```
 
-
-# PiFinder Stellarmate – using PiFinder to take control over the mount (INDI) 
+# PiFinder Stellarmate – using PiFinder to take control over the mount (INDI)
 
 Work in progress
-- basic idea: 
+
+*   basic idea:
