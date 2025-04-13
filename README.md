@@ -142,9 +142,9 @@ dtoverlay=pwm-2chan
 
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
-## Changes to PiFinder code base
+### Changes to PiFinder code base - key changes
+Die to the bookeorm environment is was necessary to alter some files. This will not affect it's functionalities. 
 
-### PiFinder code - key changes
 
 `solver.py`
 
@@ -200,9 +200,9 @@ This goes into `requirements.txt`:
 e.g. pip install picamera2
 ```
 
-## Alter the pifinder service to use the virtual python environment
+### Alter the pifinder service to use the virtual python environment
 
-##### pifinder.service
+#### pifinder.service
 
 ```
 9c9
@@ -211,7 +211,7 @@ e.g. pip install picamera2
 > ExecStart=/usr/bin/python -m PiFinder.main
 ```
 
-##### pifinder\_splash.service
+#### pifinder\_splash.service
 
 ```
 ##### pifinder_flash.service
@@ -223,13 +223,15 @@ e.g. pip install picamera2
 
 # PiFinder Stellarmate – KStars Location Integration Overview
 
-## 🔧 Purpose: Replace PiFinder's Native GPS with KStars-Based Geolocation
+## Purpose
+
+Replace PiFinder's Native GPS with KStars-Based Geolocation
 
 Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, which may be configured manually or received via INDI GPS devices. This is especially useful when Stellarmate handles GPS/time synchronization and PiFinder is running headless.
 
 ---
 
-## 🧠What the Location Writer Does
+## 🧠 What the Location Writer Does
 
 ```
 📜 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
