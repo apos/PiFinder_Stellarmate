@@ -4,7 +4,7 @@
 > 
 > This is is work in progress and (at the moment) highly experimental. As of 13.0.25 the script is ready for test and basically working (no uninstall). 
 > 
-> This project is not an official PiFinder
+> This project is not an official PiFinder (R) pr
 
 > ℹ️ **Info**  
 > 
