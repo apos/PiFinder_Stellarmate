@@ -10,9 +10,9 @@
 > *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
 > *   The script can not (yet) update an existing PiFinder installation.
 > *   There is no uninstallation routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
-> *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools
-> *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionality
-> *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate
+> *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
+> *   The script downloads and installs a default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
+> *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate.
 
 # Table of Contents
 
@@ -37,7 +37,7 @@
 
 # Purpose
 
-[PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability to plate solve in near realtime. This is great for any telscope, but at most for Dobosians, which give us the most amount of light for the price. 
+[PiFinder](https://www.pifinder.io/) is a perfect instrument for the visual astronomer with the ability to plate solve in near realtime. This is great for any telescope, but at most for Dobosians, which give us the most amount of light for the price. 
 
 [Stellarmate](https://www.stellarmate.com/) (dual license) is a software based on [KStars and EKOS](https://kstars.kde.org/de/) (open source), that enables to make professional astrophotography or EAA and control your equipment via [INDI](https://www.indilib.org/). All these technologies are based on Linux (server side) and are open to all thinkable lients, from tablets over handy up the pc. And this without any constictions to the platform (Linux, Mac, Windows). And based on a modern IoT client/server architecture. In my opion it the the most adavanced software stack usable in the field of astronomy. 
 
@@ -47,9 +47,9 @@ The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and vers
 
 I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform. 
 
-+ PiFinder: quickly locate objects
-+ SkySafari: Observation planning an quick push to (using PiFinder)
-+ Stellarmate: astrophotography and/or EAA through astrocam - or/and (if avaiable) guide scope and mount (ST4 enabled eq platform, GoTo mount)
+*   PiFinder: quickly locate objects
+*   SkySafari: Observation planning an quick push to (using PiFinder)
+*   Stellarmate: astrophotography and/or EAA through astrocam - or/and (if avaiable) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
@@ -84,7 +84,7 @@ These services will not be used or altered through PiFinder\_Stellarmate install
 
 The installation of PiFinder within StellarMate OS (!) is non destructive. But it can not update an existing PiFinder installation.
 
-1.  add PiFinder user to Stellarmate OS:
+2.  add PiFinder user to Stellarmate OS:
 
 ```
 sudo useradd -m pifinder
@@ -95,7 +95,7 @@ su - pifinder
 
 Info: the PiFinder service is running as "pifinder" user.
 
-1.  Add rights accessing hardware to user 'pifinder'
+3.  Add rights accessing hardware to user 'pifinder'
 
 ```
 sudo usermod -aG spi pifinder
@@ -104,20 +104,20 @@ sudo usermod -aG i2c pifinder
 sudo usermod -aG video pifinder
 ```
 
-1.  add pifinder to the sudoers group
+4.  add pifinder to the sudoers group
 
 ```
 pifinder ALL=(ALL) NOPASSWD: ALL
 ```
 
-1.  install additional Packages
+5.  install additional Packages
 
 ```
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera
 ```
 
-1.  add parameters to raspberry pi config.txt
+6.  add parameters to raspberry pi config.txt
 
 The location of the config.txt on bookworm has changed to: `/boot/firmware/config.txt`E.g. add the following lines to the file:
 
@@ -126,7 +126,7 @@ The location of the config.txt on bookworm has changed to: `/boot/firmware/confi
 dtoverlay=pwm-2chan
 ```
 
-1.  Install PiFinder with the modified pifinder\_setup.sh
+7.  Install PiFinder with the modified pifinder\_setup.sh
 
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
