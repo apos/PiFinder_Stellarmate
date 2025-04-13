@@ -50,7 +50,7 @@ The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and vers
   
 I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://www.stellarmate.com/) and the connection to [Sky Safari](https://skysafariastronomy.com/) to put both, visual and photographic experienvce inside one piece of hardware that sits right at the heat of my Dobsonian using my eq platform.   
 
-  ****![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
+![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
 # Prerequisites
 
