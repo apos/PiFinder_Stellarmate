@@ -7,9 +7,9 @@
 
 > ### ℹ️ **Info**
 > 
-> *   The main changes and installation of pifinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
+> *   The main changes and installation of PiFinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
 > *   The script can not (yet) update an existing PiFinder installation.
-> *   There is no uninstallation routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
+> *   There is no uninstall routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
 > *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
 > *   The script downloads and installs the default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
 > *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate.
@@ -43,7 +43,7 @@
 
 Combined with the powerful tool [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA. 
 
-The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software,  our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
+The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software,  our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq-platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography? 
 
 Stellarmate also runs on the Pi and also works together with Sky Safari. 
 
@@ -76,14 +76,14 @@ Then I5 - I2C and choose Enable
 
 ## What Pifinder\_Stellarmate installation script does (in basic terms)
 
-**1. The following services are fully managed soleily by StellarMate OS**
+**1. The following services are fully managed solely by StellarMate OS**
 
-Services will not be used/disavled or altered through PiFinder in the Stellarmate encironment by the installation script or when running PiFinder on Stellarmate.
+Services will not be used/disabled or altered through PiFinder in the Stellarmate environment by the installation script or when running PiFinder on Stellarmate.
 
 This assures full functionality of both devices side-by-side. 
 
 *   GPSD
-*   WiFi (Hostap)
+*   WiFi (Client/ Host AP)
 *   Network (LAN)
 
 The installation of PiFinder within StellarMate OS (!) is non destructive to Stellarmate. 
@@ -114,7 +114,7 @@ sudo usermod -aG i2c pifinder
 sudo usermod -aG video pifinder
 ```
 
-**4. add pifinder to the sudoers group**
+**4. add user pifinder to the sudoers group**
 
 ```
 pifinder ALL=(ALL) NOPASSWD: ALL
@@ -143,7 +143,7 @@ dtoverlay=pwm-2chan
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
 ### Changes to PiFinder code base - key changes
-Die to the bookeorm environment is was necessary to alter some files. This will not affect it's functionalities. 
+Die to the bookworm environment is was necessary to alter some files. This will not affect it's functionalities. 
 
 
 `solver.py`
