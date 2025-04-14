@@ -2,7 +2,7 @@
 
 # Set source and destination directories
 SRC_DIR="/home/pifinder/PiFinder"
-DEST_DIR="/home/pifinder/PiFinder_Stellarmate/altered_src_pifinder"
+DEST_DIR="/home/pifinder/PiFinder_Stellarmate/src_pifinder"
 
 # Ensure destination directory exists
 mkdir -p "$DEST_DIR"
@@ -13,19 +13,33 @@ cd "$SRC_DIR" || { echo "❌ Cannot access $SRC_DIR"; exit 1; }
 # Get list of changed (modified and untracked) files
 changed_files=$(git ls-files --modified --others --exclude-standard)
 
-# Exit early if nothing changed
-if [[ -z "$changed_files" ]]; then
-    echo "✅ No modified or untracked files found in $SRC_DIR"
+# Add explicitly required files even if not changed
+extra_files=(
+  "python/PiFinder/tetra3/tetra3/__init__.py"
+  "python/PiFinder/tetra3/tetra3/main.py"  # renamed from tetra3.py
+)
+
+# Merge changed + extra files, avoid duplicates
+all_files=$(printf "%s\n%s\n" "$changed_files" "${extra_files[@]}" | sort -u)
+
+# Exit early if nothing to copy
+if [[ -z "$all_files" ]]; then
+    echo "✅ No files to copy from $SRC_DIR"
     exit 0
 fi
 
-echo "🔄 Copying changed files from $SRC_DIR to $DEST_DIR ..."
+echo "🔄 Copying files to $DEST_DIR ..."
 
 # Copy each file and preserve directory structure
 while IFS= read -r file; do
+    src_path="$SRC_DIR/$file"
     dest_path="$DEST_DIR/$file"
-    mkdir -p "$(dirname "$dest_path")"
-    cp "$file" "$dest_path" && echo "✔️  Copied: $file" || echo "❌ Failed to copy: $file"
-done <<< "$changed_files"
+    if [[ -f "$src_path" ]]; then
+        mkdir -p "$(dirname "$dest_path")"
+        cp "$src_path" "$dest_path" && echo "✔️  Copied: $file" || echo "❌ Failed: $file"
+    else
+        echo "⚠️  Skipped missing file: $file"
+    fi
+done <<< "$all_files"
 
 echo "✅ All files copied to $DEST_DIR"
