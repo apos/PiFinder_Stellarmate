@@ -78,7 +78,10 @@ Then I5 - I2C and choose Enable
 
 1. Go into /home/pifinder/
 2. Clone the repo
-3. Go into PiFinder_Stellarmate
+
+    git clone https://github.com/apos/PiFinder_Stellarmate.git 
+
+3. Go into PiFinder_Stellarmate directory
 4. Run the script the first time until it stops and says:
 
 <img width="827" alt="grafik" src="https://github.com/user-attachments/assets/ace44320-b5ad-4ba1-93ef-d790121e9079" />
