@@ -6,6 +6,9 @@ pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
 pifinder_dir="/home/pifinder/PiFinder"
 python_venv="${pifinder_dir}/python/.venv"
 python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
+pifinder_config_dir="/home/pifinder/.config"
+kstarsrc_source="/home/stellarmate/.config/kstarsrc"
+kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 
 ############################################################
 # FUNCTIONS

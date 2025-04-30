@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 cd /home/pifinder
@@ -18,6 +17,20 @@ mv ${pifinder_dir}/pifinder_update.sh ${pifinder_dir}/pifinder_update.sh.before.
 cp ${pifinder_stellarmate_dir}/pifinder_update.sh ${pifinder_dir}/.
 mv ${pifinder_dir}/pifinder_post_update.sh ${pifinder_dir}/pifinder_post_update.sh.before.stellarmate
 cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
+
+
+# Ensure kstarsrc symlink exists for PiFinder user
+echo "🔗 Ensuring ~/.config/kstarsrc symlink for PiFinder ..."
+mkdir -p "$pifinder_config_dir"
+
+if [ -L "$kstarsrc_target" ]; then
+    echo "ℹ️ Symlink already exists: $kstarsrc_target"
+elif [ -e "$kstarsrc_target" ]; then
+    echo "⚠️ $kstarsrc_target exists but is not a symlink. Please resolve manually."
+else
+    ln -s "$kstarsrc_source" "$kstarsrc_target"
+    echo "✅ Symlink created: $kstarsrc_target → $kstarsrc_source"
+fi
 
 
 # PiFinder Service
@@ -113,6 +126,22 @@ fi
 show_diff_if_changed "$solver_py"
 
 
+echo "🔧 Patching solver.py for consistent Tetra3 access ..."
+
+solver_py="${pifinder_dir}/python/PiFinder/solver.py"
+cp "$solver_py" "$solver_py.bak"
+
+# Ersetze 'from tetra3 import main' → 'import tetra3.main as main'
+sed -i 's|from tetra3 import main|import tetra3.main as main|' "$solver_py"
+
+# Ersetze 'tetra3.Tetra3' → 'main.Tetra3'
+sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
+
+show_diff_if_changed "$solver_py"
+
+
+
+
 
 echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
@@ -193,7 +222,7 @@ show_diff_if_changed "$python_requirements"
 echo "✅ All changes applied and shown."
 
 
-
+##################################################
 #  PiFinder  main.py
 
 echo "🔧 Patching main.py for KStars GPS support ..."
@@ -220,77 +249,136 @@ else
 fi
 
 
-# New GPS functionality in Version 2.2
-echo "🔧 Ensuring gps_monitor() exists in gps_gpsd.py ..."
+######################################################
+# gps_gpsd.py
+
+echo "🔧 Patching gps_gpsd.py for KStars-only support ..."
+
 gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
 cp "$gps_py" "$gps_py.bak"
 
-# Append gps_monitor() definition if missing
-if ! grep -q '^def gps_monitor(gps_queue, console_queue, log_queue):' "$gps_py"; then
-    cat <<'EOF' >> "$gps_py"
+# Remove previous gps_main and gps_monitor implementations
+sed -i '/^async def gps_main/,/^def gps_monitor/ d' "$gps_py"
+sed -i '/^# To run the GPS monitor/,/^$/d' "$gps_py"
 
-# To run the GPS monitor
+# Remove old read_kstars_location_file if present
+sed -i '/^async def read_kstars_location_file/,/^EOF/ d' "$gps_py"
+
+# Append KStars-only implementation
+cat <<'EOF' >> "$gps_py"
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+async def read_kstars_location_file(gps_queue):
+    logger.info("KStars reader started (gps_gpsd.py)")
+    last_line = ""
+    while True:
+        try:
+            if os.path.exists(KSTARS_LOCATION_FILE):
+                with open(KSTARS_LOCATION_FILE, "r") as f:
+                    line = f.readline().strip()
+                    if not line or line == last_line or line.startswith("ERROR"):
+                        await asyncio.sleep(5)
+                        continue
+
+                    parts = line.split(",")
+                    if len(parts) >= 6:
+                        lat = float(parts[2])
+                        lon = float(parts[3])
+                        alt = float(parts[4])
+                        time_utc = parts[5]
+
+                        msg = (
+                            "fix",
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "altitude": alt,
+                                "source": "KStars",
+                                "lock": True,
+                                "error_in_m": 10,
+                            },
+                        )
+
+                        parsed_time = datetime.fromisoformat(time_utc)
+                        time_msg = ("time", {"time": parsed_time})
+
+                        gps_queue.put(msg)
+                        gps_queue.put(time_msg)
+
+                        logger.info(f"KStars GPS fix injected: {msg}")
+                        last_line = line
+        except Exception as e:
+            logger.warning(f"KStars GPS reader error: {e}")
+        await asyncio.sleep(5)
+
+async def gps_main(gps_queue, console_queue, log_queue):
+    MultiprocLogging.configurer(log_queue)
+    logger.info("GPS main started – using ONLY KStars")
+
+    try:
+        await read_kstars_location_file(gps_queue)
+    except Exception as e:
+        logger.error(f"Error in GPS monitor: {e}")
+        await asyncio.sleep(5)
+
 def gps_monitor(gps_queue, console_queue, log_queue):
     asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 EOF
-    echo "✅ gps_monitor() function added to gps_gpsd.py"
-else
-    echo "ℹ️ gps_monitor() already exists in gps_gpsd.py"
-fi
 
-show_diff_if_changed "$gps_py"
-
-show_diff_if_changed "$main_py"
-
-
-# PiFinder gps_gpsd.py
-
-echo "🔧 Patching gps_gpsd.py for clean KStars-only deployment ..."
-
-gps_py="/home/pifinder/PiFinder/python/PiFinder/gps_gpsd.py"
-cp "$gps_py" "$gps_py.bak"  
-
-# Entferne StreamHandler und manuelles DEBUG-Logging
-sed -i '/import sys/d' "$gps_py"
-sed -i '/StreamHandler/d' "$gps_py"
-sed -i '/logger\.addHandler/d' "$gps_py"
-sed -i '/logger\.setLevel/d' "$gps_py"
-
-# Entferne gps_locked (falls noch drin)
-sed -i 's/def read_kstars_location_file(gps_queue, gps_locked):/def read_kstars_location_file(gps_queue):/' "$gps_py"
-sed -i 's/read_kstars_location_file(gps_queue, gps_locked)/read_kstars_location_file(gps_queue)/' "$gps_py"
-
-# Entferne gesamte gps_main()
-sed -i '/async def gps_main/,/^def gps_monitor/ d' "$gps_py"
-
-# Füge neue gps_main() direkt vor gps_monitor ein
-sed -i '/^def gps_monitor/i \
-async def gps_main(gps_queue, console_queue, log_queue):\n\
-    MultiprocLogging.configurer(log_queue)\n\Mhm, Mhm. 
-    logger.info("GPS main started – using ONLY KStars")\n\
-\n\
-    try:\n\
-        await read_kstars_location_file(gps_queue)\n\
-    except Exception as e:\n\
-        logger.error(f"Error in GPS monitor: {e}")\n\
-        await asyncio.sleep(5)\n' "$gps_py"
-
-echo "✅ gps_gpsd.py clean patched."
-
+echo "✅ gps_gpsd.py patched with KStars-only GPS logic"
 show_diff_if_changed "$gps_py"
 
 
-echo "🔧 Removing GPS Status menu item from menu_structure.py ..."
+######################################################
+# menu_structure.py – remove GPS Status entry safely
 
 menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
 cp "$menu_py" "$menu_py.bak"
 
-# Entferne den GPS-Eintrag nur, wenn er existiert
-if grep -q '"name": "GPS Status"' "$menu_py"; then
-    sed -i '/"name": "GPS Status"/,/},/d' "$menu_py"
-    echo "✅ GPS Status menu item removed"
+# Ziel: sichere Entfernung von "GPS Status"-Einträgen und defekter Klammer danach
+
+# Zeilennummer finden, an der "GPS Status" auftaucht
+gps_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$gps_line" ]]; then
+    start=$((gps_line - 1))    # öffnende {
+    end=$((gps_line + 2))      # bis einschließlich schließender }
+
+    # Lösche { + "name": "GPS Status" + "class": ... + },
+    sed -i "${start},${end}d" "$menu_py"
+
+    # Entferne überzählige öffnende Klammer direkt nach "Align"
+    sed -i '/"name": "Align"/,/preload/ {
+        /preload/ {
+            n
+            /{/d
+        }
+    }' "$menu_py"
+
+    # Entferne überflüssiges Komma nach "Align"-Block
+    sed -i '/"name": "Align"/,/preload/ {
+        /preload/ {
+            n
+            s|},[[:space:]]*|}|
+        }
+    }' "$menu_py"
+
+    echo "✅ Removed GPS Status block and cleaned up Align section"
 else
-    echo "ℹ️ GPS Status menu item not found (already removed)"
+    echo "ℹ️ No GPS Status block found"
 fi
 
 show_diff_if_changed "$menu_py"
+
+
