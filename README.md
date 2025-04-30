@@ -74,6 +74,31 @@ Then I4 - SPI and choose Enable
 Then I5 - I2C and choose Enable
 ```
 
+# Installation
+
+1. Go into /home/pifinder/
+2. Clone the repo
+3. Go into PiFinder_Stellarmate
+4. Run the script the first time until it stops and says:
+
+<img width="827" alt="grafik" src="https://github.com/user-attachments/assets/ace44320-b5ad-4ba1-93ef-d790121e9079" />
+
+5. Paste the shown lines into the shell, this sources the newly created python virtual environment an restarts the script 
+
+     source /home/pifinder/PiFinder/python/.venv/bin/activate
+     ./pifinder_stellarmate_setup.sh
+
+until ...
+
+    ##############################################
+    PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)
+
+6. Restart
+
+
+
+
+
 ## What Pifinder\_Stellarmate installation script does (in basic terms)
 
 **1. The following services are fully managed solely by StellarMate OS**
