@@ -278,3 +278,19 @@ async def gps_main(gps_queue, console_queue, log_queue):\n\
 echo "✅ gps_gpsd.py clean patched."
 
 show_diff_if_changed "$gps_py"
+
+
+echo "🔧 Removing GPS Status menu item from menu_structure.py ..."
+
+menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
+cp "$menu_py" "$menu_py.bak"
+
+# Entferne den GPS-Eintrag nur, wenn er existiert
+if grep -q '"name": "GPS Status"' "$menu_py"; then
+    sed -i '/"name": "GPS Status"/,/},/d' "$menu_py"
+    echo "✅ GPS Status menu item removed"
+else
+    echo "ℹ️ GPS Status menu item not found (already removed)"
+fi
+
+show_diff_if_changed "$menu_py"
