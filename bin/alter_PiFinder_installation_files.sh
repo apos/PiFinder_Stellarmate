@@ -219,6 +219,27 @@ else
     echo "ℹ️ Import gps_gpsd bereits vorhanden"
 fi
 
+
+# New GPS functionality in Version 2.2
+echo "🔧 Ensuring gps_monitor() exists in gps_gpsd.py ..."
+gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
+cp "$gps_py" "$gps_py.bak"
+
+# Append gps_monitor() definition if missing
+if ! grep -q '^def gps_monitor(gps_queue, console_queue, log_queue):' "$gps_py"; then
+    cat <<'EOF' >> "$gps_py"
+
+# To run the GPS monitor
+def gps_monitor(gps_queue, console_queue, log_queue):
+    asyncio.run(gps_main(gps_queue, console_queue, log_queue))
+EOF
+    echo "✅ gps_monitor() function added to gps_gpsd.py"
+else
+    echo "ℹ️ gps_monitor() already exists in gps_gpsd.py"
+fi
+
+show_diff_if_changed "$gps_py"
+
 show_diff_if_changed "$main_py"
 
 
