@@ -76,7 +76,7 @@ Then I5 - I2C and choose Enable
 
 # Installation
 
-1. Go into /home/pifinder/
+1. Go into /tmp or another directory
 2. Clone the repo
 
     git clone https://github.com/apos/PiFinder_Stellarmate.git 
