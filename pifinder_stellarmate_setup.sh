@@ -73,7 +73,8 @@ echo "$pifinder_stellarmate_version_stable" >> "$(pwd)/version.txt"
 # check if user is "pifinder"
 if [ $(whoami) != "pifinder" ]
 then
-    echo "ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "❌ ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "su - pifinder"
     exit 0
 else 
     # add PiFinder user
