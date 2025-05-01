@@ -136,39 +136,39 @@ bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
 bash ${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh
 
 
-#########################################################################
-# Install AVAHI, so pifinder.local resolves
-echo "🔧 Installing Avahi service file for pifinder.local ..."
+# #########################################################################
+# # Install AVAHI, so pifinder.local resolves
+# echo "🔧 Installing Avahi service file for pifinder.local ..."
 
-avahi_service_dir="/etc/avahi/services"
-sudo mkdir -p "$avahi_service_dir"
+# avahi_service_dir="/etc/avahi/services"
+# sudo mkdir -p "$avahi_service_dir"
 
-avahi_service_file="${avahi_service_dir}/pifinder.service"
+# avahi_service_file="${avahi_service_dir}/pifinder.service"
 
-sudo tee "$avahi_service_file" > /dev/null <<EOF
-<?xml version="1.0" standalone='no'?>
-<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+# sudo tee "$avahi_service_file" > /dev/null <<EOF
+# <?xml version="1.0" standalone='no'?>
+# <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 
-<service-group>
-  <name replace-wildcards="yes">pifinder</name>
+# <service-group>
+#   <name replace-wildcards="yes">pifinder</name>
 
-  <!-- SSH on Port 5624 -->
-  <service>
-    <type>_workstation._tcp</type>
-    <port>5624</port>
-  </service>
+#   <!-- SSH on Port 5624 -->
+#   <service>
+#     <type>_workstation._tcp</type>
+#     <port>5624</port>
+#   </service>
 
-  <!-- Web interface on Port 8080 -->
-  <service>
-    <type>_http._tcp</type>
-    <port>8080</port>
-  </service>
-</service-group>
-EOF
+#   <!-- Web interface on Port 8080 -->
+#   <service>
+#     <type>_http._tcp</type>
+#     <port>8080</port>
+#   </service>
+# </service-group>
+# EOF
 
-# Restart Avahi to apply the new service definition
-sudo systemctl restart avahi-daemon
-echo "✅ Avahi service published as pifinder.local (SSH:5624, HTTP:8080)"
+# # Restart Avahi to apply the new service definition
+# sudo systemctl restart avahi-daemon
+# echo "✅ Avahi service published as pifinder.local (SSH:5624, HTTP:8080)"
 
 
 ############################################
