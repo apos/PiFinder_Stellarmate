@@ -64,13 +64,13 @@ Some Services will not be used or altered through PiFinder in the Stellarmate en
 *   GPSD => the PiFinders build in GPS will NOT be used at all
 *   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
 
+## Some PiFinder Menu items remove
+
 Therefore the following menu items you normally have in PiFinder are not available:
 
 1.  Choice of WiFi mode
 2.  Choice of GPS mode
 3.  Choice of manually setting location, time or date
-
-PiFinder.loca
 
 # Prerequisites
 
