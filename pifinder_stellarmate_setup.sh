@@ -100,7 +100,7 @@ then
         echo "Line '${append_line}' already exists in '${append_file}'. No need to append."
       fi
 
-      echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!)before continuing."
+      echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
       echo "su - pifinder"
       exit 0
     fi
@@ -110,8 +110,10 @@ fi
 # recheck user
 if [ $(whoami) != "pifinder" ]
 then
-    echo "❌ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "❌ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' and go to the original installation directory to run this install script"
     echo "su - pifinder"
+    echo "cd /tmp/PiFinder_Stellarmate/"
+    echo "./pifinder_stellarmate_setup.sh"
     exit 0
 fi
 
