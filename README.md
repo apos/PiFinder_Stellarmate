@@ -93,6 +93,8 @@ You can reach the PiFinder Webinterface with
 
 These steps here are not run by the installations script. Once done, you do not have to repeat them any more on the device. 
 
+Please use the stellarmate oder standard user with sudo permission to do these tasks,.
+
 ### raspi-config (this is not done by the script!)
 
 Enable SPI / I2C. The screen and IMU use these to communicate.
@@ -103,6 +105,59 @@ sudo raspi-config
 Select 3 - Interface Options
 Then I4 - SPI and choose Enable
 Then I5 - I2C and choose Enable
+```
+
+### **Add PiFinder user to Stellarmate OS**
+
+This is essential and creates a second home directory `/home/pifinder` in which the installation of the PiFinder software takes place.
+
+```
+sudo useradd -m pifinder
+sudo passwd pifinder
+sudo usermod -aG sudo pifinder
+su - pifinder
+```
+
+Info: the PiFinder service is running as "pifinder" user.
+
+It also adds the user pifinder to rhe group `stellarmate`.
+
+### **Add rights for hardware access to user 'pifinder'**
+
+```
+sudo usermod -aG spi pifinder
+sudo usermod -aG gpio pifinder
+sudo usermod -aG i2c pifinder
+sudo usermod -aG video pifinder
+```
+
+### Add user pifinder to the sudoers group
+
+Therefore we need to append this line to `/etc/sudoers.d/010_pi-nopasswd`
+
+```
+pifinder ALL=(ALL) NOPASSWD: ALL
+```
+
+Please paste this into the shell:
+
+```
+append_file="/etc/sudoers.d/010_pi-nopasswd"
+append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
+
+# Create file if missing
+if ! sudo test -f "$append_file"; then
+    echo "$append_line" | sudo tee "$append_file" > /dev/null
+    echo "✅ sudoers file created with entry for pifinder"
+else
+    # Check if line already present, otherwise append
+    if ! sudo grep -qF "$append_line" "$append_file"; then
+         echo "$append_line" | sudo tee -a "$append_file" > /dev/null
+         echo "✅ sudoers line added for pifinder"
+    else
+         echo "ℹ️ sudoers line already present for pifinder"
+    fi
+fi
 ```
 
 # Installation procedure
@@ -246,36 +301,6 @@ This assures full functionality of both devices side-by-side.
 **2\. The installation of PiFinder within StellarMate OS (!) is non destructive to Stellarmate**
 
 But: it can not update an existing PiFinder installation. You have to backup you settings in PiFinder, reinstall it and replay you settings
-
-**2\. add PiFinder user to Stellarmate OS:**
-
-This is essential and creates a second home directory `/home/pifinder` in which the installation of the PiFinder software takes place.
-
-```
-sudo useradd -m pifinder
-sudo passwd pifinder
-sudo usermod -aG sudo pifinder
-su - pifinder
-```
-
-Info: the PiFinder service is running as "pifinder" user.
-
-It also adds the user pifinder to rhe group `stellarmate`.
-
-**3\. Add rights for hardware access to user 'pifinder'**
-
-```
-sudo usermod -aG spi pifinder
-sudo usermod -aG gpio pifinder
-sudo usermod -aG i2c pifinder
-sudo usermod -aG video pifinder
-```
-
-**4\. add user pifinder to the sudoers group**
-
-```
-pifinder ALL=(ALL) NOPASSWD: ALL
-```
 
 **5\. install additional Packages**
 

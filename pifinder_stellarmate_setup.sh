@@ -119,8 +119,6 @@ then
           fi
       fi
 
-      sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
-
       echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
       echo "su - pifinder"
       exit 0
@@ -137,7 +135,6 @@ then
     echo "./pifinder_stellarmate_setup.sh"
     exit 0
 fi
-
 
 sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
 
