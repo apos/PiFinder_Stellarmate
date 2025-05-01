@@ -17,31 +17,31 @@
 
 # Table of Contents
 
-- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
-- [Table of Contents](#table-of-contents)
-- [Purpose](#purpose)
-- [Differences beetween using PiFinder on StellarMate and a stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-and-a-stock-pifinder)
-  - [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
-  - [PiFinder Menu items removed](#pifinder-menu-items-removed)
-  - [PiFinder Web-Interface](#pifinder-web-interface)
-- [Prerequisites](#prerequisites)
-- [Pre Installation steps on the Raspberry Pi](#pre-installation-steps-on-the-raspberry-pi)
-    - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
-    - [**Add PiFinder user to Stellarmate OS**](#add-pifinder-user-to-stellarmate-os)
-    - [**Add rights for hardware access to user 'pifinder'**](#add-rights-for-hardware-access-to-user-pifinder)
-    - [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
-    - [⚠️ Reboot](#️-reboot)
-- [Installation procedure](#installation-procedure)
-- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-  - [Purpose](#purpose-1)
-  - [What the Location Writer Does](#what-the-location-writer-does)
-  - [systemd Service Integration](#systemd-service-integration)
-- [Background Information (no action required!)](#background-information-no-action-required)
-  - [What Pifinder\_Stellarmate installation script dowa in detail](#what-pifinder_stellarmate-installation-script-dowa-in-detail)
-    - [Changes to PiFinder code base - key changes](#changes-to-pifinder-code-base---key-changes)
-    - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
-      - [pifinder.service](#pifinderservice)
-      - [pifinder\_splash.service](#pifinder_splashservice)
+*   [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+*   [Table of Contents](#table-of-contents)
+*   [Purpose](#purpose)
+*   [Differences beetween using PiFinder on StellarMate and a stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-and-a-stock-pifinder)
+    *   [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
+    *   [PiFinder Menu items removed](#pifinder-menu-items-removed)
+    *   [PiFinder Web-Interface](#pifinder-web-interface)
+*   [Prerequisites](#prerequisites)
+*   [Pre Installation steps on the Raspberry Pi](#pre-installation-steps-on-the-raspberry-pi)
+    *   [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
+    *   [**Add PiFinder user to Stellarmate OS**](#add-pifinder-user-to-stellarmate-os)
+    *   [**Add rights for hardware access to user 'pifinder'**](#add-rights-for-hardware-access-to-user-pifinder)
+    *   [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
+    *   [⚠️ Reboot](#%EF%B8%8F-reboot)
+*   [Installation procedure](#installation-procedure)
+*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+    *   [Purpose](#purpose-1)
+    *   [What the Location Writer Does](#what-the-location-writer-does)
+    *   [systemd Service Integration](#systemd-service-integration)
+*   [Background Information (no action required!)](#background-information-no-action-required)
+    *   [What Pifinder\_Stellarmate installation script dowa in detail](#what-pifinder_stellarmate-installation-script-dowa-in-detail)
+        *   [Changes to PiFinder code base - key changes](#changes-to-pifinder-code-base---key-changes)
+        *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
+            *   [pifinder.service](#pifinderservice)
+            *   [pifinder\_splash.service](#pifinder_splashservice)
 
 # Purpose
 
@@ -143,7 +143,7 @@ Therefore we need to append this line to `/etc/sudoers.d/010_pi-nopasswd`
 pifinder ALL=(ALL) NOPASSWD: ALL
 ```
 
-Please paste this into the shell:
+You can paste this into the shell to do this job for you:
 
 ```
 append_file="/etc/sudoers.d/010_pi-nopasswd"
@@ -170,12 +170,12 @@ fi
 
 > ### ⚠️ Important Information
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the prerequesite tasks above and reboot. 
->   
-> 1\. Login or open a terminal. with user `pifinder` 
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the prerequesite tasks above and reboot.
 > 
-> 2\.  Clone the Stellarmate\_PiFinder repo into the users pifinders home dir  
->   
+> 1\. Login or open a terminal. with user `pifinder`
+> 
+> 2\.  Clone the Stellarmate\_PiFinder repo into the users pifinders home dir
+> 
 > 3\. You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late
 > 
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
