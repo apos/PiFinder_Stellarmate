@@ -73,9 +73,8 @@ echo "$pifinder_stellarmate_version_stable" >> "$(pwd)/version.txt"
 # check if user is "pifinder"
 if [ $(whoami) != "pifinder" ]
 then
-    echo "❌ ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "ℹ️ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. We create it first ... "
     echo "su - pifinder"
-    exit 0
 
     # add PiFinder user
     if check_user_exists "pifinder"
@@ -100,7 +99,8 @@ then
         echo "Line '${append_line}' already exists in '${append_file}'. No need to append."
       fi
 
-      echo "User PiFinder had to be instantiated. Please reboot before continuing."
+      echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!)before continuing."
+      echo "su - pifinder"
       exit 0
     fi
 fi
@@ -109,7 +109,7 @@ fi
 # recheck user
 if [ $(whoami) != "pifinder" ]
 then
-    echo "❌ ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "❌ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
     echo "su - pifinder"
     exit 0
 fi
