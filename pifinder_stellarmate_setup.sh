@@ -87,7 +87,7 @@ then
     else
 
       echo "ℹ️ Please set a user for the newly created user <pifinder>"
-      if id "pifinder" &>/dev/null; then
+      if id "pifinder" &>/dev/null;
       then
             sudo useradd -m pifinder
             sudo passwd pifinder
