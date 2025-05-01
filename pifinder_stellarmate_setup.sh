@@ -87,18 +87,20 @@ then
     else
 
       echo "ℹ️ Please set a user for the newly created user <pifinder>"
-      sudo useradd -m pifinder
-      sudo passwd pifinder
-      sudo usermod -a -G 
+      if id "pifinder" &>/dev/null; then
+      then
+            sudo useradd -m pifinder
+            sudo passwd pifinder
+            sudo usermod -a -G 
 
-      # Add rights accessing hardware to user 'pifinder'
-      sudo usermod -a -G spi pifinder
-      sudo usermod -a -G gpio pifinder
-      sudo usermod -a -G i2c pifinder
-      sudo usermod -a -G video pifinder
-      sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
-
-      sudo chown -R stellarmate:stellarmate $(pwd)/../PiFinder_Stellarmate
+            # Add rights accessing hardware to user 'pifinder'
+            sudo usermod -a -G spi pifinder
+            sudo usermod -a -G gpio pifinder
+            sudo usermod -a -G i2c pifinder
+            sudo usermod -a -G video pifinder
+            sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
+      
+      
 
       echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
 

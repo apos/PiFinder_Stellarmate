@@ -114,7 +114,7 @@ This is essential and creates a second home directory `/home/pifinder` in which 
 ```
 sudo useradd -m pifinder
 sudo passwd pifinder
-sudo usermod -aG sudo pifinder
+sudo usermod -a -G sudo pifinder
 su - pifinder
 ```
 
@@ -125,10 +125,10 @@ It also adds the user pifinder to rhe group `stellarmate`.
 ### **Add rights for hardware access to user 'pifinder'**
 
 ```
-sudo usermod -aG spi pifinder
-sudo usermod -aG gpio pifinder
-sudo usermod -aG i2c pifinder
-sudo usermod -aG video pifinder
+sudo usermod -a -G spi pifinder
+sudo usermod -a -G gpio pifinder
+sudo usermod -a -G i2c pifinder
+sudo usermod -a -G video pifinder
 ```
 
 ### Add user pifinder to the sudoers group
