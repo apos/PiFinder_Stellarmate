@@ -55,6 +55,23 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
 
+# Differences beetween using PiFinder on StellarMate an Stock PiFinder
+
+## GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)
+
+Some Services will not be used or altered through PiFinder in the Stellarmate environment by the installation script or when running PiFinder on Stellarmate. This assures full functionality of both devices side-by-side.
+
+*   GPSD => the PiFinders build in GPS will NOT be used at all
+*   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
+
+Therefore the following menu items you normally have in PiFinder are not available:
+
+1.  Choice of WiFi mode
+2.  Choice of GPS mode
+3.  Choice of manually setting location, time or date
+
+PiFinder.loca
+
 # Prerequisites
 
 *   Stellarmate OS >= 1.8.1 (based on Debian Bookworm)  
@@ -107,7 +124,7 @@ PiFinder setup complete, please restart the Pi. This is the version to run on St
 
 # Background Information
 
-## What Pifinder\_Stellarmate installation script does (in basic terms)
+## What Pifinder\_Stellarmate installation script in detail  does (in basic terms)
 
 > ### ℹ️ **Info**
 > 
