@@ -61,6 +61,8 @@ else
     exit 1
 fi
 
+echo "$pifinder_stellarmate_version_stable" >> "$pifinder_stellarmate_dir"/version.txt
+
 ############################################################
 # Get some important vars and functinons
 source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
