@@ -120,8 +120,7 @@ Services will not be used/disabled or altered through PiFinder in the Stellarmat
 This assures full functionality of both devices side-by-side.
 
 *   GPSD => the PiFinders build in GPS will NOT be used at all
-*   WiFi (Client/ Host AP) -> Only Stellarmate OS/ Debian has the control over IP settings
-*   Network (LAN) -> dito
+*   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
 
 **2\. The installation of PiFinder within StellarMate OS (!) is non destructive to Stellarmate**
 
