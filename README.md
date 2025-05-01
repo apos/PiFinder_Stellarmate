@@ -98,6 +98,13 @@ Then I5 - I2C and choose Enable
 
 # Installation procedure
 
+> ### ⚠️ **Warning**
+> 
+> *   You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late  
+>       
+>     source /home/pifinder/PiFinder/python/.venv/bin/activate  
+>     ./pifinder\_stellarmate\_setup.sh
+
 1.  Go into /tmp or another directory
 2.  Clone the repo
 3.  git clone https://github.com/apos/PiFinder_Stellarmate.git
