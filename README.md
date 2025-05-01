@@ -2,7 +2,8 @@
 
 > ### ⚠️ **Warning**
 > 
-> *   This is is work in progress and (at the moment) highly experimental. As of 13.04.25 the script is ready for test and basically working (GPS from Stellarmate, no uninstall). 
+> *   This is is work in progress and (at the moment) highly experimental.
+> *   The verfied Version t
 > *   This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not responsible for any damage to your hard- or software by using this code.
 
 > ### ℹ️ **Info**
@@ -11,7 +12,7 @@
 > *   The script can not (yet) update an existing PiFinder installation.
 > *   There is no uninstall routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
 > *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
-> *   The script downloads and installs the default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
+> *   The script downloads and installs the a known to work an tested  default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
 > *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate.
 
 # Table of Contents
@@ -64,13 +65,14 @@ Some Services will not be used or altered through PiFinder in the Stellarmate en
 *   GPSD => the PiFinders build in GPS will NOT be used at all
 *   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
 
-## Some PiFinder Menu items remove
+## PiFinder Menu items removed
 
 Therefore the following menu items you normally have in PiFinder are not available:
 
-1.  Choice of WiFi mode
-2.  Choice of GPS mode
+1.  Settings -> Choice of WiFi mode
+2.  Settings -> Choice of GPS mode (GPSD on
 3.  Choice of manually setting location, time or date
+4.  PiFinder Update
 
 # Prerequisites
 
@@ -100,10 +102,10 @@ Then I5 - I2C and choose Enable
 
 > ### ⚠️ **Warning**
 > 
-> *   You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late  
->       
->     source /home/pifinder/PiFinder/python/.venv/bin/activate  
->     ./pifinder\_stellarmate\_setup.sh
+> You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late
+> 
+> source /home/pifinder/PiFinder/python/.venv/bin/activate  
+> ./pifinder\_stellarmate\_setup.sh
 
 1.  Go into /tmp or another directory
 2.  Clone the repo
@@ -279,9 +281,14 @@ e.g. pip install picamera2
 
 ## Purpose
 
-Replace PiFinder's Native GPS with KStars-Based Geolocation
+Purpose is, to replace PiFinder's Native GPS with KStars-Based Geolocation
 
-Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, which may be configured manually or received via INDI GPS devices. This is especially useful when Stellarmate handles GPS/time synchronization and PiFinder is running headless.
+Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, indeed form the file `kstarsrc` . KStars has several ways to determin the actual localtion: you can either type it in manuelly with in the KStars GUI (VNC), let it determine via GPSD or an INID GPS device or you simly you rely onto the Stellarmate App, which will automatically set everything from you tablet or phone. Stellarmate handles GPS/time synchronization. It simply does not matter, how KStars get the information - when it got the coordinates, the **"Location Writer Service"** writes the information into the following file and PiFinder will use it for the fix. 
+
+`(.venv) pifinder@stellarmate:~/PiFinder $ cat /tmp/kstars_location.txt`  
+`GPS Location,,49.47785331872243,8.450430929668666,100.42879867553711,2025-05-01T11:35:17.661929+00:00,2025-05-01T13:35:17.661965+02:00`
+
+Since KStars saves it's location upon reboo, it is instantly avaiable the next time you start your Stellarmate/PiFinder.
 
 ## What the Location Writer Does
 

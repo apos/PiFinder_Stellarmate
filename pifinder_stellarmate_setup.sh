@@ -151,7 +151,6 @@ if ! is_venv_active "${python_venv}"; then
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
-      echo "##### GO ON #############################################################"
       
       # Exit the script, because venv must be activated manually for Requirements installation
       exit 1

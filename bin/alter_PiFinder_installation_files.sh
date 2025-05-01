@@ -169,6 +169,7 @@ if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
 fi
 
 show_diff_if_changed "$solver_py"
+python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 echo "🔧 Patching solver.py for consistent Tetra3 access ..."
@@ -180,6 +181,7 @@ sed -i 's|from tetra3 import main|import tetra3.main as main|' "$solver_py"
 sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
 
 show_diff_if_changed "$solver_py"
+python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 
@@ -191,6 +193,7 @@ if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
     sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
 fi
 show_diff_if_changed "$init_py"
+python3 -m py_compile "$init_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
@@ -198,6 +201,7 @@ if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client
     sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
 fi
 show_diff_if_changed "$client_py"
+python3 -m py_compile "$client_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
@@ -205,6 +209,8 @@ if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
     sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
 fi
 show_diff_if_changed "$grpc_py"
+python3 -m py_compile "$grpc_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
 
 echo "📄 Checking for tetra3.py -> main.py rename ..."
 if [ -f "${t3_dir}/tetra3.py" ]; then
@@ -213,6 +219,7 @@ if [ -f "${t3_dir}/tetra3.py" ]; then
 else
     echo "ℹ️ File tetra3.py already renamed or does not exist"
 fi
+
 
 
 #######################################
@@ -226,6 +233,7 @@ if grep -q 'up: MarkingMenuOption = MarkingMenuOption(label="HELP")' "$ui_file";
     sed -i 's|up: MarkingMenuOption = MarkingMenuOption(label="HELP")|up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))|' "$ui_file"
 fi
 show_diff_if_changed "$ui_file"
+python3 -m py_compile "$ui_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 
@@ -246,6 +254,7 @@ if ! grep -q "$camera_insert" "$camera_file"; then
     ' "$camera_file.bak" > "$camera_file"
 fi
 show_diff_if_changed "$camera_file"
+python3 -m py_compile "$camera_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 
@@ -262,6 +271,7 @@ if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
 fi
 
 show_diff_if_changed "$main_py"
+python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 echo "🔧 Ensuring gps_gpsd import in main.py ..."
 
@@ -273,6 +283,8 @@ else
     echo "ℹ️ Import gps_gpsd bereits vorhanden"
 fi
 
+show_diff_if_changed "$main_py"
+python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 ######################################################
 # gps_gpsd.py
@@ -361,6 +373,7 @@ EOF
 
 echo "✅ gps_gpsd.py patched with KStars-only GPS logic"
 show_diff_if_changed "$gps_py"
+python3 -m py_compile "$gps_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 ######################################################
@@ -369,34 +382,16 @@ cp "$menu_py" "$menu_py.bak"
 
 
 ########
-## remove GPS Status entry safely
+## remove GPS Status entry safel
+# Ziel: sichere Entfernung von "Place & Time"-Einträgen
+place_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
 
-# Ziel: sichere Entfernung von "GPS Status"-Einträgen und defekter Klammer danach
-# Zeilennummer finden, an der "GPS Status" auftaucht
-gps_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
+if [[ -n "$place_line" ]]; then
+    start=$((place_line - 1))    # öffnende {
+    end=$((place_line + 20))     # schließende }, nach innerem Block
 
-if [[ -n "$gps_line" ]]; then
-    start=$((gps_line - 1))    # öffnende {
-    end=$((gps_line + 2))      # bis einschließlich schließender }
-
-    # Lösche { + "name": "GPS Status" + "class": ... + },
+    # Lösche gesamten Block
     sed -i "${start},${end}d" "$menu_py"
-
-    # Entferne überzählige öffnende Klammer direkt nach "Align"
-    sed -i '/"name": "Align"/,/preload/ {
-        /preload/ {
-            n
-            /{/d
-        }
-    }' "$menu_py"
-
-    # Entferne überflüssiges Komma nach "Align"-Block
-    sed -i '/"name": "Align"/,/preload/ {
-        /preload/ {
-            n
-            s|},[[:space:]]*|}|
-        }
-    }' "$menu_py"
 
     echo "✅ Removed GPS Status block and cleaned up Align section"
 else
@@ -404,7 +399,7 @@ else
 fi
 
 show_diff_if_changed "$menu_py"
-
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 ########
 ## remove "Place & Time" block safely
@@ -414,7 +409,7 @@ place_line=$(grep -n '"name": "Place & Time"' "$menu_py" | cut -d: -f1 | head -n
 
 if [[ -n "$place_line" ]]; then
     start=$((place_line - 1))    # öffnende {
-    end=$((place_line + 15))     # schließende }, nach innerem Block
+    end=$((place_line + 20))     # schließende }, nach innerem Block
 
     # Lösche gesamten Block
     sed -i "${start},${end}d" "$menu_py"
@@ -425,6 +420,7 @@ else
 fi
 
 show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 ########
@@ -443,6 +439,7 @@ else
 fi
 
 show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 ########
 ## remove "WiFi Mode" block safely
@@ -460,5 +457,43 @@ else
 fi
 
 show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+########
+## remove "GPS Type" block completely (this is set by default)
+
+gps_type_line=$(grep -n '"name": "GPS Type"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$gps_type_line" ]]; then
+    start=$((gps_type_line - 1))    # opening {
+    end=$((gps_type_line + 12))     # closing }
+
+    sed -i "${start},${end}d" "$menu_py"
+    echo "✅ Removed 'GPS Type' block from menu_structure.py"
+else
+    echo "ℹ️ No 'GPS Type' block found"
+fi
+
+show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+
+echo "🔧 Removing 'Software Upd' entry from menu_structure.py ..."
+
+# Finde Zeilennummer der Zeile mit "Software Upd"
+line=$(grep -n '"name": "Software Upd"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$line" ]]; then
+    start=$((line))  # öffnende {
+    end=$((line))    # inkl. schließender }
+
+    sed -i "${start},${end}d" "$menu_py"
+    echo "✅ Removed 'Software Upd' block (lines ${start}-${end})"
+else
+    echo "ℹ️  No 'Software Upd' entry found (maybe already removed)"
+fi
+
+show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
