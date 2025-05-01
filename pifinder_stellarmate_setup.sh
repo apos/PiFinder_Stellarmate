@@ -99,26 +99,27 @@ then
             sudo usermod -a -G i2c pifinder
             sudo usermod -a -G video pifinder
             sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
-      
-      
 
-      echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
+            echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
 
-      append_file="/etc/sudoers.d/010_pi-nopasswd"
-      append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
+            append_file="/etc/sudoers.d/010_pi-nopasswd"
+            append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
 
-      # Create file if missing
-      if ! sudo test -f "$append_file"; then
-          echo "$append_line" | sudo tee "$append_file" > /dev/null
-          echo "✅ sudoers file created with entry for pifinder"
+            # Create file if missing
+            if ! sudo test -f "$append_file"; then
+                echo "$append_line" | sudo tee "$append_file" > /dev/null
+                echo "✅ sudoers file created with entry for pifinder"
+            else
+                # Check if line already present, otherwise append
+                if ! sudo grep -qF "$append_line" "$append_file"; then
+                    echo "$append_line" | sudo tee -a "$append_file" > /dev/null
+                    echo "✅ sudoers line added for pifinder"
+                else
+                    echo "ℹ️ sudoers line already present for pifinder"
+                fi
+            fi
       else
-          # Check if line already present, otherwise append
-          if ! sudo grep -qF "$append_line" "$append_file"; then
-              echo "$append_line" | sudo tee -a "$append_file" > /dev/null
-              echo "✅ sudoers line added for pifinder"
-          else
-              echo "ℹ️ sudoers line already present for pifinder"
-          fi
+            echo "❌ User 'pifinder' does not exist. Skipping sudo rights setup."
       fi
 
       echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
