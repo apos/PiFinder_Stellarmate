@@ -91,7 +91,10 @@ then
       sudo usermod -a -G gpio pifinder
       sudo usermod -a -G i2c pifinder
       sudo usermod -a -G video pifinder
-      
+      sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
+
+      sudo chown -R pifinder:stellarmate $(pwd)/../PiFinder_Stellarmate
+
       echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
 
       append_file="/etc/sudoers.d/010_pi-nopasswd"
@@ -149,7 +152,6 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
-sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
 
 
 #########################################################################
