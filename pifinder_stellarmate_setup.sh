@@ -74,13 +74,14 @@ echo "$pifinder_stellarmate_version_stable" >> "$(pwd)/version.txt"
 if [ $(whoami) != "pifinder" ]
 then
     echo "ℹ️ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. We create it first ... "
-    echo "su - pifinder"
 
     # add PiFinder user
     if check_user_exists "pifinder"
     then 
       echo "continuing ..."
     else
+
+      echo "ℹ️ Please set a user for the newly created user <pifinder>"
       sudo useradd -m pifinder
       sudo passwd pifinder
       sudo usermod -aG 
