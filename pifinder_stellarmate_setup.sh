@@ -91,13 +91,24 @@ then
       sudo usermod -a -G gpio pifinder
       sudo usermod -a -G i2c pifinder
       sudo usermod -a -G video pifinder
+      
+      echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
 
       append_file="/etc/sudoers.d/010_pi-nopasswd"
       append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
-      if ! check_line_exists "${append_file}" "${append_line}"; then
-        append_line_to_file "${append_file}" "${append_line}"
+
+      # Create file if missing
+      if ! sudo test -f "$append_file"; then
+          echo "$append_line" | sudo tee "$append_file" > /dev/null
+          echo "✅ sudoers file created with entry for pifinder"
       else
-        echo "Line '${append_line}' already exists in '${append_file}'. No need to append."
+          # Check if line already present, otherwise append
+          if ! sudo grep -qF "$append_line" "$append_file"; then
+              echo "$append_line" | sudo tee -a "$append_file" > /dev/null
+              echo "✅ sudoers line added for pifinder"
+          else
+              echo "ℹ️ sudoers line already present for pifinder"
+          fi
       fi
 
       echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
