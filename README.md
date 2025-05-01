@@ -160,24 +160,30 @@ else
 fi
 ```
 
+### ⚠️ Then Reboot
+
 # Installation procedure
 
 > ### ⚠️ Important Information
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the script three times.  
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the prerequesite tasks above!
+> 
+> ⚠️ Then Reboot!   
 >   
-> 1\. After first run you have to relogin with `su - pifinder`  
+> 1\. Login or open a terminal. with user `pifinder` 
+> 
+> 2\.  Clone the Stellarmate\_PiFinder repo into the users pifinders home dir  
 >   
-> You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late
+> 3\. You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late
 > 
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
 > ./pifinder\_stellarmate\_setup.sh
 
-1.  Go into /tmp or another directory
-2.  Clone the repo
-3.  git clone https://github.com/apos/PiFinder_Stellarmate.git
-4.  Go into PiFinder\_Stellarmate directory
-5.  Run the script the first time until it stops and says:
+1.  `su - pinder`, when you are logged in as user "stellarate", "pi", etc.  (or login directly with ssh as user pifinder)  
+    If this does not work, something went wrong. Repeat the steps from "Pre Installation steps"
+2.  Clone the repo in the users dir: git clone https://github.com/apos/PiFinder_Stellarmate.git
+3.  Go into PiFinder\_Stellarmate directory
+4.  Run the script the first time until it stops and says:
 
 Paste the shown lines into the shell, this sources the newly created python virtual environment an restarts the script
 
