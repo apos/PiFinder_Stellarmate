@@ -20,7 +20,7 @@
 - [PiFinder on Stellarmate](#pifinder-on-stellarmate)
 - [Table of Contents](#table-of-contents)
 - [Purpose](#purpose)
-- [Differences beetween using PiFinder on StellarMate an Stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-an-stock-pifinder)
+- [Differences beetween using PiFinder on StellarMate and a stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-and-a-stock-pifinder)
   - [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
   - [PiFinder Menu items removed](#pifinder-menu-items-removed)
   - [PiFinder Web-Interface](#pifinder-web-interface)
@@ -61,7 +61,7 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 *   SkySafari: Observation planning, sky chart and quick "push to" (standalone or using PiFinder)
 *   Stellarmate: astrophotography and/or EAA through a dedicated astro camera - or/and (if available) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
-# Differences beetween using PiFinder on StellarMate an Stock PiFinder
+# Differences beetween using PiFinder on StellarMate and a stock PiFinder
 
 ## GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)
 
