@@ -153,7 +153,6 @@ else
     cd /home/pifinder
 fi
 
-exit 1
 
 ############################################################
 # Install some package requirements
