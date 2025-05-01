@@ -84,13 +84,13 @@ then
       echo "ℹ️ Please set a user for the newly created user <pifinder>"
       sudo useradd -m pifinder
       sudo passwd pifinder
-      sudo usermod -aG 
+      sudo usermod -a -G 
 
       # Add rights accessing hardware to user 'pifinder'
-      sudo usermod -aG spi pifinder
-      sudo usermod -aG gpio pifinder
-      sudo usermod -aG i2c pifinder
-      sudo usermod -aG video pifinder
+      sudo usermod -a -G spi pifinder
+      sudo usermod -a -G gpio pifinder
+      sudo usermod -a -G i2c pifinder
+      sudo usermod -a -G video pifinder
 
       append_file="/etc/sudoers.d/010_pi-nopasswd"
       append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
