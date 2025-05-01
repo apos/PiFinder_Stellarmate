@@ -76,7 +76,7 @@ then
     echo "❌ ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
     echo "su - pifinder"
     exit 0
-else 
+
     # add PiFinder user
     if check_user_exists "pifinder"
     then 
@@ -105,6 +105,14 @@ else
     fi
 fi
 
+##############
+# recheck user
+if [ $(whoami) != "pifinder" ]
+then
+    echo "❌ ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
+    echo "su - pifinder"
+    exit 0
+fi
 
 ############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
