@@ -4,10 +4,13 @@ After=graphical.target
 
 [Service]
 Type=simple
+ExecStartPre=/bin/touch /tmp/kstars_location.txt
+ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
 ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
 Restart=always
 RestartSec=5
-User=pifinder
+User=stellarmate
+Group=pifinder
 Nice=10
 StandardOutput=journal
 StandardError=journal

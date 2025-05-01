@@ -14,6 +14,12 @@ pifinder_stellarmate_version_testing="2.2.1"
 # MAIN
 ############################################################
 
+
+############################################################
+# Get some important vars and functinons
+source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
+
+
 ############################################################
 # VERSION CHECK (Live check from GitHub)
 
@@ -63,9 +69,6 @@ fi
 
 echo "$pifinder_stellarmate_version_stable" >> "$pifinder_stellarmate_dir"/version.txt
 
-############################################################
-# Get some important vars and functinons
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
 ############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
@@ -130,6 +133,7 @@ sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /t
 # Make some Changes to the downloaded local installation files of PiFinder 
 cd /home/pifinder/PiFinder
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
+bash ${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh
 
 
 ############################################

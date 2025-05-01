@@ -3,7 +3,7 @@
 > ### ⚠️ **Warning**
 > 
 > *   This is is work in progress and (at the moment) highly experimental.
-> *   The verfied Version t
+> *   This is verified to work with the Piversion in "version.txt"
 > *   This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not responsible for any damage to your hard- or software by using this code.
 
 > ### ℹ️ **Info**

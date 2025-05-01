@@ -3,12 +3,69 @@
 # This script is an altered script of https://raw.githubusercontent.com/brickbots/PiFinder/release/pifinder_setup.sh 
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
+# This script is known to work with
+pifinder_stellarmate_version_stable="2.2.0"
+
+# This script is actually tested against this version
+pifinder_stellarmate_version_testing="2.2.1"
+
+
+############################################################
+# MAIN
+############################################################
+
+############################################################
+# VERSION CHECK (Live check from GitHub)
+
+# Read local PiFinder version
+pifinder_local_version=$(cat "$pifinder_dir/version.txt" 2>/dev/null)
+
+# Fetch online version from GitHub (release branch)
+github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt | tr -d '\r')
+
+echo "ℹ️  Local PiFinder version: $pifinder_local_version"
+echo "ℹ️  GitHub PiFinder version: $github_version"
+
+# Function to compare versions (returns 1 if $1 > $2)
+version_gt() {
+    [ "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1" ]
+}
+
+# Function to compare versions (returns 0 if equal)
+version_eq() {
+    [ "$1" = "$2" ]
+}
+
+# Main check
+if version_eq "$github_version" "$pifinder_stellarmate_version_stable"; then
+    echo "✅ PiFinder version $github_version matches STABLE version. Proceeding..."
+elif version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
+    echo "⚠️  Actual PiFinder version in Git-main ($github_version) is NEWER than tested version ($pifinder_stellarmate_version_stable)."
+    echo "⚠️  Proceed only if you are testing new features."
+    read -p "⚠️⚠️⚠️  Continue with installation? (yes/no): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "ℹ️  Installation cancelled by user."
+        exit 0
+    fi
+
+    # Optional: Warn again if version is even newer than "testing"
+    if version_gt "$github_version" "$pifinder_stellarmate_version_testing"; then
+        echo "❌ GitHub version $github_version is NEWER than the last defined TESTING version $pifinder_stellarmate_version_testing."
+        echo "❌ This might break your current test configuration."
+        echo "❌❌❌ Exiting to prevent unintended test mismatches."
+        exit 1
+    fi
+else
+    echo "❌ PiFinder version $github_version is not supported by this Stellarmate patch script."
+    echo "❌ Expected STABLE: $pifinder_stellarmate_version_stable or TESTING: $pifinder_stellarmate_version_testing"
+    exit 1
+fi
+
+############################################################
+# Get some important vars and functinons
 source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
-#################################
-# MAIN
-#################################
-
+############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
 if [ -d PiFinder ]
 then
@@ -20,7 +77,7 @@ else
     cd /home/pifinder
 fi
 
-
+############################################################
 # check if user is "pifinder"
 if [ $(whoami) != "pifinder" ]
 then
@@ -55,26 +112,26 @@ else
     fi
 fi
 
+############################################################
 # Install some package requirements
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera python3-picamera2
 
-
+############################################################
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
+sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
 
 
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
-#########################################################################
 cd /home/pifinder/PiFinder
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
 
 
 ############################################
 # Create an activate3 VENV
-############################################
 
 # Check if venv is active and install requirements
 if ! is_venv_active "${python_venv}"; then
@@ -94,7 +151,6 @@ if ! is_venv_active "${python_venv}"; then
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
-      echo "##### GO ON #############################################################"
       
       # Exit the script, because venv must be activated manually for Requirements installation
       exit 1
@@ -143,7 +199,7 @@ sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
 
 ###########################
-# If already installed (also service)
+# Not used: tf already installed (also service)
 ###########################
 
 # Wifi config
@@ -159,7 +215,6 @@ sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 
 # NOT USED, PART OF STELLARMATE-OS:  Samba config
 # NOT USED, PART OF STELLARMATE-OS:  sudo cp ~/PiFinder/pi_config_files/smb.conf /etc/samba/smb.conf
-
 
 
 CONFIG_FILE="/boot/firmware/config.txt"
@@ -201,4 +256,3 @@ sudo systemctl enable pifinder_splash
 
 echo "##############################################"
 echo "PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
-

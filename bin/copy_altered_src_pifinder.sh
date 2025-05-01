@@ -1,8 +1,13 @@
 #!/bin/bash
 
 # Set source and destination directories
-SRC_DIR="/home/pifinder/PiFinder"
-DEST_DIR="/home/pifinder/PiFinder_Stellarmate/src_pifinder"
+
+############################################################
+# Get some important vars and functinons
+source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
+
+SRC_DIR="$pifinder_dir"
+DEST_DIR="$pifinder_stellarmate_dir/src_pifinder"
 
 # Ensure destination directory exists
 mkdir -p "$DEST_DIR"
