@@ -22,7 +22,7 @@ source $(pwd)/bin/functions.sh
 # VERSION CHECK (Live check from GitHub)
 
 # Read local PiFinder version
-pifinder_local_version=$(cat "$pifinder_dir/version.txt" 2>/dev/null)
+pifinder_local_version=$(cat "$(pwd)/version.txt" 2>/dev/null)
 
 # Fetch online version from GitHub (release branch)
 github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt | tr -d '\r')
@@ -69,19 +69,6 @@ echo "$pifinder_stellarmate_version_stable" >> "$pifinder_stellarmate_dir"/versi
 
 
 
-
-############################################################
-# Check, if there is already a PiFinder installation, if yes abort. 
-if [ -d PiFinder ]
-then
-    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
-    # exit 0
-else
-    echo "Installation from scratch ..."
-    # Ensure, to be in the correct directory
-    cd /home/pifinder
-fi
-
 ############################################################
 # check if user is "pifinder"
 if [ $(whoami) != "pifinder" ]
@@ -115,6 +102,19 @@ else
       echo "User PiFinder had to be instantiated. Please reboot before continuing."
       exit 0
     fi
+fi
+
+
+############################################################
+# Check, if there is already a PiFinder installation, if yes abort. 
+if [ -d PiFinder ]
+then
+    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
+    # exit 0
+else
+    echo "Installation from scratch ..."
+    # Ensure, to be in the correct directory
+    cd /home/pifinder
 fi
 
 ############################################################
