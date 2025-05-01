@@ -72,6 +72,12 @@ Therefore the following menu items you normally have in PiFinder are not availab
 3.  Choice of manually setting location, time or date
 4.  PiFinder Update
 
+## PiFinder Web-Interface
+
+You can reach the PiFinder Webinterface with
+
+\-http://stellarmate.local:8080/
+
 # Prerequisites
 
 *   Stellarmate OS >= 1.8.1 (based on Debian Bookworm)  
