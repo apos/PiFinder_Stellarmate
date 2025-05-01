@@ -65,7 +65,7 @@ else
     exit 1
 fi
 
-echo "$pifinder_stellarmate_version_stable" >> "$pifinder_stellarmate_dir"/version.txt
+echo "$pifinder_stellarmate_version_stable" >> "$(pwd))"/version.txt
 
 
 
