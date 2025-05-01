@@ -93,7 +93,7 @@ then
       sudo usermod -a -G video pifinder
       sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
 
-      sudo chown -R pifinder:stellarmate $(pwd)/../PiFinder_Stellarmate
+      sudo chown -R stellarmate:stellarmate $(pwd)/../PiFinder_Stellarmate
 
       echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
 
@@ -113,6 +113,8 @@ then
               echo "ℹ️ sudoers line already present for pifinder"
           fi
       fi
+
+      sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
 
       echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
       echo "su - pifinder"
