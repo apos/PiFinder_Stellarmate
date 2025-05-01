@@ -4,6 +4,7 @@
 pifinder_stellarmate_dir="/home/pifinder/PiFinder_Stellarmate"
 pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
 pifinder_dir="/home/pifinder/PiFinder"
+pifinder_data_dir="/home/pifinder/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
 python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
 pifinder_config_dir="/home/pifinder/.config"

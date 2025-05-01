@@ -18,7 +18,8 @@ ui_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
 post_update_file="${pifinder_dir}/pifinder_post_update.sh"
 camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
 menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
-
+config_default_json="${pifinder_dir}/default_config.json"
+config_json="${pifinder_data_dir}/config.json"
 
 ############################################################
 # HELPER Functions
@@ -132,6 +133,21 @@ if ! grep -q "/home/pifinder/PiFinder/python/.venv/bin/activate" "$post_update_f
     ' "$post_update_file.bak" > "$post_update_file"
 fi
 show_diff_if_changed "$post_update_file"
+
+
+
+######################################################
+# config.json adn default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
+echo "🔧 Updating gps_type in config files ..."
+
+for cfg in "$config_default_json" "$config_json"; do
+    echo "🔍 Patching $cfg ..."
+    cp "$cfg" "$cfg.bak"
+    if grep -q '"gps_type": "ublox"' "$cfg"; then
+        sed -i 's|"gps_type": "ublox"|"gps_type": "gpsd"|' "$cfg"
+    fi
+    show_diff_if_changed "$cfg"
+done
 
 
 #######################################
@@ -348,8 +364,12 @@ show_diff_if_changed "$gps_py"
 
 
 ######################################################
-# menu_structure.py – remove GPS Status entry safely
+# menu_structure.py
 cp "$menu_py" "$menu_py.bak"
+
+
+########
+## remove GPS Status entry safely
 
 # Ziel: sichere Entfernung von "GPS Status"-Einträgen und defekter Klammer danach
 # Zeilennummer finden, an der "GPS Status" auftaucht
@@ -381,6 +401,62 @@ if [[ -n "$gps_line" ]]; then
     echo "✅ Removed GPS Status block and cleaned up Align section"
 else
     echo "ℹ️ No GPS Status block found"
+fi
+
+show_diff_if_changed "$menu_py"
+
+
+########
+## remove "Place & Time" block safely
+
+# Ziel: sichere Entfernung von "Place & Time"-Einträgen
+place_line=$(grep -n '"name": "Place & Time"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$place_line" ]]; then
+    start=$((place_line - 1))    # öffnende {
+    end=$((place_line + 15))     # schließende }, nach innerem Block
+
+    # Lösche gesamten Block
+    sed -i "${start},${end}d" "$menu_py"
+
+    echo "✅ Removed 'Place & Time' block from Tools menu"
+else
+    echo "ℹ️ No 'Place & Time' block found"
+fi
+
+show_diff_if_changed "$menu_py"
+
+
+########
+## remove "UBlox" item from GPS Type menu
+
+ublox_line=$(grep -n '"name": "UBlox"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$ublox_line" ]]; then
+    start=$((ublox_line - 1))    # opening {
+    end=$((ublox_line + 2))      # closing }
+
+    sed -i "${start},${end}d" "$menu_py"
+    echo "✅ Removed 'UBlox' item from GPS Type menu"
+else
+    echo "ℹ️ No 'UBlox' entry found in GPS Type menu"
+fi
+
+show_diff_if_changed "$menu_py"
+
+########
+## remove "WiFi Mode" block safely
+
+wifi_line=$(grep -n '"name": "WiFi Mode"' "$menu_py" | cut -d: -f1 | head -n1)
+
+if [[ -n "$wifi_line" ]]; then
+    start=$((wifi_line - 1))    # opening {
+    end=$((wifi_line + 16))     # closing }
+
+    sed -i "${start},${end}d" "$menu_py"
+    echo "✅ Removed 'WiFi Mode' block from menu_structure.py"
+else
+    echo "ℹ️ No 'WiFi Mode' block found"
 fi
 
 show_diff_if_changed "$menu_py"
