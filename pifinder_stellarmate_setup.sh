@@ -14,11 +14,9 @@ pifinder_stellarmate_version_testing="2.2.1"
 # MAIN
 ############################################################
 
-
 ############################################################
 # Get some important vars and functinons
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
-
+source $pwd)/PiFinder_Stellarmate/bin/functions.sh
 
 ############################################################
 # VERSION CHECK (Live check from GitHub)
@@ -68,6 +66,8 @@ else
 fi
 
 echo "$pifinder_stellarmate_version_stable" >> "$pifinder_stellarmate_dir"/version.txt
+
+
 
 
 ############################################################
