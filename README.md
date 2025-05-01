@@ -201,7 +201,7 @@ cd PiFinder_Stellarmate
 Run the script the first time and wait for the script to stop :..
 
 ```
-./piinder_stellarmate_setup.sh
+./pifinder_stellarmate_setup.sh
 ```
 
 ... then Paste the shown lines into the shell, this sources the newly created python virtual environment an restarts the script
