@@ -54,8 +54,6 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 *   SkySafari: Observation planning, sky chart and quick "push to" (standalone or using PiFinder)
 *   Stellarmate: astrophotography and/or EAA through a dedicated astro camera - or/and (if available) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
-![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f) 
-
 # Differences beetween using PiFinder on StellarMate an Stock PiFinder
 
 ## GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)
@@ -113,8 +111,6 @@ Then I5 - I2C and choose Enable
 4.  Go into PiFinder\_Stellarmate directory
 5.  Run the script the first time until it stops and says:
 
-![grafik](https://github.com/user-attachments/assets/ace44320-b5ad-4ba1-93ef-d790121e9079)
-
 Paste the shown lines into the shell, this sources the newly created python virtual environment an restarts the script
 
 ```
@@ -129,15 +125,101 @@ until you see:
 PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)
 ```
 
-   6. Restart
+> ### ℹ️ Troubleshooting
+> 
+> *   Now carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
+> *   Check on the commandline, if you pifinder starts correctly or if there are any errors: `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
 
-# Background Information
+6\. Restart
 
-## What Pifinder\_Stellarmate installation script in detail  does (in basic terms)
+![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f)
+
+# PiFinder Stellarmate – KStars Location Integration Overview
+
+> ### ℹ️ **Info**
+> 
+> *   This is only for Information. No action required.
+
+## Purpose
+
+Purpose is, to replace PiFinder's Native GPS with KStars-Based Geolocation
+
+Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, indeed form the file `kstarsrc` . KStars has several ways to determin the actual localtion: you can either type it in manuelly with in the KStars GUI (VNC), let it determine via GPSD or an INID GPS device or you simly you rely onto the Stellarmate App, which will automatically set everything from you tablet or phone. Stellarmate handles GPS/time synchronization. It simply does not matter, how KStars get the information - when it got the coordinates, the **"Location Writer Service"** writes the information into the following file and PiFinder will use it for the fix. 
+
+`(.venv) pifinder@stellarmate:~/PiFinder $ cat /tmp/kstars_location.txt`  
+`GPS Location,,49.47785331872243,8.450430929668666,100.42879867553711,2025-05-01T11:35:17.661929+00:00,2025-05-01T13:35:17.661965+02:00`
+
+Since KStars saves it's location upon reboo, it is instantly avaiable the next time you start your Stellarmate/PiFinder.
+
+## What the Location Writer Does
+
+```
+/home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
+```
+
+This Python script:
+
+*   Parses the `~/.config/kstarsrc` file from the KStars user session.
+*   Extracts the current location:
+    *   **Latitude**
+    *   **Longitude**
+    *   **Altitude**
+    *   **City & Country**
+*   Captures the current time in:
+    *   **UTC**
+    *   **Local time with offset**
+*   Writes all data into a plain-text file:  
+    `/tmp/kstars_location.txt`
+
+The file is updated every 10 seconds.
+
+## systemd Service Integration
+
+```
+/etc/systemd/system/pifinder_kstars_location_writer.service
+```
+
+This service ensures the writer script:
+
+*   **Starts at boot** in the graphical session.
+*   **Runs as user** `**stellarmate**` (same as the KStars session).
+*   **Creates** `**/tmp/kstars_location.txt**` with correct permissions:
+    *   Uses `Group=pifinder` so the PiFinder service (which runs as user `pifinder`) can read it.
+    *   Prepares the file with `ExecStartPre` commands (`touch`, `chmod`).
+
+**Example:**
+
+```
+  ```ini
+  [Unit]
+  Description=KStars Location Writer for PiFinder
+  After=graphical.target
+
+  [Service]
+  Type=simple
+  ExecStartPre=/bin/touch /tmp/kstars_location.txt
+  ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
+  ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
+  Restart=always
+  RestartSec=5
+  User=stellarmate
+  Group=pifinder
+  Nice=10
+  StandardOutput=journal
+  StandardError=journal
+
+  [Install]
+  WantedBy=default.targipment
+```
+
+# Background Information (no action required!)
 
 > ### ℹ️ **Info**
 > 
 > *   The steps shown here are already done by the installation script. This is just for explanation purpose
+> *   This is only for Information. No action required
+
+## What Pifinder\_Stellarmate installation script dowa in detail
 
 **1\. The following services are fully managed solely by StellarMate OS**
 
@@ -275,78 +357,4 @@ e.g. pip install picamera2
 < ExecStart=/home/pifinder/PiFinder/python/.venv/bin/python -m PiFinder.splash
 ---
 > ExecStart=/usr/bin/python -m PiFinder.splash
-```
-
-# PiFinder Stellarmate – KStars Location Integration Overview
-
-## Purpose
-
-Purpose is, to replace PiFinder's Native GPS with KStars-Based Geolocation
-
-Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars**, indeed form the file `kstarsrc` . KStars has several ways to determin the actual localtion: you can either type it in manuelly with in the KStars GUI (VNC), let it determine via GPSD or an INID GPS device or you simly you rely onto the Stellarmate App, which will automatically set everything from you tablet or phone. Stellarmate handles GPS/time synchronization. It simply does not matter, how KStars get the information - when it got the coordinates, the **"Location Writer Service"** writes the information into the following file and PiFinder will use it for the fix. 
-
-`(.venv) pifinder@stellarmate:~/PiFinder $ cat /tmp/kstars_location.txt`  
-`GPS Location,,49.47785331872243,8.450430929668666,100.42879867553711,2025-05-01T11:35:17.661929+00:00,2025-05-01T13:35:17.661965+02:00`
-
-Since KStars saves it's location upon reboo, it is instantly avaiable the next time you start your Stellarmate/PiFinder.
-
-## What the Location Writer Does
-
-```
-/home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
-```
-
-This Python script:
-
-*   Parses the `~/.config/kstarsrc` file from the KStars user session.
-*   Extracts the current location:
-    *   **Latitude**
-    *   **Longitude**
-    *   **Altitude**
-    *   **City & Country**
-*   Captures the current time in:
-    *   **UTC**
-    *   **Local time with offset**
-*   Writes all data into a plain-text file:  
-    `/tmp/kstars_location.txt`
-
-The file is updated every 10 seconds.
-
-## systemd Service Integration
-
-```
-/etc/systemd/system/pifinder_kstars_location_writer.service
-```
-
-This service ensures the writer script:
-
-*   **Starts at boot** in the graphical session.
-*   **Runs as user** `**stellarmate**` (same as the KStars session).
-*   **Creates** `**/tmp/kstars_location.txt**` with correct permissions:
-    *   Uses `Group=pifinder` so the PiFinder service (which runs as user `pifinder`) can read it.
-    *   Prepares the file with `ExecStartPre` commands (`touch`, `chmod`).
-
-**Example:**
-
-```
-  ```ini
-  [Unit]
-  Description=KStars Location Writer for PiFinder
-  After=graphical.target
-
-  [Service]
-  Type=simple
-  ExecStartPre=/bin/touch /tmp/kstars_location.txt
-  ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
-  ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
-  Restart=always
-  RestartSec=5
-  User=stellarmate
-  Group=pifinder
-  Nice=10
-  StandardOutput=journal
-  StandardError=journal
-
-  [Install]
-  WantedBy=default.targipment
 ```
