@@ -65,6 +65,11 @@ else
     exit 1
 fi
 
+if [ $(whoami) == "pifinder" ]
+then 
+  sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
+fi
+
 echo "$pifinder_stellarmate_version_stable" >> "$(pwd)/version.txt"
 
 
