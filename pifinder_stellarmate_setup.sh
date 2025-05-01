@@ -133,6 +133,9 @@ then
     exit 0
 fi
 
+
+sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
+
 ############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
 if [ -d PiFinder ]
