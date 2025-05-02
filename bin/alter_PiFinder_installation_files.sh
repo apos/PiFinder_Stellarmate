@@ -460,7 +460,7 @@ show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 ########
-## remove "GPS Type" block completely (this is set by default)
+## remove "GPS Type" block completely (this is set by default_config.json to gpsd)
 
 gps_type_line=$(grep -n '"name": "GPS Type"' "$menu_py" | cut -d: -f1 | head -n1)
 
