@@ -80,13 +80,16 @@ config_json="${pifinder_data_dir}/config.json"
 ############################################################
 show_diff_if_changed() {
     local file="$1"
-    if ! diff -q "${file}.bak" "$file" >/dev/null; then
+    local bak="${file}.bak"
+
+    if [[ -f "$file" && -f "$bak" ]] && ! cmp -s <(sort "$file") <(sort "$bak"); then
         echo "🔍 Showing changes for $file:"
-        diff --unified "${file}.bak" "$file"
+        diff --unified "$bak" "$file"
     else
         echo "ℹ️ No changes for $file"
     fi
-    rm -f "${file}.bak"
+
+    rm -f "$bak"
 }
 
 ############################################################
