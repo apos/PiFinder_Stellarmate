@@ -82,7 +82,7 @@ show_diff_if_changed() {
     local file="$1"
     local bak="${file}.bak"
 
-    if [[ -f "$file" && -f "$bak" ]] && ! cmp -s <(sort "$file") <(sort "$bak"); then
+    if [[ -f "$file" && -f "$bak" ]] && [[ "$(sha256sum "$file" | awk '{print $1}')" != "$(sha256sum "$bak" | awk '{print $1}')" ]]; then
         echo "🔍 Showing changes for $file:"
         diff --unified "$bak" "$file"
     else
