@@ -220,6 +220,31 @@ fi
 show_diff_if_changed "$display_py"
 python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
+
+
+#######################################
+# Patch keyboard_pi.py for Pi5 GPIO compatibility
+echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
+cp "$keyboard_py" "$keyboard_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if ! grep -q 'GPIO.setmode(GPIO.BCM)' "$keyboard_py"; then
+        echo "ℹ️ No GPIO setup block found, skipping patch"
+    else
+        sed -i 's|import RPi.GPIO as GPIO|from luma.core.interface.serial import noop  # ⛔ RPi.GPIO not supported on Pi5\nGPIO = noop()|' "$keyboard_py"
+        echo "✅ Replaced RPi.GPIO with noop in keyboard_pi.py (temporary Pi5 fix)"
+    fi
+else
+    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$keyboard_py"
+python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+
+
+
 ########################################
 # Raspberry Pi 4
 #########################################
