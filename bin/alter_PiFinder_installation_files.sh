@@ -207,14 +207,10 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 
 if should_apply_patch "2.2.0" "P5" "bookworm"; then
     if ! grep -q 'from luma.core.interface.serial import noop' "$display_py"; then
-        sed -i 's|serial = spi(|serial = spi(gpio=noop(), port=10, |g' "$display_py"
+        sed -i 's|serial = spi(|serial = spi(gpio=noop(), port=10, |' "$display_py"
         echo "✅ Import für noop hinzugefügt"
     fi
-
-    # Ersetze serial = spi(...) durch serial = spi(gpio=gpio_cdev(), ...)
-    sed -i 's|serial = spi(|serial = spi(gpio=noop(), |g' "$display_py"
     echo "✅ Patched all 'serial = spi(...)' calls for Pi5"
-
 else
     echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
 fi
