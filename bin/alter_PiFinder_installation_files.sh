@@ -351,26 +351,24 @@ python3 -m py_compile "$camera_file" && echo "✅ Syntax OK" || echo "❌ Syntax
 ##################################################
 #  PiFinder  main.py
 
-echo "🔧 Patching main.py for KStars GPS support ..."
+echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-# Patch veraltete Prüfzeile
-if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
-    sed -i 's|gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
-    echo "✅ GPS-Kondition gepatcht in main.py"
-fi
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
+        sed -i 's|gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
+        echo "✅ GPS-Kondition gepatcht in main.py"
+    fi
 
-show_diff_if_changed "$main_py"
-python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-echo "🔧 Ensuring gps_gpsd import in main.py ..."
-
-# Import prüfen und ggf. einfügen
-if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
-    sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
-    echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
+    if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
+        sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
+        echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
+    else
+        echo "ℹ️ Import gps_gpsd bereits vorhanden"
+    fi
 else
-    echo "ℹ️ Import gps_gpsd bereits vorhanden"
+    echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
 fi
 
 show_diff_if_changed "$main_py"
