@@ -7,17 +7,19 @@ cd /home/pifinder
 source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
 # Detect PiFinder version from version.txt
-current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
+# current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
 
-# Detect current Pi hardware model
-hw_model=$(tr -d '\0' < /proc/device-tree/model)
-if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
-    current_pi="P5"
-elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
-    current_pi="P4"
-else
-    current_pi="unknown"
-fi
+# # Detect current Pi hardware model
+# hw_model=$(tr -d '\0' < /proc/device-tree/model)
+# if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+#     current_pi="P5"
+# elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+#     current_pi="P4"
+# else
+#     current_pi="unknown"
+# fi
+
+export current_pi="P4"
 
 # Detect OS codename
 current_os=$(lsb_release -sc)
@@ -287,7 +289,6 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-export current_pi="P4"
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
