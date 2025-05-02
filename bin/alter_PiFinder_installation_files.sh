@@ -259,9 +259,16 @@ python3 -m py_compile "$init_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 
 echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
-if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
-    sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
+        sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
+    fi
+else
+    echo "⏩ Skipping patch for cedar_detect_client.py: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$client_py"
 python3 -m py_compile "$client_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
