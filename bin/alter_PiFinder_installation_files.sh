@@ -206,20 +206,21 @@ cp "$display_py" "$display_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "2.2.0" "P5" "bookworm"; then
-    if grep -q 'serial = spi(' "$display_py"; then
-        sed -i '/serial = spi(/i from luma.core.interface.gpio import gpio_cdev' "$display_py"
-        sed -i 's|serial = spi(|serial = spi(gpio=gpio_cdev(), |' "$display_py"
-        echo "✅ Patched serial init for Pi5 SPI (gpio_cdev)"
-    else
-        echo "ℹ️ No 'serial = spi(' line found"
+    if ! grep -q 'from luma.core.interface.gpio import gpio_cdev' "$display_py"; then
+        sed -i '1i from luma.core.interface.gpio import gpio_cdev' "$display_py"
+        echo "✅ Import für gpio_cdev hinzugefügt"
     fi
+
+    # Ersetze serial = spi(...) durch serial = spi(gpio=gpio_cdev(), ...)
+    sed -i 's|serial = spi(|serial = spi(gpio=gpio_cdev(), |g' "$display_py"
+    echo "✅ Patched all 'serial = spi(...)' calls for Pi5"
+
 else
     echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
 fi
 
 show_diff_if_changed "$display_py"
 python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
 
 ########################################
 # Raspberry Pi 4
