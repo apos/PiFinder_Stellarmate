@@ -325,17 +325,24 @@ python3 -m py_compile "$ui_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 
 echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
-camera_insert="from picamera2 import Picamera"
-if ! grep -q "$camera_insert" "$camera_file"; then
-    awk -v insert="$camera_insert" '
-    /^import numpy as np$/ {
-        print;
-        print insert;
-        next
-    }
-    { print }
-    ' "$camera_file.bak" > "$camera_file"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    camera_insert="from picamera2 import Picamera"
+    if ! grep -q "$camera_insert" "$camera_file"; then
+        awk -v insert="$camera_insert" '
+        /^import numpy as np$/ {
+            print;
+            print insert;
+            next
+        }
+        { print }
+        ' "$camera_file.bak" > "$camera_file"
+    fi
+else
+    echo "⏩ Skipping patch for camera_pi.py: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$camera_file"
 python3 -m py_compile "$camera_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
