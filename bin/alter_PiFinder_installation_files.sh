@@ -220,7 +220,33 @@ fi
 show_diff_if_changed "$display_py"
 python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
+#######################################
+# Patch keyboard_pi.py for Pi 5
+echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
+cp "$keyboard_py" "$keyboard_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if ! grep -q 'GPIO_STUB_FOR_PI5' "$keyboard_py"; then
+        sed -i '1i\
+import types\n\
+GPIO = types.SimpleNamespace()\n\
+GPIO.IN = None\n\
+GPIO.OUT = None\n\
+GPIO.setmode = lambda mode: None\n\
+GPIO.setup = lambda pin, mode: None\n\
+GPIO.input = lambda pin: False\n\
+GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
+        echo "✅ GPIO calls stubbed in keyboard_pi.py for Pi5"
+    else
+        echo "ℹ️ GPIO stubs already present in keyboard_pi.py"
+    fi
+else
+    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$keyboard_py"
+python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 ########################################

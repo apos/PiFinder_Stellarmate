@@ -29,6 +29,7 @@ config_json="${pifinder_data_dir}/config.json"
 
 # For Pi5
 display_py="${pifinder_dir}/python/PiFinder/displays.py"
+keyboard_py="${pifinder_dir}/python/PiFinder/keyboard_pi.py"
 
 ############################################################
 # FUNCTIONS
