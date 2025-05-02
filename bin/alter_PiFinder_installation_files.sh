@@ -244,9 +244,16 @@ python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax E
 # Fix Tetra3 at various places
 echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
-if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
-    sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
+        sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
+    fi
+else
+    echo "⏩ Skipping patch for __init__.py: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$init_py"
 python3 -m py_compile "$init_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
