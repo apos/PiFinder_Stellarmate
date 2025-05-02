@@ -475,124 +475,120 @@ show_diff_if_changed "$gps_py"
 python3 -m py_compile "$gps_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
-######################################################
-# menu_structure.py
+# #####################################################
+# menu_structure.py (patching menu blocks individually with version checks)
 cp "$menu_py" "$menu_py.bak"
 
-
-########
-## remove GPS Status entry safel
-# Ziel: sichere Entfernung von "Place & Time"-Einträgen
-place_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$place_line" ]]; then
-    start=$((place_line - 1))    # öffnende {
-    end=$((place_line + 20))     # schließende }, nach innerem Block
-
-    # Lösche gesamten Block
-    sed -i "${start},${end}d" "$menu_py"
-
-    echo "✅ Removed GPS Status block and cleaned up Align section"
+# ---- Remove "GPS Status" block ----
+echo "🔧 Removing 'GPS Status' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    gps_status_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$gps_status_line" ]]; then
+        start=$((gps_status_line - 1))
+        end=$((gps_status_line + 20))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed GPS Status block and cleaned up Align section"
+    else
+        echo "ℹ️ No GPS Status block found"
+    fi
 else
-    echo "ℹ️ No GPS Status block found"
+    echo "⏩ Skipping patch for 'GPS Status': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-########
-## remove "Place & Time" block safely
-
-# Ziel: sichere Entfernung von "Place & Time"-Einträgen
-place_line=$(grep -n '"name": "Place & Time"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$place_line" ]]; then
-    start=$((place_line - 1))    # öffnende {
-    end=$((place_line + 20))     # schließende }, nach innerem Block
-
-    # Lösche gesamten Block
-    sed -i "${start},${end}d" "$menu_py"
-
-    echo "✅ Removed 'Place & Time' block from Tools menu"
+# ---- Remove "Place & Time" block ----
+echo "🔧 Removing 'Place & Time' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    place_line=$(grep -n '"name": "Place & Time"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$place_line" ]]; then
+        start=$((place_line - 1))
+        end=$((place_line + 20))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed 'Place & Time' block from Tools menu"
+    else
+        echo "ℹ️ No 'Place & Time' block found"
+    fi
 else
-    echo "ℹ️ No 'Place & Time' block found"
+    echo "⏩ Skipping patch for 'Place & Time': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-
-########
-## remove "UBlox" item from GPS Type menu
-
-ublox_line=$(grep -n '"name": "UBlox"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$ublox_line" ]]; then
-    start=$((ublox_line - 1))    # opening {
-    end=$((ublox_line + 2))      # closing }
-
-    sed -i "${start},${end}d" "$menu_py"
-    echo "✅ Removed 'UBlox' item from GPS Type menu"
+# ---- Remove "UBlox" item from GPS Type menu ----
+echo "🔧 Removing 'UBlox' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    ublox_line=$(grep -n '"name": "UBlox"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$ublox_line" ]]; then
+        start=$((ublox_line - 1))
+        end=$((ublox_line + 2))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed 'UBlox' item from GPS Type menu"
+    else
+        echo "ℹ️ No 'UBlox' entry found in GPS Type menu"
+    fi
 else
-    echo "ℹ️ No 'UBlox' entry found in GPS Type menu"
+    echo "⏩ Skipping patch for 'UBlox': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-########
-## remove "WiFi Mode" block safely
-
-wifi_line=$(grep -n '"name": "WiFi Mode"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$wifi_line" ]]; then
-    start=$((wifi_line - 1))    # opening {
-    end=$((wifi_line + 16))     # closing }
-
-    sed -i "${start},${end}d" "$menu_py"
-    echo "✅ Removed 'WiFi Mode' block from menu_structure.py"
+# ---- Remove "WiFi Mode" block ----
+echo "🔧 Removing 'WiFi Mode' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    wifi_line=$(grep -n '"name": "WiFi Mode"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$wifi_line" ]]; then
+        start=$((wifi_line - 1))
+        end=$((wifi_line + 16))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed 'WiFi Mode' block from menu_structure.py"
+    else
+        echo "ℹ️ No 'WiFi Mode' block found"
+    fi
 else
-    echo "ℹ️ No 'WiFi Mode' block found"
+    echo "⏩ Skipping patch for 'WiFi Mode': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-########
-## remove "GPS Type" block completely (this is set by default_config.json to gpsd)
-
-gps_type_line=$(grep -n '"name": "GPS Type"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$gps_type_line" ]]; then
-    start=$((gps_type_line - 1))    # opening {
-    end=$((gps_type_line + 12))     # closing }
-
-    sed -i "${start},${end}d" "$menu_py"
-    echo "✅ Removed 'GPS Type' block from menu_structure.py"
+# ---- Remove "GPS Type" block ----
+echo "🔧 Removing 'GPS Type' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    gps_type_line=$(grep -n '"name": "GPS Type"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$gps_type_line" ]]; then
+        start=$((gps_type_line - 1))
+        end=$((gps_type_line + 12))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed 'GPS Type' block from menu_structure.py"
+    else
+        echo "ℹ️ No 'GPS Type' block found"
+    fi
 else
-    echo "ℹ️ No 'GPS Type' block found"
+    echo "⏩ Skipping patch for 'GPS Type': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-
-echo "🔧 Removing 'Software Upd' entry from menu_structure.py ..."
-
-# Finde Zeilennummer der Zeile mit "Software Upd"
-line=$(grep -n '"name": "Software Upd"' "$menu_py" | cut -d: -f1 | head -n1)
-
-if [[ -n "$line" ]]; then
-    start=$((line))  # öffnende {
-    end=$((line))    # inkl. schließender }
-
-    sed -i "${start},${end}d" "$menu_py"
-    echo "✅ Removed 'Software Upd' block (lines ${start}-${end})"
+# ---- Remove "Software Upd" entry ----
+echo "🔧 Removing 'Software Upd' from menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    line=$(grep -n '"name": "Software Upd"' "$menu_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$line" ]]; then
+        start=$((line))
+        end=$((line))
+        sed -i "${start},${end}d" "$menu_py"
+        echo "✅ Removed 'Software Upd' block (lines ${start}-${end})"
+    else
+        echo "ℹ️  No 'Software Upd' entry found (maybe already removed)"
+    fi
 else
-    echo "ℹ️  No 'Software Upd' entry found (maybe already removed)"
+    echo "⏩ Skipping patch for 'Software Upd': ❌ incompatible version/pi/os"
 fi
-
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-
