@@ -6,10 +6,26 @@ pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
 pifinder_dir="/home/pifinder/PiFinder"
 pifinder_data_dir="/home/pifinder/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
-python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
 pifinder_config_dir="/home/pifinder/.config"
 kstarsrc_source="/home/stellarmate/.config/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
+
+
+# The files need to be patched
+python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
+main_py="${pifinder_dir}/python/PiFinder/main.py"
+gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
+solver_py="${pifinder_dir}/python/PiFinder/solver.py"
+init_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/__init__.py"
+client_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/cedar_detect_client.py"
+grpc_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/cedar_detect_pb2_grpc.py"
+t3_dir="${pifinder_dir}/python/PiFinder/tetra3/tetra3"
+ui_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
+post_update_file="${pifinder_dir}/pifinder_post_update.sh"
+camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
+menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
+config_default_json="${pifinder_dir}/default_config.json"
+config_json="${pifinder_data_dir}/config.json"
 
 ############################################################
 # FUNCTIONS

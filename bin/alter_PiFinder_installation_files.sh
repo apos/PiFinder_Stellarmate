@@ -60,21 +60,6 @@ should_apply_patch() {
     [[ "$match_pifinder" == "true" && "$match_pi" == "true" && "$match_os" == "true" ]]
 }
 
-# The files need to be patched
-main_py="${pifinder_dir}/python/PiFinder/main.py"
-gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
-solver_py="${pifinder_dir}/python/PiFinder/solver.py"
-init_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/__init__.py"
-client_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/cedar_detect_client.py"
-grpc_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/cedar_detect_pb2_grpc.py"
-t3_dir="${pifinder_dir}/python/PiFinder/tetra3/tetra3"
-ui_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
-post_update_file="${pifinder_dir}/pifinder_post_update.sh"
-camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
-menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
-config_default_json="${pifinder_dir}/default_config.json"
-config_json="${pifinder_data_dir}/config.json"
-
 ############################################################
 # HELPER Functions
 ############################################################
@@ -160,17 +145,17 @@ systemctl status pifinder_kstars_location_writer.service
 ############################################################
 # Check requirements
 echo "🔧 Updating requirements.txt ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 cp "$python_requirements" "$python_requirements.bak"
 
-#append_line_requirements="picamera2"
-#if ! check_line_exists "${python_requirements}" "${append_line_requirements}"; then
-#    append_line_to_file "${python_requirements}" "${append_line_requirements}"  
-#else
-#    echo "Line '${append_line_requirements}' already exists in '${python_requirements}'. No need to append."
-#fi
-if ! grep -q '^picamera2$' "$python_requirements"; then
-    echo "picamera2" >> "$python_requirements"
+if should_apply_patch "general" "general" "general"; then
+    if ! grep -q '^picamera2$' "$python_requirements"; then
+        echo "picamera2" >> "$python_requirements"
+    fi
+else
+    echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$python_requirements"
 
 #######################################
