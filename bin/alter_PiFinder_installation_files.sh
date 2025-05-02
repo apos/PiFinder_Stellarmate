@@ -22,15 +22,42 @@ fi
 # Detect OS codename
 current_os=$(lsb_release -sc)
 
-# Helper function to decide whether a patch should apply
+# Helper function to decide whether a patch should apply (safe string splitting)
 should_apply_patch() {
     local ok_pifinder="$1"
     local ok_pi="$2"
     local ok_os="$3"
 
-    ([[ "$ok_pifinder" == "general" ]] || [[ "$ok_pifinder" =~ (^|[|])"$current_pifinder"($|[|]) ]]) &&
-    ([[ "$ok_pi" == "general" ]] || [[ "$ok_pi" =~ (^|[|])"$current_pi"($|[|]) ]]) &&
-    ([[ "$ok_os" == "general" ]] || [[ "$ok_os" == "$current_os" ]])
+    local match_pifinder="false"
+    local match_pi="false"
+    local match_os="false"
+
+    # Check PiFinder version
+    if [[ "$ok_pifinder" == "general" ]]; then
+        match_pifinder="true"
+    else
+        IFS='|' read -ra vers <<< "$ok_pifinder"
+        for v in "${vers[@]}"; do
+            [[ "$v" == "$current_pifinder" ]] && match_pifinder="true"
+        done
+    fi
+
+    # Check Pi model
+    if [[ "$ok_pi" == "general" ]]; then
+        match_pi="true"
+    else
+        IFS='|' read -ra pis <<< "$ok_pi"
+        for p in "${pis[@]}"; do
+            [[ "$p" == "$current_pi" ]] && match_pi="true"
+        done
+    fi
+
+    # Check OS
+    if [[ "$ok_os" == "general" || "$ok_os" == "$current_os" ]]; then
+        match_os="true"
+    fi
+
+    [[ "$match_pifinder" == "true" && "$match_pi" == "true" && "$match_os" == "true" ]]
 }
 
 # The files need to be patched
@@ -258,6 +285,7 @@ fi
 # Patch ui/marking_menus.py
 echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
