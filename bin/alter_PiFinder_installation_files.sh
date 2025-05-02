@@ -176,18 +176,25 @@ show_diff_if_changed "$python_requirements"
 #######################################
 # pifinder_post_update.sh
 echo "🔧 Updating pifinder_post_update.sh ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 cp "$post_update_file" "$post_update_file.bak"
-insert_block="python3 -m venv /home/pifinder/PiFinder/python/.venv\nsource /home/pifinder/PiFinder/python/.venv/bin/activate"
-if ! grep -q "/home/pifinder/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
-    awk -v insert="$insert_block" '
-    /git submodule update --init --recursive/ {
-        print;
-        print insert;
-        next
-    }
-    { print }
-    ' "$post_update_file.bak" > "$post_update_file"
+
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    insert_block="python3 -m venv /home/pifinder/PiFinder/python/.venv\nsource /home/pifinder/PiFinder/python/.venv/bin/activate"
+    if ! grep -q "/home/pifinder/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
+        awk -v insert="$insert_block" '
+        /git submodule update --init --recursive/ {
+            print;
+            print insert;
+            next
+        }
+        { print }
+        ' "$post_update_file.bak" > "$post_update_file"
+    fi
+else
+    echo "⏩ Skipping patch for pifinder_post_update.sh: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$post_update_file"
 
 
