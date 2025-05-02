@@ -82,7 +82,11 @@ show_diff_if_changed() {
     local file="$1"
     if ! cmp -s "${file}.bak" "$file"; then
         echo "🔍 Showing changes for $file:"
-        diff --unified "${file}.bak" "$file" || echo "(No changes)"
+        if ! diff -q "${file}.bak" "$file" >/dev/null; then
+            diff --unified "${file}.bak" "$file"
+        else
+            echo "ℹ️ No changes for $file"
+        fi
     else
         echo "ℹ️ No changes for $file"
     fi
