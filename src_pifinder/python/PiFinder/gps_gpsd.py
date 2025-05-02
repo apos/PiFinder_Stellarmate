@@ -310,6 +310,227 @@ handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+import os
+from datetime import datetime
+
+KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
+
+logger = logging.getLogger("GPS")
+
+import sys
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
 async def read_kstars_location_file(gps_queue):
     logger.info("KStars reader started (gps_gpsd.py)")
     last_line = ""

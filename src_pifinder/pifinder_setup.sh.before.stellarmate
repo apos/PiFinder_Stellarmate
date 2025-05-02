@@ -15,10 +15,14 @@ pifinder_stellarmate_version_testing="2.2.1"
 ############################################################
 
 ############################################################
+# Get some important vars and functinons
+source $(pwd)/bin/functions.sh
+
+############################################################
 # VERSION CHECK (Live check from GitHub)
 
 # Read local PiFinder version
-pifinder_local_version=$(cat "$pifinder_dir/version.txt" 2>/dev/null)
+pifinder_local_version=$(cat "$(pwd)/version.txt" 2>/dev/null)
 
 # Fetch online version from GitHub (release branch)
 github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt | tr -d '\r')
@@ -61,9 +65,76 @@ else
     exit 1
 fi
 
+echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
+
+
+
 ############################################################
-# Get some important vars and functinons
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
+# check if user is "pifinder"
+if [ $(whoami) != "pifinder" ]
+then
+    echo "ℹ️ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. We create it first ... "
+
+    # add PiFinder user
+    if check_user_exists "pifinder"
+    then 
+      echo "continuing ..."
+    else
+
+      echo "ℹ️ Please set a user for the newly created user <pifinder>"
+      if id "pifinder" &>/dev/null;
+      then
+            sudo useradd -m pifinder
+            sudo passwd pifinder
+            sudo usermod -a -G 
+
+            # Add rights accessing hardware to user 'pifinder'
+            sudo usermod -a -G spi pifinder
+            sudo usermod -a -G gpio pifinder
+            sudo usermod -a -G i2c pifinder
+            sudo usermod -a -G video pifinder
+            sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
+
+            echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
+
+            append_file="/etc/sudoers.d/010_pi-nopasswd"
+            append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
+
+            # Create file if missing
+            if ! sudo test -f "$append_file"; then
+                echo "$append_line" | sudo tee "$append_file" > /dev/null
+                echo "✅ sudoers file created with entry for pifinder"
+            else
+                # Check if line already present, otherwise append
+                if ! sudo grep -qF "$append_line" "$append_file"; then
+                    echo "$append_line" | sudo tee -a "$append_file" > /dev/null
+                    echo "✅ sudoers line added for pifinder"
+                else
+                    echo "ℹ️ sudoers line already present for pifinder"
+                fi
+            fi
+      else
+            echo "❌ User 'pifinder' does not exist. Skipping sudo rights setup."
+      fi
+
+      echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
+      echo "su - pifinder"
+      exit 0
+    fi
+fi
+
+##############
+# recheck user
+if [ $(whoami) != "pifinder" ]
+then
+    echo "❌ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' and go to the original installation directory to run this install script"
+    echo "su - pifinder"
+    echo "cd /tmp/PiFinder_Stellarmate/"
+    echo "./pifinder_stellarmate_setup.sh"
+    exit 0
+fi
+
+sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
 
 ############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
@@ -77,40 +148,6 @@ else
     cd /home/pifinder
 fi
 
-############################################################
-# check if user is "pifinder"
-if [ $(whoami) != "pifinder" ]
-then
-    echo "ERROR: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' to run this install script"
-    exit 0
-else 
-    # add PiFinder user
-    if check_user_exists "pifinder"
-    then 
-      echo "continuing ..."
-    else
-      sudo useradd -m pifinder
-      sudo passwd pifinder
-      sudo usermod -aG 
-
-      # Add rights accessing hardware to user 'pifinder'
-      sudo usermod -aG spi pifinder
-      sudo usermod -aG gpio pifinder
-      sudo usermod -aG i2c pifinder
-      sudo usermod -aG video pifinder
-
-      append_file="/etc/sudoers.d/010_pi-nopasswd"
-      append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
-      if ! check_line_exists "${append_file}" "${append_line}"; then
-        append_line_to_file "${append_file}" "${append_line}"
-      else
-        echo "Line '${append_line}' already exists in '${append_file}'. No need to append."
-      fi
-
-      echo "User PiFinder had to be instantiated. Please reboot before continuing."
-      exit 0
-    fi
-fi
 
 ############################################################
 # Install some package requirements
@@ -121,13 +158,48 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
 sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
-sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
 
 
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
 cd /home/pifinder/PiFinder
 bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
+bash ${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh
+
+
+# #########################################################################
+# # Install AVAHI, so pifinder.local resolves
+# echo "🔧 Installing Avahi service file for pifinder.local ..."
+
+# avahi_service_dir="/etc/avahi/services"
+# sudo mkdir -p "$avahi_service_dir"
+
+# avahi_service_file="${avahi_service_dir}/pifinder.service"
+
+# sudo tee "$avahi_service_file" > /dev/null <<EOF
+# <?xml version="1.0" standalone='no'?>
+# <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+
+# <service-group>
+#   <name replace-wildcards="yes">pifinder</name>
+
+#   <!-- SSH on Port 5624 -->
+#   <service>
+#     <type>_workstation._tcp</type>
+#     <port>5624</port>
+#   </service>
+
+#   <!-- Web interface on Port 8080 -->
+#   <service>
+#     <type>_http._tcp</type>
+#     <port>8080</port>
+#   </service>
+# </service-group>
+# EOF
+
+# # Restart Avahi to apply the new service definition
+# sudo systemctl restart avahi-daemon
+# echo "✅ Avahi service published as pifinder.local (SSH:5624, HTTP:8080)"
 
 
 ############################################
