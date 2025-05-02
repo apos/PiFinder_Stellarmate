@@ -142,22 +142,6 @@ sudo systemctl start pifinder_kstars_location_writer.service
 systemctl status pifinder_kstars_location_writer.service
 
 
-############################################################
-# Check requirements
-echo "🔧 Updating requirements.txt ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-cp "$python_requirements" "$python_requirements.bak"
-
-if should_apply_patch "general" "general" "general"; then
-    if ! grep -q '^picamera2$' "$python_requirements"; then
-        echo "picamera2" >> "$python_requirements"
-    fi
-else
-    echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$python_requirements"
-
 #######################################
 # pifinder_post_update.sh
 echo "🔧 Updating pifinder_post_update.sh ..."
@@ -210,6 +194,36 @@ fi
 # PATCHING PiFinder Python files
 #######################################
 
+
+########################################
+# Raspberry Pi 5
+#########################################
+
+#######################################
+# Patch displays.py for Pi5 SPI GPIO
+echo "🔧 Updating displays.py for Pi5 SPI compatibility ..."
+cp "$display_py" "$display_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if grep -q 'serial = spi(' "$display_py"; then
+        sed -i '/serial = spi(/i from luma.core.interface.gpio import gpio_cdev' "$display_py"
+        sed -i 's|serial = spi(|serial = spi(gpio=gpio_cdev(), |' "$display_py"
+        echo "✅ Patched serial init for Pi5 SPI (gpio_cdev)"
+    else
+        echo "ℹ️ No 'serial = spi(' line found"
+    fi
+else
+    echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$display_py"
+python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+
+########################################
+# Raspberry Pi 4
+#########################################
 
 #######################################
 # Patch solver.py
