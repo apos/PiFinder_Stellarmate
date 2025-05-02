@@ -10,16 +10,14 @@ source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
 
 # Detect current Pi hardware model
-# hw_model=$(tr -d '\0' < /proc/device-tree/model)
-# if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
-#     current_pi="P5"
-# elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
-#     current_pi="P4"
-# else
-#     current_pi="unknown"
-# fi
-
-export current_pi="P4"
+hw_model=$(tr -d '\0' < /proc/device-tree/model)
+if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+    current_pi="P5"
+elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+    current_pi="P4"
+else
+    current_pi="unknown"
+fi
 
 # Detect OS codename
 current_os=$(lsb_release -sc)
