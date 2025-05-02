@@ -274,9 +274,16 @@ python3 -m py_compile "$client_py" && echo "✅ Syntax OK" || echo "❌ Syntax E
 
 echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
-if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
-    sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
+        sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
+    fi
+else
+    echo "⏩ Skipping patch for cedar_detect_pb2_grpc.py: ❌ incompatible version/pi/os"
 fi
+
 show_diff_if_changed "$grpc_py"
 python3 -m py_compile "$grpc_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
