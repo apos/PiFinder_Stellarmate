@@ -6,6 +6,33 @@ cd /home/pifinder
 # Get im portant functions and paths
 source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 
+# Detect PiFinder version from version.txt
+current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
+
+# Detect current Pi hardware model
+hw_model=$(tr -d '\0' < /proc/device-tree/model)
+if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+    current_pi="P5"
+elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+    current_pi="P4"
+else
+    current_pi="unknown"
+fi
+
+# Detect OS codename
+current_os=$(lsb_release -sc)
+
+# Helper function to decide whether a patch should apply
+should_apply_patch() {
+    local ok_pifinder="$1"
+    local ok_pi="$2"
+    local ok_os="$3"
+
+    ([[ "$ok_pifinder" == "general" ]] || [[ "$ok_pifinder" =~ (^|[|])"$current_pifinder"($|[|]) ]]) &&
+    ([[ "$ok_pi" == "general" ]] || [[ "$ok_pi" =~ (^|[|])"$current_pi"($|[|]) ]]) &&
+    ([[ "$ok_os" == "general" ]] || [[ "$ok_os" == "$current_os" ]])
+}
+
 # The files need to be patched
 main_py="${pifinder_dir}/python/PiFinder/main.py"
 gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
@@ -137,7 +164,7 @@ show_diff_if_changed "$post_update_file"
 
 
 ######################################################
-# config.json adn default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
+# config.json and default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
 echo "🔧 Updating gps_type in config files ..."
 
 for cfg in "$config_default_json" "$config_json"; do
@@ -148,6 +175,11 @@ for cfg in "$config_default_json" "$config_json"; do
     fi
     show_diff_if_changed "$cfg"
 done
+
+
+#######################################
+# PATCHING PiFinder Python files
+#######################################
 
 
 #######################################
@@ -226,12 +258,18 @@ fi
 # Patch ui/marking_menus.py
 echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
-if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
-    sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
+
+if should_apply_patch "2.2.0" "P4" "bookworm"; then
+    if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
+        sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
+    fi
+    if grep -q 'up: MarkingMenuOption = MarkingMenuOption(label="HELP")' "$ui_file"; then
+        sed -i 's|up: MarkingMenuOption = MarkingMenuOption(label="HELP")|up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))|' "$ui_file"
+    fi
+else
+    echo "⏩ Skipping patch for ui/marking_menus.py: incompatible version/pi/os"
 fi
-if grep -q 'up: MarkingMenuOption = MarkingMenuOption(label="HELP")' "$ui_file"; then
-    sed -i 's|up: MarkingMenuOption = MarkingMenuOption(label="HELP")|up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))|' "$ui_file"
-fi
+
 show_diff_if_changed "$ui_file"
 python3 -m py_compile "$ui_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
