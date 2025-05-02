@@ -19,7 +19,7 @@ source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
 #     current_pi="unknown"
 # fi
 
-export current_pi="P4"
+current_pi="P4"
 
 # Detect OS codename
 current_os=$(lsb_release -sc)
