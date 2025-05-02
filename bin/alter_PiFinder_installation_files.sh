@@ -295,7 +295,7 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
         sed -i 's|up: MarkingMenuOption = MarkingMenuOption(label="HELP")|up: MarkingMenuOption = field(default_factory=lambda: MarkingMenuOption(label="HELP"))|' "$ui_file"
     fi
 else
-    echo "⏩ Skipping patch for ui/marking_menus.py: incompatible version/pi/os"
+    echo "⏩ Skipping patch for ui/marking_menus.py: ❌ incompatible version/pi/os"
 fi
 
 show_diff_if_changed "$ui_file"
