@@ -214,30 +214,26 @@ done
 
 echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
-    sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
+        sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
+    fi
+
+    if grep -q '^import tetra3$' "$solver_py"; then
+        sed -i 's|^import tetra3$|from tetra3 import main|' "$solver_py"
+    fi
+
+    if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
+        sed -i '/from tetra3 import main/a from tetra3 import cedar_detect_client' "$solver_py"
+    fi
+
+    sed -i 's|from tetra3 import main|import tetra3.main as main|' "$solver_py"
+    sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
+else
+    echo "⏩ Skipping patch for solver.py: ❌ incompatible version/pi/os"
 fi
-
-if grep -q '^import tetra3$' "$solver_py"; then
-    sed -i 's|^import tetra3$|from tetra3 import main|' "$solver_py"
-fi
-
-if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
-    sed -i '/from tetra3 import main/a from tetra3 import cedar_detect_client' "$solver_py"
-fi
-
-show_diff_if_changed "$solver_py"
-python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-
-echo "🔧 Patching solver.py for consistent Tetra3 access ..."
-
-# Ersetze 'from tetra3 import main' → 'import tetra3.main as main'
-sed -i 's|from tetra3 import main|import tetra3.main as main|' "$solver_py"
-
-# Ersetze 'tetra3.Tetra3' → 'main.Tetra3'
-sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
 
 show_diff_if_changed "$solver_py"
 python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
