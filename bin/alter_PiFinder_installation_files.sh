@@ -195,15 +195,23 @@ show_diff_if_changed "$post_update_file"
 ######################################################
 # config.json and default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
 echo "🔧 Updating gps_type in config files ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-for cfg in "$config_default_json" "$config_json"; do
-    echo "🔍 Patching $cfg ..."
-    cp "$cfg" "$cfg.bak"
-    if grep -q '"gps_type": "ublox"' "$cfg"; then
-        sed -i 's|"gps_type": "ublox"|"gps_type": "gpsd"|' "$cfg"
-    fi
-    show_diff_if_changed "$cfg"
-done
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    for cfg in "$config_default_json" "$config_json"; do
+        echo "🔍 Patching $cfg ..."
+        cp "$cfg" "$cfg.bak"
+        if grep -q '"gps_type": "ublox"' "$cfg"; then
+            sed -i 's|"gps_type": "ublox"|"gps_type": "gpsd"|' "$cfg"
+            echo "✅ Replaced 'ublox' with 'gpsd' in $cfg"
+        else
+            echo "ℹ️ No 'ublox' GPS type found in $cfg"
+        fi
+        show_diff_if_changed "$cfg"
+    done
+else
+    echo "⏩ Skipping gps_type patch in config files: ❌ incompatible version/pi/os"
+fi
 
 
 #######################################
