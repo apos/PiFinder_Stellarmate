@@ -1,5 +1,8 @@
 #!/bin/bash
 
+### Checks for Pi-Type (Pi4/Pi5) and OS (Bookworm) and applies patches to PiFinder installation files accordingly
+### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
+
 # go to main working dir
 cd /home/pifinder
 
@@ -142,22 +145,6 @@ sudo systemctl start pifinder_kstars_location_writer.service
 systemctl status pifinder_kstars_location_writer.service
 
 
-############################################################
-# Check requirements
-echo "🔧 Updating requirements.txt ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-cp "$python_requirements" "$python_requirements.bak"
-
-if should_apply_patch "general" "general" "general"; then
-    if ! grep -q '^picamera2$' "$python_requirements"; then
-        echo "picamera2" >> "$python_requirements"
-    fi
-else
-    echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$python_requirements"
-
 #######################################
 # pifinder_post_update.sh
 echo "🔧 Updating pifinder_post_update.sh ..."
@@ -205,11 +192,97 @@ else
     echo "⏩ Skipping gps_type patch in config files: ❌ incompatible version/pi/os"
 fi
 
+#######################################
+# Patch displays.py for Pi5 SPI GPIO
+echo "🔧 Updating displays.py for Pi5 SPI compatibility ..."
+cp "$display_py" "$display_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if ! grep -q 'from luma.core.interface.serial import noop' "$display_py"; then
+        sed -i '1i from luma.core.interface.serial import noop' "$display_py"
+        echo "✅ Import für noop hinzugefügt"
+    fi
+
+    sed -i 's|serial = spi(device=0, port=0, |serial = spi(gpio=noop(), device=0, port=10, |' "$display_py"
+    echo "✅ Patched all 'serial = spi(...)' calls for Pi5"
+else
+    echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$display_py"
+python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 #######################################
-# PATCHING PiFinder Python files
-#######################################
+# Patch keyboard_pi.py for Pi 5
+echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
+cp "$keyboard_py" "$keyboard_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if grep -q 'import RPi.GPIO as GPIO' "$keyboard_py"; then
+        sed -i '/import RPi.GPIO as GPIO/i\
+import types\n\
+GPIO = types.SimpleNamespace()\n\
+GPIO.IN = None\n\
+GPIO.OUT = None\n\
+GPIO.PUD_UP = None\n\
+GPIO.BCM = None\n\
+GPIO.setmode = lambda mode: None\n\
+GPIO.setup = lambda pin, mode, pull_up_down=None, initial=None: None\n\
+GPIO.input = lambda pin: False\n\
+GPIO.LOW = 0\n\
+GPIO.HIGH = 1\n\
+GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
+        sed -i '/import RPi.GPIO as GPIO/d' "$keyboard_py"
+        echo "✅ GPIO stub inserted and import removed for Pi5"
+    else
+        echo "ℹ️ GPIO stub already present in keyboard_pi.py"
+    fi
+else
+    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$keyboard_py"
+python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+#######################################
+# Patch keyboard_pi.py for Pi 5
+echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
+cp "$keyboard_py" "$keyboard_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.2.0" "P5" "bookworm"; then
+    if grep -q 'import RPi.GPIO as GPIO' "$keyboard_py"; then
+        sed -i '/import RPi.GPIO as GPIO/i\
+import types\n\
+GPIO = types.SimpleNamespace()\n\
+GPIO.IN = None\n\
+GPIO.OUT = None\n\
+GPIO.PUD_UP = None\n\
+GPIO.BCM = None\n\
+GPIO.setmode = lambda mode: None\n\
+GPIO.setup = lambda pin, mode, pull_up_down=None, initial=None: None\n\
+GPIO.input = lambda pin: False\n\
+GPIO.LOW = 0\n\
+GPIO.HIGH = 1\n\
+GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
+        sed -i '/import RPi.GPIO as GPIO/d' "$keyboard_py"
+        echo "✅ GPIO stub inserted and import removed for Pi5"
+    else
+        echo "ℹ️ GPIO stub already present in keyboard_pi.py"
+    fi
+else
+    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$keyboard_py"
+python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+
+########################################
+# Raspberry Pi 4
+#########################################
 
 #######################################
 # Patch solver.py

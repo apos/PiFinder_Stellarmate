@@ -11,7 +11,7 @@ kstarsrc_source="/home/stellarmate/.config/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 
 
-# The files need to be patched
+# The files need to be patched for Pi4
 python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
 main_py="${pifinder_dir}/python/PiFinder/main.py"
 gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
@@ -26,6 +26,10 @@ camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
 menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
 config_default_json="${pifinder_dir}/default_config.json"
 config_json="${pifinder_data_dir}/config.json"
+
+# For Pi5
+display_py="${pifinder_dir}/python/PiFinder/displays.py"
+keyboard_py="${pifinder_dir}/python/PiFinder/keyboard_pi.py"
 
 ############################################################
 # FUNCTIONS
