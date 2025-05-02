@@ -374,21 +374,24 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
+
 ######################################################
 # gps_gpsd.py
 
-echo "🔧 Patching gps_gpsd.py for KStars-only support ..."
+echo "🔧 Updating gps_gpsd.py for KStars-only support ..."
 cp "$gps_py" "$gps_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-# Remove previous gps_main and gps_monitor implementations
-sed -i '/^async def gps_main/,/^def gps_monitor/ d' "$gps_py"
-sed -i '/^# To run the GPS monitor/,/^$/d' "$gps_py"
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    # Remove previous gps_main and gps_monitor implementations
+    sed -i '/^async def gps_main/,/^def gps_monitor/ d' "$gps_py"
+    sed -i '/^# To run the GPS monitor/,/^$/d' "$gps_py"
 
-# Remove old read_kstars_location_file if present
-sed -i '/^async def read_kstars_location_file/,/^EOF/ d' "$gps_py"
+    # Remove old read_kstars_location_file if present
+    sed -i '/^async def read_kstars_location_file/,/^EOF/ d' "$gps_py"
 
-# Append KStars-only implementation
-cat <<'EOF' >> "$gps_py"
+    # Append KStars-only implementation
+    cat <<'EOF' >> "$gps_py"
 
 import os
 from datetime import datetime
@@ -459,7 +462,11 @@ def gps_monitor(gps_queue, console_queue, log_queue):
     asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 EOF
 
-echo "✅ gps_gpsd.py patched with KStars-only GPS logic"
+    echo "✅ gps_gpsd.py patched with KStars-only GPS logic"
+else
+    echo "⏩ Skipping patch for gps_gpsd.py: ❌ incompatible version/pi/os"
+fi
+
 show_diff_if_changed "$gps_py"
 python3 -m py_compile "$gps_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
