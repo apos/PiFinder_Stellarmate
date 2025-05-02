@@ -1,5 +1,8 @@
 #!/bin/bash
 
+### Checks for Pi-Type (Pi4/Pi5) and OS (Bookworm) and applies patches to PiFinder installation files accordingly
+### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
+
 # go to main working dir
 cd /home/pifinder
 
