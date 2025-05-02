@@ -259,7 +259,7 @@ fi
 echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 
-if should_apply_patch "2.2.0" "P4" "bookworm"; then
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
