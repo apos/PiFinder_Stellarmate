@@ -274,7 +274,7 @@ Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **loca
 `(.venv) pifinder@stellarmate:~/PiFinder $ cat /tmp/kstars_location.txt`  
 `GPS Location,,49.47785331872243,8.450430929668666,100.42879867553711,2025-05-01T11:35:17.661929+00:00,2025-05-01T13:35:17.661965+02:00`
 
-Since KStars saves it's location upon reboo, it is instantly avaiable the next time you start your Stellarmate/PiFinder.
+Since KStars saves it's location upon reboot, these data are instantly avaiable the next time you start your Stellarmate/PiFinder. This is perfect, if your location does not vary. If not, you simply start the Stellarmate App and this will imediately sync time, date and location for you. 
 
 ## What the Location Writer Does
 
