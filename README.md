@@ -434,7 +434,7 @@ This goes into `requirements.txt`:
 e.g. pip install picamera2
 ```
 
-### Alter the pifinder service to use the virtual python environment
+**11\. Alter the pifinder service to use the virtual python environment**
 
 #### pifinder.service
 
