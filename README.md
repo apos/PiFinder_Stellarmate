@@ -381,7 +381,7 @@ dtoverlay=pwm-2chan
 
 This is mostly corresponding and follows the original installation guide from PiFinder: https://pifinder.readthedocs.io/en/release/software.html
 
-### Changes to PiFinder code base - key changes
+**8\. Changes to PiFinder code base - key changes**
 
 > ### ℹ️ **Info**
 > 
@@ -414,7 +414,7 @@ Due to the bookworm environment is was necessary to alter some files. This will 
 
 *   Adds "from picamera2 import Picamera" after numpy import
 
-**8\. Use a python venv (virtual environment)**
+**9\. Use a python venv (virtual environment)**
 
 The most important change is, that because of security reasons, it is not allowed to use global python libraries in Python 3.11 any more. You can use them, if installed through the OS package manager, but it is much better to use a dedicated local virtual environment for your python libraries and run the service within virtual environment:
 
@@ -425,7 +425,7 @@ source /home/pifinder/PiFinder/python/.venv/bin/activate
 pip install -r /home/pifinder/PiFinder/python/requirements.txt
 ```
 
-**9\. PIP Additional requirements(.txt) within the venv**
+**10\. PIP Additional requirements(.txt) within the venv**
 
 This goes into `requirements.txt`:
 
