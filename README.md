@@ -81,24 +81,22 @@ This assures full functionality of both devices, Stellarmate and PiFinder side-b
 Therefore the following menu items you normally have in PiFinder are not available:
 
 1.  Settings -> Choice of WiFi mode
-2.  Settings -> Choice of GPS mode (GPSD on
+2.  Settings -> Choice of GPS mode (GPSD only)
 3.  Choice of manually setting location, time or date
 4.  PiFinder Update
 
 ## PiFinder Web-Interface
 
-You can reach the PiFinder Webinterface with a slightly different URL
-
-\-http://stellarmate.local:8080/
+You can reach the PiFinder Webinterface with a slightly different URL: http://stellarmate.local:8080/
 
 # Installation
 
-The setup is a four stage process. Make sure to habe the correct hard- and software requirements:
+The setup is a four stage process. Make sure to have the correct hard- and software requirements (Pi4, Debian bookworm, PiFinder hat):
 
 1.  Enable SPI and I2C (this is also necessary for PiFinder any way), prepare the Debian bookworm for the user "pifinder" and reboot. 
 2.  Checkout the PiFinder\_Stellarmate Repo and run the setup script
-3.  Most important: source the virtual environment
-4.  Rerun the scipt and reboot
+3.  Source the python virtual environment (without this, the installation is NOT possible)
+4.  Rerun the scipt within the new virtual environment and reboot
 
 ## General Prerequisites
 
@@ -225,10 +223,18 @@ Run the script the first time and wait for the script to stop :..
 
 ### Part two (source the new virtual python environment and restart the script)
 
-⚠️ After the script stopped, paste the shown lines into the shell. This sources the newly created python virtual environment an restarts the script
+⚠️ After the script stopped, do not close the terminal ⚠️ 
+
+Paste the shown lines into the shell. This sources the newly created python virtual environment an restarts the script
 
 ```
 source /home/pifinder/PiFinder/python/.venv/bin/activate
+```
+
+You should now see that the prompt changed to something like "(.venv) ...".  
+Then rerun the script
+
+```
 ./pifinder_stellarmate_setup.sh
 ```
 
