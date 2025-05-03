@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Konfiguriere einen funktionierenden Editor, falls nötig
+git config --global core.editor "nano"
+
+# Schritt 1: Sicherstellen, dass wir auf main sind
+git checkout main || exit 1
+
+# Schritt 2: Änderungen auf main committen
+git add -A
+git commit -m "Lokale Änderungen von PiFinder übernommen" || echo "✅ Keine Änderungen zu committen auf main"
+
+# Schritt 3: main pushen
+git pull --no-rebase origin main
+git push origin main
+
+# Schritt 4: Wechsel zu dev
+git checkout dev || exit 1
+
+# Schritt 5: dev aktualisieren, falls nötig
+git pull --no-rebase origin dev
+
+# Schritt 6: main in dev mergen
+git merge main
+
+# Schritt 7: Merge-Commit abschließen (falls noch offen)
+if [ -d .git/MERGE_HEAD ]; then
+    git commit --no-edit
+fi
+
+# Schritt 8: dev pushen
+git push origin dev
