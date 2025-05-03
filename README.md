@@ -192,7 +192,7 @@ fi
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
 > ./pifinder\_stellarmate\_setup.sh
 
-### Part one (get the repo and run the script)
+### Part two (get the repo and run the script)
 
 `su - pinder`, when you are logged in as user "stellarate", "pi", etc.  (or login directly with ssh as user pifinder)  
 If this does not work, something went wrong. Repeat the steps from "Pre Installation steps"
@@ -219,7 +219,7 @@ Run the script the first time and wait for the script to stop :..
 ./pifinder_stellarmate_setup.sh
 ```
 
-### Part two (source the new virtual python environment and restart the script)
+### Part three (source the new virtual python environment and restart the script)
 
 ⚠️ After the script stopped, do not close the terminal ⚠️ 
 
