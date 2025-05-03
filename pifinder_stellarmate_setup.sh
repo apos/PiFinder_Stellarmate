@@ -214,9 +214,11 @@ if ! is_venv_active "${python_venv}"; then
     # Create venv
     if create_venv "${python_venv}"; then
       echo " "
-      echo "##### STOP ##############################################################"
-      echo " MANUAL INPUT REQUIRED: Python venv successfully created."
-      echo "You have to activate the venv manually and then re-run this setup script:"
+      echo "##### STOP ##########################################################"
+      echo "##### DO NOT CLOSE THIS TERMINAL !!! MANUAL INPUT REQUIRED !!! ######"
+      echo "The Python virtual environment was successfully created and MUST be activated manually."
+      echo "Please run the following command in this terminal to activate the virtual environment."
+      echo "Then rerun the scipt from within the new virtual environment (you see somthing like (.venv) after activation:"
       echo "" 
       echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
       echo "source ${python_venv}/bin/activate"
