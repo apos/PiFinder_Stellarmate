@@ -69,7 +69,7 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 
 ## GPS and WIFI/LAN
 
-Some Services will not be used when running PiFinder in the Stellarmate OS environment. Stellarmate takeS control over:
+Some Services will not be used when running PiFinder in the Stellarmate OS environment. Stellarmate takes control over:
 
 *   GPSD => the PiFinders build in GPS will NOT be used at all
 *   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
