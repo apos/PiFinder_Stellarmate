@@ -344,7 +344,7 @@ This service ensures the writer script:
 > *   The steps shown here are already done by the installation script. This is just for explanation purpose
 > *   This is only for Information. No action required
 
-## What Pifinder\_Stellarmate installation script dowa in detail
+## What Pifinder\_Stellarmate installation script does. Explained in some detail
 
 **1\. The following services are fully managed solely by StellarMate OS**
 
