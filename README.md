@@ -179,7 +179,7 @@ fi
 
 ## Let's go - 2. Installation (part two and three)
 
-> ### ⚠️ Important Information
+> ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
 > 
 > On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot. These tasks are:
 > 
@@ -187,7 +187,7 @@ fi
 > 
 > 2\. Clone the Stellarmate\_PiFinder repo into the user "pifinders" home dir (not in stellarmates dir or another user)
 > 
-> 3\. You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced late
+> 3\. You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced later
 > 
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
 > ./pifinder\_stellarmate\_setup.sh
