@@ -163,8 +163,7 @@ sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
 cd /home/pifinder/PiFinder
-bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
-bash ${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh
+bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
 
 
 # #########################################################################
