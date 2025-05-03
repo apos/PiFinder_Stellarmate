@@ -276,7 +276,7 @@ Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **loca
 
 Since KStars saves it's location upon reboot, these data are instantly avaiable the next time you start your Stellarmate/PiFinder. This is perfect, if your location does not vary. If not, you simply start the Stellarmate App and this will imediately sync time, date and location for you. 
 
-## What the Location Writer Does
+## What the "Location Writer" does
 
 ```
 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
