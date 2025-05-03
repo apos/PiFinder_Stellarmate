@@ -108,7 +108,7 @@ The setup is a two stage process with two reboots. Make sure to have the correct
 
 > ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot.
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the following tasks, instantiate a new user "pifinder" with it's own home directory and reboot. If you do not do this, you will not be able to use the PiFinder code with Stellarmate. PiFinder's code is not installed under the user "stellarmate" - you will not find it there. And this is intended. 
 
 These steps here are not run by the installations script. Once done, you do not have to repeat them any more on the device. 
 
