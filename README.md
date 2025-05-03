@@ -181,9 +181,9 @@ fi
 
 > ### ⚠️ Important Information
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot. These taska are:
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot. These tasks are:
 > 
-> 1\. Login or open a terminal. with user `pifinder`
+> 1\. Login or open a terminal. with the user `pifinder`
 > 
 > 2\. Clone the Stellarmate\_PiFinder repo into the user "pifinders" home dir (not in stellarmates dir or another user)
 > 
