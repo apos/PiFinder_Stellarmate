@@ -24,14 +24,18 @@
   - [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
   - [PiFinder Menu items removed](#pifinder-menu-items-removed)
   - [PiFinder Web-Interface](#pifinder-web-interface)
-- [Prerequisites](#prerequisites)
-- [Pre Installation steps on the Raspberry Pi](#pre-installation-steps-on-the-raspberry-pi)
+- [Installation](#installation)
+  - [General Prerequisites](#general-prerequisites)
+  - [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
     - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
-    - [**Add PiFinder user to Stellarmate OS**](#add-pifinder-user-to-stellarmate-os)
-    - [**Add rights for hardware access to user 'pifinder'**](#add-rights-for-hardware-access-to-user-pifinder)
+    - [Add PiFinder user to Stellarmate OS](#add-pifinder-user-to-stellarmate-os)
+    - [Add rights for hardware access to user 'pifinder'](#add-rights-for-hardware-access-to-user-pifinder)
     - [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
-    - [⚠️ Reboot](#️-reboot)
-- [Installation procedure](#installation-procedure)
+    - [⚠️ Reboot (first time)](#️-reboot-first-time)
+  - [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
+    - [Part one (get the repo and run the script)](#part-one-get-the-repo-and-run-the-script)
+    - [Part two (source the new virtual python environment and restart the script)](#part-two-source-the-new-virtual-python-environment-and-restart-the-script)
+    - [⚠️ Reboot (for the second time)](#️-reboot-for-the-second-time)
 - [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
   - [Purpose](#purpose-1)
   - [What the Location Writer Does](#what-the-location-writer-does)
@@ -85,7 +89,16 @@ You can reach the PiFinder Webinterface with
 
 \-http://stellarmate.local:8080/
 
-# Prerequisites
+# Installation
+
+The setup is a four stage process. Make sure to habe the correct hard- and software requirements:
+
+1.  Enable SPI and I2C (this is also necessary for PiFinder any way), prepare the Debian bookworm for the user "pifinder" and reboot. 
+2.  Checkout the PiFinder\_Stellarmate Repo and run the setup script
+3.  Most important: source the virtual environment
+4.  Rerun the scipt and reboot
+
+## General Prerequisites
 
 *   Stellarmate OS >= 1.8.1 (based on Debian Bookworm)  
     See: [https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html](https://www.stellarmate.com/products/stellarmate-os/stellarmate-os-detail.html)  
@@ -93,7 +106,7 @@ You can reach the PiFinder Webinterface with
 *   Raspberry Pi 4 (Pi 5 to be tested)
 *   PiFinder hardware (PiFinder hat)
 
-# Pre Installation steps on the Raspberry Pi
+## Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)
 
 These steps here are not run by the installations script. Once done, you do not have to repeat them any more on the device. 
 
@@ -111,7 +124,7 @@ Then I4 - SPI and choose Enable
 Then I5 - I2C and choose Enable
 ```
 
-### **Add PiFinder user to Stellarmate OS**
+### Add PiFinder user to Stellarmate OS
 
 This is essential and creates a second home directory `/home/pifinder` in which the installation of the PiFinder software takes place.
 
@@ -126,7 +139,7 @@ Info: the PiFinder service is running as "pifinder" user.
 
 It also adds the user pifinder to rhe group `stellarmate`.
 
-### **Add rights for hardware access to user 'pifinder'**
+### Add rights for hardware access to user 'pifinder'
 
 ```
 sudo usermod -a -G spi pifinder
@@ -164,9 +177,9 @@ else
 fi
 ```
 
-### ⚠️ Reboot
+### ⚠️ Reboot (first time)
 
-# Installation procedure
+## Let's go - 2. Installation (part two and three)
 
 > ### ⚠️ Important Information
 > 
@@ -180,6 +193,8 @@ fi
 > 
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
 > ./pifinder\_stellarmate\_setup.sh
+
+### Part one (get the repo and run the script)
 
 `su - pinder`, when you are logged in as user "stellarate", "pi", etc.  (or login directly with ssh as user pifinder)  
 If this does not work, something went wrong. Repeat the steps from "Pre Installation steps"
@@ -206,7 +221,9 @@ Run the script the first time and wait for the script to stop :..
 ./pifinder_stellarmate_setup.sh
 ```
 
-... then Paste the shown lines into the shell, this sources the newly created python virtual environment an restarts the script
+### Part two (source the new virtual python environment and restart the script)
+
+⚠️ After the script stopped, paste the shown lines into the shell. This sources the newly created python virtual environment an restarts the script
 
 ```
 source /home/pifinder/PiFinder/python/.venv/bin/activate
@@ -225,7 +242,7 @@ PiFinder setup complete, please restart the Pi. This is the version to run on St
 > *   Now carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
 > *   Check on the commandline, if you pifinder starts correctly or if there are any errors: `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
 
-6\. Restart
+### ⚠️ Reboot (for the second time)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f)
 
