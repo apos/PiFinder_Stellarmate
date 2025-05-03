@@ -91,7 +91,7 @@ You can reach the PiFinder Webinterface with a slightly different URL: http://st
 
 # Installation
 
-The setup is a three  stage process with two reboots. Make sure to have the correct hard- and software requirements (Pi4, Debian bookworm, PiFinder hat):
+The setup is a three stage process and needs two reboots. Make sure to have the correct hard- and software requirements (Pi4, Debian bookworm, PiFinder hat):
 
 1.  Enable SPI and I2C (this is also necessary for PiFinder any way), prepare the Debian bookworm for the user "pifinder" and reboot. 
 2.  Checkout the PiFinder\_Stellarmate Repo and run the setup script. Then the scipts stops. 
