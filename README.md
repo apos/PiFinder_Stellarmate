@@ -385,7 +385,8 @@ This is mostly corresponding and follows the original installation guide from Pi
 
 > ### ℹ️ **Info**
 > 
-> *    The detailed changes, that are made are in "PiFinder\_Stellarmate/bin/alter\_PiFinder\_installation\_files.sh" and it's companion "bin/funcitons.sh"
+> *   The detailed changes, that are made are in "`bin/patch_PiFinder_installation_files.sh`" and it's companion "`bin/functions.sh`"
+> *   A copy of all patched files (compared to the actual PiFinder repo) are copied to the directory `src_pifinder`
 
 Due to the bookworm environment is was necessary to alter some files. This will not affect it's functionalities.
 
