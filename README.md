@@ -106,6 +106,10 @@ The setup is a two stage process with two reboots. Make sure to have the correct
 
 ## Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)
 
+> ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
+> 
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot.
+
 These steps here are not run by the installations script. Once done, you do not have to repeat them any more on the device. 
 
 Please use the stellarmate oder standard user with sudo permission to do these tasks,.
@@ -181,13 +185,13 @@ fi
 
 > ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run these prerequesite tasks above and reboot. These tasks are:
+> To use the installation script, you have to do this with the user "pifinder", NOT with user "stellarmate" !!!
 > 
 > 1\. Login or open a terminal. with the user `pifinder`
 > 
 > 2\. Clone the Stellarmate\_PiFinder repo into the user "pifinders" home dir (not in stellarmates dir or another user)
 > 
-> 3\. You have to run the script twice: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced later
+> 3\. You have to run the script **twice**: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced later
 > 
 > source /home/pifinder/PiFinder/python/.venv/bin/activate  
 > ./pifinder\_stellarmate\_setup.sh
