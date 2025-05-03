@@ -65,16 +65,18 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 *   SkySafari: Observation planning, sky chart and quick "push to" (standalone or using PiFinder)
 *   Stellarmate: astrophotography and/or EAA through a dedicated astro camera - or/and (if available) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
-# Differences beetween using PiFinder on StellarMate and a stock PiFinder
+# Differences beetween using "PiFinder on StellarMate" and "stock PiFinder"
 
-## GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)
+## GPS and WIFI/LAN
 
-Some Services will not be used or altered through PiFinder in the Stellarmate environment by the installation script or when running PiFinder on Stellarmate. This assures full functionality of both devices side-by-side.
+Some Services will not be used when running PiFinder in the Stellarmate OS environment. Stellarmate takeS control over:
 
 *   GPSD => the PiFinders build in GPS will NOT be used at all
 *   WiFi (Client/ Host AP) and LAN -> Only Stellarmate OS/ Debian has the control over IP settings
 
-## PiFinder Menu items removed
+This assures full functionality of both devices, Stellarmate and PiFinder side-by-side.
+
+## PiFinder Menu
 
 Therefore the following menu items you normally have in PiFinder are not available:
 
@@ -85,7 +87,7 @@ Therefore the following menu items you normally have in PiFinder are not availab
 
 ## PiFinder Web-Interface
 
-You can reach the PiFinder Webinterface with
+You can reach the PiFinder Webinterface with a slightly different URL
 
 \-http://stellarmate.local:8080/
 
