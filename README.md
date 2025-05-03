@@ -17,35 +17,35 @@
 
 # Table of Contents
 
-- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
-- [Table of Contents](#table-of-contents)
-- [Purpose](#purpose)
-- [Differences beetween using PiFinder on StellarMate and a stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-and-a-stock-pifinder)
-  - [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
-  - [PiFinder Menu items removed](#pifinder-menu-items-removed)
-  - [PiFinder Web-Interface](#pifinder-web-interface)
-- [Installation](#installation)
-  - [General Prerequisites](#general-prerequisites)
-  - [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
-    - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
-    - [Add PiFinder user to Stellarmate OS](#add-pifinder-user-to-stellarmate-os)
-    - [Add rights for hardware access to user 'pifinder'](#add-rights-for-hardware-access-to-user-pifinder)
-    - [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
-    - [⚠️ Reboot (first time)](#️-reboot-first-time)
-  - [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
-    - [Part one (get the repo and run the script)](#part-one-get-the-repo-and-run-the-script)
-    - [Part two (source the new virtual python environment and restart the script)](#part-two-source-the-new-virtual-python-environment-and-restart-the-script)
-    - [⚠️ Reboot (for the second time)](#️-reboot-for-the-second-time)
-- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-  - [Purpose](#purpose-1)
-  - [What the Location Writer Does](#what-the-location-writer-does)
-  - [systemd Service Integration](#systemd-service-integration)
-- [Background Information (no action required!)](#background-information-no-action-required)
-  - [What Pifinder\_Stellarmate installation script dowa in detail](#what-pifinder_stellarmate-installation-script-dowa-in-detail)
-    - [Changes to PiFinder code base - key changes](#changes-to-pifinder-code-base---key-changes)
-    - [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
-      - [pifinder.service](#pifinderservice)
-      - [pifinder\_splash.service](#pifinder_splashservice)
+*   [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+*   [Table of Contents](#table-of-contents)
+*   [Purpose](#purpose)
+*   [Differences beetween using PiFinder on StellarMate and a stock PiFinder](#differences-beetween-using-pifinder-on-stellarmate-and-a-stock-pifinder)
+    *   [GPS and WIFI/LAN only from Stellarmate or the OS (Debian Bookworm)](#gps-and-wifilan-only-from-stellarmate-or-the-os-debian-bookworm)
+    *   [PiFinder Menu items removed](#pifinder-menu-items-removed)
+    *   [PiFinder Web-Interface](#pifinder-web-interface)
+*   [Installation](#installation)
+    *   [General Prerequisites](#general-prerequisites)
+    *   [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
+        *   [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
+        *   [Add PiFinder user to Stellarmate OS](#add-pifinder-user-to-stellarmate-os)
+        *   [Add rights for hardware access to user 'pifinder'](#add-rights-for-hardware-access-to-user-pifinder)
+        *   [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
+        *   [⚠️ Reboot (first time)](#%EF%B8%8F-reboot-first-time)
+    *   [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
+        *   [Part one (get the repo and run the script)](#part-one-get-the-repo-and-run-the-script)
+        *   [Part two (source the new virtual python environment and restart the script)](#part-two-source-the-new-virtual-python-environment-and-restart-the-script)
+        *   [⚠️ Reboot (for the second time)](#%EF%B8%8F-reboot-for-the-second-time)
+*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+    *   [Purpose](#purpose-1)
+    *   [What the Location Writer Does](#what-the-location-writer-does)
+    *   [systemd Service Integration](#systemd-service-integration)
+*   [Background Information (no action required!)](#background-information-no-action-required)
+    *   [What Pifinder\_Stellarmate installation script dowa in detail](#what-pifinder_stellarmate-installation-script-dowa-in-detail)
+        *   [Changes to PiFinder code base - key changes](#changes-to-pifinder-code-base---key-changes)
+        *   [Alter the pifinder service to use the virtual python environment](#alter-the-pifinder-service-to-use-the-virtual-python-environment)
+            *   [pifinder.service](#pifinderservice)
+            *   [pifinder\_splash.service](#pifinder_splashservice)
 
 # Purpose
 
@@ -55,7 +55,7 @@
 
 Combined with the powerful tool [Sky Safari](https://skysafariastronomy.com/) this offers vast possibilities to explore the sky and it's objects. Both visually and doing EAA. 
 
-The Raspberry-Pi is a astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software, our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/)  already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq-platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography?
+The Raspberry-Pi is an astonishing piece of hardware. Due to it's nature and versatility, it's Linux-based software and it's ARM-processor, it is ideal for the field of IoT. IoT is _the_ base of everything we do, when pairing hard-, software, our instruments and equipment. If you have a [PiFinder](https://www.pifinder.io/) already on you scope, why not use it also for EAA (e.g. live stacking). If you have an eq-platform for your big (non GoTo) Dobsonian, why not use it for serous astrophotography?
 
 Stellarmate also runs on the Pi and also works together with Sky Safari.
 
