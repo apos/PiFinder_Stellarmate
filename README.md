@@ -248,10 +248,12 @@ until you see:
 PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)
 ```
 
-> ### ℹ️ Troubleshooting
+> ### ℹ️ Read the logs - Troubleshooting
 > 
-> *   Now carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
-> *   Check on the commandline, if you pifinder starts correctly or if there are any errors: `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
+> *   Bedore reboot, carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
+> *   You might see some messages about non compatible patches. That's ok, because the script determines the actual system and only patches the files, that fit to your version/system
+> *   Later on, if something does not work: Login with the user pifinder (!) and sheck on the commandline, if you pifinder starts correctly or if there are any errors:   
+>     `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
 
 ### ⚠️ Reboot (for the second time)
 
