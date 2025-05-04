@@ -433,6 +433,7 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
         import aiohttp
         import logging
         from datetime import datetime
+        import os
 
         logger = logging.getLogger("GPS")
         url = "http://localhost:8624/api/info/location"
@@ -446,7 +447,20 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
                             result = data.get("success", {})
                             lat = float(result.get("latitude", 0))
                             lon = float(result.get("longitude", 0))
-                            alt = float(result.get("altitude", 0.0))
+                            # Begin fallback logic for altitude
+                            alt_str = result.get("altitude", None)
+                            if alt_str is None or float(alt_str) == 0.0:
+                                try:
+                                    import configparser
+                                    config = configparser.ConfigParser()
+                                    config.read(os.path.expanduser("~/.config/kstarsrc"))
+                                    alt = float(config.get("Location", "Elevation", fallback="0.0"))
+                                except Exception as e:
+                                    logger.warning(f"Could not read elevation from kstarsrc: {e}")
+                                    alt = 0.0
+                            else:
+                                alt = float(alt_str)
+                            # End fallback logic for altitude
                             tz = result.get("tz", 0)
 
                             msg = (
