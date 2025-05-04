@@ -395,14 +395,17 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-# Patch GPS location overwrite logic in main.py
+ # Patch GPS location overwrite logic in main.py with safer cat <<EOF
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     gps_fix_line=$(grep -n 'if gps_msg == "fix":' "$main_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_fix_line" ]]; then
         start=$((gps_fix_line + 1))
-        end=$((start + 25))
+        end=$((start + 40))
         sed -i "${start},${end}d" "$main_py"
-        awk -v insert='        if gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0:
+        tmp_file="${main_py}.tmp"
+        head -n "$start" "$main_py" > "$tmp_file"
+        cat <<'EOF' >> "$tmp_file"
+        if gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0:
             location = shared_state.location()
 
             # Always allow API-based location overwrite
@@ -443,11 +446,11 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
                     location.lat,
                     location.lon,
                     location.altitude,
-                )' '
-        NR == '"$start"' { print insert }
-        { print }
-        ' "$main_py" > "${main_py}.tmp" && mv "${main_py}.tmp" "$main_py"
-        echo "✅ Replaced gps_msg == 'fix' block in main.py"
+                )
+EOF
+        tail -n +"$((end + 1))" "$main_py" >> "$tmp_file"
+        mv "$tmp_file" "$main_py"
+        echo "✅ Replaced gps_msg == 'fix' block in main.py using safer cat/EOF"
     else
         echo "⚠️ Could not find gps_msg == 'fix' block in $main_py"
     fi
