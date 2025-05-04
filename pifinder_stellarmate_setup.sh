@@ -72,13 +72,13 @@ echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
 ############################################################
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
-# Add rights accessing hardware to user 'stellarmate'
-sudo usermod -a -G spi stellarmate
-sudo usermod -a -G gpio stellarmate
-sudo usermod -a -G i2c stellarmate
-sudo usermod -a -G video stellarmate
+# Add rights accessing hardware to user
+sudo usermod -a -G spi ${USER}
+sudo usermod -a -G gpio ${USER}
+sudo usermod -a -G i2c ${USER}
+sudo usermod -a -G video ${USER}
 
-sudo chown -R stellarmate:stellarmate ${pifinder_stellarmate_dir}
+sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
 # Check, if there is already a PiFinder installation, prompt for uninstall if yes.
@@ -112,7 +112,7 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 ############################################################
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
-sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
+sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 
 
 #########################################################################
@@ -202,7 +202,7 @@ else
 fi
 
 # ensure, correct rights are set
-sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
+sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 
 # NOT USED, PART OF STELLARMATE-OS: samba samba-common-bin dnsmasq hostapd dhcpd gpsd
 # NOT USED, PART OF STELLARMATE-OS: Setup GPSD
@@ -227,7 +227,7 @@ else
 fi
 
 # ensure, correct rights are set
-sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
+sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 
 
 ###########################
