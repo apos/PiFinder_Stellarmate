@@ -544,7 +544,7 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     gps_status_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_status_line" ]]; then
         start=$((gps_status_line - 1))
-        end=$((gps_status_line + 20))
+        end=$((gps_status_line + 2))
         sed -i "${start},${end}d" "$menu_py"
         echo "✅ Removed GPS Status block and cleaned up Align section"
     else
