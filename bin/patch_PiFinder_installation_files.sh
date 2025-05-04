@@ -93,17 +93,14 @@ mv ${pifinder_dir}/pifinder_post_update.sh ${pifinder_dir}/pifinder_post_update.
 cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
 
 ############################################################
-# Ensure kstarsrc symlink exists for PiFinder user 
-echo "🔗 Ensuring ~/.config/kstarsrc symlink for PiFinder ..."
+# Check if kstarsrc exists (no symlink needed)
+echo "🔍 Checking for ~/.config/kstarsrc ..."
 mkdir -p "$pifinder_config_dir"
 
-if [ -L "$kstarsrc_target" ]; then
-    echo "ℹ️ Symlink already exists: $kstarsrc_target"
-elif [ -e "$kstarsrc_target" ]; then
-    echo "⚠️ $kstarsrc_target exists but is not a symlink. Please resolve manually."
+if [ -f "$kstarsrc_target" ]; then
+    echo "✅ Found $kstarsrc_target"
 else
-    ln -s "$kstarsrc_source" "$kstarsrc_target"
-    echo "✅ Symlink created: $kstarsrc_target → $kstarsrc_source"
+    echo "⚠️ $kstarsrc_target not found. Please launch KStars once to create it."
 fi
 
 ############################################################
