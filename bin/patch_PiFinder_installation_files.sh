@@ -104,28 +104,22 @@ else
 fi
 
 ############################################################
-# PiFinder Service
-# Copy over services
+# PiFinder Services – patch dynamic paths from template
+echo "🔧 Patching systemd service templates ..."
 
+service_files=(
+    "${pifinder_dir}/pi_config_files/pifinder.service"
+    "${pifinder_dir}/pi_config_files/pifinder_splash.service"
+    "${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service"
+)
 
-python_file="${pifinder_dir}/pi_config_files/pifinder.service"
-comment_out_line_content="ExecStart=/usr/bin/python"
-commented_line="${pifinder_dir}/python/.venv/bin/python"
-if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i "s|/usr/bin/python|${pifinder_dir}/python/.venv/bin/python|" "${python_file}"
-else
-    echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
-fi
-
-
-python_file="${pifinder_dir}/pi_config_files/pifinder_splash.service"
-comment_out_line_content="/usr/bin/python"
-commented_line="${pifinder_dir}/python/.venv/bin/python"
-if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i "s|/usr/bin/python|${pifinder_dir}/python/.venv/bin/python|" "${python_file}"
-else
-    echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
-fi
+for service_file in "${service_files[@]}"; do
+    cp "$service_file" "$service_file.bak"
+    sed -i "s|__PYTHON_EXEC__|${pifinder_dir}/python/.venv/bin/python|g" "$service_file"
+    sed -i "s|__PIFINDER_USER__|${USER}|g" "$service_file"
+    sed -i "s|/home/__PIFINDER_USER__|/home/${USER}|g" "$service_file"
+    echo "✅ Patched placeholders in $service_file"
+done
 
 ############################################################
 # KStars location service
