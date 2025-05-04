@@ -395,6 +395,69 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
+# Patch GPS location overwrite logic in main.py
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    gps_fix_line=$(grep -n 'if gps_msg == "fix":' "$main_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$gps_fix_line" ]]; then
+        start=$((gps_fix_line + 1))
+        end=$((start + 25))
+        sed -i "${start},${end}d" "$main_py"
+        awk -v insert='        if gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0:
+            location = shared_state.location()
+
+            # Always allow API-based location overwrite
+            new_error = gps_content.get("error_in_m", 0)
+            allow_update = (
+                location.source != "WEB"
+                and not location.source.startswith("CONFIG:")
+                and (
+                    location.error_in_m == 0
+                    or float(new_error) < float(location.error_in_m)
+                    or gps_content.get("source", "") == "KStarsAPI"
+                )
+            )
+
+            if allow_update:
+                logger.info(f"Updating GPS location: new content: {gps_content}, old content: {location}")
+                location.lat = gps_content["lat"]
+                location.lon = gps_content["lon"]
+                location.altitude = gps_content["altitude"]
+                location.source = gps_content["source"]
+                if "error_in_m" in gps_content:
+                    location.error_in_m = gps_content["error_in_m"]
+                if "lock" in gps_content:
+                    location.lock = gps_content["lock"]
+                if "lock_type" in gps_content:
+                    location.lock_type = gps_content["lock_type"]
+
+                dt = shared_state.datetime()
+                if dt is None:
+                    location.last_gps_lock = "--"
+                else:
+                    location.last_gps_lock = dt.time().isoformat()[:8]
+                console.write(
+                    f"GPS: Location {location.lat} {location.lon} {location.altitude} {location.error_in_m}"
+                )
+                shared_state.set_location(location)
+                sf_utils.set_location(
+                    location.lat,
+                    location.lon,
+                    location.altitude,
+                )' '
+        NR == '"$start"' { print insert }
+        { print }
+        ' "$main_py" > "${main_py}.tmp" && mv "${main_py}.tmp" "$main_py"
+        echo "✅ Replaced gps_msg == 'fix' block in main.py"
+    else
+        echo "⚠️ Could not find gps_msg == 'fix' block in $main_py"
+    fi
+else
+    echo "⏩ Skipping gps fix logic patch in main.py: ❌ incompatible version/pi/os"
+fi
+
+
+
+
 
 ######################################################
 # gps_gpsd.py
