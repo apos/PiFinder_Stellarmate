@@ -46,6 +46,45 @@ if [[ "$1" == "--selfmove" ]]; then
     exit 0
 fi
 
+# --reset mode: clean install and config, but keep user data and repo
+if [[ "$1" == "--reset" ]]; then
+    echo "♻️  Resetting PiFinder installation ..."
+    sleep 1
+    cd /
+
+    echo "🔧 Stopping PiFinder services ..."
+    sudo systemctl stop pifinder.service
+    sudo systemctl stop pifinder_splash.service
+    sudo systemctl stop pifinder_kstars_location_writer.service
+
+    echo "🧹 Disabling services ..."
+    sudo systemctl disable pifinder.service
+    sudo systemctl disable pifinder_splash.service
+    sudo systemctl disable pifinder_kstars_location_writer.service
+
+    echo "🗑️ Removing systemd unit files ..."
+    sudo rm -f /etc/systemd/system/pifinder.service
+    sudo rm -f /etc/systemd/system/pifinder_splash.service
+    sudo rm -f /etc/systemd/system/pifinder_kstars_location_writer.service
+
+    echo "🔄 Reloading systemd ..."
+    sudo systemctl daemon-reexec
+    sudo systemctl daemon-reload
+
+    echo "🧹 Cleaning Python virtual environment ..."
+    sudo rm -rf /home/stellarmate/PiFinder/python/.venv
+
+    echo "🧽 Removing leftover build artifacts and logs ..."
+    sudo rm -rf /home/stellarmate/PiFinder/python/build
+    sudo rm -rf /home/stellarmate/PiFinder/python/dist
+    sudo rm -rf /home/stellarmate/PiFinder/python/*.egg-info
+    sudo find /home/stellarmate/PiFinder/python -name __pycache__ -exec rm -rf {} +
+
+    echo "♻️  PiFinder reset complete. You can now re-run the setup script:"
+    echo "    ./pifinder_stellarmate_setup.sh"
+    exit 0
+fi
+
 if [[ "$1" == "--run" ]]; then
     echo "🔁 Running uninstall from /tmp ..."
     sleep 1
