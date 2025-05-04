@@ -10,9 +10,8 @@
 > 
 > *   The main changes and installation of PiFinder is made by the script `/home/pifinder/PiFinder_Stellarmate/bin/pifinder_stellarmate_setup.sh`
 > *   The script can not (yet) update an existing PiFinder installation.
-> *   There is no uninstall routine. You only can delete `/home/pifinder/PiFinder` and re-run the script.
-> *   The folder `/home/pifinder/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
-> *   The script downloads and installs the a known to work an tested  default PiFinder installation into `/home/pifinder/PiFinder`. It then makes the necessary patches and adds additional functionalities.
+> *   The folder `/home/stellarmate/PiFinder_Stellarmate` persists. All Updates of PiFinder Code and so on have to be done from there, not from PiFinders Update tools.
+> *   The script downloads and installs the a known to work an tested  default PiFinder installation into `/home/stellarmate/PiFinder`. It then makes the necessary patches and adds additional functionalities.
 > *   PiFinders GPS and WiFi/LAN network management is NOT used, instead it uses the one from Stellarmate.
 
 # Table of Contents
@@ -28,10 +27,6 @@
   - [General Prerequisites](#general-prerequisites)
   - [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
     - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
-    - [Add PiFinder user to Stellarmate OS](#add-pifinder-user-to-stellarmate-os)
-    - [Add rights for hardware access to user 'pifinder'](#add-rights-for-hardware-access-to-user-pifinder)
-    - [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
-    - [⚠️ Reboot (first time)](#️-reboot-first-time)
   - [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
     - [Part two (get the repo and run the script)](#part-two-get-the-repo-and-run-the-script)
     - [Part three (source the new virtual python environment and restart the script)](#part-three-source-the-new-virtual-python-environment-and-restart-the-script)
@@ -108,7 +103,7 @@ The setup is a three stage process and needs two reboots. Make sure to have the 
 
 > ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
 > 
-> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the following tasks, instantiate a new user "pifinder" with it's own home directory and reboot. If you do not do this, you will not be able to use the PiFinder code with Stellarmate. PiFinder's code is not installed under the user "stellarmate" - you will not find it there. And this is intended. 
+> On a totally new sytem, where you never run Stellarmate\_PiFinder, you need to run the following tasks
 
 These steps here are not run by the installations script. Once done, you do not have to repeat them any more on the device. 
 
@@ -126,70 +121,13 @@ Then I4 - SPI and choose Enable
 Then I5 - I2C and choose Enable
 ```
 
-### Add PiFinder user to Stellarmate OS
-
-This is essential and creates a second home directory `/home/pifinder` in which the installation of the PiFinder software takes place.
-
-```
-sudo useradd -m pifinder
-sudo passwd pifinder
-sudo usermod -a -G sudo pifinder
-su - pifinder
-```
-
-Info: the PiFinder service is running as "pifinder" user.
-
-It also adds the user pifinder to rhe group `stellarmate`.
-
-### Add rights for hardware access to user 'pifinder'
-
-```
-sudo usermod -a -G spi pifinder
-sudo usermod -a -G gpio pifinder
-sudo usermod -a -G i2c pifinder
-sudo usermod -a -G video pifinder
-```
-
-### Add user pifinder to the sudoers group
-
-Therefore we need to append this line to `/etc/sudoers.d/010_pi-nopasswd`
-
-```
-pifinder ALL=(ALL) NOPASSWD: ALL
-```
-
-You can paste this into the shell to do this job for you:
-
-```
-append_file="/etc/sudoers.d/010_pi-nopasswd"
-append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
-
-# Create file if missing
-if ! sudo test -f "$append_file"; then
-    echo "$append_line" | sudo tee "$append_file" > /dev/null
-    echo "✅ sudoers file created with entry for pifinder"
-else
-    # Check if line already present, otherwise append
-    if ! sudo grep -qF "$append_line" "$append_file"; then
-         echo "$append_line" | sudo tee -a "$append_file" > /dev/null
-         echo "✅ sudoers line added for pifinder"
-    else
-         echo "ℹ️ sudoers line already present for pifinder"
-    fi
-fi
-```
-
-### ⚠️ Reboot (first time)
-
 ## Let's go - 2. Installation (part two and three)
 
 > ### ⚠️ Important Information - try to read and undestand - afterwards proceed the steps
 > 
-> To use the installation script, you have to do this with the user "pifinder", NOT with user "stellarmate" !!!
+> 1\. Login or open a terminal. with the user `stellarmate` or the standard user of the operating system (e. g. "pi"). 
 > 
-> 1\. Login or open a terminal. with the user `pifinder`
-> 
-> 2\. Clone the Stellarmate\_PiFinder repo into the user "pifinders" home dir (not in stellarmates dir or another user)
+> 2\. Clone the Stellarmate\_PiFinder repo into the users home dir
 > 
 > 3\. You have to run the script **twice**: therefore you MUST manually past the following text into the shell and rerrun the scipt as adviced later
 > 
@@ -197,13 +135,6 @@ fi
 > ./pifinder\_stellarmate\_setup.sh
 
 ### Part two (get the repo and run the script)
-
-`su - pinder`, when you are logged in as user "stellarate", "pi", etc.  (or login directly with ssh as user pifinder)  
-If this does not work, something went wrong. Repeat the steps from "Pre Installation steps"
-
-```
-su - pifinder
-```
 
 Clone the repo in the users dir: 
 
@@ -230,7 +161,7 @@ Run the script the first time and wait for the script to stop :..
 Paste the shown lines into the shell. This sources the newly created python virtual environment an restarts the script
 
 ```
-source /home/pifinder/PiFinder/python/.venv/bin/activate
+source /home/stellarmate/PiFinder/python/.venv/bin/activate
 ```
 
 You should now see that the prompt changed to something like "(.venv) ...".  
@@ -244,7 +175,7 @@ until you see:
 
 ```
 ##############################################
-PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)
+PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)
 ```
 
 > ### ℹ️ Read the logs - Troubleshooting
@@ -252,6 +183,7 @@ PiFinder setup complete, please restart the Pi. This is the version to run on St
 > *   Bedore reboot, carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
 > *   You might see some messages about non compatible patches. That's ok, because the script determines the actual system and only patches the files, that fit to your version/system
 > *   Later on, if something does not work: Login with the user pifinder (!) and sheck on the commandline, if you pifinder starts correctly or if there are any errors:   
+>       
 >     `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
 
 ### ⚠️ Reboot (for the second time)
@@ -465,7 +397,7 @@ This goes into `requirements.txt`:
 e.g. pip install picamera2
 ```
 
-**11\. Alter the pifinder service to use the virtual python environment**
+**11\. Alter the pifinder service to use the virtual python environment and start it with the stellarmate user**
 
 #### pifinder.service
 
