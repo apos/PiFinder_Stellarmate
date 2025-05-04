@@ -4,10 +4,10 @@
 ### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
 
 # go to main working dir
-cd /home/pifinder
+cd /home/stellarmate
 
 # Get im portant functions and paths
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
+source /home/stellarmate/PiFinder_Stellarmate/bin/functions.sh
 
 # Detect PiFinder version from version.txt
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
@@ -93,29 +93,26 @@ mv ${pifinder_dir}/pifinder_post_update.sh ${pifinder_dir}/pifinder_post_update.
 cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
 
 ############################################################
-# Ensure kstarsrc symlink exists for PiFinder user 
-echo "🔗 Ensuring ~/.config/kstarsrc symlink for PiFinder ..."
+# Check if kstarsrc exists (no symlink needed)
+echo "🔍 Checking for ~/.config/kstarsrc ..."
 mkdir -p "$pifinder_config_dir"
 
-if [ -L "$kstarsrc_target" ]; then
-    echo "ℹ️ Symlink already exists: $kstarsrc_target"
-elif [ -e "$kstarsrc_target" ]; then
-    echo "⚠️ $kstarsrc_target exists but is not a symlink. Please resolve manually."
+if [ -f "$kstarsrc_target" ]; then
+    echo "✅ Found $kstarsrc_target"
 else
-    ln -s "$kstarsrc_source" "$kstarsrc_target"
-    echo "✅ Symlink created: $kstarsrc_target → $kstarsrc_source"
+    echo "⚠️ $kstarsrc_target not found. Please launch KStars once to create it."
 fi
 
 ############################################################
 # PiFinder Service
 # Copy over services
-cp -r ${pifinder_stellarmate_dir}/pi_config_files ${pifinder_dir}/.
+
 
 python_file="${pifinder_dir}/pi_config_files/pifinder.service"
 comment_out_line_content="ExecStart=/usr/bin/python"
-commented_line="/home/pifinder/PiFinder/python/.venv/bin/python"
+commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/pifinder/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -123,9 +120,9 @@ fi
 
 python_file="${pifinder_dir}/pi_config_files/pifinder_splash.service"
 comment_out_line_content="/usr/bin/python"
-commented_line="/home/pifinder/PiFinder/python/.venv/bin/python"
+commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/pifinder/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -133,7 +130,7 @@ fi
 ############################################################
 # KStars location service
 # Kopieren nach systemd
-sudo cp /home/pifinder/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
+sudo cp /home/stellarmate/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
 
 # Aktivieren beim Boot
 sudo systemctl enable pifinder_kstars_location_writer.service
@@ -152,8 +149,8 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 cp "$post_update_file" "$post_update_file.bak"
 
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
-    insert_block="python3 -m venv /home/pifinder/PiFinder/python/.venv\nsource /home/pifinder/PiFinder/python/.venv/bin/activate"
-    if ! grep -q "/home/pifinder/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
+    insert_block="python3 -m venv /home/stellarmate/PiFinder/python/.venv\nsource /home/stellarmate/PiFinder/python/.venv/bin/activate"
+    if ! grep -q "/home/stellarmate/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
         awk -v insert="$insert_block" '
         /git submodule update --init --recursive/ {
             print;
@@ -207,7 +204,7 @@ if should_apply_patch "2.2.0" "P5" "bookworm"; then
     sed -i 's|serial = spi(device=0, port=0, |serial = spi(gpio=noop(), device=0, port=10, |' "$display_py"
     echo "✅ Patched all 'serial = spi(...)' calls for Pi5"
 else
-    echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping patch for displays.py: ✅ not required on Pi4 + Bookworm"
 fi
 
 show_diff_if_changed "$display_py"
@@ -240,44 +237,12 @@ GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
         echo "ℹ️ GPIO stub already present in keyboard_pi.py"
     fi
 else
-    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping patch for keyboard_pi.py: ✅ not required on Pi4 + Bookworm"
 fi
 
 show_diff_if_changed "$keyboard_py"
 python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-#######################################
-# Patch keyboard_pi.py for Pi 5
-echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
-cp "$keyboard_py" "$keyboard_py.bak"
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-
-if should_apply_patch "2.2.0" "P5" "bookworm"; then
-    if grep -q 'import RPi.GPIO as GPIO' "$keyboard_py"; then
-        sed -i '/import RPi.GPIO as GPIO/i\
-import types\n\
-GPIO = types.SimpleNamespace()\n\
-GPIO.IN = None\n\
-GPIO.OUT = None\n\
-GPIO.PUD_UP = None\n\
-GPIO.BCM = None\n\
-GPIO.setmode = lambda mode: None\n\
-GPIO.setup = lambda pin, mode, pull_up_down=None, initial=None: None\n\
-GPIO.input = lambda pin: False\n\
-GPIO.LOW = 0\n\
-GPIO.HIGH = 1\n\
-GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
-        sed -i '/import RPi.GPIO as GPIO/d' "$keyboard_py"
-        echo "✅ GPIO stub inserted and import removed for Pi5"
-    else
-        echo "ℹ️ GPIO stub already present in keyboard_pi.py"
-    fi
-else
-    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$keyboard_py"
-python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 ########################################
