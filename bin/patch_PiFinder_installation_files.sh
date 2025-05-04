@@ -4,10 +4,10 @@
 ### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
 
 # go to main working dir
-cd /home/stellarmate
+cd "$pifinder_home"
 
-# Get im portant functions and paths
-source /home/stellarmate/PiFinder_Stellarmate/bin/functions.sh
+# Get important functions and paths
+source "$(dirname "$0")/functions.sh"
 
 # Detect PiFinder version from version.txt
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
@@ -85,12 +85,12 @@ show_diff_if_changed() {
 ############################################################
 
 # Copy a new pifinder_setup.sh 
-mv ${pifinder_dir}/pifinder_setup.sh ${pifinder_dir}/pifinder_setup.sh.before.stellarmate
-cp ${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh ${pifinder_dir}/pifinder_setup.sh
-mv ${pifinder_dir}/pifinder_update.sh ${pifinder_dir}/pifinder_update.sh.before.stellarmate
-cp ${pifinder_stellarmate_dir}/pifinder_update.sh ${pifinder_dir}/.
-mv ${pifinder_dir}/pifinder_post_update.sh ${pifinder_dir}/pifinder_post_update.sh.before.stellarmate
-cp ${pifinder_stellarmate_dir}/pifinder_post_update.sh ${pifinder_dir}/.
+mv "${pifinder_dir}/pifinder_setup.sh" "${pifinder_dir}/pifinder_setup.sh.before.stellarmate"
+cp "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" "${pifinder_dir}/pifinder_setup.sh"
+mv "${pifinder_dir}/pifinder_update.sh" "${pifinder_dir}/pifinder_update.sh.before.stellarmate"
+cp "${pifinder_stellarmate_dir}/pifinder_update.sh" "${pifinder_dir}/."
+mv "${pifinder_dir}/pifinder_post_update.sh" "${pifinder_dir}/pifinder_post_update.sh.before.stellarmate"
+cp "${pifinder_stellarmate_dir}/pifinder_post_update.sh" "${pifinder_dir}/."
 
 ############################################################
 # Check if kstarsrc exists (no symlink needed)
@@ -110,9 +110,9 @@ fi
 
 python_file="${pifinder_dir}/pi_config_files/pifinder.service"
 comment_out_line_content="ExecStart=/usr/bin/python"
-commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
+commented_line="${pifinder_dir}/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i "s|/usr/bin/python|${pifinder_dir}/python/.venv/bin/python|" "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -120,9 +120,9 @@ fi
 
 python_file="${pifinder_dir}/pi_config_files/pifinder_splash.service"
 comment_out_line_content="/usr/bin/python"
-commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
+commented_line="${pifinder_dir}/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i "s|/usr/bin/python|${pifinder_dir}/python/.venv/bin/python|" "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -130,7 +130,7 @@ fi
 ############################################################
 # KStars location service
 # Kopieren nach systemd
-sudo cp /home/stellarmate/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
+sudo cp "${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service" /etc/systemd/system/
 
 # Aktivieren beim Boot
 sudo systemctl enable pifinder_kstars_location_writer.service
@@ -149,8 +149,8 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 cp "$post_update_file" "$post_update_file.bak"
 
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
-    insert_block="python3 -m venv /home/stellarmate/PiFinder/python/.venv\nsource /home/stellarmate/PiFinder/python/.venv/bin/activate"
-    if ! grep -q "/home/stellarmate/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
+    insert_block="python3 -m venv ${pifinder_dir}/python/.venv\nsource ${pifinder_dir}/python/.venv/bin/activate"
+    if ! grep -q "${pifinder_dir}/python/.venv/bin/activate" "$post_update_file"; then
         awk -v insert="$insert_block" '
         /git submodule update --init --recursive/ {
             print;
@@ -632,4 +632,4 @@ show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
-bash ${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh
+bash "${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh"

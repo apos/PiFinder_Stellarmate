@@ -1,14 +1,14 @@
 #####################################
 # Paths
 #####################################
-pifinder_home="/home/stellarmate"
+pifinder_home="/home/${USER}"
 pifinder_stellarmate_dir="${pifinder_home}/PiFinder_Stellarmate"
-pifinder_stellarmate_bin="${pifinder_home}/PiFinder_Stellarmate/bin"
+pifinder_stellarmate_bin="${pifinder_stellarmate_dir}/bin"
 pifinder_dir="${pifinder_home}/PiFinder"
 pifinder_data_dir="${pifinder_home}/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
 pifinder_config_dir="${pifinder_home}/.config"
-kstarsrc_source="${pifinder_home}/.config/kstarsrc"
+kstarsrc_source="${pifinder_config_dir}/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 
 
