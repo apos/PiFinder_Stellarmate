@@ -110,7 +110,6 @@ echo "🔧 Patching systemd service templates ..."
 service_files=(
     "${pifinder_stellarmate_dir}/pi_config_files/pifinder.service"
     "${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service"
-    "${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service"
 )
 
 for service_file in "${service_files[@]}"; do
@@ -122,20 +121,6 @@ for service_file in "${service_files[@]}"; do
 
     echo "✅ Patched placeholders in $service_file"
 done
-
-############################################################
-# KStars location service
-# Kopieren nach systemd
-sudo cp "${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service" /etc/systemd/system/
-
-# Aktivieren beim Boot
-sudo systemctl enable pifinder_kstars_location_writer.service
-
-# Starten (sofort)
-sudo systemctl start pifinder_kstars_location_writer.service
-
-# Status prüfen
-systemctl status pifinder_kstars_location_writer.service
 
 
 #######################################
