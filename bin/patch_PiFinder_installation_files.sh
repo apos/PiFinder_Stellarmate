@@ -395,63 +395,64 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-# Patch GPS location overwrite logic in main.py with safer cat <<EOF
+# Patch GPS location overwrite logic in main.py with correct indentation
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     gps_fix_line=$(grep -n 'if gps_msg == "fix":' "$main_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_fix_line" ]]; then
+        indent=$(awk "NR==$gps_fix_line" "$main_py" | sed -n 's/^\([[:space:]]*\)if gps_msg == .*/\1/p')
         start=$((gps_fix_line + 1))
-        end_line=$(awk "NR > $start && /^ *[^# ]/ { print NR; exit }" "$main_py")
+        end_line=$(awk "NR > $start && /^[^[:space:]]/ { print NR; exit }" "$main_py")
         [[ -z \"$end_line\" ]] && end_line=$((start + 40))
         sed -i "${start},$((end_line - 1))d" "$main_py"
         tmp_file="${main_py}.tmp"
         head -n "$start" "$main_py" > "$tmp_file"
-        cat <<'EOF' >> "$tmp_file"
-        if gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0:
-            location = shared_state.location()
+        cat <<EOF >> "$tmp_file"
+${indent}        if gps_content["lat"] + gps_content["lon"] != 0:
+${indent}            location = shared_state.location()
 
-            # Always allow API-based location overwrite
-            new_error = gps_content.get("error_in_m", 0)
-            allow_update = (
-                location.source != "WEB"
-                and not location.source.startswith("CONFIG:")
-                and (
-                    location.error_in_m == 0
-                    or float(new_error) < float(location.error_in_m)
-                    or gps_content.get("source", "") == "KStarsAPI"
-                )
-            )
+${indent}            # Always allow API-based location overwrite
+${indent}            new_error = gps_content.get("error_in_m", 0)
+${indent}            allow_update = (
+${indent}                location.source != "WEB"
+${indent}                and not location.source.startswith("CONFIG:")
+${indent}                and (
+${indent}                    location.error_in_m == 0
+${indent}                    or float(new_error) < float(location.error_in_m)
+${indent}                    or gps_content.get("source", "") == "KStarsAPI"
+${indent}                )
+${indent}            )
 
-            if allow_update:
-                logger.info(f"Updating GPS location: new content: {gps_content}, old content: {location}")
-                location.lat = gps_content["lat"]
-                location.lon = gps_content["lon"]
-                location.altitude = gps_content["altitude"]
-                location.source = gps_content["source"]
-                if "error_in_m" in gps_content:
-                    location.error_in_m = gps_content["error_in_m"]
-                if "lock" in gps_content:
-                    location.lock = gps_content["lock"]
-                if "lock_type" in gps_content:
-                    location.lock_type = gps_content["lock_type"]
+${indent}            if allow_update:
+${indent}                logger.info(f"Updating GPS location: new content: {gps_content}, old content: {location}")
+${indent}                location.lat = gps_content["lat"]
+${indent}                location.lon = gps_content["lon"]
+${indent}                location.altitude = gps_content["altitude"]
+${indent}                location.source = gps_content["source"]
+${indent}                if "error_in_m" in gps_content:
+${indent}                    location.error_in_m = gps_content["error_in_m"]
+${indent}                if "lock" in gps_content:
+${indent}                    location.lock = gps_content["lock"]
+${indent}                if "lock_type" in gps_content:
+${indent}                    location.lock_type = gps_content["lock_type"]
 
-                dt = shared_state.datetime()
-                if dt is None:
-                    location.last_gps_lock = "--"
-                else:
-                    location.last_gps_lock = dt.time().isoformat()[:8]
-                console.write(
-                    f"GPS: Location {location.lat} {location.lon} {location.altitude} {location.error_in_m}"
-                )
-                shared_state.set_location(location)
-                sf_utils.set_location(
-                    location.lat,
-                    location.lon,
-                    location.altitude,
-                )
+${indent}                dt = shared_state.datetime()
+${indent}                if dt is None:
+${indent}                    location.last_gps_lock = "--"
+${indent}                else:
+${indent}                    location.last_gps_lock = dt.time().isoformat()[:8]
+${indent}                console.write(
+${indent}                    f"GPS: Location {location.lat} {location.lon} {location.altitude} {location.error_in_m}"
+${indent}                )
+${indent}                shared_state.set_location(location)
+${indent}                sf_utils.set_location(
+${indent}                    location.lat,
+${indent}                    location.lon,
+${indent}                    location.altitude,
+${indent}                )
 EOF
         tail -n +"$end_line" "$main_py" >> "$tmp_file"
         mv "$tmp_file" "$main_py"
-        echo "✅ Replaced gps_msg == 'fix' block in main.py using safer cat/EOF"
+        echo "✅ Replaced gps_msg == 'fix' block in main.py using correct indentation"
     else
         echo "⚠️ Could not find gps_msg == 'fix' block in $main_py"
     fi
