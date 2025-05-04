@@ -385,31 +385,8 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
         sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
         echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
-    fi
-
-    # Replace GPS overwrite logic to allow live KStars updates
-    patch_start=$(grep -n 'Only update GPS fixes' "$main_py" | cut -d: -f1 | head -n1)
-    if [[ -n "$patch_start" ]]; then
-        patch_end=$((patch_start + 8))
-        sed -i "${patch_start},${patch_end}d" "$main_py"
-        sed -i "${patch_start}i \\
-            # Always allow API-based location overwrite\\
-            new_error = gps_content.get(\"error_in_m\", 0)\\
-            allow_update = (\\
-                location.source != \"WEB\"\\
-                and not location.source.startswith(\"CONFIG:\")\\
-                and (\\
-                    location.error_in_m == 0\\
-                    or float(new_error) < float(location.error_in_m)\\
-                    or gps_content.get(\"source\", \"\") == \"KStarsAPI\"\\
-                )\\
-            )\\
-            \\
-            if allow_update:\
-        " "$main_py"
-        echo "✅ GPS overwrite logic updated to allow KStars API updates"
     else
-        echo "⚠️ Could not find GPS overwrite block to patch in main.py"
+        echo "ℹ️ Import gps_gpsd bereits vorhanden"
     fi
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
@@ -418,13 +395,14 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
- # Patch GPS location overwrite logic in main.py with safer cat <<EOF
+# Patch GPS location overwrite logic in main.py with safer cat <<EOF
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     gps_fix_line=$(grep -n 'if gps_msg == "fix":' "$main_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_fix_line" ]]; then
         start=$((gps_fix_line + 1))
-        end=$((start + 40))
-        sed -i "${start},${end}d" "$main_py"
+        end_line=$(awk "NR > $start && /^ *[^# ]/ { print NR; exit }" "$main_py")
+        [[ -z \"$end_line\" ]] && end_line=$((start + 40))
+        sed -i "${start},$((end_line - 1))d" "$main_py"
         tmp_file="${main_py}.tmp"
         head -n "$start" "$main_py" > "$tmp_file"
         cat <<'EOF' >> "$tmp_file"
@@ -471,7 +449,7 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
                     location.altitude,
                 )
 EOF
-        tail -n +"$((end + 1))" "$main_py" >> "$tmp_file"
+        tail -n +"$end_line" "$main_py" >> "$tmp_file"
         mv "$tmp_file" "$main_py"
         echo "✅ Replaced gps_msg == 'fix' block in main.py using safer cat/EOF"
     else
