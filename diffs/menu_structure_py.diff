@@ -1,0 +1,21 @@
+--- a/menu_structure.py
++++ b/menu_structure.py
+@@ -123,12 +123,26 @@
+             },
+         ],
+     },
+-    {
+-        "name": "By Catalog",
+-        "entries": [
+-            {"name": "Messier"},
+-            {"name": "NGC"},
+-            {"name": "IC"},
+-            {"name": "Caldwell"},
+-            {"name": "Sharpless"},
+-        ],
+-    },
++    {"name": "Messier"},
++    {"name": "NGC"},
++    {"name": "IC"},
++    {"name": "Caldwell"},
++    {"name": "Sharpless"},
