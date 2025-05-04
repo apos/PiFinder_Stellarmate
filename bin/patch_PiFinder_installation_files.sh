@@ -207,7 +207,7 @@ if should_apply_patch "2.2.0" "P5" "bookworm"; then
     sed -i 's|serial = spi(device=0, port=0, |serial = spi(gpio=noop(), device=0, port=10, |' "$display_py"
     echo "✅ Patched all 'serial = spi(...)' calls for Pi5"
 else
-    echo "⏩ Skipping patch for displays.py: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping patch for displays.py: ✅ not required on Pi4 + Bookworm"
 fi
 
 show_diff_if_changed "$display_py"
@@ -240,7 +240,7 @@ GPIO_STUB_FOR_PI5 = True\n' "$keyboard_py"
         echo "ℹ️ GPIO stub already present in keyboard_pi.py"
     fi
 else
-    echo "⏩ Skipping patch for keyboard_pi.py: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping patch for keyboard_pi.py: ✅ not required on Pi4 + Bookworm"
 fi
 
 show_diff_if_changed "$keyboard_py"

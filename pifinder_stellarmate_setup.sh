@@ -78,7 +78,7 @@ sudo usermod -a -G gpio stellarmate
 sudo usermod -a -G i2c stellarmate
 sudo usermod -a -G video stellarmate
 
-sudo chown -R stellarmate:stellarmate ${pifinder_home}/../PiFinder_Stellarmate
+sudo chown -R stellarmate:stellarmate ${pifinder_stellarmate_dir}
 
 ############################################################
 # Check, if there is already a PiFinder installation, if yes abort. 
