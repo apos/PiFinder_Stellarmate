@@ -70,83 +70,38 @@ echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
 
 
 ############################################################
-# check if user is "pifinder"
-if [ $(whoami) != "pifinder" ]
-then
-    echo "ℹ️ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. We create it first ... "
+echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
-    # add PiFinder user
-    if check_user_exists "pifinder"
-    then 
-      echo "continuing ..."
-    else
+# Add rights accessing hardware to user 'stellarmate'
+sudo usermod -a -G spi stellarmate
+sudo usermod -a -G gpio stellarmate
+sudo usermod -a -G i2c stellarmate
+sudo usermod -a -G video stellarmate
 
-      echo "ℹ️ Please set a user for the newly created user <pifinder>"
-      if id "pifinder" &>/dev/null;
-      then
-            sudo useradd -m pifinder
-            sudo passwd pifinder
-            sudo usermod -a -G 
+sudo chown -R stellarmate:stellarmate ${pifinder_stellarmate_dir}
 
-            # Add rights accessing hardware to user 'pifinder'
-            sudo usermod -a -G spi pifinder
-            sudo usermod -a -G gpio pifinder
-            sudo usermod -a -G i2c pifinder
-            sudo usermod -a -G video pifinder
-            sudo usermod -a -G pifinder stellarmate # for reading kstars location file in /tmp
+############################################################
+# Check, if there is already a PiFinder installation, prompt for uninstall if yes.
+if [ -d PiFinder ]; then
+    echo "⚠️  There is already a PiFinder installation at ${pifinder_home}/PiFinder"
+    read -p "❓ Do you want to uninstall the existing installation and reinstall from scratch? (yes/no): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "ℹ️  Installation aborted by user."
+        exit 1
+    fi
+    echo "🧽 Running uninstall script in background..."
+    bash ${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh --selfmove
 
-            echo "🔧 Ensuring passwordless sudo for user 'pifinder' ..."
-
-            append_file="/etc/sudoers.d/010_pi-nopasswd"
-            append_line="pifinder ALL=(ALL) NOPASSWD: ALL"
-
-            # Create file if missing
-            if ! sudo test -f "$append_file"; then
-                echo "$append_line" | sudo tee "$append_file" > /dev/null
-                echo "✅ sudoers file created with entry for pifinder"
-            else
-                # Check if line already present, otherwise append
-                if ! sudo grep -qF "$append_line" "$append_file"; then
-                    echo "$append_line" | sudo tee -a "$append_file" > /dev/null
-                    echo "✅ sudoers line added for pifinder"
-                else
-                    echo "ℹ️ sudoers line already present for pifinder"
-                fi
-            fi
-      else
-            echo "❌ User 'pifinder' does not exist. Skipping sudo rights setup."
-      fi
-
-      echo "ℹ️ User PiFinder had to be instantiated. Please reboot or relogin as pifinder (!) before continuing."
-      echo "su - pifinder"
-      exit 0
+    # Wait briefly, then check if folder is gone
+    sleep 4
+    if [ -d PiFinder ]; then
+        echo "❌ ERROR: PiFinder folder still exists after uninstall attempt. Aborting setup."
+        exit 1
     fi
 fi
 
-##############
-# recheck user
-if [ $(whoami) != "pifinder" ]
-then
-    echo "❌ INFO: actual user is NOT <<pifinder>> but <<$(whoami)>>. Please login with e.g. 'su - pifinder' and go to the original installation directory to run this install script"
-    echo "su - pifinder"
-    echo "cd /tmp/PiFinder_Stellarmate/"
-    echo "./pifinder_stellarmate_setup.sh"
-    exit 0
-fi
-
-sudo chown -R pifinder:pifinder $(pwd)/../PiFinder_Stellarmate
-
-############################################################
-# Check, if there is already a PiFinder installation, if yes abort. 
-if [ -d PiFinder ]
-then
-    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
-    # exit 0
-else
-    echo "Installation from scratch ..."
-    # Ensure, to be in the correct directory
-    cd /home/pifinder
-fi
+echo "Installation from scratch ..."
+cd ${pifinder_home}
 
 
 ############################################################
@@ -157,13 +112,17 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 ############################################################
 # Download the actual source code 
 git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
-sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
+sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
 
 
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
-cd /home/pifinder/PiFinder
+cd ${pifinder_home}/PiFinder
 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+
+# Replace patched service files with the correct Stellarmate versions
+cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
+cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service
 
 
 # #########################################################################
@@ -225,7 +184,7 @@ if ! is_venv_active "${python_venv}"; then
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
       
-      # Exit the script, because venv must be activated manually for Requirements installation
+      # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
       echo "Error creating Python venv. Aborting."
@@ -243,7 +202,7 @@ else
 fi
 
 # ensure, correct rights are set
-sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
+sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
 
 # NOT USED, PART OF STELLARMATE-OS: samba samba-common-bin dnsmasq hostapd dhcpd gpsd
 # NOT USED, PART OF STELLARMATE-OS: Setup GPSD
@@ -268,7 +227,7 @@ else
 fi
 
 # ensure, correct rights are set
-sudo chown -R pifinder:pifinder /home/pifinder/PiFinder
+sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
 
 
 ###########################
@@ -321,11 +280,16 @@ echo "✅ config.txt checks complete."
 
 
 # Enable service
-sudo cp /home/pifinder/PiFinder/pi_config_files/pifinder.service /lib/systemd/system/pifinder.service
-sudo cp /home/pifinder/PiFinder/pi_config_files/pifinder_splash.service /lib/systemd/system/pifinder_splash.service
+sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder.service /lib/systemd/system/pifinder.service
+sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service /lib/systemd/system/pifinder_splash.service
 sudo systemctl daemon-reload
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
 
+echo "🔧 Starting PiFinder services ..."
+sudo systemctl start pifinder
+sudo systemctl start pifinder_splash
+sudo systemctl start pifinder_kstars_location_writer
+
 echo "##############################################"
-echo "PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
+echo "PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
