@@ -27,6 +27,18 @@ fi
 if id "$USER_TO_REMOVE" &>/dev/null; then
   echo "Removing user $USER_TO_REMOVE from system..."
   sudo deluser "$USER_TO_REMOVE"
+
+  # Versuche die gleichnamige Gruppe zu löschen, falls leer
+  if getent group "$USER_TO_REMOVE" >/dev/null; then
+    echo "Prüfe, ob Gruppe $USER_TO_REMOVE leer ist und gelöscht werden kann ..."
+    if [ -z "$(getent group "$USER_TO_REMOVE" | cut -d: -f4)" ]; then
+      echo "Gruppe $USER_TO_REMOVE ist leer – wird gelöscht ..."
+      sudo groupdel "$USER_TO_REMOVE"
+    else
+      echo "Gruppe $USER_TO_REMOVE ist nicht leer – wird nicht gelöscht."
+    fi
+  fi
+
 else
   echo "User $USER_TO_REMOVE does not exist."
 fi
