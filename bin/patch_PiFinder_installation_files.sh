@@ -108,16 +108,18 @@ fi
 echo "🔧 Patching systemd service templates ..."
 
 service_files=(
-    "${pifinder_dir}/pi_config_files/pifinder.service"
-    "${pifinder_dir}/pi_config_files/pifinder_splash.service"
+    "${pifinder_stellarmate_dir}/pi_config_files/pifinder.service"
+    "${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service"
     "${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service"
 )
 
 for service_file in "${service_files[@]}"; do
     cp "$service_file" "$service_file.bak"
+
     sed -i "s|__PYTHON_EXEC__|${pifinder_dir}/python/.venv/bin/python|g" "$service_file"
     sed -i "s|__PIFINDER_USER__|${USER}|g" "$service_file"
-    sed -i "s|/home/__PIFINDER_USER__|/home/${USER}|g" "$service_file"
+    sed -i "s|__PIFINDER_STELLARMATE_DIR__|${pifinder_stellarmate_dir}|g" "$service_file"
+
     echo "✅ Patched placeholders in $service_file"
 done
 
