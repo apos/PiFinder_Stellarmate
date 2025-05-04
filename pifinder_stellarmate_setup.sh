@@ -109,6 +109,10 @@ sudo chown -R stellarmate:stellarmate ${pifinder_home}/PiFinder
 cd ${pifinder_home}/PiFinder
 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
 
+# Replace patched service files with the correct Stellarmate versions
+cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
+cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service
+
 
 # #########################################################################
 # # Install AVAHI, so pifinder.local resolves
