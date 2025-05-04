@@ -34,8 +34,9 @@
   - [Uninstallation](#uninstallation)
 - [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
   - [Purpose](#purpose-1)
-  - [What the "Location Writer" does](#what-the-location-writer-does)
-  - [systemd Service Integration](#systemd-service-integration)
+  - [What changed](#what-changed)
+  - [How it works now](#how-it-works-now)
+  - [Summary of advantages](#summary-of-advantages)
 - [Background Information (no action required!)](#background-information-no-action-required)
   - [What Pifinder\_Stellarmate installation script does. Explained in some detail](#what-pifinder_stellarmate-installation-script-does-explained-in-some-detail)
       - [pifinder.service](#pifinderservice)
@@ -226,79 +227,57 @@ This stops all services and deletes the Python virtual environment and temporary
 
 > ### ℹ️ **Info**
 > 
-> *   This is only for Information. No action required.
+> *   This section is for informational purposes only. No manual action required.
 
 ## Purpose
 
-Purpose is, to replace PiFinder's Native GPS with KStars-Based Geolocation
+The purpose of this integration is to replace PiFinder's native GPS with location data provided by KStars via Stellarmate OS. This is especially useful when the PiFinder GPS module is not available or managed entirely by Stellarmate.
 
-Instead of using a direct GPS module via `gpsd`, the PiFinder now fetches **location and time data from KStars.** This it done by reading the file `kstarsrc` which stores all necessary informations, we need. KStars has several ways to determin the actual localtion: you can either type it in manuelly with in the KStars GUI (VNC), let it determine via GPSD or an INDI compatible GPS device or you simly you rely onto the Stellarmate App, which will automatically set everything from you tablet or phone. Stellarmate handles GPS/time synchronization. It simply does not matter, how KStars get the information - when it got the coordinates, the **"Location Writer Service"** writes the information into the following file and PiFinder will use it for the fix. 
+PiFinder no longer requires direct access to GPS hardware. Instead, it receives accurate time and geolocation information directly via the KStars API, using the current location set within Stellarmate. This location can originate from:
 
-`(.venv) pifinder@stellarmate:~/PiFinder $ cat /tmp/kstars_location.txt`  
-`GPS Location,,49.47785331872243,8.450430929668666,100.42879867553711,2025-05-01T11:35:17.661929+00:00,2025-05-01T13:35:17.661965+02:00`
+* Stellarmate App (mobile/tablet GPS)
+* Manual location input in KStars GUI
+* INDI-compatible GPS devices
 
-Since KStars saves it's location upon reboot, these data are instantly avaiable the next time you start your Stellarmate/PiFinder. This is perfect, if your location does not vary. If not, you simply start the Stellarmate App and this will imediately sync time, date and location for you. 
+Regardless of the source, once KStars has determined the current coordinates, PiFinder receives it via a background API request.
 
-## What the "Location Writer" does
+## What changed
 
-```
-/home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
-```
+Previously, PiFinder depended on a background script called `kstars_location_writer.py` that extracted data from the `~/.config/kstarsrc` file and wrote it to `/tmp/kstars_location.txt`. PiFinder then read this file periodically.
 
-This Python script:
+This has now changed:
 
-*   Parses the `~/.config/kstarsrc` file from the KStars user session.
-*   Extracts the current location:
-    *   **Latitude**
-    *   **Longitude**
-    *   **Altitude**
-    *   **City & Country**
-*   Captures the current time in:
-    *   **UTC**
-    *   **Local time with offset**
-*   Writes all data into a plain-text file:  
-    `/tmp/kstars_location.txt`
+* The `kstars_location_writer.py` and `/tmp/kstars_location.txt` are no longer used.
+* PiFinder now queries the KStars internal web API directly at runtime.
+* Altitude is supplemented by parsing `~/.config/kstarsrc` if missing in the API.
 
-The file is updated every 10 seconds.
+This new mechanism allows **live** location updates from Stellarmate/KStars even if the user moves to a new location or changes settings during a session.
 
-## systemd Service Integration
+## How it works now
+
+The PiFinder GPS subsystem queries the following KStars internal endpoint:
 
 ```
-/etc/systemd/system/pifinder_kstars_location_writer.service
+http://localhost:8624/api/info/location
 ```
 
-This service ensures the writer script:
+From this, the following information is extracted:
 
-*   **Starts at boot** in the graphical session.
-*   **Runs as user** `**stellarmate**` (same as the KStars session).
-*   **Creates** `**/tmp/kstars_location.txt**` with correct permissions:
-    *   Uses `Group=pifinder` so the PiFinder service (which runs as user `pifinder`) can read it.
-    *   Prepares the file with `ExecStartPre` commands (`touch`, `chmod`).
+- Latitude
+- Longitude
+- Altitude (if missing, read from kstarsrc)
+- Timezone (optional)
 
-**Example:**
+The data is then converted to a standard PiFinder GPS "fix", which overrides any previous coordinates, even if a location is already set — **as long as the source is not manually locked** or marked as "WEB".
 
-```
-  ```ini
-  [Unit]
-  Description=KStars Location Writer for PiFinder
-  After=graphical.target
+This allows seamless use of Stellarmate as a GPS provider for PiFinder without manual sync or additional tools.
 
-  [Service]
-  Type=simple
-  ExecStartPre=/bin/touch /tmp/kstars_location.txt
-  ExecStartPre=/bin/chmod 664 /tmp/kstars_location.txt
-  ExecStart=/usr/bin/python3 /home/pifinder/PiFinder_Stellarmate/bin/kstars_location_writer.py
-  Restart=always
-  RestartSec=5
-  User=stellarmate
-  Group=pifinder
-  Nice=10
-  StandardOutput=journal
-  StandardError=journal
+## Summary of advantages
 
-  [Install]
-  WantedBy=default.targipment
-```
+* Automatic GPS sync from Stellarmate App or KStars settings
+* No dependency on PiFinder’s internal GPS module
+* Location and time available immediately on boot
+* Seamless override logic inside PiFinder with source prioritization
 
 # Background Information (no action required!)
 
