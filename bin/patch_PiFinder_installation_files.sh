@@ -395,6 +395,7 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
+
 # Patch GPS location overwrite logic in main.py with correct indentation
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if grep -q '# Always allow API-based location overwrite' "$main_py"; then
@@ -411,6 +412,25 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     fi
 else
     echo "⏩ Skipping gps fix logic patch in main.py: ❌ incompatible version/pi/os"
+fi
+
+######################################################
+# Patch menu_structure.py to flatten "By Catalog" structure
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    if grep -q '"name": "By Catalog"' "$menu_py"; then
+        echo "🔧 Flattening 'By Catalog' submenu in $menu_py"
+        patch_file="${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
+        if [[ -f "$patch_file" ]]; then
+            patch "$menu_py" "$patch_file"
+            echo "✅ Successfully flattened 'By Catalog' structure in $menu_py"
+        else
+            echo "❌ Patch file $patch_file not found"
+        fi
+    else
+        echo "ℹ️ 'By Catalog' submenu already flattened or not found – skipping patch"
+    fi
+else
+    echo "⏩ Skipping patch for 'By Catalog' flattening: ❌ incompatible version/pi/os"
 fi
 
 
