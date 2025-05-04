@@ -403,7 +403,7 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
         indent=$(awk "NR==$gps_fix_line" "$main_py" | sed -n 's/^\([[:space:]]*\)if gps_msg == .*/\1/p')
         start=$((gps_fix_line + 1))
         end_line=$(awk "NR > $start && /^[^[:space:]]/ { print NR; exit }" "$main_py")
-        [[ -z \"$end_line\" ]] && end_line=$((start + 40))
+        [[ -z "$end_line" ]] && end_line=$((start + 40))
         sed -i "${start},$((end_line - 1))d" "$main_py"
         tmp_file="${main_py}.tmp"
         head -n "$start" "$main_py" > "$tmp_file"
