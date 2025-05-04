@@ -81,16 +81,27 @@ sudo usermod -a -G video stellarmate
 sudo chown -R stellarmate:stellarmate ${pifinder_stellarmate_dir}
 
 ############################################################
-# Check, if there is already a PiFinder installation, if yes abort. 
-if [ -d PiFinder ]
-then
-    echo "ERROR: There is already a PiFinder installation. Aborting installation. E.g. first rename the old directory."
-    # exit 0
-else
-    echo "Installation from scratch ..."
-    # Ensure, to be in the correct directory
-    cd ${pifinder_home}
+# Check, if there is already a PiFinder installation, prompt for uninstall if yes.
+if [ -d PiFinder ]; then
+    echo "⚠️  There is already a PiFinder installation at ${pifinder_home}/PiFinder"
+    read -p "❓ Do you want to uninstall the existing installation and reinstall from scratch? (yes/no): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "ℹ️  Installation aborted by user."
+        exit 1
+    fi
+    echo "🧽 Running uninstall script in background..."
+    bash ${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh --selfmove
+
+    # Wait briefly, then check if folder is gone
+    sleep 4
+    if [ -d PiFinder ]; then
+        echo "❌ ERROR: PiFinder folder still exists after uninstall attempt. Aborting setup."
+        exit 1
+    fi
 fi
+
+echo "Installation from scratch ..."
+cd ${pifinder_home}
 
 
 ############################################################
