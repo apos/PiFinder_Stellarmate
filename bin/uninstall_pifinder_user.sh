@@ -11,9 +11,9 @@ fi
 USER_TO_REMOVE="pifinder"
 
 # Services stoppen (optional)
-echo "Stopping PiFinder services (falls vorhanden)..."
-sudo -u pifinder systemctl --user stop pifinder_kstars_location_writer.service 2>/dev/null
-sudo systemctl stop pifinder_kstars_location_writer.service 2>/dev/null
+echo "Beende alle laufenden Prozesse des Benutzers $USER_TO_REMOVE ..."
+pkill -u "$USER_TO_REMOVE"
+sleep 2
 
 # Home-Verzeichnis löschen
 if [ -d "/home/$USER_TO_REMOVE" ]; then
