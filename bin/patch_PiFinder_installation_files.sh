@@ -103,6 +103,29 @@ else
     echo "⚠️ $kstarsrc_target not found. Please launch KStars once to create it."
 fi
 
+
+#######################################################
+# Patch requirements.txt with additional dependencies
+if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+    echo "🔧 Patching Python requirements in $python_requirements ..."
+    cp "$python_requirements" "$python_requirements.bak"
+
+    # Ensure additional requirements are appended if not already present
+    while IFS= read -r dep; do
+        if ! grep -Fxq "$dep" "$python_requirements"; then
+            echo "$dep" >> "$python_requirements"
+            echo "✅ Added $dep to requirements.txt"
+        else
+            echo "ℹ️ $dep already present in requirements.txt"
+        fi
+    done < "$python_requirements_additional"
+
+    show_diff_if_changed "$python_requirements"
+    python3 -m py_compile "$python_requirements" 2>/dev/null && echo "✅ Syntax OK" || echo "ℹ️ Text file – no syntax check needed"
+else
+    echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
+fi
+
 ############################################################
 # PiFinder Services – patch dynamic paths from template
 echo "🔧 Patching systemd service templates ..."

@@ -14,6 +14,7 @@ kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 
 # The files need to be patched for Pi4
 python_requirements="${pifinder_dir}/python/requirements.txt" # Pfad zur requirements.txt
+python_requirements_additional="${pifinder_stellarmate_bin}/requirements_additional.txt" # Pfad zur requirements_additional.txt
 main_py="${pifinder_dir}/python/PiFinder/main.py"
 gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
 solver_py="${pifinder_dir}/python/PiFinder/solver.py"
