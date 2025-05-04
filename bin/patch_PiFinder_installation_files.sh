@@ -420,10 +420,6 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     import os
     from datetime import datetime
 
-    KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-    logger = logging.getLogger("GPS")
-
     import sys
     handler = logging.StreamHandler(sys.stdout)
     logger.addHandler(handler)
