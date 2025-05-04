@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Call with "--selfmove" to run from /tmp in background: ./uninstall_pifinder_stellarmate.sh --selfmove
+
 echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
 
 echo "🔧 Stopping PiFinder services ..."
@@ -32,3 +34,13 @@ echo "    rm -rf /home/stellarmate/PiFinder_Stellarmate"
 
 echo "✅ Uninstall complete."
 
+if [[ "$1" == "--selfmove" ]]; then
+    echo "🧪 Copying script to /tmp and executing in background ..."
+    tmp_script="/tmp/uninstall_pifinder_stellarmate.sh"
+    cp "$0" "$tmp_script"
+    chmod +x "$tmp_script"
+    nohup "$tmp_script" > /tmp/uninstall_pifinder.log 2>&1 < /dev/null & disown
+    echo "ℹ️  Script is now running in background. Monitor with:"
+    echo "    tail -f /tmp/uninstall_pifinder.log"
+    exit 0
+fi
