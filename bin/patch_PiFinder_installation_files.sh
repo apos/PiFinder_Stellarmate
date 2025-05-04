@@ -399,6 +399,7 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     gps_fix_line=$(grep -n 'if gps_msg == "fix":' "$main_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_fix_line" ]]; then
+        echo "🔧 Patching gps_msg == 'fix' block starting at line $gps_fix_line"
         indent=$(awk "NR==$gps_fix_line" "$main_py" | sed -n 's/^\([[:space:]]*\)if gps_msg == .*/\1/p')
         start=$((gps_fix_line + 1))
         end_line=$(awk "NR > $start && /^[^[:space:]]/ { print NR; exit }" "$main_py")
@@ -452,7 +453,7 @@ ${indent}                )
 EOF
         tail -n +"$end_line" "$main_py" >> "$tmp_file"
         mv "$tmp_file" "$main_py"
-        echo "✅ Replaced gps_msg == 'fix' block in main.py using correct indentation"
+        echo "✅ Successfully patched gps_msg == 'fix' block in $main_py"
     else
         echo "⚠️ Could not find gps_msg == 'fix' block in $main_py"
     fi
