@@ -286,5 +286,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
 
+echo "🔧 Starting PiFinder services ..."
+sudo systemctl start pifinder
+sudo systemctl start pifinder_splash
+sudo systemctl start pifinder_kstars_location_writer
+
 echo "##############################################"
-echo "PiFinder setup complete, please restart the Pi. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
+echo "PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
