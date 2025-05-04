@@ -280,11 +280,16 @@ echo "✅ config.txt checks complete."
 
 
 # Enable service
-sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder.service /lib/systemd/system/pifinder.service
-sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service /lib/systemd/system/pifinder_splash.service
+sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
+sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service /etc/systemd/system/pifinder_splash.service
+sudo cp ${pifinder_home}/PiFinder/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/pifinder_kstars_location_writer.service
+
+sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
+
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
+sudo systemctl enable pifinder_kstars_location_writer
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder
