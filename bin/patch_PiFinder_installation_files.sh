@@ -395,12 +395,12 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
- # Patch GPS location overwrite logic in main.py with correct indentation
+# Patch GPS location overwrite logic in main.py with correct indentation
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
-    gps_fix_line=$(grep -n '# Always allow API-based location overwrite' "$main_py" | cut -d: -f1 | head -n1)
-    if [[ -n "$gps_fix_line" ]]; then
-        echo "🔧 Patching gps_msg == 'fix' block starting at line $gps_fix_line"
-
+    if grep -q '# Always allow API-based location overwrite' "$main_py"; then
+        echo "ℹ️ main.py already patched – skipping GPS overwrite patch"
+    else
+        echo "🔧 Patching gps_msg == 'fix' block in $main_py"
         patch_file="${pifinder_stellarmate_dir}/diffs/main_py.diff"
         if [[ -f "$patch_file" ]]; then
             patch "$main_py" "$patch_file"
@@ -408,8 +408,6 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
         else
             echo "❌ Patch file $patch_file not found"
         fi
-    else
-        echo "⚠️ Could not find gps_msg == 'fix' block in $main_py"
     fi
 else
     echo "⏩ Skipping gps fix logic patch in main.py: ❌ incompatible version/pi/os"
