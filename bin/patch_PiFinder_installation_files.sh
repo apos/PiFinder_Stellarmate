@@ -409,101 +409,104 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     sed -i '/^async def gps_main(gps_queue, console_queue, log_queue):/,/^    logger.info("Using GPSD GPS code")/d' "$gps_py"
     sed -i '/# To run the GPS monitor/d' "$gps_py"
 
-    # Insert new logic after line containing 'await asyncio.sleep(0)'
-    insert_after_line=$(grep -n 'await asyncio.sleep(0)' "$gps_py" | cut -d: -f1)
-    if [[ -n "$insert_after_line" ]]; then
-        insert_line=$((insert_after_line + 1))
-        patch_tmp=$(mktemp)
-        cat <<'EOF' > "$patch_tmp"
-    asyncio.run(gps_main(gps_queue, console_queue, log_queue))
+    # Insert new implementation at the end of the file
+    cat <<'EOF' >> "$gps_py"
 
-    import os
-    from datetime import datetime
+import aiohttp
+import sys
+import os
+from datetime import datetime
 
-    import sys
-    handler = logging.StreamHandler(sys.stdout)
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+logger = logging.getLogger("GPS")
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
 
-    async def read_kstars_location_file(gps_queue):
-        import aiohttp
-        import logging
-        from datetime import datetime
-        import os
+async def read_kstars_location_file(gps_queue):
+    logger.info("KStars API reader started (gps_gpsd.py)")
+    url = "http://localhost:8624/api/info/location"
 
-        logger = logging.getLogger("GPS")
-        url = "http://localhost:8624/api/info/location"
-
-        while True:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=5) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            result = data.get("success", {})
-                            lat = float(result.get("latitude", 0))
-                            lon = float(result.get("longitude", 0))
-                            # Begin fallback logic for altitude
-                            alt_str = result.get("altitude", None)
-                            if alt_str is None or float(alt_str) == 0.0:
-                                try:
-                                    import configparser
-                                    config = configparser.ConfigParser()
-                                    config.read(os.path.expanduser("~/.config/kstarsrc"))
-                                    alt = float(config.get("Location", "Elevation", fallback="0.0"))
-                                except Exception as e:
-                                    logger.warning(f"Could not read elevation from kstarsrc: {e}")
-                                    alt = 0.0
-                            else:
-                                alt = float(alt_str)
-                            # End fallback logic for altitude
-                            tz = result.get("tz", 0)
-
-                            msg = (
-                                "fix",
-                                {
-                                    "lat": lat,
-                                    "lon": lon,
-                                    "altitude": alt,
-                                    "source": "KStarsAPI",
-                                    "lock": True,
-                                    "error_in_m": 10,
-                                },
-                            )
-                            gps_queue.put(msg)
-
-                            if tz:
-                                now = datetime.utcnow()
-                                msg_time = ("time", {"time": now})
-                                gps_queue.put(msg_time)
-
-                            logger.info(f"KStars GPS API fix injected: {msg}")
-                        else:
-                            logger.warning(f"KStars API error: HTTP {response.status}")
-            except Exception as e:
-                logger.warning(f"KStars GPS API access error: {e}")
-            await asyncio.sleep(5)
-
-    async def gps_main(gps_queue, console_queue, log_queue):
-        MultiprocLogging.configurer(log_queue)
-        logger.info("GPS main started – using ONLY KStars")
-
+    def read_elevation_fallback():
+        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
         try:
-            await read_kstars_location_file(gps_queue)
+            with open(kstarsrc_path, "r") as f:
+                in_location = False
+                for line in f:
+                    line = line.strip()
+                    if line == "[Location]":
+                        in_location = True
+                    elif in_location:
+                        if line.startswith("[") and line != "[Location]":
+                            break
+                        if line.startswith("Elevation="):
+                            try:
+                                return float(line.split("=", 1)[1])
+                            except ValueError:
+                                return 0.0
         except Exception as e:
-            logger.error(f"Error in GPS monitor: {e}")
-            await asyncio.sleep(5)
+            logger.warning(f"Could not read elevation from kstarsrc: {e}")
+        return 0.0
 
-    def gps_monitor(gps_queue, console_queue, log_queue):
-        asyncio.run(gps_main(gps_queue, console_queue, log_queue))
+    last_coords = None
+
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data.get("success", {})
+                        lat = float(result.get("latitude", 0))
+                        lon = float(result.get("longitude", 0))
+                        alt = result.get("altitude")
+                        if alt is None or float(alt) == 0.0:
+                            alt = read_elevation_fallback()
+                            result["altitude"] = alt
+                        alt = float(alt)
+                        coords = (lat, lon, alt)
+                        if coords == last_coords:
+                            await asyncio.sleep(5)
+                            continue
+                        last_coords = coords
+                        tz = result.get("tz", 0)
+
+                        msg = (
+                            "fix",
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "altitude": alt,
+                                "source": "KStarsAPI",
+                                "lock": True,
+                                "error_in_m": 10,
+                            },
+                        )
+                        gps_queue.put(msg)
+
+                        if tz:
+                            now = datetime.utcnow()
+                            msg_time = ("time", {"time": now})
+                            gps_queue.put(msg_time)
+
+                        logger.info(f"KStars GPS API fix injected: {msg}")
+                    else:
+                        logger.warning(f"KStars API error: HTTP {response.status}")
+        except Exception as e:
+            logger.warning(f"KStars GPS API access error: {e}")
+        await asyncio.sleep(5)
+
+async def gps_main(gps_queue, console_queue, log_queue):
+    MultiprocLogging.configurer(log_queue)
+    logger.info("GPS main started – using ONLY KStars API")
+    try:
+        await read_kstars_location_file(gps_queue)
+    except Exception as e:
+        logger.error(f"Error in GPS monitor: {e}")
+        await asyncio.sleep(5)
+
+def gps_monitor(gps_queue, console_queue, log_queue):
+    asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 EOF
-
-        awk -v line=$insert_line 'NR==line {while ((getline insert < "'"$patch_tmp"'") > 0) print insert} {print}' "$gps_py" > "${gps_py}.tmp" && mv "${gps_py}.tmp" "$gps_py"
-        rm -f "$patch_tmp"
-        echo "✅ gps_gpsd.py patched with KStars API logic"
-    else
-        echo "❌ Failed to locate insertion point in $gps_py"
-    fi
 else
     echo "⏩ Skipping patch for gps_gpsd.py: ❌ incompatible version/pi/os"
 fi
