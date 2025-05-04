@@ -103,7 +103,6 @@ fi
 echo "Installation from scratch ..."
 cd ${pifinder_home}
 
-
 ############################################################
 # Install some package requirements
 sudo apt-get update
@@ -124,40 +123,6 @@ bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service
 
-
-# #########################################################################
-# # Install AVAHI, so pifinder.local resolves
-# echo "🔧 Installing Avahi service file for pifinder.local ..."
-
-# avahi_service_dir="/etc/avahi/services"
-# sudo mkdir -p "$avahi_service_dir"
-
-# avahi_service_file="${avahi_service_dir}/pifinder.service"
-
-# sudo tee "$avahi_service_file" > /dev/null <<EOF
-# <?xml version="1.0" standalone='no'?>
-# <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-
-# <service-group>
-#   <name replace-wildcards="yes">pifinder</name>
-
-#   <!-- SSH on Port 5624 -->
-#   <service>
-#     <type>_workstation._tcp</type>
-#     <port>5624</port>
-#   </service>
-
-#   <!-- Web interface on Port 8080 -->
-#   <service>
-#     <type>_http._tcp</type>
-#     <port>8080</port>
-#   </service>
-# </service-group>
-# EOF
-
-# # Restart Avahi to apply the new service definition
-# sudo systemctl restart avahi-daemon
-# echo "✅ Avahi service published as pifinder.local (SSH:5624, HTTP:8080)"
 
 
 ############################################
@@ -282,19 +247,16 @@ echo "✅ config.txt checks complete."
 # Enable service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service /etc/systemd/system/pifinder_splash.service
-sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/pifinder_kstars_location_writer.service
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
-sudo systemctl enable pifinder_kstars_location_writer
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
-sudo systemctl start pifinder_kstars_location_writer
 
 echo "##############################################"
 echo "PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
