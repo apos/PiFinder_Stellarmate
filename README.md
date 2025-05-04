@@ -27,10 +27,21 @@
   - [General Prerequisites](#general-prerequisites)
   - [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
     - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
+<<<<<<< HEAD
+=======
+    - [Add PiFinder user to Stellarmate OS](#add-pifinder-user-to-stellarmate-os)
+    - [Add rights for hardware access to user 'pifinder'](#add-rights-for-hardware-access-to-user-pifinder)
+    - [Add user pifinder to the sudoers group](#add-user-pifinder-to-the-sudoers-group)
+    - [⚠️ Reboot (first time)](#️-reboot-first-time)
+>>>>>>> dev
   - [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
     - [Part two (get the repo and run the script)](#part-two-get-the-repo-and-run-the-script)
     - [Part three (source the new virtual python environment and restart the script)](#part-three-source-the-new-virtual-python-environment-and-restart-the-script)
     - [⚠️ Reboot (for the second time)](#️-reboot-for-the-second-time)
+<<<<<<< HEAD
+=======
+  - [Uninstallation](#uninstallation)
+>>>>>>> dev
 - [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
   - [Purpose](#purpose-1)
   - [What the "Location Writer" does](#what-the-location-writer-does)
@@ -188,6 +199,38 @@ PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Book
 ### ⚠️ Reboot (for the second time)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f)
+
+
+## Uninstallation
+
+If you want to fully remove the PiFinder installation, you can run the uninstall script provided in the repository:
+
+```bash
+~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh
+```
+
+This will:
+
+* Stop and disable all PiFinder-related services.
+* Remove installed systemd unit files.
+* Delete the directory `/home/<youruser>/PiFinder` (but not `PiFinder_data`).
+* Print a hint for optionally removing the `PiFinder_Stellarmate` repository.
+
+If you want to trigger the uninstall process from within the script itself (e.g., for a clean reinstall), you can call it like this:
+
+```bash
+~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh --selfmove
+```
+
+This will copy the script to `/tmp` and execute it in the background from outside the repository folder to allow deletion.
+
+If you want to reset your current installation (but keep all code and config files), you can use the `--reset` option:
+
+```bash
+~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh --reset
+```
+
+This stops all services and deletes the Python virtual environment and temporary build/cache files – without deleting the repo.
 
 # PiFinder Stellarmate – KStars Location Integration Overview
 
