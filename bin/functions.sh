@@ -1,13 +1,14 @@
 #####################################
 # Paths
 #####################################
-pifinder_stellarmate_dir="/home/pifinder/PiFinder_Stellarmate"
-pifinder_stellarmate_bin="/home/pifinder/PiFinder_Stellarmate/bin"
-pifinder_dir="/home/pifinder/PiFinder"
-pifinder_data_dir="/home/pifinder/PiFinder_data"
+pifinder_home="/home/stellarmate"
+pifinder_stellarmate_dir="${pifinder_home}/PiFinder_Stellarmate"
+pifinder_stellarmate_bin="${pifinder_home}/PiFinder_Stellarmate/bin"
+pifinder_dir="${pifinder_home}/PiFinder"
+pifinder_data_dir="${pifinder_home}/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
-pifinder_config_dir="/home/pifinder/.config"
-kstarsrc_source="/home/stellarmate/.config/kstarsrc"
+pifinder_config_dir="${pifinder_home}/.config"
+kstarsrc_source="${pifinder_home}/.config/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 
 
@@ -227,4 +228,3 @@ install_requirements() {
     return 1 # False: requirements installation failed
   fi
 }
-

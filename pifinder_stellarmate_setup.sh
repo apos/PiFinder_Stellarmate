@@ -225,7 +225,7 @@ if ! is_venv_active "${python_venv}"; then
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
       
-      # Exit the script, because venv must be activated manually for Requirements installation
+      # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
       echo "Error creating Python venv. Aborting."
