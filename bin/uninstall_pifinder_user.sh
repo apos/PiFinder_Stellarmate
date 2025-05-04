@@ -1,13 +1,19 @@
 #!/bin/bash
 
+# Skript nur mit sudo ausführen
+if [ "$EUID" -ne 0 ]; then
+  echo "Dieses Skript muss mit sudo ausgeführt werden."
+  exit 1
+fi
+
 # Achtung: Nur ausführen, wenn der User pifinder wirklich nicht mehr gebraucht wird!
 
 USER_TO_REMOVE="pifinder"
 
 # Services stoppen (optional)
 echo "Stopping PiFinder services (falls vorhanden)..."
-systemctl --user stop pifinder_kstars_location_writer.service 2>/dev/null
-systemctl stop pifinder_kstars_location_writer.service 2>/dev/null
+sudo -u pifinder systemctl --user stop pifinder_kstars_location_writer.service 2>/dev/null
+sudo systemctl stop pifinder_kstars_location_writer.service 2>/dev/null
 
 # Home-Verzeichnis löschen
 if [ -d "/home/$USER_TO_REMOVE" ]; then
