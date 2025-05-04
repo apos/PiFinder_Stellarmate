@@ -4,10 +4,10 @@
 ### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
 
 # go to main working dir
-cd /home/pifinder
+cd /home/stellarmate
 
 # Get im portant functions and paths
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
+source /home/stellarmate/PiFinder_Stellarmate/bin/functions.sh
 
 # Detect PiFinder version from version.txt
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
@@ -113,9 +113,9 @@ cp -r ${pifinder_stellarmate_dir}/pi_config_files ${pifinder_dir}/.
 
 python_file="${pifinder_dir}/pi_config_files/pifinder.service"
 comment_out_line_content="ExecStart=/usr/bin/python"
-commented_line="/home/pifinder/PiFinder/python/.venv/bin/python"
+commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/pifinder/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -123,9 +123,9 @@ fi
 
 python_file="${pifinder_dir}/pi_config_files/pifinder_splash.service"
 comment_out_line_content="/usr/bin/python"
-commented_line="/home/pifinder/PiFinder/python/.venv/bin/python"
+commented_line="/home/stellarmate/PiFinder/python/.venv/bin/python"
 if ! check_line_exists "${python_file}" "${commented_line}"; then
-    sed -i 's|/usr/bin/python|/home/pifinder/PiFinder/python/.venv/bin/python|' "${python_file}"
+    sed -i 's|/usr/bin/python|/home/stellarmate/PiFinder/python/.venv/bin/python|' "${python_file}"
 else
     echo "Line '${commented_line}' already exists in '${python_file}'. No need to append."
 fi
@@ -133,7 +133,7 @@ fi
 ############################################################
 # KStars location service
 # Kopieren nach systemd
-sudo cp /home/pifinder/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
+sudo cp /home/stellarmate/PiFinder_Stellarmate/pi_config_files/pifinder_kstars_location_writer.service /etc/systemd/system/
 
 # Aktivieren beim Boot
 sudo systemctl enable pifinder_kstars_location_writer.service
@@ -152,8 +152,8 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 cp "$post_update_file" "$post_update_file.bak"
 
 if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
-    insert_block="python3 -m venv /home/pifinder/PiFinder/python/.venv\nsource /home/pifinder/PiFinder/python/.venv/bin/activate"
-    if ! grep -q "/home/pifinder/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
+    insert_block="python3 -m venv /home/stellarmate/PiFinder/python/.venv\nsource /home/stellarmate/PiFinder/python/.venv/bin/activate"
+    if ! grep -q "/home/stellarmate/PiFinder/python/.venv/bin/activate" "$post_update_file"; then
         awk -v insert="$insert_block" '
         /git submodule update --init --recursive/ {
             print;
