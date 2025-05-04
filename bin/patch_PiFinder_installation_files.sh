@@ -413,7 +413,8 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     insert_after_line=$(grep -n 'await asyncio.sleep(0)' "$gps_py" | cut -d: -f1)
     if [[ -n "$insert_after_line" ]]; then
         insert_line=$((insert_after_line + 1))
-        awk -v line=$insert_line -v insert="$(cat <<'EOF'
+        patch_tmp=$(mktemp)
+        cat <<'EOF' > "$patch_tmp"
     asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 
     import os
@@ -486,7 +487,9 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     def gps_monitor(gps_queue, console_queue, log_queue):
         asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 EOF
-)" 'NR==line {print insert} {print}' "$gps_py" > "${gps_py}.tmp" && mv "${gps_py}.tmp" "$gps_py"
+
+        awk -v line=$insert_line 'NR==line {while ((getline insert < "'"$patch_tmp"'") > 0) print insert} {print}' "$gps_py" > "${gps_py}.tmp" && mv "${gps_py}.tmp" "$gps_py"
+        rm -f "$patch_tmp"
         echo "✅ gps_gpsd.py patched with KStars API logic"
     else
         echo "❌ Failed to locate insertion point in $gps_py"
