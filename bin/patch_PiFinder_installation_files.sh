@@ -385,8 +385,31 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
     if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
         sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
         echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
+    fi
+
+    # Replace GPS overwrite logic to allow live KStars updates
+    patch_start=$(grep -n 'Only update GPS fixes' "$main_py" | cut -d: -f1 | head -n1)
+    if [[ -n "$patch_start" ]]; then
+        patch_end=$((patch_start + 8))
+        sed -i "${patch_start},${patch_end}d" "$main_py"
+        sed -i "${patch_start}i \\
+            # Always allow API-based location overwrite\\
+            new_error = gps_content.get(\"error_in_m\", 0)\\
+            allow_update = (\\
+                location.source != \"WEB\"\\
+                and not location.source.startswith(\"CONFIG:\")\\
+                and (\\
+                    location.error_in_m == 0\\
+                    or float(new_error) < float(location.error_in_m)\\
+                    or gps_content.get(\"source\", \"\") == \"KStarsAPI\"\\
+                )\\
+            )\\
+            \\
+            if allow_update:\
+        " "$main_py"
+        echo "✅ GPS overwrite logic updated to allow KStars API updates"
     else
-        echo "ℹ️ Import gps_gpsd bereits vorhanden"
+        echo "⚠️ Could not find GPS overwrite block to patch in main.py"
     fi
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
