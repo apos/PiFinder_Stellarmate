@@ -1,8 +1,9 @@
 #####################################
 # Paths
 #####################################
-pifinder_home="/home/${USER}"
-pifinder_stellarmate_dir="${pifinder_home}/PiFinder_Stellarmate"
+pifinder_home="${HOME}"
+# pifinder_stellarmate_dir="${pifinder_home}/PiFinder_Stellarmate"
+pifinder_stellarmate_dir="$(pwd)"
 pifinder_stellarmate_bin="${pifinder_stellarmate_dir}/bin"
 pifinder_dir="${pifinder_home}/PiFinder"
 pifinder_data_dir="${pifinder_home}/PiFinder_data"

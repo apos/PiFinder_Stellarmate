@@ -16,31 +16,31 @@
 
 # Table of Contents
 
-- [PiFinder on Stellarmate](#pifinder-on-stellarmate)
-- [Table of Contents](#table-of-contents)
-- [Purpose](#purpose)
-- [Differences beetween using "PiFinder on StellarMate" and "stock PiFinder"](#differences-beetween-using-pifinder-on-stellarmate-and-stock-pifinder)
-  - [GPS and WIFI/LAN](#gps-and-wifilan)
-  - [PiFinder Menu](#pifinder-menu)
-  - [PiFinder Web-Interface](#pifinder-web-interface)
-- [Installation](#installation)
-  - [General Prerequisites](#general-prerequisites)
-  - [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
-    - [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
-  - [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
-    - [Part two (get the repo and run the script)](#part-two-get-the-repo-and-run-the-script)
-    - [Part three (source the new virtual python environment and restart the script)](#part-three-source-the-new-virtual-python-environment-and-restart-the-script)
-    - [⚠️ Reboot (for the second time)](#️-reboot-for-the-second-time)
-  - [Uninstallation](#uninstallation)
-- [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
-  - [Purpose](#purpose-1)
-  - [What changed](#what-changed)
-  - [How it works now](#how-it-works-now)
-  - [Summary of advantages](#summary-of-advantages)
-- [Background Information (no action required!)](#background-information-no-action-required)
-  - [What Pifinder\_Stellarmate installation script does. Explained in some detail](#what-pifinder_stellarmate-installation-script-does-explained-in-some-detail)
-      - [pifinder.service](#pifinderservice)
-      - [pifinder\_splash.service](#pifinder_splashservice)
+*   [PiFinder on Stellarmate](#pifinder-on-stellarmate)
+*   [Table of Contents](#table-of-contents)
+*   [Purpose](#purpose)
+*   [Differences beetween using "PiFinder on StellarMate" and "stock PiFinder"](#differences-beetween-using-pifinder-on-stellarmate-and-stock-pifinder)
+    *   [GPS and WIFI/LAN](#gps-and-wifilan)
+    *   [PiFinder Menu](#pifinder-menu)
+    *   [PiFinder Web-Interface](#pifinder-web-interface)
+*   [Installation](#installation)
+    *   [General Prerequisites](#general-prerequisites)
+    *   [Let's go - 1. Pre Installation steps - preparation of Pi and Debian OS (part one)](#lets-go---1-pre-installation-steps---preparation-of-pi-and-debian-os-part-one)
+        *   [raspi-config (this is not done by the script!)](#raspi-config-this-is-not-done-by-the-script)
+    *   [Let's go - 2. Installation (part two and three)](#lets-go---2-installation-part-two-and-three)
+        *   [Part two (get the repo and run the script)](#part-two-get-the-repo-and-run-the-script)
+        *   [Part three (source the new virtual python environment and restart the script)](#part-three-source-the-new-virtual-python-environment-and-restart-the-script)
+        *   [⚠️ Reboot (for the second time)](#%EF%B8%8F-reboot-for-the-second-time)
+    *   [Uninstallation](#uninstallation)
+*   [PiFinder Stellarmate – KStars Location Integration Overview](#pifinder-stellarmate--kstars-location-integration-overview)
+    *   [Purpose](#purpose-1)
+    *   [What changed](#what-changed)
+    *   [How it works now](#how-it-works-now)
+    *   [Summary of advantages](#summary-of-advantages)
+*   [Background Information (no action required!)](#background-information-no-action-required)
+    *   [What Pifinder\_Stellarmate installation script does. Explained in some detail](#what-pifinder_stellarmate-installation-script-does-explained-in-some-detail)
+        *   [pifinder.service](#pifinderservice)
+        *   [pifinder\_splash.service](#pifinder_splashservice)
 
 # Purpose
 
@@ -181,35 +181,36 @@ PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Book
 
 > ### ℹ️ Read the logs - Troubleshooting
 > 
-> *   Bedore reboot, carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
-> *   You might see some messages about non compatible patches. That's ok, because the script determines the actual system and only patches the files, that fit to your version/system
-> *   Later on, if something does not work: Login with the user pifinder (!) and sheck on the commandline, if you pifinder starts correctly or if there are any errors:   
->       
->     `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
+> Bedore reboot, carefully read the prompt for any warnings or error. If so, please file an issue here with a complete description and all error-messages or I will not (b: [https://github.com/apos/PiFinder_Stellarmate/issues](https://github.com/apos/PiFinder_Stellarmate/issues)
+> 
+> You might see some messages about non compatible patches. That's ok, because the script determines the actual system and only patches the files, that fit to your version/system
+> 
+> Later on, if something does not work: Login with the user pifinder (!) and sheck on the commandline, if you pifinder starts correctly or if there are any errors: 
+> 
+> `sudo systemctl stop pifinder.service; sleep 2; sudo systemctl start pifinder.service ; sudo journalctl -u pifinder.service -f`
 
 ### ⚠️ Reboot (for the second time)
 
 ![16B3C596-ED0E-41CD-A90B-EC1B08FA7882_1_105_c](https://github.com/user-attachments/assets/d378cdb2-2b10-451a-ae31-7413cd21250f)
 
-
 ## Uninstallation
 
 If you want to fully remove the PiFinder installation, you can run the uninstall script provided in the repository:
 
-```bash
+```
 ~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh
 ```
 
 This will:
 
-* Stop and disable all PiFinder-related services.
-* Remove installed systemd unit files.
-* Delete the directory `/home/<youruser>/PiFinder` (but not `PiFinder_data`).
-* Print a hint for optionally removing the `PiFinder_Stellarmate` repository.
+*   Stop and disable all PiFinder-related services.
+*   Remove installed systemd unit files.
+*   Delete the directory `/home/<youruser>/PiFinder` (but not `PiFinder_data`).
+*   Print a hint for optionally removing the `PiFinder_Stellarmate` repository.
 
 If you want to trigger the uninstall process from within the script itself (e.g., for a clean reinstall), you can call it like this:
 
-```bash
+```
 ~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh --selfmove
 ```
 
@@ -217,7 +218,7 @@ This will copy the script to `/tmp` and execute it in the background from outsid
 
 If you want to reset your current installation (but keep all code and config files), you can use the `--reset` option:
 
-```bash
+```
 ~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh --reset
 ```
 
@@ -235,9 +236,9 @@ The purpose of this integration is to replace PiFinder's native GPS with locatio
 
 PiFinder no longer requires direct access to GPS hardware. Instead, it receives accurate time and geolocation information directly via the KStars API, using the current location set within Stellarmate. This location can originate from:
 
-* Stellarmate App (mobile/tablet GPS)
-* Manual location input in KStars GUI
-* INDI-compatible GPS devices
+*   Stellarmate App (mobile/tablet GPS)
+*   Manual location input in KStars GUI
+*   INDI-compatible GPS devices
 
 Regardless of the source, once KStars has determined the current coordinates, PiFinder receives it via a background API request.
 
@@ -247,9 +248,9 @@ Previously, PiFinder depended on a background script called `kstars_location_wri
 
 This has now changed:
 
-* The `kstars_location_writer.py` and `/tmp/kstars_location.txt` are no longer used.
-* PiFinder now queries the KStars internal web API directly at runtime.
-* Altitude is supplemented by parsing `~/.config/kstarsrc` if missing in the API.
+*   The `kstars_location_writer.py` and `/tmp/kstars_location.txt` are no longer used.
+*   PiFinder now queries the KStars internal web API directly at runtime.
+*   Altitude is supplemented by parsing `~/.config/kstarsrc` if missing in the API.
 
 This new mechanism allows **live** location updates from Stellarmate/KStars even if the user moves to a new location or changes settings during a session.
 
@@ -263,10 +264,10 @@ http://localhost:8624/api/info/location
 
 From this, the following information is extracted:
 
-- Latitude
-- Longitude
-- Altitude (if missing, read from kstarsrc)
-- Timezone (optional)
+*   Latitude
+*   Longitude
+*   Altitude (if missing, read from kstarsrc)
+*   Timezone (optional)
 
 The data is then converted to a standard PiFinder GPS "fix", which overrides any previous coordinates, even if a location is already set — **as long as the source is not manually locked** or marked as "WEB".
 
@@ -274,10 +275,10 @@ This allows seamless use of Stellarmate as a GPS provider for PiFinder without m
 
 ## Summary of advantages
 
-* Automatic GPS sync from Stellarmate App or KStars settings
-* No dependency on PiFinder’s internal GPS module
-* Location and time available immediately on boot
-* Seamless override logic inside PiFinder with source prioritization
+*   Automatic GPS sync from Stellarmate App or KStars settings
+*   No dependency on PiFinder’s internal GPS module
+*   Location and time available immediately on boot
+*   Seamless override logic inside PiFinder with source prioritization
 
 # Background Information (no action required!)
 

@@ -82,7 +82,7 @@ sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
 # Check, if there is already a PiFinder installation, prompt for uninstall if yes.
-if [ -d PiFinder ]; then
+if [ -d ${pifinder_home}/PiFinder ]; then
     echo "⚠️  There is already a PiFinder installation at ${pifinder_home}/PiFinder"
     read -p "❓ Do you want to uninstall the existing installation and reinstall from scratch? (yes/no): " confirm
     if [[ "$confirm" != "yes" ]]; then
