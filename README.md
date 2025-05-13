@@ -60,7 +60,7 @@ I like to unite  [PiFinder](https://www.pifinder.io/),  [Stellarmate](https://
 * SkySafari: Observation planning, sky chart and quick "push to" (standalone or using PiFinder)
 * Stellarmate: astrophotography and/or EAA through a dedicated astro camera - or/and (if available) guide scope and mount (ST4 enabled eq platform, GoTo mount)
 
-# A word on this setup hardware requirements
+# A word on Stellarmate setup on the Pi: hardware requirements
 
 If you like to do serious astrophotography, and not just test:
 
