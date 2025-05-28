@@ -2,7 +2,7 @@
 
 set -e
 
-TARGET_DIR="$HOME/Stellarmate_xvnc_setup"
+TARGET_DIR="$HOME/PiFinder_Stellarmate/bin/xvnc_emerency_d1"
 SERVICE_FILE="xvnc_session1.service"
 SERVICE_TARGET="/etc/systemd/system/$SERVICE_FILE"
 

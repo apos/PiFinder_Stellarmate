@@ -21,7 +21,7 @@ fi
 # Starte Xvfb auf Display :1, falls nicht bereits läuft
 if ! pgrep -f "Xvfb :1" > /dev/null; then
     echo "Starte Xvfb :1 ..."
-    Xvfb :1 -screen 0 1600x1200x16 &
+    Xvfb :1 -screen 0 1900x1100x16 &
     sleep 2
 else
     echo "Xvfb :1 läuft bereits."
