@@ -1,4 +1,6 @@
 git submodule update --init --recursive
+python3 -m venv /home/stellarmate/PiFinder/python/.venv
+source /home/stellarmate/PiFinder/python/.venv/bin/activate
 python3 -m venv /home/pifinder/PiFinder/python/.venv
 source /home/pifinder/PiFinder/python/.venv/bin/activate
 /home/pifinder/PiFinder/python/.venv/bin/pip install -r /home/pifinder/PiFinder/python/requirements.txt

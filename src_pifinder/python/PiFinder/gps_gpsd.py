@@ -101,454 +101,89 @@ async def process_reading_messages(client, gps_queue, console_queue, gps_locked)
         await asyncio.sleep(0)  # Yield control to the event loop
 
 
+    gps_locked = False
+
+    while True:
+        try:
+            with GPSDClient(host="127.0.0.1") as client:
+                while True:
+                    logger.debug("GPS waking")
+
+                    # Run both functions concurrently
+                    await asyncio.gather(
+                        process_sky_messages(client, gps_queue),
+                        process_reading_messages(
+                            client, gps_queue, console_queue, gps_locked
+                        ),
+                    )
+
+                    logger.debug("GPS sleeping now for 7s")
+                    await asyncio.sleep(7)
+        except Exception as e:
+            logger.error(f"Error in GPS monitor: {e}")
+            await asyncio.sleep(5)  # Wait before attempting to reconnect
+
+
+def gps_monitor(gps_queue, console_queue, log_queue):
     asyncio.run(gps_main(gps_queue, console_queue, log_queue))
 
+import aiohttp
+import sys
 import os
 from datetime import datetime
 
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
 logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-
-import os
-from datetime import datetime
-
-KSTARS_LOCATION_FILE = "/tmp/kstars_location.txt"
-
-logger = logging.getLogger("GPS")
-
-import sys
 handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
 async def read_kstars_location_file(gps_queue):
-    logger.info("KStars reader started (gps_gpsd.py)")
-    last_line = ""
+    logger.info("KStars API reader started (gps_gpsd.py)")
+    url = "http://localhost:8624/api/info/location"
+
+    def read_elevation_fallback():
+        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
+        try:
+            with open(kstarsrc_path, "r") as f:
+                in_location = False
+                for line in f:
+                    line = line.strip()
+                    if line == "[Location]":
+                        in_location = True
+                    elif in_location:
+                        if line.startswith("[") and line != "[Location]":
+                            break
+                        if line.startswith("Elevation="):
+                            try:
+                                return float(line.split("=", 1)[1])
+                            except ValueError:
+                                return 0.0
+        except Exception as e:
+            logger.warning(f"Could not read elevation from kstarsrc: {e}")
+        return 0.0
+
+    last_coords = None
+
     while True:
         try:
-            if os.path.exists(KSTARS_LOCATION_FILE):
-                with open(KSTARS_LOCATION_FILE, "r") as f:
-                    line = f.readline().strip()
-                    if not line or line == last_line or line.startswith("ERROR"):
-                        await asyncio.sleep(5)
-                        continue
-
-                    parts = line.split(",")
-                    if len(parts) >= 6:
-                        lat = float(parts[2])
-                        lon = float(parts[3])
-                        alt = float(parts[4])
-                        time_utc = parts[5]
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data.get("success", {})
+                        lat = float(result.get("latitude", 0))
+                        lon = float(result.get("longitude", 0))
+                        alt = result.get("altitude")
+                        if alt is None or float(alt) == 0.0:
+                            alt = read_elevation_fallback()
+                            result["altitude"] = alt
+                        alt = float(alt)
+                        coords = (lat, lon, alt)
+                        if coords == last_coords:
+                            await asyncio.sleep(5)
+                            continue
+                        last_coords = coords
+                        tz = result.get("tz", 0)
 
                         msg = (
                             "fix",
@@ -556,28 +191,280 @@ async def read_kstars_location_file(gps_queue):
                                 "lat": lat,
                                 "lon": lon,
                                 "altitude": alt,
-                                "source": "KStars",
+                                "source": "KStarsAPI",
                                 "lock": True,
                                 "error_in_m": 10,
                             },
                         )
-
-                        parsed_time = datetime.fromisoformat(time_utc)
-                        time_msg = ("time", {"time": parsed_time})
-
                         gps_queue.put(msg)
-                        gps_queue.put(time_msg)
 
-                        logger.info(f"KStars GPS fix injected: {msg}")
-                        last_line = line
+                        if tz:
+                            now = datetime.utcnow()
+                            msg_time = ("time", {"time": now})
+                            gps_queue.put(msg_time)
+
+                        logger.info(f"KStars GPS API fix injected: {msg}")
+                    else:
+                        logger.warning(f"KStars API error: HTTP {response.status}")
         except Exception as e:
-            logger.warning(f"KStars GPS reader error: {e}")
+            logger.warning(f"KStars GPS API access error: {e}")
+        await asyncio.sleep(5)
+
+
+import aiohttp
+import sys
+import os
+from datetime import datetime
+
+logger = logging.getLogger("GPS")
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+async def read_kstars_location_file(gps_queue):
+    logger.info("KStars API reader started (gps_gpsd.py)")
+    url = "http://localhost:8624/api/info/location"
+
+    def read_elevation_fallback():
+        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
+        try:
+            with open(kstarsrc_path, "r") as f:
+                in_location = False
+                for line in f:
+                    line = line.strip()
+                    if line == "[Location]":
+                        in_location = True
+                    elif in_location:
+                        if line.startswith("[") and line != "[Location]":
+                            break
+                        if line.startswith("Elevation="):
+                            try:
+                                return float(line.split("=", 1)[1])
+                            except ValueError:
+                                return 0.0
+        except Exception as e:
+            logger.warning(f"Could not read elevation from kstarsrc: {e}")
+        return 0.0
+
+    last_coords = None
+
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data.get("success", {})
+                        lat = float(result.get("latitude", 0))
+                        lon = float(result.get("longitude", 0))
+                        alt = result.get("altitude")
+                        if alt is None or float(alt) == 0.0:
+                            alt = read_elevation_fallback()
+                            result["altitude"] = alt
+                        alt = float(alt)
+                        coords = (lat, lon, alt)
+                        if coords == last_coords:
+                            await asyncio.sleep(5)
+                            continue
+                        last_coords = coords
+                        tz = result.get("tz", 0)
+
+                        msg = (
+                            "fix",
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "altitude": alt,
+                                "source": "KStarsAPI",
+                                "lock": True,
+                                "error_in_m": 10,
+                            },
+                        )
+                        gps_queue.put(msg)
+
+                        if tz:
+                            now = datetime.utcnow()
+                            msg_time = ("time", {"time": now})
+                            gps_queue.put(msg_time)
+
+                        logger.info(f"KStars GPS API fix injected: {msg}")
+                    else:
+                        logger.warning(f"KStars API error: HTTP {response.status}")
+        except Exception as e:
+            logger.warning(f"KStars GPS API access error: {e}")
+        await asyncio.sleep(5)
+
+
+import aiohttp
+import sys
+import os
+from datetime import datetime
+
+logger = logging.getLogger("GPS")
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+async def read_kstars_location_file(gps_queue):
+    logger.info("KStars API reader started (gps_gpsd.py)")
+    url = "http://localhost:8624/api/info/location"
+
+    def read_elevation_fallback():
+        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
+        try:
+            with open(kstarsrc_path, "r") as f:
+                in_location = False
+                for line in f:
+                    line = line.strip()
+                    if line == "[Location]":
+                        in_location = True
+                    elif in_location:
+                        if line.startswith("[") and line != "[Location]":
+                            break
+                        if line.startswith("Elevation="):
+                            try:
+                                return float(line.split("=", 1)[1])
+                            except ValueError:
+                                return 0.0
+        except Exception as e:
+            logger.warning(f"Could not read elevation from kstarsrc: {e}")
+        return 0.0
+
+    last_coords = None
+
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data.get("success", {})
+                        lat = float(result.get("latitude", 0))
+                        lon = float(result.get("longitude", 0))
+                        alt = result.get("altitude")
+                        if alt is None or float(alt) == 0.0:
+                            alt = read_elevation_fallback()
+                            result["altitude"] = alt
+                        alt = float(alt)
+                        coords = (lat, lon, alt)
+                        if coords == last_coords:
+                            await asyncio.sleep(5)
+                            continue
+                        last_coords = coords
+                        tz = result.get("tz", 0)
+
+                        msg = (
+                            "fix",
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "altitude": alt,
+                                "source": "KStarsAPI",
+                                "lock": True,
+                                "error_in_m": 10,
+                            },
+                        )
+                        gps_queue.put(msg)
+
+                        if tz:
+                            now = datetime.utcnow()
+                            msg_time = ("time", {"time": now})
+                            gps_queue.put(msg_time)
+
+                        logger.info(f"KStars GPS API fix injected: {msg}")
+                    else:
+                        logger.warning(f"KStars API error: HTTP {response.status}")
+        except Exception as e:
+            logger.warning(f"KStars GPS API access error: {e}")
+        await asyncio.sleep(5)
+
+
+import aiohttp
+import sys
+import os
+from datetime import datetime
+
+logger = logging.getLogger("GPS")
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+async def read_kstars_location_file(gps_queue):
+    logger.info("KStars API reader started (gps_gpsd.py)")
+    url = "http://localhost:8624/api/info/location"
+
+    def read_elevation_fallback():
+        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
+        try:
+            with open(kstarsrc_path, "r") as f:
+                in_location = False
+                for line in f:
+                    line = line.strip()
+                    if line == "[Location]":
+                        in_location = True
+                    elif in_location:
+                        if line.startswith("[") and line != "[Location]":
+                            break
+                        if line.startswith("Elevation="):
+                            try:
+                                return float(line.split("=", 1)[1])
+                            except ValueError:
+                                return 0.0
+        except Exception as e:
+            logger.warning(f"Could not read elevation from kstarsrc: {e}")
+        return 0.0
+
+    last_coords = None
+
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data.get("success", {})
+                        lat = float(result.get("latitude", 0))
+                        lon = float(result.get("longitude", 0))
+                        alt = result.get("altitude")
+                        if alt is None or float(alt) == 0.0:
+                            alt = read_elevation_fallback()
+                            result["altitude"] = alt
+                        alt = float(alt)
+                        coords = (lat, lon, alt)
+                        if coords == last_coords:
+                            await asyncio.sleep(5)
+                            continue
+                        last_coords = coords
+                        tz = result.get("tz", 0)
+
+                        msg = (
+                            "fix",
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "altitude": alt,
+                                "source": "KStarsAPI",
+                                "lock": True,
+                                "error_in_m": 10,
+                            },
+                        )
+                        gps_queue.put(msg)
+
+                        if tz:
+                            now = datetime.utcnow()
+                            msg_time = ("time", {"time": now})
+                            gps_queue.put(msg_time)
+
+                        logger.info(f"KStars GPS API fix injected: {msg}")
+                    else:
+                        logger.warning(f"KStars API error: HTTP {response.status}")
+        except Exception as e:
+            logger.warning(f"KStars GPS API access error: {e}")
         await asyncio.sleep(5)
 
 async def gps_main(gps_queue, console_queue, log_queue):
     MultiprocLogging.configurer(log_queue)
-    logger.info("GPS main started – using ONLY KStars")
-
+    logger.info("GPS main started – using ONLY KStars API")
     try:
         await read_kstars_location_file(gps_queue)
     except Exception as e:

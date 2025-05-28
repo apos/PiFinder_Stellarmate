@@ -1,0 +1,14 @@
+[Unit]
+Description=Starte Xvfb, LXDE, x11vnc, noVNC auf :1
+After=network.target
+Requires=network.target
+
+[Service]
+Type=simple
+User=stellarmate
+ExecStart=/home/stellarmate/bin/start_xvnc_session1.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

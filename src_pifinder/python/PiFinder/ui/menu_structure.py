@@ -34,6 +34,24 @@ pifinder_menu = {
                     "stateful": True,
                     "preload": True,
                 },
+            ],
+        },
+        {
+            "name": "Chart",
+            "class": UIChart,
+            "stateful": True,
+            "preload": True,
+        },
+        {
+            "name": "Objects",
+            "class": UITextMenu,
+            "select": "single",
+            "items": [
+                {
+                    "name": "All Filtered",
+                    "class": UIObjectList,
+                    "objects": "catalogs.filtered",
+                },
                 {
                     "name": "By Catalog",
                     "class": UITextMenu,
