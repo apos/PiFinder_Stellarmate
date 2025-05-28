@@ -10,6 +10,15 @@ sudo systemctl disable "$SERVICE_NAME" || true
 echo "➤ Entferne systemd Service-Datei: $SERVICE_PATH"
 sudo rm -f "$SERVICE_PATH"
 
+echo "➤ Aktiviere den alten x11vnc.service wieder (sofern vorhanden)..."
+if [ -f /etc/systemd/system/x11vnc.service ]; then
+  sudo systemctl enable x11vnc.service
+  sudo systemctl start x11vnc.service
+  echo "✔ x11vnc.service wurde wieder aktiviert."
+else
+  echo "⚠ x11vnc.service nicht gefunden – bitte manuell prüfen."
+fi
+
 echo "➤ Lade systemd neu"
 sudo systemctl daemon-reload
 

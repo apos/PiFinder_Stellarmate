@@ -2,6 +2,10 @@
 
 set -e
 
+echo "➤ Deaktiviere alten x11vnc.service, falls aktiv"
+sudo systemctl disable x11vnc.service || true
+sudo systemctl stop x11vnc.service || true
+
 TARGET_DIR="$HOME/PiFinder_Stellarmate/bin/xvnc_emerency_d1"
 SERVICE_FILE="xvnc_session1.service"
 SERVICE_TARGET="/etc/systemd/system/$SERVICE_FILE"
