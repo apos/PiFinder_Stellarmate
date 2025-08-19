@@ -2,6 +2,10 @@
 
 > ### ⚠️ **Warning**
 >
+> Projekt is currently in standby (expected restart in December 2025). But do not hesitate to cantact me eihter here or via https://discord.com/channels/1087556380724052059/1179949372847423489 
+
+> ### ⚠️ **Warning**
+>
 > * This is is work in progress and (at the moment) highly experimental (you should know how to do things in Linux at the command line)
 > * This is verified to work with the PiFinder-Version in "version.txt"
 > * This project is not an official PiFinder (R) project. It is on your own to understand, how the script works. I am not responsible for any damage to your hard- or software by using this code.
