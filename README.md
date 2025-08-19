@@ -2,7 +2,7 @@
 
 > ### ℹ️ **Info**
 >
-> Projekt is currently in standby (expected restart in December 2025). But do not hesitate to cantact me eihter here or via https://discord.com/channels/1087556380724052059/1179949372847423489 
+> ** The projekt is currently in standby (expected restart in December 2025). ** But do not hesitate to cantact me eihter here or via https://discord.com/channels/1087556380724052059/1179949372847423489 
 
 
 -----------
