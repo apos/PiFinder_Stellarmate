@@ -2,12 +2,12 @@
 
 # This script is an altered script of https://raw.githubusercontent.com/brickbots/PiFinder/release/pifinder_setup.sh 
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
-
+i
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.2.0"
+pifinder_stellarmate_version_stable="2.3.0"
 
 # This script is actually tested against this version
-pifinder_stellarmate_version_testing="2.2.1"
+pifinder_stellarmate_version_testing="2.3.0"
 
 
 ############################################################
