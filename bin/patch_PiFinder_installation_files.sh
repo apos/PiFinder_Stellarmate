@@ -22,7 +22,7 @@ else
     current_pi="unknown"
 fi
 
-# Detect OS codename
+# Detect OS codenameTh
 current_os=$(lsb_release -sc)
 
 # Helper function to decide whether a patch should apply (safe string splitting)
@@ -104,9 +104,16 @@ else
 fi
 
 
+    echo "DEBUG: current_pifinder = $current_pifinder"
+    echo "DEBUG: current_pi = $current_pi"
+    echo "DEBUG: current_os = $current_os"
+    if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+        echo "DEBUG: should_apply_patch returned true for requirements.txt"
+    else
+        echo "DEBUG: should_apply_patch returned false for requirements.txt"
+    fi
 #######################################################
-# Patch requirements.txt with additional dependencies
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
     cp "$python_requirements" "$python_requirements.bak"
 
@@ -122,6 +129,11 @@ if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
 
     show_diff_if_changed "$python_requirements"
     python3 -m py_compile "$python_requirements" 2>/dev/null && echo "✅ Syntax OK" || echo "ℹ️ Text file – no syntax check needed"
+
+    # Upgrade scikit-learn to the latest version to avoid build issues on Bookworm
+    echo "🔧 Upgrading scikit-learn version in $python_requirements ..."
+    sed -i 's/scikit-learn==1.2.2/scikit-learn/' "$python_requirements"
+    echo "✅ Changed scikit-learn to latest version."
 else
     echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
 fi
@@ -152,7 +164,7 @@ echo "🔧 Updating pifinder_post_update.sh ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 cp "$post_update_file" "$post_update_file.bak"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     insert_block="python3 -m venv ${pifinder_dir}/python/.venv\nsource ${pifinder_dir}/python/.venv/bin/activate"
     if ! grep -q "${pifinder_dir}/python/.venv/bin/activate" "$post_update_file"; then
         awk -v insert="$insert_block" '
@@ -177,7 +189,7 @@ show_diff_if_changed "$post_update_file"
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     for cfg in "$config_default_json" "$config_json"; do
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
@@ -199,7 +211,7 @@ echo "🔧 Updating displays.py for Pi5 SPI compatibility ..."
 cp "$display_py" "$display_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P5" "bookworm"; then
     if ! grep -q 'from luma.core.interface.serial import noop' "$display_py"; then
         sed -i '1i from luma.core.interface.serial import noop' "$display_py"
         echo "✅ Import für noop hinzugefügt"
@@ -220,7 +232,7 @@ echo "🔧 Updating keyboard_pi.py for Pi5 GPIO compatibility ..."
 cp "$keyboard_py" "$keyboard_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P5" "bookworm"; then
     if grep -q 'import RPi.GPIO as GPIO' "$keyboard_py"; then
         sed -i '/import RPi.GPIO as GPIO/i\
 import types\n\
@@ -260,21 +272,20 @@ echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
         sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
     fi
 
     if grep -q '^import tetra3$' "$solver_py"; then
-        sed -i 's|^import tetra3$|from tetra3 import main|' "$solver_py"
+        sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
     fi
 
     if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
         sed -i '/from tetra3 import main/a from tetra3 import cedar_detect_client' "$solver_py"
     fi
 
-    sed -i 's|from tetra3 import main|import tetra3.main as main|' "$solver_py"
-    sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
+
 else
     echo "⏩ Skipping patch for solver.py: ❌ incompatible version/pi/os"
 fi
@@ -290,7 +301,7 @@ echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
         sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
     fi
@@ -305,7 +316,7 @@ echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
         sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
     fi
@@ -320,7 +331,7 @@ echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
         sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
     fi
@@ -348,7 +359,7 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
@@ -371,7 +382,7 @@ echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     camera_insert="from picamera2 import Picamera"
     if ! grep -q "$camera_insert" "$camera_file"; then
         awk -v insert="$camera_insert" '
@@ -399,7 +410,7 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
         sed -i 's|gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
         echo "✅ GPS-Kondition gepatcht in main.py"
@@ -420,7 +431,7 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 
 
 # Patch GPS location overwrite logic in main.py with correct indentation
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q '# Always allow API-based location overwrite' "$main_py"; then
         echo "ℹ️ main.py already patched – skipping GPS overwrite patch"
     else
@@ -439,7 +450,7 @@ fi
 
 ######################################################
 # Patch menu_structure.py to flatten "By Catalog" structure
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q '"name": "By Catalog"' "$menu_py"; then
         echo "🔧 Flattening 'By Catalog' submenu in $menu_py"
         patch_file="${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
@@ -464,7 +475,7 @@ echo "🔧 Updating gps_gpsd.py for KStars API support ..."
 cp "$gps_py" "$gps_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     echo "🔍 Applying KStars API patch to $gps_py ..."
     # Remove old implementation
     sed -i '/^async def gps_main(gps_queue, console_queue, log_queue):/,/^    logger.info("Using GPSD GPS code")/d' "$gps_py"
@@ -583,7 +594,7 @@ cp "$menu_py" "$menu_py.bak"
 # ---- Remove "GPS Status" block ----
 echo "🔧 Removing 'GPS Status' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     gps_status_line=$(grep -n '"name": "GPS Status"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_status_line" ]]; then
         start=$((gps_status_line - 1))
@@ -602,7 +613,7 @@ python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # ---- Remove "Place & Time" block ----
 echo "🔧 Removing 'Place & Time' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     place_line=$(grep -n '"name": "Place & Time"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$place_line" ]]; then
         start=$((place_line - 1))
@@ -621,7 +632,7 @@ python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # ---- Remove "UBlox" item from GPS Type menu ----
 echo "🔧 Removing 'UBlox' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     ublox_line=$(grep -n '"name": "UBlox"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$ublox_line" ]]; then
         start=$((ublox_line - 1))
@@ -640,7 +651,7 @@ python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # ---- Remove "WiFi Mode" block ----
 echo "🔧 Removing 'WiFi Mode' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     wifi_line=$(grep -n '"name": "WiFi Mode"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$wifi_line" ]]; then
         start=$((wifi_line - 1))
@@ -659,7 +670,7 @@ python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # ---- Remove "GPS Type" block ----
 echo "🔧 Removing 'GPS Type' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     gps_type_line=$(grep -n '"name": "GPS Type"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$gps_type_line" ]]; then
         start=$((gps_type_line - 1))
@@ -678,7 +689,7 @@ python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # ---- Remove "Software Upd" entry ----
 echo "🔧 Removing 'Software Upd' from menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.2.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     line=$(grep -n '"name": "Software Upd"' "$menu_py" | cut -d: -f1 | head -n1)
     if [[ -n "$line" ]]; then
         start=$((line))

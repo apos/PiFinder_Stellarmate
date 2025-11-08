@@ -2,7 +2,7 @@
 
 # This script is an altered script of https://raw.githubusercontent.com/brickbots/PiFinder/release/pifinder_setup.sh 
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
-i
+
 # This script is known to work with
 pifinder_stellarmate_version_stable="2.3.0"
 
@@ -122,6 +122,143 @@ bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
 # Replace patched service files with the correct Stellarmate versions
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service
+
+############################################
+# Create an activate3 VENV
+
+# Check if venv is active and install requirements
+if ! is_venv_active "${python_venv}"; then
+  echo "Python venv is not active."
+
+  # Check if venv directory exists
+  if ! check_venv_exists "${python_venv}"; then
+    echo "Python venv directory does not exist."
+    # Create venv
+    if create_venv "${python_venv}"; then
+      echo " "
+      echo "##### STOP ##########################################################"
+      echo "##### DO NOT CLOSE THIS TERMINAL !!! MANUAL INPUT REQUIRED !!! ######"
+      echo "The Python virtual environment was successfully created and MUST be activated manually."
+      echo "Please run the following command in this terminal to activate the virtual environment."
+      echo "Then rerun the scipt from within the new virtual environment (you see somthing like (.venv) after activation:"
+      echo "" 
+      echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      echo "source ${python_venv}/bin/activate"
+      echo "./pifinder_stellarmate_setup.sh"
+      echo "" 
+      
+      # Exit the script, because venv must be activated   manually for Requirements installation
+      exit 1
+    else
+      echo "Error creating Python venv. Aborting."
+      exit 1 
+    fi
+  else
+     echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
+     echo "source ${python_venv}/bin/activate"
+     echo -e "\nTHEN: run the script again to install the Requirements."
+     exit 1 # Exit script because venv must be activated manually for Requirements installation
+  fi
+else
+  echo "Python venv is active. Installing Requirements."
+  install_requirements "${python_requirements}"
+fi
+
+# ensure, correct rights are set
+sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
+
+# NOT USED, PART OF STELLARMATE-OS: samba samba-common-bin dnsmasq hostapd dhcpd gpsd
+# NOT USED, PART OF STELLARMATE-OS: Setup GPSD
+# NOT USED, PART OF STELLARMATE-OS: sudo dpkg-reconfigure -plow gpsd
+# NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/gpsd.conf /etc/default/gpsd
+
+# data dirs
+mkdir -p ~/PiFinder_data
+mkdir -p ~/PiFinder_data/captures
+mkdir -p ~/PiFinder_data/obslists
+mkdir -p ~/PiFinder_data/screenshots
+mkdir -p ~/PiFinder_data/solver_debug_dumps
+mkdir -p ~/PiFinder_data/logs
+chmod -R 777 ~/PiFinder_data
+
+# Hipparcos catalog
+if ls "${pifinder_dir}/astro_data/hip_main.dat"
+then
+  echo "hip_main.dat already installed"
+else
+  wget -O ${pifinder_dir}/astro_data/hip_main.dat https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+fi
+
+# ensure, correct rights are set
+sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
+
+
+###########################
+# Not used: tf already installed (also service)
+###########################
+
+# Wifi config
+# NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/dhcpcd.* /etc
+# NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/dhcpcd.conf.sta /etc/dhcpcd.conf
+# NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/dnsmasq.conf /etc/dnsmasq.conf
+# NOT USED, PART OF STELLARMATE-OS: sudo cp ~/PiFinder/pi_config_files/hostapd.conf /etc/hostapd/hostapd.conf
+# NOT USED, PART OF STELLARMATE-OS: echo -n "Client" > ~/PiFinder/wifi_status.txt
+# NOT USED, PART OF STELLARMATE-OS: sudo systemctl unmask hostapd
+
+# NOT USED, PART OF STELLARMATE-OS:  open permissisons on wpa_supplicant file so we can adjust network config
+# NOT USED, PART OF STELLARMATE-OS:  sudo chmod 666 /etc/wpa_supplicant/wpa_supplicant.conf
+
+# NOT USED, PART OF STELLARMATE-OS:  Samba config
+# NOT USED, PART OF STELLARMATE-OS:  sudo cp ~/PiFinder/pi_config_files/smb.conf /etc/samba/smb.conf
+
+
+CONFIG_FILE="/boot/firmware/config.txt"
+
+echo "🔧 Ensuring required config.txt entries are present ..."
+
+add_if_missing() {
+    local line="$1"
+    local marker="$2"
+    if ! grep -Fxq "$line" "$CONFIG_FILE"; then
+        echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
+        echo "✅ Added: $line"
+    else
+        echo "ℹ️  Already present: $line"
+    fi
+}
+
+# Optionaler Marker, um PiFinder-Block zu kennzeichnen
+add_if_missing "#Pifinder"
+
+# Interfaces und Overlays
+add_if_missing "dtparam=spi=on"
+add_if_missing "dtparam=i2c_arm=on"
+add_if_missing "dtparam=i2c_arm_baudrate=10000"
+add_if_missing "dtoverlay=pwm,pin=13,func=4"
+add_if_missing "dtoverlay=uart3"
+add_if_missing "dtoverlay=pwm-2chan"  # Speziell für Bookworm
+
+echo "✅ config.txt checks complete."
+
+
+
+# Enable service
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service /etc/systemd/system/pifinder_splash.service
+
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+
+sudo systemctl enable pifinder
+sudo systemctl enable pifinder_splash
+
+echo "🔧 Starting PiFinder services ..."
+sudo systemctl start pifinder
+sudo systemctl start pifinder_splash
+
+echo "##############################################"
+echo "PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
+
 
 
 

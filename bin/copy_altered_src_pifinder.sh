@@ -4,7 +4,7 @@
 
 ############################################################
 # Get some important vars and functinons
-source /home/${USER}/PiFinder_Stellarmate/bin/functions.sh
+source /home/${SUDO_USER:-${USER}}/PiFinder_Stellarmate/bin/functions.sh
 
 SRC_DIR="$pifinder_dir"
 DEST_DIR="$pifinder_stellarmate_dir/src_pifinder"

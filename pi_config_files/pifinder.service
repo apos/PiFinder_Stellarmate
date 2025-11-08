@@ -4,9 +4,9 @@ After=basic.target
 
 [Service]
 Type=idle
-User=__PIFINDER_USER__
-WorkingDirectory=/home/__PIFINDER_USER__/PiFinder/python
-ExecStart=__PYTHON_EXEC__ -m PiFinder.main
+User=stellarmate
+WorkingDirectory=/home/stellarmate/PiFinder/python
+ExecStart=/home/stellarmate/PiFinder/python/.venv/bin/python -m PiFinder.main
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]

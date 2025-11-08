@@ -1,7 +1,7 @@
 #####################################
 # Paths
 #####################################
-pifinder_home="/home/${USER}"
+pifinder_home="/home/${SUDO_USER:-${USER}}"
 pifinder_stellarmate_dir="${pifinder_home}/PiFinder_Stellarmate"
 pifinder_stellarmate_bin="${pifinder_stellarmate_dir}/bin"
 pifinder_dir="${pifinder_home}/PiFinder"
@@ -220,7 +220,7 @@ create_venv() {
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."
-  pip install -r "${requirements_file}"
+  pip install -r "${requirements_file}" --break-system-packages
   if [ $? -eq 0 ]; then
     echo "Python Requirements installed successfully."
     return 0 # True: requirements installed successfully
