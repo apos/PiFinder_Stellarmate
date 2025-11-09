@@ -38,11 +38,6 @@ from PiFinder import pos_server
 from PiFinder import utils
 from PiFinder import server
 from PiFinder import keyboard_interface
-from PiFinder import gps_gpsd as gps_monitor
-from PiFinder import gps_gpsd as gps_monitor
-from PiFinder import gps_gpsd as gps_monitor
-from PiFinder import gps_gpsd as gps_monitor
-from PiFinder import gps_gpsd as gps_monitor
 
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.catalogs import CatalogBuilder, CatalogFilter, Catalogs
@@ -924,6 +919,8 @@ if __name__ == "__main__":
         gps_type = cfg.get_option("gps_type")
         if gps_type == "ublox":
             gps_monitor = importlib.import_module("PiFinder.gps_ubx")
+        elif gps_type == "stellarmate":
+            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")
         else:
             gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
 

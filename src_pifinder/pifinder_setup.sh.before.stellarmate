@@ -81,37 +81,54 @@ sudo usermod -a -G video ${USER}
 sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
-# Check, if there is already a PiFinder installation, prompt for uninstall if yes.
-if [ -d PiFinder ]; then
-    echo "⚠️  There is already a PiFinder installation at ${pifinder_home}/PiFinder"
-    read -p "❓ Do you want to uninstall the existing installation and reinstall from scratch? (yes/no): " confirm
-    if [[ "$confirm" != "yes" ]]; then
-        echo "ℹ️  Installation aborted by user."
-        exit 1
-    fi
-    echo "🧽 Running uninstall script in background..."
-    bash ${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh --selfmove
+# Check if a PiFinder installation already exists.
+if [ -d "${pifinder_home}/PiFinder" ]; then
+    echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
+    echo "❓ Please choose an action:"
+    echo "   1. Delete the existing installation and reinstall from scratch."
+    echo "   2. Update the existing installation with 'git pull'."
+    echo "   3. Cancel the installation."
+    read -p "Enter your choice (1, 2, or 3): " choice
 
-    # Wait briefly, then check if folder is gone
-    sleep 4
-    if [ -d PiFinder ]; then
-        echo "❌ ERROR: PiFinder folder still exists after uninstall attempt. Aborting setup."
-        exit 1
-    fi
+    case "$choice" in
+        1)
+            echo "🗑️  Deleting the existing installation..."
+            bash "${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh" --selfmove
+            sleep 4
+            if [ -d "${pifinder_home}/PiFinder" ]; then
+                echo "❌ ERROR: The PiFinder folder still exists after the uninstall attempt. Aborting setup."
+                exit 1
+            fi
+            echo "Installation from scratch ..."
+            cd "${pifinder_home}"
+            git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+            sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+            ;;
+        2)
+            echo "🔄 Updating the existing installation with 'git pull'..."
+            cd "${pifinder_home}/PiFinder"
+            git pull
+            sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+            ;;
+        3)
+            echo "ℹ️  Installation cancelled by user."
+            exit 0
+            ;;
+        *)
+            echo "❌ Invalid choice. Please run the script again and select 1, 2, or 3."
+            exit 1
+            ;;
+    esac
+else
+    echo "🚀 No existing installation found. Starting fresh..."
+    cd "${pifinder_home}"
+    git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+    sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
 fi
 
-echo "Installation from scratch ..."
-cd ${pifinder_home}
-
-############################################################
 # Install some package requirements
 sudo apt-get update
 sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera python3-picamera2
-
-############################################################
-# Download the actual source code 
-git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
-sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 
 
 #########################################################################

@@ -1,14 +1,10 @@
---- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py.orig	2025-11-09 13:36:19.169308473 +0100
-+++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py	2025-11-09 13:49:16.130139582 +0100
-@@ -38,10 +38,7 @@
- from PiFinder import utils
- from PiFinder import server
- from PiFinder import keyboard_interface
--from PiFinder import gps_gpsd as gps_monitor
--from PiFinder import gps_gpsd as gps_monitor
--from PiFinder import gps_gpsd as gps_monitor
--from PiFinder import gps_gpsd as gps_monitor
-+
- 
- from PiFinder.multiproclogging import MultiprocLogging
- from PiFinder.catalogs import CatalogBuilder, CatalogFilter, Catalogs
+--- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py.orig	2025-11-09 15:10:15.073299768 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py	2025-11-09 15:13:15.182213573 +0100
+@@ -919,6 +919,8 @@
+         gps_type = cfg.get_option("gps_type")
+         if gps_type == "ublox":
+             gps_monitor = importlib.import_module("PiFinder.gps_ubx")
++        elif gps_type == "stellarmate":
++            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")
+         else:
+             gps_monitor = importlib.import_module("PiFinder.gps_gpsd")

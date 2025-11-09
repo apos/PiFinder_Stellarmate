@@ -412,7 +412,8 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
-        sed -i 's|gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
+        sed -i 's
+        |gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
         echo "✅ GPS-Kondition gepatcht in main.py"
     fi
 
