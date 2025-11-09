@@ -1,21 +1,13 @@
---- a/menu_structure.py
-+++ b/menu_structure.py
-@@ -123,12 +123,26 @@
-             },
-         ],
-     },
--    {
--        "name": "By Catalog",
--        "entries": [
--            {"name": "Messier"},
--            {"name": "NGC"},
--            {"name": "IC"},
--            {"name": "Caldwell"},
--            {"name": "Sharpless"},
--        ],
--    },
-+    {"name": "Messier"},
-+    {"name": "NGC"},
-+    {"name": "IC"},
-+    {"name": "Caldwell"},
-+    {"name": "Sharpless"},
+--- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/ui/menu_structure.py.orig	2025-11-09 18:04:00.214022044 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/ui/menu_structure.py	2025-11-09 18:06:16.692045901 +0100
+@@ -963,6 +963,10 @@
+                             "name": _("GPSD (generic)"),
+                             "value": "gpsd",
+                         },
++                        {
++                            "name": "Stellarmate",
++                            "value": "stellarmate",
++                        },
+                     ],
+                 },
+                 {

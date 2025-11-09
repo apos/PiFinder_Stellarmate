@@ -389,20 +389,20 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 
 # Patch GPS location overwrite logic in main.py with correct indentation
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q '# Always allow API-based location overwrite' "$main_py"; then
-        echo "ℹ️ main.py already patched – skipping GPS overwrite patch"
+    if grep -q 'elif gps_type == "stellarmate":' "$main_py"; then
+        echo "ℹ️ main.py already patched – skipping GPS type patch"
     else
-        echo "🔧 Patching gps_msg == 'fix' block in $main_py"
+        echo "🔧 Patching GPS type handling in $main_py"
         patch_file="${pifinder_stellarmate_dir}/diffs/main_py.diff"
         if [[ -f "$patch_file" ]]; then
             patch "$main_py" "$patch_file"
-            echo "✅ Successfully patched gps_msg == 'fix' block in $main_py"
+            echo "✅ Successfully patched GPS type handling in $main_py"
         else
             echo "❌ Patch file $patch_file not found"
         fi
     fi
 else
-    echo "⏩ Skipping gps fix logic patch in main.py: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping GPS type patch in main.py: ❌ incompatible version/pi/os"
 fi
 
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
@@ -488,11 +488,13 @@ echo "🔧 Adding 'Stellarmate' to GPS Type in menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     if ! grep -q '"name": "Stellarmate"' "$menu_py"; then
-        sed -i '/"name": "GPSD (generic)"/a \                        {\
-                            "name": "Stellarmate",\
-                            "value": "stellarmate",\
-                        },' "$menu_py"
-        echo "✅ Added 'Stellarmate' to GPS Type"
+        patch_file="${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
+        if [[ -f "$patch_file" ]]; then
+            patch "$menu_py" "$patch_file"
+            echo "✅ Successfully patched 'Stellarmate' to GPS Type"
+        else
+            echo "❌ Patch file $patch_file not found"
+        fi
     else
         echo "ℹ️ 'Stellarmate' GPS Type already exists."
     fi
@@ -502,22 +504,3 @@ fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-# ---- Add "stellarmate" gps_type to main.py ----
-echo "🔧 Adding 'stellarmate' gps_type to main.py ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if ! grep -q 'elif gps_type == "stellarmate":' "$main_py"; then
-        sed -i '/elif gps_type == "gpsd":/a \        elif gps_type == "stellarmate":\
-            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")' "$main_py"
-        echo "✅ Added 'stellarmate' gps_type to main.py"
-    else
-        echo "ℹ️ 'stellarmate' gps_type already exists in main.py."
-    fi
-else
-    echo "⏩ Skipping patch for 'stellarmate' gps_type in main.py: ❌ incompatible version/pi/os"
-fi
-show_diff_if_changed "$main_py"
-python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-
-bash "${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh"

@@ -1,5 +1,5 @@
---- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py.orig	2025-11-09 17:23:37.363553945 +0100
-+++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py	2025-11-09 17:23:37.351554169 +0100
+--- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py.orig	2025-11-09 18:09:29.085237067 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py	2025-11-09 18:09:29.073237243 +0100
 @@ -919,6 +919,8 @@
          gps_type = cfg.get_option("gps_type")
          if gps_type == "ublox":
