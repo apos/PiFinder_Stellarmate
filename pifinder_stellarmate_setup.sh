@@ -87,7 +87,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
     echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
     echo "❓ Please choose an action:"
     echo "   1. Delete the existing installation and reinstall from scratch."
-    echo "   2. Update the existing installation with 'git pull'."
+    echo "   2. Update the existing installation with 'git reset --hard origin/release'."
     echo "   3. Cancel the installation."
     read -p "Enter your choice (1, 2, or 3): " choice
 
@@ -110,7 +110,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
             ;;
         2)
             sudo systemctl stop pifinder
-            echo "🔄 Updating the existing installation with 'git pull'..."
+            echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
             cd "${pifinder_home}/PiFinder"
             git reset --hard origin/release
             git pull

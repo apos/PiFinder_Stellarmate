@@ -1,13 +1,15 @@
 #!/bin/bash
+# Get important functions and paths
+source "$(dirname "$0")/functions.sh"
 
 ### Checks for Pi-Type (Pi4/Pi5) and OS (Bookworm) and applies patches to PiFinder installation files accordingly
 ### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
 
 # go to main working dir
 cd "$pifinder_home"
-
-# Get important functions and paths
-source "$(dirname "$0")/functions.sh"
+cd "${pifinder_home}/PiFinder"
+git reset --hard origin/release
+cd "$pifinder_home"
 
 # Detect PiFinder version from version.txt
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
@@ -171,15 +173,32 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
         if grep -q '"gps_type": "ublox"' "$cfg"; then
-            sed -i 's|"gps_type": "ublox"|"gps_type": "gpsd"|' "$cfg"
-            echo "✅ Replaced 'ublox' with 'gpsd' in $cfg"
+            sed -i 's|"gps_type": "ublox"|"gps_type": "stellarmate"|' "$cfg"
+            echo "✅ Replaced 'ublox' with 'stellarmate' in $cfg"
+        elif grep -q '"gps_type": "gpsd"' "$cfg"; then
+            sed -i 's|"gps_type": "gpsd"|"gps_type": "stellarmate"|' "$cfg"
+            echo "✅ Replaced 'gpsd' with 'stellarmate' in $cfg"
         else
-            echo "ℹ️ No 'ublox' GPS type found in $cfg"
+            echo "ℹ️ No 'ublox' or 'gpsd' GPS type found to replace in $cfg"
         fi
         show_diff_if_changed "$cfg"
     done
 else
     echo "⏩ Skipping gps_type patch in config files: ❌ incompatible version/pi/os"
+fi
+
+############################################################
+# Copy gps_stellarmate.py module
+echo "🔧 Copying Stellarmate GPS module..."
+cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_dir}/python/PiFinder/"
+echo "✅ Copied gps_stellarmate.py"
+
+# Ensure __init__.py exists in the python directory for package recognition
+if [ ! -f "${pifinder_dir}/python/__init__.py" ]; then
+    touch "${pifinder_dir}/python/__init__.py"
+    echo "✅ Created empty __init__.py in ${pifinder_dir}/python/"
+else
+    echo "ℹ️ __init__.py already exists in ${pifinder_dir}/python/"
 fi
 
 #######################################
@@ -420,86 +439,16 @@ fi
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
-######################################################
-# Patch menu_structure.py to flatten "By Catalog" structure
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q '"name": "By Catalog"' "$menu_py"; then
-        echo "🔧 Flattening 'By Catalog' submenu in $menu_py"
-        patch_file="${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
-        if [[ -f "$patch_file" ]]; then
-            patch "$menu_py" "$patch_file"
-            echo "✅ Successfully flattened 'By Catalog' structure in $menu_py"
-        else
-            echo "❌ Patch file $patch_file not found"
-        fi
-    else
-        echo "ℹ️ 'By Catalog' submenu already flattened or not found – skipping patch"
-    fi
-else
-    echo "⏩ Skipping patch for 'By Catalog' flattening: ❌ incompatible version/pi/os"
-fi
-
-
 # #####################################################
-# menu_structure.py (patching menu blocks individually with version checks)
+# menu_structure.py (overwrite with known-good version)
 cp "$menu_py" "$menu_py.bak"
-
-# ---- Remove "WiFi Mode" block ----
-echo "🔧 Removing 'WiFi Mode' from menu_structure.py ..."
+echo "🔧 Overwriting menu_structure.py with known-good version ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    wifi_line=$(grep -n '"name": "WiFi Mode"' "$menu_py" | cut -d: -f1 | head -n1)
-    if [[ -n "$wifi_line" ]]; then
-        start=$((wifi_line - 1))
-        end=$((wifi_line + 16))
-        sed -i "${start},${end}d" "$menu_py"
-        echo "✅ Removed 'WiFi Mode' block from menu_structure.py"
-    else
-        echo "ℹ️ No 'WiFi Mode' block found"
-    fi
+    cp "/home/stellarmate/PiFinder_BAK/python/PiFinder/ui/menu_structure.py" "$menu_py"
+    echo "✅ Successfully overwrote menu_structure.py with known-good version."
 else
-    echo "⏩ Skipping patch for 'WiFi Mode': ❌ incompatible version/pi/os"
-fi
-show_diff_if_changed "$menu_py"
-python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-# ---- Remove "Software Upd" entry ----
-echo "🔧 Removing 'Software Upd' from menu_structure.py ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    line=$(grep -n '"name": "Software Upd"' "$menu_py" | cut -d: -f1 | head -n1)
-    if [[ -n "$line" ]]; then
-        start=$((line))
-        end=$((line))
-        sed -i "${start},${end}d" "$menu_py"
-        echo "✅ Removed 'Software Upd' block (lines ${start}-${end})"
-    else
-        echo "ℹ️  No 'Software Upd' entry found (maybe already removed)"
-    fi
-else
-    echo "⏩ Skipping patch for 'Software Upd': ❌ incompatible version/pi/os"
-fi
-show_diff_if_changed "$menu_py"
-python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-
-# ---- Add "Stellarmate" to GPS Type ----
-echo "🔧 Adding 'Stellarmate' to GPS Type in menu_structure.py ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if ! grep -q '"name": "Stellarmate"' "$menu_py"; then
-        patch_file="${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
-        if [[ -f "$patch_file" ]]; then
-            patch "$menu_py" "$patch_file"
-            echo "✅ Successfully patched 'Stellarmate' to GPS Type"
-        else
-            echo "❌ Patch file $patch_file not found"
-        fi
-    else
-        echo "ℹ️ 'Stellarmate' GPS Type already exists."
-    fi
-else
-    echo "⏩ Skipping patch for 'Stellarmate' GPS Type: ❌ incompatible version/pi/os"
+    echo "⏩ Skipping overwrite for menu_structure.py: ❌ incompatible version/pi/os"
 fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
