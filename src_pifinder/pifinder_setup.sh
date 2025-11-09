@@ -17,6 +17,7 @@ pifinder_stellarmate_version_testing="2.3.0"
 ############################################################
 # Get some important vars and functinons
 source $(pwd)/bin/functions.sh
+source ${python_venv}/bin/activate
 
 ############################################################
 # VERSION CHECK (Live check from GitHub)
@@ -82,7 +83,9 @@ sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
 # Check if a PiFinder installation already exists.
-if [ -d "${pifinder_home}/PiFinder" ]; then
+if [ -f "${lockfile}" ]; then
+    echo "ℹ️ Lock file found. Assuming this is a re-run to install requirements. Continuing..."
+elif [ -d "${pifinder_home}/PiFinder" ]; then
     echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
     echo "❓ Please choose an action:"
     echo "   1. Delete the existing installation and reinstall from scratch."
@@ -103,12 +106,14 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
             cd "${pifinder_home}"
             git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+            echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
             ;;
         2)
             echo "🔄 Updating the existing installation with 'git pull'..."
             cd "${pifinder_home}/PiFinder"
             git pull
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+            echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
             ;;
         3)
             echo "ℹ️  Installation cancelled by user."
@@ -124,6 +129,7 @@ else
     cd "${pifinder_home}"
     git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
     sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+    echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
 fi
 
 # Install some package requirements
@@ -163,7 +169,7 @@ if ! is_venv_active "${python_venv}"; then
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
-      
+      touch "${lockfile}"
       # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
@@ -174,6 +180,7 @@ if ! is_venv_active "${python_venv}"; then
      echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
      echo "source ${python_venv}/bin/activate"
      echo -e "\nTHEN: run the script again to install the Requirements."
+     touch "${lockfile}"
      exit 1 # Exit script because venv must be activated manually for Requirements installation
   fi
 else

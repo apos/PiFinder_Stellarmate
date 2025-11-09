@@ -158,29 +158,6 @@ for service_file in "${service_files[@]}"; do
 done
 
 
-#######################################
-# pifinder_post_update.sh
-echo "🔧 Updating pifinder_post_update.sh ..."
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-cp "$post_update_file" "$post_update_file.bak"
-
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    insert_block="python3 -m venv ${pifinder_dir}/python/.venv\nsource ${pifinder_dir}/python/.venv/bin/activate"
-    if ! grep -q "${pifinder_dir}/python/.venv/bin/activate" "$post_update_file"; then
-        awk -v insert="$insert_block" '
-        /git submodule update --init --recursive/ {
-            print;
-            print insert;
-            next
-        }
-        { print }
-        ' "$post_update_file.bak" > "$post_update_file"
-    fi
-else
-    echo "⏩ Skipping patch for pifinder_post_update.sh: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$post_update_file"
 
 
 
@@ -404,27 +381,11 @@ python3 -m py_compile "$camera_file" && echo "✅ Syntax OK" || echo "❌ Syntax
 
 
 ##################################################
-#  PiFinder  main.py
+# PiFinder  main.py
 
 echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
-        sed -i 's
-        |gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
-        echo "✅ GPS-Kondition gepatcht in main.py"
-    fi
-
-
-else
-    echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$main_py"
-python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
 
 # Patch GPS location overwrite logic in main.py with correct indentation
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
@@ -443,6 +404,21 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
 else
     echo "⏩ Skipping gps fix logic patch in main.py: ❌ incompatible version/pi/os"
 fi
+
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
+        sed -i 's
+        |gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
+        echo "✅ GPS-Kondition gepatcht in main.py"
+    fi
+
+
+else
+    echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$main_py"
+python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 ######################################################
 # Patch menu_structure.py to flatten "By Catalog" structure
