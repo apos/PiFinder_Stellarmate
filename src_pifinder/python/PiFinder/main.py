@@ -37,8 +37,7 @@ from PiFinder import config
 from PiFinder import pos_server
 from PiFinder import utils
 from PiFinder import server
-from PiFinder import keyboard_interface
-from PiFinder import gps_gpsd as gps_monitor
+from PiFinder import gps_stellarmate as gps_monitor
 
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder import gps_gpsd as gps_monitor
@@ -520,18 +519,19 @@ def main(
                             if gps_content["lat"] + gps_content["lon"] != 0:
                                 location = shared_state.location()
 
-                            # Only update GPS fixes, as soon as it's loaded or comes from the WEB it's untouchable
-                            if (
-                                not location.source == "WEB"
+                            # Always allow API-based location overwrite
+                            new_error = gps_content.get("error_in_m", 0)
+                            allow_update = (
+                                location.source != "WEB"
                                 and not location.source.startswith("CONFIG:")
                                 and (
                                     location.error_in_m == 0
-                                    or float(gps_content["error_in_m"])
-                                    < float(
-                                        location.error_in_m
-                                    )  # Only if new error is smaller
+                                    or float(new_error) < float(location.error_in_m)
+                                    or gps_content.get("source", "") == "KStarsAPI"
                                 )
-                            ):
+                            )
+
+                            if allow_update:
                                 logger.info(
                                     f"Updating GPS location: new content: {gps_content}, old content: {location}"
                                 )
@@ -921,6 +921,8 @@ if __name__ == "__main__":
         gps_type = cfg.get_option("gps_type")
         if gps_type == "ublox":
             gps_monitor = importlib.import_module("PiFinder.gps_ubx")
+        elif gps_type == "stellarmate":
+            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")
         else:
             gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
 

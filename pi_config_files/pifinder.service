@@ -6,7 +6,7 @@ After=basic.target
 Type=idle
 User=stellarmate
 WorkingDirectory=/home/stellarmate/PiFinder/python
-ExecStart=/home/stellarmate/PiFinder/python/.venv/bin/python -m PiFinder.main
+ExecStart=/home/stellarmate/PiFinder/python/.venv/bin/python -m PiFinder.main --verbose
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
