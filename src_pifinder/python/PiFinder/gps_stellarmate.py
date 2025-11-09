@@ -170,6 +170,7 @@ async def read_kstars_location_file(gps_queue):
                 async with session.get(url, timeout=5) as response:
                     if response.status == 200:
                         data = await response.json()
+                        logger.debug(f"KStars API raw response: {data}")
                         result = data.get("success", {})
                         lat = float(result.get("latitude", 0))
                         lon = float(result.get("longitude", 0))
@@ -179,6 +180,7 @@ async def read_kstars_location_file(gps_queue):
                             result["altitude"] = alt
                         alt = float(alt)
                         coords = (lat, lon, alt)
+                        logger.debug(f"Parsed coordinates: lat={lat}, lon={lon}, alt={alt}")
                         if coords == last_coords:
                             await asyncio.sleep(5)
                             continue
@@ -196,6 +198,7 @@ async def read_kstars_location_file(gps_queue):
                                 "error_in_m": 10,
                             },
                         )
+                        logger.info(f"Putting GPS fix message into queue: {msg}")
                         gps_queue.put(msg)
 
                         if tz:
