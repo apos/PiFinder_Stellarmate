@@ -2,7 +2,8 @@
 Description=PiFinderSplash
 
 [Service]
-WorkingDirectory=/home/root/PiFinder/python
+User=stellarmate
+WorkingDirectory=/home/stellarmate/PiFinder/python
 ExecStart=/home/stellarmate/PiFinder/python/.venv/bin/python -m PiFinder.splash
 
 [Install]

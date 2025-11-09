@@ -1,25 +1,14 @@
-40a41
-> from PiFinder import gps_gpsd as gps_monitor
-492,499c493,505
-<                             # Only update GPS fixes, as soon as it's loaded or comes from the WEB it's untouchable
-<                             if not location.source == "WEB" and not location.source.startswith("CONFIG:") and (
-<                                 location.error_in_m == 0
-<                                 or float(gps_content["error_in_m"])
-<                                 < float(
-<                                     location.error_in_m
-<                                 )  # Only if new error is smaller
-<                             ):
----
->                             # Always allow API-based location overwrite
->                             new_error = gps_content.get("error_in_m", 0)
->                             allow_update = (
->                                 location.source != "WEB"
->                                 and not location.source.startswith("CONFIG:")
->                                 and (
->                                     location.error_in_m == 0
->                                     or float(new_error) < float(location.error_in_m)
->                                     or gps_content.get("source", "") == "KStarsAPI"
->                                 )
->                             )
-> 
->                             if allow_update:
+--- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py.orig	2025-11-09 13:36:19.169308473 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/main.py	2025-11-09 13:49:16.130139582 +0100
+@@ -38,10 +38,7 @@
+ from PiFinder import utils
+ from PiFinder import server
+ from PiFinder import keyboard_interface
+-from PiFinder import gps_gpsd as gps_monitor
+-from PiFinder import gps_gpsd as gps_monitor
+-from PiFinder import gps_gpsd as gps_monitor
+-from PiFinder import gps_gpsd as gps_monitor
++
+ 
+ from PiFinder.multiproclogging import MultiprocLogging
+ from PiFinder.catalogs import CatalogBuilder, CatalogFilter, Catalogs
