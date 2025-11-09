@@ -108,6 +108,8 @@ fi
     else
         echo "DEBUG: should_apply_patch returned false for requirements.txt"
     fi
+
+echo "------------------------------------"
 #######################################################
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
@@ -125,17 +127,18 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
 
     show_diff_if_changed "$python_requirements"
     python3 -m py_compile "$python_requirements" 2>/dev/null && echo "✅ Syntax OK" || echo "ℹ️ Text file – no syntax check needed"
+echo "------------------------------------"
 
     # Upgrade scikit-learn to the latest version to avoid build issues on Bookworm
     echo "🔧 Upgrading scikit-learn version in $python_requirements ..."
     sed -i 's/scikit-learn==1.2.2/scikit-learn/' "$python_requirements"
-    echo "✅ Changed scikit-learn to latest version."
-else
-    echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
-fi
-
-############################################################
-# PiFinder Services – patch dynamic paths from template
+        echo "✅ Changed scikit-learn to latest version."
+    else
+        echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
+    fi
+    echo "------------------------------------"
+    ############################################################
+    # PiFinder Services – patch dynamic paths from template
 echo "🔧 Patching systemd service templates ..."
 
 service_files=(
@@ -150,15 +153,21 @@ for service_file in "${service_files[@]}"; do
     sed -i "s|__PIFINDER_USER__|${USER}|g" "$service_file"
     sed -i "s|__PIFINDER_STELLARMATE_DIR__|${pifinder_stellarmate_dir}|g" "$service_file"
 
-    echo "✅ Patched placeholders in $service_file"
-done
+        echo "✅ Patched placeholders in $service_file"
 
+    done
 
+    echo "------------------------------------"
 
+    
 
+    
 
-######################################################
-# config.json and default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
+    
+
+    ######################################################
+
+    # config.json and default_config.json – set gps_type to gpsd (we do not use ublox, only stellarmate/KStars GPS)
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
@@ -180,6 +189,7 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
 else
     echo "⏩ Skipping gps_type patch in config files: ❌ incompatible version/pi/os"
 fi
+echo "------------------------------------"
 
 ############################################################
 # Copy gps_stellarmate.py module
@@ -192,11 +202,12 @@ if [ ! -f "${pifinder_dir}/python/__init__.py" ]; then
     touch "${pifinder_dir}/python/__init__.py"
     echo "✅ Created empty __init__.py in ${pifinder_dir}/python/"
 else
-    echo "ℹ️ __init__.py already exists in ${pifinder_dir}/python/"
-fi
-
-#######################################
-# Patch displays.py for Pi5 SPI GPIO
+        echo "ℹ️ __init__.py already exists in ${pifinder_dir}/python/"
+    fi
+    echo "------------------------------------"
+    
+    #######################################
+    # Patch displays.py for Pi5 SPI GPIO
 echo "🔧 Updating displays.py for Pi5 SPI compatibility ..."
 cp "$display_py" "$display_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
@@ -215,6 +226,7 @@ fi
 
 show_diff_if_changed "$display_py"
 python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 #######################################
 # Patch keyboard_pi.py for Pi 5
@@ -248,6 +260,7 @@ fi
 
 show_diff_if_changed "$keyboard_py"
 python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 
 
@@ -255,6 +268,7 @@ python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax
 # Raspberry Pi 4
 #########################################
 
+echo "------------------------------------"
 #######################################
 # Patch solver.py
 
@@ -283,6 +297,7 @@ fi
 
 show_diff_if_changed "$solver_py"
 python3 -m py_compile "$solver_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 
 
@@ -302,6 +317,7 @@ fi
 
 show_diff_if_changed "$init_py"
 python3 -m py_compile "$init_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
@@ -317,6 +333,7 @@ fi
 
 show_diff_if_changed "$client_py"
 python3 -m py_compile "$client_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
@@ -331,7 +348,13 @@ else
 fi
 
 show_diff_if_changed "$grpc_py"
+
 python3 -m py_compile "$grpc_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+echo "------------------------------------"
+
+
+
 
 
 echo "📄 Checking for tetra3.py -> main.py rename ..."
@@ -341,6 +364,7 @@ if [ -f "${t3_dir}/tetra3.py" ]; then
 else
     echo "ℹ️ File tetra3.py already renamed or does not exist"
 fi
+echo "------------------------------------"
 
 
 
@@ -363,6 +387,7 @@ fi
 
 show_diff_if_changed "$ui_file"
 python3 -m py_compile "$ui_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 
 
@@ -391,6 +416,7 @@ fi
 
 show_diff_if_changed "$camera_file"
 python3 -m py_compile "$camera_file" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 
 
@@ -435,6 +461,7 @@ fi
 
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 
 # #####################################################
 # menu_structure.py (overwrite with known-good version)

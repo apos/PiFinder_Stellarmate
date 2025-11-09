@@ -282,5 +282,21 @@ echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
+# Detect Pi and OS versions for the final summary message
+hw_model=$(tr -d '\0' < /proc/device-tree/model)
+if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+    current_pi="Pi 5"
+elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+    current_pi="Pi 4"
+else
+    current_pi="Unknown Pi"
+fi
+current_os=$(lsb_release -sc | sed 's/\b\(.\)/\u\1/')
+
 echo "##############################################"
-echo "PiFinder setup complete. This is the version to run on Stellarmate OS (Pi4, Bookworm)"
+echo "✅ PiFinder setup complete."
+echo "   - PiFinder Version: $github_version"
+echo "   - PiFinder-Stellarmate Scripts: $pifinder_local_version"
+echo "   - Hardware: $current_pi"
+echo "   - OS: $current_os"
+echo "##############################################"
