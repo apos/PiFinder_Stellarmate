@@ -10,6 +10,7 @@ import aiohttp
 import sys
 import os
 from datetime import datetime
+import logging
 
 logger = logging.getLogger("GPS")
 handler = logging.StreamHandler(sys.stdout)

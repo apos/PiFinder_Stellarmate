@@ -5,12 +5,6 @@ source "$(dirname "$0")/functions.sh"
 ### Checks for Pi-Type (Pi4/Pi5) and OS (Bookworm) and applies patches to PiFinder installation files accordingly
 ### This script is intended to be run on a Raspberry Pi running Stellarmate with PiFinder installed
 
-# go to main working dir
-cd "$pifinder_home"
-cd "${pifinder_home}/PiFinder"
-git reset --hard origin/release
-cd "$pifinder_home"
-
 # Detect PiFinder version from version.txt
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
 
@@ -274,6 +268,7 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
     fi
 
     if grep -q '^import tetra3$' "$solver_py"; then
+        sed -i 's|^import tetra3$|from tetra3 import main|' "$solver_py"
         sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
     fi
 
@@ -406,31 +401,33 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-# Patch GPS location overwrite logic in main.py with correct indentation
+# Patch GPS type handling in main.py
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q 'elif gps_type == "stellarmate":' "$main_py"; then
-        echo "ℹ️ main.py already patched – skipping GPS type patch"
-    else
+    STELLARMATE_GPS_LINE_1='        elif gps_type == "stellarmate":'
+    STELLARMATE_GPS_LINE_2='            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")'
+    if ! grep -qF "$STELLARMATE_GPS_LINE_1" "$main_py"; then
         echo "🔧 Patching GPS type handling in $main_py"
-        patch_file="${pifinder_stellarmate_dir}/diffs/main_py.diff"
-        if [[ -f "$patch_file" ]]; then
-            patch "$main_py" "$patch_file"
-            echo "✅ Successfully patched GPS type handling in $main_py"
-        else
-            echo "❌ Patch file $patch_file not found"
-        fi
+        sed -i "/gps_monitor = importlib.import_module(\"PiFinder.gps_ubx\")/a \\${STELLARMATE_GPS_LINE_1}\\n\\${STELLARMATE_GPS_LINE_2}" "$main_py"
+        echo "✅ Successfully added 'stellarmate' GPS type handling in $main_py"
+    else
+        echo "ℹ️ 'stellarmate' GPS type handling already present in main.py – skipping"
     fi
 else
     echo "⏩ Skipping GPS type patch in main.py: ❌ incompatible version/pi/os"
 fi
 
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q 'gps_content\["lat"\] \+ gps_content\["lon"\] != 0' "$main_py"; then
-        sed -i 's
-        |gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
-        echo "✅ GPS-Kondition gepatcht in main.py"
-    else
+    # Check for the new condition first to make the script idempotent
+    if grep -q 'gps_content\["lat"\] != 0.0 or gps_content\["lon"\] != 0.0' "$main_py"; then
         echo "ℹ️ GPS condition already patched in main.py – skipping"
+    else
+        # If new condition not found, check for old and replace
+        if grep -q 'gps_content\["lat"\] + gps_content\["lon"\] != 0' "$main_py"; then
+            sed -i 's/gps_content\["lat"\] + gps_content\["lon"\] != 0/gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0/' "$main_py"
+            echo "✅ GPS condition patched in main.py"
+        else
+            echo "ℹ️ Could not find old GPS condition to patch in main.py"
+        fi
     fi
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
@@ -442,14 +439,16 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 # #####################################################
 # menu_structure.py (overwrite with known-good version)
 cp "$menu_py" "$menu_py.bak"
-echo "🔧 Overwriting menu_structure.py with known-good version ..."
+echo "🔧 Updating menu_structure.py ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    cp "/home/stellarmate/PiFinder_BAK/python/PiFinder/ui/menu_structure.py" "$menu_py"
-    echo "✅ Successfully overwrote menu_structure.py with known-good version."
+    if grep -q '"value": "stellarmate"' "$menu_py"; then
+        echo "ℹ️ 'Stellarmate' GPS option already present in menu_structure.py – skipping"
+    else
+        cp "/home/stellarmate/PiFinder_BAK/python/PiFinder/ui/menu_structure.py" "$menu_py"
+        echo "✅ Successfully overwrote menu_structure.py with known-good version."
+    fi
 else
     echo "⏩ Skipping overwrite for menu_structure.py: ❌ incompatible version/pi/os"
 fi
-show_diff_if_changed "$menu_py"
-python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
