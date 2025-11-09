@@ -416,12 +416,7 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
         echo "✅ GPS-Kondition gepatcht in main.py"
     fi
 
-    if ! grep -q 'from PiFinder import gps_gpsd as gps_monitor' "$main_py"; then
-        sed -i '/from PiFinder.multiproclogging import MultiprocLogging/a from PiFinder import gps_gpsd as gps_monitor' "$main_py"
-        echo "✅ Import von gps_gpsd als gps_monitor eingefügt"
-    else
-        echo "ℹ️ Import gps_gpsd bereits vorhanden"
-    fi
+
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
 fi
@@ -468,125 +463,6 @@ else
 fi
 
 
-######################################################
-# gps_gpsd.py
-
-echo "🔧 Updating gps_gpsd.py for KStars API support ..."
-cp "$gps_py" "$gps_py.bak"
-echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    echo "🔍 Applying KStars API patch to $gps_py ..."
-    # Remove old implementation
-    sed -i '/^async def gps_main(gps_queue, console_queue, log_queue):/,/^    logger.info("Using GPSD GPS code")/d' "$gps_py"
-    sed -i '/# To run the GPS monitor/d' "$gps_py"
-
-    # Insert new implementation at the end of the file
-    cat <<'EOF' >> "$gps_py"
-
-import aiohttp
-import sys
-import os
-from datetime import datetime
-
-logger = logging.getLogger("GPS")
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-async def read_kstars_location_file(gps_queue):
-    logger.info("KStars API reader started (gps_gpsd.py)")
-    url = "http://localhost:8624/api/info/location"
-
-    def read_elevation_fallback():
-        kstarsrc_path = os.path.expanduser("~/.config/kstarsrc")
-        try:
-            with open(kstarsrc_path, "r") as f:
-                in_location = False
-                for line in f:
-                    line = line.strip()
-                    if line == "[Location]":
-                        in_location = True
-                    elif in_location:
-                        if line.startswith("[") and line != "[Location]":
-                            break
-                        if line.startswith("Elevation="):
-                            try:
-                                return float(line.split("=", 1)[1])
-                            except ValueError:
-                                return 0.0
-        except Exception as e:
-            logger.warning(f"Could not read elevation from kstarsrc: {e}")
-        return 0.0
-
-    last_coords = None
-
-    while True:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        result = data.get("success", {})
-                        lat = float(result.get("latitude", 0))
-                        lon = float(result.get("longitude", 0))
-                        alt = result.get("altitude")
-                        if alt is None or float(alt) == 0.0:
-                            alt = read_elevation_fallback()
-                            result["altitude"] = alt
-                        alt = float(alt)
-                        coords = (lat, lon, alt)
-                        if coords == last_coords:
-                            await asyncio.sleep(5)
-                            continue
-                        last_coords = coords
-                        tz = result.get("tz", 0)
-
-                        msg = (
-                            "fix",
-                            {
-                                "lat": lat,
-                                "lon": lon,
-                                "altitude": alt,
-                                "source": "KStarsAPI",
-                                "lock": True,
-                                "error_in_m": 10,
-                            },
-                        )
-                        gps_queue.put(msg)
-
-                        if tz:
-                            now = datetime.utcnow()
-                            msg_time = ("time", {"time": now})
-                            gps_queue.put(msg_time)
-
-                        logger.info(f"KStars GPS API fix injected: {msg}")
-                    else:
-                        logger.warning(f"KStars API error: HTTP {response.status}")
-        except Exception as e:
-            logger.warning(f"KStars GPS API access error: {e}")
-        await asyncio.sleep(5)
-
-async def gps_main(gps_queue, console_queue, log_queue):
-    MultiprocLogging.configurer(log_queue)
-    logger.info("GPS main started – using ONLY KStars API")
-    try:
-        await read_kstars_location_file(gps_queue)
-    except Exception as e:
-        logger.error(f"Error in GPS monitor: {e}")
-        await asyncio.sleep(5)
-
-def gps_monitor(gps_queue, console_queue, log_queue):
-    asyncio.run(gps_main(gps_queue, console_queue, log_queue))
-EOF
-else
-    echo "⏩ Skipping patch for gps_gpsd.py: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$gps_py"
-python3 -m py_compile "$gps_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-
-
 # #####################################################
 # menu_structure.py (patching menu blocks individually with version checks)
 cp "$menu_py" "$menu_py.bak"
@@ -628,6 +504,43 @@ else
 fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+
+# ---- Add "Stellarmate" to GPS Type ----
+echo "🔧 Adding 'Stellarmate' to GPS Type in menu_structure.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    if ! grep -q '"name": "Stellarmate"' "$menu_py"; then
+        sed -i '/"name": "GPSD (generic)"/a \                        {\
+                            "name": "Stellarmate",\
+                            "value": "stellarmate",\
+                        },' "$menu_py"
+        echo "✅ Added 'Stellarmate' to GPS Type"
+    else
+        echo "ℹ️ 'Stellarmate' GPS Type already exists."
+    fi
+else
+    echo "⏩ Skipping patch for 'Stellarmate' GPS Type: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+# ---- Add "stellarmate" gps_type to main.py ----
+echo "🔧 Adding 'stellarmate' gps_type to main.py ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    if ! grep -q 'elif gps_type == "stellarmate":' "$main_py"; then
+        sed -i '/elif gps_type == "gpsd":/a \        elif gps_type == "stellarmate":\
+            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")' "$main_py"
+        echo "✅ Added 'stellarmate' gps_type to main.py"
+    else
+        echo "ℹ️ 'stellarmate' gps_type already exists in main.py."
+    fi
+else
+    echo "⏩ Skipping patch for 'stellarmate' gps_type in main.py: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$main_py"
+python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 
 
 bash "${pifinder_stellarmate_bin}/copy_altered_src_pifinder.sh"
