@@ -1,31 +1,44 @@
-source /home/stellarmate/PiFinder_Stellarmate/bin/functions.sh
-
 git submodule update --init --recursive
-python3 -m venv ${pifinder_dir}/python/.venv
-source ${pifinder_dir}/python/.venv/bin/activate
-${pifinder_dir}/python/.venv/bin/pip install -r ${pifinder_dir}/python/requirements.txt
+sudo pip install -r /home/pifinder/PiFinder/python/requirements.txt
 
 # Set up migrations folder if it does not exist
-if ! [ -d "${pifinder_data_dir}/migrations" ]
+if ! [ -d "/home/pifinder/PiFinder_data/migrations" ]
 then
-    mkdir ${pifinder_data_dir}/migrations
+    mkdir /home/pifinder/PiFinder_data/migrations
 fi
 
 # v1.x.x
 # everying prior to selecitve migrations
-if ! [ -f "${pifinder_data_dir}/migrations/v1.x.x" ]
+if ! [ -f "/home/pifinder/PiFinder_data/migrations/v1.x.x" ]
 then
-    source ${pifinder_dir}/migration_source/v1.x.x.sh
-    touch ${pifinder_data_dir}/migrations/v1.x.x
+    source /home/pifinder/PiFinder/migration_source/v1.x.x.sh
+    touch /home/pifinder/PiFinder_data/migrations/v1.x.x
 fi
 
 # v2.1.0
 # Switch to Cedar
-if ! [ -f "${pifinder_data_dir}/migrations/v2.1.0" ]
+if ! [ -f "/home/pifinder/PiFinder_data/migrations/v2.1.0" ]
 then
-    source ${pifinder_dir}/migration_source/v2.1.0.sh
-    touch ${pifinder_data_dir}/migrations/v2.1.0
+    source /home/pifinder/PiFinder/migration_source/v2.1.0.sh
+    touch /home/pifinder/PiFinder_data/migrations/v2.1.0
+fi
+
+# v2.2.1
+# Install libinput
+if ! [ -f "/home/pifinder/PiFinder_data/migrations/v2.2.1" ]
+then
+    source /home/pifinder/PiFinder/migration_source/v2.2.1.sh
+    touch /home/pifinder/PiFinder_data/migrations/v2.2.1
+fi
+
+# v2.2.2
+# Enable host usb on usb-c port
+if ! [ -f "/home/pifinder/PiFinder_data/migrations/v2.2.2" ]
+then
+    source /home/pifinder/PiFinder/migration_source/v2.2.2.sh
+    touch /home/pifinder/PiFinder_data/migrations/v2.2.2
 fi
 
 # DONE
 echo "Post Update Complete"
+

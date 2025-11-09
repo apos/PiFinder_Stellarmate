@@ -410,9 +410,9 @@ if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
         sed -i 's
         |gps_content\["lat"\] \+ gps_content\["lon"\] != 0|gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0|' "$main_py"
         echo "✅ GPS-Kondition gepatcht in main.py"
+    else
+        echo "ℹ️ GPS condition already patched in main.py – skipping"
     fi
-
-
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
 fi

@@ -83,9 +83,7 @@ sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
 # Check if a PiFinder installation already exists.
-if [ -f "${lockfile}" ]; then
-    echo "ℹ️ Lock file found. Assuming this is a re-run to install requirements. Continuing..."
-elif [ -d "${pifinder_home}/PiFinder" ]; then
+if [ -d "${pifinder_home}/PiFinder" ]; then
     echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
     echo "❓ Please choose an action:"
     echo "   1. Delete the existing installation and reinstall from scratch."
@@ -95,11 +93,12 @@ elif [ -d "${pifinder_home}/PiFinder" ]; then
 
     case "$choice" in
         1)
-            echo "🗑️  Deleting the existing installation..."
-            bash "${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh" --selfmove
-            sleep 4
+            sudo systemctl stop pifinder
+            echo "🗑️  Deleting the existing PiFinder installation directory..."
+            sudo rm -rf "${pifinder_home}/PiFinder"
+            sleep 2 # Give some time for the deletion to complete
             if [ -d "${pifinder_home}/PiFinder" ]; then
-                echo "❌ ERROR: The PiFinder folder still exists after the uninstall attempt. Aborting setup."
+                echo "❌ ERROR: The PiFinder folder still exists after deletion. Aborting setup."
                 exit 1
             fi
             echo "Installation from scratch ..."
@@ -107,13 +106,17 @@ elif [ -d "${pifinder_home}/PiFinder" ]; then
             git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
             echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
+            bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
             ;;
         2)
+            sudo systemctl stop pifinder
             echo "🔄 Updating the existing installation with 'git pull'..."
             cd "${pifinder_home}/PiFinder"
+            git reset --hard origin/release
             git pull
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
             echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
+            bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
             ;;
         3)
             echo "ℹ️  Installation cancelled by user."
@@ -140,7 +143,6 @@ sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamer
 #########################################################################
 # Make some Changes to the downloaded local installation files of PiFinder 
 cd ${pifinder_home}/PiFinder
-bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
 
 # Replace patched service files with the correct Stellarmate versions
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
@@ -169,7 +171,6 @@ if ! is_venv_active "${python_venv}"; then
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
-      touch "${lockfile}"
       # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
@@ -180,7 +181,6 @@ if ! is_venv_active "${python_venv}"; then
      echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
      echo "source ${python_venv}/bin/activate"
      echo -e "\nTHEN: run the script again to install the Requirements."
-     touch "${lockfile}"
      exit 1 # Exit script because venv must be activated manually for Requirements installation
   fi
 else
