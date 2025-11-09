@@ -107,6 +107,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
             echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
             bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+            cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
             ;;
         2)
             sudo systemctl stop pifinder
@@ -117,6 +118,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
             sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
             echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
             bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+            cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
             ;;
         3)
             echo "ℹ️  Installation cancelled by user."
