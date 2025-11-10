@@ -427,16 +427,7 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    # Modify GPS update logic
-    sed -i '/if (\s*not location.source == "WEB"/ { N; N; N; N; N; N; N; N; N; N; N; N; N; s|                            if (\s*not location.source == "WEB"\s*and not location.source.startswith("CONFIG:")\s*and (\s*location.error_in_m == 0\s*or float(gps_content["error_in_m"])\s*< float(\s*location.error_in_m\s*)  # Only if new error is smaller\s*)\s*):|                                if location.source in [None, "GPS", "KStarsAPI"]:| }' "$main_py"
-
-    # Add stellarmate GPS type option
-    sed -i '/gps_monitor = importlib.import_module("PiFinder.gps_ubx")/a \        elif gps_type == "stellarmate":\n            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")' "$main_py"
-else
-    echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
-fi
-
+    patch "$main_py" < "${pifinder_stellarmate_dir}/diffs/main_py.diff"
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
@@ -461,21 +452,6 @@ show_diff_if_changed "$server_py"
 python3 -m py_compile "$server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
-#######################################
-# Patch status.py
-echo "🔧 Updating status.py ..."
-cp "$status_py" "$status_py.bak"
-echo "➡️ Detected Version Combo: $current_pfinder / $current_pi / $current_os"
-
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    cp "${pifinder_stellarmate_dir}/status.py.modified_for_diff" "$status_py"
-else
-    echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
-fi
-
-show_diff_if_changed "$status_py"
-python3 -m py_compile "$status_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
-echo "------------------------------------"
 
 # #####################################################
 # menu_structure.py (overwrite with known-good version)

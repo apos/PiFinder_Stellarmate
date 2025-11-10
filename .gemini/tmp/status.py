@@ -102,13 +102,9 @@ class UIStatus(UIModule):
             "GPS": "--",
             "GPS ALT": "--",
             "GPS LST": "--",
-            "SM KOORD": "--",
-            "SM ALT": "--",
-            "SM LST": "--",
             "LCL TM": "--",
             "UTC TM": "--",
             "CPU TMP": "--",
-        }
 
         if self._config_options["WiFi Mode"]["value"] == "Client":
             self.status_dict["WIFI"] = "Client"
@@ -281,23 +277,7 @@ class UIStatus(UIModule):
         last_lock = location.last_gps_lock
         self.status_dict["GPS LST"] = last_lock if last_lock else "--"
 
-        if location and location.lat is not None and location.lon is not None:
-            self.status_dict["SM KOORD"] = [
-                "SM KOORD",
-                f"{location.lat:.2f}/{location.lon:.2f}",
-            ]
-            self.status_dict["SM ALT"] = f"{location.altitude:.1f}m"
-            local_dt = self.shared_state.local_datetime()
-            self.status_dict["SM LST"] = local_dt.time().isoformat()[:8] if local_dt else "--"
-        else:
-            logging.info(f"SM KOORD check failed. Location: {location}")
-            if location:
-                logging.info(
-                    f"Location attrs: lat={getattr(location, 'lat', 'N/A')}, lon={getattr(location, 'lon', 'N/A')}"
-                )
-            self.status_dict["SM KOORD"] = ["SM KOORD", "--"]
-            self.status_dict["SM ALT"] = "--"
-            self.status_dict["SM LST"] = "--"
+
 
         dt = self.shared_state.datetime()
         local_dt = self.shared_state.local_datetime()

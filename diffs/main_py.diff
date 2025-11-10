@@ -1,0 +1,25 @@
+--- /home/stellarmate/PiFinder_Stellarmate/main.py.original	2025-11-10 20:30:10.101096904 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/gps_files/main.py	2025-11-10 17:18:08.741595441 +0100
+@@ -522,13 +522,6 @@
+                             if (
+                                 not location.source == "WEB"
+                                 and not location.source.startswith("CONFIG:")
+-                                and (
+-                                    location.error_in_m == 0
+-                                    or float(gps_content["error_in_m"])
+-                                    < float(
+-                                        location.error_in_m
+-                                    )  # Only if new error is smaller
+-                                )
+                             ):
+                                 logger.info(
+                                     f"Updating GPS location: new content: {gps_content}, old content: {location}"
+@@ -919,6 +912,8 @@
+         gps_type = cfg.get_option("gps_type")
+         if gps_type == "ublox":
+             gps_monitor = importlib.import_module("PiFinder.gps_ubx")
++        elif gps_type == "stellarmate":
++            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")
+         else:
+             gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
+ 

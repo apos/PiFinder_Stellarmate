@@ -33,8 +33,14 @@ The primary goal was to fix the PiFinder status screen, which was displaying `0.
         *   `/home/stellarmate/PiFinder/python/PiFinder/ui/status.py`
 
 2.  **Cleanup:**
-    *   Remove the backup of `gps_stellarmate.py`.
-    *   Remove any temporary files from `.gemini/tmp`.
+* nothing to do 
+
 
 3.  **Next Objective:**
-    *   The next logical step is to remove the redundant "GPS" fields from the status screen, as they now display the same information as the "SM" fields. This will involve modifying `status.py` to remove the "GPS", "GPS ALT", and "GPS LST" entries from the `status_dict`.
+
+
+4.  **Verification of Installation and Patching:**
+    *   **`gps_stellarmate.py`:** This is a *new* file. Ensure that the `cp` command in `pifinder_stellarmate_setup.sh` (specifically: `cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"`) correctly copies this file to the PiFinder installation during a fresh setup or reinstall.
+    *   **`main.py`:** Check if the modifications made to `main.py` are correctly applied by the `patch_PiFinder_installation_files.sh` script. This will involve generating a diff for `main.py`.
+    *   **Working Example:** Keep the current `main.py` as a working example.
+    *   **Full Verification:** To assure the patch file is working, perform a `git hard reset` by running the setup file (choosing option 1 for a full reinstall). This process will be repeated until everything works and is patched correctly.
