@@ -452,20 +452,35 @@ show_diff_if_changed "$server_py"
 python3 -m py_compile "$server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
+##################################################
+# PiFinder index.tpl
+echo "🔧 Updating index.tpl ..."
+cp "$index_tpl" "$index_tpl.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+    patch "$index_tpl" < "${pifinder_stellarmate_dir}/diffs/index_tpl.diff"
+show_diff_if_changed "$index_tpl"
+echo "------------------------------------"
+
+##################################################
+# PiFinder header.tpl
+echo "🔧 Updating header.tpl ..."
+cp "$header_tpl" "$header_tpl.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+    patch "$header_tpl" < "${pifinder_stellarmate_dir}/diffs/header_tpl.diff"
+show_diff_if_changed "$header_tpl"
+echo "------------------------------------"
 
 # #####################################################
-# menu_structure.py (overwrite with known-good version)
-cp "$menu_py" "$menu_py.bak"
+# menu_structure.py
 echo "🔧 Updating menu_structure.py ..."
+cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    if grep -q '"value": "stellarmate"' "$menu_py"; then
-        echo "ℹ️ 'Stellarmate' GPS option already present in menu_structure.py – skipping"
-    else
-        cp "/home/stellarmate/PiFinder_BAK/python/PiFinder/ui/menu_structure.py" "$menu_py"
-        echo "✅ Successfully overwrote menu_structure.py with known-good version."
-    fi
-else
-    echo "⏩ Skipping overwrite for menu_structure.py: ❌ incompatible version/pi/os"
+    patch "$menu_py" < "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
+show_diff_if_changed "$menu_py"
+python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
 

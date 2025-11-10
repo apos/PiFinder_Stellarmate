@@ -1,6 +1,32 @@
---- /tmp/menu_structure.py.pristine_original	2025-11-09 19:04:25.605620135 +0100
-+++ /home/stellarmate/PiFinder_BAK/python/PiFinder/ui/menu_structure.py	2025-11-09 11:24:30.058881889 +0100
-@@ -963,6 +963,10 @@
+--- /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/menu_structure.py.orig	2025-11-10 21:20:02.516348592 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/menu_structure.py	2025-11-10 21:17:31.647001189 +0100
+@@ -856,24 +856,7 @@
+                         },
+                     ],
+                 },
+-                {
+-                    "name": _("WiFi Mode"),
+-                    "class": UITextMenu,
+-                    "select": "single",
+-                    "value_callback": callbacks.get_wifi_mode,
+-                    "items": [
+-                        {
+-                            "name": _("Client Mode"),
+-                            "value": "Client",
+-                            "callback": callbacks.go_wifi_cli,
+-                        },
+-                        {
+-                            "name": _("AP Mode"),
+-                            "value": "AP",
+-                            "callback": callbacks.go_wifi_ap,
+-                        },
+-                    ],
+-                },
++
+                 {
+                     "name": _("PiFinder Type"),
+                     "class": UITextMenu,
+@@ -963,6 +946,10 @@
                              "name": _("GPSD (generic)"),
                              "value": "gpsd",
                          },

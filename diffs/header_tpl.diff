@@ -1,0 +1,20 @@
+--- /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/header.tpl.orig	2025-11-10 21:50:44.663712903 +0100
++++ /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/header.tpl	2025-11-10 21:38:17.938746176 +0100
+@@ -16,7 +16,7 @@
+       <ul class="right hide-on-med-and-down">
+         <li><a href="/">Home</a></li>
+         <li><a href="/remote">Remote</a></li>
+-        <li><a href="/network">Network Setup</a></li>
++        <li><a href="#" class="grey-text">Network (SM mode - not avaiable)</a></li>
+         <li><a href="/observations">Observations</a></li>
+         <li><a href="/locations">Locations</a></li>
+         <li><a href="/equipment">Equipment</a></li>
+@@ -27,7 +27,7 @@
+       <ul id="nav-mobile" class="sidenav">
+         <li><a href="/">Home</a></li>
+         <li><a href="/remote">Remote</a></li>
+-        <li><a href="/network">Network Setup</a></li>
++        <li><a href="#" class="grey-text">Network (SM mode - not avaiable)</a></li>
+         <li><a href="/observations">Observations</a></li>
+         <li><a href="/locations">Locations</a></li>
+         <li><a href="/equipment">Equipment</a></li>

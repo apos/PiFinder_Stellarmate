@@ -27,6 +27,8 @@ post_update_file="${pifinder_dir}/pifinder_post_update.sh"
 camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
 menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
 status_py="${pifinder_dir}/python/PiFinder/ui/status.py"
+index_tpl="${pifinder_dir}/python/views/index.tpl"
+header_tpl="${pifinder_dir}/python/views/header.tpl"
 config_default_json="${pifinder_dir}/default_config.json"
 config_json="${pifinder_data_dir}/config.json"
 
@@ -221,7 +223,7 @@ create_venv() {
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."
-  pip install -r "${requirements_file}" --break-system-packages
+  pip install -q -r "${requirements_file}" --break-system-packages
   if [ $? -eq 0 ]; then
     echo "Python Requirements installed successfully."
     return 0 # True: requirements installed successfully
