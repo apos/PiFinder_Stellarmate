@@ -21,6 +21,7 @@ This setup modifies the stock PiFinder installation to better integrate with Ste
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
 *   **Compatibility:** The scripts are designed for Raspberry Pi 4 and Raspberry Pi 5 running Stellarmate OS (based on Debian Bookworm).
+*   **Comprehensive IP Address Display:** The web interface and the device's OLED status screen now show all available non-localhost IP addresses, providing better network visibility.
 *   **Dynamic User:** The web interface authentication is patched to use the current system user (e.g., `stellarmate`) instead of a hardcoded default.
 
 ## Installation
