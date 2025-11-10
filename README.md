@@ -59,7 +59,6 @@ The setup process is designed to be straightforward. It will guide you through a
     *   **If no PiFinder is found:** The script will clone the official PiFinder repository and apply all the necessary patches.
     *   **If PiFinder is found:** You will be prompted to either:
         *   **1. Reinstall from scratch:** This will completely delete the existing PiFinder directory and perform a fresh installation.
-        *   **2. Update:** This will reset your local PiFinder to the official `release` branch version and re-apply all patches.
 
 4.  **Python Virtual Environment (First Run Only):**
     The first time you run the script on a fresh system, it will stop after creating a Python virtual environment (`.venv`). You must activate it manually and re-run the script to complete the installation of dependencies. The script will provide the exact commands to run, which will look like this:
