@@ -20,7 +20,7 @@ This setup modifies the stock PiFinder installation to better integrate with Ste
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
-*   **Compatibility:** The scripts are designed for Raspberry Pi 4 and Raspberry Pi 5 running Stellarmate OS (based on Debian Bookworm).
+*   **Compatibility:** The scripts are designed for Raspberry Pi 4 running Stellarmate OS (based on Debian Bookworm). Raspberry Pi 5 support is highly experimental, in development, and not fully functional yet.
 *   **Comprehensive IP Address Display:** The web interface and the device's OLED status screen now show all available non-localhost IP addresses, providing better network visibility.
 *   **Dynamic User:** The web interface authentication is patched to use the current system user (e.g., `stellarmate`) instead of a hardcoded default.
 
@@ -30,7 +30,7 @@ The setup process is designed to be straightforward. It will guide you through a
 
 ### Prerequisites
 
-*   A Raspberry Pi 4 or 5 with PiFinder hardware (hat, screen, etc.).
+*   A Raspberry Pi 4 with PiFinder hardware (hat, screen, etc.).
 *   Stellarmate OS (based on Debian Bookworm) installed and running.
 *   Basic familiarity with the Linux command line.
 
