@@ -17,7 +17,14 @@ pifinder_stellarmate_version_testing="2.3.0"
 ############################################################
 # Get some important vars and functinons
 source $(pwd)/bin/functions.sh
-source ${python_venv}/bin/activate
+
+# Define a lock file for resuming the script after venv activation
+lock_file="${pifinder_stellarmate_dir}/.resume_from_venv"
+
+# Source python venv if it exists
+if [ -f "${python_venv}/bin/activate" ]; then
+    source "${python_venv}/bin/activate"
+fi
 
 ############################################################
 # VERSION CHECK (Live check from GitHub)
@@ -84,51 +91,56 @@ sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 ############################################################
 # Check if a PiFinder installation already exists.
 if [ -d "${pifinder_home}/PiFinder" ]; then
-    echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
-    echo "❓ Please choose an action:"
-    echo "   1. Delete the existing installation and reinstall from scratch."
-    echo "   2. Update the existing installation with 'git reset --hard origin/release'."
-    echo "   3. Cancel the installation."
-    read -p "Enter your choice (1, 2, or 3): " choice
+    # If resuming, skip the prompt
+    if [ -f "$lock_file" ] && is_venv_active "${python_venv}"; then
+        echo "✅ Resuming installation after virtual environment activation."
+    else
+        echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
+        echo "❓ Please choose an action:"
+        echo "   1. Delete the existing installation and reinstall from scratch."
+        echo "   2. Update the existing installation with 'git reset --hard origin/release'."
+        echo "   3. Cancel the installation."
+        read -p "Enter your choice (1, 2, or 3): " choice
 
-    case "$choice" in
-        1)
-            sudo systemctl stop pifinder
-            echo "🗑️  Deleting the existing PiFinder installation directory..."
-            sudo rm -rf "${pifinder_home}/PiFinder"
-            sleep 2 # Give some time for the deletion to complete
-            if [ -d "${pifinder_home}/PiFinder" ]; then
-                echo "❌ ERROR: The PiFinder folder still exists after deletion. Aborting setup."
+        case "$choice" in
+            1)
+                sudo systemctl stop pifinder
+                echo "🗑️  Deleting the existing PiFinder installation directory..."
+                sudo rm -rf "${pifinder_home}/PiFinder"
+                sleep 2 # Give some time for the deletion to complete
+                if [ -d "${pifinder_home}/PiFinder" ]; then
+                    echo "❌ ERROR: The PiFinder folder still exists after deletion. Aborting setup."
+                    exit 1
+                fi
+                echo "Installation from scratch ..."
+                cd "${pifinder_home}"
+                git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+                sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+                echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
+                bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+                cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
+                ;;
+            2)
+                sudo systemctl stop pifinder
+                echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
+                cd "${pifinder_home}/PiFinder"
+                git reset --hard origin/release
+                git pull
+                sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
+                echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
+                bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+                cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
+                ;;
+            3)
+                echo "ℹ️  Installation cancelled by user."
+                exit 0
+                ;;
+            *)
+                echo "❌ Invalid choice. Please run the script again and select 1, 2, or 3."
                 exit 1
-            fi
-            echo "Installation from scratch ..."
-            cd "${pifinder_home}"
-            git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
-            sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
-            echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
-            bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
-            cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
-            ;;
-        2)
-            sudo systemctl stop pifinder
-            echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
-            cd "${pifinder_home}/PiFinder"
-            git reset --hard origin/release
-            git pull
-            sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
-            echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
-            bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
-            cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
-            ;;
-        3)
-            echo "ℹ️  Installation cancelled by user."
-            exit 0
-            ;;
-        *)
-            echo "❌ Invalid choice. Please run the script again and select 1, 2, or 3."
-            exit 1
-            ;;
-    esac
+                ;;
+        esac
+    fi
 else
     echo "🚀 No existing installation found. Starting fresh..."
     cd "${pifinder_home}"
@@ -173,6 +185,8 @@ if ! is_venv_active "${python_venv}"; then
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
       echo "" 
+      # Create the lock file before exiting
+      touch "${lock_file}"
       # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
@@ -186,8 +200,20 @@ if ! is_venv_active "${python_venv}"; then
      exit 1 # Exit script because venv must be activated manually for Requirements installation
   fi
 else
-  echo "Python venv is active. Installing Requirements."
-  install_requirements "${python_requirements}"
+  # Venv seems active, but let's double-check if the directory is actually there
+  if ! check_venv_exists "${python_venv}"; then
+    echo "###################################################################"
+    echo "WARNING: Your shell thinks a virtual environment is active,"
+    echo "but the directory has been removed (likely during reinstallation)."
+    echo "Please run 'deactivate' and then re-run this setup script."
+    echo "###################################################################"
+    exit 1
+  else
+    # Clean up the lock file if it exists, as we are now proceeding
+    rm -f "${lock_file}"
+    echo "Python venv is active. Installing Requirements."
+    install_requirements "${python_requirements}"
+  fi
 fi
 
 # ensure, correct rights are set
