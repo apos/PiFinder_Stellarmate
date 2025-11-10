@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../PiFinder"
+		},
+		{
+			"path": "../.gemini/tmp"
 		}
 	],
 	"settings": {}

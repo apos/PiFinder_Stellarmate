@@ -1,0 +1,13 @@
+--- /home/stellarmate/PiFinder_Stellarmate/src_pifinder/python/PiFinder/ui/menu_structure.py.orig	2025-11-09 18:04:00.214022044 +0100
++++ /tmp/menu_structure.py.new	2025-11-09 18:55:54.305265843 +0100
+@@ -961,6 +961,10 @@
+                         },
+                         {
+                             "name": _("GPSD (generic)"),
++                        {
++                            "name": "Stellarmate",
++                            "value": "stellarmate",
++                        },
+                             "value": "gpsd",
+                         },
+                     ],
