@@ -427,40 +427,54 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-# Patch GPS type handling in main.py
 if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    STELLARMATE_GPS_LINE_1='        elif gps_type == "stellarmate":'
-    STELLARMATE_GPS_LINE_2='            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")'
-    if ! grep -qF "$STELLARMATE_GPS_LINE_1" "$main_py"; then
-        echo "🔧 Patching GPS type handling in $main_py"
-        sed -i "/gps_monitor = importlib.import_module(\"PiFinder.gps_ubx\")/a \\${STELLARMATE_GPS_LINE_1}\\n\\${STELLARMATE_GPS_LINE_2}" "$main_py"
-        echo "✅ Successfully added 'stellarmate' GPS type handling in $main_py"
-    else
-        echo "ℹ️ 'stellarmate' GPS type handling already present in main.py – skipping"
-    fi
-else
-    echo "⏩ Skipping GPS type patch in main.py: ❌ incompatible version/pi/os"
-fi
+    # Modify GPS update logic
+    sed -i '/if (\s*not location.source == "WEB"/ { N; N; N; N; N; N; N; N; N; N; N; N; N; s|                            if (\s*not location.source == "WEB"\s*and not location.source.startswith("CONFIG:")\s*and (\s*location.error_in_m == 0\s*or float(gps_content["error_in_m"])\s*< float(\s*location.error_in_m\s*)  # Only if new error is smaller\s*)\s*):|                                if location.source in [None, "GPS", "KStarsAPI"]:| }' "$main_py"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
-    # Check for the new condition first to make the script idempotent
-    if grep -q 'gps_content\["lat"\] != 0.0 or gps_content\["lon"\] != 0.0' "$main_py"; then
-        echo "ℹ️ GPS condition already patched in main.py – skipping"
-    else
-        # If new condition not found, check for old and replace
-        if grep -q 'gps_content\["lat"\] + gps_content\["lon"\] != 0' "$main_py"; then
-            sed -i 's/gps_content\["lat"\] + gps_content\["lon"\] != 0/gps_content["lat"] != 0.0 or gps_content["lon"] != 0.0/' "$main_py"
-            echo "✅ GPS condition patched in main.py"
-        else
-            echo "ℹ️ Could not find old GPS condition to patch in main.py"
-        fi
-    fi
+    # Add stellarmate GPS type option
+    sed -i '/gps_monitor = importlib.import_module("PiFinder.gps_ubx")/a \        elif gps_type == "stellarmate":\n            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")' "$main_py"
 else
     echo "⏩ Skipping patch for main.py: ❌ incompatible version/pi/os"
 fi
 
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder server.py
+server_py="${pifinder_dir}/python/PiFinder/server.py"
+echo "🔧 Updating server.py ..."
+cp "$server_py" "$server_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    # Replace hardcoded 'pifinder' with dynamic username in login function
+    sed -i "s|sys_utils.verify_password(\"pifinder\", password)|sys_utils.verify_password(\"$(whoami)\", password)|" "$server_py"
+    # Replace hardcoded 'pifinder' with dynamic username in password_change function
+    sed -i "s|sys_utils.change_password(\"pifinder\", current_password, new_passworda)|sys_utils.change_password(\"$(whoami)\", current_password, new_passworda)|" "$server_py"
+else
+    echo "⏩ Skipping patch for server.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$server_py"
+python3 -m py_compile "$server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+#######################################
+# Patch status.py
+echo "🔧 Updating status.py ..."
+cp "$status_py" "$status_py.bak"
+echo "➡️ Detected Version Combo: $current_pfinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    cp "${pifinder_stellarmate_dir}/status.py.modified_for_diff" "$status_py"
+else
+    echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$status_py"
+python3 -m py_compile "$status_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
 # #####################################################

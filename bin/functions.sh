@@ -26,6 +26,7 @@ ui_file="${pifinder_dir}/python/PiFinder/ui/marking_menus.py"
 post_update_file="${pifinder_dir}/pifinder_post_update.sh"
 camera_file="${pifinder_dir}/python/PiFinder/camera_pi.py"
 menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
+status_py="${pifinder_dir}/python/PiFinder/ui/status.py"
 config_default_json="${pifinder_dir}/default_config.json"
 config_json="${pifinder_data_dir}/config.json"
 
