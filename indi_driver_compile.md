@@ -66,9 +66,9 @@ Now we will configure the build system and compile only our specific driver.
 1.  **Create a build directory** inside the `indi-source` folder and change into it.
 
     ```bash
-mkdir -p ~/indi-source/build
-cd ~/indi-source/build
-```
+    mkdir -p ~/indi-source/build
+    cd ~/indi-source/build
+    ```
 
 2.  **Run CMake to prepare the build files.** This command analyzes your system and the INDI source code to generate the necessary Makefiles.
 
@@ -79,8 +79,8 @@ cd ~/indi-source/build
 3.  **Compile the `pifinder_lx200` driver.** This command will build just our driver, which is much faster than building the entire INDI library.
 
     ```bash
-make indi_pifinder_lx200
-```
+    make indi_pifinder_lx200
+    ```
 
     If successful, you will find the compiled driver executable at `~/indi-source/build/drivers/telescope/indi_pifinder_lx200`.
 
@@ -99,8 +99,8 @@ After a successful compilation, the driver files must be copied to the system-wi
 2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver.
 
     ```bash
-sudo cp ../drivers/telescope/pifinder_lx200.xml /usr/share/indi/
-```
+    sudo cp ../drivers/telescope/pifinder_lx200.xml /usr/share/indi/
+    ```
 
 ---
 
