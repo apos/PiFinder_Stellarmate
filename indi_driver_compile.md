@@ -1,12 +1,38 @@
-# How to Compile the Custom PiFinder INDI Driver
+# How to Compile or Install the Custom PiFinder INDI Driver
 
-This guide provides a detailed, step-by-step process for downloading the required dependencies, preparing the source code, and compiling the `pifinder_lx200` INDI driver on a Raspberry Pi running a Debian-based OS like Stellarmate OS (Bookworm).
+This guide provides a detailed, step-by-step process for either installing a pre-built `pifinder_lx200` INDI driver or compiling it from source on a Raspberry Pi running a Debian-based OS like Stellarmate OS (Bookworm).
 
 The primary goal is to build a minimal INDI driver that:
 - Reports the current Right Ascension (RA) and Declination (Dec) from the PiFinder.
 - Accepts GoTo commands from INDI clients (like KStars/Ekos) to direct the PiFinder.
 
 This driver does **not** control any motors, tracking, or other mount functions.
+
+---
+
+### Option A: Install Pre-built Driver
+
+If you have a pre-compiled `indi_pifinder_lx200` driver executable and its corresponding XML definition file, you can install them directly without needing to compile from source.
+
+1.  **Copy the pre-built driver executable** to `/usr/bin`.
+
+    ```bash
+    sudo cp /path/to/your/prebuilt/indi_pifinder_lx200 /usr/bin/
+    ```
+
+2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver.
+
+    ```bash
+    sudo cp /path/to/your/prebuilt/pifinder_lx200.xml /usr/share/indi/
+    ```
+
+After installing the pre-built driver, skip to **Step 5: Test the Driver in Ekos**.
+
+---
+
+### Option B: Build the Driver from Source
+
+Follow these steps if you need to compile the `pifinder_lx200` driver from its source code.
 
 ---
 
@@ -70,13 +96,13 @@ Now we will configure the build system and compile only our specific driver.
     cd ~/indi-source/build
     ```
 
-2.  **Run CMake to prepare the build files.** This command analyzes your system and the INDI source code to generate the necessary Makefiles.
+2.  **Run CMake to prepare the build files.** This command analyzes your system and the INDI source code to generate the necessary Makefiles for the entire INDI project.
 
     ```bash
     cmake ..
     ```
 
-3.  **Compile the `pifinder_lx200` driver.** This command will build just our driver, which is much faster than building the entire INDI library.
+3.  **Compile only the `pifinder_lx200` driver.** This command will build just our specific driver, which is much faster than compiling the entire INDI library.
 
     ```bash
     make indi_pifinder_lx200
@@ -86,7 +112,7 @@ Now we will configure the build system and compile only our specific driver.
 
 ---
 
-### Step 5: Install the Driver
+### Step 5: Install the Driver (from build directory)
 
 After a successful compilation, the driver files must be copied to the system-wide INDI directories so that the INDI server can find and use them.
 
