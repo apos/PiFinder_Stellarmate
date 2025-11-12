@@ -40,8 +40,8 @@ The driver must be compiled against the complete source code of the INDI library
 1.  **Clone the official INDI repository.** We will place it in your home directory in a folder named `indi-source`.
 
     ```bash
-git clone https://github.com/indilib/indi.git ~/indi-source
-```
+    git clone https://github.com/indilib/indi.git ~/indi-source
+    ```
 
 ---
 
