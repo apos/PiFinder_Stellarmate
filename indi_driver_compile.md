@@ -54,8 +54,8 @@ The `PiFinder_Stellarmate` project contains the source code for the custom `pifi
 2.  **Copy the `indi_pifinder` directory** into the telescope drivers section of the INDI source code. This directory contains the C++ source (`.cpp`), header (`.h`), and XML definition file for our driver.
 
     ```bash
-cp -r indi_pifinder/* ~/indi-source/drivers/telescope/
-```
+    cp -r indi_pifinder/* ~/indi-source/drivers/telescope/
+    ```
 
 ---
 
@@ -73,8 +73,8 @@ cd ~/indi-source/build
 2.  **Run CMake to prepare the build files.** This command analyzes your system and the INDI source code to generate the necessary Makefiles.
 
     ```bash
-cmake ..
-```
+    cmake ..
+    ```
 
 3.  **Compile the `pifinder_lx200` driver.** This command will build just our driver, which is much faster than building the entire INDI library.
 
@@ -93,8 +93,8 @@ After a successful compilation, the driver files must be copied to the system-wi
 1.  **Copy the compiled driver executable** to `/usr/bin`.
 
     ```bash
-sudo cp drivers/telescope/indi_pifinder_lx200 /usr/bin/
-```
+    sudo cp drivers/telescope/indi_pifinder_lx200 /usr/bin/
+    ```
 
 2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver.
 
