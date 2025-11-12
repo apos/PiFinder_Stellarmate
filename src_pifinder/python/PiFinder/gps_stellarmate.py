@@ -62,7 +62,7 @@ def gps_monitor(gps_queue, console_queue, log_queue):
 
             tm = ("time", {"time": datetime.datetime.now()})
             gps_queue.put(tm)
-            logger.info(f"KStars GPS API fix injected: {fix}")
+            logger.debug(f"KStars GPS API fix injected: {fix}")
         else:
             logger.warning("Could not get location from KStars")
 
