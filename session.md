@@ -2,11 +2,11 @@
 Compile a custom INDI driver for the PiFinder to allow INDI-compatible software to control it, and test it within the existing Stellarmate/Ekos environment.
 
 ## Current Status
-The `pifinder_lx200` driver has been heavily modified to be a minimal driver, but the compilation is failing. The `GoTo` function was incorrectly marked with `override`, and several unsupported function implementations were not fully removed, leading to linker errors.
+The `pifinder_lx200` driver has been successfully compiled and installed to the system directories (`/usr/bin` and `/usr/share/indi`). The driver has been stripped down to its minimal functionality: reporting current RA/Dec and handling GoTo commands. A detailed compilation guide (`indi_driver_compile.md`) has been created.
 
 ## Key Knowledge & State
 - **Minimal Driver:** The driver's sole purpose is to report the PiFinder's current RA/Dec and to accept GoTo commands. All other functionality (tracking, parking, guiding, alignment, etc.) is unsupported.
-- **GoTo Implementation:** The correct way to handle a GoTo command is to override the `ISNewRaDec(double ra, double dec)` virtual function from the `INDI::Telescope` base class. This function is triggered when a client sends new coordinates.
+- **GoTo Implementation:** GoTo commands are handled by the `ISNewRaDec(double ra, double dec)` function, which sends `:Sr#` and `:Sd#` commands to the PiFinder's `pos_server.py`.
 - **Build Dependency:** We are compiling against the full INDI source code located at `/home/stellarmate/PiFinder_Stellarmate/indi-source`.
 - **Test Environment:** All testing is conducted using the standard INDI server provided by the Stellarmate OS, controlled via Ekos/KStars.
 
@@ -15,6 +15,7 @@ The `pifinder_lx200` driver has been heavily modified to be a minimal driver, bu
 - `indi-source/drivers/telescope/pifinder_lx200.h`: The header file for the new driver.
 - `indi-source/drivers/telescope/pifinder_lx200.xml`: The XML file that describes the driver to the INDI system.
 - `indi-source/drivers/telescope/pifinder_lx200_generic.cpp`: A custom, simplified version of `lx200generic.cpp` to ensure only the `pifinder_lx200` driver is loaded.
+- `indi_driver_compile.md`: A detailed guide on how to compile and install the driver.
 
 ## Files Altered
 - `indi-source/drivers/telescope/CMakeLists.txt`: Modified to add the `pifinder_lx200` as a new build target.
@@ -30,14 +31,13 @@ To fully restore context, the following files should be read:
 4. `indi-source/libs/indidriver/inditelescope.h` (to understand the base class virtual functions).
 
 ## Next Steps
-1.  **Fix Compilation Errors:**
-    -   Remove the incorrect `GoTo(double ra, double dec)` declaration and implementation.
-    -   Add the correct `ISNewRaDec(double ra, double dec) override` declaration to `pifinder_lx200.h`.
-    -   Implement `ISNewRaDec` in `pifinder_lx200.cpp` to send the `:Sr#` and `:Sd#` commands.
-    -   Ensure all other unsupported function implementations are fully removed.
-2.  **Recompile and Install:**
-    -   Run `make indi_pifinder_lx200` in the build directory.
-    -   Copy the compiled driver to `/usr/bin/`.
-3.  **Test the Driver in Ekos:**
+1.  **Test the Driver in Ekos:**
+    -   Start KStars/Ekos.
+    -   Create a new equipment profile.
+    -   Select the "PiFinder LX200" driver for the telescope.
+    -   Start the INDI server through Ekos and connect to the driver.
     -   Verify that the driver connects and correctly reports RA/Dec.
     -   Test the GoTo functionality by slewing to a target in KStars.
+2.  **Finetune and Clean:**
+    -   Address any remaining issues or unexpected behavior.
+    -   Ensure the driver is stable and efficient.
