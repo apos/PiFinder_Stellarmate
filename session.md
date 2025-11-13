@@ -1,43 +1,30 @@
-## Overall Goal
-Compile a custom INDI driver for the PiFinder to allow INDI-compatible software to control it, and test it within the existing Stellarmate/Ekos environment.
+## PiFinder INDI Driver Development
 
-## Current Status
-The `pifinder_lx200` driver has been successfully compiled and installed to the system directories (`/usr/bin` and `/usr/share/indi`). The driver has been stripped down to its minimal functionality: reporting current RA/Dec and handling GoTo commands. A detailed compilation guide (`indi_driver_compile.md`) has been created.
+**Objective:** Build and install the `pifinder_lx200` INDI driver.
 
-## Key Knowledge & State
-- **Minimal Driver:** The driver's sole purpose is to report the PiFinder's current RA/Dec and to accept GoTo commands. All other functionality (tracking, parking, guiding, alignment, etc.) is unsupported.
-- **GoTo Implementation:** GoTo commands are handled by the `ISNewRaDec(double ra, double dec)` function, which sends `:Sr#` and `:Sd#` commands to the PiFinder's `pos_server.py`.
-- **Build Dependency:** We are compiling against the full INDI source code located at `/home/stellarmate/PiFinder_Stellarmate/indi-source`.
-- **Test Environment:** All testing is conducted using the standard INDI server provided by the Stellarmate OS, controlled via Ekos/KStars.
+**Status:**
+The `pifinder_lx200` driver has been successfully compiled. The previous compilation failures were caused by a fundamental misunderstanding of the INDI framework. The key insight was that the base `INDI::Telescope` class handles coordinate reporting and epoch conversion automatically via the `NewRaDec()` function. My attempts to perform a manual JNow-to-J2000 conversion using `libnova` were incorrect and unnecessary.
 
-## Files Created
-- `indi-source/drivers/telescope/pifinder_lx200.cpp`: The main source file for the new driver.
-- `indi-source/drivers/telescope/pifinder_lx200.h`: The header file for the new driver.
-- `indi-source/drivers/telescope/pifinder_lx200.xml`: The XML file that describes the driver to the INDI system.
-- `indi-source/drivers/telescope/pifinder_lx200_generic.cpp`: A custom, simplified version of `lx200generic.cpp` to ensure only the `pifinder_lx200` driver is loaded.
-- `indi_driver_compile.md`: A detailed guide on how to compile and install the driver.
+The final linker error was resolved by removing an unused `updateProperties()` override from the `PiFinderLX200` class definition and declaration.
 
-## Files Altered
-- `indi-source/drivers/telescope/CMakeLists.txt`: Modified to add the `pifinder_lx200` as a new build target.
-- `indi-source/drivers.xml`: Modified to include the new `pifinder_lx200` driver.
-- `indi-source/drivers/telescope/pifinder_lx200.cpp`: Heavily modified to remove unsupported functions and simplify logic.
-- `indi-source/drivers/telescope/pifinder_lx200.h`: Modified to remove declarations for unsupported functions and correct the GoTo implementation.
+**Files Altered:**
+*   `indi-source/drivers/telescope/pifinder_lx200.cpp`: Removed all `libnova` headers and conversion logic. Simplified the `ReadScopeStatus()` function to call `NewRaDec()` with the raw JNow coordinates from the device. Removed the `updateProperties()` function definition.
+*   `indi-source/drivers/telescope/pifinder_lx200.h`: Removed `libnova` header includes and the `updateProperties()` function declaration.
+*   `indi-source/drivers/telescope/CMakeLists.txt`: Removed all `libnova` dependencies (compile definitions, include directories, and library links) for the `indi_pifinder_lx200` target to resolve linker errors.
 
-## Files to Re-read on Resume
-To fully restore context, the following files should be read:
-1. `session.md` and `session_advanced.md` (for strategy and status).
-2. `indi-source/drivers/telescope/pifinder_lx200.h` (the new driver's header).
-3. `indi-source/drivers/telescope/pifinder_lx200.cpp` (the new driver's source code).
-4. `indi-source/libs/indidriver/inditelescope.h` (to understand the base class virtual functions).
+**Key Knowledge & Strategy:**
+*   The INDI framework's base classes (like `INDI::Telescope`) handle complex operations like epoch conversions. The driver's responsibility is to provide the raw data (JNow coordinates) to the framework via the correct functions (`NewRaDec()`).
+*   **Emulation is Key:** Analyzing the parent class (`lx200telescope.cpp`) was the correct strategy to understand the proper API usage and avoid reimplementing existing functionality.
+*   **Targeted Compilation:** To save time and resources, compile only the specific driver needed using `make <target_name>` instead of `make all`.
 
-## Next Steps
-1.  **Test the Driver in Ekos:**
-    -   Start KStars/Ekos.
-    -   Create a new equipment profile.
-    -   Select the "PiFinder LX200" driver for the telescope.
-    -   Start the INDI server through Ekos and connect to the driver.
-    -   Verify that the driver connects and correctly reports RA/Dec.
-    -   Test the GoTo functionality by slewing to a target in KStars.
-2.  **Finetune and Clean:**
-    -   Address any remaining issues or unexpected behavior.
-    -   Ensure the driver is stable and efficient.
+**Next Steps:**
+1.  Install the compiled driver binary to the system's binary directory (`/usr/bin/`).
+2.  Install the driver's XML definition file to the INDI system directory (`/usr/share/indi/`).
+3.  Register the new driver with the INDI server using `indi_add_driver`.
+4.  Test the driver's functionality using KStars/Ekos.
+
+**Files to Re-read for Context:**
+*   `session.md` (this file)
+*   `indi-source/drivers/telescope/pifinder_lx200.cpp` (the working driver source)
+*   `indi-source/drivers/telescope/pifinder_lx200.h` (the working driver header)
+*   `indi_driver_compile.md` (for installation steps)

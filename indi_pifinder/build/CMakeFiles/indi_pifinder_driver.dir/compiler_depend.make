@@ -4,8 +4,8 @@
 CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.cpp \
   /usr/include/stdc-predef.h \
   /home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.h \
-  /home/stellarmate/indi-source/libs/indidevice/indibase.h \
-  /home/stellarmate/indi-source/libs/indicore/indiapi.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/indibase.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indiapi.h \
   /usr/include/stdio.h \
   /usr/include/aarch64-linux-gnu/bits/libc-header-start.h \
   /usr/include/features.h \
@@ -31,15 +31,15 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/aarch64-linux-gnu/bits/stdio_lim.h \
   /usr/include/aarch64-linux-gnu/bits/floatn.h \
   /usr/include/aarch64-linux-gnu/bits/floatn-common.h \
-  /home/stellarmate/indi-source/build/indiversion.h \
-  /home/stellarmate/indi-source/libs/indicore/indidevapi.h \
-  /home/stellarmate/indi-source/libs/indicore/lilxml.h \
-  /home/stellarmate/indi-source/libs/indidevice/indibasetypes.h \
-  /home/stellarmate/indi-source/libs/indibase/defaultdevice.h \
-  /home/stellarmate/indi-source/libs/indidevice/parentdevice.h \
-  /home/stellarmate/indi-source/libs/indidevice/basedevice.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indiproperty.h \
-  /home/stellarmate/indi-source/libs/indicore/indiutility.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/build/indiversion.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indidevapi.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/lilxml.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/indibasetypes.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/defaultdevice.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/parentdevice.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/basedevice.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiproperty.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indiutility.h \
   /usr/include/c++/12/string \
   /usr/include/aarch64-linux-gnu/c++/12/bits/c++config.h \
   /usr/include/aarch64-linux-gnu/c++/12/bits/os_defines.h \
@@ -176,7 +176,7 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/aarch64-linux-gnu/bits/timex.h \
   /usr/include/aarch64-linux-gnu/bits/types/struct_tm.h \
   /usr/include/aarch64-linux-gnu/bits/types/struct_itimerspec.h \
-  /home/stellarmate/indi-source/libs/indimacros.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indimacros.h \
   /usr/include/unistd.h \
   /usr/include/aarch64-linux-gnu/bits/posix_opt.h \
   /usr/include/aarch64-linux-gnu/bits/environments.h \
@@ -223,9 +223,9 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/c++/12/backward/auto_ptr.h \
   /usr/include/c++/12/pstl/glue_memory_defs.h \
   /usr/include/c++/12/pstl/execution_defs.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertyview.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indiwidgettraits.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indiwidgetview.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyview.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiwidgettraits.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiwidgetview.h \
   /usr/include/c++/12/cstdarg \
   /usr/include/c++/12/functional \
   /usr/include/c++/12/bits/std_function.h \
@@ -246,24 +246,24 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/c++/12/bits/algorithmfwd.h \
   /usr/include/c++/12/bits/stl_heap.h \
   /usr/include/c++/12/bits/uniform_int_dist.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indiproperties.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiproperties.h \
   /usr/include/c++/12/deque \
   /usr/include/c++/12/bits/stl_deque.h \
   /usr/include/c++/12/bits/deque.tcc \
   /usr/include/c++/12/algorithm \
   /usr/include/c++/12/pstl/glue_algorithm_defs.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertytext.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertybasic.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertynumber.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertyswitch.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertytext.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertybasic.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertynumber.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyswitch.h \
   /usr/include/c++/12/map \
   /usr/include/c++/12/bits/stl_tree.h \
   /usr/include/c++/12/bits/stl_map.h \
   /usr/include/c++/12/bits/stl_multimap.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertylight.h \
-  /home/stellarmate/indi-source/libs/indidevice/property/indipropertyblob.h \
-  /home/stellarmate/indi-source/libs/indibase/indidriver.h \
-  /home/stellarmate/indi-source/libs/indicore/indicom.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertylight.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyblob.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/indidriver.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indicom.h \
   /usr/include/c++/12/math.h \
   /usr/include/c++/12/cmath \
   /usr/include/math.h \
@@ -290,7 +290,7 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/c++/12/tr1/poly_hermite.tcc \
   /usr/include/c++/12/tr1/poly_laguerre.tcc \
   /usr/include/c++/12/tr1/riemann_zeta.tcc \
-  /home/stellarmate/indi-source/libs/indibase/indilogger.h \
+  /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/indilogger.h \
   /usr/include/c++/12/fstream \
   /usr/include/c++/12/istream \
   /usr/include/c++/12/ios \
@@ -340,7 +340,10 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
   /usr/include/rpc/netdb.h \
   /usr/include/aarch64-linux-gnu/bits/types/sigevent_t.h \
   /usr/include/aarch64-linux-gnu/bits/types/__sigval_t.h \
-  /usr/include/aarch64-linux-gnu/bits/netdb.h
+  /usr/include/aarch64-linux-gnu/bits/netdb.h \
+  /usr/include/libnova/julian_day.h \
+  /usr/include/libnova/ln_types.h \
+  /usr/include/libnova/precession.h
 
 
 /usr/include/aarch64-linux-gnu/bits/netdb.h:
@@ -368,6 +371,8 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 /usr/include/aarch64-linux-gnu/bits/types/struct_iovec.h:
 
 /usr/include/aarch64-linux-gnu/sys/socket.h:
+
+/usr/include/c++/12/bits/sstream.tcc:
 
 /usr/include/c++/12/bits/fstream.tcc:
 
@@ -397,8 +402,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/stdexcept:
 
-/usr/include/c++/12/system_error:
-
 /usr/include/c++/12/bits/locale_classes.tcc:
 
 /usr/include/c++/12/bits/locale_classes.h:
@@ -406,6 +409,8 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 /usr/include/c++/12/bits/ios_base.h:
 
 /usr/include/c++/12/ios:
+
+/usr/include/c++/12/istream:
 
 /usr/include/aarch64-linux-gnu/bits/in.h:
 
@@ -417,11 +422,19 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/tr1/poly_laguerre.tcc:
 
+/usr/include/c++/12/tr1/legendre_function.tcc:
+
+/usr/include/c++/12/cwctype:
+
+/usr/include/c++/12/tr1/hypergeometric.tcc:
+
 /usr/include/c++/12/tr1/exp_integral.tcc:
 
 /usr/include/aarch64-linux-gnu/c++/12/bits/c++io.h:
 
 /usr/include/c++/12/tr1/ell_integral.tcc:
+
+/usr/include/c++/12/tr1/beta_function.tcc:
 
 /usr/include/c++/12/tr1/special_function_util.h:
 
@@ -443,11 +456,11 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/cmath:
 
-/home/stellarmate/indi-source/libs/indicore/indicom.h:
+/usr/include/c++/12/system_error:
 
-/usr/include/c++/12/tr1/legendre_function.tcc:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indicom.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertylight.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertylight.h:
 
 /usr/include/c++/12/bits/stl_map.h:
 
@@ -525,13 +538,9 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/uniform_int_dist.h:
 
-/usr/include/c++/12/debug/debug.h:
-
 /usr/include/aarch64-linux-gnu/bits/types/time_t.h:
 
 /usr/include/c++/12/bits/uses_allocator.h:
-
-/usr/include/c++/12/bits/stl_iterator_base_types.h:
 
 /usr/include/c++/12/bits/ostream_insert.h:
 
@@ -547,11 +556,7 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/atomic_base.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertyswitch.h:
-
 /usr/include/aarch64-linux-gnu/bits/types/timer_t.h:
-
-/home/stellarmate/indi-source/libs/indibase/defaultdevice.h:
 
 /usr/include/asm-generic/int-ll64.h:
 
@@ -561,13 +566,17 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/clocale:
 
-/usr/include/aarch64-linux-gnu/bits/types/__locale_t.h:
-
 /usr/include/c++/12/bits/move.h:
 
 /usr/include/stdc-predef.h:
 
+/usr/include/c++/12/debug/debug.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indiapi.h:
+
 /usr/include/aarch64-linux-gnu/c++/12/bits/c++allocator.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/basedevice.h:
 
 /usr/include/c++/12/bits/codecvt.h:
 
@@ -577,21 +586,27 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/allocator.h:
 
+/usr/include/aarch64-linux-gnu/bits/stdint-uintn.h:
+
+/usr/include/c++/12/bits/hash_bytes.h:
+
 /usr/include/aarch64-linux-gnu/bits/libc-header-start.h:
 
 /usr/include/aarch64-linux-gnu/bits/fp-logb.h:
 
 /usr/include/aarch64-linux-gnu/bits/stdint-intn.h:
 
-/usr/include/c++/12/bits/cxxabi_forced.h:
+/usr/include/aarch64-linux-gnu/bits/math-vector.h:
 
-/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.cpp:
+/usr/include/aarch64-linux-gnu/gnu/stubs.h:
 
 /usr/include/c++/12/any:
 
 /usr/include/c++/12/ctime:
 
 /usr/include/aarch64-linux-gnu/bits/types/__mbstate_t.h:
+
+/usr/include/aarch64-linux-gnu/bits/types/cookie_io_functions_t.h:
 
 /usr/include/endian.h:
 
@@ -603,14 +618,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/aarch64-linux-gnu/bits/statx-generic.h:
 
-/usr/include/aarch64-linux-gnu/bits/types/cookie_io_functions_t.h:
-
-/home/stellarmate/indi-source/libs/indidevice/indibasetypes.h:
-
-/usr/lib/linux/uapi/arm64/asm/errno.h:
-
-/usr/include/aarch64-linux-gnu/bits/types/struct_FILE.h:
-
 /usr/include/aarch64-linux-gnu/bits/fp-fast.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/FILE.h:
@@ -618,6 +625,10 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 /usr/include/features-time64.h:
 
 /usr/include/c++/12/ext/aligned_buffer.h:
+
+/usr/include/libnova/ln_types.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/indilogger.h:
 
 /usr/include/aarch64-linux-gnu/c++/12/bits/c++locale.h:
 
@@ -627,23 +638,39 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/aarch64-linux-gnu/bits/waitflags.h:
 
+/usr/include/aarch64-linux-gnu/bits/types/__locale_t.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertytext.h:
+
 /usr/include/aarch64-linux-gnu/bits/wchar.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/__fpos64_t.h:
 
-/usr/include/aarch64-linux-gnu/sys/cdefs.h:
+/usr/include/aarch64-linux-gnu/bits/unistd_ext.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertyblob.h:
+/usr/include/aarch64-linux-gnu/bits/types.h:
+
+/usr/include/aarch64-linux-gnu/bits/struct_mutex.h:
+
+/usr/include/aarch64-linux-gnu/bits/setjmp.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/indidriver.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyview.h:
+
+/usr/include/aarch64-linux-gnu/bits/uintn-identity.h:
+
+/usr/include/aarch64-linux-gnu/sys/cdefs.h:
 
 /usr/include/c++/12/bits/exception_ptr.h:
 
-/usr/include/c++/12/bits/hash_bytes.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyblob.h:
 
-/usr/include/aarch64-linux-gnu/bits/stdint-uintn.h:
+/usr/include/aarch64-linux-gnu/bits/types/__fpos_t.h:
 
-/home/stellarmate/indi-source/build/indiversion.h:
+/usr/lib/gcc/aarch64-linux-gnu/12/include/stdint.h:
 
-/usr/include/aarch64-linux-gnu/bits/unistd_ext.h:
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.h:
 
 /usr/lib/gcc/aarch64-linux-gnu/12/include/stdarg.h:
 
@@ -659,77 +686,37 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/type_traits:
 
-/usr/include/aarch64-linux-gnu/bits/types.h:
-
-/usr/include/aarch64-linux-gnu/bits/struct_mutex.h:
-
-/usr/include/aarch64-linux-gnu/bits/setjmp.h:
-
 /usr/include/c++/12/bits/stl_multimap.h:
 
 /usr/include/aarch64-linux-gnu/bits/time64.h:
 
 /usr/include/alloca.h:
 
-/home/stellarmate/indi-source/libs/indicore/lilxml.h:
-
 /usr/include/aarch64-linux-gnu/bits/types/clock_t.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/locale_t.h:
 
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indiutility.h:
+
 /usr/include/stdio.h:
 
-/usr/include/c++/12/cwctype:
-
-/usr/include/c++/12/tr1/hypergeometric.tcc:
-
-/home/stellarmate/indi-source/libs/indidevice/property/indiproperty.h:
-
-/usr/include/aarch64-linux-gnu/bits/math-vector.h:
-
-/usr/include/aarch64-linux-gnu/gnu/stubs.h:
-
-/home/stellarmate/indi-source/libs/indicore/indiapi.h:
-
-/usr/lib/gcc/aarch64-linux-gnu/12/include/stdint.h:
-
-/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/indidevapi.h:
 
 /usr/include/c++/12/new:
 
 /usr/include/features.h:
 
-/usr/include/aarch64-linux-gnu/bits/uintn-identity.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiproperty.h:
 
-/home/stellarmate/indi-source/libs/indicore/indidevapi.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/indibasetypes.h:
 
-/home/stellarmate/indi-source/libs/indidevice/basedevice.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indicore/lilxml.h:
 
-/usr/include/aarch64-linux-gnu/bits/floatn-common.h:
-
-/usr/include/aarch64-linux-gnu/bits/types/struct_timeval.h:
-
-/usr/include/c++/12/bits/localefwd.h:
-
-/usr/include/c++/12/pstl/glue_algorithm_defs.h:
-
-/usr/include/aarch64-linux-gnu/bits/socket_type.h:
-
-/usr/include/aarch64-linux-gnu/bits/waitstatus.h:
-
-/usr/include/c++/12/bits/stringfwd.h:
-
-/usr/include/c++/12/initializer_list:
-
-/usr/include/c++/12/bits/shared_ptr.h:
-
-/usr/include/c++/12/string:
-
-/usr/include/strings.h:
-
-/usr/include/aarch64-linux-gnu/bits/types/__fpos_t.h:
+/usr/include/aarch64-linux-gnu/bits/types/struct_sched_param.h:
 
 /usr/include/aarch64-linux-gnu/sys/types.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/indibase.h:
 
 /usr/include/c++/12/bits/stl_tempbuf.h:
 
@@ -743,9 +730,31 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/basic_string.tcc:
 
-/usr/include/c++/12/bits/sstream.tcc:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/parentdevice.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertybasic.h:
+/usr/include/c++/12/bit:
+
+/usr/include/aarch64-linux-gnu/bits/locale.h:
+
+/usr/include/aarch64-linux-gnu/bits/floatn-common.h:
+
+/usr/include/c++/12/bits/stl_iterator_base_types.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/pifinder.cpp:
+
+/usr/include/c++/12/bits/cxxabi_forced.h:
+
+/usr/include/aarch64-linux-gnu/bits/types/struct_FILE.h:
+
+/usr/lib/linux/uapi/arm64/asm/errno.h:
+
+/usr/include/c++/12/initializer_list:
+
+/usr/include/c++/12/bits/shared_ptr.h:
+
+/usr/include/c++/12/string:
+
+/usr/include/strings.h:
 
 /usr/include/aarch64-linux-gnu/bits/wordsize.h:
 
@@ -757,9 +766,21 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/node_handle.h:
 
-/home/stellarmate/indi-source/libs/indidevice/indibase.h:
+/usr/include/aarch64-linux-gnu/bits/types/struct_timeval.h:
+
+/usr/include/c++/12/bits/localefwd.h:
+
+/usr/include/c++/12/pstl/glue_algorithm_defs.h:
+
+/usr/include/aarch64-linux-gnu/bits/socket_type.h:
+
+/usr/include/aarch64-linux-gnu/bits/waitstatus.h:
+
+/usr/include/c++/12/bits/stringfwd.h:
 
 /usr/lib/gcc/aarch64-linux-gnu/12/include/stddef.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertybasic.h:
 
 /usr/include/aarch64-linux-gnu/c++/12/bits/error_constants.h:
 
@@ -781,6 +802,8 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/aarch64-linux-gnu/bits/getopt_core.h:
 
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indibase/defaultdevice.h:
+
 /usr/include/wchar.h:
 
 /usr/include/c++/12/bits/new_allocator.h:
@@ -790,10 +813,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 /usr/include/locale.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/wint_t.h:
-
-/usr/include/aarch64-linux-gnu/bits/locale.h:
-
-/home/stellarmate/indi-source/libs/indicore/indiutility.h:
 
 /usr/include/aarch64-linux-gnu/bits/long-double.h:
 
@@ -809,15 +828,13 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/lib/linux/uapi/arm64/asm/types.h:
 
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertyswitch.h:
+
 /usr/include/aarch64-linux-gnu/bits/pthreadtypes-arch.h:
 
 /usr/include/aarch64-linux-gnu/bits/typesizes.h:
 
 /usr/include/c++/12/bits/stl_vector.h:
-
-/usr/include/c++/12/istream:
-
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertyview.h:
 
 /usr/include/aarch64-linux-gnu/bits/struct_rwlock.h:
 
@@ -831,19 +848,23 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/aarch64-linux-gnu/bits/stdlib-float.h:
 
+/usr/include/libnova/julian_day.h:
+
 /usr/include/aarch64-linux-gnu/bits/time.h:
 
 /usr/include/errno.h:
 
 /usr/include/aarch64-linux-gnu/bits/errno.h:
 
-/home/stellarmate/indi-source/libs/indidevice/parentdevice.h:
+/usr/include/libnova/precession.h:
 
 /usr/include/aarch64-linux-gnu/c++/12/bits/c++config.h:
 
 /usr/include/linux/errno.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/error_t.h:
+
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiwidgetview.h:
 
 /usr/include/c++/12/bits/istream.tcc:
 
@@ -867,10 +888,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/linux/stat.h:
 
-/usr/include/c++/12/cstdio:
-
-/usr/include/linux/types.h:
-
 /usr/include/linux/posix_types.h:
 
 /usr/include/c++/12/bits/cxxabi_init_exception.h:
@@ -891,6 +908,10 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/aarch64-linux-gnu/bits/types/struct_itimerspec.h:
 
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indimacros.h:
+
+/usr/include/c++/12/bits/shared_ptr_base.h:
+
 /usr/include/unistd.h:
 
 /usr/include/linux/close_range.h:
@@ -898,10 +919,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 /usr/include/c++/12/memory:
 
 /usr/include/c++/12/bits/stl_raw_storage_iter.h:
-
-/usr/include/c++/12/bit:
-
-/usr/include/c++/12/bits/shared_ptr_base.h:
 
 /usr/include/c++/12/math.h:
 
@@ -927,9 +944,9 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/backward/auto_ptr.h:
 
-/usr/include/aarch64-linux-gnu/bits/sched.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/build/indiversion.h:
 
-/usr/include/aarch64-linux-gnu/bits/types/struct_sched_param.h:
+/usr/include/aarch64-linux-gnu/bits/sched.h:
 
 /usr/include/aarch64-linux-gnu/bits/types/mbstate_t.h:
 
@@ -959,13 +976,13 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/pstl/execution_defs.h:
 
-/home/stellarmate/indi-source/libs/indibase/indidriver.h:
+/usr/include/c++/12/cstdio:
 
-/home/stellarmate/indi-source/libs/indimacros.h:
+/usr/include/linux/types.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indiwidgettraits.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiwidgettraits.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indiwidgetview.h:
+/usr/include/c++/12/bits/stl_tree.h:
 
 /usr/include/c++/12/bits/concept_check.h:
 
@@ -987,38 +1004,30 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: /home/stellarmate/PiFinder_S
 
 /usr/include/c++/12/bits/stl_bvector.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indiproperties.h:
-
 /usr/include/c++/12/array:
 
 /usr/include/c++/12/bits/stl_algo.h:
 
 /usr/include/c++/12/bits/algorithmfwd.h:
 
-/home/stellarmate/indi-source/libs/indibase/indilogger.h:
-
 /usr/include/asm-generic/posix_types.h:
 
 /usr/include/c++/12/bits/stl_heap.h:
 
-/usr/include/c++/12/ext/type_traits.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indiproperties.h:
 
-/usr/include/asm-generic/bitsperlong.h:
+/usr/include/c++/12/ext/type_traits.h:
 
 /usr/include/asm-generic/types.h:
 
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertynumber.h:
+/usr/include/asm-generic/bitsperlong.h:
 
 /usr/include/c++/12/deque:
 
 /usr/include/c++/12/algorithm:
 
-/usr/include/c++/12/tr1/beta_function.tcc:
-
-/home/stellarmate/indi-source/libs/indidevice/property/indipropertytext.h:
+/home/stellarmate/PiFinder_Stellarmate/indi-source/libs/indidevice/property/indipropertynumber.h:
 
 /usr/include/c++/12/bits/charconv.h:
 
 /usr/include/c++/12/map:
-
-/usr/include/c++/12/bits/stl_tree.h:

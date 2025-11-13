@@ -1,5 +1,11 @@
+Two possibilities this md was called from the chat: this is a running or a new chat session: 
 
-Update the local session.md to reflect the actual status and also the next steps in a way, that I can safely restart the session in case of a session breakdown. Therefore you need to remember: 
+
+1. "read ctx.md and load": 
+If this is a new sesssion, Read session.md to reflect the actual status and also the next steps. Read necessary files to understand the context. 
+
+2. "read ctx.md and save" 
+If this is a running session, update the local session.md to reflect the actual status and also the next steps in a way, that I can safely restart the session in case of a session breakdown. Therefore you need to remember: 
 
 - which files have been created or altered and why (for each)
 - which files to re-read for having the context (setup, pathing, funcitons.sh) 

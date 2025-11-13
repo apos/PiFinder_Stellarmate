@@ -7,6 +7,8 @@
 #include "indipropertynumber.h"
 #include "indipropertyswitch.h"
 
+#include <libnova/nova.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>

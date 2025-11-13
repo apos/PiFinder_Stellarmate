@@ -279,4 +279,6 @@ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o: \
  /usr/include/arpa/inet.h /usr/include/netdb.h /usr/include/rpc/netdb.h \
  /usr/include/aarch64-linux-gnu/bits/types/sigevent_t.h \
  /usr/include/aarch64-linux-gnu/bits/types/__sigval_t.h \
- /usr/include/aarch64-linux-gnu/bits/netdb.h
+ /usr/include/aarch64-linux-gnu/bits/netdb.h \
+ /usr/include/libnova/julian_day.h /usr/include/libnova/ln_types.h \
+ /usr/include/libnova/precession.h

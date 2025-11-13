@@ -164,13 +164,14 @@ bool PiFinder::ReadScopeStatus()
 
     char response[32];
     int h, m, s, d;
+    double jnow_ra = 0, jnow_dec = 0;
 
     // Get RA
     if (SendCommand(":GR#", response, sizeof(response)))
     {
         if (sscanf(response, "%d:%d:%d#", &h, &m, &s) == 3)
         {
-            EquatorialEODN[0].value = h + m / 60.0 + s / 3600.0;
+            jnow_ra = h + m / 60.0 + s / 3600.0;
         }
     }
 
@@ -179,12 +180,26 @@ bool PiFinder::ReadScopeStatus()
     {
         if (sscanf(response, "%d*%d'%d#", &d, &m, &s) == 3)
         {
-            double dec = d + m / 60.0 + s / 3600.0;
+            jnow_dec = d + m / 60.0 + s / 3600.0;
             if (response[0] == '-')
-                dec = -dec;
-            EquatorialEODN[1].value = dec;
+                jnow_dec = -jnow_dec;
         }
     }
+
+    // Convert from JNow to J2000
+    struct ln_equ_posn jnow_coords, j2000_coords;
+    jnow_coords.ra = jnow_ra;
+    jnow_coords.dec = jnow_dec;
+
+    // Get current Julian date
+    double jd = ln_get_julian_from_sys();
+
+    // Precess from JNow to J2000
+    ln_precess_equ(&jnow_coords, jd, LN_JULIAN_DATE_J2000);
+    j2000_coords = jnow_coords;
+
+    EquatorialEODN[0].value = j2000_coords.ra;
+    EquatorialEODN[1].value = j2000_coords.dec;
 
     // Update the property
     IDSetNumber(&EquatorialEODNP, nullptr);
