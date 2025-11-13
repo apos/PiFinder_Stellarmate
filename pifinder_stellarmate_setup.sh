@@ -308,6 +308,12 @@ echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
+# INDI Driver Installation (Step 5 from indi_driver_compile.md, without indi_add_driver)
+echo "🔧 Installing PiFinder LX200 INDI driver..."
+sudo cp ~/indi-source/build/drivers/telescope/indi_pifinder_lx200 /usr/bin/
+sudo cp ${pifinder_stellarmate_dir}/indi_pifinder/indi_pifinder_driver.xml.in /usr/share/indi/pifinder_lx200.xml
+echo "✅ PiFinder LX200 INDI driver installed."
+
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)
 if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
