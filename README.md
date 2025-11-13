@@ -21,6 +21,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 This setup modifies the stock PiFinder installation to better integrate with Stellarmate:
 
 *   **Automated Installation:** A single script handles downloading the correct PiFinder version, creating a Python virtual environment, installing dependencies, and applying all necessary patches.
+*   **INDI Driver for KStars/Ekos:** The setup script automatically compiles and installs a custom `pifinder_lx200` INDI driver. This allows KStars/Ekos to read the PiFinder's coordinates, perfect for plate-solving and mount alignment.
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
@@ -71,7 +72,21 @@ The setup process is designed to be straightforward. It will guide you through a
     source /home/stellarmate/PiFinder/python/.venv/bin/activate
     ./pifinder_stellarmate_setup.sh
     ```
-    After this, the installation will complete, and the PiFinder services will be started.
+    After this, the installation will complete, the PiFinder services will be started, and the INDI driver will be installed.
+
+## Using the INDI Driver
+
+The setup script automatically installs the `pifinder_lx200` INDI driver. To use it:
+
+1.  **Start KStars** and open the **Ekos Profile Wizard** (`Ctrl+P`).
+2.  Create a new equipment profile or edit an existing one.
+3.  In the "Telescope" dropdown, select **"PiFinder LX200"** and click "Add".
+4.  Save the profile and start INDI.
+5.  In the INDI Control Panel, go to the "PiFinder LX200" tab, then the "Connection" tab.
+6.  Ensure the IP address is `127.0.0.1` and the port is `4030`.
+7.  Click **"Connect"**.
+
+You should now see the PiFinder's RA and Dec values in Ekos, which can be used for alignment or as a reference.
 
 ## Uninstallation
 
