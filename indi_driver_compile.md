@@ -52,7 +52,6 @@ sudo apt-get install -y \
     libcurl4-gnutls-dev \
     libgsl-dev \
     libjpeg-dev \
-    libnova-dev \
     libusb-1.0-0-dev \
     zlib1g-dev
 ```
@@ -80,7 +79,7 @@ The `PiFinder_Stellarmate` project contains the source code for the custom `pifi
 2.  **Copy the `indi_pifinder` directory** into the telescope drivers section of the INDI source code. This directory contains the C++ source (`.cpp`), header (`.h`), and XML definition file for our driver.
 
     ```bash
-    cp -r indi_pifinder/* ~/indi-source/drivers/telescope/
+    cp -r indi-source/drivers/telescope/pifinder_lx200* ~/indi-source/drivers/telescope/
     ```
 
 ---
@@ -122,10 +121,16 @@ After a successful compilation, the driver files must be copied to the system-wi
     sudo cp drivers/telescope/indi_pifinder_lx200 /usr/bin/
     ```
 
-2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver.
+2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver. Note that we are renaming the `.xml.in` file to just `.xml` during the copy.
 
     ```bash
-    sudo cp ../drivers/telescope/pifinder_lx200.xml /usr/share/indi/
+    sudo cp indi_pifinder/indi_pifinder_driver.xml.in /usr/share/indi/pifinder_lx200.xml
+
+4.  **Register the driver with the INDI server.** This command tells the INDI server to recognize and load the new driver.
+
+    ```bash
+    indi_add_driver indi_pifinder_lx200
+    ```
     ```
 
 ---
