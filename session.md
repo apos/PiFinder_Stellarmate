@@ -1,29 +1,30 @@
 ## PiFinder INDI Driver Development
 
-**Objective:** Build, install, and test the `pifinder_lx200` INDI driver.
+**Objective:** Fix the GoTo functionality in the `pifinder_lx200` INDI driver.
 
 **Status:**
-**SUCCESS!** The `pifinder_lx200` driver has been successfully compiled, installed, and verified in Ekos and the mobile app. The `pifinder_stellarmate_setup.sh` script has been updated to include Python cache clearing steps to prevent `tetra3` import errors during fresh installations or updates.
+The `pifinder_lx200` driver has been modified to correct the Right Ascension (RA) format sent in GoTo commands. The driver has been recompiled and reinstalled. The system is now ready for the user to test the fix.
 
 **Files Altered:**
-*   `indi-source/drivers/telescope/pifinder_lx200.cpp`: Removed all `libnova` headers and conversion logic. Simplified the `ReadScopeStatus()` function to call `NewRaDec()` with the raw JNow coordinates from the device. Removed the `updateProperties()` function definition.
-*   `indi-source/drivers/telescope/pifinder_lx200.h`: Removed `libnova` header includes and the `updateProperties()` function declaration.
-*   `indi-source/drivers/telescope/CMakeLists.txt`: Removed all `libnova` dependencies (compile definitions, include directories, and library links) for the `indi_pifinder_lx200` target to resolve linker errors.
-*   `/usr/bin/indi_pifinder_lx200`: The compiled driver binary was installed.
-*   `/usr/share/indi/indi_pifinder_lx200.xml`: The driver's XML definition file was installed.
-*   `pifinder_stellarmate_setup.sh`: Added `find ~/PiFinder -type f -name "*.pyc" -delete && find ~/PiFinder -type d -name "__pycache__" -delete` commands after `patch_PiFinder_installation_files.sh` and `install_requirements` to clear Python cache.
+*   `indi-source/drivers/telescope/pifinder_lx200.cpp`: Modified the `ISNewRaDec` function. The `fs_sexa` call for formatting the RA string was changed from `fs_sexa(ra_str, ra, 0, 36000)` to `fs_sexa(ra_str, ra, 2, 3600)`. This was done to remove fractional seconds from the RA value, matching the format expected by the PiFinder's `pos_server.py` (`HH:MM:SS` instead of `HH:MM:SS.S`).
 
 **Key Knowledge & Strategy:**
-*   The INDI framework's base classes handle complex operations like epoch conversions. The driver's responsibility is to provide the raw data to the framework via the correct functions (`NewRaDec()`).
-*   Analyzing the parent class (`lx200telescope.cpp`) was the correct strategy to understand the proper API usage.
-*   Targeted compilation (`make <target_name>`) is essential for efficient development on resource-constrained systems.
-*   Clearing Python cache (`__pycache__` directories and `.pyc` files) is crucial after code changes or fresh installations to prevent stale module import issues.
+*   **Problem:** GoTo commands were failing.
+*   **Root Cause:** Analysis of `pos_server.py` revealed it expected RA coordinates in `HH:MM:SS` format (integer seconds), while the INDI driver was sending `HH:MM:SS.S` (fractional seconds), causing a parsing failure on the server side.
+*   **Solution:** The C++ driver code was modified to format the RA string correctly.
+*   **Installation Process:**
+    1.  The INDI server must be stopped before overwriting the driver executable (`/usr/bin/indi_pifinder_lx200`) to avoid a "Text file busy" error.
+    2.  Compile only the specific driver target (`make indi_pifinder_lx200`) for speed.
+    3.  Copy the compiled binary and the correct XML file (`~/PiFinder_Stellarmate/indi_pifinder/indi_pifinder_driver.xml.in`) to the system directories (`/usr/bin/` and `/usr/share/indi/`).
 
 **Next Steps:**
-1.  The current task is complete. Awaiting further instructions from the user.
+1.  The user needs to restart the INDI server.
+2.  The user needs to connect to the "PiFinder LX200" driver in an INDI client (e.g., Ekos).
+3.  The user needs to issue a GoTo command to verify that the fix is working correctly.
 
 **Files to Re-read for Context:**
 *   `session.md` (this file)
-*   `indi-source/drivers/telescope/pifinder_lx200.cpp` (the working driver source)
-*   `indi_driver_compile.md` (for installation steps)
-*   `pifinder_stellarmate_setup.sh` (the updated setup script)
+*   `indi-source/drivers/telescope/pifinder_lx200.cpp` (the modified driver source)
+*   `indi_driver_compile.md` (for build and installation steps)
+*   `pifinder_stellarmate_setup.sh` (for overall project setup)
+*   The local copy of `pos_server.py` used for analysis is at `/home/stellarmate/.gemini/tmp/b39e61b51db81a420783f159a86885c68453009da73d62e4023c7fd073be8f56/pos_server.py`.

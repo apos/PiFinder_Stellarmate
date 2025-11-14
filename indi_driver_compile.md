@@ -124,9 +124,9 @@ After a successful compilation, the driver files must be copied to the system-wi
 2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver. Note that we are renaming the `.xml.in` file to just `.xml` during the copy.
 
     ```bash
-    sudo cp indi_pifinder/indi_pifinder_driver.xml.in /usr/share/indi/pifinder_lx200.xml
+    sudo cp ../drivers/telescope/pifinder_lx200.xml /usr/share/indi/
 
-4.  **Register the driver with the INDI server.** This command tells the INDI server to recognize and load the new driver.
+4.  **Register the driver with the INDI server (Optional).** This command tells the INDI server to recognize and load the new driver. If you are using the Stellarmate GUI or Ekos to add the driver, you can skip this step.
 
     ```bash
     indi_add_driver indi_pifinder_lx200
