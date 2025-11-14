@@ -118,6 +118,8 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+                find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
+                find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
                 ;;
             2)
@@ -213,6 +215,8 @@ else
     rm -f "${lock_file}"
     echo "Python venv is active. Installing Requirements."
     install_requirements "${python_requirements}"
+    find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
+    find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
   fi
 fi
 
