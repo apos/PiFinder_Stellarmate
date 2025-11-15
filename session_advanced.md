@@ -2,22 +2,25 @@
 
 This document outlines higher-level strategies and critical technical details for the `pifinder_lx200` driver development.
 
-## Core Strategy: API Modernization
+## Core Strategy: Mimic a Working Reference
 
-The primary obstacle has been the API drift between the original, functional driver code and the current `indilib` source tree. The old code relied on direct struct member manipulation (e.g., `Property.name = "..."`, `Property.s = IPS_OK`), a practice that has been deprecated and removed.
+The primary obstacle has been API drift between the original driver code and the current `indilib` source. The most effective strategy is to abandon trial-and-error and strictly adhere to the patterns found in a known-good, modern reference driver: `lx200_10micron`.
 
 **The correct, modern approach is as follows:**
 
-1.  **Initialization (`initProperties`)**:
-    *   Use the `IUFill...` family of helper functions (e.g., `IUFillSwitchVector`, `IUFillNumberVector`) to define and initialize properties and their elements. This is the most robust method for creating the required data structures.
-    *   Use `setDriverInterface(TELESCOPE_INTERFACE)` to declare the driver's primary capability instead of the old `SetCapability` method.
-    *   Register the properties with the driver using `defineSwitch()` and `defineNumber()`.
+1.  **Property Declaration**:
+    *   In the driver's header file (`.h`), declare properties as direct C-style struct members, **not** C++ wrapper classes or pointers. This is the most critical lesson learned.
+    *   **Correct:** `ISwitchVectorProperty ConnectionSP;`
+    *   **Incorrect:** `INDI::PropertySwitch ConnectionSP;`
+    *   **Incorrect:** `ISwitchVectorProperty *ConnectionSP;`
 
-2.  **State Management (e.g., `ISNewSwitch`)**:
-    *   Do not modify property state directly (e.g., `ConnectionS[0].s = ISS_ON`).
-    *   Instead, read the incoming desired state from the `states` array using helpers like `IUFindSwitch(states, names, n, "SWITCH_NAME")`.
-    *   After performing the driver logic (e.g., `Handshake()`), update the property's state variable (`ConnectionSP.s = IPS_OK`).
-    *   Finally, notify the INDI server of the change using `IDSetSwitch(&ConnectionSP, nullptr)`.
+2.  **Property Initialization (`initProperties`)**:
+    *   Use the `IUFill...` family of helper functions (e.g., `IUFillSwitchVector`) to initialize the struct members.
+    *   Pass the properties to these functions using the `&` operator (e.g., `IUFillSwitchVector(&ConnectionSP, ...)`).
+
+3.  **Linking**:
+    *   Identify all external library dependencies (like `libnova` for astronomical calculations) by observing the reference driver.
+    *   Ensure these libraries are explicitly linked in the `CMakeLists.txt` file via `target_link_libraries`.
 
 ## Build System Strategy
 
@@ -26,9 +29,9 @@ The primary obstacle has been the API drift between the original, functional dri
 
 ## Debugging Strategy
 
-1.  **Reference Implementation**: The `lx200_10micron` driver, located in `indi-source/drivers/telescope/`, serves as the primary reference for a simple, modern, and functional LX200-style driver. When encountering API usage errors or logical issues, compare the `pifinder_lx200.cpp` implementation to `lx200_10micron.cpp`.
-2.  **Protocol Definition**: The `pos_server.py` script, provided by the user and located in `indi_pifinder/`, is the absolute source of truth for the LX200 command-and-response protocol that the PiFinder expects. All commands sent by the driver (e.g., `:GR#`, `:GD#`, `:Sr...#`) must exactly match the format parsed by this script.
+1.  **Reference Implementation**: The `lx200_10micron` driver, located in `indi-source/drivers/telescope/`, serves as the primary reference for a simple, modern, and functional LX200-style driver.
+2.  **Protocol Definition**: The `pos_server.py` script, located in `indi_pifinder/`, is the absolute source of truth for the LX200 command-and-response protocol that the PiFinder expects.
 
 ## Version Control Policy
 
-*   **Atomic Commits**: To prevent the loss of working code, a `git commit` must be made after every significant and successful change. This creates a safety net and allows for easy reversion if a new change introduces a regression. This rule was established after a near-loss of the original working C++ file.
+*   **Atomic Commits**: To prevent the loss of working code, a `git commit -a -m "..."` must be made after every significant and successful code modification. This creates a safety net and allows for easy reversion if a new change introduces a regression. This rule was established after multiple failed refactoring attempts made it difficult to return to a known-good state.

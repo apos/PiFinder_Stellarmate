@@ -34,12 +34,12 @@ private:
     int pifinder_fd = -1;
 
     // INDI Properties
-    ISwitchVectorProperty *ConnectionSP = nullptr;
+    ISwitchVectorProperty ConnectionSP;
     ISwitch ConnectionS[2];
 
-    INumberVectorProperty *EquatorialEODNP = nullptr;
+    INumberVectorProperty EquatorialEODNP;
     INumber EquatorialEODN[2];
 
-    INumberVectorProperty *HorizontalCoordinatesNP = nullptr;
+    INumberVectorProperty HorizontalCoordinatesNP;
     INumber HorizontalCoordinatesN[2];
 };
