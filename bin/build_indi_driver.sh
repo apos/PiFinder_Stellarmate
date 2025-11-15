@@ -32,7 +32,7 @@ fi
 
 # Log file for the script's output
 LOG_FILE="${pifinder_stellarmate_dir}/indi_driver_build.log"
-exec > >(tee -a "${LOG_FILE}") 2>&1
+exec > >(tee "${LOG_FILE}") 2>&1
 
 echo "############################################################"
 echo "Starting PiFinder INDI Driver Build Script"

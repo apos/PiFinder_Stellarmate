@@ -35,3 +35,10 @@ When a high-level API (like the methods in `LX200Telescope`) does not support a 
 
 *   **Low-Level Function:** The correct function for sending raw command strings to the serial port is `tty_write_string`, which is defined in `indicom.h` and implemented in `lx200driver.cpp`.
 *   **Thread Safety:** It is **critical** that all calls to `tty_write_string` or any other function performing direct serial I/O are protected by a mutex. The INDI LX200 drivers use a global mutex named `lx200CommsLock`. Every write operation must be wrapped in a `std::unique_lock<std::mutex> guard(lx200CommsLock);` block to prevent race conditions and ensure the driver remains stable under concurrent operations. This is a fundamental pattern for robust INDI driver development.
+
+#### 6. Debugging Compilation Errors
+When compilation fails, a systematic approach is required.
+*   **Analyze the Log:** The first step is always to carefully read the compiler errors in the build log (`indi_driver_build.log`) to identify the exact lines of code and error messages.
+*   **Consult the Reference:** The most effective strategy has been to consult the source code of a similar, working driver. For this project, the `lx200_10micron` driver is the primary reference. By comparing the failing code with the working implementation, we can identify incorrect function calls, missing definitions, and flawed logic.
+*   **Codebase Investigation:** Use tools like `grep` to search the entire `indi-source` codebase for definitions of constants, functions, and classes when their origin is unclear.
+*   **Iterative Fixes:** Apply fixes one at a time and recompile to ensure that each change resolves an error without introducing new ones.
