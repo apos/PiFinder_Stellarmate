@@ -1,3 +1,0 @@
-/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/indi_pifinder_driver.dir
-/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/edit_cache.dir
-/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/rebuild_cache.dir

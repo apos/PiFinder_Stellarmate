@@ -12,7 +12,7 @@
 // We declare an auto pointer to PiFinderLX200.
 std::unique_ptr<PiFinderLX200> pifinderlx200(new PiFinderLX200());
 
-PiFinderLX200::PiFinderLX200()
+PiFinderLX200::PiFinderLX200() : LX200Telescope()
 {
     // Constructor
 }
@@ -24,12 +24,6 @@ const char *PiFinderLX200::getDefaultName()
 
 bool PiFinderLX200::Handshake()
 {
-    // Call the base class Connect method to handle serial port setup
-    if (!INDI::Telescope::Connect())
-    {
-        return false;
-    }
-
     // PiFinder's pos_server.py does not respond to a simple ACK (0x06).
     // Instead, it expects LX200 commands directly. We'll send a :GR# command
     // to get the current RA, which will also serve as a handshake.

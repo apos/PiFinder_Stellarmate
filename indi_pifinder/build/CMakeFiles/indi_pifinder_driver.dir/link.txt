@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/indi_pifinder_driver.dir/pifinder.cpp.o -o drivers/indi_pifinder_driver   -L/home/stellarmate/PiFinder_Stellarmate/indi-source/build/libs/indibase  -Wl,-rpath,/home/stellarmate/PiFinder_Stellarmate/indi-source/build/libs/indibase -lindidriver 
