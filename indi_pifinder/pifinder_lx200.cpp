@@ -2,6 +2,7 @@
 
 #include <libnova/julian_day.h>
 #include <libnova/transform.h>
+#include <libnova/precession.h>
 
 #include "indicom.h"
 #include "indiproperty.h"
