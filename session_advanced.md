@@ -3,30 +3,35 @@
 This document outlines the key strategic decisions and workflow patterns established during the development of the `pifinder_lx200` INDI driver.
 
 #### 1. Driver Architecture: Standalone vs. Generic Plugin
-The initial attempt to integrate the `pifinder_lx200` driver into the `lx200generic` executable was incorrect. This approach is designed for drivers that are minor variations of the standard LX200 protocol and can be selected at runtime by the `lx200generic` loader.
-
-The correct and final architecture for the `pifinder_lx200` driver is a **standalone executable**. This is necessary because the PiFinder `pos_server.py` implements a custom variation of the LX200 command set (e.g., the RA format in the GoTo command).
+The correct architecture for the `pifinder_lx200` driver is a **standalone executable**. This is necessary because the PiFinder `pos_server.py` implements a custom variation of the LX200 command set.
 
 **Implementation:**
 *   Create a dedicated `add_executable(indi_pifinder_lx200 ...)` entry in the `indi-source/drivers/telescope/CMakeLists.txt`.
 *   Link this executable with the necessary base LX200 implementation files (`lx200driver.cpp`, `lx200telescope.cpp`) to provide the core communication functions.
 
 #### 2. Class Inheritance Strategy
-To avoid re-implementing the entire LX200 protocol from scratch, the `PiFinderLX200` class inherits from `LX200Telescope`.
+The `PiFinderLX200` class inherits from `LX200Telescope`. This provides the essential LX200 properties and helper functions while allowing for the necessary overrides to implement the PiFinder's specific protocol.
 
-*   **`LX200Telescope` (Correct):** This base class provides the essential LX200 functions (`setObjectDEC`, `Slew`, `ReadScopeStatus`, etc.) and properties without the dynamic loading mechanism of its child, `LX200Generic`. This is the ideal parent class for a standalone driver that speaks a variant of the LX200 protocol.
-*   **`LX200Generic` (Incorrect for this use case):** This class is designed to be a multi-purpose driver that loads other LX200 variants. Inheriting from it pulls in unnecessary complexity and is counter to the standalone driver goal.
-*   **`INDI::Telescope` (Incorrect for this use case):** Inheriting directly from the base telescope class would require re-implementing all LX200 command parsing and formatting from the ground up, which is inefficient.
+#### 3. Protocol-Driven Development
+The most critical lesson learned is that the driver's logic must be dictated by the server-side implementation (`pos_server.py`). Assumptions about standard LX200 commands (like the GoTo sequence or RA/DEC format) proved to be a major source of errors.
 
-#### 3. Development Workflow
-A strict separation is maintained between the development directory and the INDI build directory.
+**Key Protocol Differences in `pos_server.py`:**
+*   **GoTo Sequence:** A GoTo is initiated by sending the target RA (`:Sr...#`) followed by the target DEC (`:Sd...#`). The `Sd` command itself triggers the action. There is **no** separate Slew (`:MA#`) command.
+*   **RA Format:** `:SrHH:MM:SS#` (with colons).
+*   **DEC Format:** `:Sd[sign]DD*MM:SS#` (e.g., `:Sd+12*34:56#`).
 
-*   **Development Directory:** `/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/`
-    *   This directory is under version control (git).
-    *   All coding, modifications, and testing of the driver's C++ and XML files occur here.
-*   **Build Directory:** `/home/stellarmate/PiFinder_Stellarmate/indi-source/`
-    *   This is a clone of the official INDI repository, used as the build environment.
-    *   Before compiling, the finalized source files (`pifinder_lx200.cpp`, `pifinder_lx200.h`, `indi_pifinder_lx200_driver.xml.in`) are **copied** from the development directory into `indi-source/drivers/telescope/`.
-    *   The `CMakeLists.txt` within `indi-source` is modified to include the driver in the build.
+The development process must involve reading and understanding the target server's code to ensure compatibility.
 
-This workflow ensures that the development files remain clean and version-controlled, while the build environment can be easily updated or reset without affecting the source code.
+#### 4. Development Workflow
+A strict separation is maintained between the development directory (`indi_pifinder`) and the INDI build directory (`indi-source`).
+
+*   **Development Directory:** `/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/` (Version-controlled source code).
+*   **Build Directory:** `/home/stellarmate/PiFinder_Stellarmate/indi-source/` (INDI repository clone for compilation).
+
+Before compiling, finalized source files are **copied** from the development directory into `indi-source/drivers/telescope/`. This ensures a clean and reproducible build process.
+
+#### 5. Direct Serial I/O and Thread Safety
+When a high-level API (like the methods in `LX200Telescope`) does not support a device's specific command protocol, it is necessary to drop down to a lower level of control.
+
+*   **Low-Level Function:** The correct function for sending raw command strings to the serial port is `tty_write_string`, which is defined in `indicom.h` and implemented in `lx200driver.cpp`.
+*   **Thread Safety:** It is **critical** that all calls to `tty_write_string` or any other function performing direct serial I/O are protected by a mutex. The INDI LX200 drivers use a global mutex named `lx200CommsLock`. Every write operation must be wrapped in a `std::unique_lock<std::mutex> guard(lx200CommsLock);` block to prevent race conditions and ensure the driver remains stable under concurrent operations. This is a fundamental pattern for robust INDI driver development.

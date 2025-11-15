@@ -1,6 +1,9 @@
 #pragma once
 
 #include "lx200telescope.h"
+#include <mutex>
+
+extern std::mutex lx200CommsLock;
 
 class PiFinderLX200 : public LX200Telescope
 {
