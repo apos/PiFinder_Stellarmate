@@ -322,38 +322,106 @@ bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char 
     return true;
 }
 
+bool PiFinder::sendRA(double raHours, char *response, size_t responseLen)
+{
+    char command[64];
+
+    // Normalize RA to 0–24h
+    while (raHours < 0.0)
+        raHours += 24.0;
+    while (raHours >= 24.0)
+        raHours -= 24.0;
+
+    int h = static_cast<int>(raHours);
+    double remHours = raHours - h;
+    double totalMinutes = remHours * 60.0;
+
+    // --- Try format 1: HH:MM.m (e.g. 17:20.7) ---
+    double minutesWithFraction = totalMinutes; // already includes fraction
+    snprintf(command, sizeof(command), ":Sr%02d:%04.1f#", h, minutesWithFraction);
+    if (SendCommand(command, response, responseLen) && response[0] == '1')
+        return true;
+
+    // --- Fallback: HH:MM:SS (e.g. 17:20:44) ---
+    int m = static_cast<int>(totalMinutes);
+    double remMinutes = totalMinutes - m;
+    double totalSeconds = remMinutes * 60.0;
+    int s = static_cast<int>(totalSeconds + 0.5);
+
+    // Normalize carry
+    if (s >= 60)
+    {
+        s -= 60;
+        m += 1;
+    }
+    if (m >= 60)
+    {
+        m -= 60;
+        h = (h + 1) % 24;
+    }
+
+    snprintf(command, sizeof(command), ":Sr%02d:%02d:%02d#", h, m, s);
+    return (SendCommand(command, response, responseLen) && response[0] == '1');
+}
+
+bool PiFinder::sendDec(double decDegrees, char *response, size_t responseLen)
+{
+    char command[64];
+
+    char sign = (decDegrees >= 0.0) ? '+' : '-';
+    double absDec = fabs(decDegrees);
+
+    int d = static_cast<int>(absDec);
+    double remDeg = absDec - d;
+    double totalArcMinutes = remDeg * 60.0;
+
+    // --- Try format 1: sDD*MM.m (e.g. +34*39.2) ---
+    double arcMinWithFraction = totalArcMinutes; // MM.m
+    snprintf(command, sizeof(command), ":Sd%c%02d*%04.1f#", sign, d, arcMinWithFraction);
+    if (SendCommand(command, response, responseLen) && response[0] == '1')
+        return true;
+
+    // --- Fallback: sDD*MM:SS (e.g. +34*39:10) ---
+    int m = static_cast<int>(totalArcMinutes);
+    double remArcMin = totalArcMinutes - m;
+    double totalArcSeconds = remArcMin * 60.0;
+    int s = static_cast<int>(totalArcSeconds + 0.5);
+
+    // Normalize carry
+    if (s >= 60)
+    {
+        s -= 60;
+        m += 1;
+    }
+    if (m >= 60)
+    {
+        m -= 60;
+        d += 1;
+    }
+
+    snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
+    return (SendCommand(command, response, responseLen) && response[0] == '1');
+}
+
 bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, char *names[], int n)
 {
     if (strcmp(name, "EQUATORIAL_EOD_COORD") == 0)
     {
         // The user is trying to set the equatorial coordinates (GoTo)
-        double ra = values[0];
-        double dec = values[1];
+        double ra  = values[0]; // hours
+        double dec = values[1]; // degrees
 
-        char command[64];
         char response[32];
 
-        // Format RA
-        int h = ra;
-        int m = (ra - h) * 60;
-        int s = (ra - h - m / 60.0) * 3600;
-        snprintf(command, sizeof(command), ":Sr%02d:%02d:%02d#", h, m, s);
-        SendCommand(command, response, sizeof(response));
-
-        // Format Dec
-        char sign = dec >= 0 ? '+' : '-';
-        dec = fabs(dec);
-        int d = dec;
-        m = (dec - d) * 60;
-        s = (dec - d - m / 60.0) * 3600;
-        snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
-        
         this->EquatorialEODNP.s = INDI::IPS_BUSY;
         this->IDSetNumber(&EquatorialEODNP, nullptr);
 
-        if (SendCommand(command, response, sizeof(response)) && response[0] == '1')
+        bool raOk  = sendRA(ra,  response, sizeof(response));
+        bool decOk = sendDec(dec, response, sizeof(response));
+
+        if (raOk && decOk)
         {
-            this->EquatorialEODNP.s = INDI::IPS_OK;
+            this->EquatorialEODNP.s     = INDI::IPS_OK;
             this->EquatorialEODN[0].value = ra;
             this->EquatorialEODN[1].value = dec;
         }
@@ -361,10 +429,10 @@ bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, ch
         {
             this->EquatorialEODNP.s = INDI::IPS_ALERT;
         }
+
         this->IDSetNumber(&EquatorialEODNP, nullptr);
         return true;
     }
-
     // We check if the user is trying to set the horizontal coordinates
     if (strcmp(name, "HORIZONTAL_COORDINATES") == 0)
     {

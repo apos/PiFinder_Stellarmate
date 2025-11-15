@@ -23,7 +23,7 @@ If you have a pre-compiled `indi_pifinder_lx200` driver executable and its corre
 2.  **Copy the driver's XML definition file** to `/usr/share/indi`. This file tells INDI clients like Ekos about the new driver.
 
     ```bash
-    sudo cp /path/to/your/prebuilt/pifinder_lx200.xml /usr/share/indi/
+    sudo cp /path/to/your/prebuilt/indi-source/drivers/telescope/pifinder_lx200.xml /usr/share/indi/
     ```
 
 After installing the pre-built driver, skip to **Step 5: Test the Driver in Ekos**.
@@ -148,3 +148,40 @@ The driver is now installed. You can test it using KStars and Ekos.
 7.  Click **"Connect"**.
 
 If the connection is successful, the driver will connect to the PiFinder's position server, and you should see the RA and Dec values update in the "Main Control" tab. You can then test GoTo commands from the KStars sky map.
+
+### Clean Rebuild Instructions
+
+If you are having issues with the driver not updating, you can perform a clean rebuild to ensure there are no stale build artifacts.
+
+1.  **Remove the build directory and all related files:**
+    ```bash
+    rm -rf /home/stellarmate/PiFinder_Stellarmate/indi-source/build
+    sudo rm /usr/share/indi/pifinder_lx200.xml
+    sudo rm /usr/bin/indi_pifinder_lx200
+    ```
+2.  **Create and enter a new build directory:**
+    ```bash
+    mkdir /home/stellarmate/PiFinder_Stellarmate/indi-source/build
+    cd /home/stellarmate/PiFinder_Stellarmate/indi-source/build
+    ```
+3.  **Run CMake to configure the build:**
+    ```bash
+    cmake ..
+    ```
+4.  **Compile the driver:**
+    ```bash
+    make indi_pifinder_lx200
+    ```
+5.  **Install the driver binary:**
+    ```bash
+    sudo cp drivers/telescope/indi_pifinder_lx200 /usr/bin/
+    ```
+6.  **Install the XML file:**
+    ```bash
+    sudo cp ../drivers/telescope/pifinder_lx200.xml /usr/share/indi/
+    ```
+
+After performing these steps, please restart KStars/Ekos and check the logs again:
+```bash
+cat /home/stellarmate/.local/share/kstars/logs/$(date + %F)/log_*.txt
+```
