@@ -9,8 +9,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <libnova/julian_day.h>
-#include <libnova/transform.h>
 
 class PiFinder : public INDI::DefaultDevice
 {
@@ -36,12 +34,12 @@ private:
     int pifinder_fd = -1;
 
     // INDI Properties
-    INDI::PropertySwitch ConnectionSP;
+    ISwitchVectorProperty *ConnectionSP = nullptr;
     ISwitch ConnectionS[2];
 
-    INDI::PropertyNumber EquatorialEODNP;
+    INumberVectorProperty *EquatorialEODNP = nullptr;
     INumber EquatorialEODN[2];
 
-    INDI::PropertyNumber HorizontalCoordinatesNP;
+    INumberVectorProperty *HorizontalCoordinatesNP = nullptr;
     INumber HorizontalCoordinatesN[2];
 };
