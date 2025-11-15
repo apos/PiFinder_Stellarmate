@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(indi_pifinder)
+project(indi_pifinder_lx200)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../indi-source/cmake_modules")
 
@@ -41,13 +41,13 @@ link_directories(/home/stellarmate/PiFinder_Stellarmate/indi-source/build/libs/i
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(indi_pifinder_driver pifinder.cpp)
-target_link_libraries(indi_pifinder_driver /home/stellarmate/PiFinder_Stellarmate/indi-source/build/libs/indibase/libindidriver.so ${Nova_LIBRARIES})
-set_target_properties(indi_pifinder_driver PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/drivers)
+add_executable(indi_pifinder_lx200 pifinder_lx200.cpp)
+target_link_libraries(indi_pifinder_lx200 /home/stellarmate/PiFinder_Stellarmate/indi-source/build/libs/indibase/libindidriver.so ${Nova_LIBRARIES})
+set_target_properties(indi_pifinder_lx200 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/drivers)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/indi_pifinder_driver.xml.in
-    ${CMAKE_CURRENT_BINARY_DIR}/drivers/indi_pifinder_driver.xml
+    ${CMAKE_CURRENT_BINARY_DIR}/drivers/indi_pifinder_lx200.xml
     COPYONLY
 )
 
