@@ -12,74 +12,7 @@ std::unique_ptr<PiFinder> pifinder(new PiFinder());
 
 PiFinder::PiFinder()
 {
-    // Initialize INDI properties
-    // Connection switch
-    ConnectionS[0].name = "CONNECT";
-    ConnectionS[0].s = INDI::ISS_OFF;
-    ConnectionS[1].name = "DISCONNECT";
-    ConnectionS[1].s = INDI::ISS_ON;
-    this->ConnectionSP.np = this->ConnectionS;
-    ConnectionSP.name = "CONNECTION";
-    ConnectionSP.label = "Connection";
-    ConnectionSP.type = INDI::IPS_CS_EQ_CONJ;
-    ConnectionSP.access = INDI::IP_RW;
-    ConnectionSP.state = INDI::IPS_IDLE;
-    ConnectionSP.perm = INDI::IP_RW;
-    ConnectionSP.rule = INDI::ISR_1OF2;
-    ConnectionSP.aux = "Main";
-    ConnectionSP.nnp = 2;
-
-    // Equatorial coordinates
-    EquatorialEODN[0].name = "RA";
-    EquatorialEODN[0].label = "Right Ascension";
-    EquatorialEODN[0].format = "%02.0f:%02.0f:%04.1f";
-    EquatorialEODN[0].min = 0;
-    EquatorialEODN[0].max = 24;
-    EquatorialEODN[0].step = 0;
-    EquatorialEODN[0].value = 0;
-
-    EquatorialEODN[1].name = "DEC";
-    EquatorialEODN[1].label = "Declination";
-    EquatorialEODN[1].format = "%+02.0f:%02.0f:%02.0f";
-    EquatorialEODN[1].min = -90;
-    EquatorialEODN[1].max = 90;
-    EquatorialEODN[1].step = 0;
-    EquatorialEODN[1].value = 0;
-
-    this->EquatorialEODNP.np = this->EquatorialEODN;
-    EquatorialEODNP.name = "EQUATORIAL_EOD_COORD";
-    EquatorialEODNP.label = "RA/DEC J2000";
-    EquatorialEODNP.type = INDI::IP_NUMBER;
-    EquatorialEODNP.access = INDI::IP_RW;
-    EquatorialEODNP.state = INDI::IPS_IDLE;
-    EquatorialEODNP.perm = INDI::IP_RW;
-    EquatorialEODNP.nnp = 2;
-
-    // Horizontal coordinates (for display, not control)
-    HorizontalCoordinatesN[0].name = "ALT";
-    HorizontalCoordinatesN[0].label = "Altitude";
-    HorizontalCoordinatesN[0].format = "%+02.0f:%02.0f:%02.0f";
-    HorizontalCoordinatesN[0].min = -90;
-    HorizontalCoordinatesN[0].max = 90;
-    HorizontalCoordinatesN[0].step = 0;
-    HorizontalCoordinatesN[0].value = 0;
-
-    HorizontalCoordinatesN[1].name = "AZ";
-    HorizontalCoordinatesN[1].label = "Azimuth";
-    HorizontalCoordinatesN[1].format = "%03.0f:%02.0f:%02.0f";
-    HorizontalCoordinatesN[1].min = 0;
-    HorizontalCoordinatesN[1].max = 360;
-    HorizontalCoordinatesN[1].step = 0;
-    HorizontalCoordinatesN[1].value = 0;
-
-    this->HorizontalCoordinatesNP.np = this->HorizontalCoordinatesN;
-    HorizontalCoordinatesNP.name = "HORIZONTAL_COORDINATES";
-    HorizontalCoordinatesNP.label = "Alt/Az";
-    HorizontalCoordinatesNP.type = INDI::IP_NUMBER;
-    HorizontalCoordinatesNP.access = INDI::IP_RO;
-    HorizontalCoordinatesNP.state = INDI::IPS_IDLE;
-    HorizontalCoordinatesNP.perm = INDI::IP_RO;
-    HorizontalCoordinatesNP.nnp = 2;
+    // Constructor is empty, properties are initialized in initProperties.
 }
 
 // Helper function to send a command and get a response
@@ -88,10 +21,10 @@ bool PiFinder::SendCommand(const char *cmd, char *response, int max_len)
     if (pifinder_fd < 0)
         return false;
 
-    DEBUGF(INDI::Logger::DBG_COMMAND, "CMD <%s>", cmd);
+    LOGF_DEBUG("CMD <%s>", cmd);
     if (write(pifinder_fd, cmd, strlen(cmd)) < 0)
     {
-        DEBUGF(INDI::Logger::DBG_ERROR, "Error writing to socket: %s", strerror(errno));
+        LOGF_DEBUG("Error writing to socket: %s", strerror(errno));
         return false;
     }
 
@@ -102,12 +35,12 @@ bool PiFinder::SendCommand(const char *cmd, char *response, int max_len)
     if (bytes_read > 0)
     {
         response[bytes_read] = '\0';
-        DEBUGF(INDI::Logger::DBG_COMMAND, "RES <%s>", response);
+        LOGF_DEBUG("RES <%s>", response);
     }
     else
     {
         response[0] = '\0';
-        DEBUGF(INDI::Logger::DBG_ERROR, "Error reading from socket");
+        LOGF_DEBUG("Error reading from socket");
     }
     return bytes_read > 0;
 }
@@ -136,7 +69,7 @@ bool PiFinder::Handshake()
     pifinder_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (pifinder_fd < 0)
     {
-        DEBUGF(INDI::Logger::DBG_ERROR, "Error creating socket: %s", strerror(errno));
+        LOGF_DEBUG("Error creating socket: %s", strerror(errno));
         return false;
     }
 
@@ -147,12 +80,12 @@ bool PiFinder::Handshake()
 
     if (connect(pifinder_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
     {
-        DEBUGF(INDI::Logger::DBG_ERROR, "Error connecting to PiFinder: %s", strerror(errno));
+        LOGF_DEBUG("Error connecting to PiFinder: %s", strerror(errno));
         Close();
         return false;
     }
 
-    DEBUGF(INDI::Logger::DBG_SESSION, "Connected to PiFinder on fd %d", pifinder_fd);
+    LOGF_INFO("Connected to PiFinder on fd %d", pifinder_fd);
     return true;
 }
 
@@ -194,7 +127,7 @@ bool PiFinder::ReadScopeStatus()
     double jd = ln_get_julian_from_sys();
 
     // Precess from JNow to J2000
-    ln_precess_equ(&jnow_coords, jd, LN_JULIAN_DATE_J2000);
+    ln_precess_equ(&jnow_coords, jd, J2000);
     j2000_coords = jnow_coords;
 
     EquatorialEODN[0].value = j2000_coords.ra;
@@ -211,23 +144,25 @@ bool PiFinder::initProperties()
     // Init properties defined in parent
     INDI::DefaultDevice::initProperties();
 
+    // Initialize properties
+    IUFillSwitch(&ConnectionS[0], "CONNECT", "Connect", ISS_OFF);
+    IUFillSwitch(&ConnectionS[1], "DISCONNECT", "Disconnect", ISS_ON);
+    IUFillSwitchVector(&ConnectionSP, ConnectionS, 2, getDeviceName(), "CONNECTION", "Connection", MAIN_CONTROL_TAB, IP_RW, ISR_1OF2, 0, IPS_IDLE);
+
+    IUFillNumber(&EquatorialEODN[0], "RA", "RA", "%02.0f:%02.0f:%04.1f", 0, 24, 0, 0);
+    IUFillNumber(&EquatorialEODN[1], "DEC", "Dec", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
+    IUFillNumberVector(&EquatorialEODNP, EquatorialEODN, 2, getDeviceName(), "EQUATORIAL_EOD_COORD", "RA/DEC J2000", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+
+    IUFillNumber(&HorizontalCoordinatesN[0], "ALT", "Altitude", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
+    IUFillNumber(&HorizontalCoordinatesN[1], "AZ", "Azimuth", "%03.0f:%02.0f:%02.0f", 0, 360, 0, 0);
+    IUFillNumberVector(&HorizontalCoordinatesNP, HorizontalCoordinatesN, 2, getDeviceName(), "HORIZONTAL_COORDINATES", "Alt/Az", MAIN_CONTROL_TAB, IP_RO, 0, IPS_IDLE);
+
     // Tell INDI this is a Telescope
-    this->SetCapability(INDI::TELESCOPE_CAN_GOTO, true);
-    this->SetCapability(INDI::TELESCOPE_CAN_SYNC, true);
-    this->SetCapability(INDI::TELESCOPE_CAN_ABORT, false);
-    this->SetCapability(INDI::TELESCOPE_HAS_ON_BOARD_CLOCK, false);
-    this->SetCapability(INDI::TELESCOPE_HAS_GEOGRAPHIC_LOCATION, false);
+    setDriverInterface(TELESCOPE_INTERFACE);
 
-    // We want to manage the connection ourselves
-    this->SetCapability(INDI::CONNECTION_CAP, true);
-
-    // Equatorial coordinates
-    this->EquatorialEODNP.fill("EQUATORIAL_EOD_COORD", "RA/DE", "JNow", INDI::IP_RW, 0, 60);
-    this->EquatorialEODN[0].fill("RA", "RA", "%02.0f:%02.0f:%04.1f", 0, 24, 0, 0);
-    this->EquatorialEODN[1].fill("DEC", "Dec", "+%02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
-    
     // Add the properties to the driver
-    this->defineNumber(&EquatorialEODNP);
+    defineSwitch(&ConnectionSP);
+    defineNumber(&EquatorialEODNP);
 
     return true;
 }
@@ -237,15 +172,15 @@ bool PiFinder::updateProperties()
     // Update properties defined in parent
     INDI::DefaultDevice::updateProperties();
 
-    if (this->isConnected())
+    if (isConnected())
     {
         // We are connected, so we are ready to receive commands
-        this->defineText(&HorizontalCoordinatesNP);
+        defineNumber(&HorizontalCoordinatesNP);
     }
     else
     {
         // We are not connected, so we cannot receive commands
-        this->deleteProperty(HorizontalCoordinatesNP.name);
+        deleteProperty(HorizontalCoordinatesNP.name);
     }
 
     return true;
@@ -259,75 +194,62 @@ void PiFinder::ISGetProperties(const char *dev)
 
 bool PiFinder::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-    // We check if the user is trying to connect or disconnect
     if (strcmp(name, "CONNECTION") == 0)
     {
-        // The user is trying to connect or disconnect
-        if (states[0].s == ISS_ON)
+        if (IUFindSwitch(states, names, n, "CONNECT")->s == ISS_ON)
         {
-            // The user is trying to connect
             if (Handshake())
             {
-                // We are connected
-                this->ConnectionS[0].s = INDI::ISS_ON;
-                this->ConnectionS[1].s = INDI::ISS_OFF;
+                ConnectionSP.s = IPS_OK;
+                ConnectionS[0].s = ISS_ON;
+                ConnectionS[1].s = ISS_OFF;
             }
             else
             {
-                // We are not connected
-                this->ConnectionS[0].s = INDI::ISS_OFF;
-                this->ConnectionS[1].s = INDI::ISS_ON;
+                ConnectionSP.s = IPS_ALERT;
+                ConnectionS[0].s = ISS_OFF;
+                ConnectionS[1].s = ISS_ON;
             }
         }
         else
         {
-            // The user is trying to disconnect
             Close();
-            this->ConnectionS[0].s = INDI::ISS_OFF;
-            this->ConnectionS[1].s = INDI::ISS_ON;
+            ConnectionSP.s = IPS_OK;
+            ConnectionS[0].s = ISS_OFF;
+            ConnectionS[1].s = ISS_ON;
         }
+        IDSetSwitch(&ConnectionSP, nullptr);
     }
-
-    // We update the CONNECTION property
-    this->ConnectionSP.s = INDI::IPS_OK;
-    this->IDSetSwitch(&ConnectionSP, nullptr);
-    return true;
+    return INDI::DefaultDevice::ISNewSwitch(dev, name, states, names, n);
 }
 
 bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-    // We check if the user is trying to set the horizontal coordinates
     if (strcmp(name, "HORIZONTAL_COORDINATES") == 0)
     {
-        // The user is trying to set the horizontal coordinates
-        // We parse the coordinates
         double alt, az;
         if (sscanf(texts[0], "%lf", &alt) == 1 && sscanf(texts[1], "%lf", &az) == 1)
         {
-            // We set the coordinates
-            this->HorizontalCoordinatesN[0].value = alt;
-            this->HorizontalCoordinatesN[1].value = az;
-            this->HorizontalCoordinatesNP.s = INDI::IPS_OK;
+            HorizontalCoordinatesN[0].value = alt;
+            HorizontalCoordinatesN[1].value = az;
+            HorizontalCoordinatesNP.s = IPS_OK;
         }
         else
         {
-            // We cannot parse the coordinates
-            this->HorizontalCoordinatesNP.s = INDI::IPS_ALERT;
+            HorizontalCoordinatesNP.s = IPS_ALERT;
         }
+        IDSetText(&HorizontalCoordinatesNP, nullptr);
+        return true;
     }
-
-    // We update the HORIZONTAL_COORDINATES property
-    this->IDSetText(&HorizontalCoordinatesNP, nullptr);
-    return true;
+    return INDI::DefaultDevice::ISNewText(dev, name, texts, names, n);
 }
 
 bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, char *names[], int n)
 {
     if (strcmp(name, "EQUATORIAL_EOD_COORD") == 0)
     {
-        // The user is trying to set the equatorial coordinates (GoTo)
-        double ra = values[0];
-        double dec = values[1];
+        double ra = IUFindNumber(values, names, n, "RA")->value;
+        double dec = IUFindNumber(values, names, n, "DEC")->value;
 
         char command[64];
         char response[32];
@@ -347,36 +269,33 @@ bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, ch
         s = (dec - d - m / 60.0) * 3600;
         snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
         
-        this->EquatorialEODNP.s = INDI::IPS_BUSY;
-        this->IDSetNumber(&EquatorialEODNP, nullptr);
+        EquatorialEODNP.s = IPS_BUSY;
+        IDSetNumber(&EquatorialEODNP, nullptr);
 
         if (SendCommand(command, response, sizeof(response)) && response[0] == '1')
         {
-            this->EquatorialEODNP.s = INDI::IPS_OK;
-            this->EquatorialEODN[0].value = ra;
-            this->EquatorialEODN[1].value = dec;
+            EquatorialEODNP.s = IPS_OK;
+            EquatorialEODN[0].value = ra;
+            EquatorialEODN[1].value = dec;
         }
         else
         {
-            this->EquatorialEODNP.s = INDI::IPS_ALERT;
+            EquatorialEODNP.s = IPS_ALERT;
         }
-        this->IDSetNumber(&EquatorialEODNP, nullptr);
+        IDSetNumber(&EquatorialEODNP, nullptr);
         return true;
     }
 
-    // We check if the user is trying to set the horizontal coordinates
     if (strcmp(name, "HORIZONTAL_COORDINATES") == 0)
     {
-        // The user is trying to set the horizontal coordinates
-        // We set the coordinates
-        this->HorizontalCoordinatesN[0].value = values[0];
-        this->HorizontalCoordinatesN[1].value = values[1];
-        this->HorizontalCoordinatesNP.s = INDI::IPS_OK;
+        HorizontalCoordinatesN[0].value = IUFindNumber(values, names, n, "ALT")->value;
+        HorizontalCoordinatesN[1].value = IUFindNumber(values, names, n, "AZ")->value;
+        HorizontalCoordinatesNP.s = IPS_OK;
+        IDSetNumber(&HorizontalCoordinatesNP, nullptr);
+        return true;
     }
 
-    // We update the HORIZONTAL_COORDINATES property
-    this->IDSetNumber(&HorizontalCoordinatesNP, nullptr);
-    return true;
+    return INDI::DefaultDevice::ISNewNumber(dev, name, values, names, n);
 }
 
 bool PiFinder::ISNewBLOB(const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n)

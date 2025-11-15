@@ -1,38 +1,38 @@
-## PiFinder INDI Driver Development
+# PiFinder INDI Driver Development Session
 
-**Objective:** Compile and fix the `pifinder_lx200` INDI driver.
+## Key Knowledge & State
 
-**Status:**
-The driver compilation was failing due to several C++ errors. I have now implemented fixes in `pifinder_lx200.cpp` based on the patterns found in the `lx200_10micron` driver, which was the original base for our driver. The user will now re-run the build script to compile the corrected code.
+*   **Objective**: Build a standalone INDI driver named `pifinder_lx200` for the PiFinder device.
+*   **Development Environment**:
+    *   Driver source code is developed locally in the `~/PiFinder_Stellarmate/indi_pifinder/` directory.
+    *   Compilation occurs within the `~/PiFinder_Stellarmate/indi-source/` directory, which is a fresh clone of the official `indilib` repository.
+*   **Core Problem**: The user's original `pifinder_lx200.cpp` file, while previously functional, is incompatible with the modern INDI library API in the current `indi-source`, leading to extensive compilation errors.
+*   **Current Status**:
+    *   Both `indi_pifinder/pifinder_lx200.cpp` and `indi_pifinder/pifinder_lx200.h` have been completely rewritten to use the modern INDI API. The new implementation uses `IUFill...` helper functions for property setup and standard INDI methods for state management, while preserving the original socket-based communication logic.
+    *   The build script, `bin/build_indi_driver.sh`, has been made robust. It now automatically copies all necessary source files (`.cpp`, `.h`, `.xml.in`) and patches the `indi-source/drivers/telescope/CMakeLists.txt` to ensure a reproducible build on a clean checkout.
+*   **Important Rule**: A new project rule has been established: after any successful code modification, a `git commit -a -m "..."` must be performed to create a stable restore point.
 
-**Files Altered:**
-*   `indi_pifinder/pifinder_lx200.cpp`:
-    *   Defined `MAX_RESPONSE_SIZE` and `LX200_TIMEOUT` to resolve compilation errors.
-    *   Corrected the `Connect` method to use `tty_read_section` for reading the handshake response, which is the correct function for reading until a delimiter.
-    *   Completely rewrote the `ReadScopeStatus` method. It now actively polls the device for RA and DEC using the correct `:GR#` and `:GD#` commands, parses the sexagesimal responses using `f_scansexa`, and updates the INDI server with the new coordinates via the `NewRaDec` method. This replaces the previous incorrect and non-functional implementation.
-*   `bin/build_indi_driver.sh`:
-    *   Modified the script to overwrite the `indi_driver_build.log` file on each run instead of appending to it, ensuring the log only contains output from the most recent build.
+## Files Created/Altered
 
-**Key Knowledge & Strategy:**
-*   **Reference Implementation:** The development and debugging of this driver relies on using the `lx200_10micron` driver as a reference for correct implementation patterns and API usage.
-*   **Direct Serial Communication:** The driver must use low-level `indicom` functions like `tty_write_string` and `tty_read_section` for direct, thread-safe communication with the PiFinder's `pos_server.py`.
-*   **Coordinate Parsing:** The `f_scansexa` function is the correct tool for parsing the sexagesimal (HH:MM:SS or DD:MM:SS) coordinate strings returned by the device.
-*   **State Updates:** The `NewRaDec` method is the designated way to inform the INDI server of the telescope's new coordinates.
+*   `indi_pifinder/pifinder_lx200.cpp`: **Completely rewritten** to use the modern INDI API and fix compilation errors.
+*   `indi_pifinder/pifinder_lx200.h`: **Completely rewritten** to match the new C++ implementation and modern INDI data types.
+*   `bin/build_indi_driver.sh`: **Modified** to automatically copy the driver's `.xml.in` template and patch the `CMakeLists.txt` file in the `indi-source` tree.
+*   `pifinder_lx200.cpp.bak`: **Created** as a backup of the user's original, working C++ file.
 
-**Requirements to Continue:**
-*   Build essentials (`build-essential`, `cmake`) must be installed.
-*   The local INDI source code must be present at `~/PiFinder_Stellermate/indi-source`.
-*   The user must have KStars with Ekos installed for testing.
+## To Resume Session
 
-**Next Steps:**
-1.  The user will execute the `bin/build_indi_driver.sh` script to copy the fixed source file, recompile the driver, and install it.
-2.  I will then read the `indi_driver_build.log` file to verify that the compilation was successful.
-3.  If the build succeeds, the user will proceed to test the driver's connection and functionality in Ekos.
+To get the full context, re-read the following files:
+1.  `session.md` (this file)
+2.  `session_advanced.md`
+3.  `bin/functions.sh` and `bin/build_indi_driver.sh` (for build process and paths)
+4.  `indi_pifinder/pifinder_lx200.cpp` and `indi_pifinder/pifinder_lx200.h` (the new driver code)
+5.  `indi_pifinder/pos_server.py` (as the definitive protocol reference)
 
-**Files to Re-read for Context:**
-*   `session.md`
-*   `session_advanced.md`
-*   `pifinder_stellarmate_setup.sh`
-*   `bin/functions.sh`
-*   `indi_pifinder/pifinder_lx200.cpp` (for implementation reference)
-*   `indi-source/drivers/telescope/lx200_10micron.cpp` (as the primary reference for correct patterns)
+## Next Steps
+
+1.  **Commit Changes**: Execute `git commit -a -m "feat: Rewrite pifinder_lx200 driver to use modern INDI API"` to save the rewritten source code.
+2.  **Build Driver**: Perform a clean build by running `bin/build_indi_driver.sh -c`.
+3.  **Analyze & Debug**:
+    *   If the build fails, analyze the new, shorter list of compilation errors.
+    *   If the build succeeds but the driver fails to connect or operate correctly, analyze the KStars logs.
+    *   Use the `lx200_10micron` driver as a reference for correct API usage and `pos_server.py` as the reference for the command protocol.
