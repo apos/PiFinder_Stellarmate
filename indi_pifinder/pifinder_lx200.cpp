@@ -131,11 +131,11 @@ bool PiFinder::ReadScopeStatus()
     // Precess from JNow to J2000 using INDI's internal function
     INDI::ObservedToJ2000(&jnow_coords, jd, &j2000_coords);
 
-    EquatorialEODN[0].value = j2000_coords.rightascension;
-    EquatorialEODN[1].value = j2000_coords.declination;
+    EqN[0].value = j2000_coords.rightascension;
+    EqN[1].value = j2000_coords.declination;
 
     // Update the property
-    IDSetNumber(&EquatorialEODNP, nullptr);
+    IDSetNumber(&EqNP, nullptr);
 
     return true;
 }
@@ -162,32 +162,32 @@ void PiFinder::ISGetProperties(const char *dev)
 
 bool PiFinder::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-    if (strcmp(name, ConnectionSP.name) == 0)
+    if (strcmp(name, Connection.name) == 0)
     {
-        ISwitch *connectSwitch = IUFindSwitch(&ConnectionSP, "CONNECT");
+        ISwitch *connectSwitch = IUFindSwitch(&Connection, "CONNECT");
         if (connectSwitch && connectSwitch->s == ISS_ON)
         {
             if (Handshake())
             {
-                ConnectionSP.s = IPS_OK;
-                ConnectionS[0].s = ISS_ON;
-                ConnectionS[1].s = ISS_OFF;
+                Connection.s = IPS_OK;
+                Connection.sw[0].s = ISS_ON;
+                Connection.sw[1].s = ISS_OFF;
             }
             else
             {
-                ConnectionSP.s = IPS_ALERT;
-                ConnectionS[0].s = ISS_OFF;
-                ConnectionS[1].s = ISS_ON;
+                Connection.s = IPS_ALERT;
+                Connection.sw[0].s = ISS_OFF;
+                Connection.sw[1].s = ISS_ON;
             }
         }
         else
         {
             Close();
-            ConnectionSP.s = IPS_OK;
-            ConnectionS[0].s = ISS_OFF;
-            ConnectionS[1].s = ISS_ON;
+            Connection.s = IPS_OK;
+            Connection.sw[0].s = ISS_OFF;
+            Connection.sw[1].s = ISS_ON;
         }
-        IDSetSwitch(&ConnectionSP, nullptr);
+        IDSetSwitch(&Connection, nullptr);
         // Do not call parent, we handle connection here
         return true;
     }
@@ -201,7 +201,7 @@ bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char 
 
 bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, char *names[], int n)
 {
-    if (strcmp(name, EquatorialEODNP.name) == 0)
+    if (strcmp(name, EqNP.name) == 0)
     {
         INumber *raNumber = IUFindNumber(&EquatorialEODNP, "RA");
         INumber *decNumber = IUFindNumber(&EquatorialEODNP, "DEC");
@@ -230,20 +230,20 @@ bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, ch
         s = (dec - d - m / 60.0) * 3600;
         snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
         
-        EquatorialEODNP.s = IPS_BUSY;
-        IDSetNumber(&EquatorialEODNP, nullptr);
+        EqNP.s = IPS_BUSY;
+        IDSetNumber(&EqNP, nullptr);
 
         if (SendCommand(command, response, sizeof(response)) && response[0] == '1')
         {
-            EquatorialEODNP.s = IPS_OK;
-            EquatorialEODN[0].value = ra;
-            EquatorialEODN[1].value = dec;
+            EqNP.s = IPS_OK;
+            EqN[0].value = ra;
+            EqN[1].value = dec;
         }
         else
         {
-            EquatorialEODNP.s = IPS_ALERT;
+            EqNP.s = IPS_ALERT;
         }
-        IDSetNumber(&EquatorialEODNP, nullptr);
+        IDSetNumber(&EqNP, nullptr);
         return true;
     }
 
