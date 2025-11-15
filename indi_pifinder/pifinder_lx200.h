@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lx200generic.h"
+#include "lx200telescope.h"
 
-class PiFinderLX200 : public LX200Generic
+class PiFinderLX200 : public LX200Telescope
 {
     public:
         PiFinderLX200();
