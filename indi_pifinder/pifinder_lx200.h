@@ -25,7 +25,7 @@ public:
     virtual bool ISNewBLOB(const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n) override;
 
 protected:
-    bool Handshake();
+    virtual bool Handshake() override;
     void Close();
     bool SendCommand(const char *cmd, char *response, int max_len);
     bool ReadScopeStatus();
