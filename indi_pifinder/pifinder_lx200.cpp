@@ -1,12 +1,11 @@
 #include "pifinder_lx200.h"
 
-#include <libnova/julian_day.h>
-#include <libnova/transform.h>
-#include <libnova/precession.h>
+#include "pifinder_lx200.h"
 
 #include "indicom.h"
 #include "indiproperty.h"
 #include "indilogger.h"
+#include "libastro.h" // For INDI::ObservedToJ2000
 
 #include <memory>
 #include <string.h>
@@ -123,19 +122,18 @@ bool PiFinder::ReadScopeStatus()
     }
 
     // Convert from JNow to J2000
-    struct ln_equ_posn jnow_coords, j2000_coords;
-    jnow_coords.ra = jnow_ra;
-    jnow_coords.dec = jnow_dec;
+    INDI::IEquatorialCoordinates jnow_coords, j2000_coords;
+    jnow_coords.rightascension = jnow_ra;
+    jnow_coords.declination = jnow_dec;
 
     // Get current Julian date
     double jd = ln_get_julian_from_sys();
 
-    // Precess from JNow to J2000
-    ln_precess_equ(&jnow_coords, jd, J2000);
-    j2000_coords = jnow_coords;
+    // Precess from JNow to J2000 using INDI's internal function
+    INDI::ObservedToJ2000(&jnow_coords, jd, &j2000_coords);
 
-    EquatorialEODN[0].value = j2000_coords.ra;
-    EquatorialEODN[1].value = j2000_coords.dec;
+    EquatorialEODN[0].value = j2000_coords.rightascension;
+    EquatorialEODN[1].value = j2000_coords.declination;
 
     // Update the property
     IDSetNumber(&EquatorialEODNP, nullptr);
