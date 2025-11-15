@@ -6,6 +6,7 @@
 #include "indiproperty.h"
 #include "indilogger.h"
 #include "libastro.h" // For INDI::ObservedToJ2000
+#include <libnova/julian_day.h>
 
 #include <memory>
 #include <string.h>
