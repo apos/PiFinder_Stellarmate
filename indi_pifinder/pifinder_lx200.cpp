@@ -1,5 +1,5 @@
 
-#include "pifinder.h"
+#include "pifinder_lx200.h"
 
 #include "indicom.h"
 #include "indiproperty.h"

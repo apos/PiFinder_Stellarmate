@@ -8,6 +8,7 @@ find_package(Nova REQUIRED)
 # find_package(INDI REQUIRED)
 include_directories(
     ${Nova_INCLUDE_DIRS}
+    /usr/include/libnova
     /home/stellarmate/PiFinder_Stellarmate/indi-source/build
     /home/stellarmate/PiFinder_Stellarmate/indi-source/libs
     /home/stellarmate/PiFinder_Stellarmate/indi-source/libs/fpack
