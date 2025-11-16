@@ -1,7 +1,6 @@
 #pragma once
 
-#include "defaultdevice.h"
-#include "indiproperty.h"
+#include "lx200telescope.h"
 #include "indilogger.h"
 
 #include <sys/socket.h>
@@ -10,7 +9,7 @@
 #include <errno.h>
 #include <string.h>
 
-class PiFinder : public INDI::DefaultDevice
+class PiFinder : public LX200Telescope
 {
 public:
     PiFinder();
@@ -25,21 +24,11 @@ public:
     virtual bool ISNewBLOB(const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n) override;
 
 protected:
-    bool Handshake();
+    virtual bool Handshake() override;
     void Close();
     bool SendCommand(const char *cmd, char *response, int max_len);
-    bool ReadScopeStatus();
+    virtual bool ReadScopeStatus() override;
 
 private:
     int pifinder_fd = -1;
-
-    // INDI Properties
-    ISwitchVectorProperty ConnectionSP;
-    ISwitch ConnectionS[2];
-
-    INumberVectorProperty EquatorialEODNP;
-    INumber EquatorialEODN[2];
-
-    INumberVectorProperty HorizontalCoordinatesNP;
-    INumber HorizontalCoordinatesN[2];
 };
