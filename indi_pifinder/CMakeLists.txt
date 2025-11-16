@@ -7,7 +7,7 @@ add_executable(indi_pifinder_lx200
 
 target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
-target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
+target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova lx200generic)
 
 install(TARGETS indi_pifinder_lx200 RUNTIME DESTINATION bin)
 
