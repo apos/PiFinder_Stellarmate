@@ -1,14 +1,17 @@
 # ################################################################################
 # ########## PiFinder LX200 #############
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-add_executable(indi_pifinder_lx200
+add_library(indi_pifinder_lx200 MODULE
     pifinder_lx200.cpp)
 
 target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
-target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova lx200generic)
+target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
 
-install(TARGETS indi_pifinder_lx200 RUNTIME DESTINATION bin)
+install(TARGETS indi_pifinder_lx200 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES
+    indi_pifinder_lx200_driver.xml.in
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/indi
+    COMPONENT Devel)
 
 # ################################################################################
