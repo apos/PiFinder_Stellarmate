@@ -136,7 +136,7 @@ DRIVER_NAME="indi_pifinder_lx200"
 # Remove any existing entry to ensure idempotency
 sed -i "/${DRIVER_NAME}/d" "${CMAKE_FILE}"
 # Add the correct entry
-echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200" pifinder_lx200.cpp lx200generic.cpp)' >> "${CMAKE_FILE}"
+echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200" pifinder_lx200.cpp)' >> "${CMAKE_FILE}"
 
 echo "-> Removing old driver files..."
 sudo rm -f /usr/share/indi/pifinder_lx200.xml
