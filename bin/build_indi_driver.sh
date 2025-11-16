@@ -140,7 +140,7 @@ sudo rm -f /usr/bin/indi_pifinder_lx200
 echo "-> Building the driver..."
 cd "${indi_source_dir}/build"
 cmake ..
-make indi_pifinder_lx200
+make
 
 echo "-> Installing the driver..."
 sudo cp drivers/telescope/indi_pifinder_lx200 /usr/bin/
