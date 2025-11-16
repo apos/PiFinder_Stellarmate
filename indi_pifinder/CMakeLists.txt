@@ -8,7 +8,8 @@
 
 add_library(indilx200 SHARED
     lx200driver.cpp
-    lx200telescope.cpp)
+    lx200telescope.cpp
+    lx200generic.cpp)
 
 if(NOT WIN32)
     set_target_properties(indilx200 PROPERTIES COMPILE_FLAGS "-fPIC")
@@ -41,14 +42,11 @@ install(TARGETS indi_lx200basic RUNTIME DESTINATION bin)
 
 # ########## PiFinder LX200 #############
 add_executable(indi_pifinder_lx200
-    pifinder_lx200.cpp
-    lx200driver.cpp
-    lx200telescope.cpp
-    lx200generic.cpp)
+    pifinder_lx200.cpp)
 
 target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
-target_link_libraries(indi_pifinder_lx200 indidriver nova)
+target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
 
 install(TARGETS indi_pifinder_lx200 RUNTIME DESTINATION bin)
 
