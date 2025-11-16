@@ -31,4 +31,8 @@ protected:
 
 private:
     int pifinder_fd = -1;
+
+    // INDI Properties for Horizontal Coordinates (not provided by LX200Telescope)
+    INumberVectorProperty HorizontalCoordinatesNP;
+    INumber HorizontalCoordinatesN[2];
 };

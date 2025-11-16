@@ -132,11 +132,9 @@ bool PiFinder::ReadScopeStatus()
     // Precess from JNow to J2000 using INDI's internal function
     INDI::ObservedToJ2000(&jnow_coords, jd, &j2000_coords);
 
-    EqN[0].value = j2000_coords.rightascension;
-    EqN[1].value = j2000_coords.declination;
-
-    // Update the property
-    IDSetNumber(&EqNP, nullptr);
+    // Update the inherited RaN and DecN members. The base class will update the property.
+    RaN.value = j2000_coords.rightascension;
+    DecN.value = j2000_coords.declination;
 
     return true;
 }
@@ -146,23 +144,13 @@ bool PiFinder::initProperties()
     // Init properties defined in parent
     LX200Telescope::initProperties();
 
-    // Initialize properties
-    // These are already defined in LX200Telescope, so we just need to fill them
-    IUFillSwitch(&ConnectionS[0], "CONNECT", "Connect", ISS_OFF);
-    IUFillSwitch(&ConnectionS[1], "DISCONNECT", "Disconnect", ISS_ON);
-    IUFillSwitchVector(&Connection, ConnectionS, 2, getDeviceName(), "CONNECTION", "Connection", MAIN_CONTROL_TAB, IP_RW, ISR_1OFMANY, 0, IPS_IDLE);
-
-    IUFillNumber(&EqN[0], "RA", "RA", "%02.0f:%02.0f:%04.1f", 0, 24, 0, 0);
-    IUFillNumber(&EqN[1], "DEC", "Dec", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
-    IUFillNumberVector(&EqNP, EqN, 2, getDeviceName(), "EQUATORIAL_EOD_COORD", "RA/DEC J2000", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
-
+    // Initialize our custom properties
     IUFillNumber(&HorizontalCoordinatesN[0], "ALT", "Altitude", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
     IUFillNumber(&HorizontalCoordinatesN[1], "AZ", "Azimuth", "%03.0f:%02.0f:%02.0f", 0, 360, 0, 0);
     IUFillNumberVector(&HorizontalCoordinatesNP, HorizontalCoordinatesN, 2, getDeviceName(), "HORIZONTAL_COORDINATES", "Alt/Az", MAIN_CONTROL_TAB, IP_RO, 0, IPS_IDLE);
 
-    // Add the properties to the driver
-    defineProperty(&Connection);
-    defineProperty(&EqNP);
+    // Add our custom properties to the driver
+    defineProperty(&HorizontalCoordinatesNP);
 
     return true;
 }
@@ -174,12 +162,10 @@ bool PiFinder::updateProperties()
 
     if (isConnected())
     {
-        // We are connected, so we are ready to receive commands
         defineProperty(&HorizontalCoordinatesNP);
     }
     else
     {
-        // We are not connected, so we cannot receive commands
         deleteProperty(HorizontalCoordinatesNP.name);
     }
 
@@ -194,39 +180,14 @@ void PiFinder::ISGetProperties(const char *dev)
 
 bool PiFinder::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-    if (strcmp(name, Connection.name) == 0)
-    {
-        ISwitch *connectSwitch = IUFindSwitch(&Connection, "CONNECT");
-        if (connectSwitch && connectSwitch->s == ISS_ON)
-        {
-            if (Handshake())
-            {
-                Connection.s = IPS_OK;
-                ConnectionS[0].s = ISS_ON;
-                ConnectionS[1].s = ISS_OFF;
-            }
-            else
-            {
-                Connection.s = IPS_ALERT;
-                ConnectionS[0].s = ISS_OFF;
-                ConnectionS[1].s = ISS_ON;
-            }
-        }
-        else
-        {
-            Close();
-            Connection.s = IPS_OK;
-            ConnectionS[0].s = ISS_OFF;
-            ConnectionS[1].s = ISS_ON;
-        }
-        IDSetSwitch(&Connection, nullptr);
-        return true; // We handled the connection, so return true
-    }
+    // Let the parent class handle all switch changes, including Connection.
+    // It will call our overridden Handshake() method when needed.
     return LX200Telescope::ISNewSwitch(dev, name, states, names, n);
 }
 
 bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
+    // Handle our custom properties
     if (strcmp(name, HorizontalCoordinatesNP.name) == 0)
     {
         double alt, az;
@@ -243,57 +204,13 @@ bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char 
         IDSetNumber(&HorizontalCoordinatesNP, nullptr);
         return true;
     }
+    // Pass everything else to the parent class
     return LX200Telescope::ISNewText(dev, name, texts, names, n);
 }
 
 bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, char *names[], int n)
 {
-    if (strcmp(name, EqNP.name) == 0)
-    {
-        INumber *raNumber = IUFindNumber(&EqNP, "RA");
-        INumber *decNumber = IUFindNumber(&EqNP, "DEC");
-
-        if (raNumber == nullptr || decNumber == nullptr)
-            return false;
-
-        double ra = raNumber->value;
-        double dec = decNumber->value;
-
-        char command[64];
-        char response[32];
-
-        // Format RA
-        int h = ra;
-        int m = (ra - h) * 60;
-        int s = (ra - h - m / 60.0) * 3600;
-        snprintf(command, sizeof(command), ":Sr%02d:%02d:%02d#", h, m, s);
-        SendCommand(command, response, sizeof(response));
-
-        // Format Dec
-        char sign = dec >= 0 ? '+' : '-';
-        dec = fabs(dec);
-        int d = dec;
-        m = (dec - d) * 60;
-        s = (dec - d - m / 60.0) * 3600;
-        snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
-        
-        EqNP.s = IPS_BUSY;
-        IDSetNumber(&EqNP, nullptr);
-
-        if (SendCommand(command, response, sizeof(response)) && response[0] == '1')
-        {
-            EqNP.s = IPS_OK;
-            EqN[0].value = ra;
-            EqN[1].value = dec;
-        }
-        else
-        {
-            EqNP.s = IPS_ALERT;
-        }
-        IDSetNumber(&EqNP, nullptr);
-        return true;
-    }
-
+    // Handle our custom properties
     if (strcmp(name, HorizontalCoordinatesNP.name) == 0)
     {
         INumber *altNumber = IUFindNumber(&HorizontalCoordinatesNP, "ALT");
@@ -309,6 +226,7 @@ bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, ch
         return true;
     }
 
+    // Pass everything else to the parent class. It will handle EqNP and call GoTo().
     return LX200Telescope::ISNewNumber(dev, name, values, names, n);
 }
 
