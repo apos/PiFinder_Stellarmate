@@ -27,7 +27,7 @@
     The 10micron mount implementation contains an example for TLE-based satellite tracking.
 */
 
-#include "lx200_10micron.h"
+#include "pifinder_lx200.h"
 #include "indicom.h"
 #include "lx200driver.h"
 
@@ -59,7 +59,7 @@
 #define SAT_TRACKING_STAT "SAT_TRACKING_STAT"
 #define UNATTENDED_FLIP "UNATTENDED_FLIP"
 
-LX200_10MICRON::LX200_10MICRON() : LX200Generic()
+LX200_PIFINDER::LX200_PIFINDER() : LX200Generic()
 {
     setLX200Capability( LX200_HAS_TRACKING_FREQ | LX200_HAS_PULSE_GUIDING );
 
@@ -84,13 +84,13 @@ LX200_10MICRON::LX200_10MICRON() : LX200Generic()
 
 // Called by INDI::DefaultDevice::ISGetProperties
 // Note that getDriverName calls ::getDefaultName which returns LX200 Generic
-const char *LX200_10MICRON::getDefaultName()
+const char *LX200_PIFINDER::getDefaultName()
 {
-    return "10micron";
+    return "PiFinder LX200";
 }
 
 // Called by INDI::Telescope::callHandshake, either TCP Connect or Serial Port Connect
-bool LX200_10MICRON::Handshake()
+bool LX200_PIFINDER::Handshake()
 {
     fd = PortFD;
 
@@ -118,7 +118,7 @@ bool LX200_10MICRON::Handshake()
 
 // Called only once by DefaultDevice::ISGetProperties
 // Initialize basic properties that are required all the time
-bool LX200_10MICRON::initProperties()
+bool LX200_PIFINDER::initProperties()
 {
     const bool result = LX200Generic::initProperties();
     if (result)
@@ -188,7 +188,7 @@ bool LX200_10MICRON::initProperties()
     return result;
 }
 
-bool LX200_10MICRON::saveConfigItems(FILE *fp)
+bool LX200_PIFINDER::saveConfigItems(FILE *fp)
 {
     INDI::Telescope::saveConfigItems(fp);
     IUSaveConfigSwitch(fp, &UnattendedFlipSP);
@@ -196,7 +196,7 @@ bool LX200_10MICRON::saveConfigItems(FILE *fp)
 }
 
 // Called by INDI::Telescope when connected state changes to add/remove properties
-bool LX200_10MICRON::updateProperties()
+bool LX200_PIFINDER::updateProperties()
 {
     bool result = LX200Generic::updateProperties();
 
@@ -263,7 +263,7 @@ bool LX200_10MICRON::updateProperties()
 }
 
 // Called by LX200Generic::updateProperties
-void LX200_10MICRON::getBasicData()
+void LX200_PIFINDER::getBasicData()
 {
     DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "<%s>", __FUNCTION__);
 
@@ -351,7 +351,7 @@ void LX200_10MICRON::getBasicData()
 }
 
 // Called by our getBasicData
-bool LX200_10MICRON::getMountInfo()
+bool LX200_PIFINDER::getMountInfo()
 {
     char ProductName[80];
     getCommandString(PortFD, ProductName, "#:GVP#");
@@ -385,7 +385,7 @@ bool LX200_10MICRON::getMountInfo()
 
 // INDI::Telescope calls ReadScopeStatus() every POLLMS to check the link to the telescope and update its state and position.
 // The child class should call newRaDec() whenever a new value is read from the telescope.
-bool LX200_10MICRON::ReadScopeStatus()
+bool LX200_PIFINDER::ReadScopeStatus()
 {
     if (!isConnected())
     {
@@ -533,7 +533,7 @@ bool LX200_10MICRON::ReadScopeStatus()
     return true;
 }
 
-bool LX200_10MICRON::Park()
+bool LX200_PIFINDER::Park()
 {
     // #:KA#
     // Slew to park position
@@ -554,7 +554,7 @@ bool LX200_10MICRON::Park()
     return true;
 }
 
-bool LX200_10MICRON::UnPark()
+bool LX200_PIFINDER::UnPark()
 {
     // #:PO#
     // Unpark
@@ -575,7 +575,7 @@ bool LX200_10MICRON::UnPark()
     return true;
 }
 
-bool LX200_10MICRON::SetTrackEnabled(bool enabled)
+bool LX200_PIFINDER::SetTrackEnabled(bool enabled)
 {
     // :AL#
     // Stops tracking.
@@ -604,7 +604,7 @@ bool LX200_10MICRON::SetTrackEnabled(bool enabled)
     return true;
 }
 
-bool LX200_10MICRON::getUnattendedFlipSetting()
+bool LX200_PIFINDER::getUnattendedFlipSetting()
 {
     // #:Guaf#
     // Returns the unattended flip setting.
@@ -627,7 +627,7 @@ bool LX200_10MICRON::getUnattendedFlipSetting()
     return '1' == guaf[0];
 }
 
-bool LX200_10MICRON::setUnattendedFlipSetting(bool setting)
+bool LX200_PIFINDER::setUnattendedFlipSetting(bool setting)
 {
     // #:SuafN#
     // Enables or disables the unattended flip. Use N=1 to enable, N=0 to disable. This is set always to 0 after power up.
@@ -652,14 +652,14 @@ bool LX200_10MICRON::setUnattendedFlipSetting(bool setting)
     return false;
 }
 
-bool LX200_10MICRON::Flip(double ra, double dec)
+bool LX200_PIFINDER::Flip(double ra, double dec)
 {
     INDI_UNUSED(ra);
     INDI_UNUSED(dec);
     return flip();
 }
 
-bool LX200_10MICRON::flip()
+bool LX200_PIFINDER::flip()
 {
     // #:FLIP#
     // This command acts in different ways on the AZ2000 and german equatorial (GM1000 – GM4000) mounts.
@@ -675,7 +675,7 @@ bool LX200_10MICRON::flip()
     return 0 == setStandardProcedureAndExpectChar(fd, data, "1");
 }
 
-bool LX200_10MICRON::SyncConfigBehaviour(bool cmcfg)
+bool LX200_PIFINDER::SyncConfigBehaviour(bool cmcfg)
 {
     // #:CMCFGn#
     // Configures the behaviour of the :CM# and :CMR# commands depending on the value
@@ -696,7 +696,7 @@ bool LX200_10MICRON::SyncConfigBehaviour(bool cmcfg)
     return true;
 }
 
-bool LX200_10MICRON::setLocalDate(uint8_t days, uint8_t months, uint16_t years)
+bool LX200_PIFINDER::setLocalDate(uint8_t days, uint8_t months, uint16_t years)
 {
     // #:SCYYYY-MM-DD#
     // Set date to YYYY-MM-DD (year, month, day). The date is expressed in local time.
@@ -710,7 +710,7 @@ bool LX200_10MICRON::setLocalDate(uint8_t days, uint8_t months, uint16_t years)
     return 0 == setStandardProcedureAndExpectChar(fd, data, "1");
 }
 
-bool LX200_10MICRON::SetTLEtoFollow(const char *tle)
+bool LX200_PIFINDER::SetTLEtoFollow(const char *tle)
 {
     // #:TLEL0<two line element>#
     // Loads satellite orbital elements in two-line format directly from the command protocol.
@@ -783,7 +783,7 @@ bool LX200_10MICRON::SetTLEtoFollow(const char *tle)
     return 0;
 }
 
-bool LX200_10MICRON::SetTLEfromDatabase(int tleN)
+bool LX200_PIFINDER::SetTLEfromDatabase(int tleN)
 {
     // #:TLEDLn#
     // Loads orbital elements for a satellite from the TLE database in the mount. n is the index of the
@@ -815,7 +815,7 @@ bool LX200_10MICRON::SetTLEfromDatabase(int tleN)
     return 0;
 }
 
-bool LX200_10MICRON::CalculateSatTrajectory(std::string start_pass_isodatetime, std::string end_pass_isodatetime)
+bool LX200_PIFINDER::CalculateSatTrajectory(std::string start_pass_isodatetime, std::string end_pass_isodatetime)
 {
     // #:TLEPJD,min#
     // Precalculates the first transit of the satellite with the currently loaded orbital elements,
@@ -878,7 +878,7 @@ bool LX200_10MICRON::CalculateSatTrajectory(std::string start_pass_isodatetime, 
     return 0;
 }
 
-bool LX200_10MICRON::TrackSat()
+bool LX200_PIFINDER::TrackSat()
 {
     // #:TLES#
     // Slews to the start of the satellite transit that has been precalculated with the :TLEP command.
@@ -929,7 +929,7 @@ bool LX200_10MICRON::TrackSat()
     return 0;
 }
 
-int LX200_10MICRON::SetRefractionModelTemperature(double temperature)
+int LX200_PIFINDER::SetRefractionModelTemperature(double temperature)
 {
     // #:SRTMPsTTT.T#
     // Sets the temperature used in the refraction model to sTTT.T degrees Celsius (°C).
@@ -942,7 +942,7 @@ int LX200_10MICRON::SetRefractionModelTemperature(double temperature)
     return setStandardProcedure(fd, data);
 }
 
-int LX200_10MICRON::SetRefractionModelPressure(double pressure)
+int LX200_PIFINDER::SetRefractionModelPressure(double pressure)
 {
     // #:SRPRSPPPP.P#
     // Sets the atmospheric pressure used in the refraction model to PPPP.P hPa. Note
@@ -956,7 +956,7 @@ int LX200_10MICRON::SetRefractionModelPressure(double pressure)
     return setStandardProcedure(fd, data);
 }
 
-int LX200_10MICRON::AddSyncPoint(double MRa, double MDec, double MSide, double PRa, double PDec, double SidTime)
+int LX200_PIFINDER::AddSyncPoint(double MRa, double MDec, double MSide, double PRa, double PDec, double SidTime)
 {
     // #:newalptMRA,MDEC,MSIDE,PRA,PDEC,SIDTIME#
     // Add a new point to the alignment specification. The parameters are:
@@ -1014,13 +1014,13 @@ int LX200_10MICRON::AddSyncPoint(double MRa, double MDec, double MSide, double P
     return 0;
 }
 
-int LX200_10MICRON::AddSyncPointHere(double PRa, double PDec)
+int LX200_PIFINDER::AddSyncPointHere(double PRa, double PDec)
 {
     double MSide = (toupper(Ginfo.SideOfPier) == 'E') ? 0 : 1;
     return AddSyncPoint(Ginfo.RA_JNOW, Ginfo.DEC_JNOW, MSide, PRa, PDec, Ginfo.SiderealTime);
 }
 
-bool LX200_10MICRON::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
+bool LX200_PIFINDER::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
@@ -1143,7 +1143,7 @@ bool LX200_10MICRON::ISNewNumber(const char *dev, const char *name, double value
     return LX200Generic::ISNewNumber(dev, name, values, names, n);
 }
 
-bool LX200_10MICRON::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
+bool LX200_PIFINDER::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
@@ -1302,7 +1302,7 @@ bool LX200_10MICRON::ISNewSwitch(const char *dev, const char *name, ISState *sta
     return LX200Generic::ISNewSwitch(dev, name, states, names, n);
 }
 
-bool LX200_10MICRON::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
+bool LX200_PIFINDER::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
@@ -1360,7 +1360,7 @@ bool LX200_10MICRON::ISNewText(const char *dev, const char *name, char *texts[],
 }
 
 // this should move to some generic library
-int LX200_10MICRON::monthToNumber(const char *monthName)
+int LX200_PIFINDER::monthToNumber(const char *monthName)
 {
     struct entry
     {
@@ -1381,7 +1381,7 @@ int LX200_10MICRON::monthToNumber(const char *monthName)
     return 0;
 }
 
-int LX200_10MICRON::setStandardProcedureWithoutRead(int fd, const char *data)
+int LX200_PIFINDER::setStandardProcedureWithoutRead(int fd, const char *data)
 {
     int error_type;
     int nbytes_write = 0;
@@ -1397,7 +1397,7 @@ int LX200_10MICRON::setStandardProcedureWithoutRead(int fd, const char *data)
     return 0;
 }
 
-int LX200_10MICRON::setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect)
+int LX200_PIFINDER::setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect)
 {
     char bool_return[2];
     int error_type;
@@ -1430,7 +1430,7 @@ int LX200_10MICRON::setStandardProcedureAndExpectChar(int fd, const char *data, 
     return 0;
 }
 
-int LX200_10MICRON::setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length)
+int LX200_PIFINDER::setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length)
 {
     int error_type;
     int nbytes_write = 0, nbytes_read = 0;

@@ -22,18 +22,18 @@
 
 #include "lx200generic.h"
 
-class LX200_10MICRON : public LX200Generic
+class LX200_PIFINDER : public LX200Generic
 {
     public:
 
-        enum LX200_10MICRON_UNATTENDED_FLIP_SETTINGS
+        enum LX200_PIFINDER_UNATTENDED_FLIP_SETTINGS
         {
             UNATTENDED_FLIP_DISABLED,
             UNATTENDED_FLIP_ENABLED,
             UNATTENDED_FLIP_COUNT
         };
 
-        enum LX200_10MICRON_PRODUCT_INFO
+        enum LX200_PIFINDER_PRODUCT_INFO
         {
             PRODUCT_NAME,
             PRODUCT_CONTROL_BOX,
@@ -42,7 +42,7 @@ class LX200_10MICRON : public LX200Generic
             PRODUCT_COUNT
         };
 
-        enum LX200_10MICRON_10MICRON_GSTAT
+        enum LX200_PIFINDER_10MICRON_GSTAT
         {
             GSTAT_UNSET                       = -999,
             GSTAT_TRACKING                    = 0,
@@ -61,7 +61,7 @@ class LX200_10MICRON : public LX200Generic
             GSTAT_ERROR                       = 99
         };
 
-        enum LX200_10MICRON_ALIGNMENT_POINT
+        enum LX200_PIFINDER_ALIGNMENT_POINT
         {
             ALP_MRA,     // Mount Right Ascension
             ALP_MDEC,    // Mount Declination
@@ -72,7 +72,7 @@ class LX200_10MICRON : public LX200Generic
             ALP_COUNT
         };
 
-        enum LX200_10MICRON_MINI_ALIGNMENT_POINT_RO
+        enum LX200_PIFINDER_MINI_ALIGNMENT_POINT_RO
         {
             MALPRO_MRA,     // Mount Right Ascension
             MALPRO_MDEC,    // Mount Declination
@@ -81,14 +81,14 @@ class LX200_10MICRON : public LX200Generic
             MALPRO_COUNT
         };
 
-        enum LX200_10MICRON_MINI_ALIGNMENT_POINT
+        enum LX200_PIFINDER_MINI_ALIGNMENT_POINT
         {
             MALP_PRA,  // Plate solved Right Ascension
             MALP_PDEC, // Plate solved Declination
             MALP_COUNT
         };
 
-        enum LX200_10MICRON_ALIGNMENT_STATE
+        enum LX200_PIFINDER_ALIGNMENT_STATE
         {
             ALIGN_IDLE,
             ALIGN_START,
@@ -97,8 +97,8 @@ class LX200_10MICRON : public LX200Generic
             ALIGN_COUNT
         };
 
-        LX200_10MICRON();
-        ~LX200_10MICRON() {}
+        LX200_PIFINDER();
+        ~LX200_PIFINDER() {}
 
         bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
         bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
