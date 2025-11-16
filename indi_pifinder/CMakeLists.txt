@@ -1,6 +1,6 @@
 # ################################################################################
 # ########## PiFinder LX200 #############
-include_directories(${INDI_SOURCE_DIR}/drivers/telescope)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 add_executable(indi_pifinder_lx200
     pifinder_lx200.cpp)
