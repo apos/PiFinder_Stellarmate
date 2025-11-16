@@ -125,13 +125,28 @@ if [ ! -d "${indi_source_dir}/build" ]; then
 fi
 
 
-echo "-> Copying development files to indi-source..."
-cp "${indi_pifinder_dir}/pifinder_lx200.h" "${indi_source_dir}/drivers/telescope/"
-cp "${indi_pifinder_dir}/pifinder_lx200.cpp" "${indi_source_dir}/drivers/telescope/"
-cp "${indi_pifinder_dir}/indi_pifinder_lx200_driver.xml.in" "${indi_source_dir}/drivers/telescope/"
+echo "-> Integrating local driver with indi-source..."
+# Create a subdirectory for our driver
+DRIVER_SUBDIR="${indi_source_dir}/drivers/telescope/indi_pifinder"
+mkdir -p "${DRIVER_SUBDIR}"
 
-echo "-> Copying local CMakeLists.txt to indi-source..."
-cp "${indi_pifinder_dir}/CMakeLists.txt" "${indi_source_dir}/drivers/telescope/CMakeLists.txt"
+# Copy all our local driver files into the subdirectory
+cp "${indi_pifinder_dir}/pifinder_lx200.h" "${DRIVER_SUBDIR}/"
+cp "${indi_pifinder_dir}/pifinder_lx200.cpp" "${DRIVER_SUBDIR}/"
+cp "${indi_pifinder_dir}/indi_pifinder_lx200_driver.xml.in" "${DRIVER_SUBDIR}/"
+cp "${indi_pifinder_dir}/CMakeLists.txt" "${DRIVER_SUBDIR}/"
+
+# Add our driver subdirectory to the main telescope CMakeLists.txt
+CMAKE_FILE="${indi_source_dir}/drivers/telescope/CMakeLists.txt"
+SUBDIR_ENTRY="add_subdirectory(indi_pifinder)"
+if grep -q "add_subdirectory(indi_pifinder)" "${CMAKE_FILE}"; then
+    echo "   Driver subdirectory entry already exists in CMakeLists.txt. Skipping patch."
+else
+    echo "   Adding driver subdirectory entry to CMakeLists.txt..."
+    echo "" >> "${CMAKE_FILE}"
+    echo "# Add PiFinder LX200 driver" >> "${CMAKE_FILE}"
+    echo "${SUBDIR_ENTRY}" >> "${CMAKE_FILE}"
+fi
 
 echo "-> Removing old driver files..."
 sudo rm -f /usr/share/indi/pifinder_lx200.xml
