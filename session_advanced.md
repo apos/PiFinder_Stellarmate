@@ -2,25 +2,19 @@
 
 This document outlines higher-level strategies and critical technical details for the `pifinder_lx200` driver development.
 
-## Core Strategy: Mimic a Working Reference
+## Core Strategy: Inherit and Override
 
-The primary obstacle has been API drift between the original driver code and the current `indilib` source. The most effective strategy is to abandon trial-and-error and strictly adhere to the patterns found in a known-good, modern reference driver: `lx200_10micron`.
+The primary obstacle has been API incompatibility and incorrect C++ object orientation. The most effective strategy is to abandon building from a generic base class and instead inherit from the specific `LX200Telescope` class.
 
 **The correct, modern approach is as follows:**
 
-1.  **Property Declaration**:
-    *   In the driver's header file (`.h`), declare properties as direct C-style struct members, **not** C++ wrapper classes or pointers. This is the most critical lesson learned.
-    *   **Correct:** `ISwitchVectorProperty ConnectionSP;`
-    *   **Incorrect:** `INDI::PropertySwitch ConnectionSP;`
-    *   **Incorrect:** `ISwitchVectorProperty *ConnectionSP;`
+1.  **Inheritance**: The driver class (`PiFinder`) *must* inherit from the appropriate INDI base class (`LX200Telescope`) to gain the necessary telescope functionality and properties. This is the most critical lesson learned.
+    *   **Correct:** `class PiFinder : public LX200Telescope`
+    *   **Incorrect:** `class PiFinder : public INDI::DefaultDevice`
 
-2.  **Property Initialization (`initProperties`)**:
-    *   Use the `IUFill...` family of helper functions (e.g., `IUFillSwitchVector`) to initialize the struct members.
-    *   Pass the properties to these functions using the `&` operator (e.g., `IUFillSwitchVector(&ConnectionSP, ...)`).
+2.  **Overriding**: Key virtual methods from the base class, such as `Handshake()` and `ReadScopeStatus()`, must be correctly marked with the `virtual` keyword and the `override` specifier in the header file. This ensures the custom implementation is called.
 
-3.  **Linking**:
-    *   Identify all external library dependencies (like `libnova` for astronomical calculations) by observing the reference driver.
-    *   Ensure these libraries are explicitly linked in the `CMakeLists.txt` file via `target_link_libraries`.
+3.  **Property Usage**: Use the properties provided by the base class (e.g., `EqNP`, `Connection`, `EqN`) directly. Do not re-declare them in the child class, as this leads to compilation errors and incorrect behavior.
 
 ## Build System Strategy
 
@@ -29,8 +23,8 @@ The primary obstacle has been API drift between the original driver code and the
 
 ## Debugging Strategy
 
-1.  **Reference Implementation**: The `lx200_10micron` driver, located in `indi-source/drivers/telescope/`, serves as the primary reference for a simple, modern, and functional LX200-style driver.
-2.  **Protocol Definition**: The `pos_server.py` script, located in `indi_pifinder/`, is the absolute source of truth for the LX200 command-and-response protocol that the PiFinder expects.
+1.  **Reference Implementation**: The `lx200telescope.cpp` and `.h` files serve as the primary reference for the base class implementation, revealing which methods can be overridden and which properties are available.
+2.  **Protocol Definition**: The `pos_server.py` script, located in `indi_pifinder/`, is the absolute source of truth for the LX200 command-and-response protocol that the PiFinder expects. The driver must match this protocol.
 
 ## Version Control Policy
 

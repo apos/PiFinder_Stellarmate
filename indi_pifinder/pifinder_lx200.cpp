@@ -131,11 +131,11 @@ bool PiFinder::ReadScopeStatus()
     // Precess from JNow to J2000 using INDI's internal function
     INDI::ObservedToJ2000(&jnow_coords, jd, &j2000_coords);
 
-    EqN[0].value = j2000_coords.rightascension;
-    EqN[1].value = j2000_coords.declination;
+    EquatorialEODN[0].value = j2000_coords.rightascension;
+    EquatorialEODN[1].value = j2000_coords.declination;
 
     // Update the property
-    IDSetNumber(&EqNP, nullptr);
+    IDSetNumber(&EquatorialEODNP, nullptr);
 
     return true;
 }
@@ -143,65 +143,113 @@ bool PiFinder::ReadScopeStatus()
 bool PiFinder::initProperties()
 {
     // Init properties defined in parent
-    LX200Telescope::initProperties();
+    INDI::DefaultDevice::initProperties();
+
+    // Initialize properties
+    IUFillSwitch(&ConnectionS[0], "CONNECT", "Connect", ISS_OFF);
+    IUFillSwitch(&ConnectionS[1], "DISCONNECT", "Disconnect", ISS_ON);
+    IUFillSwitchVector(&ConnectionSP, ConnectionS, 2, getDeviceName(), "CONNECTION", "Connection", MAIN_CONTROL_TAB, IP_RW, ISR_1OFMANY, 0, IPS_IDLE);
+
+    IUFillNumber(&EquatorialEODN[0], "RA", "RA", "%02.0f:%02.0f:%04.1f", 0, 24, 0, 0);
+    IUFillNumber(&EquatorialEODN[1], "DEC", "Dec", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
+    IUFillNumberVector(&EquatorialEODNP, EquatorialEODN, 2, getDeviceName(), "EQUATORIAL_EOD_COORD", "RA/DEC J2000", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+
+    IUFillNumber(&HorizontalCoordinatesN[0], "ALT", "Altitude", "%+02.0f:%02.0f:%02.0f", -90, 90, 0, 0);
+    IUFillNumber(&HorizontalCoordinatesN[1], "AZ", "Azimuth", "%03.0f:%02.0f:%02.0f", 0, 360, 0, 0);
+    IUFillNumberVector(&HorizontalCoordinatesNP, HorizontalCoordinatesN, 2, getDeviceName(), "HORIZONTAL_COORDINATES", "Alt/Az", MAIN_CONTROL_TAB, IP_RO, 0, IPS_IDLE);
+
+    // Tell INDI this is a Telescope
+    setDriverInterface(TELESCOPE_INTERFACE);
+
+    // Add the properties to the driver
+    defineProperty(&ConnectionSP);
+    defineProperty(&EquatorialEODNP);
+
     return true;
 }
 
 bool PiFinder::updateProperties()
 {
     // Update properties defined in parent
-    LX200Telescope::updateProperties();
+    INDI::DefaultDevice::updateProperties();
+
+    if (isConnected())
+    {
+        // We are connected, so we are ready to receive commands
+        defineProperty(&HorizontalCoordinatesNP);
+    }
+    else
+    {
+        // We are not connected, so we cannot receive commands
+        deleteProperty(HorizontalCoordinatesNP.name);
+    }
+
     return true;
 }
 
 void PiFinder::ISGetProperties(const char *dev)
 {
     // Get properties defined in parent
-    LX200Telescope::ISGetProperties(dev);
+    INDI::DefaultDevice::ISGetProperties(dev);
 }
 
 bool PiFinder::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-    if (strcmp(name, Connection.name) == 0)
+    if (strcmp(name, ConnectionSP.name) == 0)
     {
-        ISwitch *connectSwitch = IUFindSwitch(&Connection, "CONNECT");
+        ISwitch *connectSwitch = IUFindSwitch(&ConnectionSP, "CONNECT");
         if (connectSwitch && connectSwitch->s == ISS_ON)
         {
             if (Handshake())
             {
-                Connection.s = IPS_OK;
-                Connection.sw[0].s = ISS_ON;
-                Connection.sw[1].s = ISS_OFF;
+                ConnectionSP.s = IPS_OK;
+                ConnectionS[0].s = ISS_ON;
+                ConnectionS[1].s = ISS_OFF;
             }
             else
             {
-                Connection.s = IPS_ALERT;
-                Connection.sw[0].s = ISS_OFF;
-                Connection.sw[1].s = ISS_ON;
+                ConnectionSP.s = IPS_ALERT;
+                ConnectionS[0].s = ISS_OFF;
+                ConnectionS[1].s = ISS_ON;
             }
         }
         else
         {
             Close();
-            Connection.s = IPS_OK;
-            Connection.sw[0].s = ISS_OFF;
-            Connection.sw[1].s = ISS_ON;
+            ConnectionSP.s = IPS_OK;
+            ConnectionS[0].s = ISS_OFF;
+            ConnectionS[1].s = ISS_ON;
         }
-        IDSetSwitch(&Connection, nullptr);
-        // Do not call parent, we handle connection here
-        return true;
+        IDSetSwitch(&ConnectionSP, nullptr);
+        return true; // We handled the connection, so return true
     }
-    return LX200Telescope::ISNewSwitch(dev, name, states, names, n);
+    return INDI::DefaultDevice::ISNewSwitch(dev, name, states, names, n);
 }
 
 bool PiFinder::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-    return LX200Telescope::ISNewText(dev, name, texts, names, n);
+    if (strcmp(name, HorizontalCoordinatesNP.name) == 0)
+    {
+        double alt, az;
+        if (sscanf(texts[0], "%lf", &alt) == 1 && sscanf(texts[1], "%lf", &az) == 1)
+        {
+            HorizontalCoordinatesN[0].value = alt;
+            HorizontalCoordinatesN[1].value = az;
+            HorizontalCoordinatesNP.s = IPS_OK;
+        }
+        else
+        {
+            HorizontalCoordinatesNP.s = IPS_ALERT;
+        }
+        IDSetNumber(&HorizontalCoordinatesNP, nullptr);
+        return true;
+    }
+    return INDI::DefaultDevice::ISNewText(dev, name, texts, names, n);
 }
 
 bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, char *names[], int n)
 {
-    if (strcmp(name, EqNP.name) == 0)
+    if (strcmp(name, EquatorialEODNP.name) == 0)
     {
         INumber *raNumber = IUFindNumber(&EquatorialEODNP, "RA");
         INumber *decNumber = IUFindNumber(&EquatorialEODNP, "DEC");
@@ -230,28 +278,43 @@ bool PiFinder::ISNewNumber(const char *dev, const char *name, double *values, ch
         s = (dec - d - m / 60.0) * 3600;
         snprintf(command, sizeof(command), ":Sd%c%02d*%02d:%02d#", sign, d, m, s);
         
-        EqNP.s = IPS_BUSY;
-        IDSetNumber(&EqNP, nullptr);
+        EquatorialEODNP.s = IPS_BUSY;
+        IDSetNumber(&EquatorialEODNP, nullptr);
 
         if (SendCommand(command, response, sizeof(response)) && response[0] == '1')
         {
-            EqNP.s = IPS_OK;
-            EqN[0].value = ra;
-            EqN[1].value = dec;
+            EquatorialEODNP.s = IPS_OK;
+            EquatorialEODN[0].value = ra;
+            EquatorialEODN[1].value = dec;
         }
         else
         {
-            EqNP.s = IPS_ALERT;
+            EquatorialEODNP.s = IPS_ALERT;
         }
-        IDSetNumber(&EqNP, nullptr);
+        IDSetNumber(&EquatorialEODNP, nullptr);
         return true;
     }
 
-    return LX200Telescope::ISNewNumber(dev, name, values, names, n);
+    if (strcmp(name, HorizontalCoordinatesNP.name) == 0)
+    {
+        INumber *altNumber = IUFindNumber(&HorizontalCoordinatesNP, "ALT");
+        INumber *azNumber = IUFindNumber(&HorizontalCoordinatesNP, "AZ");
+
+        if (altNumber)
+            HorizontalCoordinatesN[0].value = altNumber->value;
+        if (azNumber)
+            HorizontalCoordinatesN[1].value = azNumber->value;
+        
+        HorizontalCoordinatesNP.s = IPS_OK;
+        IDSetNumber(&HorizontalCoordinatesNP, nullptr);
+        return true;
+    }
+
+    return INDI::DefaultDevice::ISNewNumber(dev, name, values, names, n);
 }
 
 bool PiFinder::ISNewBLOB(const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n)
 {
     // We call the parent method
-    return LX200Telescope::ISNewBLOB(dev, name, sizes, blobsizes, blobs, formats, names, n);
+    return INDI::DefaultDevice::ISNewBLOB(dev, name, sizes, blobsizes, blobs, formats, names, n);
 }
