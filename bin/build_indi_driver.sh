@@ -137,7 +137,7 @@ if grep -q "${DRIVER_NAME}" "${CMAKE_FILE}"; then
     echo "   Driver entry already exists in CMakeLists.txt. Skipping patch."
 else
     echo "   Adding driver entry to CMakeLists.txt..."
-    echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200")' >> "${CMAKE_FILE}"
+    echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200" pifinder_lx200.cpp lx200generic.cpp)' >> "${CMAKE_FILE}"
 fi
 
 echo "-> Removing old driver files..."
