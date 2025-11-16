@@ -132,9 +132,8 @@ bool PiFinder::ReadScopeStatus()
     // Precess from JNow to J2000 using INDI's internal function
     INDI::ObservedToJ2000(&jnow_coords, jd, &j2000_coords);
 
-    // Update the inherited RaN and DecN members. The base class will update the property.
-    this->EqN[0].value = j2000_coords.rightascension;
-    this->EqN[1].value = j2000_coords.declination;
+    // Update the coordinates using the base class method
+    NewRaDec(j2000_coords.rightascension, j2000_coords.declination);
 
     return true;
 }
