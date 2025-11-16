@@ -133,12 +133,10 @@ cp "${indi_pifinder_dir}/indi_pifinder_lx200_driver.xml.in" "${indi_source_dir}/
 echo "-> Patching CMakeLists.txt..."
 CMAKE_FILE="${indi_source_dir}/drivers/telescope/CMakeLists.txt"
 DRIVER_NAME="indi_pifinder_lx200"
-if grep -q "${DRIVER_NAME}" "${CMAKE_FILE}"; then
-    echo "   Driver entry already exists in CMakeLists.txt. Skipping patch."
-else
-    echo "   Adding driver entry to CMakeLists.txt..."
-    echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200" pifinder_lx200.cpp lx200generic.cpp)' >> "${CMAKE_FILE}"
-fi
+# Remove any existing entry to ensure idempotency
+sed -i "/${DRIVER_NAME}/d" "${CMAKE_FILE}"
+# Add the correct entry
+echo 'add_indi_driver(indi_pifinder_lx200 "PiFinder LX200" pifinder_lx200.cpp lx200generic.cpp)' >> "${CMAKE_FILE}"
 
 echo "-> Removing old driver files..."
 sudo rm -f /usr/share/indi/pifinder_lx200.xml
