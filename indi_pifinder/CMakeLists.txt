@@ -41,11 +41,14 @@ install(TARGETS indi_lx200basic RUNTIME DESTINATION bin)
 
 # ########## PiFinder LX200 #############
 add_executable(indi_pifinder_lx200
-    pifinder_lx200.cpp)
+    pifinder_lx200.cpp
+    lx200driver.cpp
+    lx200telescope.cpp
+    lx200generic.cpp)
 
 target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
-target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
+target_link_libraries(indi_pifinder_lx200 indidriver nova)
 
 install(TARGETS indi_pifinder_lx200 RUNTIME DESTINATION bin)
 
