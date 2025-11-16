@@ -1,12 +1,14 @@
-cmake_minimum_required(VERSION 3.5)
-project(indi_pifinder_lx200 CXX)
+# ################################################################################
+# ########## PiFinder LX200 #############
+include_directories(${INDI_SOURCE_DIR}/drivers/telescope)
 
-find_package(INDI 1.9.0 REQUIRED)
-find_package(Libnova REQUIRED)
+add_executable(indi_pifinder_lx200
+    pifinder_lx200.cpp)
 
-add_library(indi_pifinder_lx200 MODULE pifinder_lx200.cpp)
+target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
-target_link_libraries(indi_pifinder_lx200 PRIVATE indidriver indilx200 ${LIBNOVA_LIBRARIES})
+target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
 
-install(TARGETS indi_pifinder_lx200 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-contin
+install(TARGETS indi_pifinder_lx200 RUNTIME DESTINATION bin)
+
+# ################################################################################
