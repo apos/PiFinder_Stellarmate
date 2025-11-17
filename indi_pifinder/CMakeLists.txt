@@ -20,4 +20,4 @@ configure_file(indi_pifinder_lx200_driver.xml.in indi_pifinder_lx200_driver.xml 
 install(TARGETS indi_pifinder_lx200 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_pifinder_lx200_driver.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/indi)
 
-# ################################################################################
+# ###############################################################################

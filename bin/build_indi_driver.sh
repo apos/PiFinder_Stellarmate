@@ -149,8 +149,8 @@ else
 fi
 
 echo "-> Removing old driver files..."
-sudo rm -f /usr/share/indi/pifinder_lx200.xml
-sudo rm -f /usr/bin/indi_pifinder_lx200
+sudo rm -f /usr/local/share/indi/pifinder_lx200.xml
+sudo rm -f /usr/local/lib/libindi_pifinder_lx200.so
 
 echo "-> Building the driver..."
 cd "${indi_source_dir}/build"
