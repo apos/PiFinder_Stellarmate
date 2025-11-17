@@ -161,6 +161,24 @@ make indi_pifinder_lx200
 echo "-> Installing the driver..."
 sudo make install
 
+echo "-> Registering the driver with the main INDI drivers.xml file..."
+DRIVER_XML_PATH="/usr/share/indi/drivers.xml"
+DRIVER_ENTRY_STRING="<driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>"
+
+if grep -qF "$DRIVER_ENTRY_STRING" "$DRIVER_XML_PATH"; then
+    echo "   Driver entry already exists in $DRIVER_XML_PATH. No changes needed."
+else
+    echo "   Driver entry not found. Adding it to the 'Telescopes' group..."
+    # This is the XML block to insert.
+    XML_BLOCK="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\n            <driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>\n            <version>1.0</version>\n        </device>"
+
+    # Use sed to find the end of the "Telescopes" device group and insert the block before it.
+    # The command looks for the first occurrence of '</devGroup>' after a line containing 'group="Telescopes"'
+    # and inserts our XML block before it. This is safer than just appending to the end of the file.
+    sudo sed -i "/<devGroup group=\"Telescopes\">/ { N; /<\/devGroup>/! { P; D; }; s|</devGroup>|${XML_BLOCK}\n    </devGroup>| }" "$DRIVER_XML_PATH"
+    echo "   Driver entry added successfully."
+fi
+
 echo "-> Build and installation complete."
 
 
