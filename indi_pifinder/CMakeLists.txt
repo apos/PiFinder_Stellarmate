@@ -1,5 +1,14 @@
 # ################################################################################
 # ########## PiFinder LX200 #############
+
+# Check if the essential INDI install variables are defined.
+if(NOT DEFINED INDI_DRIVER_INSTALL_DIR)
+    message(FATAL_ERROR "INDI_DRIVER_INSTALL_DIR is not defined! Cannot install driver.")
+endif()
+if(NOT DEFINED INDI_XML_INSTALL_DIR)
+    message(FATAL_ERROR "INDI_XML_INSTALL_DIR is not defined! Cannot install XML file.")
+endif()
+
 include_directories("/home/stellarmate/PiFinder_Stellarmate/indi-source/drivers/telescope")
 
 add_library(indi_pifinder_lx200 MODULE
@@ -13,7 +22,7 @@ target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
 configure_file(indi_pifinder_lx200_driver.xml.in indi_pifinder_lx200_driver.xml @ONLY)
 
 # Install the driver library and the configured XML file
-install(TARGETS indi_pifinder_lx200 DESTINATION ${INDI_DRIVER_INSTALL_DIR})
+install(TARGETS indi_pifinder_lx200 LIBRARY DESTINATION ${INDI_DRIVER_INSTALL_DIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_pifinder_lx200_driver.xml DESTINATION ${INDI_XML_INSTALL_DIR})
 
 # ################################################################################
