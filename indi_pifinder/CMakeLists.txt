@@ -9,10 +9,11 @@ target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700)
 
 target_link_libraries(indi_pifinder_lx200 indidriver indilx200 nova)
 
-install(TARGETS indi_pifinder_lx200 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES
-    indi_pifinder_lx200_driver.xml.in
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/indi
-    COMPONENT Devel)
+# Configure the XML file from the template
+configure_file(indi_pifinder_lx200_driver.xml.in indi_pifinder_lx200_driver.xml @ONLY)
+
+# Install the driver library and the configured XML file
+install(TARGETS indi_pifinder_lx200 DESTINATION ${INDI_DRIVER_INSTALL_DIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_pifinder_lx200_driver.xml DESTINATION ${INDI_XML_INSTALL_DIR})
 
 # ################################################################################
