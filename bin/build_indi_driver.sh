@@ -126,51 +126,54 @@ fi
 
 
 echo "-> Integrating local driver with indi-source..."
-# Create a subdirectory for our driver
-DRIVER_SUBDIR="${indi_source_dir}/drivers/telescope/indi_pifinder"
-mkdir -p "${DRIVER_SUBDIR}"
+# Copy our local driver files into the indi-source tree
+cp "${indi_pifinder_dir}/pifinder_lx200.h" "${indi_source_dir}/drivers/telescope/"
+cp "${indi_pifinder_dir}/pifinder_lx200.cpp" "${indi_source_dir}/drivers/telescope/"
 
-# Copy all our local driver files into the subdirectory
-cp "${indi_pifinder_dir}/pifinder_lx200.h" "${DRIVER_SUBDIR}/"
-cp "${indi_pifinder_dir}/pifinder_lx200.cpp" "${DRIVER_SUBDIR}/"
-cp "${indi_pifinder_dir}/indi_pifinder_lx200_driver.xml.in" "${DRIVER_SUBDIR}/"
-cp "${indi_pifinder_dir}/CMakeLists.txt" "${DRIVER_SUBDIR}/"
-
-# Add our driver subdirectory to the main telescope CMakeLists.txt
+# Add our driver's source file to the indi_lx200generic executable
 CMAKE_FILE="${indi_source_dir}/drivers/telescope/CMakeLists.txt"
-SUBDIR_ENTRY="add_subdirectory(indi_pifinder)"
-if grep -q "add_subdirectory(indi_pifinder)" "${CMAKE_FILE}"; then
-    echo "   Driver subdirectory entry already exists in CMakeLists.txt. Skipping patch."
+SOURCE_FILE_ENTRY="    pifinder_lx200.cpp"
+if grep -q "pifinder_lx200.cpp" "${CMAKE_FILE}"; then
+    echo "   Driver source file entry already exists in CMakeLists.txt. Skipping patch."
 else
-    echo "   Adding driver subdirectory entry to CMakeLists.txt..."
-    echo "" >> "${CMAKE_FILE}"
-    echo "# Add PiFinder LX200 driver" >> "${CMAKE_FILE}"
-    echo "${SUBDIR_ENTRY}" >> "${CMAKE_FILE}"
+    echo "   Adding driver source file entry to CMakeLists.txt..."
+    # Use sed to add our source file to the list of files for the indi_lx200generic executable
+    sudo sed -i "/add_executable(indi_lx200generic/a ${SOURCE_FILE_ENTRY}" "${CMAKE_FILE}"
+    echo "   Driver source file entry added successfully."
+fi
+
+# Remove the add_subdirectory entry if it exists from previous builds
+if grep -q "add_subdirectory(indi_pifinder)" "${CMAKE_FILE}"; then
+    echo "   Removing old add_subdirectory entry from CMakeLists.txt..."
+    sudo sed -i "/add_subdirectory(indi_pifinder)/d" "${CMAKE_FILE}"
+    sudo sed -i "/# Add PiFinder LX200 driver/d" "${CMAKE_FILE}"
+    echo "   Old entry removed."
 fi
 
 echo "-> Removing old driver files..."
 sudo rm -f /usr/share/indi/indi_pifinder_lx200.xml
 sudo rm -f /usr/share/indi/indi_pifinder_lx200_driver.xml
 sudo rm -f /usr/lib/indi/libindi_pifinder_lx200.so
+sudo rm -f /usr/bin/indi_pifinder_lx200
 
 echo "-> Building the driver..."
 cd "${indi_source_dir}/build"
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
-make indi_pifinder_lx200
+make indi_lx200generic
 
 echo "-> Installing the driver..."
 sudo make install
 
 echo "-> Registering the driver with the main INDI drivers.xml file..."
 DRIVER_XML_PATH="/usr/share/indi/drivers.xml"
-DRIVER_ENTRY_STRING="<driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>"
+DRIVER_ENTRY_STRING="<device label=\"PiFinder LX200\""
 
 if grep -qF "$DRIVER_ENTRY_STRING" "$DRIVER_XML_PATH"; then
     echo "   Driver entry already exists in $DRIVER_XML_PATH. No changes needed."
 else
     echo "   Driver entry not found. Adding it to the 'Telescopes' group..."
     # This is the XML block to insert.
-    XML_BLOCK="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\n            <driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>\n            <version>1.0</version>\n        </device>"
+    XML_BLOCK="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\n            <driver name=\"PiFinder LX200\">LX200 Generic</driver>\n            <version>1.0</version>\n        </device>"
 
     # Use sed to find the end of the "Telescopes" device group and insert the block before it.
     # The command looks for the first occurrence of '</devGroup>' after a line containing 'group="Telescopes"'
