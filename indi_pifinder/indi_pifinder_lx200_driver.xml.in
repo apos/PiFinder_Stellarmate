@@ -1,1 +1,6 @@
-404: Not Found
+<drivers>
+    <driver name="PiFinder LX200">
+        <version>1.0</version>
+        <executable>@CMAKE_INSTALL_FULL_LIBDIR@/libindi_pifinder_lx200.so</executable>
+    </driver>
+</drivers>
