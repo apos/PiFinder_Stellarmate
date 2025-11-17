@@ -1,5 +1,6 @@
 # ################################################################################
 # ########## PiFinder LX200 #############
+include_directories("/home/stellarmate/PiFinder_Stellarmate/indi-source/drivers/telescope")
 
 add_library(indi_pifinder_lx200 MODULE
     pifinder_lx200.cpp)
