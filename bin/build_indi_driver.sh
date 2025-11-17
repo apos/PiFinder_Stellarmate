@@ -102,7 +102,7 @@ fi
 # --clean-build | -c
 if [ "$clean_build" = true ]; then
     echo "-> Cleaning build directory..."
-    rm -rf "${indi_source_dir}/build"
+    sudo rm -rf "${indi_source_dir}/build"
     mkdir "${indi_source_dir}/build"
 fi
 
@@ -158,7 +158,7 @@ cmake ..
 make indi_pifinder_lx200
 
 echo "-> Installing the driver..."
-sudo make install
+sudo make install/strip
 
 echo "-> Build and installation complete."
 
