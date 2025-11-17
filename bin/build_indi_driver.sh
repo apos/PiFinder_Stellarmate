@@ -149,17 +149,17 @@ else
 fi
 
 echo "-> Removing old driver files..."
-sudo rm -f /usr/share/indi/pifinder_lx200_driver.xml
+sudo rm -f /usr/share/indi/indi_pifinder_lx200.xml
+sudo rm -f /usr/share/indi/indi_pifinder_lx200_driver.xml
 sudo rm -f /usr/lib/indi/libindi_pifinder_lx200.so
 
 echo "-> Building the driver..."
 cd "${indi_source_dir}/build"
-cmake ..
+cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make indi_pifinder_lx200
 
 echo "-> Installing the driver..."
-sudo cp "${indi_source_dir}/build/drivers/telescope/indi_pifinder/libindi_pifinder_lx200.so" "/usr/lib/indi/"
-sudo cp "${indi_source_dir}/build/drivers/telescope/indi_pifinder/indi_pifinder_lx200_driver.xml" "/usr/share/indi/"
+sudo make install
 
 echo "-> Build and installation complete."
 
