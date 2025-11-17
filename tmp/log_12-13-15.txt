@@ -1,0 +1,156 @@
+[2025-11-17T12:13:15.383 CET INFO ][                org.kde.kstars] - "Welcome to KStars" 3.8.0 Beta
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - Build: 2025-10-16T11:20:41Z
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - OS: "debian"
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - API: "arm64-little_endian-lp64"
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - Arch: "arm64"
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - Kernel Type: "linux"
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - Kernel Version: "6.6.31+rpt-rpi-v8"
+[2025-11-17T12:13:15.384 CET INFO ][                org.kde.kstars] - Qt Version: 5.15.8
+[2025-11-17T12:13:16.635 CET DEBG ][                org.kde.kstars] - Opened the User DB. Ready.
+[2025-11-17T12:13:17.075 CET INFO ][                org.kde.kstars] - Processing  "unnamedstars.dat" , HTMesh Level 3
+[2025-11-17T12:13:17.075 CET INFO ][                org.kde.kstars] -   Sky Mesh Size:  512
+[2025-11-17T12:13:17.418 CET INFO ][                org.kde.kstars] - Loaded DSO catalog file:  "unnamedstars.dat"
+[2025-11-17T12:13:18.011 CET WARN ][                org.kde.kstars] - "Star HD20,794 not found."
+[2025-11-17T12:13:18.034 CET WARN ][                org.kde.kstars] - "Star HD98,230 not found."
+[2025-11-17T12:13:18.062 CET INFO ][                org.kde.kstars] - Loaded DSO catalogs.
+[2025-11-17T12:13:18.396 CET INFO ][                org.kde.kstars] - Loading comets
+[2025-11-17T12:13:18.795 CET WARN ][                       default] - QLayout: Attempting to add QLayout "" to MinimizeWidget "altitudeGraphMinimizeWidget", which already has a layout
+[2025-11-17T12:13:18.797 CET WARN ][                       default] - QLayout: Attempting to add QLayout "" to MinimizeWidget "astrobinSearchMinimizeWidget", which already has a layout
+[2025-11-17T12:13:18.799 CET WARN ][                       default] - QLayout: Attempting to add QLayout "" to MinimizeWidget "filtersMinimizeWidget", which already has a layout
+[2025-11-17T12:13:18.802 CET WARN ][                       default] - QLayout: Attempting to add QLayout "" to MinimizeWidget "imageFrameMinimizeWidget", which already has a layout
+[2025-11-17T12:13:19.052 CET DEBG ][                org.kde.kstars] - Paths to color scheme :  ("/usr/share/kstars/themes")
+[2025-11-17T12:13:19.201 CET DEBG ][                org.kde.kstars] - Reporting new timestep value:  60
+[2025-11-17T12:13:19.306 CET WARN ][                       default] - libpng warning: iCCP: known incorrect sRGB profile
+[2025-11-17T12:13:19.903 CET WARN ][                       default] - QObject::connect(QAction, Ekos::Scheduler): invalid nullptr parameter
+[2025-11-17T12:13:19.905 CET WARN ][                       default] - libpng warning: iCCP: known incorrect sRGB profile
+[2025-11-17T12:13:20.146 CET WARN ][              kf.configwidgets] - A widget named ' "kcfg_SaveFocusImages" ' was found but there is no setting named ' "SaveFocusImages" '
+[2025-11-17T12:13:20.146 CET WARN ][                       default] - libpng warning: iCCP: known incorrect sRGB profile
+[2025-11-17T12:13:20.274 CET DEBG ][                org.kde.kstars] - Daylight Saving Time inactive
+[2025-11-17T12:13:20.274 CET DEBG ][                org.kde.kstars] - Next Daylight Savings Time change (Local Time):  "Sun Mar 29 01:00:00 2026 GMT"
+[2025-11-17T12:13:20.274 CET DEBG ][                org.kde.kstars] - Next Daylight Savings Time change (UTC):  "Sat Mar 28 00:00:00 2026 GMT"
+[2025-11-17T12:13:20.619 CET DEBG ][                org.kde.kstars] - Daylight Saving Time inactive
+[2025-11-17T12:13:20.619 CET DEBG ][                org.kde.kstars] - Next Daylight Savings Time change (Local Time):  "Sun Mar 29 01:00:00 2026 GMT"
+[2025-11-17T12:13:20.620 CET DEBG ][                org.kde.kstars] - Next Daylight Savings Time change (UTC):  "Sat Mar 28 00:00:00 2026 GMT"
+[2025-11-17T12:13:20.620 CET DEBG ][                org.kde.kstars] - Starting the timer
+[2025-11-17T12:13:20.860 CET DEBG ][                org.kde.kstars] - Date/Time is: "Mon Nov 17 11:13:20 2025 GMT"
+[2025-11-17T12:13:20.861 CET DEBG ][                org.kde.kstars] - Location: "GPS Location"
+[2025-11-17T12:13:20.861 CET DEBG ][                org.kde.kstars] - TZ0: 1 TZ: 1
+[2025-11-17T12:13:20.862 CET WARN ][                org.kde.kstars] - Current icon theme is "PiXflat"
+[2025-11-17T12:13:21.332 CET WARN ][                       default] - QImage::scaled: Image is a null image
+[2025-11-17T12:13:22.192 CET INFO ][                org.kde.kstars] - Loading comets
+[2025-11-17T12:13:22.791 CET INFO ][           org.kde.kstars.ekos] - Attempting auto-start EkosLive connection.
+[2025-11-17T12:13:22.791 CET WARN ][           org.kde.kstars.ekos] - NodeManager: Token is considered expired (empty auth response or no expiry timestamp).
+[2025-11-17T12:13:22.791 CET INFO ][           org.kde.kstars.ekos] - Token for NodeManager "https://ekoslive.com" is nearly expired or missing. Triggering re-authentication.
+[2025-11-17T12:13:22.792 CET INFO ][           org.kde.kstars.ekos] - One or more tokens are nearly expired/missing or connection is forced. Re-authenticating all managers.
+[2025-11-17T12:13:22.792 CET INFO ][           org.kde.kstars.ekos] - NodeManager: Clearing authentication data.
+[2025-11-17T12:13:22.792 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Entering authenticate(). Current re-auth status: false
+[2025-11-17T12:13:22.794 CET INFO ][           org.kde.kstars.ekos] - NodeManager: Clearing authentication data.
+[2025-11-17T12:13:22.795 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "http://localhost:3000" ): Entering authenticate(). Current re-auth status: false
+[2025-11-17T12:13:23.235 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "http://localhost:3000" ): Entering onResult(). Reply error: QNetworkReply::NoError String: "Unknown error"
+[2025-11-17T12:13:23.235 CET INFO ][           org.kde.kstars.ekos] - NodeManager for URL "http://localhost:3000" authenticated. Token expiry: "2025-11-18T12:13:23"
+[2025-11-17T12:13:23.235 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "http://localhost:3000" ): Authenticated. Processing 2 nodes for reconnection.
+[2025-11-17T12:13:23.235 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "http://localhost:3000" ): Processing node with pointer EkosLive::Node(0x55ce37ae10) - Calling setAuthResponse and connectServer.
+[2025-11-17T12:13:23.236 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): Entered connectServer(). Base URL: "ws://localhost:3000" Path: "/message/ekos"
+[2025-11-17T12:13:23.236 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): About to open websocket. Request URL: "ws://localhost:3000/message/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNDY0NDAzfQ.Uh4dyU0zEw1prGl1oK9y8K6GDMPPl4TZrqTfCtQPJmE&remoteToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type&version=3.8.0" Is valid: true
+[2025-11-17T12:13:23.236 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): Auth Token used: "eyJhbGciOi" ...
+[2025-11-17T12:13:23.236 CET INFO ][           org.kde.kstars.ekos] - Connecting to  "message" Websocket server at "ws://localhost:3000/message/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNDY0NDAzfQ.Uh4dyU0zEw1prGl1oK9y8K6GDMPPl4TZrqTfCtQPJmE&remoteToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type&version=3.8.0"
+[2025-11-17T12:13:23.236 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "http://localhost:3000" ): Processing node with pointer EkosLive::Node(0x55ce37e9c0) - Calling setAuthResponse and connectServer.
+[2025-11-17T12:13:23.236 CET DEBG ][           org.kde.kstars.ekos] - Node( "media" ): Entered connectServer(). Base URL: "ws://localhost:3000" Path: "/media/ekos"
+[2025-11-17T12:13:23.236 CET INFO ][           org.kde.kstars.ekos] - Connecting to  "media" Websocket server at "ws://localhost:3000/media/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNDY0NDAzfQ.Uh4dyU0zEw1prGl1oK9y8K6GDMPPl4TZrqTfCtQPJmE&remoteToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type&version=3.8.0"
+[2025-11-17T12:13:23.239 CET INFO ][           org.kde.kstars.ekos] - Connected to Message Websocket server at "ws://localhost:3000"
+[2025-11-17T12:13:23.270 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_connection\"}"
+[2025-11-17T12:13:23.270 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_drivers\"}"
+[2025-11-17T12:13:23.283 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_scopes\"}"
+[2025-11-17T12:13:23.286 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_profiles\"}"
+[2025-11-17T12:13:23.288 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_devices\"}"
+[2025-11-17T12:13:23.290 CET INFO ][           org.kde.kstars.ekos] - NodeManager for URL "http://localhost:3000" successfully re-authenticated and connected all nodes.
+[2025-11-17T12:13:23.316 CET INFO ][           org.kde.kstars.ekos] - Connected to Media Websocket server at "ws://localhost:3000"
+[2025-11-17T12:13:23.340 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Entering onResult(). Reply error: QNetworkReply::NoError String: "Unknown error"
+[2025-11-17T12:13:23.341 CET INFO ][           org.kde.kstars.ekos] - NodeManager for URL "https://ekoslive.com" authenticated. Token expiry: "2025-11-20T12:13:23"
+[2025-11-17T12:13:23.341 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Authenticated. Processing 3 nodes for reconnection.
+[2025-11-17T12:13:23.341 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Processing node with pointer EkosLive::Node(0x55ce357850) - Calling setAuthResponse and connectServer.
+[2025-11-17T12:13:23.341 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): Entered connectServer(). Base URL: "wss://ekoslive.com" Path: "/message/ekos"
+[2025-11-17T12:13:23.341 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): About to open websocket. Request URL: "wss://ekoslive.com/message/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=25926226d14949228a610602a15b8191&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type=live&version=3.8.0" Is valid: true
+[2025-11-17T12:13:23.341 CET DEBG ][           org.kde.kstars.ekos] - Node( "message" ): Auth Token used: "eyJhbGciOi" ...
+[2025-11-17T12:13:23.342 CET INFO ][           org.kde.kstars.ekos] - Connecting to  "message" Websocket server at "wss://ekoslive.com/message/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=25926226d14949228a610602a15b8191&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type=live&version=3.8.0"
+[2025-11-17T12:13:23.343 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Processing node with pointer EkosLive::Node(0x55ce35cad0) - Calling setAuthResponse and connectServer.
+[2025-11-17T12:13:23.343 CET DEBG ][           org.kde.kstars.ekos] - Node( "media" ): Entered connectServer(). Base URL: "wss://ekoslive.com" Path: "/media/ekos"
+[2025-11-17T12:13:23.344 CET INFO ][           org.kde.kstars.ekos] - Connecting to  "media" Websocket server at "wss://ekoslive.com/media/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=25926226d14949228a610602a15b8191&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type=live&version=3.8.0"
+[2025-11-17T12:13:23.344 CET DEBG ][           org.kde.kstars.ekos] - NodeManager( "https://ekoslive.com" ): Processing node with pointer EkosLive::Node(0x55ce355da0) - Calling setAuthResponse and connectServer.
+[2025-11-17T12:13:23.344 CET DEBG ][           org.kde.kstars.ekos] - Node( "cloud" ): Entered connectServer(). Base URL: "wss://ekoslive.com" Path: "/cloud/ekos"
+[2025-11-17T12:13:23.345 CET INFO ][           org.kde.kstars.ekos] - Connecting to  "cloud" Websocket server at "wss://ekoslive.com/cloud/ekos?observatory=Home Observatory&username=apos&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYXBvcyIsImlhdCI6MTc2MzM3ODAwMywiZXhwIjoxNzYzNjM3MjAzfQ.FzfO6m2XwU9kXCaL2zZK0K6T028b3sZx1lsWFlOMVPQ&machine_id=25926226d14949228a610602a15b8191&email=apos@blue-it.org&from_date=2024-01-01 11:40:48&to_date=2099-12-31 23:59:59&plan_id=2&type=live&version=3.8.0"
+[2025-11-17T12:13:23.461 CET INFO ][           org.kde.kstars.ekos] - Connected to Message Websocket server at "wss://ekoslive.com"
+[2025-11-17T12:13:23.484 CET INFO ][           org.kde.kstars.ekos] - Connected to Cloud Websocket server at "wss://ekoslive.com"
+[2025-11-17T12:13:23.516 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_connection\"}"
+[2025-11-17T12:13:23.520 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_drivers\"}"
+[2025-11-17T12:13:23.530 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_scopes\"}"
+[2025-11-17T12:13:23.531 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_profiles\"}"
+[2025-11-17T12:13:23.533 CET INFO ][           org.kde.kstars.ekos] - Websocket Message "{\"type\":\"get_devices\"}"
+[2025-11-17T12:13:23.534 CET INFO ][           org.kde.kstars.ekos] - NodeManager for URL "https://ekoslive.com" successfully re-authenticated and connected all nodes.
+[2025-11-17T12:13:23.558 CET INFO ][           org.kde.kstars.ekos] - Connected to Media Websocket server at "wss://ekoslive.com"
+[2025-11-17T12:13:23.579 CET INFO ][           org.kde.kstars.ekos] - Cloud Text Websocket Message "{\"type\":\"option_set\",\"payload\":{\"options\":[{\"name\":\"ekosliveCloud\",\"value\":false}]}}"
+[2025-11-17T12:13:23.604 CET INFO ][           org.kde.kstars.ekos] - Media Text Websocket Message "{\"type\":\"option_set\",\"payload\":{\"options\":[{\"name\":\"ekosliveCloud\",\"value\":false}]}}"
+[2025-11-17T12:13:27.342 CET DEBG ][           org.kde.kstars.ekos] - Resetting Ekos Manager...
+[2025-11-17T12:13:27.398 CET INFO ][           org.kde.kstars.ekos] - "Starting INDI services..."
+[2025-11-17T12:13:27.400 CET DEBG ][           org.kde.kstars.indi] - INDI: Starting local drivers...
+[2025-11-17T12:13:27.401 CET DEBG ][           org.kde.kstars.indi] - Starting INDI Server:  ("-v", "-p", "7624", "-m", "1024", "-r", "0", "-f", "/tmp/indififo01b111e2") -f "/tmp/indififo01b111e2"
+[2025-11-17T12:13:27.432 CET DEBG ][           org.kde.kstars.indi] - INDI: INDI Server started locally on port  7624
+[2025-11-17T12:13:27.432 CET DEBG ][           org.kde.kstars.indi] - INDI Server Started?  true
+[2025-11-17T12:13:27.432 CET DEBG ][           org.kde.kstars.indi] - Starting INDI Driver "indi_simulator_ccd"
+[2025-11-17T12:13:27.436 CET DEBG ][                org.kde.kstars] - No extensions found
+[2025-11-17T12:13:27.471 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:27.476 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: startup: /usr/bin/indiserver -v -p 7624 -m 1024 -r 0 -f /tmp/indififo01b111e2"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: listening to port 7624 on fd 5"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: Local server: listening on local domain at: @/tmp/indiserver"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: FIFO: start indi_simulator_ccd"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: FIFO: Starting driver indi_simulator_ccd"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: Driver indi_simulator_ccd: pid=39743 rfd=9 wfd=9 efd=10"
+[2025-11-17T12:13:27.478 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  ""
+[2025-11-17T12:13:27.570 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:13:27: Driver indi_simulator_ccd: snooping on SQM.SKY_QUALITY"
+[2025-11-17T12:13:27.570 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  ""
+[2025-11-17T12:13:32.721 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:37.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:42.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:47.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:52.781 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:13:57.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:02.783 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:07.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:12.784 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:16.580 CET DEBG ][           org.kde.kstars.indi] - INDI: Stopping local drivers...
+[2025-11-17T12:14:16.581 CET DEBG ][           org.kde.kstars.indi] - Stopping INDI Driver  "indi_simulator_ccd"
+[2025-11-17T12:14:16.581 CET DEBG ][           org.kde.kstars.indi] - Stopping INDI Driver  "indi_pifinder_lx200"
+[2025-11-17T12:14:16.582 CET DEBG ][           org.kde.kstars.ekos] - Resetting Ekos Manager...
+[2025-11-17T12:14:16.583 CET INFO ][           org.kde.kstars.ekos] - "INDI services stopped."
+[2025-11-17T12:14:16.597 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:14:16: FIFO: stop indi_simulator_ccd"
+[2025-11-17T12:14:16.598 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:14:16: FIFO: Shutting down driver: indi_simulator_ccd"
+[2025-11-17T12:14:16.598 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "<delProperty device=\"CCD Simulator\"/>"
+[2025-11-17T12:14:16.598 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:14:16: FIFO: stop indi_pifinder_lx200 -n \"PiFinder LX200 2 3 4 5 6 7 8 9 10\""
+[2025-11-17T12:14:16.599 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  "2025-11-17T11:14:16: With name: PiFinder LX200 2 3 4 5 6 7 8 9 10"
+[2025-11-17T12:14:16.599 CET DEBG ][           org.kde.kstars.indi] - INDI Server:  ""
+[2025-11-17T12:14:17.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:22.789 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:27.783 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:32.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:37.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:42.784 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:47.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:52.783 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:14:57.787 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:02.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:07.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:12.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:17.795 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:22.793 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:27.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:32.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:37.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:42.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:47.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:52.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:15:57.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:16:02.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:16:07.785 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:16:12.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:16:17.786 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...
+[2025-11-17T12:16:22.782 CET WARN ][           org.kde.kstars.indi] - Driver "PiFinder LX200" failed to start. Retrying in 5 seconds...

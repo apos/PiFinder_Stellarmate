@@ -1,0 +1,635 @@
+############################################################
+Starting PiFinder INDI Driver Build Script
+Timestamp: Mon Nov 17 04:06:25 PM CET 2025
+############################################################
+-> Stopping INDI server...
+indiserver: no process found
+-> Starting standard build procedure...
+-> Integrating local driver with indi-source...
+   Driver subdirectory entry already exists in CMakeLists.txt. Skipping patch.
+-> Removing old driver files...
+-> Building the driver...
+-- Using bundled hidapi
+-- Using bundled httplib
+-- Using bundled json library
+-- Found libnova: /usr/lib/aarch64-linux-gnu/libnova.so
+-- Building INDI Client
+-- Found CFITSIO: /usr/lib/aarch64-linux-gnu/libcfitsio.so
+-- Found libnova: /usr/lib/aarch64-linux-gnu/libnova.so
+-- Found FFTW3: /usr/lib/aarch64-linux-gnu/libfftw3.so
+-- Could NOT find UDEV (missing:  UDEV_LIBRARY UDEV_INCLUDE_DIR) 
+-- Could NOT find LibXISF (missing:  LibXISF_LIBRARY LibXISF_INCLUDE_DIR) 
+-- Could NOT find the ogg and theora libraries (missing:  OGGTHEORA_ogg_LIBRARY OGGTHEORA_theoraenc_LIBRARY OGGTHEORA_theoradec_LIBRARY OGGTHEORA_ogg_INCLUDE_DIR OGGTHEORA_theora_INCLUDE_DIR) 
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Could NOT find GMock (missing: GMOCK_LIBRARY GMOCK_INCLUDE_DIR) 
+-- GTEST not found, not building tests
+-- The following REQUIRED packages have been found:
+
+ * Libev
+ * Threads
+ * ZLIB
+ * CFITSIO, A library for reading and writing data files in FITS (Flexible Image Transport System) data format, <http://heasarc.gsfc.nasa.gov/fitsio/fitsio.html>
+   Provides INDI with FITS I/O support.
+ * Nova, A general purpose, double precision, Celestial Mechanics, Astrometry and Astrodynamics library, <http://libnova.sourceforge.net>
+   Provides INDI with astrodynamics library.
+ * USB1
+ * CURL
+ * GSL
+ * JPEG
+ * FFTW3
+ * Iconv
+
+-- The following OPTIONAL packages have not been found:
+
+ * UDEV
+ * LibXISF
+ * OggTheora
+ * RTLSDR
+ * GTest
+ * GMock
+
+-- The following components are going to be built:
+-- ## INDI Server
+-- ## INDI Drivers, Tools, and Examples
+-- ## INDI Client
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/stellarmate/PiFinder_Stellarmate/indi-source/build
+[  9%] Built target indicore
+[ 18%] Built target indidevice
+[ 22%] Built target indilx200
+[ 22%] Built target indiabstractclient
+[ 22%] Built target sockets
+[ 27%] Built target indiclient_OBJECT
+[ 27%] Built target indiclient
+[ 27%] Built target eventloop
+[ 36%] Built target dsp
+[ 36%] Built target fpack
+[ 40%] Built target indi_hid
+[ 50%] Built target AlignmentDriver
+[100%] Built target indidriver_OBJECT
+[100%] Built target indidriver
+[100%] Building CXX object drivers/telescope/indi_pifinder/CMakeFiles/indi_pifinder_lx200.dir/pifinder_lx200.cpp.o
+[100%] Linking CXX shared module libindi_pifinder_lx200.so
+[100%] Built target indi_pifinder_lx200
+-> Installing the driver...
+[  2%] Built target indicore
+[  4%] Built target indidevice
+[  4%] Built target indiabstractclient
+[  7%] Built target indiserver
+[  7%] Built target sockets
+[  8%] Built target indiclient_OBJECT
+[  8%] Built target indiclientstatic
+[  8%] Built target indiclient
+[  8%] Built target eventloop
+[ 10%] Built target dsp
+[ 10%] Built target fpack
+[ 11%] Built target indi_hid
+[ 11%] Built target indi_hid_test
+[ 13%] Built target AlignmentDriver
+[ 24%] Built target indidriver_OBJECT
+[ 24%] Built target indidriver_STATIC
+[ 24%] Built target indidriver
+[ 24%] Built target AlignmentClient
+[ 24%] Built target indi_Nearest_MathPlugin
+[ 24%] Built target indi_SVD_MathPlugin
+[ 25%] Built target indilx200
+[ 25%] Built target indi_lx200basic
+[ 26%] Built target indi_lx200_TeenAstro
+[ 31%] Built target indi_lx200generic
+[ 32%] Built target indi_celestron_gps
+[ 33%] Built target indi_rainbow_telescope
+[ 33%] Built target indi_crux_mount
+[ 34%] Built target indi_temma_telescope
+[ 34%] Built target indi_paramount_telescope
+[ 34%] Built target indi_astrotrac_telescope
+[ 34%] Built target indi_synscan_telescope
+[ 35%] Built target indi_synscanlegacy_telescope
+[ 35%] Built target indi_skycommander_telescope
+[ 35%] Built target indi_dsc_telescope
+[ 36%] Built target indi_ieqlegacy_telescope
+[ 36%] Built target indi_ieq_telescope
+[ 37%] Built target indi_ioptronv3_telescope
+[ 37%] Built target indi_pmc8_telescope
+[ 37%] Built target indi_simulator_telescope
+[ 37%] Built target indi_script_telescope
+[ 37%] Built target indi_skywatcherAltAzMount
+[ 37%] Built target indi_planewave_telescope
+[ 37%] Built target indi_pifinder_lx200
+[ 37%] Built target indi_simulator_ccd
+[ 37%] Built target indi_simulator_guide
+[ 37%] Built target indi_alpaca_ccd
+[ 37%] Built target indi_simulator_focus
+[ 37%] Built target indi_robo_focus
+[ 37%] Built target indi_ieaf_focus
+[ 38%] Built target indi_fcusb_focus
+[ 39%] Built target indi_nfocus
+[ 40%] Built target indi_nstep_focus
+[ 40%] Built target indi_efa_focus
+[ 40%] Built target indi_celestron_sct_focus
+[ 41%] Built target indi_aaf2_focus
+[ 41%] Built target indi_rbfocus_focus
+[ 41%] Built target indi_astromechfoc
+[ 41%] Built target indi_pinefeat_cef_focus
+[ 42%] Built target indi_moonlite_focus
+[ 42%] Built target indi_moonlitedro_focus
+[ 42%] Built target indi_myfocuserpro2_focus
+[ 42%] Built target indi_onfocus_focus
+[ 42%] Built target indi_teenastro_focus
+[ 42%] Built target indi_sestosenso_focus
+[ 43%] Built target indi_sestosenso2_focus
+[ 44%] Built target indi_esatto_focus
+[ 44%] Built target indi_esattoarco_focus
+[ 44%] Built target indi_rainbowrsf_focus
+[ 45%] Built target indi_dreamfocuser_focus
+[ 45%] Built target indi_lakeside_focus
+[ 45%] Built target indi_dmfc_focus
+[ 45%] Built target indi_pegasus_focuscube
+[ 46%] Built target indi_pegasus_focuscube3
+[ 47%] Built target indi_pegasus_prodigyMF
+[ 47%] Built target indi_pegasus_scopsoag
+[ 48%] Built target indi_usbfocusv3_focus
+[ 48%] Built target indi_microtouch_focus
+[ 48%] Built target indi_steeldrive2_focus
+[ 49%] Built target indi_steeldrive_focus
+[ 49%] Built target indi_alluna_tcs2
+[ 49%] Built target indi_lynx_focus
+[ 50%] Built target indi_perfectstar_focus
+[ 51%] Built target indi_siefs_focus
+[ 51%] Built target indi_hitecastrodc_focus
+[ 52%] Built target indi_deepskydad_af1_focus
+[ 52%] Built target indi_deepskydad_af2_focus
+[ 52%] Built target indi_deepskydad_af3_focus
+[ 52%] Built target indi_smartfocus_focus
+[ 52%] Built target indi_tcfs_focus
+[ 52%] Built target indi_lacerta_mfoc_focus
+[ 53%] Built target indi_lacerta_mfoc_fmc_focus
+[ 54%] Built target indi_activefocuser_focus
+[ 54%] Built target indi_nframe_rotator
+[ 54%] Built target indi_simulator_rotator
+[ 54%] Built target indi_gemini_focus
+[ 55%] Built target indi_iafscaa_focus
+[ 55%] Built target indi_nightcrawler_focus
+[ 56%] Built target indi_pyxis_rotator
+[ 56%] Built target indi_falcon_rotator
+[ 57%] Built target indi_camelot_rotator
+[ 57%] Built target indi_falconv2_rotator
+[ 57%] Built target indi_wanderer_lite_rotator
+[ 57%] Built target indi_wanderer_rotator_mini
+[ 58%] Built target indi_wanderer_rotator_lite_v2
+[ 59%] Built target indi_integra_focus
+[ 59%] Built target indi_deepskydad_fr1
+[ 59%] Built target indi_xagyl_wheel
+[ 60%] Built target indi_simulator_wheel
+[ 60%] Built target indi_manual_wheel
+[ 61%] Built target indi_optec_wheel
+[ 61%] Built target indi_quantum_wheel
+[ 62%] Built target indi_trutech_wheel
+[ 62%] Built target indi_qhycfw1_wheel
+[ 62%] Built target indi_qhycfw2_wheel
+[ 63%] Built target indi_qhycfw3_wheel
+[ 63%] Built target indi_pegasusindigo_wheel
+[ 63%] Built target indi_ioptron_wheel
+[ 64%] Built target indi_simulator_dome
+[ 64%] Built target indi_rolloff_dome
+[ 64%] Built target indi_baader_dome
+[ 65%] Built target indi_domepro2_dome
+[ 66%] Built target indi_rigel_dome
+[ 67%] Built target indi_scopedome_dome
+[ 67%] Built target indi_ddw_dome
+[ 67%] Built target indi_script_dome
+[ 67%] Built target indi_nexdome_beaver
+[ 67%] Built target indi_dragonlair_dome
+[ 67%] Built target indi_universalror_dome
+[ 68%] Built target indi_alpaca_dome
+[ 68%] Built target indi_wanderercover_v4_ec
+[ 68%] Built target indi_wanderercover_v4_pro_ec
+[ 69%] Built target indi_wanderer_eclipse
+[ 69%] Built target indi_astrolink4
+[ 69%] Built target indi_wandererbox_plus_v3
+[ 70%] Built target indi_wandererbox_pro_v3
+[ 70%] Built target indi_wanderer_dew_terminator
+[ 70%] Built target indi_wanderer_cover
+[ 71%] Built target indi_skysafari
+[ 72%] Built target indi_watchdog
+[ 73%] Built target indi_safetymonitor
+[ 73%] Built target indi_flipflat
+[ 74%] Built target indi_simulator_lightpanel
+[ 74%] Built target indi_simulator_dustcover
+[ 75%] Built target indi_Excalibur
+[ 76%] Built target indi_snapcap
+[ 76%] Built target indi_astromech_lpm
+[ 77%] Built target indi_astrolink4mini2
+[ 77%] Built target indi_sqm_weather
+[ 78%] Built target indi_simulator_sqm
+[ 79%] Built target indi_astrometry
+[ 80%] Built target indi_star2000
+[ 80%] Built target indi_arduinost4
+[ 81%] Built target indi_planewave_deltat
+[ 81%] Built target indi_gpusb
+[ 81%] Built target indi_joystick
+[ 82%] Built target indi_simulator_gps
+[ 83%] Built target indi_deepskydad_fp
+[ 84%] Built target indi_giotto
+[ 85%] Built target indi_alto
+[ 85%] Built target indi_dragon_light
+[ 86%] Built target indi_gemini_flatpanel
+[ 86%] Built target indi_terrans_powerboxgo_v2
+[ 86%] Built target indi_terrans_powerboxpro_v2
+[ 86%] Built target indi_pegasus_upb
+[ 86%] Built target indi_pegasus_ppb
+[ 86%] Built target indi_pegasus_ppba
+[ 87%] Built target indi_pegasus_spb
+[ 88%] Built target indi_ups_safety
+[ 88%] Built target indi_usbdewpoint
+[ 88%] Built target indi_myDewControllerPro
+[ 89%] Built target indi_cheapodc
+[ 90%] Built target indi_mydcp4esp32
+[ 90%] Built target indi_celestron_dewpower
+[ 91%] Built target indi_wavesharemodbus_relay
+[ 91%] Built target indi_ipx800v4
+[ 91%] Built target indi_simulator_io
+[ 91%] Built target indi_simulator_receiver
+[ 91%] Built target indi_simulator_weather
+[ 91%] Built target indi_meta_weather
+[ 91%] Built target indi_watcher_weather
+[ 91%] Built target indi_aagsolo_weather
+[ 91%] Built target indi_weather_safety_proxy
+[ 92%] Built target indi_mbox_weather
+[ 92%] Built target indi_uranus_weather
+[ 93%] Built target indi_vantage_weather
+[ 93%] Built target indi_openweathermap_weather
+[ 93%] Built target indi_weather_safety_alpaca
+[ 94%] Built target indi_weatherflow_weather
+[ 94%] Built target indi_imager_agent
+[ 94%] Built target indi_v4l2_ccd
+[ 94%] Built target shelyak_usis
+[ 94%] Built target indi_spectracyber
+[ 95%] Built target indi_alpaca_server
+[ 95%] Built target indi_getprop
+[ 95%] Built target indi_setprop
+[ 96%] Built target indi_eval
+[ 96%] Built target tutorial_one
+[ 97%] Built target tutorial_two
+[ 97%] Built target tutorial_three
+[ 98%] Built target tutorial_four
+[ 98%] Built target tutorial_dome
+[ 98%] Built target tutorial_rain
+[ 99%] Built target tutorial_client
+[100%] Built target tutorial_seven
+[100%] Built target tutorial_eight
+Install the project...
+-- Install configuration: ""
+-- Up-to-date: /usr/include/libindi/indimacros.h
+-- Up-to-date: /usr/include/libindi/indiapi.h
+-- Up-to-date: /usr/include/libindi/indidevapi.h
+-- Up-to-date: /usr/include/libindi/indiutility.h
+-- Up-to-date: /usr/include/libindi/lilxml.h
+-- Up-to-date: /usr/include/libindi/base64.h
+-- Up-to-date: /usr/include/libindi/indicom.h
+-- Up-to-date: /usr/include/libindi/sharedblob.h
+-- Up-to-date: /usr/include/libindi/libastro.h
+-- Up-to-date: /usr/include/libindi/indibase.h
+-- Up-to-date: /usr/include/libindi/indibasetypes.h
+-- Up-to-date: /usr/include/libindi/basedevice.h
+-- Up-to-date: /usr/include/libindi/parentdevice.h
+-- Up-to-date: /usr/include/libindi/indistandardproperty.h
+-- Up-to-date: /usr/include/libindi/indiproperties.h
+-- Up-to-date: /usr/include/libindi/indiproperty.h
+-- Up-to-date: /usr/include/libindi/indipropertybasic.h
+-- Up-to-date: /usr/include/libindi/indipropertyview.h
+-- Up-to-date: /usr/include/libindi/indipropertytext.h
+-- Up-to-date: /usr/include/libindi/indipropertynumber.h
+-- Up-to-date: /usr/include/libindi/indipropertyswitch.h
+-- Up-to-date: /usr/include/libindi/indipropertylight.h
+-- Up-to-date: /usr/include/libindi/indipropertyblob.h
+-- Up-to-date: /usr/include/libindi/indiwidgetview.h
+-- Up-to-date: /usr/include/libindi/indiwidgettraits.h
+-- Up-to-date: /usr/include/libindi/abstractbaseclient.h
+-- Up-to-date: /usr/bin/indiserver
+-- Up-to-date: /usr/include/libindi/baseclient.h
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiclient.a
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiclient.so.2.1.6
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiclient.so.2
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiclient.so
+-- Up-to-date: /usr/include/libindi/eventloop.h
+-- Up-to-date: /usr/include/libindi/dsp.h
+-- Up-to-date: /usr/include/libindi/fits_extensions.h
+-- Up-to-date: /usr/include/libindi/fits.h
+-- Up-to-date: /usr/include/libindi/sdfits.h
+-- Up-to-date: /usr/include/libindi/fitsidi.h
+-- Up-to-date: /usr/include/libindi/indi_hidapi.h
+-- Up-to-date: /usr/bin/indi_hid_test
+-- Up-to-date: /usr/include/libindi/stream/streammanager.h
+-- Up-to-date: /usr/include/libindi/stream/fpsmeter.h
+-- Up-to-date: /usr/include/libindi/stream/uniquequeue.h
+-- Up-to-date: /usr/include/libindi/stream/gammalut16.h
+-- Up-to-date: /usr/include/libindi/stream/jpegutils.h
+-- Up-to-date: /usr/include/libindi/stream/ccvt.h
+-- Up-to-date: /usr/include/libindi/stream/ccvt_types.h
+-- Up-to-date: /usr/include/libindi/stream/encoder/encodermanager.h
+-- Up-to-date: /usr/include/libindi/stream/encoder/encoderinterface.h
+-- Up-to-date: /usr/include/libindi/stream/encoder/rawencoder.h
+-- Up-to-date: /usr/include/libindi/stream/encoder/mjpegencoder.h
+-- Up-to-date: /usr/include/libindi/stream/recorder/recordermanager.h
+-- Up-to-date: /usr/include/libindi/stream/recorder/recorderinterface.h
+-- Up-to-date: /usr/include/libindi/stream/recorder/serrecorder.h
+-- Up-to-date: /usr/include/libindi/v4l2_decode.h
+-- Up-to-date: /usr/include/libindi/v4l2_builtin_decoder.h
+-- Up-to-date: /usr/include/libindi/v4l2_colorspace.h
+-- Up-to-date: /usr/include/libindi/indidriver.h
+-- Up-to-date: /usr/include/libindi/pid.h
+-- Up-to-date: /usr/include/libindi/defaultdevice.h
+-- Up-to-date: /usr/include/libindi/hotplugcapabledevice.h
+-- Up-to-date: /usr/include/libindi/hotplugmanager.h
+-- Up-to-date: /usr/include/libindi/indiccd.h
+-- Up-to-date: /usr/include/libindi/indiccdchip.h
+-- Up-to-date: /usr/include/libindi/indisensorinterface.h
+-- Up-to-date: /usr/include/libindi/indicorrelator.h
+-- Up-to-date: /usr/include/libindi/indidetector.h
+-- Up-to-date: /usr/include/libindi/indispectrograph.h
+-- Up-to-date: /usr/include/libindi/indireceiver.h
+-- Up-to-date: /usr/include/libindi/indifilterwheel.h
+-- Up-to-date: /usr/include/libindi/indifocuserinterface.h
+-- Up-to-date: /usr/include/libindi/indigpsinterface.h
+-- Up-to-date: /usr/include/libindi/indiweatherinterface.h
+-- Up-to-date: /usr/include/libindi/indifocuser.h
+-- Up-to-date: /usr/include/libindi/indirotator.h
+-- Up-to-date: /usr/include/libindi/inditelescope.h
+-- Up-to-date: /usr/include/libindi/indiguiderinterface.h
+-- Up-to-date: /usr/include/libindi/indifilterinterface.h
+-- Up-to-date: /usr/include/libindi/indirotatorinterface.h
+-- Up-to-date: /usr/include/libindi/indiinputinterface.h
+-- Up-to-date: /usr/include/libindi/indioutputinterface.h
+-- Up-to-date: /usr/include/libindi/indipowerinterface.h
+-- Up-to-date: /usr/include/libindi/inditimer.h
+-- Up-to-date: /usr/include/libindi/indielapsedtimer.h
+-- Up-to-date: /usr/include/libindi/indisinglethreadpool.h
+-- Up-to-date: /usr/include/libindi/indidome.h
+-- Up-to-date: /usr/include/libindi/indigps.h
+-- Up-to-date: /usr/include/libindi/indilightboxinterface.h
+-- Up-to-date: /usr/include/libindi/indidustcapinterface.h
+-- Up-to-date: /usr/include/libindi/indiweather.h
+-- Up-to-date: /usr/include/libindi/indilogger.h
+-- Up-to-date: /usr/include/libindi/indicontroller.h
+-- Up-to-date: /usr/include/libindi/indiimuinterface.h
+-- Up-to-date: /usr/include/libindi/indiimu.h
+-- Up-to-date: /usr/include/libindi/indiusbdevice.h
+-- Up-to-date: /usr/include/libindi/fitskeyword.h
+-- Up-to-date: /usr/include/libindi/connectionplugins/connectioninterface.h
+-- Up-to-date: /usr/include/libindi/connectionplugins/connectionserial.h
+-- Up-to-date: /usr/include/libindi/connectionplugins/connectiontcp.h
+-- Up-to-date: /usr/include/libindi/connectionplugins/connectioni2c.h
+-- Up-to-date: /usr/include/libindi/dsp/manager.h
+-- Up-to-date: /usr/include/libindi/dsp/dspinterface.h
+-- Up-to-date: /usr/include/libindi/dsp/transforms.h
+-- Up-to-date: /usr/include/libindi/dsp/convolution.h
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindidriver.a
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindidriver.so.2.1.6
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindidriver.so.2
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindidriver.so
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiAlignmentDriver.so.2.1.6
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiAlignmentDriver.so.2
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiAlignmentDriver.so
+-- Up-to-date: /usr/include/libindi/alignment/AlignmentSubsystemForMathPlugins.h
+-- Up-to-date: /usr/include/libindi/alignment/AlignmentSubsystemForDrivers.h
+-- Up-to-date: /usr/include/libindi/alignment/BasicMathPlugin.h
+-- Up-to-date: /usr/include/libindi/alignment/BuiltInMathPlugin.h
+-- Up-to-date: /usr/include/libindi/alignment/NearestMathPlugin.h
+-- Up-to-date: /usr/include/libindi/alignment/ClientAPIForAlignmentDatabase.h
+-- Up-to-date: /usr/include/libindi/alignment/ClientAPIForMathPluginManagement.h
+-- Up-to-date: /usr/include/libindi/alignment/Common.h
+-- Up-to-date: /usr/include/libindi/alignment/ConvexHull.h
+-- Up-to-date: /usr/include/libindi/alignment/DriverCommon.h
+-- Up-to-date: /usr/include/libindi/alignment/InMemoryDatabase.h
+-- Up-to-date: /usr/include/libindi/alignment/MathPlugin.h
+-- Up-to-date: /usr/include/libindi/alignment/MathPluginManagement.h
+-- Up-to-date: /usr/include/libindi/alignment/SVDMathPlugin.h
+-- Up-to-date: /usr/include/libindi/alignment/TelescopeDirectionVectorSupportFunctions.h
+-- Up-to-date: /usr/include/libindi/alignment/MapPropertiesToInMemoryDatabase.h
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindiAlignmentClient.a
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/indi/MathPlugins/libindi_Nearest_MathPlugin.so
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/indi/MathPlugins/libindi_SVD_MathPlugin.so
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindilx200.so.2.1.6
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindilx200.so.2
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/libindilx200.so
+-- Up-to-date: /usr/include/libindi/mounts/lx200telescope.h
+-- Up-to-date: /usr/include/libindi/mounts/lx200driver.h
+-- Up-to-date: /usr/bin/indi_lx200basic
+-- Up-to-date: /usr/bin/indi_lx200_TeenAstro
+-- Up-to-date: /usr/bin/indi_lx200generic
+-- Up-to-date: /usr/bin/indi_celestron_gps
+-- Up-to-date: /usr/bin/indi_rainbow_telescope
+-- Up-to-date: /usr/bin/indi_crux_mount
+-- Up-to-date: /usr/bin/indi_temma_telescope
+-- Up-to-date: /usr/bin/indi_paramount_telescope
+-- Up-to-date: /usr/bin/indi_astrotrac_telescope
+-- Up-to-date: /usr/bin/indi_synscan_telescope
+-- Up-to-date: /usr/bin/indi_synscanlegacy_telescope
+-- Up-to-date: /usr/bin/indi_skycommander_telescope
+-- Up-to-date: /usr/bin/indi_dsc_telescope
+-- Up-to-date: /usr/bin/indi_ieqlegacy_telescope
+-- Up-to-date: /usr/bin/indi_ieq_telescope
+-- Up-to-date: /usr/bin/indi_ioptronv3_telescope
+-- Up-to-date: /usr/bin/indi_pmc8_telescope
+-- Up-to-date: /usr/bin/indi_simulator_telescope
+-- Up-to-date: /usr/bin/indi_script_telescope
+-- Up-to-date: /usr/bin/indi_skywatcherAltAzMount
+-- Up-to-date: /usr/bin/indi_planewave_telescope
+-- Installing: /usr/lib/aarch64-linux-gnu/libindi_pifinder_lx200.so
+-- Set runtime path of "/usr/lib/aarch64-linux-gnu/libindi_pifinder_lx200.so" to ""
+-- Installing: /usr/share/indi/indi_pifinder_lx200_driver.xml
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200classic  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200autostar  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200_16  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200gps  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200ap_v2  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200ap_legacy  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200gemini  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200zeq25  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200am5  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200gotonova  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200pulsar2  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200fs2  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200ss2000pc  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200_OnStep  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200_OpenAstroTech  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200_pegasus_nyx101  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_lx200_10micron  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_ioptronHC8406  2>&1
+running /usr/bin/cmake -E create_symlink indi_lx200generic /usr/bin/indi_eq500x_telescope  2>&1
+-- Up-to-date: /usr/bin/indi_simulator_ccd
+-- Up-to-date: /usr/bin/indi_simulator_guide
+-- Up-to-date: /usr/bin/indi_alpaca_ccd
+-- Up-to-date: /usr/bin/indi_simulator_focus
+-- Up-to-date: /usr/bin/indi_robo_focus
+-- Up-to-date: /usr/bin/indi_ieaf_focus
+-- Up-to-date: /usr/bin/indi_fcusb_focus
+-- Up-to-date: /usr/bin/indi_nfocus
+-- Up-to-date: /usr/bin/indi_nstep_focus
+-- Up-to-date: /usr/bin/indi_efa_focus
+-- Up-to-date: /usr/bin/indi_celestron_sct_focus
+-- Up-to-date: /usr/bin/indi_aaf2_focus
+-- Up-to-date: /usr/bin/indi_rbfocus_focus
+-- Up-to-date: /usr/bin/indi_astromechfoc
+-- Up-to-date: /usr/bin/indi_pinefeat_cef_focus
+-- Up-to-date: /usr/bin/indi_moonlite_focus
+-- Up-to-date: /usr/bin/indi_moonlitedro_focus
+-- Up-to-date: /usr/bin/indi_myfocuserpro2_focus
+-- Up-to-date: /usr/bin/indi_onfocus_focus
+-- Up-to-date: /usr/bin/indi_teenastro_focus
+-- Up-to-date: /usr/bin/indi_sestosenso_focus
+-- Up-to-date: /usr/bin/indi_sestosenso2_focus
+-- Up-to-date: /usr/bin/indi_esatto_focus
+-- Up-to-date: /usr/bin/indi_esattoarco_focus
+-- Up-to-date: /usr/bin/indi_rainbowrsf_focus
+-- Up-to-date: /usr/bin/indi_dreamfocuser_focus
+-- Up-to-date: /usr/bin/indi_lakeside_focus
+-- Up-to-date: /usr/bin/indi_dmfc_focus
+-- Up-to-date: /usr/bin/indi_pegasus_focuscube
+-- Up-to-date: /usr/bin/indi_pegasus_focuscube3
+-- Up-to-date: /usr/bin/indi_pegasus_prodigyMF
+-- Up-to-date: /usr/bin/indi_pegasus_scopsoag
+-- Up-to-date: /usr/bin/indi_usbfocusv3_focus
+-- Up-to-date: /usr/bin/indi_microtouch_focus
+-- Up-to-date: /usr/bin/indi_steeldrive2_focus
+-- Up-to-date: /usr/bin/indi_steeldrive_focus
+-- Up-to-date: /usr/bin/indi_alluna_tcs2
+-- Up-to-date: /usr/bin/indi_lynx_focus
+-- Up-to-date: /usr/bin/indi_perfectstar_focus
+-- Up-to-date: /usr/bin/indi_siefs_focus
+-- Up-to-date: /usr/bin/indi_hitecastrodc_focus
+-- Up-to-date: /usr/bin/indi_deepskydad_af1_focus
+-- Up-to-date: /usr/bin/indi_deepskydad_af2_focus
+-- Up-to-date: /usr/bin/indi_deepskydad_af3_focus
+-- Up-to-date: /usr/bin/indi_smartfocus_focus
+-- Up-to-date: /usr/bin/indi_tcfs_focus
+-- Up-to-date: /usr/bin/indi_lacerta_mfoc_focus
+-- Up-to-date: /usr/bin/indi_lacerta_mfoc_fmc_focus
+-- Up-to-date: /usr/bin/indi_activefocuser_focus
+running /usr/bin/cmake -E create_symlink indi_tcfs_focus /usr/bin/indi_tcfs3_focus  2>&1
+-- Up-to-date: /usr/bin/indi_nframe_rotator
+-- Up-to-date: /usr/bin/indi_simulator_rotator
+-- Up-to-date: /usr/bin/indi_gemini_focus
+-- Up-to-date: /usr/bin/indi_iafscaa_focus
+-- Up-to-date: /usr/bin/indi_nightcrawler_focus
+-- Up-to-date: /usr/bin/indi_pyxis_rotator
+-- Up-to-date: /usr/bin/indi_falcon_rotator
+-- Up-to-date: /usr/bin/indi_camelot_rotator
+-- Up-to-date: /usr/bin/indi_falconv2_rotator
+-- Up-to-date: /usr/bin/indi_wanderer_lite_rotator
+-- Up-to-date: /usr/bin/indi_wanderer_rotator_mini
+-- Up-to-date: /usr/bin/indi_wanderer_rotator_lite_v2
+-- Up-to-date: /usr/bin/indi_integra_focus
+-- Up-to-date: /usr/bin/indi_deepskydad_fr1
+-- Up-to-date: /usr/bin/indi_xagyl_wheel
+-- Up-to-date: /usr/bin/indi_simulator_wheel
+-- Up-to-date: /usr/bin/indi_manual_wheel
+-- Up-to-date: /usr/bin/indi_optec_wheel
+-- Up-to-date: /usr/bin/indi_quantum_wheel
+-- Up-to-date: /usr/bin/indi_trutech_wheel
+-- Up-to-date: /usr/bin/indi_qhycfw1_wheel
+-- Up-to-date: /usr/bin/indi_qhycfw2_wheel
+-- Up-to-date: /usr/bin/indi_qhycfw3_wheel
+-- Up-to-date: /usr/bin/indi_pegasusindigo_wheel
+-- Up-to-date: /usr/bin/indi_ioptron_wheel
+-- Up-to-date: /usr/bin/indi_simulator_dome
+-- Up-to-date: /usr/bin/indi_rolloff_dome
+-- Up-to-date: /usr/bin/indi_baader_dome
+-- Up-to-date: /usr/bin/indi_domepro2_dome
+-- Up-to-date: /usr/bin/indi_rigel_dome
+-- Up-to-date: /usr/bin/indi_scopedome_dome
+-- Up-to-date: /usr/bin/indi_ddw_dome
+-- Up-to-date: /usr/bin/indi_script_dome
+-- Up-to-date: /usr/bin/indi_nexdome_beaver
+-- Up-to-date: /usr/bin/indi_dragonlair_dome
+-- Up-to-date: /usr/bin/indi_universalror_dome
+-- Up-to-date: /usr/bin/indi_alpaca_dome
+-- Up-to-date: /lib/udev/rules.d/99-indi_auxiliary.rules
+-- Up-to-date: /usr/bin/indi_wanderercover_v4_ec
+-- Up-to-date: /usr/bin/indi_wanderercover_v4_pro_ec
+-- Up-to-date: /usr/bin/indi_wanderer_eclipse
+-- Up-to-date: /usr/bin/indi_astrolink4
+-- Up-to-date: /usr/bin/indi_wandererbox_plus_v3
+-- Up-to-date: /usr/bin/indi_wandererbox_pro_v3
+-- Up-to-date: /usr/bin/indi_wanderer_dew_terminator
+-- Up-to-date: /usr/bin/indi_wanderer_cover
+-- Up-to-date: /usr/bin/indi_skysafari
+-- Up-to-date: /usr/bin/indi_watchdog
+-- Up-to-date: /usr/bin/indi_safetymonitor
+-- Up-to-date: /usr/bin/indi_flipflat
+-- Up-to-date: /usr/bin/indi_simulator_lightpanel
+-- Up-to-date: /usr/bin/indi_simulator_dustcover
+-- Up-to-date: /usr/bin/indi_Excalibur
+-- Up-to-date: /usr/bin/indi_snapcap
+-- Up-to-date: /usr/bin/indi_astromech_lpm
+-- Up-to-date: /usr/bin/indi_astrolink4mini2
+-- Up-to-date: /usr/bin/indi_sqm_weather
+-- Up-to-date: /usr/bin/indi_simulator_sqm
+-- Up-to-date: /usr/bin/indi_astrometry
+-- Up-to-date: /usr/bin/indi_star2000
+-- Up-to-date: /usr/bin/indi_arduinost4
+-- Up-to-date: /usr/bin/indi_planewave_deltat
+-- Up-to-date: /usr/bin/indi_gpusb
+-- Up-to-date: /usr/bin/indi_joystick
+-- Up-to-date: /usr/bin/indi_simulator_gps
+-- Up-to-date: /usr/bin/indi_deepskydad_fp
+-- Up-to-date: /usr/bin/indi_giotto
+-- Up-to-date: /usr/bin/indi_alto
+-- Up-to-date: /usr/bin/indi_dragon_light
+-- Up-to-date: /usr/bin/indi_gemini_flatpanel
+-- Up-to-date: /usr/bin/indi_terrans_powerboxgo_v2
+-- Up-to-date: /usr/bin/indi_terrans_powerboxpro_v2
+-- Up-to-date: /usr/bin/indi_pegasus_upb
+-- Up-to-date: /usr/bin/indi_pegasus_ppb
+-- Up-to-date: /usr/bin/indi_pegasus_ppba
+-- Up-to-date: /usr/bin/indi_pegasus_spb
+-- Up-to-date: /usr/bin/indi_ups_safety
+-- Up-to-date: /usr/bin/indi_usbdewpoint
+-- Up-to-date: /usr/bin/indi_myDewControllerPro
+-- Up-to-date: /usr/bin/indi_cheapodc
+-- Up-to-date: /usr/bin/indi_mydcp4esp32
+-- Up-to-date: /usr/bin/indi_celestron_dewpower
+-- Up-to-date: /usr/bin/indi_wavesharemodbus_relay
+-- Up-to-date: /usr/bin/indi_ipx800v4
+-- Up-to-date: /usr/bin/indi_simulator_io
+-- Up-to-date: /usr/bin/indi_simulator_receiver
+-- Up-to-date: /usr/bin/indi_simulator_weather
+-- Up-to-date: /usr/bin/indi_meta_weather
+-- Up-to-date: /usr/bin/indi_watcher_weather
+-- Up-to-date: /usr/bin/indi_aagsolo_weather
+-- Up-to-date: /usr/bin/indi_weather_safety_proxy
+-- Up-to-date: /usr/bin/indi_mbox_weather
+-- Up-to-date: /usr/bin/indi_uranus_weather
+-- Up-to-date: /usr/bin/indi_vantage_weather
+-- Up-to-date: /usr/bin/indi_openweathermap_weather
+-- Up-to-date: /usr/bin/indi_weather_safety_alpaca
+-- Up-to-date: /usr/bin/indi_weatherflow_weather
+-- Up-to-date: /usr/bin/indi_imager_agent
+-- Up-to-date: /usr/bin/indi_v4l2_ccd
+-- Up-to-date: /lib/udev/rules.d/80-dbk21-camera.rules
+-- Up-to-date: /usr/bin/shelyak_usis
+-- Up-to-date: /usr/share/indi/shelyak_boards.json
+-- Up-to-date: /usr/bin/indi_spectracyber
+-- Up-to-date: /usr/bin/indi_alpaca_server
+-- Up-to-date: /usr/share/indi/drivers.xml
+-- Up-to-date: /usr/share/indi/indi_tcfs_sk.xml
+-- Up-to-date: /usr/bin/indi_getprop
+-- Up-to-date: /usr/bin/indi_setprop
+-- Up-to-date: /usr/bin/indi_eval
+-- Up-to-date: /usr/lib/aarch64-linux-gnu/pkgconfig/libindi.pc
+-- Up-to-date: /usr/include/libindi/inicpp.h
+-- Up-to-date: /usr/include/libindi/indiversion.h
+-- Up-to-date: /usr/include/libindi/httplib.h
+-- Up-to-date: /usr/include/libindi/indijson.hpp
+-> Build and installation complete.
+-> Preparing for interactive test session...
+   -> Deleting old KStars logs for today to ensure a clean test...
+   -> Old logs deleted.
+
+########################### ACTION REQUIRED ############################
+Please start KStars/Ekos now and connect to your profile containing
+the 'PiFinder LX200' driver. Perform any tests you need.
+The script will wait for 30 seconds after you press ENTER.
+######################################################################
+Press ENTER to continue...
