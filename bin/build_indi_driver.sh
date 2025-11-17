@@ -158,8 +158,7 @@ cmake ..
 make indi_pifinder_lx200
 
 echo "-> Installing the driver..."
-sudo cp drivers/telescope/indi_pifinder/indi_pifinder_lx200 /usr/bin/
-sudo cp ../drivers/telescope/indi_pifinder/indi_pifinder_lx200_driver.xml /usr/share/indi/
+sudo make install
 
 echo "-> Build and installation complete."
 
