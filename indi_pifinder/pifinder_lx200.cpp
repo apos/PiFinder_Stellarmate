@@ -252,7 +252,7 @@ bool LX200_PIFINDER::updateProperties()
 }
 
 // Called by LX200Generic::updateProperties
-bool pifinder_lx200::getBasicData()
+bool LX200_PIFINDER::getBasicData()
 {
     return LX200Generic::getBasicData();
 }
