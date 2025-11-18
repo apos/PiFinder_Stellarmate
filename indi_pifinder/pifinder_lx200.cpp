@@ -100,19 +100,8 @@ bool LX200_PIFINDER::Handshake()
         return true;
     }
 
-    // Set Ultra Precision Mode #:U2# , replies like 15:58:19.49 instead of 15:21.2
-    LOG_INFO("Setting Ultra Precision Mode.");
-    // #:U2#
-    // Set ultra precision mode. In ultra precision mode, extra decimal digits are returned for
-    // some commands, and there is no more difference between different emulation modes.
-    // Returns: nothing
-    // Available from version 2.10.
-    if (setCommandInt(fd, 2, "#:U") < 0)
-    {
-        LOG_ERROR("Failed to set Ultra Precision Mode.");
-        return false;
-    }
-
+    // The PiFinder server has no handshake. Just return true.
+    LOG_INFO("PiFinder LX200: No handshake required.");
     return true;
 }
 
