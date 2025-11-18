@@ -110,17 +110,20 @@ fi
 
 echo "-> Build and installation complete."
 
-# --- KStars Log Inspection ---
+# --- KStars Log Management for Testing ---
 KSTARS_BASE_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
+TEMP_KSTARS_LOG_DEST="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
 
-echo "-> Searching for the latest KStars log file..."
+echo "-> Waiting 30 seconds for driver testing and log generation..."
+sleep 30
 
 # Find the newest log file within any dated subdirectory
 LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -name "log_*.txt" -printf "%T@ %p
 " | sort -n | tail -1 | cut -d' ' -f2-)
 
 if [ -n "${LATEST_KSTARS_LOG}" ] && [ -f "${LATEST_KSTARS_LOG}" ]; then
-    echo "-> Found latest KStars log: ${LATEST_KSTARS_LOG}"
+    echo "-> Copying latest KStars log (${LATEST_KSTARS_LOG}) to ${TEMP_KSTARS_LOG_DEST} for inspection..."
+    sudo cp "${LATEST_KSTARS_LOG}" "${TEMP_KSTARS_LOG_DEST}"
     echo "-> Appending KStars log to the build log (${LOG_FILE})..."
     echo "" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
