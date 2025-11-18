@@ -110,29 +110,31 @@ fi
 
 echo "-> Build and installation complete."
 
-# --- KStars Log Inspection ---
+# --- KStars Log Management for Testing ---
 KSTARS_BASE_LOG_DIR="/home/stellarmate/.indi/logs"
+
+read -p "Press Enter to continue and then wait 30 seconds for driver testing and log generation..."
+sleep 30
 
 echo "-> Searching for the latest INDI driver log file..."
 
 # Find the newest log file within the driver-specific subdirectory
-LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -path "*/indi_pifinder_lx200/log_*.log" -printf "%T@ %p
+LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -path "*/indi_pifinder_lx200/indi_pifinder_lx200_*.log" -printf "%T@ %p
 " | sort -n | tail -1 | cut -d' ' -f2-)
 
 if [ -n "${LATEST_KSTARS_LOG}" ] && [ -f "${LATEST_KSTARS_LOG}" ]; then
-    echo "-> Copying latest KStars log (${LATEST_KSTARS_LOG}) to ${TEMP_KSTARS_LOG_DEST} for inspection..."
-    sudo cp "${LATEST_KSTARS_LOG}" "${TEMP_KSTARS_LOG_DEST}"
-    echo "-> Appending KStars log to the build log (${LOG_FILE})..."
+    echo "-> Found latest INDI driver log: ${LATEST_KSTARS_LOG}"
+    echo "-> Appending INDI driver log to the build log (${LOG_FILE})..."
     echo "" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- KStars Log Start: ${LATEST_KSTARS_LOG} ---" | sudo tee -a "${LOG_FILE}"
+    echo "--- INDI Driver Log Start: ${LATEST_KSTARS_LOG} ---" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
     sudo cat "${LATEST_KSTARS_LOG}" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- KStars Log End ---" | sudo tee -a "${LOG_FILE}"
+    echo "--- INDI Driver Log End ---" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
 else
-    echo "-> Warning: No KStars log file found in ${KSTARS_BASE_LOG_DIR}. Skipping."
+    echo "-> Warning: No INDI driver log file found in ${KSTARS_BASE_LOG_DIR}. Skipping log append."
 fi
 
 echo "############################################################"
