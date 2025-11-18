@@ -22,6 +22,8 @@ TELESCOPE_CMAKE_FILE="${INDI_TELESCOPE_DIR}/CMakeLists.txt"
 SOURCE_ENTRY="${DRIVER_NAME}.cpp"
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
 DRIVERS_XML_BACKUP="/tmp/drivers.xml.pifinder.bak"
+SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
+DRIVERS_XML_BACKUP="/tmp/drivers.xml.pifinder.bak"
 
 echo "-> Committing changes in ${DRIVER_SOURCE_DIR}..."
 cd "${DRIVER_SOURCE_DIR}"
@@ -87,20 +89,24 @@ sudo chmod +x "/usr/bin/indi_lx200generic" # Ensure it's executable
 echo "   Creating symbolic link for ${DRIVER_NAME}..."
 sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${DRIVER_NAME}
 
-XML_FILENAME="${DRIVER_NAME}_driver.xml"
-XML_SOURCE_FILE="${DRIVER_SOURCE_DIR}/indi_${XML_FILENAME}.in"
-XML_DEST_FILE="/usr/share/indi/${XML_FILENAME}"
+echo "-> Injecting driver XML entry into /usr/share/indi/drivers.xml..."
+# Backup drivers.xml before modifying
+sudo cp "${SYSTEM_DRIVERS_XML}" "${DRIVERS_XML_BACKUP}"
 
-echo "   Installing driver-specific XML file to ${XML_DEST_FILE}"
-sudo cp "${XML_SOURCE_FILE}" "${XML_DEST_FILE}"
+# Use sed to insert the driver entry after the <devGroup group="Telescopes"> line
+# The XML entry needs to be escaped for sed
+DRIVER_XML_ENTRY="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\\n            <driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>\\n            <version>1.0</version>\\n        </device>"
 
-INDI_VERSION_MAJOR=$(grep "#define INDI_VERSION_MAJOR" indiversion.h | awk '{print $3}')
-INDI_VERSION_MINOR=$(grep "#define INDI_VERSION_MINOR" indiversion.h | awk '{print $3}')
+# Check if the entry already exists to prevent duplicates
+if ! grep -qF "PiFinder LX200" "${SYSTEM_DRIVERS_XML}"; then
+    sudo sed -i "/<devGroup group=\"Telescopes\">/a ${DRIVER_XML_ENTRY}" "${SYSTEM_DRIVERS_XML}"
+    echo "   PiFinder LX200 driver entry added."
+else
+    echo "   PiFinder LX200 driver entry already exists. Skipping injection."
+fi
 
-echo "   Configuring XML file with version ${INDI_VERSION_MAJOR}.${INDI_VERSION_MINOR}"
-sudo sed -i "s|@INDI_DRIVERS_DIR@|/usr/bin|g" "${XML_DEST_FILE}"
-sudo sed -i "s|@INDI_VERSION_MAJOR@|${INDI_VERSION_MAJOR}|g" "${XML_DEST_FILE}"
-sudo sed -i "s|@INDI_VERSION_MINOR@|${INDI_VERSION_MINOR}|g" "${XML_DEST_FILE}"
+# Restore drivers.xml from backup (this is now redundant as we are modifying it directly, but keeping for safety if future changes revert to full file replacement)
+# sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
 
 echo "-> Build and installation complete."
 echo "############################################################"
