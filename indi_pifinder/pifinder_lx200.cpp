@@ -254,7 +254,35 @@ bool LX200_PIFINDER::updateProperties()
 // Called by LX200Generic::updateProperties
 void LX200_PIFINDER::getBasicData()
 {
-    return LX200Generic::getBasicData();
+    DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "<%s>", __FUNCTION__);
+
+    if (!isSimulation())
+    {
+        // We don't need to get any specific data from the PiFinder on connection.
+        // We just need to ensure we don't call the parent method which sends
+        // unsupported commands.
+        checkLX200EquatorialFormat(fd);
+        timeFormat = LX200_24;
+    }
+
+    if (sendLocationOnStartup)
+    {
+        LOG_INFO("sendLocationOnStartup is enabled, call sendScopeLocation.");
+        sendScopeLocation();
+    }
+    else
+    {
+        LOG_INFO("sendLocationOnStartup is disabled, do not call sendScopeLocation.");
+    }
+    if (sendTimeOnStartup)
+    {
+        LOG_INFO("sendTimeOnStartup is enabled, call sendScopeTime.");
+        sendScopeTime();
+    }
+    else
+    {
+        LOG_INFO("sendTimeOnStartup is disabled, do not call sendScopeTime.");
+    }
 }
 
 // Called by our getBasicData
