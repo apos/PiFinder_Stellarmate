@@ -111,30 +111,31 @@ fi
 echo "-> Build and installation complete."
 
 # --- KStars Log Management for Testing ---
-KSTARS_BASE_LOG_DIR="/home/stellarmate/.indi/logs"
+INDI_LOG_DIR="/home/stellarmate/.indi/logs"
+KSTARS_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
 
 read -p "Press Enter to continue and then wait 30 seconds for driver testing and log generation..."
 sleep 30
 
-echo "-> Searching for the latest INDI driver log file..."
+echo "-> Searching for the latest INDI driver log file in all known locations..."
 
-# Find the newest log file within the driver-specific subdirectory
-LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -path "*/indi_pifinder_lx200/indi_pifinder_lx200_*.log" -printf "%T@ %p
-" | sort -n | tail -1 | cut -d' ' -f2-)
+# Find the newest log file across both possible log directories
+LATEST_LOG_FILE=$(sudo find "${INDI_LOG_DIR}" "${KSTARS_LOG_DIR}" -type f \( -name "indi_pifinder_lx200_*.log" -o -name "log_*.txt" \) -printf "%T@ %p
+" 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
 
-if [ -n "${LATEST_KSTARS_LOG}" ] && [ -f "${LATEST_KSTARS_LOG}" ]; then
-    echo "-> Found latest INDI driver log: ${LATEST_KSTARS_LOG}"
-    echo "-> Appending INDI driver log to the build log (${LOG_FILE})..."
+if [ -n "${LATEST_LOG_FILE}" ] && [ -f "${LATEST_LOG_FILE}" ]; then
+    echo "-> Found latest log: ${LATEST_LOG_FILE}"
+    echo "-> Appending log to the build log (${LOG_FILE})..."
     echo "" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- INDI Driver Log Start: ${LATEST_KSTARS_LOG} ---" | sudo tee -a "${LOG_FILE}"
+    echo "--- Captured Log Start: ${LATEST_LOG_FILE} ---" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    sudo cat "${LATEST_KSTARS_LOG}" | sudo tee -a "${LOG_FILE}"
+    sudo cat "${LATEST_LOG_FILE}" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- INDI Driver Log End ---" | sudo tee -a "${LOG_FILE}"
+    echo "--- Captured Log End ---" | sudo tee -a "${LOG_FILE}"
     echo "############################################################" | sudo tee -a "${LOG_FILE}"
 else
-    echo "-> Warning: No INDI driver log file found in ${KSTARS_BASE_LOG_DIR}. Skipping log append."
+    echo "-> Warning: No INDI driver or KStars log file found. Skipping log append."
 fi
 
 echo "############################################################"
