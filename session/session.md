@@ -2,35 +2,37 @@
 
 ## Key Knowledge & State
 
-*   **Objective**: Build a standalone INDI driver named `pifinder_lx200` for the PiFinder device.
-*   **Development Environment**:
-    *   Driver source code is developed locally in the `~/PiFinder_Stellarmate/indi_pifinder/` directory.
-    *   Compilation occurs within the `~/PiFinder_Stellarmate/indi-source/` directory, which is a clone of the official `indilib` repository.
-*   **Core Problem**: The driver was successfully compiling and installing, but it was not visible in the Ekos device list. The root cause was a corrupted or empty `indi_pifinder_lx200_driver.xml.in` template file. This caused CMake's `configure_file` command to generate an empty XML file, which the INDI server silently ignored.
-*   **Current Strategy**:
-    *   The build process now uses `cmake -DCMAKE_INSTALL_PREFIX=/usr ..` followed by `sudo make install`. This is the correct and most robust method to ensure the driver's `.so` library and `.xml` file are installed into the standard system directories (`/usr/lib/aarch64-linux-gnu/` and `/usr/share/indi/`) that the pre-installed INDI server expects.
-    *   The corrupted XML template has been replaced with a correct, functional version that properly defines the driver for the INDI system.
-*   **Important Rules**:
-    *   **CRITICAL RULE**: NEVER commit changes to the `indi-source` directory. It is a temporary build environment. All driver source code must reside in the `indi_pifinder` directory, and the `build_indi_driver.sh` script is responsible for preparing the `indi-source` directory at build time.
-    *   **COMMIT RULE**: After any successful code modification, a `git commit -a -m "..."` must be performed to create a stable restore point. This is critical for reverting to a known-good state if a change introduces a problem.
+*   **Objective**: Build and correctly register the `pifinder_lx200` INDI driver so it is visible and usable in Ekos.
+*   **Core Problem**: The driver was failing to build and start due to a misunderstanding of the INDI build system. Initial attempts to build a standalone executable failed because the `LX200Generic` base class is not exposed as a linkable library.
+*   **Current Strategy**: The driver is now correctly integrated directly into the existing `indi_lx200generic` executable. This is the standard method for drivers inheriting from `LX200Generic`. The build script now patches the main INDI `CMakeLists.txt` to include our driver's source code in that shared executable.
+*   **Build Process**: The `build_indi_driver.sh` script automates the entire process:
+    1.  Copies the driver's `.cpp` and `.h` files into the `indi-source` tree.
+    2.  Patches `indi-source/drivers/telescope/CMakeLists.txt` to add `pifinder_lx200.cpp` to the `add_executable(indi_lx200generic ...)` definition.
+    3.  Builds the `indi_lx200generic` target.
+    4.  Installs the resulting executable.
+    5.  Idempotently adds a device entry for the "PiFinder LX200" to `/usr/share/indi/drivers.xml`, pointing it to the "LX200 Generic" driver executable.
+
+## Important Rules
+
+*   **CRITICAL RULE**: NEVER commit changes to the `indi-source` directory. It is a temporary build environment.
+*   **COMMIT RULE**: After any successful code modification to the driver source (`indi_pifinder/`), a `git commit -a -m "..."` must be performed to create a stable restore point.
 
 ## Files Created/Altered
 
-*   `bin/build_indi_driver.sh`: **Modified** to use the standard `cmake -DCMAKE_INSTALL_PREFIX=/usr ..` and `sudo make install` commands. This is the definitive, correct way to build and install the driver against the system's existing INDI installation. The script also now cleans up multiple possible old XML file names to prevent conflicts.
-*   `indi_pifinder/indi_pifinder_lx200_driver.xml.in`: **Overwritten**. The previous file was found to be corrupt or empty. It has been replaced with a valid XML structure that correctly defines the driver's name and executable path for the INDI server. This was the key fix for the driver not appearing in Ekos.
+*   `bin/build_indi_driver.sh`: **Heavily Modified**. The script was completely refactored to abandon the `add_subdirectory` approach in favor of patching the main `CMakeLists.txt` and integrating our driver's source code directly into the `indi_lx200generic` executable.
+*   `indi_pifinder/CMakeLists.txt`: **Modified**. Changed from building a shared library to a standalone executable, which also failed. The current build process no longer uses this file directly, but it was part of the development process.
+*   `indi_pifinder/indi_pifinder_lx200_driver.xml.in`: **Modified**. The `<driver>` name was changed from `indi_pifinder_lx200` to `LX200 Generic` to match the new executable target.
 
 ## To Resume Session
 
 To get the full context, re-read the following files:
-1.  `session.md` (this file)
-2.  `session_advanced.md`
-3.  `bin/build_indi_driver.sh` and `bin/functions.sh` (for the current build process and paths)
-4.  `indi_pifinder/CMakeLists.txt` (the driver's own build definition)
-5.  `indi_pifinder/indi_pifinder_lx200_driver.xml.in` (the corrected driver definition template)
-6.  `indi_pifinder/pifinder_lx200.cpp` and `indi_pifinder/pifinder_lx200.h` (the driver source code)
+1.  `session.md` (this file) and `session_advanced.md`.
+2.  `bin/build_indi_driver.sh` and `bin/functions.sh` (for the current build process).
+3.  `indi_pifinder/pifinder_lx200.cpp` and `pifinder_lx200.h` (the driver source).
+4.  `indi_pifinder/indi_pifinder_lx200_driver.xml.in` (the driver definition template).
 
 ## Next Steps
 
-1.  **Await Build**: The user needs to run the corrected `build_indi_driver.sh` script, preferably with the `--clean-build` option to ensure the new XML template is used.
-2.  **Verify in Ekos**: After the build completes, the user must restart KStars/Ekos and verify that the "PiFinder LX200" driver is now visible in the device selection list.
-3.  **Test Functionality**: If the driver is visible, the next step is to connect to it and test its basic functionality (e.g., reading coordinates).
+1.  **Build**: Run `bin/build_indi_driver.sh --clean-build --indi-restart` to perform a clean build, install the driver, and prepare for testing.
+2.  **Verify**: Start KStars/Ekos and confirm that the "PiFinder LX200" driver appears in the device list and can be started successfully.
+3.  **Test**: Perform functional tests to ensure the driver communicates correctly with the PiFinder.

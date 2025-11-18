@@ -2,28 +2,23 @@
 
 This document outlines higher-level strategies and critical technical details for the `pifinder_lx200` driver development.
 
-## Core Strategy: Standard System Installation
+## Core Strategy: Integration with `indi_lx200generic`
 
-The primary obstacle has been a series of incorrect assumptions about the INDI build system and standard installation paths on a pre-configured system like Stellarmate. Manual installation via `cp` and using non-standard paths like `/usr/local` proved to be fragile and incorrect.
+The primary obstacle in this project was the incorrect assumption that our driver, which inherits from the `LX200Generic` class, could be built as a standalone executable and linked against a `lx200generic` library. This is not how the INDI build system is structured.
 
 **The correct, robust approach is as follows:**
 
-1.  **Self-Contained Driver Project**: The `indi_pifinder` directory contains all necessary source files for the driver, including its own `CMakeLists.txt`.
-2.  **Integration**: The main `indi-source/drivers/telescope/CMakeLists.txt` is modified by the build script to add a single line: `add_subdirectory(indi_pifinder)`.
-3.  **Configuration**: The `build_indi_driver.sh` script **must** configure the build using `cmake -DCMAKE_INSTALL_PREFIX=/usr ..`. This flag tells CMake to prepare the build for installation into the standard system directories (`/usr/lib`, `/usr/share`, etc.), which aligns with the existing `apt`-managed INDI installation.
-4.  **Installation**: The script must use `sudo make install`. This is the canonical way to install a CMake project. It correctly places all files (libraries, XML definitions, headers) into the appropriate subdirectories defined by the install prefix and the INDI build system's own logic.
+1.  **Source Integration**: The `LX200Generic` class and its related drivers are compiled into a single, monolithic executable called `indi_lx200generic`. The correct way to add a new driver of this type is to add its source file to the list of files that make up this executable.
+2.  **Automated Patching**: The `build_indi_driver.sh` script is the cornerstone of this strategy. It treats the `indi-source` directory as a temporary build environment and programmatically modifies its `CMakeLists.txt` file. This is achieved using `sed` commands that add our `pifinder_lx200.cpp` file to the `add_executable(indi_lx200generic ...)` definition.
+3.  **XML Registration**: The driver's XML file (`indi_pifinder_lx200_driver.xml.in`) must define a new *device* (e.g., "PiFinder LX200"), but point to the existing *driver* executable, which is `LX200 Generic`. The build script then adds this device entry to the main `/usr/share/indi/drivers.xml` file. This allows KStars to display our specific device name while launching the correct shared executable.
 
 ## Build System Strategy & CMake Gotchas
 
-*   **`indi-source` is a Build Artifact**: The `indi-source` directory should be treated as a temporary build location. It should be cleaned (`git reset --hard` and `sudo rm -rf build`) before builds to ensure a pristine state. All source code changes must occur in the local `indi_pifinder` directory.
-*   **Problem: Driver not visible in Ekos.**
-    *   **Symptom**: The build succeeds, `make install` reports that the driver's `.so` and `.xml` files are installed, but the driver does not appear in the Ekos device list.
-    *   **Root Cause**: A corrupted, empty, or malformed `..._driver.xml.in` template file. CMake's `configure_file` command can fail silently on a bad input, resulting in an empty output XML file. The INDI server will see this empty file and simply ignore it without an error message.
-    *   **Solution**: Ensure the `.xml.in` file contains a valid `<drivers>` structure with the correct executable path variable (e.g., `@CMAKE_INSTALL_FULL_LIBDIR@/libindi_pifinder_lx200.so`).
-*   **Problem: `make install` builds all drivers.**
-    *   **Symptom**: The build process is very slow on the first run after a clean.
-    *   **Explanation**: This is the expected and unavoidable behavior of the INDI build system's `install` target. It has a dependency on the `all` target, which builds every defined component.
-    *   **Mitigation**: This is a one-time cost. Subsequent builds without the `--clean-build` flag will be incremental and much faster, as `make` will only recompile the files that have actually changed. This is the necessary trade-off for a correct and robust installation that respects the existing system.
+*   **`indi-source` is a Build Artifact**: The `indi-source` directory should always be treated as a temporary build location. It should be cleaned (`git reset --hard` and `sudo rm -rf build`) before builds to ensure a pristine state. All source code changes must occur in the local `indi_pifinder` directory.
+*   **Problem: Linker Errors (`undefined reference to LX200Generic`)**
+    *   **Symptom**: The build fails during the linking stage with errors indicating that the `LX200Generic` class methods are not found.
+    *   **Root Cause**: This occurs when attempting to build the driver as a standalone executable (`add_executable`) and link it against a non-existent `lx200generic` library.
+    *   **Solution**: The correct solution is not to find a library to link against, but to abandon the standalone executable approach entirely and integrate the source code into the `indi_lx200generic` build target as described in the Core Strategy.
 
 ## Version Control Policy
 
