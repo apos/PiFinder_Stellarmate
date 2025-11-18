@@ -110,26 +110,28 @@ fi
 
 echo "-> Build and installation complete."
 
-# --- KStars Log Management for Testing ---
+# --- KStars Log Inspection ---
 KSTARS_BASE_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
-TEMP_KSTARS_LOG_DEST="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
 
-echo "-> Clearing old KStars log directories in ${KSTARS_BASE_LOG_DIR}"
-# Remove all dated log directories
-sudo find "${KSTARS_BASE_LOG_DIR}" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
-
-echo "-> Waiting 30 seconds for driver testing and log generation..."
-sleep 30
+echo "-> Searching for the latest KStars log file..."
 
 # Find the newest log file within any dated subdirectory
 LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -name "log_*.txt" -printf "%T@ %p
 " | sort -n | tail -1 | cut -d' ' -f2-)
 
-if [ -n "${LATEST_KSTARS_LOG}" ]; then
-    echo "-> Copying latest KStars log (${LATEST_KSTARS_LOG}) to ${TEMP_KSTARS_LOG_DEST} for inspection..."
-    sudo cp "${LATEST_KSTARS_LOG}" "${TEMP_KSTARS_LOG_DEST}"
+if [ -n "${LATEST_KSTARS_LOG}" ] && [ -f "${LATEST_KSTARS_LOG}" ]; then
+    echo "-> Found latest KStars log: ${LATEST_KSTARS_LOG}"
+    echo "-> Appending KStars log to the build log (${LOG_FILE})..."
+    echo "" | sudo tee -a "${LOG_FILE}"
+    echo "############################################################" | sudo tee -a "${LOG_FILE}"
+    echo "--- KStars Log Start: ${LATEST_KSTARS_LOG} ---" | sudo tee -a "${LOG_FILE}"
+    echo "############################################################" | sudo tee -a "${LOG_FILE}"
+    sudo cat "${LATEST_KSTARS_LOG}" | sudo tee -a "${LOG_FILE}"
+    echo "############################################################" | sudo tee -a "${LOG_FILE}"
+    echo "--- KStars Log End ---" | sudo tee -a "${LOG_FILE}"
+    echo "############################################################" | sudo tee -a "${LOG_FILE}"
 else
-    echo "-> Warning: No KStars log file found in ${KSTARS_BASE_LOG_DIR}. Skipping copy."
+    echo "-> Warning: No KStars log file found in ${KSTARS_BASE_LOG_DIR}. Skipping."
 fi
 
 echo "############################################################"
