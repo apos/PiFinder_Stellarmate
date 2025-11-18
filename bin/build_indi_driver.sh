@@ -110,15 +110,13 @@ fi
 
 echo "-> Build and installation complete."
 
-# --- KStars Log Management for Testing ---
-KSTARS_BASE_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
-TEMP_KSTARS_LOG_DEST="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
+# --- KStars Log Inspection ---
+KSTARS_BASE_LOG_DIR="/home/stellarmate/.indi/logs"
 
-echo "-> Waiting 30 seconds for driver testing and log generation..."
-sleep 30
+echo "-> Searching for the latest INDI driver log file..."
 
-# Find the newest log file within any dated subdirectory
-LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -name "log_*.txt" -printf "%T@ %p
+# Find the newest log file within the driver-specific subdirectory
+LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -path "*/indi_pifinder_lx200/log_*.log" -printf "%T@ %p
 " | sort -n | tail -1 | cut -d' ' -f2-)
 
 if [ -n "${LATEST_KSTARS_LOG}" ] && [ -f "${LATEST_KSTARS_LOG}" ]; then
