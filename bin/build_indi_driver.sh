@@ -69,7 +69,7 @@ cd "${indi_source_dir}/build"
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 
 echo "-> Building the driver (incrementally)..."
-make
+make indi_lx200generic
 
 echo "-> Safely installing the driver..."
 echo "   Backing up ${SYSTEM_DRIVERS_XML} to ${DRIVERS_XML_BACKUP}"
