@@ -1,18 +1,27 @@
 ## Advanced Strategies & Critical Information
 
-### Build System Deep Dive
-The core strategy is to treat the `indi-source` directory as a pristine, read-only build environment that is programmatically and temporarily modified by the `build_indi_driver.sh` script. All driver-specific source code **must** reside in the `indi_pifinder` directory.
+### Build System Deep Dive (Standalone Driver)
+The new strategy requires a more robust integration with the INDI build system than the previous file-copying approach.
 
--   **CMake Patching**: The `sed` command used to patch the `CMakeLists.txt` is `sed -i "/add_executable(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"`. This injects our source file on a new line immediately after the `add_executable` declaration for the generic driver. While simple, it's effective and avoids complex patching logic. If this fails, it's the first place to debug.
--   **Incremental Build Logic**: The incremental build relies on `git checkout HEAD -- <file>` to revert only the files that the script is about to patch. This is the key to the fast build cycle. It avoids a full `git reset` and preserves the compiled object files in the `build` directory.
--   **XML Installation**: The driver's XML file is installed separately by the script, not by `make install`. It is manually configured with version information scraped from the `indiversion.h` file generated during the build. This decouples our driver's definition from the main `drivers.xml`, preventing conflicts and ensuring our driver is always present without overwriting system configurations.
+-   **`add_subdirectory`**: The core of the new build process will be to use the `add_subdirectory` command in the main `indi-source/drivers/telescope/CMakeLists.txt`. This command will tell CMake to descend into our `indi_pifinder` directory and process its own `CMakeLists.txt` file. This is the standard, correct way to add a new component to a CMake-based project.
+-   **Driver `CMakeLists.txt`**: The `indi_pifinder/CMakeLists.txt` file will be responsible for:
+    -   Defining the executable: `add_executable(pifinder_lx200 pifinder_lx200.cpp)`
+    -   Linking against the necessary INDI libraries: `target_link_libraries(pifinder_lx200 PRIVATE INDI::INDI_LX200_GENERIC)` (or similar, based on analysis).
+    -   Installing the executable to the correct location.
+-   **Build Script (`build_indi_driver.sh`)**: The script's role will change significantly. Instead of copying source files, it will be responsible for:
+    1.  Temporarily adding the `add_subdirectory(indi_pifinder)` line to the main `CMakeLists.txt`.
+    2.  Running `cmake` and `make` from the `indi-source/build` directory.
+    3.  Installing the final driver XML file.
+    4.  Using `git` to manage the temporary changes to the `indi-source` tree, ensuring it remains clean between builds.
 
 ### Debugging Strategy
--   **Logs are Key**: If the driver fails to load or crashes in Ekos, the first step is always to check the INDI server logs. Run the server from the command line with verbose logging: `indiserver -v -v -v indi_lx200_generic`.
--   **Protocol Ground Truth**: The PiFinder's `pos_server.py` script is the definitive reference for the expected LX200 command-and-response protocol. Any debugging of GoTo, Sync, or status polling should be compared against the implementation in that file.
--   **Reverting Code**: Because the build script now enforces commits within the `indi_pifinder` directory, `git log` and `git checkout <commit_hash>` can be used to easily revert to a last-known-good state if a code change breaks the driver.
+-   **Logs are Key**: This remains unchanged. Verbose logs from `indiserver` are the primary tool for debugging runtime issues.
+-   **Compilation Errors**: Debugging will now be focused on the `indi_pifinder/CMakeLists.txt` file and the C++ source. Linker errors will indicate missing `target_link_libraries`, and compiler errors will point to issues in the `.cpp`/`.h` files.
 
-### Critical Rules & Saved Memory
+### CRITICAL RULES & SAVED MEMORY (PRESERVED)
+-   **Standalone is the Goal**: The driver **must** be built as its own executable.
+-   **Use the Build System**: Do not manually copy files into the `indi-source` tree. Use CMake's features (`add_subdirectory`) to integrate the driver correctly.
+-   **Reference `lx200_10micron`**: When in doubt about C++ implementation or CMake configuration, refer to the `lx200_10micron` driver as the ground truth.
 -   **NEVER use `add_indi_driver`**: This CMake macro is not for this purpose and will always fail. The correct method is to add the driver's `.cpp` file to the `add_executable(indi_lx200generic ...)` block.
 -   **NEVER let `make install` overwrite `drivers.xml`**: The build script now protects against this, but it's a critical failure point to be aware of if the script is ever modified.
 -   **DO NOT alter working code without permission**: This applies to the build script itself and any other part of the established workflow.

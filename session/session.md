@@ -1,23 +1,19 @@
 ## PiFinder LX200 INDI Driver - Session State
 
 ### Current Status
-The `pifinder_lx200` INDI driver is now successfully integrated into the main `indi_lx200_generic` executable. The build process is stable and managed by a robust `build_indi_driver.sh` script that supports both fast incremental builds (default) and full clean builds (`--clean-build`). The critical issue of overwriting the system `drivers.xml` file has been resolved by implementing a backup-and-restore mechanism in the build script. All recent changes have been committed to the local git repository.
+**COURSE CORRECTION:** The previous strategy of integrating the driver into `indi_lx200generic` was incorrect and has been abandoned.
+
+The new, primary goal is to build a **standalone `pifinder_lx200` INDI driver**. This driver should be a separate executable, modeled after the existing `lx200_10micron` driver in the INDI source tree.
 
 ### Altered Files & Rationale
-- **`bin/build_indi_driver.sh`**: Completely rewritten to use a safe, git-based workflow.
-    - **Why:** To prevent accidental modification of the `indi-source` tree and to support both fast incremental builds for development and full clean builds for verification. It now also protects the system `drivers.xml` file from being overwritten.
-- **`indi_pifinder/indi_pifinder_lx200_driver.xml.in`**: The `exec` attribute was changed to `indi_lx200_generic`.
-    - **Why:** To match the new build strategy where our driver is part of the generic LX200 executable, not a standalone binary.
-- **`.gitignore`**: Updated to ignore the `indi-source/` directory and other build/log files.
-    - **Why:** To keep the project repository clean and avoid committing large, unnecessary build artifacts.
+- All previous changes related to the `lx200generic` integration strategy are now considered obsolete and will be reverted or replaced.
 
 ### Key Concepts & Strategies
-- **Build Strategy**: The driver is built by integrating its source code directly into the `indi_lx200_generic` executable within the main INDI source tree. The `build_indi_driver.sh` script automates this by copying source files and patching the `CMakeLists.txt` file at build time.
-- **Safety & Workflow**:
-    1.  The script defaults to a fast, **incremental build**. It only reverts the patched `CMakeLists.txt` file to its original state before applying changes.
-    2.  The `--clean-build` flag triggers a full `git reset --hard` on the `indi-source` directory and a deletion of the `build` folder for a completely fresh start.
-    3.  The system's main `/usr/share/indi/drivers.xml` is backed up before `make install` and restored immediately after, preventing its destruction.
-- **Commit Rule**: After any code change, a `git commit -a -m "..."` must be run to save the state of the working files. This is enforced in the build script for the `indi_pifinder` directory.
+- **Build Strategy**: The new strategy is to define our driver as a standalone executable within the INDI build system. This will involve:
+    1.  Creating a `CMakeLists.txt` file in the `indi_pifinder` directory that correctly defines the `pifinder_lx200` executable and its dependencies.
+    2.  Modifying the `build_indi_driver.sh` script to use CMake's `add_subdirectory` command to include our driver in the main `indi-source` build process.
+    3.  Ensuring the driver's XML file (`indi_pifinder_lx200_driver.xml.in`) points to the correct standalone executable name.
+- **Model Driver**: The `lx200_10micron` driver will be used as the reference for the correct C++ class structure and CMake configuration.
 
 ### Requirements to Continue
 - **Dependencies**: `git`, `build-essential`, `cmake`. The INDI library source must be present in `indi-source`.
@@ -26,11 +22,11 @@ The `pifinder_lx200` INDI driver is now successfully integrated into the main `i
 ### Files to Re-read for Context
 - `session/session.md` (this file)
 - `session/session_advanced.md` (for deeper strategy details)
-- `bin/build_indi_driver.sh` (to understand the current build process)
+- `indi-source/drivers/telescope/lx200_10micron.cpp` (as a model)
+- `indi-source/drivers/telescope/CMakeLists.txt` (to understand how standalone drivers are built)
 - `indi_pifinder/pifinder_lx200.cpp` and `pifinder_lx200.h` (the driver source code)
 
 ### Next Steps
-1.  The build system is now stable and safe.
-2.  Continue development of the driver's functionality within `pifinder_lx200.cpp` and `pifinder_lx200.h`.
-3.  Run the `build_indi_driver.sh` script (without flags for a fast incremental build) to compile any new changes.
-4.  Test the "PiFinder LX200" driver in Ekos and debug its behavior.
+1.  **Analyze**: Thoroughly examine the `lx200_10micron` driver's source and CMake configuration.
+2.  **Plan**: Formulate a detailed plan to adapt our `pifinder_lx200` driver and build scripts to match the standalone model.
+3.  **Propose**: Present the plan to you for approval before implementing any changes.

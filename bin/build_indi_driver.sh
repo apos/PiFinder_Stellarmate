@@ -69,13 +69,13 @@ cd "${indi_source_dir}/build"
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 
 echo "-> Building the driver (incrementally)..."
-make indi_lx200generic
+make
 
 echo "-> Safely installing the driver..."
 echo "   Backing up ${SYSTEM_DRIVERS_XML} to ${DRIVERS_XML_BACKUP}"
 sudo cp "${SYSTEM_DRIVERS_XML}" "${DRIVERS_XML_BACKUP}"
 
-sudo make install
+sudo make 
 
 echo "   Restoring ${SYSTEM_DRIVERS_XML} from backup."
 sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
