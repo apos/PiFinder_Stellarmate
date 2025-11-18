@@ -109,6 +109,25 @@ fi
 # sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
 
 echo "-> Build and installation complete."
+
+# --- KStars Log Management for Testing ---
+KSTARS_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
+KSTARS_LOG_FILE="${KSTARS_LOG_DIR}/kstars_indi_log.txt"
+TEMP_KSTARS_LOG="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
+
+echo "-> Clearing old KStars logs in ${KSTARS_LOG_DIR}"
+sudo rm -f "${KSTARS_LOG_DIR}"/*
+
+echo "-> Waiting 30 seconds for driver testing and log generation..."
+sleep 30
+
+if [ -f "${KSTARS_LOG_FILE}" ]; then
+    echo "-> Copying latest KStars log to ${TEMP_KSTARS_LOG} for inspection..."
+    sudo cp "${KSTARS_LOG_FILE}" "${TEMP_KSTARS_LOG}"
+else
+    echo "-> Warning: KStars log file not found at ${KSTARS_LOG_FILE}. Skipping copy."
+fi
+
 echo "############################################################"
 echo "Script finished."
 echo "Timestamp: $(date)"
