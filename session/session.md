@@ -34,4 +34,4 @@ The `pifinder_lx200` INDI driver build process has been completely refactored an
 ### Next Steps
 1.  The user will run the updated `bin/build_indi_driver.sh` script.
 2.  Verify that the script completes successfully and that the "PiFinder LX200" driver is now available in Ekos.
-3.  Begin functional testing of the driver (connection, getting coordinates, GoTo commands).
+3.  Begin functional testing of the driver (connection, getting coordinates, GoTo
