@@ -2,7 +2,8 @@
 
 # This script compiles and installs the PiFinder INDI driver by integrating it
 # into the indi_lx200_generic driver executable.
-# It uses a git-based workflow for safety and reliability.
+# It uses a git-based workflow for safety and reliability, supporting both
+# fast incremental builds and full clean builds.
 
 source $(dirname "$0")/functions.sh
 
@@ -24,13 +25,27 @@ DRIVERS_XML_BACKUP="/tmp/drivers.xml.pifinder.bak"
 
 echo "-> Committing changes in ${DRIVER_SOURCE_DIR}..."
 cd "${DRIVER_SOURCE_DIR}"
-git commit -a -m "Automated commit before build: $(date)"
+# Use --no-verify to bypass any potential pre-commit hooks
+git commit -a -m "Automated commit before build: $(date)" --no-verify
 cd "${pifinder_stellarmate_dir}"
 
-echo "-> Resetting indi-source directory to a clean state..."
-cd "${indi_source_dir}"
-git reset --hard
-cd "${pifinder_stellarmate_dir}"
+# --- Build Mode Logic ---
+if [[ "$1" == "--clean-build" ]]; then
+    echo "-> Performing a FULL CLEAN build..."
+    echo "   Resetting indi-source directory to a clean state..."
+    cd "${indi_source_dir}"
+    git reset --hard
+    cd "${pifinder_stellarmate_dir}"
+
+    echo "   Cleaning build directory..."
+    sudo rm -rf "${indi_source_dir}/build"
+else
+    echo "-> Performing an INCREMENTAL build..."
+    echo "   Restoring pristine version of CMakeLists.txt before patching."
+    cd "${indi_source_dir}"
+    git checkout HEAD -- "${TELESCOPE_CMAKE_FILE}"
+    cd "${pifinder_stellarmate_dir}"
+fi
 
 echo "-> Preparing indi-source tree for build..."
 echo "   Copying driver source files to ${INDI_TELESCOPE_DIR}/"
@@ -45,12 +60,15 @@ else
     sudo sed -i "/add_executable(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
 fi
 
-echo "-> Configuring the build..."
-mkdir -p "${indi_source_dir}/build"
+echo "-> Configuring the build (if necessary)..."
+if [ ! -d "${indi_source_dir}/build" ]; then
+    mkdir -p "${indi_source_dir}/build"
+fi
 cd "${indi_source_dir}/build"
+# CMake will only re-configure if something has changed
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 
-echo "-> Building the driver..."
+echo "-> Building the driver (incrementally)..."
 make
 
 echo "-> Safely installing the driver..."
