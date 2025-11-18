@@ -1,0 +1,15 @@
+# This is the CMakeLists.txt file for building the pifinder_lx200 driver
+# within the main INDI source tree.
+
+# Use standard GNU installation directories
+include(GNUInstallDirs)
+
+# Add the driver as an executable. The add_indi_driver macro handles all the
+# necessary dependencies, include paths, and linking.
+add_indi_driver(indi_pifinder_lx200 pifinder_lx200.cpp)
+
+# Configure the XML file from the template
+configure_file(indi_pifinder_lx200_driver.xml.in indi_pifinder_lx200_driver.xml @ONLY)
+
+# Install the configured XML file
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_pifinder_lx200_driver.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/indi)

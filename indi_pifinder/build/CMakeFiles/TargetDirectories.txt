@@ -1,0 +1,7 @@
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/indi_pifinder_lx200.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/edit_cache.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/rebuild_cache.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/list_install_components.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/install.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/install/local.dir
+/home/stellarmate/PiFinder_Stellarmate/indi_pifinder/build/CMakeFiles/install/strip.dir

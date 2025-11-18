@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/indi_pifinder_lx200.dir/pifinder_lx200.cpp.o "CMakeFiles/indi_pifinder_lx200.dir/home/stellarmate/PiFinder_Stellarmate/indi-source/drivers/telescope/lx200driver.cpp.o" "CMakeFiles/indi_pifinder_lx200.dir/home/stellarmate/PiFinder_Stellarmate/indi-source/drivers/telescope/lx200telescope.cpp.o" -o indi_pifinder_lx200  -lindidriver -lnova 
