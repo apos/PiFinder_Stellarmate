@@ -1,3 +1,7 @@
-astro_data
-.venv
-.gemini
+/indi-source/
+/indi_driver_build.log
+/pi_config_files/pifinder.service.bak
+/pi_config_files/pifinder_splash.service.bak
+/tmp/kstars_vs_indi_drivers.diff
+/tmp/lx200driver.cpp
+/tmp/lx200driver.h
