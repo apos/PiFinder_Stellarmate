@@ -111,21 +111,25 @@ fi
 echo "-> Build and installation complete."
 
 # --- KStars Log Management for Testing ---
-KSTARS_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
-KSTARS_LOG_FILE="${KSTARS_LOG_DIR}/kstars_indi_log.txt"
-TEMP_KSTARS_LOG="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
+KSTARS_BASE_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
+TEMP_KSTARS_LOG_DEST="${pifinder_stellarmate_dir}/.gemini/tmp/kstars_indi_log_$(date +%Y%m%d_%H%M%S).txt"
 
-echo "-> Clearing old KStars logs in ${KSTARS_LOG_DIR}"
-sudo rm -f "${KSTARS_LOG_DIR}"/*
+echo "-> Clearing old KStars log directories in ${KSTARS_BASE_LOG_DIR}"
+# Remove all dated log directories
+sudo find "${KSTARS_BASE_LOG_DIR}" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
 
 echo "-> Waiting 30 seconds for driver testing and log generation..."
 sleep 30
 
-if [ -f "${KSTARS_LOG_FILE}" ]; then
-    echo "-> Copying latest KStars log to ${TEMP_KSTARS_LOG} for inspection..."
-    sudo cp "${KSTARS_LOG_FILE}" "${TEMP_KSTARS_LOG}"
+# Find the newest log file within any dated subdirectory
+LATEST_KSTARS_LOG=$(sudo find "${KSTARS_BASE_LOG_DIR}" -type f -name "log_*.txt" -printf "%T@ %p
+" | sort -n | tail -1 | cut -d' ' -f2-)
+
+if [ -n "${LATEST_KSTARS_LOG}" ]; then
+    echo "-> Copying latest KStars log (${LATEST_KSTARS_LOG}) to ${TEMP_KSTARS_LOG_DEST} for inspection..."
+    sudo cp "${LATEST_KSTARS_LOG}" "${TEMP_KSTARS_LOG_DEST}"
 else
-    echo "-> Warning: KStars log file not found at ${KSTARS_LOG_FILE}. Skipping copy."
+    echo "-> Warning: No KStars log file found in ${KSTARS_BASE_LOG_DIR}. Skipping copy."
 fi
 
 echo "############################################################"
