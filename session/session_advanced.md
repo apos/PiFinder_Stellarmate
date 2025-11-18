@@ -1,20 +1,17 @@
 ## Advanced Strategies & Critical Information
 
-### Build System Deep Dive
-The XML handling and log management are now critical parts of the build script.
+### Core Strategy: Inheritance for Compatibility
+The fundamental issue with the driver was that it was a clone of the `lx200_10micron` driver and therefore used many proprietary commands that the PiFinder's `pos_server.py` does not understand. The connection failed immediately after the handshake when the driver tried to query the mount status with a 10Micron-specific command (`#:Ginfo#`).
 
--   **Direct XML Injection**: The script uses the following `sed` command to add our driver: `sudo sed -i "/<devGroup group=\"Telescopes\">/a ${DRIVER_XML_ENTRY}" "${SYSTEM_DRIVERS_XML}"`. This finds the line containing `<devGroup group="Telescopes">` and **a**ppends our driver's XML block on the next line. The XML block itself is stored in a variable and escaped for `sed`.
--   **Idempotency**: The script prevents duplicate XML entries by first running `grep -qF "PiFinder LX200" "${SYSTEM_DRIVERS_XML}"`. If this command succeeds (meaning the entry is already there), the `sed` command is skipped. This makes the script safe to run multiple times.
--   **No More Separate XML**: The old method of copying `pifinder_lx200_driver.xml` to `/usr/share/indi` is now gone. It was incorrect and has been completely replaced by the injection logic.
--   **KStars Log Management Details**: The script now includes an interactive `read -p` prompt and a `sleep 30` command, allowing the user to initiate KStars and the INDI server before log capture. After the wait, it robustly searches for the *newest log file* across both `/home/stellarmate/.indi/logs/` (for driver-specific logs) and `/home/stellarmate/.local/share/kstars/logs/` (for general KStars logs). It then appends the found log to the build log for easy access and review, without deleting any existing logs.
+The definitive solution is to force the `pifinder_lx200` driver to behave as a true generic LX200 device. This is achieved by modifying our child class (`LX200_PIFINDER`) to call the parent class's (`LX200Generic`) methods for core functionality, rather than using its own overridden, specialized versions.
+
+-   **`getBasicData()`**: This function is called once upon connection. The specialized version in our driver was full of unsupported commands. It will be replaced with a simple call to `LX200Generic::getBasicData();`.
+-   **`ReadScopeStatus()`**: This function is called repeatedly to get the telescope's position. The specialized version used the `#:Ginfo#` command. It will be replaced with a call to `return LX200Generic::ReadScopeStatus();`, which correctly uses the standard `:GR#` (Get RA) and `:GD#` (Get Dec) commands.
 
 ### Debugging Strategy
--   **Driver Not in List**: If the driver is still not visible in Ekos after running the script and restarting the server, the very first step is to manually inspect the main XML file: `cat /usr/share/indi/drivers.xml | grep "PiFinder LX200"`. If the entry is not there, the `sed` command in the build script failed. If it is there, the problem might be with XML syntax or INDI server caching.
--   **Logs are Key**: This remains the most important tool for runtime issues. Run the server from the command line with verbose logging to see driver messages: `indiserver -v -v -v indi_pifinder_lx200`. The automated log copying will provide a snapshot of this output.
--   **Reverting Code**: The "commit-first" rule is a safety net. All changes are committed, so `git checkout` can be used to revert to a known-good state.
+-   **Log Analysis**: The primary debugging tool remains the KStars/INDI logs. After the next build, the logs should show the driver sending standard `:GR#` and `:GD#` commands. If the connection still fails, the logs will be essential to see the server's response or lack thereof.
+-   **Clean Builds**: Because the build system can cache compiled objects, it is critical to use the `--clean-build` flag with the build script after making code changes to ensure they are actually compiled and linked.
 
 ### Critical Rules & Saved Memory
 -   **Commit After Every Code Change**: Non-negotiable.
--   **The Driver MUST be in `drivers.xml`**: This is the core lesson learned. Separate XML files in `/usr/share/indi` are not sufficient for a driver to appear in the main Ekos list.
--   **Build Strategy is Fixed**: The current `lx200generic` + symlink + direct XML injection model is the correct and final approach.
--   **NEVER use `make install`**: The build script must use the targeted `cp` command for installation.
+-   **Use Generic LX200 Commands**: The driver must not use any commands that are not part of the basic LX200 protocol supported by the PiFinder server. Relying on the `LX200Generic` parent class is the safest way to ensure this.
