@@ -77,6 +77,9 @@ sudo cp "${SYSTEM_DRIVERS_XML}" "${DRIVERS_XML_BACKUP}"
 
 sudo make install indi_lx200generic
 
+echo "   Creating symbolic link for ${DRIVER_NAME}..."
+sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${DRIVER_NAME}
+
 echo "   Restoring ${SYSTEM_DRIVERS_XML} from backup."
 sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
 
