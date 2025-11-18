@@ -32,10 +32,6 @@ cd "${indi_source_dir}"
 git reset --hard
 cd "${pifinder_stellarmate_dir}"
 
-# --clean-build is now the default because of git reset
-echo "-> Cleaning build directory..."
-sudo rm -rf "${indi_source_dir}/build"
-
 echo "-> Preparing indi-source tree for build..."
 echo "   Copying driver source files to ${INDI_TELESCOPE_DIR}/"
 sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_NAME}.cpp" "${INDI_TELESCOPE_DIR}/"
