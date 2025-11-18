@@ -1,5 +1,10 @@
 ## PiFinder LX200 INDI Driver - Session State
 
+### Main Requirements and goal (do not change or alter)
+- PiFinder is a device which can do live platesolving an has an python server which implements parts of the LX200 protkoll: it reports the position, can accept a GoTo and an align. 
+- Stellarmate is an debian based OS which uses INDI to communicate with devices. This is done by indi-server which is under the command of a running KStars/EKOS. 
+- There is an INDI driver that partially works with PiFinder: 10micron_lx200. But this only the case for the basic functionality, like beeing adhered from lx200_generic, establishing the connection over network, getting a posistion. 10micron has a lot of functionality which PiFinder not has, also some funcitons like goto or align do not work out of the box and need refactoring to match PiFinders pos_server.py. 
+
 ### Current Status
 **COURSE CORRECTION:** The previous strategy of integrating the driver into `indi_lx200generic` was incorrect and has been abandoned.
 

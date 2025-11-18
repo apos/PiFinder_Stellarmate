@@ -56,8 +56,17 @@ echo "   Patching main telescope CMakeLists.txt..."
 if grep -qF "$SOURCE_ENTRY" "$TELESCOPE_CMAKE_FILE"; then
     echo "   Driver source entry already exists. Skipping patch."
 else
-    echo "   Adding driver source entry to the indi_lx200generic target."
-    sudo sed -i "/add_executable\(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
+    # Find the line number of the add_executable(indi_lx200generic line
+    LINE_NUM=$(grep -nF "add_executable(indi_lx200generic" "$TELESCOPE_CMAKE_FILE" | cut -d: -f1)
+
+    # If the line is found, then patch it
+    if [ -n "$LINE_NUM" ]; then
+        echo "   Adding driver source entry to the indi_lx200generic target."
+        sudo sed -i "${LINE_NUM}a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
+    else
+        echo "   Error: Could not find 'add_executable(indi_lx200generic' in $TELESCOPE_CMAKE_FILE."
+        exit 1
+    fi
 fi
 
 echo "-> Configuring the build (if necessary)..."
@@ -71,17 +80,12 @@ cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 echo "-> Building the driver (incrementally)..."
 make indi_lx200generic
 
-echo "-> Safely installing the driver..."
-echo "   Backing up ${SYSTEM_DRIVERS_XML} to ${DRIVERS_XML_BACKUP}"
-sudo cp "${SYSTEM_DRIVERS_XML}" "${DRIVERS_XML_BACKUP}"
-
-sudo make install indi_lx200generic
+echo "-> Installing the driver executable and creating symlink..."
+sudo cp "${indi_source_dir}/build/drivers/telescope/indi_lx200generic" "/usr/bin/indi_lx200generic"
+sudo chmod +x "/usr/bin/indi_lx200generic" # Ensure it's executable
 
 echo "   Creating symbolic link for ${DRIVER_NAME}..."
 sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${DRIVER_NAME}
-
-echo "   Restoring ${SYSTEM_DRIVERS_XML} from backup."
-sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
 
 XML_FILENAME="${DRIVER_NAME}_driver.xml"
 XML_SOURCE_FILE="${DRIVER_SOURCE_DIR}/indi_${XML_FILENAME}.in"
