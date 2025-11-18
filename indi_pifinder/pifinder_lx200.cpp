@@ -252,41 +252,14 @@ bool LX200_PIFINDER::updateProperties()
 }
 
 // Called by LX200Generic::updateProperties
-void LX200_PIFINDER::getBasicData()
+bool pifinder_lx200::getBasicData()
 {
-    LX200Generic::getBasicData();
+    return LX200Generic::getBasicData();
 }
 
 // Called by our getBasicData
 bool LX200_PIFINDER::getMountInfo()
 {
-    char ProductName[80];
-    getCommandString(PortFD, ProductName, "#:GVP#");
-    char ControlBox[80];
-    getCommandString(PortFD, ControlBox, "#:GVZ#");
-    char FirmwareVersion[80];
-    getCommandString(PortFD, FirmwareVersion, "#:GVN#");
-    char FirmwareDate1[80];
-    getCommandString(PortFD, FirmwareDate1, "#:GVD#");
-    char FirmwareDate2[80];
-    char mon[4];
-    int dd, yyyy;
-    sscanf(FirmwareDate1, "%s %02d %04d", mon, &dd, &yyyy);
-    getCommandString(PortFD, FirmwareDate2, "#:GVT#");
-    char FirmwareDate[80];
-    snprintf(FirmwareDate, 80, "%04d-%02d-%02dT%s", yyyy, monthToNumber(mon), dd, FirmwareDate2);
-
-    LOGF_INFO("Product:%s Control box:%s Firmware:%s of %s", ProductName, ControlBox, FirmwareVersion, FirmwareDate);
-
-    IUFillText(&ProductT[PRODUCT_NAME], "NAME", "Product Name", ProductName);
-    IUFillText(&ProductT[PRODUCT_CONTROL_BOX], "CONTROL_BOX", "Control Box", ControlBox);
-    IUFillText(&ProductT[PRODUCT_FIRMWARE_VERSION], "FIRMWARE_VERSION", "Firmware Version", FirmwareVersion);
-    IUFillText(&ProductT[PRODUCT_FIRMWARE_DATE], "FIRMWARE_DATE", "Firmware Date", FirmwareDate);
-    IUFillTextVector(&ProductTP, ProductT, PRODUCT_COUNT, getDeviceName(),
-                     PRODUCT_INFO, "Product", PRODUCT_TAB, IP_RO, 60, IPS_IDLE);
-
-    defineProperty(&ProductTP);
-
     return true;
 }
 
