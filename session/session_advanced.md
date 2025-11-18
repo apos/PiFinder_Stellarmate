@@ -1,26 +1,18 @@
-# PiFinder INDI Driver - Advanced Strategies
+## Advanced Strategies & Critical Information
 
-This document outlines higher-level strategies and critical technical details for the `pifinder_lx200` driver development.
+### Build System Deep Dive
+The core strategy is to treat the `indi-source` directory as a pristine, read-only build environment that is programmatically and temporarily modified by the `build_indi_driver.sh` script. All driver-specific source code **must** reside in the `indi_pifinder` directory.
 
-## Core Strategy: Integration with `indi_lx200generic`
+-   **CMake Patching**: The `sed` command used to patch the `CMakeLists.txt` is `sed -i "/add_executable(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"`. This injects our source file on a new line immediately after the `add_executable` declaration for the generic driver. While simple, it's effective and avoids complex patching logic. If this fails, it's the first place to debug.
+-   **Incremental Build Logic**: The incremental build relies on `git checkout HEAD -- <file>` to revert only the files that the script is about to patch. This is the key to the fast build cycle. It avoids a full `git reset` and preserves the compiled object files in the `build` directory.
+-   **XML Installation**: The driver's XML file is installed separately by the script, not by `make install`. It is manually configured with version information scraped from the `indiversion.h` file generated during the build. This decouples our driver's definition from the main `drivers.xml`, preventing conflicts and ensuring our driver is always present without overwriting system configurations.
 
-The primary obstacle in this project was the incorrect assumption that our driver, which inherits from the `LX200Generic` class, could be built as a standalone executable and linked against a `lx200generic` library. This is not how the INDI build system is structured.
+### Debugging Strategy
+-   **Logs are Key**: If the driver fails to load or crashes in Ekos, the first step is always to check the INDI server logs. Run the server from the command line with verbose logging: `indiserver -v -v -v indi_lx200_generic`.
+-   **Protocol Ground Truth**: The PiFinder's `pos_server.py` script is the definitive reference for the expected LX200 command-and-response protocol. Any debugging of GoTo, Sync, or status polling should be compared against the implementation in that file.
+-   **Reverting Code**: Because the build script now enforces commits within the `indi_pifinder` directory, `git log` and `git checkout <commit_hash>` can be used to easily revert to a last-known-good state if a code change breaks the driver.
 
-**The correct, robust approach is as follows:**
-
-1.  **Source Integration**: The `LX200Generic` class and its related drivers are compiled into a single, monolithic executable called `indi_lx200generic`. The correct way to add a new driver of this type is to add its source file to the list of files that make up this executable.
-2.  **Automated Patching**: The `build_indi_driver.sh` script is the cornerstone of this strategy. It treats the `indi-source` directory as a temporary build environment and programmatically modifies its `CMakeLists.txt` file. This is achieved using `sed` commands that add our `pifinder_lx200.cpp` file to the `add_executable(indi_lx200generic ...)` definition.
-3.  **XML Registration**: The driver's XML file (`indi_pifinder_lx200_driver.xml.in`) must define a new *device* (e.g., "PiFinder LX200"), but point to the existing *driver* executable, which is `LX200 Generic`. The build script then adds this device entry to the main `/usr/share/indi/drivers.xml` file. This allows KStars to display our specific device name while launching the correct shared executable.
-
-## Build System Strategy & CMake Gotchas
-
-*   **`indi-source` is a Build Artifact**: The `indi-source` directory should always be treated as a temporary build location. It should be cleaned (`git reset --hard` and `sudo rm -rf build`) before builds to ensure a pristine state. All source code changes must occur in the local `indi_pifinder` directory.
-*   **Problem: Linker Errors (`undefined reference to LX200Generic`)**
-    *   **Symptom**: The build fails during the linking stage with errors indicating that the `LX200Generic` class methods are not found.
-    *   **Root Cause**: This occurs when attempting to build the driver as a standalone executable (`add_executable`) and link it against a non-existent `lx200generic` library.
-    *   **Solution**: The correct solution is not to find a library to link against, but to abandon the standalone executable approach entirely and integrate the source code into the `indi_lx200generic` build target as described in the Core Strategy.
-
-## Version Control Policy
-
-*   **Atomic Commits**: To prevent the loss of working code, a `git commit -a -m "..."` must be made after every significant and successful code modification. This creates a safety net and allows for easy reversion if a new change introduces a regression.
-*   **No Commits in `indi-source`**: The `indi-source` directory is external and temporary. It must never be committed to our local repository. All changes to it must be scripted via `build_indi_driver.sh`.
+### Critical Rules & Saved Memory
+-   **NEVER use `add_indi_driver`**: This CMake macro is not for this purpose and will always fail. The correct method is to add the driver's `.cpp` file to the `add_executable(indi_lx200generic ...)` block.
+-   **NEVER let `make install` overwrite `drivers.xml`**: The build script now protects against this, but it's a critical failure point to be aware of if the script is ever modified.
+-   **DO NOT alter working code without permission**: This applies to the build script itself and any other part of the established workflow.

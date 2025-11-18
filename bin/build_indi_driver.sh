@@ -57,7 +57,7 @@ if grep -qF "$SOURCE_ENTRY" "$TELESCOPE_CMAKE_FILE"; then
     echo "   Driver source entry already exists. Skipping patch."
 else
     echo "   Adding driver source entry to the indi_lx200generic target."
-    sudo sed -i "/add_executable(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
+    sudo sed -i "/add_executable\\(indi_lx200generic/a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
 fi
 
 echo "-> Configuring the build (if necessary)..."
