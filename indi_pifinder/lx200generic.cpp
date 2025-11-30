@@ -28,7 +28,7 @@ Updated driver to use INDI::Telescope (JM)
 #endif
 
 #include "lx200generic.h"
-
+#include "pifinder_lx200.h"
 #include "lx200_10micron.h"
 #include "lx200_16.h"
 #include "lx200_OnStep.h"
