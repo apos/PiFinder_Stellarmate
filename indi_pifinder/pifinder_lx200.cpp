@@ -100,19 +100,19 @@ bool LX200_PIFINDER::Handshake()
         return true;
     }
 
-    // The base classes perform an ACK check that the PiFinder does not support.
-    // To prevent this check from failing the connection, we perform our own simple
-    // handshake here by sending a known-good command and checking for any response.
-    // This proves the connection is alive.
-    LOG_INFO("PiFinder LX200: Performing handshake...");
-    char response[80];
-    if (setStandardProcedureAndReturnResponse(fd, ":MS#", response, sizeof(response)) != 0 || response[0] != '0')
+    // Set Ultra Precision Mode #:U2# , replies like 15:58:19.49 instead of 15:21.2
+    LOG_INFO("Setting Ultra Precision Mode.");
+    // #:U2#
+    // Set ultra precision mode. In ultra precision mode, extra decimal digits are returned for
+    // some commands, and there is no more difference between different emulation modes.
+    // Returns: nothing
+    // Available from version 2.10.
+    if (setCommandInt(fd, 2, "#:U") < 0)
     {
-        LOGF_ERROR("Handshake failed: Expected '0' response from telescope on :MS# command, got '%c'.", response[0]);
+        LOG_ERROR("Failed to set Ultra Precision Mode.");
         return false;
     }
 
-    LOGF_INFO("PiFinder LX200: Handshake successful. Got MS response: %c", response[0]);
     return true;
 }
 
@@ -267,13 +267,67 @@ void LX200_PIFINDER::getBasicData()
 {
     DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "<%s>", __FUNCTION__);
 
+    // cannot call LX200Generic::getBasicData(); as getTimeFormat :Gc# (and getSiteName :GM#) are not implemented on 10Micron
     if (!isSimulation())
     {
-        // We don't need to get any specific data from the PiFinder on connection.
-        // We just need to ensure we don't call the parent method which sends
-        // unsupported commands.
+        getMountInfo();
+
+        getAlignment();
         checkLX200EquatorialFormat(fd);
         timeFormat = LX200_24;
+
+        if (getTrackFreq(PortFD, &TrackFreqN[0].value) < 0)
+        {
+            LOG_WARN("Failed to get tracking frequency from device.");
+        }
+        else
+        {
+            LOGF_INFO("Tracking frequency is %.1f Hz", TrackFreqN[0].value);
+            IDSetNumber(&TrackFreqNP, nullptr);
+        }
+
+        char RefractionModelTemperature[80];
+        getCommandString(PortFD, RefractionModelTemperature, "#:GRTMP#");
+        float rmtemp;
+        sscanf(RefractionModelTemperature, "%f#", &rmtemp);
+        RefractionModelTemperatureN[0].value = rmtemp;
+        LOGF_INFO("RefractionModelTemperature is %0+6.1f degrees C", RefractionModelTemperatureN[0].value);
+        IDSetNumber(&RefractionModelTemperatureNP, nullptr);
+
+        char RefractionModelPressure[80];
+        getCommandString(PortFD, RefractionModelPressure, "#:GRPRS#");
+        float rmpres;
+        sscanf(RefractionModelPressure, "%f#", &rmpres);
+        RefractionModelPressureN[0].value = rmpres;
+        LOGF_INFO("RefractionModelPressure is %06.1f hPa", RefractionModelPressureN[0].value);
+        IDSetNumber(&RefractionModelPressureNP, nullptr);
+
+        int ModelCount;
+        getCommandInt(PortFD, &ModelCount, "#:modelcnt#");
+        ModelCountN[0].value = (double) ModelCount;
+        LOGF_INFO("%d Alignment Models", static_cast<int>(ModelCountN[0].value));
+        IDSetNumber(&ModelCountNP, nullptr);
+
+        int AlignmentPoints;
+        getCommandInt(PortFD, &AlignmentPoints, "#:getalst#");
+        AlignmentPointsN[0].value = AlignmentPoints;
+        LOGF_INFO("%d Alignment Stars in active model", static_cast<int>(AlignmentPointsN[0].value));
+        IDSetNumber(&AlignmentPointsNP, nullptr);
+
+        if (false == getUnattendedFlipSetting())
+        {
+            UnattendedFlipS[UNATTENDED_FLIP_DISABLED].s = ISS_ON;
+            UnattendedFlipS[UNATTENDED_FLIP_ENABLED].s = ISS_OFF;
+            LOG_INFO("Unattended Flip is disabled.");
+        }
+        else
+        {
+            UnattendedFlipS[UNATTENDED_FLIP_DISABLED].s = ISS_OFF;
+            UnattendedFlipS[UNATTENDED_FLIP_ENABLED].s = ISS_ON;
+            LOG_INFO("Unattended Flip is enabled.");
+        }
+        UnattendedFlipSP.s = IPS_OK;
+        IDSetSwitch(&UnattendedFlipSP, nullptr);
     }
 
     if (sendLocationOnStartup)
@@ -299,6 +353,33 @@ void LX200_PIFINDER::getBasicData()
 // Called by our getBasicData
 bool LX200_PIFINDER::getMountInfo()
 {
+    char ProductName[80];
+    getCommandString(PortFD, ProductName, "#:GVP#");
+    char ControlBox[80];
+    getCommandString(PortFD, ControlBox, "#:GVZ#");
+    char FirmwareVersion[80];
+    getCommandString(PortFD, FirmwareVersion, "#:GVN#");
+    char FirmwareDate1[80];
+    getCommandString(PortFD, FirmwareDate1, "#:GVD#");
+    char FirmwareDate2[80];
+    char mon[4];
+    int dd, yyyy;
+    sscanf(FirmwareDate1, "%s %02d %04d", mon, &dd, &yyyy);
+    getCommandString(PortFD, FirmwareDate2, "#:GVT#");
+    char FirmwareDate[80];
+    snprintf(FirmwareDate, 80, "%04d-%02d-%02dT%s", yyyy, monthToNumber(mon), dd, FirmwareDate2);
+
+    LOGF_INFO("Product:%s Control box:%s Firmware:%s of %s", ProductName, ControlBox, FirmwareVersion, FirmwareDate);
+
+    IUFillText(&ProductT[PRODUCT_NAME], "NAME", "Product Name", ProductName);
+    IUFillText(&ProductT[PRODUCT_CONTROL_BOX], "CONTROL_BOX", "Control Box", ControlBox);
+    IUFillText(&ProductT[PRODUCT_FIRMWARE_VERSION], "FIRMWARE_VERSION", "Firmware Version", FirmwareVersion);
+    IUFillText(&ProductT[PRODUCT_FIRMWARE_DATE], "FIRMWARE_DATE", "Firmware Date", FirmwareDate);
+    IUFillTextVector(&ProductTP, ProductT, PRODUCT_COUNT, getDeviceName(),
+                     PRODUCT_INFO, "Product", PRODUCT_TAB, IP_RO, 60, IPS_IDLE);
+
+    defineProperty(&ProductTP);
+
     return true;
 }
 
@@ -316,43 +397,138 @@ bool LX200_PIFINDER::ReadScopeStatus()
         return true;
     }
 
-    char ra_response[80];
-    char dec_response[80];
-    double ra_val, dec_val;
-
-    // Get RA
-    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response)) != 0)
+    // Read scope status, based loosely on LX200_GENERIC::getCommandString
+    // #:Ginfo#
+    // Get multiple information. Returns a string where multiple data are encoded, separated
+    // by commas ',', and terminated by '#'. Data are recognized by their position in the string.
+    // The data are the following:
+    // Position Datum
+    // 1        The telescope right ascension in hours and decimals (from 000.00000 to 23.99999),
+    //          true equinox and equator of date of observation (i.e. Jnow).
+    // 2        The telescope declination in degrees and decimals (from –90.0000 to +90.0000),
+    //          true equinox and equator of date of observation (i.e. Jnow).
+    // 3        A flag indicating the side of the pier on which the telescope is currently positioned
+    //          ("E" or "W").
+    // 4        The telescope azimuth in degrees and decimals (from 000.0000 to 359.9999).
+    // 5        The telescope altitude in degrees and decimals (from -90.0000 to +90.0000).
+    // 6        The julian date (JJJJJJJ.JJJJJJJJ), UTC, with leap second flag (see command
+    //          :GJD2# for the description of this datum).
+    // 7        A number encoding the status of the mount as in the :Gstat command.
+    // 8        A number returning the slew status (0 if :D# would return no slew, 1 otherwise).
+    // The string is terminated by '#'. Other parameters may be added in future at the end of
+    // the string: do not assume that the number of parameters will stay the same.
+    // Available from version 2.14.9 (previous versions may have this command but it was
+    // experimental and possibly with a different format).
+    char cmd[] = "#:Ginfo#";
+    char data[80];
+    char *term;
+    int error_type;
+    int nbytes_write = 0, nbytes_read = 0;
+    // DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "CMD <%s>", cmd);
+    if ((error_type = tty_write_string(fd, cmd, &nbytes_write)) != TTY_OK)
     {
-        LOG_ERROR("Failed to get RA from PiFinder.");
         return false;
     }
-    // Parse RA (HH:MM:SS)
-    if (f_scansexa(ra_response, &ra_val) == -1)
+    error_type = tty_read_section(fd, data, '#', LX200_TIMEOUT, &nbytes_read);
+    tcflush(fd, TCIFLUSH);
+    if (error_type != TTY_OK)
     {
-        LOGF_ERROR("Failed to parse RA response: %s", ra_response);
+        return false;
+    }
+    term = strchr(data, '#');
+    if (term)
+    {
+        *(term + 1) = '\0';
+    }
+    else
+    {
+        return false;
+    }
+    DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "CMD <%s> RES <%s>", cmd, data);
+
+    // TODO: check if this needs changing when satellite tracking
+    // Now parse the data. This format may consist of more parts some day
+    nbytes_read = sscanf(data, "%g,%g,%c,%g,%g,%g,%d,%d#", &Ginfo.RA_JNOW, &Ginfo.DEC_JNOW, &Ginfo.SideOfPier,
+                         &Ginfo.AZ, &Ginfo.ALT, &Ginfo.Jdate, &Ginfo.Gstat, &Ginfo.SlewStatus);
+    if (nbytes_read < 0)
+    {
         return false;
     }
 
-    // Get Dec
-    if (setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response)) != 0)
+    if (Ginfo.Gstat != OldGstat)
     {
-        LOG_ERROR("Failed to get Dec from PiFinder.");
-        return false;
+        if (OldGstat != GSTAT_UNSET)
+        {
+            LOGF_INFO("Gstat changed from %d to %d", OldGstat, Ginfo.Gstat);
+        }
+        else
+        {
+            LOGF_INFO("Gstat initialized at %d", Ginfo.Gstat);
+        }
     }
-    // Parse Dec (+/-DD*MM'SS)
-    if (f_scansexa(dec_response, &dec_val) == -1)
+    switch (Ginfo.Gstat)
     {
-        LOGF_ERROR("Failed to parse Dec response: %s", dec_response);
-        return false;
+        case GSTAT_TRACKING:
+            TrackState = SCOPE_TRACKING;
+            break;
+        case GSTAT_STOPPED:
+            TrackState = SCOPE_IDLE;
+            break;
+        case GSTAT_PARKING:
+            TrackState = SCOPE_PARKING;
+            break;
+        case GSTAT_UNPARKING:
+            TrackState = SCOPE_TRACKING;
+            break;
+        case GSTAT_SLEWING_TO_HOME:
+            TrackState = SCOPE_SLEWING;
+            break;
+        case GSTAT_PARKED:
+            TrackState = SCOPE_PARKED;
+            if (!isParked())
+                SetParked(true);
+            break;
+        case GSTAT_SLEWING_OR_STOPPING:
+            TrackState = SCOPE_SLEWING;
+            break;
+        case GSTAT_NOT_TRACKING_AND_NOT_MOVING:
+            TrackState = SCOPE_IDLE;
+            break;
+        case GSTAT_MOTORS_TOO_COLD:
+            TrackState = SCOPE_IDLE;
+            break;
+        case GSTAT_TRACKING_OUTSIDE_LIMITS:
+            TrackState = SCOPE_TRACKING;
+            break;
+        case GSTAT_FOLLOWING_SATELLITE:
+            TrackState = SCOPE_TRACKING;
+            break;
+        case GSTAT_NEED_USEROK:
+            TrackState = SCOPE_IDLE;
+            break;
+        case GSTAT_UNKNOWN_STATUS:
+            TrackState = SCOPE_IDLE;
+            break;
+        case GSTAT_ERROR:
+            TrackState = SCOPE_IDLE;
+            break;
+        default:
+            return false;
     }
+    setPierSide((toupper(Ginfo.SideOfPier) == 'E') ? INDI::Telescope::PIER_EAST : INDI::Telescope::PIER_WEST);
 
-    // Update INDI with new coordinates
-    NewRaDec(ra_val, dec_val);
+    OldGstat = Ginfo.Gstat;
+    NewRaDec(Ginfo.RA_JNOW, Ginfo.DEC_JNOW);
 
-    // For now, we don't have a way to get Pier Side, Alt, Az, etc. from PiFinder directly.
-    // We will need to add these if the PiFinder implements corresponding LX200 commands.
-    // For now, assume a default pier side or infer from RA/Dec if possible.
-    setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
+    // Update alignment Mini new alignment point Read-Only fields
+    char LocalSiderealTimeS[80];
+    getCommandString(fd, LocalSiderealTimeS, "#:GS#");
+    f_scansexa(LocalSiderealTimeS, &Ginfo.SiderealTime);
+    MiniNewAlpRON[MALPRO_MRA].value = Ginfo.RA_JNOW;
+    MiniNewAlpRON[MALPRO_MDEC].value = Ginfo.DEC_JNOW;
+    MiniNewAlpRON[MALPRO_MSIDE].value = (toupper(Ginfo.SideOfPier) == 'E') ? 0 : 1;
+    MiniNewAlpRON[MALPRO_SIDTIME].value = Ginfo.SiderealTime;
+    IDSetNumber(&MiniNewAlpRONP, nullptr);
 
     return true;
 }
