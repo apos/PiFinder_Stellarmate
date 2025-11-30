@@ -225,7 +225,7 @@ def parse_sg_command(shared_state, input_str: str):
         logger.warning(f"parse_sg_command: Failed to parse UTC offset command: {input_str}")
         return "0"
 
-def parse_s_g_command(shared_state, input_str: str):
+def parse_s_g_command(shared_state, input_strDO N: str):
     pattern = r":Sg([-+]?\d{2,3})\*(\d{2})#"
     match = re.match(pattern, input_str)
     if match:
