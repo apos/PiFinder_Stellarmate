@@ -100,8 +100,19 @@ bool LX200_PIFINDER::Handshake()
         return true;
     }
 
-    // The PiFinder server has no handshake. Just return true.
-    LOG_INFO("PiFinder LX200: No handshake required.");
+    // The base classes perform an ACK check that the PiFinder does not support.
+    // To prevent this check from failing the connection, we perform our own simple
+    // handshake here by sending a known-good command and checking for any response.
+    // This proves the connection is alive.
+    LOG_INFO("PiFinder LX200: Performing handshake...");
+    char response[80];
+    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", response, sizeof(response)) != 0)
+    {
+        LOG_ERROR("Handshake failed: No response from telescope on #:GR# command.");
+        return false;
+    }
+
+    LOGF_INFO("PiFinder LX200: Handshake successful. Got RA response: %s", response);
     return true;
 }
 
