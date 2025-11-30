@@ -106,13 +106,13 @@ bool LX200_PIFINDER::Handshake()
     // This proves the connection is alive.
     LOG_INFO("PiFinder LX200: Performing handshake...");
     char response[80];
-    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", response, sizeof(response)) != 0)
+    if (setStandardProcedureAndReturnResponse(fd, ":MS#", response, sizeof(response)) != 0 || response[0] != '0')
     {
-        LOG_ERROR("Handshake failed: No response from telescope on #:GR# command.");
+        LOG_ERROR("Handshake failed: Expected '0' response from telescope on :MS# command, got '%c'.", response[0]);
         return false;
     }
 
-    LOGF_INFO("PiFinder LX200: Handshake successful. Got RA response: %s", response);
+    LOGF_INFO("PiFinder LX200: Handshake successful. Got MS response: %c", response[0]);
     return true;
 }
 
