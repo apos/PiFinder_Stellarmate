@@ -306,7 +306,55 @@ bool LX200_PIFINDER::getMountInfo()
 // The child class should call newRaDec() whenever a new value is read from the telescope.
 bool LX200_PIFINDER::ReadScopeStatus()
 {
-    return LX200Generic::ReadScopeStatus();
+    if (!isConnected())
+    {
+        return false;
+    }
+    if (isSimulation())
+    {
+        mountSim();
+        return true;
+    }
+
+    char ra_response[80];
+    char dec_response[80];
+    double ra_val, dec_val;
+
+    // Get RA
+    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response)) != 0)
+    {
+        LOG_ERROR("Failed to get RA from PiFinder.");
+        return false;
+    }
+    // Parse RA (HH:MM:SS)
+    if (f_scansexa(ra_response, &ra_val) == -1)
+    {
+        LOGF_ERROR("Failed to parse RA response: %s", ra_response);
+        return false;
+    }
+
+    // Get Dec
+    if (setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response)) != 0)
+    {
+        LOG_ERROR("Failed to get Dec from PiFinder.");
+        return false;
+    }
+    // Parse Dec (+/-DD*MM'SS)
+    if (f_scansexa(dec_response, &dec_val) == -1)
+    {
+        LOGF_ERROR("Failed to parse Dec response: %s", dec_response);
+        return false;
+    }
+
+    // Update INDI with new coordinates
+    NewRaDec(ra_val, dec_val);
+
+    // For now, we don't have a way to get Pier Side, Alt, Az, etc. from PiFinder directly.
+    // We will need to add these if the PiFinder implements corresponding LX200 commands.
+    // For now, assume a default pier side or infer from RA/Dec if possible.
+    setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
+
+    return true;
 }
 
 bool LX200_PIFINDER::Park()
