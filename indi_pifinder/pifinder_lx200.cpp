@@ -108,7 +108,7 @@ bool LX200_PIFINDER::Handshake()
     char response[80];
     if (setStandardProcedureAndReturnResponse(fd, ":MS#", response, sizeof(response)) != 0 || response[0] != '0')
     {
-        LOG_ERROR("Handshake failed: Expected '0' response from telescope on :MS# command, got '%c'.", response[0]);
+        LOGF_ERROR("Handshake failed: Expected '0' response from telescope on :MS# command, got '%c'.", response[0]);
         return false;
     }
 
