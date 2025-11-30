@@ -137,6 +137,44 @@ def get_telescope_latitude(shared_state, _):
     logger.debug("get_telescope_latitude: Latitude result: %s", lat_result)
     return lat_result
 
+def get_telescope_local_time(shared_state, _):
+    """
+    Extract local time from shared_state
+    format for LX200 protocol
+    Time = HH:MM:SS
+    """
+    dt = shared_state.datetime()
+    if not dt:
+        return "00:00:00#"
+
+    local_dt = dt.astimezone()
+    hh = local_dt.hour
+    mm = local_dt.minute
+    ss = local_dt.second
+
+    time_result = f"{hh:02d}:{mm:02d}:{ss:02d}#"
+    logger.debug("get_telescope_local_time: Time result: %s", time_result)
+    return time_result
+
+def get_telescope_utc_date(shared_state, _):
+    """
+    Extract UTC date from shared_state
+    format for LX200 protocol
+    Date = MM/DD/YY
+    """
+    dt = shared_state.datetime()
+    if not dt:
+        return "01/01/00#"
+
+    utc_dt = dt.astimezone(datetime.timezone.utc)
+    mm = utc_dt.month
+    dd = utc_dt.day
+    yy = utc_dt.year % 100
+
+    date_result = f"{mm:02d}/{dd:02d}/{yy:02d}#"
+    logger.debug("get_telescope_utc_date: Date result: %s", date_result)
+    return date_result
+
 
 def respond_none(shared_state, input_str):
     return None
@@ -289,6 +327,9 @@ lx_command_dict = {
     "GD": get_telescope_dec,
     "GR": get_telescope_ra,
     "Gg": get_telescope_longitude,
+    "Gt": get_telescope_latitude,
+    "GL": get_telescope_local_time,
+    "GG": get_telescope_utc_date,
     "RS": respond_none,
     "MS": respond_zero,
     "Sd": parse_sd_command,
