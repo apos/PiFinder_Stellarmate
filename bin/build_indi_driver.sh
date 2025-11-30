@@ -16,6 +16,7 @@ echo "Timestamp: $(date)"
 echo "############################################################"
 
 DRIVER_NAME="pifinder_lx200"
+DRIVER_LXGENERIC="lx200generic"
 INDI_TELESCOPE_DIR="${indi_source_dir}/drivers/telescope"
 DRIVER_SOURCE_DIR="${indi_pifinder_dir}"
 TELESCOPE_CMAKE_FILE="${INDI_TELESCOPE_DIR}/CMakeLists.txt"
@@ -53,6 +54,8 @@ echo "-> Preparing indi-source tree for build..."
 echo "   Copying driver source files to ${INDI_TELESCOPE_DIR}/"
 sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_NAME}.cpp" "${INDI_TELESCOPE_DIR}/"
 sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_NAME}.h" "${INDI_TELESCOPE_DIR}/"
+sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_LXGENERIC}.cpp" "${INDI_TELESCOPE_DIR}/"
+
 
 echo "   Patching main telescope CMakeLists.txt..."
 if grep -qF "$SOURCE_ENTRY" "$TELESCOPE_CMAKE_FILE"; then
