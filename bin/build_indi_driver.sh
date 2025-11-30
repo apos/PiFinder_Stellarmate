@@ -81,6 +81,11 @@ cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 
 echo "-> Building the driver (incrementally)..."
 make indi_lx200generic
+if [ $? -ne 0 ]; then
+    echo "   [ERROR] The build failed. See the output above for details."
+    echo "   Aborting script."
+    exit 1
+fi
 
 echo "-> Installing the driver executable and creating symlink..."
 sudo cp "${indi_source_dir}/build/drivers/telescope/indi_lx200generic" "/usr/bin/indi_lx200generic"
