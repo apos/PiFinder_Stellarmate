@@ -15,7 +15,7 @@ echo "Starting PiFinder INDI Driver Git-Managed Build Script"
 echo "Timestamp: $(date)"
 echo "############################################################"
 
-DRIVER_NAME="lx_200_pifinder"
+DRIVER_NAME="lx200_pifinder"
 DRIVER_LXGENERIC="lx200generic"
 INDI_TELESCOPE_DIR="${indi_source_dir}/drivers/telescope"
 DRIVER_SOURCE_DIR="${indi_pifinder_dir}"
