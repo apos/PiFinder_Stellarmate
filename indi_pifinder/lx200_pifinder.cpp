@@ -341,16 +341,17 @@ bool LX200_PIFINDER::SetTrackEnabled(bool enabled)
     // Returns: nothing
     if (enabled)
     {
-        LOG_INFO("Start tracking.");
-        if (setStandardProcedureWithoutRead(fd, "#:AP#") < 0)
+        LOG_INFO("Stop tracking. PiFinder has not tracking.");
+        // if (setStandardProcedureWithoutRead(fd, "#:AP#") < 0)
+        if (setStandardProcedureWithoutRead(fd, "#:AL#") < 0)
         {
-            LOG_ERROR("Start tracking command failed");
+            LOG_ERROR("Start tracking failed (disabled, due to PiFinder mode)");
             return false;
         }
     }
     else
     {
-        LOG_INFO("Stop tracking.");
+        LOG_INFO("Stop tracking. PiFinder has not tracking.");
         if (setStandardProcedureWithoutRead(fd, "#:AL#") < 0)
         {
             LOG_ERROR("Stop tracking command failed");
