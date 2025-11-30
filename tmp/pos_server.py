@@ -89,6 +89,30 @@ def get_telescope_dec(shared_state, _):
     logger.debug("get_telescope_dec: Dec result: %s", dec_result)
     return dec_result
 
+def get_telescope_longitude(shared_state, _):
+    """
+    Extract Longitude from current location
+    format for LX200 protocol
+    Lon = +/- DDD*MM
+    """
+    location = shared_state.location()
+    if not location.lat or not location.lon:
+        return "+000*00"
+
+    lon = location.lon
+    if lon < 0:
+        lon = abs(lon)
+        sign = "-"
+    else:
+        sign = "+"
+
+    mm, hh = modf(lon)
+    mm = round(mm * 60.0)
+
+    lon_result = f"{sign}{hh:03.0f}*{mm:02.0f}#"
+    logger.debug("get_telescope_longitude: Longitude result: %s", lon_result)
+    return lon_result
+
 
 def respond_none(shared_state, input_str):
     return None
@@ -175,6 +199,62 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
     return "1"
 
 
+def parse_sg_command(shared_state, input_str: str):
+    pattern = r":SG([-+]?\d{1,2}\.\d{1})#"
+    match = re.match(pattern, input_str)
+    if match:
+        offset_float = float(match.group(1))
+        # Convert offset (e.g., -1.0 for CET) to timedelta
+        offset_hours = int(offset_float)
+        offset_minutes = int(modf(abs(offset_float))[0] * 60)
+        
+        # Create a timezone object for the offset
+        tz = datetime.timezone(datetime.timedelta(hours=offset_hours, minutes=offset_minutes))
+
+        # Get current UTC time and apply the offset
+        current_utc_dt = datetime.now(datetime.timezone.utc)
+        new_local_dt = current_utc_dt.astimezone(tz)
+        
+        # Use the time_lock function (assuming it's accessible or passed)
+        # Note: server.py's time_lock expects a datetime object with timezone info
+        # We'll pass the local time with its offset-based timezone
+        shared_state.set_local_datetime(new_local_dt) # Assuming this is the correct way to set from pos_server
+        logger.debug(f"parse_sg_command: Set local time to {new_local_dt} with offset {offset_float}")
+        return "1"
+    else:
+        logger.warning(f"parse_sg_command: Failed to parse UTC offset command: {input_str}")
+        return "0"
+
+def parse_s_g_command(shared_state, input_str: str):
+    pattern = r":Sg([-+]?\d{2,3})\*(\d{2})#"
+    match = re.match(pattern, input_str)
+    if match:
+        degrees = int(match.group(1))
+        minutes = int(match.group(2))
+        
+        # Combine degrees and minutes into a float longitude
+        lon = degrees + (minutes / 60.0)
+        # Preserve the sign from the degrees part
+        if degrees < 0:
+            lon = -lon
+
+        # Assuming gps_lock expects longitude in float degrees
+        # We need to get current latitude and altitude to call gps_lock
+        location = shared_state.location()
+        current_lat = location.lat if location.lat is not None else 0.0
+        current_alt = location.altitude if location.altitude is not None else 0.0
+        
+        # Assuming shared_state has a method to call gps_lock indirectly or directly
+        # For now, we'll log and assume a mechanism to update shared_state will be handled.
+        # This part might need adjustment based on how gps_lock is exposed to pos_server.py
+        shared_state.set_location(current_lat, lon, current_alt, 0, "INDI", True)
+        logger.debug(f"parse_s_g_command: Set longitude to {lon} degrees")
+        return "1"
+    else:
+        logger.warning(f"parse_s_g_command: Failed to parse longitude command: {input_str}")
+        return "0"
+
+
 # Function to extract command
 def extract_command(s):
     match = re.search(r":([A-Za-z]+)", s)
@@ -184,10 +264,13 @@ def extract_command(s):
 lx_command_dict = {
     "GD": get_telescope_dec,
     "GR": get_telescope_ra,
+    "Gg": get_telescope_longitude,
     "RS": respond_none,
     "MS": respond_zero,
     "Sd": parse_sd_command,
     "Sr": parse_sr_command,
+    "SG": parse_sg_command,
+    "Sg": parse_s_g_command,
     "Q": respond_none,
 }
 

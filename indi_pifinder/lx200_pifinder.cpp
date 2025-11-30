@@ -210,13 +210,8 @@ void LX200_PIFINDER::getBasicData()
 
     if (sendLocationOnStartup)
     {
-        // LOG_INFO("sendLocationOnStartup is enabled, call sendScopeLocation.");  
-        // sendScopeLocation();  
-        // PiFinder's pos_server.py does not currently implement LX200 commands
-        // for GETTING terrestrial latitude, which sendScopeLocation() relies on.
-        // Temporarily disabling to prevent timeouts and focus on RA/DEC.
-        // LOG_INFO("sendLocationOnStartup is enabled, call sendScopeLocation.");
-        // sendScopeLocation();
+        LOG_INFO("sendLocationOnStartup is enabled, call sendScopeLocation.");
+        sendScopeLocation();
     }
     else
     {
@@ -224,13 +219,8 @@ void LX200_PIFINDER::getBasicData()
     }
     if (sendTimeOnStartup)
     {
-        //LOG_INFO("sendTimeOnStartup is enabled, call sendScopeTime.");                      │
-        // sendScopeTime(); 
-        // PiFinder's pos_server.py does not currently implement LX200 commands
-        // for GETTING time/date, which sendScopeTime() relies on.
-        // Temporarily disabling to prevent timeouts and focus on RA/DEC.
-        // LOG_INFO("sendTimeOnStartup is enabled, call sendScopeTime.");
-        // sendScopeTime();
+        LOG_INFO("sendTimeOnStartup is enabled, call sendScopeTime.");
+        sendScopeTime();
     }
     else
     {

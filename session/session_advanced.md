@@ -29,4 +29,9 @@ The established development cycle is as follows:
 4.  **Commit Changes:** Run `git commit -a -m "feat(driver): Descriptive message"` to save the state. **This is a mandatory step.**
 5.  **Build:** Run `bin/build_indi_driver.sh`.
 6.  **Test:** Connect via Ekos and observe behavior.
-7.  **Repeat:** Continue the cycle until the objective is met.
+## Current Status and Next Steps
+Longitude getter (`:Gg#`) and setters for longitude (`:Sg...#`) and UTC offset (`:SG...#`) have been implemented in `pos_server.py`. The updated `pos_server.py` has been copied to the PiFinder installation and the `pifinder` service has been restarted. The INDI driver now needs to be rebuilt to incorporate these new commands.
+
+**Next Steps:**
+1.  **Rebuild INDI Driver:** Rebuild the INDI driver using `bin/build_indi_driver.sh`.
+2.  **Test INDI Driver:** Connect via Ekos and verify that RA, DEC, Longitude, and UTC offset are all correctly communicated. Check the `indi_driver_build.log` for any errors or unexpected behavior during testing.
