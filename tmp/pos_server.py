@@ -113,6 +113,30 @@ def get_telescope_longitude(shared_state, _):
     logger.debug("get_telescope_longitude: Longitude result: %s", lon_result)
     return lon_result
 
+def get_telescope_latitude(shared_state, _):
+    """
+    Extract Latitude from current location
+    format for LX200 protocol
+    Lat = +/- DD*MM
+    """
+    location = shared_state.location()
+    if not location.lat or not location.lon:
+        return "+00*00"
+
+    lat = location.lat
+    if lat < 0:
+        lat = abs(lat)
+        sign = "-"
+    else:
+        sign = "+"
+
+    mm, hh = modf(lat)
+    mm = round(mm * 60.0)
+
+    lat_result = f"{sign}{hh:02.0f}*{mm:02.0f}#"
+    logger.debug("get_telescope_latitude: Latitude result: %s", lat_result)
+    return lat_result
+
 
 def respond_none(shared_state, input_str):
     return None
