@@ -30,11 +30,3 @@ The established development cycle is as follows:
 5.  **Build:** Run `bin/build_indi_driver.sh`.
 6.  **Test:** Connect via Ekos and observe behavior.
 7.  **Repeat:** Continue the cycle until the objective is met.
-
-## Next Iteration Strategy (ACK Failure)
-The "Telescope is not responding to ACK!" error persists because the parent `LX200Generic` class sends an ACK character (`0x06`) to probe the connection *before* our overridden `Handshake()` or `getBasicData()` methods are called. The PiFinder `pos_server.py` does not respond to this character, causing the connection to fail.
-
-The `lx200_10micron` driver succeeds because the 10micron mount hardware *does* respond to the ACK.
-
-**New Plan:**
-The `LX200Generic` class has a protected method `Connect()`. The most robust solution is to override this method in our `LX200_PIFINDER` class. We will copy the original `Connect()` implementation from `lx200generic.cpp` and simply **remove the section that performs the ACK check**. This will bypass the problematic probe while keeping the rest of the essential connection logic intact. This is a more targeted approach than trying to guess handshake commands and should definitively solve the connection failure.
