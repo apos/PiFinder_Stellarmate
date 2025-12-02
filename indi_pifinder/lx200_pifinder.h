@@ -130,9 +130,13 @@ class LX200_PIFINDER : public LX200Generic
         int monthToNumber(const char *monthName);
         int setStandardProcedureWithoutRead(int fd, const char *data);
         int setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect);
-        int setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length);
+    // Called by our getBasicData
+    bool getMountInfo() override;
 
-    protected:
+    bool sendScopeLocation() override;
+    bool sendScopeTime() override;
+
+  protected:
         void getBasicData() override;
 
         int UnattendedFlip = -1;

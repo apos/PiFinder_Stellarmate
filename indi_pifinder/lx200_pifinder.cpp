@@ -234,6 +234,18 @@ bool LX200_PIFINDER::getMountInfo()
     return true;
 }
 
+bool LX200_PIFINDER::sendScopeLocation()
+{
+    // PiFinder is a passive source of location. Do not send anything.
+    return true;
+}
+
+bool LX200_PIFINDER::sendScopeTime()
+{
+    // PiFinder is a passive source of time. Do not send anything.
+    return true;
+}
+
 // INDI::Telescope calls ReadScopeStatus() every POLLMS to check the link to the telescope and update its state and position.
 // The child class should call newRaDec() whenever a new value is read from the telescope.
 bool LX200_PIFINDER::ReadScopeStatus()
