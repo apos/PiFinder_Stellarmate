@@ -29,7 +29,7 @@
     The PiFinder has only the basic funcitonalities position, GoTo, align.
 */
 
-#include "pifinder_lx200.h"
+#include "lx200_pifinder.h"
 #include "indicom.h"
 #include "lx200driver.h"
 
