@@ -130,8 +130,9 @@ class LX200_PIFINDER : public LX200Generic
         int monthToNumber(const char *monthName);
         int setStandardProcedureWithoutRead(int fd, const char *data);
         int setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect);
+        int setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length);
     // Called by our getBasicData
-    bool getMountInfo() override;
+    bool getMountInfo();
 
     bool sendScopeLocation() override;
     bool sendScopeTime() override;
@@ -183,7 +184,6 @@ class LX200_PIFINDER : public LX200Generic
 
     private:
         int fd = -1; // short notation for PortFD/sockfd
-        bool getMountInfo();
         bool flip();
 
         int OldGstat = GSTAT_UNSET;
