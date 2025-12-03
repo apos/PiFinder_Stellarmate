@@ -4,7 +4,7 @@
 The primary objective is to develop a stable, minimal INDI driver named `piffinder_lx200` that allows astronomical software like KStars/Ekos to interface with the PiFinder's telescope position server (`pos_server.py`).
 
 ## Current Status
-The build previously failed due to incorrect C++ override syntax. After careful investigation of the `INDI::Telescope` base class header (`inditelescope.h`), I have corrected the code in `lx200_pifinder.cpp` and `.h` to properly override the `updateLocation` and `updateTime` methods. These functions now do nothing and simply return `true`, preventing the driver from sending unsupported time and location SET commands. All changes have been committed. The build has not yet been re-run since these corrections.
+The build previously completed with a warning regarding an unused `utc` parameter in `updateTime`. This warning has now been suppressed by explicitly casting the parameter to `void` within the function. All changes have been committed. The build has not yet been re-run since this latest correction.
 
 ## Key Knowledge & Strategy - The Refined Development Loop
 Our successful development loop involves the following steps, which will be strictly adhered to:
@@ -29,7 +29,7 @@ To fully restore the context of this session, the following files should be read
 6.  `tmp/pos_server.py` (PiFinder command handler)
 
 ## Next Steps
-1.  **Run the Build Script:** Execute `bin/build_indi_driver.sh` to compile the corrected driver and confirm the previous build errors are resolved.
-2.  **Test Connection in Ekos:** Start the INDI server and connect to the `PiFinder LX200` driver.
-3.  **Verify Logs:** Check the KStars/INDI logs to confirm that there are no connection or runtime errors.
+1.  **Run the Build Script:** Execute `bin/build_indi_driver.sh` to compile the corrected driver and confirm that all build warnings are now resolved, resulting in a clean build.
+2.  **Test Connection in Ekos:** Start the INDI server (if not already running) and connect to the `PiFinder LX200` driver in KStars/Ekos.
+3.  **Verify Logs:** Check the KStars/INDI logs to confirm that there are no connection or runtime errors. Pay close attention to the `indi_driver_build.log` for any appended runtime messages.
 4.  **Confirm RA/DEC Polling:** Ensure that the driver is successfully polling for and displaying the RA and DEC coordinates from the PiFinder.
