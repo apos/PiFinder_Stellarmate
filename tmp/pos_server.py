@@ -20,6 +20,7 @@ from PiFinder.composite_object import CompositeObject, MagnitudeObject
 from PiFinder.multiproclogging import MultiprocLogging
 from skyfield.positionlib import position_of_radec
 import sys
+import datetime
 import time
 
 logger = logging.getLogger("PosServer")
