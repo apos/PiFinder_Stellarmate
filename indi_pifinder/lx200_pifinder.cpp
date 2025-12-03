@@ -246,6 +246,24 @@ bool LX200_PIFINDER::sendScopeTime()
     return true;
 }
 
+bool LX200_PIFINDER::SetLongitude(double longitude)
+{
+    LOGF_INFO("SetLongitude called, ignoring command: %f", longitude);
+    return true;
+}
+
+bool LX200_PIFINDER::SetLatitude(double latitude)
+{
+    LOGF_INFO("SetLatitude called, ignoring command: %f", latitude);
+    return true;
+}
+
+bool LX200_PIFINDER::SetUTCoffset(double utcOffset)
+{
+    LOGF_INFO("SetUTCoffset called, ignoring command: %f", utcOffset);
+    return true;
+}
+
 // INDI::Telescope calls ReadScopeStatus() every POLLMS to check the link to the telescope and update its state and position.
 // The child class should call newRaDec() whenever a new value is read from the telescope.
 bool LX200_PIFINDER::ReadScopeStatus()
@@ -419,26 +437,16 @@ bool LX200_PIFINDER::SyncConfigBehaviour(bool cmcfg)
 
 bool LX200_PIFINDER::setLocalDate(uint8_t days, uint8_t months, uint16_t years)
 {
-    LOGF_INFO("setLocalDate called, ignoring command: %04d-%02d-%02d", years, months, days);
-    return true;
-}
-
-bool LX200_PIFINDER::setSiteLongitude(double longitude)
-{
-    LOGF_INFO("setSiteLongitude called, ignoring command: %f", longitude);
-    return true;
-}
-
-bool LX200_PIFINDER::setSiteLatitude(double latitude)
-{
-    LOGF_INFO("setSiteLatitude called, ignoring command: %f", latitude);
-    return true;
-}
-
-bool LX200_PIFINDER::setUTCOffset(double utcOffset)
-{
-    LOGF_INFO("setUTCOffset called, ignoring command: %f", utcOffset);
-    return true;
+    // #:SCYYYY-MM-DD#
+    // Set date to YYYY-MM-DD (year, month, day). The date is expressed in local time.
+    // Returns:
+    // 0 if the date is invalid
+    // The character "1" without additional strings in ultra-precision mode (regardless of
+    // emulation).
+    DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "<%s>", __FUNCTION__);
+    char data[64];
+    snprintf(data, sizeof(data), ":SC%04d-%02d-%02d#", years, months, days);
+    return 0 == setStandardProcedureAndExpectChar(fd, data, "1");
 }
 
 int LX200_PIFINDER::SetRefractionModelTemperature(double temperature)
