@@ -81,6 +81,7 @@ LX200_PIFINDER::LX200_PIFINDER() : LX200Generic()
 const char *LX200_PIFINDER::getDefaultName()
 {
     return "PiFinder LX200";
+}
 
 // Called by INDI::Telescope::callHandshake, either TCP Connect or Serial Port Connect
 bool LX200_PIFINDER::Handshake()
