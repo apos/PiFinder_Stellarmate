@@ -254,6 +254,7 @@ bool LX200_PIFINDER::updateLocation(double latitude, double longitude, double el
 
 bool LX200_PIFINDER::updateTime(ln_date *utc, double utc_offset)
 {
+    (void)utc; // Suppress unused parameter warning
     LOGF_INFO("updateTime called, ignoring. UTC Offset: %f", utc_offset);
     return true;
 }
