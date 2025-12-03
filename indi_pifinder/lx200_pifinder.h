@@ -139,9 +139,8 @@ class LX200_PIFINDER : public LX200Generic
 
   protected:
         void getBasicData() override;
-        bool SetSiteLongitude(double longitude) override;
-        bool SetSiteLatitude(double latitude) override;
-        bool SetUTCOffset(double utcOffset) override;
+        bool updateLocation(double latitude, double longitude, double elevation) override;
+        bool updateTime(ln_date *utc, double utc_offset) override;
 
         int UnattendedFlip = -1;
         ISwitch UnattendedFlipS[UNATTENDED_FLIP_COUNT];

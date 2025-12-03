@@ -246,21 +246,15 @@ bool LX200_PIFINDER::sendScopeTime()
     return true;
 }
 
-bool LX200_PIFINDER::SetSiteLongitude(double longitude)
+bool LX200_PIFINDER::updateLocation(double latitude, double longitude, double elevation)
 {
-    LOGF_INFO("SetSiteLongitude called, ignoring command: %f", longitude);
+    LOGF_INFO("updateLocation called, ignoring. Lat: %f, Lon: %f, Elev: %f", latitude, longitude, elevation);
     return true;
 }
 
-bool LX200_PIFINDER::SetSiteLatitude(double latitude)
+bool LX200_PIFINDER::updateTime(ln_date *utc, double utc_offset)
 {
-    LOGF_INFO("SetSiteLatitude called, ignoring command: %f", latitude);
-    return true;
-}
-
-bool LX200_PIFINDER::SetUTCOffset(double utcOffset)
-{
-    LOGF_INFO("SetUTCOffset called, ignoring command: %f", utcOffset);
+    LOGF_INFO("updateTime called, ignoring. UTC Offset: %f", utc_offset);
     return true;
 }
 
