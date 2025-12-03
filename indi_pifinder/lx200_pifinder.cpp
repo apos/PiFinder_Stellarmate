@@ -112,6 +112,10 @@ bool LX200_PIFINDER::initProperties()
     const bool result = LX200Generic::initProperties();
     if (result)
     {
+        // Override the mount type property to make it writable, like the simulator.
+        // This is crucial for clients like SkySafari which attempt to set this property on connection.
+        MountTypeSP.fill(getDeviceName(), "TELESCOPE_MOUNT_TYPE", "Mount Type", MOTION_TAB, IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
         // TODO initialize properties additional to INDI::Telescope
         IUFillNumber(&ModelCountN[0], "COUNT", "#", "%.0f", 0, 999, 0, 0);
         IUFillNumberVector(&ModelCountNP, ModelCountN, 1, getDeviceName(),
