@@ -76,8 +76,7 @@ LX200_PIFINDER::LX200_PIFINDER() : LX200Generic()
 // Note that getDriverName calls ::getDefaultName which returns LX200 Generic
 const char *LX200_PIFINDER::getDefaultName()
 {
-    return "PiFinder LX200";
-}
+    return "PiFinder LX200";the 
 
 // Called by INDI::Telescope::callHandshake, either TCP Connect or Serial Port Connect
 bool LX200_PIFINDER::Handshake()
