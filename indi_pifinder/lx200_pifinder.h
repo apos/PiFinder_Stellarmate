@@ -118,6 +118,9 @@ class LX200_PIFINDER : public LX200Generic
         bool setUnattendedFlipSetting(bool setting);
         bool SyncConfigBehaviour(bool cmcfg);
         bool setLocalDate(uint8_t days, uint8_t months, uint16_t years) override;
+        bool setSiteLongitude(double longitude) override;
+        bool setSiteLatitude(double latitude) override;
+        bool setUTCOffset(double utcOffset) override;
         bool SetTLEtoFollow(const char *tle);
         bool SetTLEfromDatabase(int tleN);
         bool TrackSat();
