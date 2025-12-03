@@ -3,8 +3,10 @@
 ## Main Requirements and Goal
 The primary objective is to develop a stable, minimal INDI driver named `piffinder_lx200` that allows astronomical software like KStars/Ekos to interface with the PiFinder's telescope position server (`pos_server.py`).
 
-## Current Status
-The build previously completed with a warning regarding an unused `utc` parameter in `updateTime`. This warning has now been suppressed by explicitly casting the parameter to `void` within the function. All changes have been committed. The build has not yet been re-run since this latest correction.
+## Current Status - **VERSION 2.0 STABLE**
+The driver is now considered **stable for its core RA/DEC polling functionality**. The previous development branch (`pi4_lx200_v2.0_base_10micron_alpha`) has been successfully merged into the `main` branch to mark this milestone.
+
+A new branch, `pi4_lx200_2.1_base_10micron_beta`, has been created to begin the next phase of development.
 
 ## Key Knowledge & Strategy - The Refined Development Loop
 Our successful development loop involves the following steps, which will be strictly adhered to:
@@ -12,7 +14,7 @@ Our successful development loop involves the following steps, which will be stri
 2.  **Check and Correct Code:** Analyze the `indi_driver_build.log` for any compilation or runtime errors. If errors exist, identify the root cause and make necessary code corrections in the `indi_pifinder/` directory.
 3.  **Git Commit:** After *every* logical code change, commit the changes with a clear and concise message.
 4.  **Update Session:** Reflect the current status, new knowledge, and next steps in `session/session.md` and `session/session_advanced.md`.
-5.  **Test and Verify:** Connect to the driver in Ekos, verify logs (KStars/INDI), and confirm functionality (e.g., RA/DEC polling).
+5.  **Test and Verify:** Connect to the driver in Ekos, verify logs (KStars/INDI), and confirm functionality.
 
 This iterative process ensures systematic progress and proper documentation of changes.
 
@@ -29,7 +31,4 @@ To fully restore the context of this session, the following files should be read
 6.  `tmp/pos_server.py` (PiFinder command handler)
 
 ## Next Steps
-1.  **Run the Build Script:** Execute `bin/build_indi_driver.sh` to compile the corrected driver and confirm that all build warnings are now resolved, resulting in a clean build.
-2.  **Test Connection in Ekos:** Start the INDI server (if not already running) and connect to the `PiFinder LX200` driver in KStars/Ekos.
-3.  **Verify Logs:** Check the KStars/INDI logs to confirm that there are no connection or runtime errors. Pay close attention to the `indi_driver_build.log` for any appended runtime messages.
-4.  **Confirm RA/DEC Polling:** Ensure that the driver is successfully polling for and displaying the RA and DEC coordinates from the PiFinder.
+The project is now ready for the next phase of development. Please provide the next set of instructions or features to implement.
