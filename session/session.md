@@ -4,7 +4,7 @@
 The primary objective is to develop a stable, minimal INDI driver named `piffinder_lx200` that allows astronomical software like KStars/Ekos to interface with the PiFinder's telescope position server (`pos_server.py`).
 
 ## Current Status
-The previous build failed due to incorrect C++ override syntax. After investigating the base class headers (`lx200generic.h` and `inditelescope.h`), I have now corrected the code in `lx200_pifinder.cpp` and `.h` to properly override the `SetLongitude`, `SetLatitude`, and `SetUTCoffset` methods from the `INDI::Telescope` base class. These functions now do nothing and simply return `true`, which will prevent the driver from sending unsupported time and location SET commands to the PiFinder device. All changes have been committed.
+The previous build failed due to incorrect C++ override syntax. I have investigated the base class headers and corrected the code in `lx200_pifinder.cpp` and `.h` to properly override the `SetSiteLongitude`, `SetSiteLatitude`, and `SetUTCOffset` methods. These functions now do nothing and simply return `true`, which will prevent the driver from sending unsupported time and location SET commands to the PiFinder device. All changes have been committed.
 
 ## Key Knowledge & Strategy
 -   **Build Process:** The driver is built by integrating its source code into the existing `indi_lx200generic` executable. The `bin/build_indi_driver.sh` script automates this entire process.
@@ -24,5 +24,5 @@ To fully restore the context of this session, the following files should be read
 ## Next Steps
 1.  **Run the Build Script:** Execute `bin/build_indi_driver.sh` to compile the corrected driver.
 2.  **Test Connection in Ekos:** Start the INDI server and connect to the `PiFinder LX200` driver.
-3.  **Verify Logs:** Check the KStars/INDI logs to confirm that the "Error setting site longitude" and "Error setting UTC Offset" messages are no longer present.
+3.  **Verify Logs:** Check the KStars/INDI logs to confirm that the build errors are resolved and the connection is stable.
 4.  **Confirm RA/DEC Polling:** Ensure that the driver is successfully polling for and displaying the RA and DEC coordinates from the PiFinder.

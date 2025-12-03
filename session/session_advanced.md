@@ -18,12 +18,12 @@ The `pifinder_lx200` driver is architected as a subclass of the `LX200Generic` c
 7.  **Repeat.**
 
 ## Current Status and Next Steps
-The previous build failed with a compiler error because the functions `setSiteLongitude`, `setSiteLatitude`, and `setUTCOffset` in `lx200_pifinder.h` were marked `override` but did not actually override any virtual function in the `LX200Generic` parent class.
+The previous build failed with a compiler error because the functions `SetLongitude`, `SetLatitude`, and `SetUTCoffset` in `lx200_pifinder.h` were marked `override` but did not match any virtual function in the parent class.
 
-After inspecting the `INDI::Telescope` base class header, the correct function signatures were identified as `SetLongitude`, `SetLatitude`, and `SetUTCoffset`. I have corrected these in `lx200_pifinder.h` and `lx200_pifinder.cpp`. The new implementations are empty stubs that simply log that they were called and return `true`, effectively silencing the unsupported SET commands that were causing errors in the previous test run. The changes have been committed.
+After inspecting the `INDI::Telescope` base class header, the correct function signatures were identified as `SetSiteLongitude`, `SetSiteLatitude`, and `SetUTCOffset`. I have corrected these in `lx200_pifinder.h` and `lx200_pifinder.cpp`. The new implementations are empty stubs that simply log that they were called and return `true`, effectively silencing the unsupported SET commands. The changes have been committed.
 
 **Next Steps:**
 1.  **Run the Build Script:** Execute `bin/build_indi_driver.sh` to compile the corrected driver.
 2.  **Test Connection in Ekos:** Start the INDI server and connect to the `PiFinder LX200` driver.
-3.  **Verify Logs:** Check the KStars/INDI logs to confirm that the "Error setting site longitude" and "Error setting UTC Offset" messages are gone.
+3.  **Verify Logs:** Check the KStars/INDI logs to confirm the build error is gone.
 4.  **Confirm RA/DEC Polling:** The primary objective is to verify that the driver is now able to maintain a stable connection and correctly poll for and display the RA and DEC coordinates from the PiFinder.
