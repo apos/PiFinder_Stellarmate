@@ -4,10 +4,10 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.3.0"
+pifinder_stellarmate_version_stable="2.5.1"
 
 # This script is actually tested against this version
-pifinder_stellarmate_version_testing="2.3.0"
+pifinder_stellarmate_version_testing="2.5.1"
 
 
 ############################################################
@@ -85,6 +85,12 @@ sudo usermod -a -G spi ${USER}
 sudo usermod -a -G gpio ${USER}
 sudo usermod -a -G i2c ${USER}
 sudo usermod -a -G video ${USER}
+sudo usermod -a -G kmem ${USER}
+
+# udev rule for /dev/gpiomem access (Arch Linux)
+echo 'SUBSYSTEM=="gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpiomem.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --action=change /dev/gpiomem
 
 sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
@@ -151,9 +157,10 @@ else
     echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
 fi
 
-# Install some package requirements
-sudo apt-get update
-sudo apt-get install -y git python3-pip python3-venv libcap-dev python3-libcamera python3-picamera2
+# Install some package requirements (Arch/SMOS)
+sudo pacman -Sy git python-pip python-virtualenv libcap python-libcamera;
+
+
 
 
 #########################################################################
@@ -163,6 +170,7 @@ cd ${pifinder_home}/PiFinder
 # Replace patched service files with the correct Stellarmate versions
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service ${pifinder_home}/PiFinder/pi_config_files/pifinder.service
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinder_home}/PiFinder/pi_config_files/pifinder_splash.service
+cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service ${pifinder_home}/PiFinder/pi_config_files/pifinder-setup.service
 
 ############################################
 # Create an activate3 VENV
@@ -268,7 +276,13 @@ sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 # NOT USED, PART OF STELLARMATE-OS:  sudo cp ~/PiFinder/pi_config_files/smb.conf /etc/samba/smb.conf
 
 
-CONFIG_FILE="/boot/firmware/config.txt"
+if [ -f "/boot/firmware/config.txt" ]; then
+    CONFIG_FILE="/boot/firmware/config.txt"
+elif [ -f "/boot/config.txt" ]; then
+    CONFIG_FILE="/boot/config.txt"
+else
+    echo "❌ config.txt nicht gefunden!"; exit 1
+fi
 
 echo "🔧 Ensuring required config.txt entries are present ..."
 
@@ -301,14 +315,17 @@ echo "✅ config.txt checks complete."
 # Enable service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service /etc/systemd/system/pifinder_splash.service
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service /etc/systemd/system/pifinder-setup.service
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
+sudo systemctl enable pifinder-setup
 
 echo "🔧 Starting PiFinder services ..."
+sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 

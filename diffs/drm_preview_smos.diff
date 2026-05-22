@@ -1,0 +1,61 @@
+--- /tmp/drm_preview_orig.py	2026-05-22 18:28:54.725687732 +0200
++++ /home/stellarmate/PiFinder/python/.venv/lib/python3.14/site-packages/picamera2/previews/drm_preview.py	2026-05-21 11:29:04.457029530 +0200
+@@ -8,9 +8,16 @@
+     # If available, use pure python kms package
+     import kms as pykms
+     from kms import PixelFormats as PixelFormat
++    _pykms_available = True
+ except ImportError:
+-    import pykms
+-    from pykms import PixelFormat
++    try:
++        import pykms
++        from pykms import PixelFormat
++        _pykms_available = True
++    except ImportError:
++        pykms = None
++        PixelFormat = None
++        _pykms_available = False
+ 
+ from libcamera import Transform
+ 
+@@ -19,6 +26,8 @@
+ 
+ class DrmManager:
+     def __init__(self):
++        if not _pykms_available:
++            raise ImportError("DrmPreview requires pykms which is not installed")
+         self.lock = threading.Lock()
+         self.use_count = 0
+ 
+@@ -49,20 +58,22 @@
+ 
+ class DrmPreview(NullPreview):
+     FMT_MAP = {
+-        "RGB888": PixelFormat.RGB888,
+-        "BGR888": PixelFormat.BGR888,
++        "RGB888": PixelFormat.RGB888 if _pykms_available else None,
++        "BGR888": PixelFormat.BGR888 if _pykms_available else None,
+         # doesn't work "YUYV": PixelFormat.YUYV,
+         # doesn't work "YVYU": PixelFormat.YVYU,
+-        "XRGB8888": PixelFormat.XRGB8888,
+-        "XBGR8888": PixelFormat.XBGR8888,
+-        "YUV420": PixelFormat.YUV420,
+-        "YVU420": PixelFormat.YVU420,
+-        "MJPEG": PixelFormat.BGR888,
++        "XRGB8888": PixelFormat.XRGB8888 if _pykms_available else None,
++        "XBGR8888": PixelFormat.XBGR8888 if _pykms_available else None,
++        "YUV420": PixelFormat.YUV420 if _pykms_available else None,
++        "YVU420": PixelFormat.YVU420 if _pykms_available else None,
++        "MJPEG": PixelFormat.BGR888 if _pykms_available else None,
+     }
+ 
+-    _manager = DrmManager()
++    _manager = DrmManager() if _pykms_available else None
+ 
+     def __init__(self, x=0, y=0, width=640, height=480, transform=None):
++        if not _pykms_available:
++            raise ImportError("DrmPreview requires pykms which is not installed")
+         self.init_drm(x, y, width, height, transform)
+         self.stop_count = 0
+ 

@@ -1,0 +1,43 @@
+--- /tmp/keyboard_pi_orig.py	2026-05-22 16:56:25.439186516 +0200
++++ python/PiFinder/keyboard_pi.py	2026-04-24 20:49:31.740558869 +0200
+@@ -76,9 +76,9 @@
+         ]
+         # fmt: on
+ 
+-        # physical keyboard support init
+-        self.li_kb = libinput.LibInput(context_type=libinput.ContextType.UDEV)
+-        self.li_kb.assign_seat("seat0")
++        # physical keyboard support init (python-libinput 0.1.0 API)
++        self.li_kb = libinput.LibInput(udev=True)
++        self.li_kb.udev_assign_seat("seat0")
+ 
+     def get_keyboard_key(self) -> int:
+         """
+@@ -98,17 +98,16 @@
+         }
+ 
+         while True:
+-            while True:
+-                self.li_kb._libinput.libinput_dispatch(self.li_kb._li)
+-                hevent = self.li_kb._libinput.libinput_get_event(self.li_kb._li)
+-                if not hevent:
+-                    return 0
+-                type_ = self.li_kb._libinput.libinput_event_get_type(hevent)
+-
+-                if type_.is_keyboard():
+-                    kbev = libinput.KeyboardEvent(hevent, self.li_kb._libinput)
+-                    if kbev.key_state == libinput.constant.KeyState.RELEASED:
+-                        return key_mapping.get(kbev.key, 0)
++            from libinput.event import Event as LibInputEvent
++            self.li_kb._libinput.libinput_dispatch(self.li_kb._li)
++            hevent = self.li_kb._libinput.libinput_get_event(self.li_kb._li)
++            if not hevent:
++                return 0
++            event = LibInputEvent(hevent, self.li_kb._libinput)
++            if event.type == libinput.constant.Event.KEYBOARD_KEY:
++                kbev = event.get_keyboard_event()
++                if kbev.get_key_state() == libinput.constant.KeyState.RELEASED:
++                    return key_mapping.get(int(kbev.get_key()), 0)
+ 
+     def run_keyboard(self, log_queue):
+         """

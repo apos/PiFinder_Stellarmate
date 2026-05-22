@@ -1,0 +1,11 @@
+[Unit]
+Description=PiFinder Setup (groups, gpio, pwm)
+Before=pifinder.service pifinder_splash.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/stellarmate/PiFinder_Stellarmate/bin/pifinder_pre_start.sh stellarmate
+
+[Install]
+WantedBy=basic.target

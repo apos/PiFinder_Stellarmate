@@ -18,8 +18,8 @@ else
     current_pi="unknown"
 fi
 
-# Detect OS codenameTh
-current_os=$(lsb_release -sc)
+# Detect OS codename (lsb_release on Debian/bookworm, /etc/os-release ID on Arch/SMOS)
+current_os=$(lsb_release -sc 2>/dev/null || grep "^ID=" /etc/os-release | cut -d= -f2)
 
 # Helper function to decide whether a patch should apply (safe string splitting)
 should_apply_patch() {
@@ -103,7 +103,7 @@ fi
     echo "DEBUG: current_pifinder = $current_pifinder"
     echo "DEBUG: current_pi = $current_pi"
     echo "DEBUG: current_os = $current_os"
-    if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+    if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
         echo "DEBUG: should_apply_patch returned true for requirements.txt"
     else
         echo "DEBUG: should_apply_patch returned false for requirements.txt"
@@ -111,7 +111,7 @@ fi
 
 echo "------------------------------------"
 #######################################################
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
     cp "$python_requirements" "$python_requirements.bak"
 
@@ -171,7 +171,7 @@ for service_file in "${service_files[@]}"; do
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     for cfg in "$config_default_json" "$config_json"; do
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
@@ -276,7 +276,7 @@ echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
         sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
     fi
@@ -307,7 +307,7 @@ echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
         sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
     fi
@@ -323,7 +323,7 @@ echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
         sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
     fi
@@ -339,7 +339,7 @@ echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
         sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
     fi
@@ -374,7 +374,7 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
@@ -398,7 +398,7 @@ echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     camera_insert="from picamera2 import Picamera"
     if ! grep -q "$camera_insert" "$camera_file"; then
         awk -v insert="$camera_insert" '
@@ -439,7 +439,7 @@ echo "🔧 Updating server.py ..."
 cp "$server_py" "$server_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     # Replace hardcoded 'pifinder' with dynamic username in login function
     sed -i "s|sys_utils.verify_password(\"pifinder\", password)|sys_utils.verify_password(\"$(whoami)\", password)|" "$server_py"
     # Replace hardcoded 'pifinder' with dynamic username in password_change function
@@ -477,10 +477,58 @@ echo "------------------------------------"
 echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0" "P4|P5" "bookworm"; then
+if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     patch "$menu_py" < "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+############################################################
+# SMOS (Arch Linux) specific patches
+############################################################
+
+#######################################
+# Patch keyboard_pi.py for SMOS (python-libinput 0.1.0 API)
+echo "🔧 Updating keyboard_pi.py for SMOS (python-libinput 0.1.0 API) ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "general" "P4|P5" "arch"; then
+    cp "$keyboard_py" "$keyboard_py.bak"
+    if grep -q 'context_type=libinput.ContextType.UDEV' "$keyboard_py"; then
+        patch "$keyboard_py" < "${pifinder_stellarmate_dir}/diffs/keyboard_pi_smos.diff"
+        echo "✅ Patched keyboard_pi.py for python-libinput 0.1.0"
+    else
+        echo "ℹ️ keyboard_pi.py already patched or pattern not found"
+    fi
+    show_diff_if_changed "$keyboard_py"
+    python3 -m py_compile "$keyboard_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+else
+    echo "⏩ Skipping keyboard_pi.py SMOS patch: not on Arch Linux"
+fi
+echo "------------------------------------"
+
+#######################################
+# Patch picamera2 drm_preview.py for SMOS (pykms not available on Arch)
+echo "🔧 Patching picamera2 drm_preview.py for SMOS (no pykms) ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "general" "P4|P5" "arch"; then
+    drm_preview_py=$(python3 -c "import picamera2.previews.drm_preview as m; print(m.__file__)" 2>/dev/null)
+    if [ -n "$drm_preview_py" ]; then
+        if grep -q '_pykms_available' "$drm_preview_py"; then
+            echo "ℹ️ drm_preview.py already patched"
+        else
+            cp "$drm_preview_py" "$drm_preview_py.bak"
+            patch "$drm_preview_py" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff"
+            echo "✅ Patched drm_preview.py for missing pykms"
+            show_diff_if_changed "$drm_preview_py"
+        fi
+    else
+        echo "⚠️ picamera2 not installed in venv, skipping drm_preview.py patch"
+    fi
+else
+    echo "⏩ Skipping drm_preview.py patch: not on Arch Linux"
+fi
 echo "------------------------------------"
 
