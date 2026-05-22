@@ -80,12 +80,13 @@ echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
 ############################################################
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
+# Create hardware groups if missing (Arch/SMOS does not create these by default)
+for grp in spi gpio i2c kmem input; do
+    getent group "$grp" > /dev/null 2>&1 || sudo groupadd "$grp"
+done
+
 # Add rights accessing hardware to user
-sudo usermod -a -G spi ${USER}
-sudo usermod -a -G gpio ${USER}
-sudo usermod -a -G i2c ${USER}
-sudo usermod -a -G video ${USER}
-sudo usermod -a -G kmem ${USER}
+sudo usermod -a -G spi,gpio,i2c,video,kmem,input ${USER}
 
 # udev rule for /dev/gpiomem access (Arch Linux)
 echo 'SUBSYSTEM=="gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpiomem.rules
@@ -155,10 +156,17 @@ else
     git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
     sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
     echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
+    bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+    find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
+    find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
 fi
 
-# Install some package requirements (Arch/SMOS)
-sudo pacman -Sy git python-pip python-virtualenv libcap python-libcamera;
+# Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot)
+grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
+sudo pacman -Sy --noconfirm
+
+# Install system package requirements (Arch/SMOS)
+sudo pacman -S --noconfirm --needed git python-pip python-virtualenv libcap python-libcamera openexr
 
 
 
@@ -225,6 +233,23 @@ else
     install_requirements "${python_requirements}"
     find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
     find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
+
+    # Install python-libinput 0.1.0 manually (0.3.0a0 unavailable; setup.py uses removed 'imp')
+    echo "🔧 Installing python-libinput 0.1.0 (patched for Python 3.12+) ..."
+    LIBINPUT_TMP=$(mktemp -d)
+    curl -sL https://files.pythonhosted.org/packages/source/p/python-libinput/python-libinput-0.1.0.tar.gz \
+        -o "${LIBINPUT_TMP}/python-libinput-0.1.0.tar.gz"
+    tar xzf "${LIBINPUT_TMP}/python-libinput-0.1.0.tar.gz" -C "${LIBINPUT_TMP}"
+    # Patch setup.py: replace removed 'imp' module with importlib.util
+    sed -i 's/from imp import load_source/import importlib.util\ndef load_source(name, path):\n    spec = importlib.util.spec_from_file_location(name, path)\n    mod = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(mod)\n    return mod/' \
+        "${LIBINPUT_TMP}/python-libinput-0.1.0/setup.py"
+    pip install "${LIBINPUT_TMP}/python-libinput-0.1.0/"
+    rm -rf "${LIBINPUT_TMP}"
+    echo "✅ python-libinput 0.1.0 installed."
+
+    # Re-run patch script now that picamera2 is installed (drm_preview.py patch)
+    echo "🔧 Re-applying patches post pip-install (drm_preview.py) ..."
+    bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
   fi
 fi
 
@@ -286,9 +311,9 @@ fi
 
 echo "🔧 Ensuring required config.txt entries are present ..."
 
+# Add a line globally if not already present anywhere in config.txt
 add_if_missing() {
     local line="$1"
-    local marker="$2"
     if ! grep -Fxq "$line" "$CONFIG_FILE"; then
         echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
         echo "✅ Added: $line"
@@ -297,18 +322,64 @@ add_if_missing() {
     fi
 }
 
-# Optionaler Marker, um PiFinder-Block zu kennzeichnen
-add_if_missing "#Pifinder"
+# Add a line inside a specific [section] block; creates section if missing.
+# Lines are only added once per section (idempotent).
+add_to_section() {
+    local section="$1"
+    local line="$2"
+    # Check if line already exists anywhere in file (avoid duplicates across sections)
+    if grep -Fxq "$line" "$CONFIG_FILE"; then
+        echo "ℹ️  Already present: $line"
+        return
+    fi
+    # Insert section header + line if section missing, else append after last line of section
+    if ! grep -Fxq "[$section]" "$CONFIG_FILE"; then
+        printf '\n[%s]\n%s\n' "$section" "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
+        echo "✅ Created [$section] and added: $line"
+    else
+        # Append line after the section header
+        sudo sed -i "/^\[$section\]/a $line" "$CONFIG_FILE"
+        echo "✅ Added to [$section]: $line"
+    fi
+}
 
-# Interfaces und Overlays
+# Global entries (apply to all Pi models)
 add_if_missing "dtparam=spi=on"
 add_if_missing "dtparam=i2c_arm=on"
-add_if_missing "dtparam=i2c_arm_baudrate=10000"
-add_if_missing "dtoverlay=pwm,pin=13,func=4"
-add_if_missing "dtoverlay=uart3"
-add_if_missing "dtoverlay=pwm-2chan"  # Speziell für Bookworm
+
+# Detect Pi model for model-specific overlays
+hw_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+    # Pi5: PWM on GPIO13 (ALT0), uart3, imx296
+    add_to_section "pi5" "dtparam=i2c_arm_baudrate=10000"
+    add_to_section "pi5" "dtoverlay=pwm,pin=13,func=4"
+    add_to_section "pi5" "dtoverlay=uart3"
+    add_to_section "pi5" "dtoverlay=pwm-2chan"
+    add_to_section "pi5" "dtoverlay=imx296"
+elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+    # Pi4: PWM on GPIO13 (ALT0), uart3, imx296 — NO pwm-2chan (would override to GPIO19)
+    add_to_section "pi4" "dtparam=i2c_arm_baudrate=10000"
+    add_to_section "pi4" "dtoverlay=pwm,pin=13,func=4"
+    add_to_section "pi4" "dtoverlay=uart3"
+    add_to_section "pi4" "dtoverlay=imx296"
+fi
 
 echo "✅ config.txt checks complete."
+
+# Create 2GB swapfile if missing (btrfs-compatible: chattr +C + dd, NOT fallocate)
+if [ ! -f /swapfile ]; then
+    echo "🔧 Creating 2GB swapfile (btrfs-compatible) ..."
+    sudo touch /swapfile
+    sudo chattr +C /swapfile 2>/dev/null || true   # disable CoW for btrfs
+    sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap defaults 0 0" | sudo tee -a /etc/fstab
+    echo "✅ Swapfile created and activated."
+else
+    echo "ℹ️  Swapfile already exists."
+fi
 
 
 
