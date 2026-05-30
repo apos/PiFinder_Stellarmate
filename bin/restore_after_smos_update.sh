@@ -42,7 +42,9 @@ echo "🔧 [2/8] Installing system packages ..."
 # libcamera 0.7.1+ (pybind11 smart_holder) is NOT compatible with picamera2 from pip.
 # python-libcamera must stay at 0.7.0 (no smart_holder) — pinned via IgnorePkg.
 # If python-libcamera 0.7.0 cache pkg is available, downgrade; otherwise install from pacman.
-PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
+# Prefer pinned package from repo, fall back to pacman cache
+PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
+[ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
     libcamera libcamera-ipa \

@@ -172,7 +172,9 @@ sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
     libcamera libcamera-ipa \
     openexr
-PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
+# Prefer pinned package from repo, fall back to pacman cache
+PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
+[ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
 if [ -n "$PYLIBCAM_PKG" ]; then
     echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
     sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
