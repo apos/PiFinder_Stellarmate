@@ -27,4 +27,15 @@ if [ -f /swapfile ] && ! swapon --show | grep -q /swapfile; then
     swapon /swapfile 2>/dev/null || true
 fi
 
+# Python version check: warn if venv Python != system Python
+VENV_PY="/home/stellarmate/PiFinder/python/.venv/bin/python"
+if [ -f "$VENV_PY" ]; then
+    venv_ver=$("$VENV_PY" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    sys_ver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    if [ -n "$venv_ver" ] && [ "$venv_ver" != "$sys_ver" ]; then
+        echo "ERROR: PiFinder venv Python $venv_ver != system Python $sys_ver." >&2
+        echo "ERROR: Run pifinder_stellarmate_setup.sh to rebuild the venv." >&2
+    fi
+fi
+
 exit 0

@@ -181,6 +181,19 @@ cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinde
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service ${pifinder_home}/PiFinder/pi_config_files/pifinder-setup.service
 
 ############################################
+# Python version check: delete venv if system Python changed (e.g. after SMOS update)
+if [ -f "${python_venv}/bin/python" ]; then
+    venv_ver=$("${python_venv}/bin/python" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    sys_ver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    if [ -n "$venv_ver" ] && [ "$venv_ver" != "$sys_ver" ]; then
+        echo "⚠️  Python version mismatch: venv=$venv_ver, system=$sys_ver — deleting venv for rebuild."
+        rm -rf "${python_venv}"
+    else
+        echo "ℹ️  Python version OK: venv=$venv_ver, system=$sys_ver"
+    fi
+fi
+
+############################################
 # Create an activate3 VENV
 
 # Check if venv is active and install requirements
