@@ -1,27 +1,45 @@
 #!/bin/bash
 # simulate_fresh_install.sh
 #
-# Simulates the state after a SMOS BTRFS snapshot reset:
-# - Backs up all affected files to /home/stellarmate/pifinder_sim_backup/<timestamp>/
-# - Removes services, udev rules, config.txt [pi4] section, swapfile, pacman repos
-# - Leaves /home and pacman packages intact (90% simulation)
+# Simulates the state after a SMOS BTRFS snapshot reset.
+# Backs up all affected files to /home/stellarmate/pifinder_sim_backup/<timestamp>/
 #
-# After running this script, execute:
-#   cd /home/stellarmate/PiFinder_Stellarmate && bash pifinder_stellarmate_setup.sh
+# Usage:
+#   bash simulate_fresh_install.sh [--mode=update]   # Use Case 2: SMOS update, /home intact (default)
+#   bash simulate_fresh_install.sh --mode=fresh      # Use Case 1: brand new SMOS, no PiFinder at all
+#
+# After running this script, execute the appropriate restore/setup script:
+#   Use Case 2: bash bin/restore_after_smos_update.sh
+#   Use Case 1: bash pifinder_stellarmate_setup.sh
 
 set -e
+
+# Parse --mode argument
+MODE="update"
+for arg in "$@"; do
+    case "$arg" in
+        --mode=fresh)  MODE="fresh"  ;;
+        --mode=update) MODE="update" ;;
+    esac
+done
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="/home/stellarmate/pifinder_sim_backup/${TIMESTAMP}"
 
 echo "======================================================"
-echo " PiFinder SMOS Fresh-Install Simulation"
+echo " PiFinder SMOS Fresh-Install Simulation  [mode: ${MODE}]"
 echo " Backup: ${BACKUP_DIR}"
 echo "======================================================"
 echo ""
-echo "⚠️  This will remove services, udev rules, config.txt [pi4] section,"
-echo "    swapfile and pacman repos — simulating a BTRFS snapshot reset."
-echo "    /home and pacman packages remain untouched."
+if [ "$MODE" = "fresh" ]; then
+    echo "⚠️  Mode FRESH: removes services, udev rules, config.txt [pi4] section,"
+    echo "    swapfile, pacman repos AND /home/stellarmate/PiFinder/ + venv."
+    echo "    Simulates brand-new SMOS without any PiFinder installation."
+else
+    echo "⚠️  Mode UPDATE: removes services, udev rules, config.txt [pi4] section,"
+    echo "    swapfile and pacman repos — simulating a BTRFS snapshot reset."
+    echo "    /home/PiFinder and venv remain untouched."
+fi
 echo ""
 read -p "Proceed? (yes/no): " confirm
 [[ "$confirm" != "yes" ]] && echo "Aborted." && exit 0
@@ -140,13 +158,32 @@ with open(path, 'w') as f:
 print("  ✅ pacman.conf reset to smos-only")
 PYEOF
 
+# -------------------------------------------------------
+# FRESH MODE: additionally remove /home/PiFinder and venv
+# -------------------------------------------------------
+if [ "$MODE" = "fresh" ]; then
+    echo "🗑️  [fresh] Stopping and removing PiFinder venv ..."
+    rm -rf /home/stellarmate/PiFinder/python/.venv
+    echo "  ✅ venv removed"
+
+    echo "🗑️  [fresh] Removing /home/stellarmate/PiFinder/ ..."
+    rm -rf /home/stellarmate/PiFinder
+    echo "  ✅ /home/stellarmate/PiFinder/ removed"
+fi
+
 echo ""
 echo "======================================================"
-echo "✅ Simulation complete. System is now in post-SMOS-update state."
+echo "✅ Simulation complete [mode: ${MODE}]."
 echo ""
-echo "Next step — run setup script:"
-echo "  cd /home/stellarmate/PiFinder_Stellarmate"
-echo "  bash pifinder_stellarmate_setup.sh"
+if [ "$MODE" = "fresh" ]; then
+    echo "Next step — full setup:"
+    echo "  cd /home/stellarmate/PiFinder_Stellarmate"
+    echo "  bash pifinder_stellarmate_setup.sh"
+else
+    echo "Next step — restore root-only items (services, config.txt, swapfile):"
+    echo "  cd /home/stellarmate/PiFinder_Stellarmate"
+    echo "  bash bin/restore_after_smos_update.sh"
+fi
 echo ""
 echo "To restore from backup:"
 echo "  sudo rsync -a ${BACKUP_DIR}/etc/ /etc/"
