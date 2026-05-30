@@ -166,7 +166,12 @@ grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional Tr
 sudo pacman -Sy --noconfirm
 
 # Install system package requirements (Arch/SMOS)
-sudo pacman -S --noconfirm --needed git python-pip python-virtualenv libcap python-libcamera openexr
+# libcamera + python-libcamera must be the same version (ABI compatibility)
+sudo pacman -S --noconfirm --needed \
+    git python-pip python-virtualenv libcap \
+    libcamera libcamera-ipa \
+    python-libcamera \
+    openexr
 
 
 

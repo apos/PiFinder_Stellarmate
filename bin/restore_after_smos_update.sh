@@ -39,7 +39,13 @@ echo "  ✅ Repos added and synced"
 # 2. System packages
 # -------------------------------------------------------
 echo "🔧 [2/8] Installing system packages ..."
-sudo pacman -S --noconfirm --needed git python-pip python-virtualenv libcap python-libcamera openexr
+# libcamera + python-libcamera must be the same version (ABI compatibility)
+# Installing both together ensures no mismatch after SMOS updates
+sudo pacman -S --noconfirm --needed \
+    git python-pip python-virtualenv libcap \
+    libcamera libcamera-ipa \
+    python-libcamera \
+    openexr
 echo "  ✅ Packages installed"
 
 # -------------------------------------------------------
