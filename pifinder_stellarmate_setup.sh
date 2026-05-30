@@ -166,12 +166,22 @@ grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional Tr
 sudo pacman -Sy --noconfirm
 
 # Install system package requirements (Arch/SMOS)
-# libcamera + python-libcamera must be the same version (ABI compatibility)
+# libcamera 0.7.1+ uses pybind11 smart_holder — incompatible with picamera2 from pip.
+# python-libcamera must stay at 0.7.0 — use cached package if available, then pin.
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
     libcamera libcamera-ipa \
-    python-libcamera \
     openexr
+PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
+if [ -n "$PYLIBCAM_PKG" ]; then
+    echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
+    sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
+else
+    echo "⚠️  python-libcamera 0.7.0 not in cache — installing current (may need manual fix)"
+    sudo pacman -S --noconfirm --needed python-libcamera
+fi
+grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
+    sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
 
 
 

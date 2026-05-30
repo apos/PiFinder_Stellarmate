@@ -39,14 +39,25 @@ echo "  ✅ Repos added and synced"
 # 2. System packages
 # -------------------------------------------------------
 echo "🔧 [2/8] Installing system packages ..."
-# libcamera + python-libcamera must be the same version (ABI compatibility)
-# Installing both together ensures no mismatch after SMOS updates
+# libcamera 0.7.1+ (pybind11 smart_holder) is NOT compatible with picamera2 from pip.
+# python-libcamera must stay at 0.7.0 (no smart_holder) — pinned via IgnorePkg.
+# If python-libcamera 0.7.0 cache pkg is available, downgrade; otherwise install from pacman.
+PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
     libcamera libcamera-ipa \
-    python-libcamera \
     openexr
-echo "  ✅ Packages installed"
+if [ -n "$PYLIBCAM_PKG" ]; then
+    echo "  ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
+    sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
+else
+    echo "  ⚠️  python-libcamera 0.7.0 not in cache — installing current version (may break camera!)"
+    sudo pacman -S --noconfirm --needed python-libcamera
+fi
+# Pin python-libcamera to prevent upgrade to 0.7.1+ (smart_holder incompatible with picamera2)
+grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
+    sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
+echo "  ✅ Packages installed, python-libcamera pinned"
 
 # -------------------------------------------------------
 # 3. Groups + usermod
