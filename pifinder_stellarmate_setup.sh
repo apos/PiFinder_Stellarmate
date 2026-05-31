@@ -198,6 +198,25 @@ cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service ${pifinde
 cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service ${pifinder_home}/PiFinder/pi_config_files/pifinder-setup.service
 
 ############################################
+# Create swapfile BEFORE pip install — pip builds (numpy, pandas, picamera2)
+# consume huge amounts of RAM and will kill the system without swap on Pi4
+if [ ! -f /swapfile ]; then
+    echo "🔧 Creating 2GB swapfile (btrfs-compatible, needed before pip install) ..."
+    sudo touch /swapfile
+    sudo chattr +C /swapfile 2>/dev/null || true
+    sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap defaults 0 0" | sudo tee -a /etc/fstab
+    echo "✅ Swapfile ready."
+else
+    # Ensure swap is active even if file exists (e.g. after reboot without fstab)
+    swapon --show | grep -q /swapfile || sudo swapon /swapfile 2>/dev/null || true
+    echo "ℹ️  Swapfile already exists and active."
+fi
+
+############################################
 # Python version check: delete venv if system Python changed (e.g. after SMOS update)
 if [ -f "${python_venv}/bin/python" ]; then
     venv_ver=$("${python_venv}/bin/python" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
@@ -273,7 +292,7 @@ else
     # Patch setup.py: replace removed 'imp' module with importlib.util
     sed -i 's/from imp import load_source/import importlib.util\ndef load_source(name, path):\n    spec = importlib.util.spec_from_file_location(name, path)\n    mod = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(mod)\n    return mod/' \
         "${LIBINPUT_TMP}/python-libinput-0.1.0/setup.py"
-    pip install "${LIBINPUT_TMP}/python-libinput-0.1.0/"
+    nice -n 15 ionice -c 3 pip install "${LIBINPUT_TMP}/python-libinput-0.1.0/"
     rm -rf "${LIBINPUT_TMP}"
     echo "✅ python-libinput 0.1.0 installed."
 
@@ -396,20 +415,7 @@ fi
 
 echo "✅ config.txt checks complete."
 
-# Create 2GB swapfile if missing (btrfs-compatible: chattr +C + dd, NOT fallocate)
-if [ ! -f /swapfile ]; then
-    echo "🔧 Creating 2GB swapfile (btrfs-compatible) ..."
-    sudo touch /swapfile
-    sudo chattr +C /swapfile 2>/dev/null || true   # disable CoW for btrfs
-    sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
-    grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap defaults 0 0" | sudo tee -a /etc/fstab
-    echo "✅ Swapfile created and activated."
-else
-    echo "ℹ️  Swapfile already exists."
-fi
+# Swapfile is created earlier (before pip install) — see above
 
 
 

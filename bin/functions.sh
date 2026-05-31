@@ -226,12 +226,14 @@ create_venv() {
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."
-  pip install -q -r "${requirements_file}" --break-system-packages
+  # nice -n 15: reduce CPU priority to prevent system overload during compilation
+  # ionice -c 3: idle I/O class so system stays responsive during long builds
+  nice -n 15 ionice -c 3 pip install -r "${requirements_file}"
   if [ $? -eq 0 ]; then
     echo "Python Requirements installed successfully."
-    return 0 # True: requirements installed successfully
+    return 0
   else
     echo "Error installing Python Requirements."
-    return 1 # False: requirements installation failed
+    return 1
   fi
 }
