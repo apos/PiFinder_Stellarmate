@@ -507,22 +507,10 @@ echo "✅ config.txt checks complete."
 
 
 
-# WirePlumber: libcamera-Monitor deaktivieren (IMX296-Kamera-Fix)
-# Muss VOR dem ersten Reboot existieren, damit WirePlumber beim Boot
-# die Config lädt und /dev/video0 nicht blockiert.
-echo "🔧 Configuring WirePlumber (disable libcamera monitor for IMX296) ..."
-WP_CONF_DIR="/home/${USER}/.config/wireplumber/wireplumber.conf.d"
-WP_CONF_FILE="${WP_CONF_DIR}/50-disable-libcamera.conf"
-mkdir -p "${WP_CONF_DIR}"
-cat > "${WP_CONF_FILE}" << 'EOF'
-wireplumber.profiles = {
-  main = {
-    monitor.libcamera = disabled
-  }
-}
-EOF
-chown -R "${USER}:${USER}" "/home/${USER}/.config/wireplumber/"
-echo "✅ WirePlumber libcamera monitor disabled"
+# System-Fixes anwenden (WirePlumber, Gruppen, PWM, Swap etc.)
+echo "🔧 Running pifinder_pre_start.sh to apply system fixes ..."
+sudo bash "${pifinder_stellarmate_bin}/pifinder_pre_start.sh" "${USER}"
+echo "✅ System fixes applied"
 
 # Enable service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
