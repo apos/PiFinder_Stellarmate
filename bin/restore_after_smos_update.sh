@@ -61,6 +61,17 @@ grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
 echo "  ✅ Packages installed, python-libcamera pinned"
 
+# Risiko 1: libcamera Major-Version prüfen
+LIBCAM_MAJOR=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1)
+LIBCAM_VER=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)
+if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
+    echo "⚠️  WARNING: libcamera major version $LIBCAM_VER detected!"
+    echo "    python-libcamera 0.7.0 may be incompatible. Camera may not work."
+    echo "    Update packages/python-libcamera-*.pkg in PiFinder_Stellarmate repo."
+else
+    echo "ℹ️  libcamera $LIBCAM_VER — compatible with pinned python-libcamera 0.7.0"
+fi
+
 # -------------------------------------------------------
 # 3. Groups + usermod
 # -------------------------------------------------------

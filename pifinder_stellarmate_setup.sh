@@ -187,6 +187,17 @@ fi
 grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
 
+# Risiko 1: libcamera Major-Version prüfen — python-libcamera 0.7.0 ist nur für 0.7.x kompatibel
+LIBCAM_VER=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)
+LIBCAM_MAJOR=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1)
+if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
+    echo "⚠️  WARNING: libcamera major version $LIBCAM_VER detected!"
+    echo "    python-libcamera 0.7.0 may be incompatible with libcamera $LIBCAM_VER."
+    echo "    If camera fails, update packages/python-libcamera-*.pkg in the SM repo."
+else
+    echo "ℹ️  libcamera version $LIBCAM_VER — compatible with python-libcamera 0.7.0"
+fi
+
 
 
 
@@ -298,31 +309,33 @@ else
     rm -rf "${LIBINPUT_TMP}"
     echo "✅ python-libinput 0.1.0 installed."
 
-    # Patch skyfield starlib.py for numpy 2.0 compatibility
-    # isnan() on object dtype arrays raises TypeError in numpy 2.0+
+    # Patch skyfield starlib.py for numpy 2.0 compatibility (Risiko 3)
     echo "🔧 Patching skyfield starlib.py for numpy 2.0 compatibility ..."
+    SKYFIELD_VER=$("${python_venv}/bin/python" -c "import skyfield; print(skyfield.__version__)" 2>/dev/null || echo "unknown")
     STARLIB_PY=$(find "${python_venv}" -name "starlib.py" -path "*/skyfield/*" 2>/dev/null | head -1)
     if [ -n "$STARLIB_PY" ]; then
         if grep -q "numpy 2.0" "$STARLIB_PY"; then
-            echo "  ℹ️  starlib.py already patched"
+            echo "  ℹ️  starlib.py already patched (skyfield $SKYFIELD_VER)"
         else
             patch -N "$STARLIB_PY" < "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff" && \
-                echo "  ✅ starlib.py patched" || echo "  ⚠️  starlib.py patch failed"
+                echo "  ✅ starlib.py patched for skyfield $SKYFIELD_VER" || \
+                echo "  ⚠️  starlib.py patch FAILED for skyfield $SKYFIELD_VER — update diffs/starlib_numpy2_smos.diff!"
         fi
     else
         echo "  ⚠️  skyfield not found in venv — skipping"
     fi
 
-    # Re-run patch script now that picamera2 is installed (drm_preview.py patch)
-    echo "🔧 Applying drm_preview.py patch post pip-install (pykms not available on Arch) ..."
-    # Use find instead of Python import (import fails without pykms installed)
+    # Patch picamera2 drm_preview.py (pykms not available on Arch) (Risiko 2)
+    echo "🔧 Applying drm_preview.py patch post pip-install ..."
+    PICAM_VER=$("${python_venv}/bin/python" -c "import picamera2; print(picamera2.__version__)" 2>/dev/null || echo "unknown")
     DRM_PY=$(find "${python_venv}" -name "drm_preview.py" 2>/dev/null | head -1)
     if [ -n "$DRM_PY" ]; then
         if grep -q "_pykms_available" "$DRM_PY"; then
-            echo "  ℹ️  drm_preview.py already patched"
+            echo "  ℹ️  drm_preview.py already patched (picamera2 $PICAM_VER)"
         else
             patch -N "$DRM_PY" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff" && \
-                echo "  ✅ drm_preview.py patched" || echo "  ⚠️  drm_preview.py patch failed"
+                echo "  ✅ drm_preview.py patched for picamera2 $PICAM_VER" || \
+                echo "  ⚠️  drm_preview.py patch FAILED for picamera2 $PICAM_VER — update diffs/drm_preview_smos.diff!"
         fi
     else
         echo "  ⚠️  picamera2 not found in venv — skipping"
