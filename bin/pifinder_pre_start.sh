@@ -38,4 +38,34 @@ if [ -f "$VENV_PY" ]; then
     fi
 fi
 
+# WirePlumber: libcamera-Monitor deaktivieren
+# WirePlumber greift sonst auf /dev/video0 (Unicam/IMX296) zu und bringt
+# den Sensor in einen defekten I2C-Zustand → Kamera zeigt nur schwarz.
+# Config liegt in /home (überlebt BTRFS-Reset).
+# Strategie: Config immer sicherstellen UND WirePlumber neu starten wenn
+# er /dev/video0 hält — egal ob Erstinstallation oder nach BTRFS-Reset.
+WP_CONF_DIR="/home/${PIFINDER_USER}/.config/wireplumber/wireplumber.conf.d"
+WP_CONF_FILE="${WP_CONF_DIR}/50-disable-libcamera.conf"
+WP_CONF_CONTENT='wireplumber.profiles = {
+  main = {
+    monitor.libcamera = disabled
+  }
+}'
+
+# Config-Datei immer sicherstellen (idempotent)
+mkdir -p "${WP_CONF_DIR}"
+echo "${WP_CONF_CONTENT}" > "${WP_CONF_FILE}"
+chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "/home/${PIFINDER_USER}/.config/wireplumber/"
+
+# WirePlumber neu starten wenn er /dev/video0 hält (Kamera blockiert)
+if fuser /dev/video0 2>/dev/null | grep -q .; then
+    echo "⚠️  WirePlumber hält /dev/video0 — starte neu..."
+    systemctl --user -M "${PIFINDER_USER}@.host" restart wireplumber 2>/dev/null || \
+        su -s /bin/bash -c "systemctl --user restart wireplumber" "${PIFINDER_USER}" 2>/dev/null || true
+    sleep 2
+    echo "✅ WirePlumber neugestartet (IMX296 freigegeben)"
+else
+    echo "✅ WirePlumber hält /dev/video0 nicht — OK"
+fi
+
 exit 0
