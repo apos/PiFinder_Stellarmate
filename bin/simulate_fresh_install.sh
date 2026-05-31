@@ -42,6 +42,7 @@ else
 fi
 echo ""
 read -p "Proceed? (yes/no): " confirm
+confirm="${confirm//[$'\r\n']}"  # strip CR/LF (VSCode SSH terminal sends CRLF)
 [[ "$confirm" != "yes" ]] && echo "Aborted." && exit 0
 
 # -------------------------------------------------------

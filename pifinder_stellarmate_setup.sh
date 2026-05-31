@@ -55,6 +55,7 @@ elif version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
     echo "⚠️  Actual PiFinder version in Git-main ($github_version) is NEWER than tested version ($pifinder_stellarmate_version_stable)."
     echo "⚠️  Proceed only if you are testing new features."
     read -p "⚠️⚠️⚠️  Continue with installation? (yes/no): " confirm
+    confirm="${confirm//[$'\r\n']}"
     if [[ "$confirm" != "yes" ]]; then
         echo "ℹ️  Installation cancelled by user."
         exit 0
@@ -108,6 +109,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         echo "   2. Update the existing installation with 'git reset --hard origin/release'."
         echo "   3. Cancel the installation."
         read -p "Enter your choice (1, 2, or 3): " choice
+        choice="${choice//[$'\r\n']}"
 
         case "$choice" in
             1)
