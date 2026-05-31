@@ -373,9 +373,17 @@ else
         fi
     done
     if [ "$HIP_OK" = false ]; then
-        echo "⚠️  hip_main.dat download failed from all mirrors."
-        echo "    Plate solving with Hipparcos stars will be unavailable."
-        echo "    Retry manually: wget -O ${HIP_DAT} https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+        # Last resort: use bundled compressed copy from the SM repo
+        HIP_GZ="${pifinder_stellarmate_dir}/src_pifinder/astro_data/hip_main.dat.gz"
+        if [ -f "$HIP_GZ" ]; then
+            echo "ℹ️  Using bundled hip_main.dat.gz from PiFinder_Stellarmate repo ..."
+            gunzip -c "$HIP_GZ" > "$HIP_DAT"
+            echo "✅ hip_main.dat extracted from bundled copy ($(stat -c%s "$HIP_DAT") bytes)"
+            HIP_OK=true
+        else
+            echo "⚠️  hip_main.dat not available from any source."
+            echo "    Retry manually: wget -O ${HIP_DAT} https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+        fi
     fi
 fi
 
