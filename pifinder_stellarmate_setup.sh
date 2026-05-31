@@ -298,6 +298,21 @@ else
     rm -rf "${LIBINPUT_TMP}"
     echo "✅ python-libinput 0.1.0 installed."
 
+    # Patch skyfield starlib.py for numpy 2.0 compatibility
+    # isnan() on object dtype arrays raises TypeError in numpy 2.0+
+    echo "🔧 Patching skyfield starlib.py for numpy 2.0 compatibility ..."
+    STARLIB_PY=$(find "${python_venv}" -name "starlib.py" -path "*/skyfield/*" 2>/dev/null | head -1)
+    if [ -n "$STARLIB_PY" ]; then
+        if grep -q "numpy 2.0" "$STARLIB_PY"; then
+            echo "  ℹ️  starlib.py already patched"
+        else
+            patch -N "$STARLIB_PY" < "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff" && \
+                echo "  ✅ starlib.py patched" || echo "  ⚠️  starlib.py patch failed"
+        fi
+    else
+        echo "  ⚠️  skyfield not found in venv — skipping"
+    fi
+
     # Re-run patch script now that picamera2 is installed (drm_preview.py patch)
     echo "🔧 Applying drm_preview.py patch post pip-install (pykms not available on Arch) ..."
     # Use find instead of Python import (import fails without pykms installed)

@@ -1,0 +1,12 @@
+--- /tmp/starlib_orig.py	2026-05-31 12:23:33.007194110 +0200
++++ /home/stellarmate/PiFinder/python/.venv/lib/python3.14/site-packages/skyfield/starlib.py	2026-05-31 12:23:17.039402582 +0200
+@@ -140,6 +140,9 @@
+         parallax = self.parallax_mas
+         shape = getattr(parallax, 'shape', None)
+         if shape:
++            # numpy 2.0: isnan() requires float dtype, not object — cast explicitly
++            if hasattr(parallax, 'astype'):
++                parallax = parallax.astype(float)
+             parallax = where(isnan(parallax), 0.0, parallax)
+             parallax[parallax <= 0.0] = 1.0e-6
+         elif parallax <= 0.0:

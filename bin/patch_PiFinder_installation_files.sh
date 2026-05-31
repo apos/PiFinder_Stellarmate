@@ -565,3 +565,27 @@ else
 fi
 echo "------------------------------------"
 
+#######################################
+# Patch skyfield starlib.py for numpy 2.0 (isnan on object dtype)
+echo "🔧 Patching skyfield starlib.py for numpy 2.0 compatibility ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "general" "P4|P5" "arch"; then
+    starlib_py=$(find "${python_venv}" -name "starlib.py" -path "*/skyfield/*" 2>/dev/null | head -1)
+    if [ -n "$starlib_py" ]; then
+        if grep -q "numpy 2.0" "$starlib_py"; then
+            echo "ℹ️ starlib.py already patched"
+        else
+            cp "$starlib_py" "$starlib_py.bak"
+            patch -N "$starlib_py" < "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff"
+            echo "✅ Patched starlib.py for numpy 2.0"
+            show_diff_if_changed "$starlib_py"
+        fi
+    else
+        echo "⚠️ skyfield not installed in venv, skipping starlib.py patch"
+    fi
+else
+    echo "⏩ Skipping starlib.py patch: not on Arch Linux"
+fi
+echo "------------------------------------"
+
