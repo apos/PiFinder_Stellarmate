@@ -300,8 +300,8 @@ else
 
     # Re-run patch script now that picamera2 is installed (drm_preview.py patch)
     echo "🔧 Applying drm_preview.py patch post pip-install (pykms not available on Arch) ..."
-    DRM_PY=$("${python_venv}/bin/python" -c \
-        "import picamera2.previews.drm_preview as m; print(m.__file__)" 2>/dev/null || true)
+    # Use find instead of Python import (import fails without pykms installed)
+    DRM_PY=$(find "${python_venv}" -name "drm_preview.py" 2>/dev/null | head -1)
     if [ -n "$DRM_PY" ]; then
         if grep -q "_pykms_available" "$DRM_PY"; then
             echo "  ℹ️  drm_preview.py already patched"

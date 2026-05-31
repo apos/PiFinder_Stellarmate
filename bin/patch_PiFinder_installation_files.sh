@@ -546,7 +546,8 @@ echo "🔧 Patching picamera2 drm_preview.py for SMOS (no pykms) ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "general" "P4|P5" "arch"; then
-    drm_preview_py=$(python3 -c "import picamera2.previews.drm_preview as m; print(m.__file__)" 2>/dev/null)
+    # Use find instead of Python import (import fails without pykms)
+    drm_preview_py=$(find "${python_venv}" -name "drm_preview.py" 2>/dev/null | head -1)
     if [ -n "$drm_preview_py" ]; then
         if grep -q '_pykms_available' "$drm_preview_py"; then
             echo "ℹ️ drm_preview.py already patched"
