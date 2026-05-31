@@ -587,4 +587,8 @@ else
     echo "  ✅ No critical warnings — setup completed cleanly."
 fi
 echo "##############################################"
+echo ""
+echo "  ➡️  Please reboot now to activate all changes:"
+echo "     sudo reboot"
+echo "##############################################"
 rm -f "$warnings_file"
