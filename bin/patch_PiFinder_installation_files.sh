@@ -316,6 +316,7 @@ if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     if grep -q '^import tetra3$' "$solver_py"; then
         sed -i 's|^import tetra3$|from tetra3 import main|' "$solver_py"
         sed -i 's|tetra3\.Tetra3|main.Tetra3|' "$solver_py"
+        sed -i 's|tetra3\.get_centroids_from_image|main.get_centroids_from_image|g' "$solver_py"
     fi
 
     if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
