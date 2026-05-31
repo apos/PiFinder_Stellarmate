@@ -299,8 +299,19 @@ else
     echo "✅ python-libinput 0.1.0 installed."
 
     # Re-run patch script now that picamera2 is installed (drm_preview.py patch)
-    echo "🔧 Re-applying patches post pip-install (drm_preview.py) ..."
-    bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
+    echo "🔧 Applying drm_preview.py patch post pip-install (pykms not available on Arch) ..."
+    DRM_PY=$("${python_venv}/bin/python" -c \
+        "import picamera2.previews.drm_preview as m; print(m.__file__)" 2>/dev/null || true)
+    if [ -n "$DRM_PY" ]; then
+        if grep -q "_pykms_available" "$DRM_PY"; then
+            echo "  ℹ️  drm_preview.py already patched"
+        else
+            patch -N "$DRM_PY" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff" && \
+                echo "  ✅ drm_preview.py patched" || echo "  ⚠️  drm_preview.py patch failed"
+        fi
+    else
+        echo "  ⚠️  picamera2 not found in venv — skipping"
+    fi
   fi
 fi
 

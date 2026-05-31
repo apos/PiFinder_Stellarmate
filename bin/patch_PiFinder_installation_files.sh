@@ -455,7 +455,7 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-    patch "$main_py" < "${pifinder_stellarmate_dir}/diffs/main_py.diff"
+    patch -N "$main_py" < "${pifinder_stellarmate_dir}/diffs/main_py.diff"
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
@@ -486,7 +486,7 @@ echo "🔧 Updating index.tpl ..."
 cp "$index_tpl" "$index_tpl.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-    patch "$index_tpl" < "${pifinder_stellarmate_dir}/diffs/index_tpl.diff"
+    patch -N "$index_tpl" < "${pifinder_stellarmate_dir}/diffs/index_tpl.diff"
 show_diff_if_changed "$index_tpl"
 echo "------------------------------------"
 
@@ -496,7 +496,7 @@ echo "🔧 Updating header.tpl ..."
 cp "$header_tpl" "$header_tpl.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-    patch "$header_tpl" < "${pifinder_stellarmate_dir}/diffs/header_tpl.diff"
+    patch -N "$header_tpl" < "${pifinder_stellarmate_dir}/diffs/header_tpl.diff"
 show_diff_if_changed "$header_tpl"
 echo "------------------------------------"
 
@@ -506,7 +506,7 @@ echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
-    patch "$menu_py" < "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
+    patch -N "$menu_py" < "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
@@ -524,7 +524,7 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 if should_apply_patch "general" "P4|P5" "arch"; then
     cp "$keyboard_py" "$keyboard_py.bak"
     if grep -q 'context_type=libinput.ContextType.UDEV' "$keyboard_py"; then
-        patch "$keyboard_py" < "${pifinder_stellarmate_dir}/diffs/keyboard_pi_smos.diff"
+        patch -N "$keyboard_py" < "${pifinder_stellarmate_dir}/diffs/keyboard_pi_smos.diff"
         echo "✅ Patched keyboard_pi.py for python-libinput 0.1.0"
     else
         echo "ℹ️ keyboard_pi.py already patched or pattern not found"
@@ -548,7 +548,7 @@ if should_apply_patch "general" "P4|P5" "arch"; then
             echo "ℹ️ drm_preview.py already patched"
         else
             cp "$drm_preview_py" "$drm_preview_py.bak"
-            patch "$drm_preview_py" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff"
+            patch -N "$drm_preview_py" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff"
             echo "✅ Patched drm_preview.py for missing pykms"
             show_diff_if_changed "$drm_preview_py"
         fi
