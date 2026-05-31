@@ -332,15 +332,36 @@ mkdir -p ~/PiFinder_data/solver_debug_dumps
 mkdir -p ~/PiFinder_data/logs
 chmod -R 777 ~/PiFinder_data
 
-# Hipparcos catalog
-if [ -f "${pifinder_dir}/astro_data/hip_main.dat" ]; then
+# Hipparcos catalog — check file exists AND is non-empty (>1MB)
+HIP_DAT="${pifinder_dir}/astro_data/hip_main.dat"
+HIP_MIN_SIZE=1000000
+if [ -f "$HIP_DAT" ] && [ "$(stat -c%s "$HIP_DAT" 2>/dev/null)" -gt "$HIP_MIN_SIZE" ]; then
     echo "ℹ️  hip_main.dat already installed"
 else
+    [ -f "$HIP_DAT" ] && rm -f "$HIP_DAT"  # remove empty/partial file
     echo "🔧 Downloading Hipparcos catalog..."
-    wget -q --timeout=30 -O "${pifinder_dir}/astro_data/hip_main.dat" \
-        https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat 2>/dev/null && \
-        echo "✅ hip_main.dat downloaded" || \
-        echo "⚠️  hip_main.dat download failed (network issue) — plate solving may be limited."
+    HIP_URLS=(
+        "https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+        "http://vizier.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+        "http://cdsarc.u-strasbg.fr/ftp/cats/I/239/hip_main.dat"
+    )
+    HIP_OK=false
+    for url in "${HIP_URLS[@]}"; do
+        echo "  Trying: $url"
+        wget -q --timeout=30 -L -O "$HIP_DAT" "$url" 2>/dev/null
+        if [ -f "$HIP_DAT" ] && [ "$(stat -c%s "$HIP_DAT" 2>/dev/null)" -gt "$HIP_MIN_SIZE" ]; then
+            echo "✅ hip_main.dat downloaded from $url"
+            HIP_OK=true
+            break
+        else
+            rm -f "$HIP_DAT"
+        fi
+    done
+    if [ "$HIP_OK" = false ]; then
+        echo "⚠️  hip_main.dat download failed from all mirrors."
+        echo "    Plate solving with Hipparcos stars will be unavailable."
+        echo "    Retry manually: wget -O ${HIP_DAT} https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+    fi
 fi
 
 # ensure, correct rights are set
