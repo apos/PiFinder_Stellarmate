@@ -1,6 +1,6 @@
---- /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/menu_structure.py.orig	2025-11-10 21:20:02.516348592 +0100
-+++ /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/menu_structure.py	2025-11-10 21:17:31.647001189 +0100
-@@ -856,24 +856,7 @@
+--- python/PiFinder/ui/menu_structure.py.orig	2026-05-31 17:40:06.308609391 +0200
++++ python/PiFinder/ui/menu_structure.py	2026-05-31 17:39:02.147942040 +0200
+@@ -897,24 +897,7 @@
                          },
                      ],
                  },
@@ -24,16 +24,16 @@
 -                },
 +
                  {
-                     "name": _("PiFinder Type"),
+                     "name": _("Mount Type"),
                      "class": UITextMenu,
-@@ -963,6 +946,10 @@
-                             "name": _("GPSD (generic)"),
-                             "value": "gpsd",
-                         },
-+                        {
-+                            "name": _("Stellarmate"),
-+                            "value": "stellarmate",
-+                        },
-                     ],
-                 },
-                 {
+@@ -1015,6 +998,10 @@
+                                             "name": _("GPSD (generic)"),
+                                             "value": "gpsd",
+                                         },
++                                        {
++                                            "name": _("Stellarmate"),
++                                            "value": "stellarmate",
++                                        },
+                                     ],
+                                 },
+                                 {

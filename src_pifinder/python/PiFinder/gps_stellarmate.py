@@ -62,7 +62,7 @@ def gps_monitor(gps_queue, console_queue, log_queue):
             )
             gps_queue.put(fix)
 
-            tm = ("time", {"time": datetime.datetime.now()})
+            tm = ("time", {"time": datetime.datetime.now(datetime.timezone.utc)})
             gps_queue.put(tm)
             logger.debug(f"KStars GPS API fix injected: {fix}")
         else:
