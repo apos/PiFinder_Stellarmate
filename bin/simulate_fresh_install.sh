@@ -8,9 +8,18 @@
 #   bash simulate_fresh_install.sh [--mode=update]   # Use Case 2: SMOS update, /home intact (default)
 #   bash simulate_fresh_install.sh --mode=fresh      # Use Case 1: brand new SMOS, no PiFinder at all
 #
-# After running this script, execute the appropriate restore/setup script:
-#   Use Case 2: bash bin/restore_after_smos_update.sh
-#   Use Case 1: bash pifinder_stellarmate_setup.sh
+# CORRECT TEST SEQUENCE — do NOT skip the intermediate reboot:
+#
+#   1. bash bin/simulate_fresh_install.sh [--mode=...]
+#   2. sudo reboot          ← boots into the true clean state (no overlays, no services)
+#   3. bash pifinder_stellarmate_setup.sh   (or restore_after_smos_update.sh for UC2)
+#   4. sudo reboot          ← verifies cold-boot behavior
+#
+# WHY the intermediate reboot matters:
+#   After simulate, the running kernel still has PWM/IMX296 overlays loaded,
+#   groups in memory, swap active. Running setup immediately tests against
+#   this "warm" state — not the true post-BTRFS-reset state.
+#   Only a reboot reveals what really happens on a cold start.
 
 set -e
 
@@ -176,14 +185,22 @@ echo ""
 echo "======================================================"
 echo "✅ Simulation complete [mode: ${MODE}]."
 echo ""
+echo "⚠️  REBOOT FIRST — then run the setup/restore script!"
+echo "    The kernel still has old overlays/groups/swap from before simulate."
+echo "    Only a reboot gives the true post-BTRFS-reset state."
+echo ""
 if [ "$MODE" = "fresh" ]; then
-    echo "Next step — full setup:"
-    echo "  cd /home/stellarmate/PiFinder_Stellarmate"
-    echo "  bash pifinder_stellarmate_setup.sh"
+    echo "Next steps:"
+    echo "  1. sudo reboot"
+    echo "  2. cd /home/stellarmate/PiFinder_Stellarmate"
+    echo "     bash pifinder_stellarmate_setup.sh"
+    echo "  3. sudo reboot  (verify cold-boot)"
 else
-    echo "Next step — restore root-only items (services, config.txt, swapfile):"
-    echo "  cd /home/stellarmate/PiFinder_Stellarmate"
-    echo "  bash bin/restore_after_smos_update.sh"
+    echo "Next steps:"
+    echo "  1. sudo reboot"
+    echo "  2. cd /home/stellarmate/PiFinder_Stellarmate"
+    echo "     bash bin/restore_after_smos_update.sh"
+    echo "  3. sudo reboot  (verify cold-boot)"
 fi
 echo ""
 echo "To restore from backup:"
