@@ -160,6 +160,10 @@ echo "------------------------------------"
     # timezonefinder: requires numpy<2, conflicts with numpy>=2.0
     sed -i 's/^timezonefinder==.*/timezonefinder/' "$python_requirements" && echo "  ✅ timezonefinder unpinned"
 
+    # python-libinput: 0.3.0a0 not available; uses removed 'imp' module (Python 3.12+)
+    # Installed manually as 0.1.0 with patched setup.py — must not be in requirements.txt
+    sed -i 's/^python-libinput/# python-libinput/' "$python_requirements" && echo "  ✅ python-libinput commented out (installed manually as 0.1.0)"
+
     show_diff_if_changed "$python_requirements"
     else
         echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
