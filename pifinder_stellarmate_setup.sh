@@ -333,11 +333,14 @@ mkdir -p ~/PiFinder_data/logs
 chmod -R 777 ~/PiFinder_data
 
 # Hipparcos catalog
-if [ -f "${pifinder_dir}/astro_data/hip_main.dat" ]
-then
-  echo "hip_main.dat already installed"
+if [ -f "${pifinder_dir}/astro_data/hip_main.dat" ]; then
+    echo "ℹ️  hip_main.dat already installed"
 else
-  wget -O ${pifinder_dir}/astro_data/hip_main.dat https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+    echo "🔧 Downloading Hipparcos catalog..."
+    wget -q --timeout=30 -O "${pifinder_dir}/astro_data/hip_main.dat" \
+        https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat 2>/dev/null && \
+        echo "✅ hip_main.dat downloaded" || \
+        echo "⚠️  hip_main.dat download failed (network issue) — plate solving may be limited."
 fi
 
 # ensure, correct rights are set
@@ -450,10 +453,18 @@ sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
 # INDI Driver Installation (Step 5 from indi_driver_compile.md, without indi_add_driver)
+# Requires prior manual compilation — see bin/README_compile_indi.md
 echo "🔧 Installing PiFinder LX200 INDI driver..."
-sudo cp ~/indi-source/build/drivers/telescope/indi_pifinder_lx200 /usr/bin/
-sudo cp ${pifinder_stellarmate_dir}/indi_pifinder/indi_pifinder_driver.xml.in /usr/share/indi/pifinder_lx200.xml
-echo "✅ PiFinder LX200 INDI driver installed."
+INDI_BIN=~/indi-source/build/drivers/telescope/indi_pifinder_lx200
+INDI_XML=${pifinder_stellarmate_dir}/indi_pifinder/indi_pifinder_driver.xml.in
+if [ -f "$INDI_BIN" ] && [ -f "$INDI_XML" ]; then
+    sudo cp "$INDI_BIN" /usr/bin/
+    sudo cp "$INDI_XML" /usr/share/indi/pifinder_lx200.xml
+    echo "✅ PiFinder LX200 INDI driver installed."
+else
+    echo "ℹ️  INDI driver binary not found — skipping (requires manual compilation)."
+    echo "    See bin/README_compile_indi.md for instructions."
+fi
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)
@@ -464,7 +475,7 @@ elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
 else
     current_pi="Unknown Pi"
 fi
-current_os=$(lsb_release -sc | sed 's/\b\(.\)/\u\1/')
+current_os=$(lsb_release -sc 2>/dev/null || grep "^ID=" /etc/os-release | cut -d= -f2)
 
 echo "##############################################"
 echo "✅ PiFinder setup complete."
