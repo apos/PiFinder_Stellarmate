@@ -105,6 +105,11 @@ echo ""
 # -------------------------------------------------------
 # SIMULATION: Remove what BTRFS reset would wipe
 # -------------------------------------------------------
+echo "🗑️  Turning off OLED display before stopping services ..."
+VENV_PY="/home/stellarmate/PiFinder/python/.venv/bin/python"
+DISP_OFF="$(dirname "$0")/display_off.py"
+[ -f "$VENV_PY" ] && [ -f "$DISP_OFF" ] && "$VENV_PY" "$DISP_OFF" 2>/dev/null || true
+
 echo "🗑️  Stopping PiFinder services ..."
 sudo systemctl stop pifinder 2>/dev/null || true
 sudo systemctl stop pifinder-setup 2>/dev/null || true
