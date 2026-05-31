@@ -590,3 +590,15 @@ else
 fi
 echo "------------------------------------"
 
+# catalogs.py — background loader: os.nice(15), smaller batches, longer yield
+echo "🔧 Patching catalogs.py (background loader CPU throttling) ..."
+if [ -f "$catalogs_py" ]; then
+    cp "$catalogs_py" "$catalogs_py.bak"
+    patch -N "$catalogs_py" < "${pifinder_stellarmate_dir}/diffs/catalogs_py.diff"
+    echo "✅ Patched catalogs.py (os.nice + yield_time)"
+    show_diff_if_changed "$catalogs_py"
+else
+    echo "⚠️ catalogs.py not found, skipping"
+fi
+echo "------------------------------------"
+

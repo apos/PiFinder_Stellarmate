@@ -1,0 +1,28 @@
+--- python/PiFinder/catalogs.py.orig	2026-05-31 20:07:24.562922544 +0200
++++ python/PiFinder/catalogs.py	2026-05-31 20:07:16.907152688 +0200
+@@ -1,5 +1,6 @@
+ # mypy: ignore-errors
+ import logging
++import os
+ import re
+ import time
+ import datetime
+@@ -737,8 +738,8 @@
+         self._stop_flag = threading.Event()
+ 
+         # Performance tuning - load in batches with CPU yielding
+-        self.batch_size = 100  # Objects per batch before yielding CPU
+-        self.yield_time = 0.05  # Seconds to sleep between batches (50ms)
++        self.batch_size = 50   # Objects per batch before yielding CPU
++        self.yield_time = 0.3  # Seconds to sleep between batches (300ms)
+ 
+     def start(self) -> None:
+         """Start background loading in daemon thread"""
+@@ -765,6 +766,7 @@
+     def _load_deferred_objects(self) -> None:
+         """Background worker - loads objects in batches with CPU yielding"""
+         try:
++            os.nice(15)
+             total = len(self._deferred_data)
+             batch = []
+             current_catalog = None
