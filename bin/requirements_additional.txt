@@ -1,2 +1,5 @@
 aiohttp
 picamera2
+RPi.GPIO
+spidev
+aiofiles

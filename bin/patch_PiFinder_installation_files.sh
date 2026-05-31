@@ -129,10 +129,38 @@ if should_apply_patch "2.3.0|2.5.1" "P4|P5" "general"; then
     python3 -m py_compile "$python_requirements" 2>/dev/null && echo "✅ Syntax OK" || echo "ℹ️ Text file – no syntax check needed"
 echo "------------------------------------"
 
-    # Upgrade scikit-learn to the latest version to avoid build issues on Bookworm
-    echo "🔧 Upgrading scikit-learn version in $python_requirements ..."
-    sed -i 's/scikit-learn==1.2.2/scikit-learn/' "$python_requirements"
-        echo "✅ Changed scikit-learn to latest version."
+    # Unpin packages that are incompatible with Python 3.13+/3.14 or numpy 2.0
+    # Each sed only acts if the pinned version is still present (idempotent)
+    echo "🔧 Unpinning incompatible package versions for Python 3.13+/numpy 2.0 ..."
+
+    # numpy: 1.26.x does not build on Python 3.14; numpy 2.0 removed numpy.float_
+    sed -i 's/^numpy==.*/numpy>=2.0/' "$python_requirements" && echo "  ✅ numpy unpinned (>=2.0)"
+
+    # pandas: old pinned version fails to build on Python 3.14
+    sed -i 's/^pandas==.*/pandas/' "$python_requirements" && echo "  ✅ pandas unpinned"
+
+    # pillow: unpin for Python 3.14 compatibility
+    sed -i 's/^pillow==.*/pillow/' "$python_requirements" && echo "  ✅ pillow unpinned"
+
+    # scikit-learn: old version has build issues
+    sed -i 's/^scikit-learn==.*/scikit-learn/' "$python_requirements" && echo "  ✅ scikit-learn unpinned"
+
+    # grpcio: pinned version fails to build on Python 3.14
+    sed -i 's/^grpcio==.*/grpcio/' "$python_requirements" && echo "  ✅ grpcio unpinned"
+
+    # protobuf: metaclass incompatibility with Python 3.14
+    sed -i 's/^protobuf==.*/protobuf/' "$python_requirements" && echo "  ✅ protobuf unpinned"
+
+    # skyfield: uses numpy.float_ which was removed in numpy 2.0
+    sed -i 's/^skyfield==.*/skyfield/' "$python_requirements" && echo "  ✅ skyfield unpinned"
+
+    # bottle: uses cgi module which was removed in Python 3.13
+    sed -i 's/^bottle==.*/bottle/' "$python_requirements" && echo "  ✅ bottle unpinned"
+
+    # timezonefinder: requires numpy<2, conflicts with numpy>=2.0
+    sed -i 's/^timezonefinder==.*/timezonefinder/' "$python_requirements" && echo "  ✅ timezonefinder unpinned"
+
+    show_diff_if_changed "$python_requirements"
     else
         echo "⏩ Skipping requirements.txt patch: ❌ incompatible version/pi/os"
     fi
