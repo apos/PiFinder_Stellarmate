@@ -21,6 +21,18 @@ source $(pwd)/bin/functions.sh
 # Define a lock file for resuming the script after venv activation
 lock_file="${pifinder_stellarmate_dir}/.resume_from_venv"
 
+# Warnings file — persists across both runs for final summary
+warnings_file="${pifinder_stellarmate_dir}/.setup_warnings"
+
+# Clear warnings on first run (no lock file = first run)
+[ ! -f "$lock_file" ] && > "$warnings_file"
+
+# Helper: add a critical warning (shown in final summary)
+add_warning() {
+    echo "  ⚠️  $1"
+    echo "$1" >> "$warnings_file"
+}
+
 # Source python venv if it exists
 if [ -f "${python_venv}/bin/activate" ]; then
     source "${python_venv}/bin/activate"
@@ -180,9 +192,11 @@ PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"
 if [ -n "$PYLIBCAM_PKG" ]; then
     echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
     sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
+    PYLIBCAM_METHOD="pinned 0.7.0 from $(basename $PYLIBCAM_PKG)"
 else
-    echo "⚠️  python-libcamera 0.7.0 not in cache — installing current (may need manual fix)"
+    add_warning "python-libcamera 0.7.0 not found — installed current version. Camera may fail (smart_holder)!"
     sudo pacman -S --noconfirm --needed python-libcamera
+    PYLIBCAM_METHOD="current version (UNPINNED — may cause smart_holder error!)"
 fi
 grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
@@ -191,9 +205,7 @@ grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
 LIBCAM_VER=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)
 LIBCAM_MAJOR=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1)
 if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
-    echo "⚠️  WARNING: libcamera major version $LIBCAM_VER detected!"
-    echo "    python-libcamera 0.7.0 may be incompatible with libcamera $LIBCAM_VER."
-    echo "    If camera fails, update packages/python-libcamera-*.pkg in the SM repo."
+    add_warning "libcamera $LIBCAM_VER detected — python-libcamera 0.7.0 may be incompatible! Update packages/ in SM repo if camera fails."
 else
     echo "ℹ️  libcamera version $LIBCAM_VER — compatible with python-libcamera 0.7.0"
 fi
@@ -319,7 +331,7 @@ else
         else
             patch -N "$STARLIB_PY" < "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff" && \
                 echo "  ✅ starlib.py patched for skyfield $SKYFIELD_VER" || \
-                echo "  ⚠️  starlib.py patch FAILED for skyfield $SKYFIELD_VER — update diffs/starlib_numpy2_smos.diff!"
+                add_warning "starlib.py patch FAILED for skyfield $SKYFIELD_VER — update diffs/starlib_numpy2_smos.diff! Star charts may crash."
         fi
     else
         echo "  ⚠️  skyfield not found in venv — skipping"
@@ -335,7 +347,7 @@ else
         else
             patch -N "$DRM_PY" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff" && \
                 echo "  ✅ drm_preview.py patched for picamera2 $PICAM_VER" || \
-                echo "  ⚠️  drm_preview.py patch FAILED for picamera2 $PICAM_VER — update diffs/drm_preview_smos.diff!"
+                add_warning "drm_preview.py patch FAILED for picamera2 $PICAM_VER — update diffs/drm_preview_smos.diff! Camera import will fail."
         fi
     else
         echo "  ⚠️  picamera2 not found in venv — skipping"
@@ -374,12 +386,14 @@ else
         "http://cdsarc.u-strasbg.fr/ftp/cats/I/239/hip_main.dat"
     )
     HIP_OK=false
+    HIP_METHOD="not downloaded"
     for url in "${HIP_URLS[@]}"; do
         echo "  Trying: $url"
         wget -q --timeout=30 -L -O "$HIP_DAT" "$url" 2>/dev/null
         if [ -f "$HIP_DAT" ] && [ "$(stat -c%s "$HIP_DAT" 2>/dev/null)" -gt "$HIP_MIN_SIZE" ]; then
             echo "✅ hip_main.dat downloaded from $url"
             HIP_OK=true
+            HIP_METHOD="downloaded from $url"
             break
         else
             rm -f "$HIP_DAT"
@@ -393,9 +407,10 @@ else
             gunzip -c "$HIP_GZ" > "$HIP_DAT"
             echo "✅ hip_main.dat extracted from bundled copy ($(stat -c%s "$HIP_DAT") bytes)"
             HIP_OK=true
+            HIP_METHOD="extracted from bundled src_pifinder/astro_data/hip_main.dat.gz"
         else
-            echo "⚠️  hip_main.dat not available from any source."
-            echo "    Retry manually: wget -O ${HIP_DAT} https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+            add_warning "hip_main.dat not available — star charts will fail! Retry: wget -O ${HIP_DAT} https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat"
+            HIP_METHOD="FAILED — not available!"
         fi
     fi
 fi
@@ -534,10 +549,42 @@ else
 fi
 current_os=$(lsb_release -sc 2>/dev/null || grep "^ID=" /etc/os-release | cut -d= -f2)
 
+LIBCAM_FULL=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}')
+PYLIBCAM_FULL=$(pacman -Q python-libcamera 2>/dev/null | awk '{print $2}')
+PICAM_FULL=$("${python_venv}/bin/python" -c "import picamera2; print(picamera2.__version__)" 2>/dev/null || echo "unknown")
+SKYFIELD_FULL=$("${python_venv}/bin/python" -c "import skyfield; print(skyfield.__version__)" 2>/dev/null || echo "unknown")
+NUMPY_FULL=$("${python_venv}/bin/python" -c "import numpy; print(numpy.__version__)" 2>/dev/null || echo "unknown")
+PYTHON_FULL=$("${python_venv}/bin/python" --version 2>&1 | awk '{print $2}')
+
+echo ""
 echo "##############################################"
-echo "✅ PiFinder setup complete."
-echo "   - PiFinder Version: $github_version"
-echo "   - PiFinder-Stellarmate Scripts: $pifinder_local_version"
-echo "   - Hardware: $current_pi"
-echo "   - OS: $current_os"
+echo "  PiFinder Setup — Installation Summary"
 echo "##############################################"
+echo "  PiFinder:             $github_version"
+echo "  SM Scripts:           $pifinder_local_version"
+echo "  Hardware:             $current_pi"
+echo "  OS:                   $current_os"
+echo "  Python (venv):        $PYTHON_FULL"
+echo "  numpy:                $NUMPY_FULL"
+echo "  skyfield:             $SKYFIELD_FULL"
+echo "  picamera2:            $PICAM_FULL"
+echo "  libcamera:            $LIBCAM_FULL"
+echo "  python-libcamera:     $PYLIBCAM_FULL  [${PYLIBCAM_METHOD:-pinned}]"
+echo "  hip_main.dat:         ${HIP_METHOD:-already present}"
+echo "##############################################"
+
+if [ -f "$warnings_file" ] && [ -s "$warnings_file" ]; then
+    echo ""
+    echo "  ⚠️  CRITICAL WARNINGS — ACTION REQUIRED:"
+    echo "##############################################"
+    while IFS= read -r line; do
+        echo "  ❌ $line"
+    done < "$warnings_file"
+    echo "##############################################"
+    echo "  PiFinder may not work correctly until"
+    echo "  the above issues are resolved."
+else
+    echo "  ✅ No critical warnings — setup completed cleanly."
+fi
+echo "##############################################"
+rm -f "$warnings_file"
