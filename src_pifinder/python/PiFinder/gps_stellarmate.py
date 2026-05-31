@@ -41,7 +41,9 @@ def gps_monitor(gps_queue, console_queue, log_queue):
     MultiprocLogging.configurer(log_queue)
     logger.info("GPS KStars monitor started")
 
-    loop = asyncio.get_event_loop()
+    # Python 3.10+: get_event_loop() raises RuntimeError in new threads/processes
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     while True:
         lat, lon, alt = loop.run_until_complete(get_kstars_location())
 
