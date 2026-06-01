@@ -9,6 +9,10 @@ pifinder_stellarmate_version_stable="2.5.1"
 # This script is actually tested against this version
 pifinder_stellarmate_version_testing="2.5.1"
 
+# StellarMate OS version this script was tested with (rolling release — changes matter!)
+smos_version_stable="2.1.1"
+smos_version_testing="2.1.1"
+
 
 ############################################################
 # MAIN
@@ -88,7 +92,27 @@ fi
 
 echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
 
+############################################################
+# SMOS VERSION CHECK
 
+current_smos_version=$(curl -s http://localhost:8624/api/info/version 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null)
+
+if [ -z "$current_smos_version" ]; then
+    echo "⚠️  SMOS version could not be determined (API not reachable). Proceeding anyway."
+elif version_eq "$current_smos_version" "$smos_version_stable"; then
+    echo "✅ SMOS version $current_smos_version matches tested STABLE version. Proceeding..."
+elif version_gt "$current_smos_version" "$smos_version_stable"; then
+    echo "⚠️  SMOS $current_smos_version is NEWER than tested version ($smos_version_stable)."
+    echo "⚠️  Arch is rolling release — package versions may differ. Proceed with caution."
+    read -p "⚠️⚠️⚠️  Continue anyway? (yes/no): " confirm_smos
+    confirm_smos="${confirm_smos//[$'\r\n']}"
+    if [[ "$confirm_smos" != "yes" ]]; then
+        echo "ℹ️  Installation cancelled by user."
+        exit 0
+    fi
+else
+    echo "⚠️  SMOS $current_smos_version is OLDER than tested version ($smos_version_stable). Proceeding anyway."
+fi
 
 ############################################################
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
@@ -567,6 +591,7 @@ echo "  PiFinder Setup — Installation Summary"
 echo "##############################################"
 echo "  PiFinder:             $github_version"
 echo "  SM Scripts:           $pifinder_local_version"
+echo "  SMOS:                 ${current_smos_version:-unknown}  [tested: $smos_version_stable]"
 echo "  Hardware:             $current_pi"
 echo "  OS:                   $current_os"
 echo "  Python (venv):        $PYTHON_FULL"
