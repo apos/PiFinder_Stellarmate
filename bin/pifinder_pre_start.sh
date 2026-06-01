@@ -74,4 +74,69 @@ else
     echo "✅ pipewire-libcamera nicht installiert — OK"
 fi
 
+# ===== Pi5: rpi-lgpio (GPIO-Kompatibilität für Pi5 RP1-GPIO) =====
+# RPi.GPIO kennt den Pi5-SoC (RP1) nicht → rpi-lgpio als Drop-in-Replacement.
+# liblgpio.so liegt in /usr/local/lib/ → geht bei BTRFS-Reset verloren.
+# Rebuild: nur gcc nötig (kein swig, kein Internet) — Source bleibt in /home/.
+# Wheels liegen in packages/ → kein Internet für pip install nötig.
+PIFINDER_VENV="/home/${PIFINDER_USER}/PiFinder/python/.venv"
+PIFINDER_SM_DIR="/home/${PIFINDER_USER}/PiFinder_Stellarmate"
+HW_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+if echo "$HW_MODEL" | grep -q "Raspberry Pi 5"; then
+    LGPIO_SRC="/home/${PIFINDER_USER}/lgpio-src"
+    LGPIO_LIB="/usr/local/lib/liblgpio.so"
+
+    # /usr/local/lib im ldconfig-Suchpfad sicherstellen (geht bei BTRFS-Reset verloren)
+    if [ ! -f /etc/ld.so.conf.d/local.conf ] || ! grep -q '/usr/local/lib' /etc/ld.so.conf.d/local.conf; then
+        echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf
+        ldconfig
+        echo ">> [Pi5] /usr/local/lib: ldconfig-Pfad eingetragen."
+    fi
+
+    # liblgpio.so neu bauen falls fehlt (nach BTRFS-Reset)
+    # Nur gcc nötig — kein swig, kein make install, kein Internet
+    if [ ! -f "$LGPIO_LIB" ]; then
+        echo ">> [Pi5] liblgpio.so fehlt – wird neu gebaut..."
+        if [ ! -d "$LGPIO_SRC" ]; then
+            echo "!! [Pi5] lgpio-Quellcode fehlt: $LGPIO_SRC"
+            echo "   Bitte Setup-Script erneut ausführen: bash pifinder_stellarmate_setup.sh"
+        else
+            (
+                cd "$LGPIO_SRC"
+                gcc -O3 -Wall -pthread -fpic \
+                    -c lgCtx.c lgDbg.c lgErr.c lgGpio.c lgHdl.c lgI2C.c lgNotify.c \
+                       lgPthAlerts.c lgPthTx.c lgSerial.c lgSPI.c lgThread.c lgUtil.c \
+                    2>/dev/null
+                gcc -shared -pthread -Wl,-soname,liblgpio.so.1 \
+                    lgCtx.o lgDbg.o lgErr.o lgGpio.o lgHdl.o lgI2C.o lgNotify.o \
+                    lgPthAlerts.o lgPthTx.o lgSerial.o lgSPI.o lgThread.o lgUtil.o \
+                    -o liblgpio.so.1 2>/dev/null
+            ) && install -m 0755 "${LGPIO_SRC}/liblgpio.so.1" /usr/local/lib/ \
+              && ln -sf /usr/local/lib/liblgpio.so.1 /usr/local/lib/liblgpio.so \
+              && ldconfig \
+              && echo ">> [Pi5] liblgpio.so: neu gebaut." \
+              || echo "!! [Pi5] liblgpio.so: Build fehlgeschlagen."
+        fi
+    else
+        echo ">> [Pi5] liblgpio.so: OK"
+    fi
+
+    # rpi-lgpio im venv installieren falls nicht importierbar
+    # Installation aus lokalem packages/ – kein Internet nötig
+    if [ -f "${PIFINDER_VENV}/bin/python" ]; then
+        if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO" &>/dev/null; then
+            echo ">> [Pi5] rpi-lgpio fehlt – wird aus packages/ installiert..."
+            if "${PIFINDER_VENV}/bin/pip" install --quiet \
+                --no-index --find-links="${PIFINDER_SM_DIR}/packages/" \
+                rpi-lgpio lgpio; then
+                echo ">> [Pi5] rpi-lgpio: installiert."
+            else
+                echo "!! [Pi5] rpi-lgpio: Installation fehlgeschlagen."
+            fi
+        else
+            echo ">> [Pi5] rpi-lgpio (RPi.GPIO): OK"
+        fi
+    fi
+fi
+
 exit 0
