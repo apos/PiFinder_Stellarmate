@@ -12,7 +12,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 
 > ### ✅ **Current Version**
 >
-> * Works with PiFinder software 2.3.0, Raspberry Pi 4, Stellarmate OS (Debian Bookworm).
+> * Works with PiFinder software 2.5.1, Raspberry Pi 4 + Pi 5, Stellarmate OS (Arch Linux).
 
 ---
 
@@ -28,6 +28,28 @@ This setup modifies the stock PiFinder installation to better integrate with Ste
 *   **Compatibility:** The scripts are designed for Raspberry Pi 4 running Stellarmate OS (based on Debian Bookworm). Raspberry Pi 5 support is highly experimental, in development, and not fully functional yet.
 *   **Comprehensive IP Address Display:** The web interface and the device's OLED status screen now show all available non-localhost IP addresses, providing better network visibility.
 *   **Dynamic User:** The web interface authentication is patched to use the current system user (e.g., `stellarmate`) instead of a hardcoded default.
+
+## Hardware Requirements
+
+### Raspberry Pi 4 *(works for basic tasks)*
+
+| Component | Requirement |
+|---|---|
+| RAM | ≥ 4 GB (absolute minimum — 2 GB not possible) |
+| Storage | USB 3.0 NVMe HAT (**mandatory** — SD card is not sufficient) |
+| Power | Power HAT ≥ 5 A (**mandatory** — USB power is not enough) |
+
+### Raspberry Pi 5 *(recommended)*
+
+| Component | Requirement |
+|---|---|
+| RAM | > 4 GB (≥ 8 GB recommended) |
+| Storage | NVMe HAT with PCIe (**mandatory** — SD card is not sufficient) |
+| Power | Power HAT ≥ 5 A (**mandatory** — USB-C PD 5 A may work) |
+
+> **Note on Camera (Pi 5):** The Pi 5 uses a **15-pin FFC CSI connector**, while Pi 4 uses 22-pin. A cable adapter is required to connect the PiFinder camera module to a Pi 5.
+
+---
 
 ## Installation
 
