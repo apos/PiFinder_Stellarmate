@@ -1,19 +1,117 @@
---- python/PiFinder/main.py.orig	2026-06-01 23:30:14.190858488 +0200
-+++ python/PiFinder/main.py	2026-06-01 23:29:49.723237538 +0200
-@@ -184,6 +184,12 @@
+--- python/PiFinder/main.py.orig	2026-06-01 23:40:06.237388731 +0200
++++ python/PiFinder/main.py	2026-06-01 23:39:49.745809447 +0200
+@@ -135,11 +135,19 @@
+ 
+ 
+ class PowerManager:
++    # Pre-solve sleep states
++    _WARMUP = "warmup"      # initial 2-min window before first solve
++    _PRE_SLEEP = "pre_sleep"  # 30s sleep between attempts
++    _RETRY = "retry"        # 1-min retry window after sleep
++    _SOLVED = "solved"      # normal operation after first solve
++
+     def __init__(self, cfg, shared_state, display_device):
+         self.cfg = cfg
+         self.shared_state = shared_state
+         self.display_device = display_device
+         self.last_activity = time.time()
++        self._solve_state = self._WARMUP
++        self._state_start = time.time()
+ 
+     def register_activity(self):
+         """
+@@ -173,29 +181,77 @@
+         self.shared_state.set_power_state(0)
+         self.sleep_screen()
+ 
++    def _has_solve(self):
++        solution = self.shared_state.solution()
++        return solution is not None and solution.get("RA") is not None
++
++    def _enter_state(self, state):
++        self._solve_state = state
++        self._state_start = time.time()
++
++    def _elapsed(self):
++        return time.time() - self._state_start
++
+     def update(self):
+         """
+-        Check IMU for activity
+-        go to sleep if needed
+-        if asleep, Introduce wait state
++        Check IMU for activity, manage sleep with pre-solve state machine.
++
++        Pre-solve behavior (battery-friendly):
++          WARMUP  (2 min)  → no solve → sleep 30s → RETRY (1 min) → loop
++          Any state        → solve    → SOLVED (use configured timeout)
++          SOLVED           → solve lost (clouds) → WARMUP
+         """
+         if self.get_sleep_timeout() <= 0:
+-            # Disabled
++            # Sleep disabled — stay awake always
              self.register_activity()
              return
  
-+        # Don't sleep before first successful solve — solver needs stable frames
-+        solution = self.shared_state.solution()
-+        if not (solution and solution.get("RA") is not None):
-+            self.register_activity()
-+            return
+-        if self.shared_state.power_state() > 0:
+-            # We are awake, should we sleep?
+-            if time.time() - self.last_activity > self.get_sleep_timeout():
+-                self.go_to_sleep()
++        has_solve = self._has_solve()
+ 
+-        else:  # We are asleepd, should we wake up?
+-            _imu = self.shared_state.imu()
+-            if _imu:
+-                if _imu["moving"]:
++        if self._solve_state == self._SOLVED:
++            if not has_solve:
++                # Lost solve (clouds etc.) — restart warmup
++                self._enter_state(self._WARMUP)
++                self.wake_up()
++                return
++            # Normal operation: sleep after configured timeout of inactivity
++            if self.shared_state.power_state() > 0:
++                if time.time() - self.last_activity > self.get_sleep_timeout():
++                    self.go_to_sleep()
++            else:
++                _imu = self.shared_state.imu()
++                if _imu and _imu["moving"]:
+                     self.wake_up()
+ 
+-        # should we pause execution for a bit?
++        elif self._solve_state == self._WARMUP:
++            if has_solve:
++                self._enter_state(self._SOLVED)
++                return
++            if self._elapsed() > 120:
++                # 2 min without solve → sleep 30s
++                self._enter_state(self._PRE_SLEEP)
++                self.go_to_sleep()
++            else:
++                self.register_activity()
 +
-         if self.shared_state.power_state() > 0:
-             # We are awake, should we sleep?
-             if time.time() - self.last_activity > self.get_sleep_timeout():
-@@ -571,13 +577,6 @@
++        elif self._solve_state == self._PRE_SLEEP:
++            if self._elapsed() > 30:
++                # Done sleeping → retry for 1 min
++                self._enter_state(self._RETRY)
++                self.wake_up()
++
++        elif self._solve_state == self._RETRY:
++            if has_solve:
++                self._enter_state(self._SOLVED)
++                return
++            if self._elapsed() > 60:
++                # 1 min retry failed → sleep again
++                self._enter_state(self._PRE_SLEEP)
++                self.go_to_sleep()
++            else:
++                self.register_activity()
++
++        # Pause execution while sleeping
+         if self.shared_state.power_state() < 1:
+             time.sleep(0.2)
+ 
+@@ -571,13 +627,6 @@
                              if (
                                  not location.source == "WEB"
                                  and not location.source.startswith("CONFIG:")
@@ -27,7 +125,7 @@
                              ):
                                  logger.info(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -1004,6 +1003,8 @@
+@@ -1004,6 +1053,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
