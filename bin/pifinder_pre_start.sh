@@ -38,21 +38,40 @@ if [ -f "$VENV_PY" ]; then
     fi
 fi
 
-# WirePlumber: Service dauerhaft maskieren
-# WirePlumber greift sonst auf /dev/video0 (Unicam/IMX296) zu und bringt
-# den Sensor in einen defekten I2C-Zustand → Kamera zeigt nur schwarz.
-# Lösung: Service komplett maskieren (→ /dev/null). Kein Audio nötig auf
-# diesem Astro-Computer. Symlink in /home überlebt BTRFS-Reset.
-WP_MASK_DIR="/home/${PIFINDER_USER}/.config/systemd/user"
-WP_MASK_FILE="${WP_MASK_DIR}/wireplumber.service"
+# WirePlumber + PipeWire: Services dauerhaft maskieren + pipewire-libcamera entfernen
+# WirePlumber/PipeWire greifen auf /dev/video0 (Unicam/IMX296) zu und bringen
+# den Sensor in einen defekten I2C-Zustand → Kamera zeigt nur schwarz, selbst
+# nach Reboot (nur Power-Cycle hilft dann). Kein Audio nötig auf diesem Astro-Computer.
+# pipewire-libcamera muss entfernt werden (kommt nach BTRFS-Reset zurück).
+# Symlinks in /home überleben BTRFS-Reset.
+SYSTEMD_USER_DIR="/home/${PIFINDER_USER}/.config/systemd/user"
+mkdir -p "${SYSTEMD_USER_DIR}"
 
-mkdir -p "${WP_MASK_DIR}"
-if [ ! -L "${WP_MASK_FILE}" ] || [ "$(readlink "${WP_MASK_FILE}")" != "/dev/null" ]; then
-    ln -sf /dev/null "${WP_MASK_FILE}"
-    chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "${WP_MASK_DIR}"
-    echo "✅ WirePlumber maskiert (IMX296-Schutz)"
+_mask_user_unit() {
+    local unit="$1"
+    local target="${SYSTEMD_USER_DIR}/${unit}"
+    if [ ! -L "${target}" ] || [ "$(readlink "${target}")" != "/dev/null" ]; then
+        ln -sf /dev/null "${target}"
+        echo "✅ ${unit} maskiert"
+    else
+        echo "✅ ${unit} bereits maskiert — OK"
+    fi
+}
+
+_mask_user_unit "wireplumber.service"
+_mask_user_unit "pipewire.service"
+_mask_user_unit "pipewire-pulse.service"
+_mask_user_unit "pipewire.socket"
+_mask_user_unit "pipewire-pulse.socket"
+chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "${SYSTEMD_USER_DIR}"
+
+# pipewire-libcamera entfernen — greift direkt auf Kamera zu, ohne WirePlumber
+if pacman -Q pipewire-libcamera &>/dev/null; then
+    pacman -R --noconfirm pipewire-libcamera 2>/dev/null \
+        && echo "✅ pipewire-libcamera entfernt" \
+        || echo "⚠️  pipewire-libcamera konnte nicht entfernt werden"
 else
-    echo "✅ WirePlumber bereits maskiert — OK"
+    echo "✅ pipewire-libcamera nicht installiert — OK"
 fi
 
 exit 0
