@@ -590,6 +590,20 @@ else
 fi
 echo "------------------------------------"
 
+# tetra3/main.py — numpy 2.0: np.math.factorial → math.factorial
+echo "🔧 Patching tetra3/main.py (numpy 2.0 compatibility) ..."
+if [ -f "$tetra3_main_py" ]; then
+    if grep -q 'np\.math\.factorial' "$tetra3_main_py"; then
+        sed -i 's/np\.math\.factorial/math.factorial/g' "$tetra3_main_py"
+        echo "✅ tetra3/main.py: np.math.factorial → math.factorial"
+    else
+        echo "⏩ tetra3/main.py: bereits gepatcht oder nicht nötig"
+    fi
+else
+    echo "⚠️ tetra3/main.py nicht gefunden, skipping"
+fi
+echo "------------------------------------"
+
 # catalogs.py — background loader: os.nice(15), smaller batches, longer yield
 echo "🔧 Patching catalogs.py (background loader CPU throttling) ..."
 if [ -f "$catalogs_py" ]; then
