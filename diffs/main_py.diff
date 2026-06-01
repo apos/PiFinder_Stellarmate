@@ -1,6 +1,19 @@
---- /home/stellarmate/PiFinder_Stellarmate/main.py.original	2025-11-10 20:30:10.101096904 +0100
-+++ /home/stellarmate/PiFinder_Stellarmate/.gemini/tmp/gps_files/main.py	2025-11-10 17:18:08.741595441 +0100
-@@ -522,13 +522,6 @@
+--- python/PiFinder/main.py.orig	2026-06-01 23:30:14.190858488 +0200
++++ python/PiFinder/main.py	2026-06-01 23:29:49.723237538 +0200
+@@ -184,6 +184,12 @@
+             self.register_activity()
+             return
+ 
++        # Don't sleep before first successful solve — solver needs stable frames
++        solution = self.shared_state.solution()
++        if not (solution and solution.get("RA") is not None):
++            self.register_activity()
++            return
++
+         if self.shared_state.power_state() > 0:
+             # We are awake, should we sleep?
+             if time.time() - self.last_activity > self.get_sleep_timeout():
+@@ -571,13 +577,6 @@
                              if (
                                  not location.source == "WEB"
                                  and not location.source.startswith("CONFIG:")
@@ -14,9 +27,9 @@
                              ):
                                  logger.info(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -919,6 +912,8 @@
-         gps_type = cfg.get_option("gps_type")
-         if gps_type == "ublox":
+@@ -1004,6 +1003,8 @@
+             gps_monitor = importlib.import_module("PiFinder.gps_fake")
+         elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
 +        elif gps_type == "stellarmate":
 +            gps_monitor = importlib.import_module("PiFinder.gps_stellarmate")
