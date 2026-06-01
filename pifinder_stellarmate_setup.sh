@@ -18,6 +18,8 @@ smos_version_testing="2.1.1"
 # MAIN
 ############################################################
 
+SETUP_START=$SECONDS
+
 ############################################################
 # Get some important vars and functinons
 source $(pwd)/bin/functions.sh
@@ -651,6 +653,8 @@ echo "  picamera2:            $PICAM_FULL"
 echo "  libcamera:            $LIBCAM_FULL"
 echo "  python-libcamera:     $PYLIBCAM_FULL  [${PYLIBCAM_METHOD:-pinned}]"
 echo "  hip_main.dat:         ${HIP_METHOD:-already present}"
+_elapsed=$(( SECONDS - SETUP_START ))
+echo "  Setup time:           $(( _elapsed / 60 ))m $(( _elapsed % 60 ))s"
 echo "##############################################"
 
 if [ -f "$warnings_file" ] && [ -s "$warnings_file" ]; then
