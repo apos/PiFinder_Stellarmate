@@ -124,9 +124,9 @@ else
     if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
         add_to_section "pi5" "dtparam=i2c_arm_baudrate=10000"
         add_to_section "pi5" "dtoverlay=pwm,pin=13,func=4"
-        add_to_section "pi5" "dtoverlay=uart3"
         add_to_section "pi5" "dtoverlay=pwm-2chan"
         add_to_section "pi5" "dtoverlay=imx296"
+        # uart3 intentionally omitted: GPIO9 conflicts with SPI0-MISO on RP1
     elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
         add_to_section "pi4" "dtparam=i2c_arm_baudrate=10000"
         add_to_section "pi4" "dtoverlay=pwm,pin=13,func=4"
