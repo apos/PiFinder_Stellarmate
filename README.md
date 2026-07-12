@@ -12,7 +12,8 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 
 > ### ✅ **Current Version**
 >
-> * Works with PiFinder software 2.5.1, Raspberry Pi 4 + Pi 5, Stellarmate OS (Arch Linux).
+> * Works with PiFinder software **2.6.0**, Raspberry Pi 4 + Pi 5, Stellarmate OS 2.1.1 (Arch Linux).
+> * Tested under real night sky on Pi 4 (2026-07-12): camera ✅, plate solve ✅, IMU ✅
 
 ---
 
@@ -25,7 +26,7 @@ This setup modifies the stock PiFinder installation to better integrate with Ste
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
-*   **Compatibility:** The scripts are designed for Raspberry Pi 4 running Stellarmate OS (based on Debian Bookworm). Raspberry Pi 5 support is highly experimental, in development, and not fully functional yet.
+*   **Compatibility:** The scripts are designed for Raspberry Pi 4 and Pi 5 running Stellarmate OS (Arch Linux). Pi 4 is fully tested and stable. Pi 5 support is in active development (GPS ✅, camera adapter cable required).
 *   **Comprehensive IP Address Display:** The web interface and the device's OLED status screen now show all available non-localhost IP addresses, providing better network visibility.
 *   **Dynamic User:** The web interface authentication is patched to use the current system user (e.g., `stellarmate`) instead of a hardcoded default.
 
@@ -57,18 +58,14 @@ The setup process is designed to be straightforward. It will guide you through a
 
 ### Prerequisites
 
-*   A Raspberry Pi 4 with PiFinder hardware (hat, screen, etc.).
-*   Stellarmate OS (based on Debian Bookworm) installed and running.
+*   A Raspberry Pi 4 or Pi 5 with PiFinder hardware (hat, screen, camera, etc.).
+*   Stellarmate OS 2.1.1 (Arch Linux) installed and running.
 *   Basic familiarity with the Linux command line.
 
 ### Setup Steps
 
 1.  **Enable Hardware Interfaces:**
-    Before running the script, you must enable SPI and I2C using the Raspberry Pi Configuration tool.
-    ```bash
-    sudo raspi-config
-    ```
-    Navigate to `3 Interface Options` and enable both `I4 SPI` and `I5 I2C`.
+    SPI and I2C are enabled automatically by the setup script via `/boot/config.txt`. No manual step required on Stellarmate OS (Arch Linux). `raspi-config` is not available on this platform.
 
 2.  **Clone the Repository:**
     Open a terminal on your Stellarmate device and clone this repository:
