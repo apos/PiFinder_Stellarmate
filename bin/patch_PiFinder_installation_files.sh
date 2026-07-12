@@ -160,6 +160,10 @@ echo "------------------------------------"
     # timezonefinder: requires numpy<2, conflicts with numpy>=2.0
     sed -i 's/^timezonefinder==.*/timezonefinder/' "$python_requirements" && echo "  ✅ timezonefinder unpinned"
 
+    # numpy-quaternion 2023.0.4 requires numpy<2.0 — conflicts with numpy>=2.0
+    # 2024.0.3+ supports numpy 2.0
+    sed -i 's/^numpy-quaternion==.*/numpy-quaternion>=2024.0.3/' "$python_requirements" && echo "  ✅ numpy-quaternion updated (>=2024.0.3, numpy 2.0 compatible)"
+
     # python-libinput: 0.3.0a0 not available; uses removed 'imp' module (Python 3.12+)
     # Installed manually as 0.1.0 with patched setup.py — must not be in requirements.txt
     sed -i 's/^python-libinput/# python-libinput/' "$python_requirements" && echo "  ✅ python-libinput commented out (installed manually as 0.1.0)"
