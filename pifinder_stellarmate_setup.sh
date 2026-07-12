@@ -4,10 +4,10 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.5.1"
+pifinder_stellarmate_version_stable="2.6.0"
 
 # This script is actually tested against this version
-pifinder_stellarmate_version_testing="2.5.1"
+pifinder_stellarmate_version_testing="2.6.0"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
 smos_version_stable="2.1.1"
