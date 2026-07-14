@@ -12,8 +12,9 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 
 > ### ✅ **Current Version**
 >
-> * Works with PiFinder software **2.6.0**, Raspberry Pi 4 + Pi 5, Stellarmate OS 2.1.1 (Arch Linux).
-> * Tested under real night sky on Pi 4 (2026-07-12): camera ✅, plate solve ✅, IMU ✅
+> * Works with PiFinder software **2.6.0**, Stellarmate OS **2.2.1** (Arch Linux).
+> * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
+> * **Raspberry Pi 5**: Partially supported — GPS ✅, Web UI ✅. OLED display not yet working (SPI driver issue under investigation). Camera requires 15-pin FFC CSI adapter cable.
 
 ---
 
@@ -106,6 +107,37 @@ The setup script automatically installs the `pifinder_lx200` INDI driver. To use
 7.  Click **"Connect"**.
 
 You should now see the PiFinder's RA and Dec values in Ekos, which can be used for alignment or as a reference.
+
+## SMOS Updates
+
+Stellarmate OS uses BTRFS snapshot resets to apply updates. This wipes the root partition, which removes all manually installed packages and configuration (pacman repos, systemd services, swap, etc.). The `/home` partition survives intact.
+
+After every SMOS update, run the restore script:
+
+```bash
+bash ~/PiFinder_Stellarmate/bin/restore_after_smos_update.sh
+sudo reboot
+```
+
+This restores everything PiFinder needs: pacman repos, system packages, hardware groups, udev rules, `/boot/config.txt` overlays, swapfile, and systemd services.
+
+### Syncing basic-memory / Claude context to Nextcloud
+
+The post-update script also handles syncing the Claude AI memory and context to Nextcloud:
+
+```bash
+bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
+```
+
+> **Note:** `rclone` is installed automatically by `restore_after_smos_update.sh`. The Nextcloud remote must be pre-configured in `~/.config/rclone/rclone.conf` (remote name: `nextcloud`, WebDAV).
+
+### Version Compatibility
+
+| PiFinder | SMOS | Pi 4 | Pi 5 |
+|---|---|---|---|
+| 2.6.0 | 2.2.1 | ✅ fully tested | ⚠️ GPS/Web UI only — OLED pending |
+| 2.6.0 | 2.1.1 | ✅ tested | ⚠️ same |
+| 2.5.1 | 2.1.1 | ✅ tested | — |
 
 ## Uninstallation
 
