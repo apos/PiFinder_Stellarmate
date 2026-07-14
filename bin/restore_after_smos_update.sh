@@ -47,7 +47,7 @@ PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"
 [ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
-    openexr
+    openexr rclone
 # libcamera + libcamera-ipa are pre-installed by SMOS — only install if missing.
 # Never upgrade: repo may carry a newer pkgrel with incompatible soname (SMOS packaging bug:
 # libcamera 0.7.1-64 breaks libcamera-ipa 0.7.1-1 soname dependency).
