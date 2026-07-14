@@ -10,8 +10,8 @@ pifinder_stellarmate_version_stable="2.6.0"
 pifinder_stellarmate_version_testing="2.6.0"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
-smos_version_stable="2.1.1"
-smos_version_testing="2.1.1"
+smos_version_stable="2.2.1"
+smos_version_testing="2.2.1"
 
 
 ############################################################
@@ -210,8 +210,16 @@ sudo pacman -Sy --noconfirm
 # python-libcamera must stay at 0.7.0 — use cached package if available, then pin.
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
-    libcamera libcamera-ipa \
     openexr
+# libcamera + libcamera-ipa are pre-installed by SMOS — only install if missing.
+# Never upgrade: repo may carry a newer pkgrel with incompatible soname (SMOS packaging bug:
+# libcamera 0.7.1-64 breaks libcamera-ipa 0.7.1-1 soname dependency).
+if ! pacman -Q libcamera &>/dev/null || ! pacman -Q libcamera-ipa &>/dev/null; then
+    sudo pacman -S --noconfirm libcamera libcamera-ipa
+    echo "  ✅ libcamera installed"
+else
+    echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base)"
+fi
 # Prefer pinned package from repo, fall back to pacman cache
 PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
 [ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
