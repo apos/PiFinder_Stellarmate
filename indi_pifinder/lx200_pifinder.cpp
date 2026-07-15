@@ -42,12 +42,17 @@
 #include "lx200driver.h"
 
 #include <cstdlib>
+#include <memory>
 #include <termios.h>
 #include <libnova/libnova.h>
 
 #define LX200_TIMEOUT 5 /* FD timeout in seconds */
 
-LX200_PIFINDER::LX200_PIFINDER() : LX200Generic()
+// Standalone driver executable: no multi-driver Loader/fat-binary needed.
+// Links directly against the system's libindilx200/libindidriver.
+static std::unique_ptr<LX200_PIFINDER> pifinder_driver(new LX200_PIFINDER());
+
+LX200_PIFINDER::LX200_PIFINDER() : LX200Telescope()
 {
     setLX200Capability( LX200_HAS_TRACKING_FREQ | LX200_HAS_PULSE_GUIDING );
 
@@ -91,7 +96,7 @@ bool LX200_PIFINDER::Handshake()
 // Initialize basic properties that are required all the time
 bool LX200_PIFINDER::initProperties()
 {
-    const bool result = LX200Generic::initProperties();
+    const bool result = LX200Telescope::initProperties();
     if (result)
     {
         // Override the mount type property to make it writable, like the simulator.
@@ -101,7 +106,7 @@ bool LX200_PIFINDER::initProperties()
     return result;
 }
 
-// Called by LX200Generic::updateProperties
+// Called by LX200Telescope::updateProperties
 void LX200_PIFINDER::getBasicData()
 {
     DEBUGFDEVICE(getDefaultName(), DBG_SCOPE, "<%s>", __FUNCTION__);

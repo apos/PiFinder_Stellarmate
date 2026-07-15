@@ -1,159 +1,53 @@
 #! /usr/bin/bash
+set -euo pipefail
 
-# This script compiles and installs the PiFinder INDI driver by integrating it
-# into the indi_lx200_generic driver executable.
-# It uses a git-based workflow for safety and reliability, supporting both
-# fast incremental builds and full clean builds.
+# Builds and installs the PiFinder LX200 INDI driver.
+#
+# Standalone driver: links directly against the system's libindi
+# (libindilx200, libindidriver, both installed via pacman/apt as part of
+# the libindi package) - no INDI source checkout, no full INDI build needed.
+# Replaces the old lx200generic fat-binary approach (see basic-memory
+# pifinder-stellarmate/00008 for why).
 
-source $(dirname "$0")/functions.sh
+source "$(dirname "$0")/functions.sh"
 
-LOG_FILE="${pifinder_stellarmate_dir}/indi_driver_build.log"
-exec > >(tee "${LOG_FILE}") 2>&1
-
-echo "############################################################"
-echo "Starting PiFinder INDI Driver Git-Managed Build Script"
-echo "Timestamp: $(date)"
-echo "############################################################"
-
-DRIVER_NAME="lx200_pifinder"
-# Binary/symlink name the Loader's strstr() check and drivers.xml both expect
-# (see indi_pifinder/lx200generic.cpp and indi_pifinder_lx200_driver.xml.in).
-# Intentionally different word order from DRIVER_NAME (the source filename).
-BINARY_NAME="pifinder_lx200"
-DRIVER_LXGENERIC="lx200generic"
-INDI_TELESCOPE_DIR="${indi_source_dir}/drivers/telescope"
-DRIVER_SOURCE_DIR="${indi_pifinder_dir}"
-TELESCOPE_CMAKE_FILE="${INDI_TELESCOPE_DIR}/CMakeLists.txt"
-SOURCE_ENTRY="${DRIVER_NAME}.cpp"
+BUILD_DIR="${indi_pifinder_dir}/build"
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
-DRIVERS_XML_BACKUP="/tmp/drivers.xml.pifinder.bak"
-SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
-DRIVERS_XML_BACKUP="/tmp/drivers.xml.pifinder.bak"
 
-echo "-> Committing changes in ${DRIVER_SOURCE_DIR}..."
-cd "${DRIVER_SOURCE_DIR}"
-# Use --no-verify to bypass any potential pre-commit hooks
-git commit -a -m "Automated commit before build: $(date)" --no-verify
-cd "${pifinder_stellarmate_dir}"
+if [[ "${1:-}" == "--clean-build" ]]; then
+    echo "-> Removing existing build directory..."
+    rm -rf "${BUILD_DIR}"
+fi
 
-# --- Build Mode Logic ---
-if [[ "$1" == "--clean-build" ]]; then
-    echo "-> Performing a FULL CLEAN build..."
-    echo "   Resetting indi-source directory to a clean state..."
-    cd "${indi_source_dir}"
-    git reset --hard
-    cd "${pifinder_stellarmate_dir}"
+echo "-> Configuring..."
+mkdir -p "${BUILD_DIR}"
+cmake -S "${indi_pifinder_dir}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
 
-    echo "   Cleaning build directory..."
-    sudo rm -rf "${indi_source_dir}/build"
+echo "-> Building..."
+cmake --build "${BUILD_DIR}"
+
+echo "-> Installing driver executable..."
+sudo cp "${BUILD_DIR}/indi_pifinder_lx200" /usr/bin/indi_pifinder_lx200
+sudo chmod +x /usr/bin/indi_pifinder_lx200
+
+# Remove artifacts from the old lx200generic fat-binary/symlink approach, if present.
+sudo rm -f /usr/bin/indi_lx200_pifinder
+
+echo "-> Checking driver XML entry in ${SYSTEM_DRIVERS_XML}..."
+if grep -qF "PiFinder LX200" "${SYSTEM_DRIVERS_XML}"; then
+    echo "   Entry already present. Skipping."
 else
-    echo "-> Performing an INCREMENTAL build..."
-    echo "   Restoring pristine version of CMakeLists.txt before patching."
-    cd "${indi_source_dir}"
-    git checkout HEAD -- "${TELESCOPE_CMAKE_FILE}"
-    cd "${pifinder_stellarmate_dir}"
-fi
-
-echo "-> Preparing indi-source tree for build..."
-echo "   Copying driver source files to ${INDI_TELESCOPE_DIR}/"
-sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_NAME}.cpp" "${INDI_TELESCOPE_DIR}/"
-sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_NAME}.h" "${INDI_TELESCOPE_DIR}/"
-sudo cp "${DRIVER_SOURCE_DIR}/${DRIVER_LXGENERIC}.cpp" "${INDI_TELESCOPE_DIR}/"
-
-
-echo "   Patching main telescope CMakeLists.txt..."
-if grep -qF "$SOURCE_ENTRY" "$TELESCOPE_CMAKE_FILE"; then
-    echo "   Driver source entry already exists. Skipping patch."
-else
-    # Find the line number of the add_executable(indi_lx200generic line
-    LINE_NUM=$(grep -nF "add_executable(indi_lx200generic" "$TELESCOPE_CMAKE_FILE" | cut -d: -f1)
-
-    # If the line is found, then patch it
-    if [ -n "$LINE_NUM" ]; then
-        echo "   Adding driver source entry to the indi_lx200generic target."
-        sudo sed -i "${LINE_NUM}a \    ${SOURCE_ENTRY}" "$TELESCOPE_CMAKE_FILE"
-    else
-        echo "   Error: Could not find 'add_executable(indi_lx200generic' in $TELESCOPE_CMAKE_FILE."
-        exit 1
-    fi
-fi
-
-echo "-> Configuring the build (if necessary)..."
-if [ ! -d "${indi_source_dir}/build" ]; then
-    mkdir -p "${indi_source_dir}/build"
-fi
-cd "${indi_source_dir}/build"
-# CMake will only re-configure if something has changed
-cmake -DCMAKE_INSTALL_PREFIX=/usr ..
-
-echo "-> Building the driver (incrementally)..."
-make indi_lx200generic
-if [ $? -ne 0 ]; then
-    echo "   [ERROR] The build failed. See the output above for details."
-    echo "   Aborting script."
-    exit 1
-fi
-
-echo "-> Installing the driver executable and creating symlink..."
-sudo cp "${indi_source_dir}/build/drivers/telescope/indi_lx200generic" "/usr/bin/indi_lx200generic"
-sudo chmod +x "/usr/bin/indi_lx200generic" # Ensure it's executable
-
-echo "   Creating symbolic link for ${BINARY_NAME}..."
-sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${BINARY_NAME}
-# Drop the old, wrongly-named symlink if a previous run created it.
-sudo rm -f /usr/bin/indi_${DRIVER_NAME}
-
-echo "-> Injecting driver XML entry into /usr/share/indi/drivers.xml..."
-# Backup drivers.xml before modifying
-sudo cp "${SYSTEM_DRIVERS_XML}" "${DRIVERS_XML_BACKUP}"
-
-# Use sed to insert the driver entry after the <devGroup group="Telescopes"> line
-# The XML entry needs to be escaped for sed
-DRIVER_XML_ENTRY="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\\n            <driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>\\n            <version>1.0</version>\\n        </device>"
-
-# Check if the entry already exists to prevent duplicates
-if ! grep -qF "PiFinder LX200" "${SYSTEM_DRIVERS_XML}"; then
+    DRIVER_XML_ENTRY="        <device label=\"PiFinder LX200\" manufacturer=\"PiFinder\">\\n            <driver name=\"PiFinder LX200\">indi_pifinder_lx200</driver>\\n            <version>1.0</version>\\n        </device>"
     sudo sed -i "/<devGroup group=\"Telescopes\">/a ${DRIVER_XML_ENTRY}" "${SYSTEM_DRIVERS_XML}"
-    echo "   PiFinder LX200 driver entry added."
-else
-    echo "   PiFinder LX200 driver entry already exists. Skipping injection."
+    echo "   Entry added."
 fi
 
-# Restore drivers.xml from backup (this is now redundant as we are modifying it directly, but keeping for safety if future changes revert to full file replacement)
-# sudo mv "${DRIVERS_XML_BACKUP}" "${SYSTEM_DRIVERS_XML}"
-
-echo "-> Build and installation complete."
-
-# --- KStars Log Management for Testing ---
-INDI_LOG_DIR="/home/stellarmate/.indi/logs"
-KSTARS_LOG_DIR="/home/stellarmate/.local/share/kstars/logs"
-
-read -p "Press Enter to continue and then wait 30 seconds for driver testing and log generation..."
-sleep 30
-
-echo "-> Searching for the latest INDI driver log file in all known locations..."
-
-# Find the newest log file across both possible log directories
-LATEST_LOG_FILE=$(sudo find "${INDI_LOG_DIR}" "${KSTARS_LOG_DIR}" -type f \( -name "indi_pifinder_lx200_*.log" -o -name "log_*.txt" \) -printf "%T@ %p
-" 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
-
-if [ -n "${LATEST_LOG_FILE}" ] && [ -f "${LATEST_LOG_FILE}" ]; then
-    echo "-> Found latest log: ${LATEST_LOG_FILE}"
-    echo "-> Appending log to the build log (${LOG_FILE})..."
-    echo "" | sudo tee -a "${LOG_FILE}"
-    echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- Captured Log Start: ${LATEST_LOG_FILE} ---" | sudo tee -a "${LOG_FILE}"
-    echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    sudo cat "${LATEST_LOG_FILE}" | sudo tee -a "${LOG_FILE}"
-    echo "############################################################" | sudo tee -a "${LOG_FILE}"
-    echo "--- Captured Log End ---" | sudo tee -a "${LOG_FILE}"
-    echo "############################################################" | sudo tee -a "${LOG_FILE}"
-else
-    echo "-> Warning: No INDI driver or KStars log file found. Skipping log append."
-fi
-
-echo "############################################################"
-echo "Script finished."
-echo "Timestamp: $(date)"
-echo "Log file located at: ${LOG_FILE}"
-echo "############################################################"
+echo ""
+echo "Done. If the driver was already running, stop it first (e.g. via the"
+echo "StellarMate Webmanager) before installing, or the cp above will fail"
+echo "with 'Text file busy'."
+echo ""
+echo "The StellarMate Webmanager caches its driver catalog at its own startup -"
+echo "restart it to see a newly-added driver (must run from the GUI/VNC"
+echo "session, not SSH - see basic-memory pifinder-stellarmate/00011):"
+echo "  systemctl --user restart stellarmatewebmanager.service"

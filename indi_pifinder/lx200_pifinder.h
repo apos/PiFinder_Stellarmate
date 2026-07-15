@@ -20,9 +20,9 @@
 
 #pragma once
 
-#include "lx200generic.h"
+#include "lx200telescope.h"
 
-class LX200_PIFINDER : public LX200Generic
+class LX200_PIFINDER : public LX200Telescope
 {
     public:
 

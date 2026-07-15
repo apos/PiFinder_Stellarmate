@@ -11,7 +11,6 @@ pifinder_config_dir="${pifinder_home}/.config"
 kstarsrc_source="${pifinder_config_dir}/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 indi_pifinder_dir="${pifinder_stellarmate_dir}/indi_pifinder"
-indi_source_dir="${pifinder_stellarmate_dir}/indi-source"
 
 
 
