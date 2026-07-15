@@ -306,7 +306,11 @@ int LX200_PIFINDER::setStandardProcedureAndReturnResponse(int fd, const char *da
         LOGF_ERROR("CMD <%s> write ERROR %d", data, error_type);
         return error_type;
     }
-    error_type = tty_read(fd, response, max_response_length, LX200_TIMEOUT, &nbytes_read);
+    // PiFinder terminates every response with '#' and then sends nothing
+    // more - tty_read() would block until max_response_length bytes arrive
+    // (i.e. until LX200_TIMEOUT expires) instead of returning as soon as the
+    // short reply is complete. Read up to the terminator instead.
+    error_type = tty_nread_section(fd, response, max_response_length, '#', LX200_TIMEOUT, &nbytes_read);
     tcflush(fd, TCIFLUSH);
 
     if (nbytes_read < 1)
