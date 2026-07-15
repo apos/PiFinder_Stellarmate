@@ -16,6 +16,10 @@ echo "Timestamp: $(date)"
 echo "############################################################"
 
 DRIVER_NAME="lx200_pifinder"
+# Binary/symlink name the Loader's strstr() check and drivers.xml both expect
+# (see indi_pifinder/lx200generic.cpp and indi_pifinder_lx200_driver.xml.in).
+# Intentionally different word order from DRIVER_NAME (the source filename).
+BINARY_NAME="pifinder_lx200"
 DRIVER_LXGENERIC="lx200generic"
 INDI_TELESCOPE_DIR="${indi_source_dir}/drivers/telescope"
 DRIVER_SOURCE_DIR="${indi_pifinder_dir}"
@@ -94,8 +98,10 @@ echo "-> Installing the driver executable and creating symlink..."
 sudo cp "${indi_source_dir}/build/drivers/telescope/indi_lx200generic" "/usr/bin/indi_lx200generic"
 sudo chmod +x "/usr/bin/indi_lx200generic" # Ensure it's executable
 
-echo "   Creating symbolic link for ${DRIVER_NAME}..."
-sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${DRIVER_NAME}
+echo "   Creating symbolic link for ${BINARY_NAME}..."
+sudo ln -sf /usr/bin/indi_lx200generic /usr/bin/indi_${BINARY_NAME}
+# Drop the old, wrongly-named symlink if a previous run created it.
+sudo rm -f /usr/bin/indi_${DRIVER_NAME}
 
 echo "-> Injecting driver XML entry into /usr/share/indi/drivers.xml..."
 # Backup drivers.xml before modifying
