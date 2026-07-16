@@ -182,9 +182,7 @@ Open `http://<pi-address>:8624` in a browser.
 
 ### Step 3: INDI Control Panel — connect the devices
 
-The tab strip at the top shows all three devices side by side once the profile is running:
-
-![INDI Control Panel: tabs LX200 OnStep, PiFinder LX200, PiFinder Mount Bridge; PiFinder LX200 → Connection tab with TCP 127.0.0.1:4030](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png)
+The tab strip at the top shows all three devices side by side once the profile is running.
 
 Connect **PiFinder LX200**:
 - Tab "PiFinder LX200" → Connection
@@ -192,9 +190,7 @@ Connect **PiFinder LX200**:
 - Click "Connect"
 
 Then check the "Main Control" tab — it's also directly visible there that "On Set" only offers
-**Track/Slew**, no Sync (see [What happens on a GoTo](#what-happens-on-a-goto-to-pifinder-lx200)):
-
-![PiFinder LX200 → Main Control: Connection, On Set (Track/Slew only), Eq. Coordinates, Abort Motion](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png)
+**Track/Slew**, no Sync (see [What happens on a GoTo](#what-happens-on-a-goto-to-pifinder-lx200)).
 
 Connect **your real mount** (OnStepX example): pick the serial port or TCP connection as
 appropriate, then "Connect".
@@ -202,13 +198,33 @@ appropriate, then "Connect".
 Connect **PiFinder Mount Bridge** (if used):
 - Tab "PiFinder Mount Bridge" → subtab "Options" → "Active devices" → set `PiFinder` and `Mount`
   to the correct device names (e.g. "PiFinder LX200" / "LX200 OnStep")
-
-![PiFinder Mount Bridge → Options: Active devices set to "PiFinder LX200" / "LX200 OnStep"](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png)
-
 - Click "Connect" (Main Control tab)
 - Then set "Coupling" to the mode you want (see the table above)
 
-![PiFinder Mount Bridge → Main Control: Connection, Coupling (Verify/Alert only active), Auto-correct action, Manual (one-shot) Sync Now/Goto Now, Drift Threshold, Status showing the current drift value](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png)
+Click any thumbnail below for the full-size screenshot:
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png" width="380"></a><br>
+<sub>All three tabs; PiFinder LX200 → Connection (TCP 127.0.0.1:4030)</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="380"></a><br>
+<sub>PiFinder LX200 → Main Control: only Track/Slew, no Sync</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="380"></a><br>
+<sub>Mount Bridge → Options: Active devices set</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="380"></a><br>
+<sub>Mount Bridge → Main Control: Coupling, Manual trigger, Drift status</sub>
+</td>
+</tr>
+</table>
 
 ### Step 4: KStars/Ekos (Remote mode)
 
@@ -220,8 +236,6 @@ doesn't launch or look up anything locally at all: it's purely a network client 
 `indiserver` that the Web Manager already started, so it doesn't matter which driver catalog Ekos
 itself has.
 
-![Ekos Profile Editor: Mode set to "Remote Host", Host "localhost", Port 7624, "INDI Web Manager" enabled with Port 8624, "Web Manager" and "Scan" buttons](docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png)
-
 - Ekos Profile Editor → **Mode: Remote Host** (not "Local"!), Host `localhost`, Port **`7624`**
   (the `indiserver` port from the Web Manager profile)
 - Also enable **"INDI Web Manager"**, Port **`8624`** — this lets Ekos talk to the Web Manager's
@@ -232,14 +246,27 @@ itself has.
 
 Right-clicking a star shows both devices as separate targets in the context menu — the red
 crosshair markers show where PiFinder is currently "looking" versus where the mount actually is
-(deliberately far apart here, for illustration):
+(deliberately far apart here, for illustration). The "PiFinder LX200" submenu expanded shows only
+**Goto / Abort / Find Telescope**, no Sync (see
+[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)). Click any thumbnail for the full-size
+screenshot:
 
-![KStars sky map: crosshair markers "Position PiFinder" and "Position Mount" at different spots; context menu shows "LX200 OnStep" and "PiFinder LX200" as separate target devices](docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png)
-
-The "PiFinder LX200" submenu expanded — only **Goto / Abort / Find Telescope**, no Sync (see
-[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)):
-
-![KStars context menu: "PiFinder LX200" submenu shows only Goto, Abort, Find Telescope](docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png)
+<table>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png"><img src="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png" width="260"></a><br>
+<sub>Ekos Profile Editor: Mode "Remote Host", Host localhost, Port 7624, INDI Web Manager enabled</sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="260"></a><br>
+<sub>Sky map: PiFinder and mount as separate target devices in the context menu</sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="260"></a><br>
+<sub>"PiFinder LX200" submenu: only Goto, Abort, Find Telescope</sub>
+</td>
+</tr>
+</table>
 
 ### Step 5: Connecting SkySafari
 
