@@ -10,11 +10,12 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Use these scripts at your own risk. The author is not responsible for any damage to your hardware or software.
 > * This process has been tested with the PiFinder version specified in `version.txt`.
 
-> ### ✅ **Current Version**
+> ### ✅ **Current Version — v1.0.0**
 >
-> * Works with PiFinder software **2.6.0**, Stellarmate OS **2.2.1** (Arch Linux).
+> * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
 > * **Raspberry Pi 5**: Partially supported — GPS ✅, Web UI ✅. OLED display not yet working (SPI driver issue under investigation). Camera requires 15-pin FFC CSI adapter cable.
+> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PFinder_LX200.md](Readme_PFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -23,7 +24,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 This setup modifies the stock PiFinder installation to better integrate with Stellarmate:
 
 *   **Automated Installation:** A single script handles downloading the correct PiFinder version, creating a Python virtual environment, installing dependencies, and applying all necessary patches.
-*   **INDI Driver for KStars/Ekos:** The setup script automatically compiles and installs a custom `pifinder_lx200` INDI driver. This allows KStars/Ekos to read the PiFinder's coordinates, perfect for plate-solving and mount alignment.
+*   **INDI Integration for KStars/Ekos & SkySafari:** A standalone `PiFinder LX200` INDI driver reports PiFinder's solved position and forwards GoTo requests as push-to targets. An optional `PiFinder Mount Bridge` driver can couple that position to any real INDI mount driver (verify/alert, auto-correct on drift, or full event-driven GoTo-forwarding). Built directly against system `libindi` — no INDI source checkout, no full INDI build. **Not** installed automatically by the main setup script — see [Readme_PFinder_LX200.md](Readme_PFinder_LX200.md) for the full build/deployment guide, technical reference, and illustrated setup instructions.
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
@@ -92,21 +93,23 @@ The setup process is designed to be straightforward. It will guide you through a
     source /home/stellarmate/PiFinder/python/.venv/bin/activate
     ./pifinder_stellarmate_setup.sh
     ```
-    After this, the installation will complete, the PiFinder services will be started, and the INDI driver will be installed.
+    After this, the installation will complete and the PiFinder services will be started. The INDI
+    driver is a separate step — see [Using the INDI Driver](#using-the-indi-driver) below.
 
 ## Using the INDI Driver
 
-The setup script automatically installs the `pifinder_lx200` INDI driver. To use it:
+The INDI driver (and the optional Mount Bridge for coupling PiFinder to a real motorized mount) is
+a **separate, manual build step** — not part of `pifinder_stellarmate_setup.sh`:
 
-1.  **Start KStars** and open the **Ekos Profile Wizard** (`Ctrl+P`).
-2.  Create a new equipment profile or edit an existing one.
-3.  In the "Telescope" dropdown, select **"PiFinder LX200"** and click "Add".
-4.  Save the profile and start INDI.
-5.  In the INDI Control Panel, go to the "PiFinder LX200" tab, then the "Connection" tab.
-6.  Ensure the IP address is `127.0.0.1` and the port is `4030`.
-7.  Click **"Connect"**.
+```bash
+cd ~/PiFinder_Stellarmate
+bash bin/build_indi_driver.sh     # PiFinder LX200 (required)
+bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, only if you have a real mount)
+```
 
-You should now see the PiFinder's RA and Dec values in Ekos, which can be used for alignment or as a reference.
+For the full setup walkthrough (StellarMate Web Manager profile, INDI Control Panel, KStars/Ekos
+Remote mode, SkySafari), the complete LX200 command/property reference, and an explanation of the
+code and deployment strategy, see **[Readme_PFinder_LX200.md](Readme_PFinder_LX200.md)**.
 
 ## SMOS Updates
 
@@ -148,3 +151,9 @@ A script is provided to safely remove the PiFinder installation and services.
 ```
 
 This will stop and disable the `pifinder` services, remove the systemd files, and delete the `~/PiFinder` directory. It will not remove the `~/PiFinder_data` directory or the `PiFinder_Stellarmate` repository itself.
+
+## See Also
+
+*   **[Readme_PFinder_LX200.md](Readme_PFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy.
+*   **[CHANGELOG.md](CHANGELOG.md)** — release history.
+*   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
