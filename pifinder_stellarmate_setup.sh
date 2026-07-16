@@ -57,10 +57,20 @@ add_warning() {
     echo "$1" >> "$warnings_file"
 }
 
+# Machine-readable phase marker for gui_installer/server.py's progress bar.
+# Because the venv bootstrap re-execs this whole script from the top (see
+# below), phases 1-4 print again on the second pass — the GUI tracks the
+# furthest phase reached so far rather than the latest one, so that's harmless.
+phase() {
+    echo "###PHASE### $1"
+}
+
 # Source python venv if it exists
 if [ -f "${python_venv}/bin/activate" ]; then
     source "${python_venv}/bin/activate"
 fi
+
+phase "Checking versions"
 
 ############################################################
 # VERSION CHECK (Live check from GitHub)
@@ -135,6 +145,8 @@ else
 fi
 
 ############################################################
+phase "Setting up hardware access"
+
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
 # Create hardware groups if missing (Arch/SMOS does not create these by default)
@@ -153,6 +165,8 @@ sudo udevadm trigger --action=change /dev/gpiomem
 sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
 ############################################################
+phase "Cloning or updating PiFinder"
+
 # Check if a PiFinder installation already exists.
 if [ -d "${pifinder_home}/PiFinder" ]; then
     # If resuming, skip the prompt
@@ -231,6 +245,8 @@ else
     find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
 fi
 
+phase "Installing system packages"
+
 # Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot)
 grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
 sudo pacman -Sy --noconfirm
@@ -304,6 +320,8 @@ else
     swapon --show | grep -q /swapfile || sudo swapon /swapfile 2>/dev/null || true
     echo "ℹ️  Swapfile already exists and active."
 fi
+
+phase "Creating Python venv"
 
 ############################################
 # Python version check: delete venv if system Python changed (e.g. after SMOS update)
@@ -385,6 +403,7 @@ else
   else
     # Clean up the lock file if it exists, as we are now proceeding
     rm -f "${lock_file}"
+    phase "Installing Python requirements"
     echo "Python venv is active. Installing Requirements."
     install_requirements "${python_requirements}"
     find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
@@ -502,6 +521,8 @@ mkdir -p ~/PiFinder_data/solver_debug_dumps
 mkdir -p ~/PiFinder_data/logs
 chmod -R 777 ~/PiFinder_data
 
+phase "Downloading star catalog"
+
 # Hipparcos catalog — check file exists AND is non-empty (>1MB)
 HIP_DAT="${pifinder_dir}/astro_data/hip_main.dat"
 HIP_MIN_SIZE=1000000
@@ -567,6 +588,7 @@ sudo chown -R ${USER}:${USER} ${pifinder_home}/PiFinder
 # NOT USED, PART OF STELLARMATE-OS:  Samba config
 # NOT USED, PART OF STELLARMATE-OS:  sudo cp ~/PiFinder/pi_config_files/smb.conf /etc/samba/smb.conf
 
+phase "Configuring hardware & services"
 
 if [ -f "/boot/firmware/config.txt" ]; then
     CONFIG_FILE="/boot/firmware/config.txt"
@@ -661,6 +683,8 @@ sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
+phase "Building INDI drivers"
+
 # Build and install the PiFinder INDI drivers (PiFinder LX200 + Mount Bridge).
 # See Readme_PiFinder_LX200.md for what these do and how to use them.
 echo "🔧 Building and installing PiFinder INDI drivers ..."
@@ -749,3 +773,5 @@ echo "  ➡️  Please reboot now to activate all changes:"
 echo "     sudo reboot"
 echo "##############################################"
 rm -f "$warnings_file"
+
+phase "Setup complete"

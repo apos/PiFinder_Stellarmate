@@ -11,8 +11,56 @@
     margin: 0;
     padding: 1.5rem;
   }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
   h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
-  .subtitle { color: #888; margin-bottom: 1.5rem; }
+  .subtitle { color: #888; margin-bottom: 0; }
+  #header-image {
+    width: 260px;
+    height: auto;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  #progress-wrap { margin-bottom: 0.8rem; }
+  #progress-track {
+    background: #262626;
+    border-radius: 5px;
+    height: 10px;
+    overflow: hidden;
+  }
+  #progress-fill {
+    background: #2a6fdb;
+    height: 100%;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+  #progress-label {
+    color: #999;
+    font-size: 0.85rem;
+    margin-top: 0.4rem;
+  }
+  #phase-checklist {
+    list-style: none;
+    margin: 0 0 1.2rem;
+    padding: 0;
+    max-width: 420px;
+  }
+  #phase-checklist li {
+    padding: 0.15rem 0;
+    font-size: 0.9rem;
+    color: #666;
+  }
+  #phase-checklist li .icon {
+    display: inline-block;
+    width: 1.4em;
+  }
+  #phase-checklist li.done { color: #ccc; }
+  #phase-checklist li.current { color: #ddd; font-weight: bold; }
   #status {
     font-weight: bold;
     padding: 0.5rem 0.8rem;
@@ -55,17 +103,43 @@
     padding: 1rem;
     border-radius: 6px;
     height: 60vh;
+    width: 60%;
+    min-width: 320px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
     margin-top: 1rem;
+    box-sizing: border-box;
   }
+  #reboot-wrap { margin-top: 1rem; display: none; }
+  #reboot-button {
+    background: #a33;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  #reboot-button:hover { filter: brightness(1.15); }
 </style>
 </head>
 <body>
 
-<h1>PiFinder Setup</h1>
-<div class="subtitle">pifinder_stellarmate_setup.sh &mdash; live status</div>
+<header>
+  <div>
+    <h1>PiFinder Setup</h1>
+    <div class="subtitle">pifinder_stellarmate_setup.sh &mdash; live status</div>
+  </div>
+  <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
+</header>
+
+<div id="progress-wrap" style="display:none;">
+  <div id="progress-track"><div id="progress-fill"></div></div>
+  <div id="progress-label"></div>
+</div>
+
+<ul id="phase-checklist" style="display:none;"></ul>
 
 <div id="status" class="status-idle">Checking current state&hellip;</div>
 
@@ -73,14 +147,57 @@
 
 <pre id="log" style="display:none;"></pre>
 
+<div id="reboot-wrap">
+  <button id="reboot-button" onclick="reboot()">Reboot Now</button>
+</div>
+
 <script>
 let logPosition = 0;
 let polling = false;
+let phaseLabels = [];
 
 function setStatus(text, cls) {
   const el = document.getElementById('status');
   el.textContent = text;
   el.className = cls;
+}
+
+function updateProgress(phaseIndex, phaseTotal, phaseLabel) {
+  const wrap = document.getElementById('progress-wrap');
+  if (phaseIndex === null || phaseIndex < 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  const pct = Math.round(((phaseIndex + 1) / phaseTotal) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent =
+    'Step ' + (phaseIndex + 1) + ' of ' + phaseTotal + ': ' + phaseLabel;
+}
+
+// Minimal checklist: a green check for finished steps, a construction icon
+// for the one currently running, nothing (blank) for steps not reached yet.
+// No animation — this just reflects the furthest phase marker seen so far.
+function updateChecklist(phaseIndex, running, exitCode) {
+  const el = document.getElementById('phase-checklist');
+  if (phaseLabels.length === 0 || phaseIndex === null || phaseIndex < 0) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  const finishedRun = !running && exitCode === 0;
+  el.innerHTML = phaseLabels.map((label, i) => {
+    let icon = '';
+    let cls = '';
+    if (i < phaseIndex || (i === phaseIndex && finishedRun)) {
+      icon = '✅';
+      cls = 'done';
+    } else if (i === phaseIndex) {
+      icon = '🚧';
+      cls = 'current';
+    }
+    return `<li class="${cls}"><span class="icon">${icon}</span>${label}</li>`;
+  }).join('');
 }
 
 function showChoices(existingInstall) {
@@ -123,6 +240,7 @@ function showChoices(existingInstall) {
 
 async function start(action) {
   document.getElementById('choices').style.display = 'none';
+  document.getElementById('reboot-wrap').style.display = 'none';
   setStatus('Starting…', 'status-running');
   const resp = await fetch('/start?action=' + encodeURIComponent(action), { method: 'POST' });
   const data = await resp.json();
@@ -143,6 +261,20 @@ async function start(action) {
   }
 }
 
+async function reboot() {
+  if (!confirm('Reboot the Pi now?')) return;
+  const btn = document.getElementById('reboot-button');
+  btn.disabled = true;
+  btn.textContent = 'Rebooting…';
+  const resp = await fetch('/reboot', { method: 'POST' });
+  const data = await resp.json();
+  if (!data.rebooting) {
+    btn.disabled = false;
+    btn.textContent = 'Reboot Now';
+    alert('Could not reboot: ' + (data.error || 'unknown error'));
+  }
+}
+
 async function pollLog() {
   const resp = await fetch('/log?position=' + logPosition);
   const data = await resp.json();
@@ -153,12 +285,15 @@ async function pollLog() {
     logPosition = data.position;
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
+  updateProgress(data.phase_index, data.phase_total, data.phase_label);
+  updateChecklist(data.phase_index, data.running, data.exit_code);
   if (data.running) {
     setStatus('Running…', 'status-running');
     setTimeout(pollLog, 1000);
   } else {
     if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
+      document.getElementById('reboot-wrap').style.display = 'block';
     } else if (data.exit_code === null) {
       setStatus('Idle', 'status-idle');
     } else {
@@ -171,6 +306,9 @@ async function pollLog() {
 async function init() {
   const resp = await fetch('/state');
   const data = await resp.json();
+  phaseLabels = data.phases || [];
+  updateProgress(data.phase_index, data.phase_total, data.phase_label);
+  updateChecklist(data.phase_index, data.running, data.exit_code);
   if (data.running) {
     document.getElementById('log').style.display = 'block';
     setStatus('Running…', 'status-running');

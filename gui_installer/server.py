@@ -14,6 +14,7 @@ but the bare system python3.
 import json
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -23,24 +24,48 @@ GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
+PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
+
+# Must match the phase() call sites (and their order) in pifinder_stellarmate_setup.sh.
+PHASES = [
+    "Checking versions",
+    "Setting up hardware access",
+    "Cloning or updating PiFinder",
+    "Installing system packages",
+    "Creating Python venv",
+    "Installing Python requirements",
+    "Downloading star catalog",
+    "Configuring hardware & services",
+    "Building INDI drivers",
+    "Setup complete",
+]
+PHASE_MARKER = "###PHASE### "
 
 _lock = threading.Lock()
 _lines = []
 _running = False
 _exit_code = None
 _process = None
+_phase_index = -1  # furthest phase reached so far, -1 = none yet
 
 
 def _reader_thread(proc):
-    global _running, _exit_code
+    global _running, _exit_code, _phase_index
     with open(LOG_FILE, "w") as log_f:
         for line in iter(proc.stdout.readline, ""):
-            with _lock:
-                _lines.append(line.rstrip("\n"))
             log_f.write(line)
             log_f.flush()
+            stripped = line.rstrip("\n")
+            if stripped.startswith(PHASE_MARKER):
+                label = stripped[len(PHASE_MARKER):]
+                if label in PHASES:
+                    with _lock:
+                        _phase_index = max(_phase_index, PHASES.index(label))
+                continue  # phase markers are for the progress bar, not the log panel
+            with _lock:
+                _lines.append(stripped)
     proc.wait()
     with _lock:
         _running = False
@@ -48,13 +73,14 @@ def _reader_thread(proc):
 
 
 def _start_run(action):
-    global _running, _exit_code, _process, _lines
+    global _running, _exit_code, _process, _lines, _phase_index
     with _lock:
         if _running:
             return False, "A run is already in progress."
         _lines = []
         _running = True
         _exit_code = None
+        _phase_index = -1
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
         _process = subprocess.Popen(
             cmd,
@@ -66,6 +92,11 @@ def _start_run(action):
         )
         threading.Thread(target=_reader_thread, args=(_process,), daemon=True).start()
     return True, None
+
+
+def _do_reboot():
+    time.sleep(1)  # give the HTTP response a moment to reach the browser
+    subprocess.run(["sudo", "reboot"])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -92,15 +123,32 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        if parsed.path == "/pifinder.jpg":
+            if not PIFINDER_IMAGE.is_file():
+                self.send_error(404)
+                return
+            body = PIFINDER_IMAGE.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path == "/state":
             with _lock:
                 running = _running
                 exit_code = _exit_code
+                phase_index = _phase_index
             self._send_json(
                 {
                     "existing_install": PIFINDER_DIR.is_dir(),
                     "running": running,
                     "exit_code": exit_code,
+                    "phase_index": phase_index,
+                    "phase_total": len(PHASES),
+                    "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
+                    "phases": PHASES,
                 }
             )
             return
@@ -113,12 +161,16 @@ class Handler(BaseHTTPRequestHandler):
                 new_position = len(_lines)
                 running = _running
                 exit_code = _exit_code
+                phase_index = _phase_index
             self._send_json(
                 {
                     "lines": new_lines,
                     "position": new_position,
                     "running": running,
                     "exit_code": exit_code,
+                    "phase_index": phase_index,
+                    "phase_total": len(PHASES),
+                    "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
                 }
             )
             return
@@ -136,6 +188,16 @@ class Handler(BaseHTTPRequestHandler):
             started, error = _start_run(action)
             self._send_json({"started": started, "error": error})
             return
+
+        if parsed.path == "/reboot":
+            with _lock:
+                if _running:
+                    self._send_json({"rebooting": False, "error": "A run is still in progress."}, status=409)
+                    return
+            self._send_json({"rebooting": True})
+            threading.Thread(target=_do_reboot, daemon=True).start()
+            return
+
         self.send_error(404)
 
 
