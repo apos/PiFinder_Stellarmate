@@ -27,7 +27,9 @@ All notable changes to this project are documented in this file. Format loosely 
   clickable link below the terminal, so it can be reopened from another device. Shows PiFinder's
   own OLED screen next to the header image - mirrors PiFinder's live `/image` endpoint once it's
   running, falling back to (and back to, if PiFinder stops responding) the static splash bitmap
-  `~/PiFinder/images/welcome.png` otherwise.
+  `~/PiFinder/images/welcome.png` otherwise. On success, also shows PiFinder's own web UI links
+  (same IPs, whichever port - 80 or 8080 - was actually detected working) plus the default remote
+  password, so there's a direct path from "setup finished" to "using PiFinder."
 
 ### Fixed
 

@@ -150,6 +150,20 @@
     margin-right: 1rem;
   }
   #remote-links a:hover { text-decoration: underline; }
+  #pifinder-access {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  #pifinder-access a {
+    color: #7ec8ff;
+    text-decoration: none;
+    margin-right: 1rem;
+  }
+  #pifinder-access a:hover { text-decoration: underline; }
   #docs-links {
     margin-top: 0.4rem;
     margin-bottom: 1.2rem;
@@ -195,6 +209,8 @@
 
     <div id="status" class="status-idle">Checking current state&hellip;</div>
 
+    <div id="pifinder-access" style="display:none;"></div>
+
     <div id="choices" style="display:none;"></div>
 
     <div id="reboot-wrap">
@@ -225,6 +241,8 @@
 let logPosition = 0;
 let polling = false;
 let phaseLabels = [];
+let knownIps = [];
+let setupSucceeded = false;
 
 function setStatus(text, cls) {
   const el = document.getElementById('status');
@@ -283,6 +301,30 @@ function renderRemoteLinks(ips, port) {
     return `<a href="${url}">${url}</a>`;
   }).join('');
   el.innerHTML = 'Reach this page from another device on the network:<br>' + links;
+}
+
+// PiFinder's own web UI, once setup has finished. Reuses whichever port the
+// OLED-screen probe (see initPiFinderScreen) found working; if that probe
+// hasn't succeeded yet, falls back to 8080 (the common case whenever
+// something else - like StellarMate's own dashboard - already holds port 80).
+function showPiFinderAccess() {
+  setupSucceeded = true;
+  const el = document.getElementById('pifinder-access');
+  if (!knownIps || knownIps.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  const port = pifinderScreenUrl
+    ? new URL(pifinderScreenUrl).port || 80
+    : 8080;
+  const links = knownIps.map(ip => {
+    const url = `http://${ip}:${port}/`;
+    return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+  }).join('');
+  el.innerHTML =
+    'PiFinder is ready — open it in your browser:<br>' + links +
+    '<br>Default remote password: <code>smate</code>';
+  el.style.display = 'block';
 }
 
 function showChoices(existingInstall) {
@@ -378,6 +420,7 @@ async function pollLog() {
   } else {
     if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
+      showPiFinderAccess();
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
       }
@@ -401,6 +444,9 @@ function tryPiFinderScreenUrls(urls, index) {
   probe.onload = () => {
     pifinderScreenUrl = urls[index];
     refreshPiFinderScreen();
+    // The port may have just been discovered after the access-links box
+    // already rendered with a guessed port - refresh it now it's known.
+    if (setupSucceeded) showPiFinderAccess();
   };
   probe.onerror = () => tryPiFinderScreenUrls(urls, index + 1);
   probe.src = urls[index] + '?t=' + Date.now();
@@ -434,6 +480,7 @@ async function init() {
   if (data.setup_script_path) {
     document.getElementById('subtitle').textContent = data.setup_script_path + ' — live status';
   }
+  knownIps = data.ips || [];
   renderRemoteLinks(data.ips, data.port);
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
