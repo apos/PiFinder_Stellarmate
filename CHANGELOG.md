@@ -23,7 +23,8 @@ All notable changes to this project are documented in this file. Format loosely 
   self-restart doesn't make progress appear to jump backwards), and offers a Reboot button once the
   run finishes successfully. Listens on all network interfaces (not just localhost) so it's also
   reachable from another device on the same LAN — there is no login, so don't expose this port
-  beyond a trusted home/observatory network.
+  beyond a trusted home/observatory network. The page also lists every non-loopback IP as a
+  clickable link below the terminal, so it can be reopened from another device.
 
 ### Changed
 

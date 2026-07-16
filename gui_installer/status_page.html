@@ -127,6 +127,17 @@
     cursor: pointer;
   }
   #reboot-button:hover { filter: brightness(1.15); }
+  #remote-links {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+    color: #999;
+  }
+  #remote-links a {
+    color: #7ec8ff;
+    text-decoration: none;
+    margin-right: 1rem;
+  }
+  #remote-links a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -156,6 +167,7 @@
 
   <div class="right-col">
     <pre id="log" style="display:none;"></pre>
+    <div id="remote-links"></div>
   </div>
 </div>
 
@@ -206,6 +218,21 @@ function updateChecklist(phaseIndex, running, exitCode) {
     }
     return `<li class="${cls}"><span class="icon">${icon}</span>${label}</li>`;
   }).join('');
+}
+
+// Every non-loopback IP the server found on this machine, as clickable
+// links, so this page can be reopened from another device on the network.
+function renderRemoteLinks(ips, port) {
+  const el = document.getElementById('remote-links');
+  if (!ips || ips.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  const links = ips.map(ip => {
+    const url = `http://${ip}:${port}/`;
+    return `<a href="${url}">${url}</a>`;
+  }).join('');
+  el.innerHTML = 'Reach this page from another device on the network:<br>' + links;
 }
 
 function showChoices(existingInstall) {
@@ -318,6 +345,7 @@ async function init() {
   if (data.setup_script_path) {
     document.getElementById('subtitle').textContent = data.setup_script_path + ' — live status';
   }
+  renderRemoteLinks(data.ips, data.port);
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
   if (data.running) {

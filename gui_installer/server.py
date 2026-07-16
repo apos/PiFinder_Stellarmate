@@ -51,6 +51,26 @@ _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 
 
+def _get_all_ips():
+    """Every non-loopback IPv4 address on this machine, for the remote-access links."""
+    try:
+        output = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+    except Exception:
+        return []
+    ips = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 4 or fields[1] == "lo":
+            continue
+        ips.append(fields[3].split("/")[0])
+    return ips
+
+
 def _reader_thread(proc):
     global _running, _exit_code, _phase_index
     with open(LOG_FILE, "w") as log_f:
@@ -150,6 +170,8 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
                     "phases": PHASES,
                     "setup_script_path": str(SETUP_SCRIPT),
+                    "ips": _get_all_ips(),
+                    "port": PORT,
                 }
             )
             return
