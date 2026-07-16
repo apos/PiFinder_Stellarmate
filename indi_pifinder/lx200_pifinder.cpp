@@ -247,6 +247,13 @@ bool LX200_PIFINDER::Goto(double ra, double dec)
 
     LOG_INFO("Push-to target set on PiFinder.");
     TrackState = SCOPE_IDLE;
+
+    // The base Telescope class publishes the requested (ra, dec) on its own
+    // "TARGET_EOD_COORD" property right after this call returns true (see
+    // INDI::Telescope::ISNewNumber) - that's the persistent, event-driven
+    // signal the PiFinder Mount Bridge snoops to detect a new push-to
+    // request, since ReadScopeStatus() itself never changes just because a
+    // target was set (PiFinder has no motor).
     return true;
 }
 

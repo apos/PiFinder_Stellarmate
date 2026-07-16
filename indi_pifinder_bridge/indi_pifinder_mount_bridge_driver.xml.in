@@ -3,7 +3,7 @@
     <devGroup group="Auxiliary">
         <device label="PiFinder Mount Bridge" manufacturer="PiFinder">
             <driver name="PiFinder Mount Bridge">indi_pifinder_mount_bridge</driver>
-            <version>1.0</version>
+            <version>1.1</version>
         </device>
     </devGroup>
 </driversList>

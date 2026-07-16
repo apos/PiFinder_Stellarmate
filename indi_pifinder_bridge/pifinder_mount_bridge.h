@@ -16,6 +16,7 @@
 
 #include "defaultdevice.h"
 
+#include <cmath>
 #include <memory>
 
 class PiFinderBridgeClient;
@@ -45,6 +46,13 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         std::unique_ptr<PiFinderBridgeClient> m_client;
 
+        // ISGetProperties() fires once per client connection (every
+        // indi_getprop call, every INDI Control Panel refresh) - guard so
+        // loadConfig() only actually replays the saved config once, or a
+        // later client re-querying properties would silently revert
+        // whatever mode the user just chose back to the last-saved one.
+        bool m_configLoaded = false;
+
         // Settings: how to reach the local indiserver
         ITextVectorProperty SettingsTP;
         IText SettingsT[2] {};
@@ -57,8 +65,8 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         // Coupling degree - see 00009 for the rationale of each stage
         ISwitchVectorProperty BridgeModeSP;
-        ISwitch BridgeModeS[3];
-        enum { MODE_OFF, MODE_VERIFY_ALERT, MODE_AUTO_CORRECT };
+        ISwitch BridgeModeS[4];
+        enum { MODE_OFF, MODE_VERIFY_ALERT, MODE_AUTO_CORRECT, MODE_GOTO_FORWARD };
 
         // AUTO_CORRECT sends Sync or Goto/Track - separate from the above so
         // the one-shot manual actions below can also pick either.
@@ -78,4 +86,19 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // the VERIFY_ALERT mode and general visibility.
         INumberVectorProperty DriftStatusNP;
         INumber DriftStatusN[1];
+
+        // MODE_GOTO_FORWARD state machine: forwards a *new* push-to target
+        // to the mount immediately (event-driven, unlike the drift-polling
+        // modes above), then waits for the mount to finish slewing and for
+        // PiFinder to produce a fresh plate-solve of the arrival position
+        // before auto-correcting any residual error. See 00009/00012 in
+        // basic-memory pifinder-stellarmate for the design rationale.
+        enum class ForwardState { IDLE, SLEWING, SETTLING };
+        ForwardState m_forwardState = ForwardState::IDLE;
+        double m_lastForwardedRA = std::nan("");
+        double m_lastForwardedDec = std::nan("");
+        int m_settleTicksRemaining = 0;
+        static constexpr int SETTLE_TICKS = 3; // poll cycles to wait for a fresh PiFinder solve after slew
+
+        void handleGotoForward();
 };

@@ -10,7 +10,7 @@ static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBri
 
 PiFinderMountBridge::PiFinderMountBridge()
 {
-    setVersion(1, 0);
+    setVersion(1, 1);
     setDriverInterface(AUX_INTERFACE);
 
     m_client.reset(new PiFinderBridgeClient());
@@ -38,7 +38,8 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
-    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 3, getDeviceName(), "BRIDGE_MODE", "Coupling",
+    IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
+    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
                        "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
 
     IUFillSwitch(&CorrectionActionS[ACTION_SYNC], "ACTION_SYNC", "Sync", ISS_ON);
@@ -72,7 +73,11 @@ void PiFinderMountBridge::ISGetProperties(const char *dev)
     defineProperty(&SettingsTP);
     defineProperty(&ActiveDeviceTP);
 
-    loadConfig(true);
+    if (!m_configLoaded)
+    {
+        loadConfig(true);
+        m_configLoaded = true;
+    }
 }
 
 bool PiFinderMountBridge::updateProperties()
@@ -142,6 +147,13 @@ void PiFinderMountBridge::TimerHit()
         return;
     }
 
+    if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+    {
+        handleGotoForward();
+        SetTimer(getCurrentPollingPeriod());
+        return;
+    }
+
     double piRA, piDec, mountRA, mountDec;
     if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
     {
@@ -178,6 +190,105 @@ void PiFinderMountBridge::TimerHit()
     SetTimer(getCurrentPollingPeriod());
 }
 
+void PiFinderMountBridge::handleGotoForward()
+{
+    double targetRA, targetDec;
+    const bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
+
+    switch (m_forwardState)
+    {
+        case ForwardState::IDLE:
+        {
+            if (!hasTarget)
+                return;
+
+            if (std::isnan(m_lastForwardedRA))
+            {
+                // First observation since entering this mode - establish a
+                // baseline without forwarding, so switching into Goto-Forward
+                // doesn't immediately re-send whatever push-to target
+                // happened to already be set on PiFinder.
+                m_lastForwardedRA = targetRA;
+                m_lastForwardedDec = targetDec;
+                return;
+            }
+
+            const bool isNewTarget = std::abs(targetRA - m_lastForwardedRA) > 1e-9 ||
+                                      std::abs(targetDec - m_lastForwardedDec) > 1e-9;
+            if (!isNewTarget)
+                return;
+
+            if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
+            {
+                LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
+                          targetRA, targetDec);
+                m_lastForwardedRA = targetRA;
+                m_lastForwardedDec = targetDec;
+                m_forwardState = ForwardState::SLEWING;
+            }
+            else
+            {
+                LOG_ERROR("Failed to forward Goto to mount.");
+            }
+            break;
+        }
+
+        case ForwardState::SLEWING:
+        {
+            if (!m_client->isMountSlewing())
+            {
+                m_settleTicksRemaining = SETTLE_TICKS;
+                m_forwardState = ForwardState::SETTLING;
+                LOG_INFO("Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
+            }
+            break;
+        }
+
+        case ForwardState::SETTLING:
+        {
+            if (m_settleTicksRemaining > 0)
+            {
+                --m_settleTicksRemaining;
+                break;
+            }
+
+            double piRA, piDec, mountRA, mountDec;
+            if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+            {
+                m_forwardState = ForwardState::IDLE;
+                break;
+            }
+
+            const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+            const double threshold = DriftThresholdN[0].value;
+            DriftStatusN[0].value = drift;
+            DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
+            IDSetNumber(&DriftStatusNP, nullptr);
+
+            if (drift > threshold)
+            {
+                // The mount already physically arrived via the Goto above;
+                // a residual here is a mount-model/PiFinder-alignment
+                // offset, not a missed slew - true it up with a Sync, not
+                // another full Goto.
+                if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin (threshold %.1f) - synced mount.",
+                              drift, threshold);
+                else
+                    LOG_ERROR("Failed to send verification sync to mount.");
+            }
+            else
+            {
+                LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                          drift, threshold);
+            }
+
+            m_forwardState = ForwardState::IDLE;
+            break;
+        }
+    }
+}
+
 bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
@@ -187,6 +298,13 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IUUpdateSwitch(&BridgeModeSP, states, names, n);
             BridgeModeSP.s = IPS_OK;
             IDSetSwitch(&BridgeModeSP, nullptr);
+
+            // Any mode change resets the Goto-Forward state machine, so
+            // re-entering it always re-baselines against whatever target
+            // PiFinder currently has instead of reacting to a stale one.
+            m_forwardState = ForwardState::IDLE;
+            m_lastForwardedRA = std::nan("");
+            m_lastForwardedDec = std::nan("");
             return true;
         }
 

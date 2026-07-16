@@ -28,6 +28,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool getPiFinderRADE(double &ra, double &dec) const;
         bool getMountRADE(double &ra, double &dec) const;
 
+        // The last push-to target requested via a Goto() on the PiFinder
+        // device - distinct from getPiFinderRADE(), which is PiFinder's live
+        // solved position and never changes just because a target was set.
+        bool getPiFinderTargetRADE(double &ra, double &dec) const;
+
+        // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
+        bool isMountSlewing() const;
+
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
@@ -43,6 +51,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool m_mountOnline = false;
 
         INDI::PropertyViewNumber *m_piFinderEqNP = nullptr;
+        INDI::PropertyViewNumber *m_piFinderTargetNP = nullptr;
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
 };

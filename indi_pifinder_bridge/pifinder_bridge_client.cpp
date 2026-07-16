@@ -10,6 +10,7 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_mountName = mountName;
     m_piFinderOnline = m_mountOnline = false;
     m_piFinderEqNP = m_mountEqNP = nullptr;
+    m_piFinderTargetNP = nullptr;
     m_mountOnCoordSetSP = nullptr;
 
     watchDevice(m_piFinderName.c_str());
@@ -40,12 +41,16 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountOnCoordSetSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
+    else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
+        m_piFinderTargetNP = property.getNumber();
 }
 
 void PiFinderBridgeClient::removeProperty(INDI::Property property)
 {
     if (property.getNumber() == m_piFinderEqNP)
         m_piFinderEqNP = nullptr;
+    else if (property.getNumber() == m_piFinderTargetNP)
+        m_piFinderTargetNP = nullptr;
     else if (property.getNumber() == m_mountEqNP)
         m_mountEqNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
@@ -70,6 +75,21 @@ bool PiFinderBridgeClient::getMountRADE(double &ra, double &dec) const
     ra = m_mountEqNP->at(0)->getValue();
     dec = m_mountEqNP->at(1)->getValue();
     return true;
+}
+
+bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
+{
+    if (m_piFinderTargetNP == nullptr)
+        return false;
+
+    ra = m_piFinderTargetNP->at(0)->getValue();
+    dec = m_piFinderTargetNP->at(1)->getValue();
+    return true;
+}
+
+bool PiFinderBridgeClient::isMountSlewing() const
+{
+    return m_mountEqNP != nullptr && m_mountEqNP->getState() == IPS_BUSY;
 }
 
 bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *coordSetName)
