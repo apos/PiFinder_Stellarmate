@@ -32,7 +32,10 @@ All notable changes to this project are documented in this file. Format loosely 
   password, so there's a direct path from "setup finished" to "using PiFinder." The detection probe
   now retries indefinitely every 2s instead of giving up after one failed attempt (PiFinder can take
   a while to come back up after a restart), and doubles as the signal for a "Waiting for PiFinder to
-  start…" progress indicator shown until it actually answers.
+  start…" progress indicator shown until it actually answers. A new Close Setup button (new
+  `POST /shutdown` route) lets you stop the setup webserver itself once a run finishes without a
+  reboot being required — if a reboot is needed, that button is shown instead, since rebooting
+  takes the webserver down anyway.
 
 ### Removed
 

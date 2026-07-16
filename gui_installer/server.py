@@ -131,6 +131,15 @@ def _do_reboot():
     subprocess.run(["sudo", "reboot"])
 
 
+_server = None  # set in main(); used by /shutdown to stop serve_forever()
+
+
+def _do_shutdown():
+    time.sleep(1)  # give the HTTP response a moment to reach the browser
+    if _server is not None:
+        _server.shutdown()
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep the terminal quiet; the browser is the UI
@@ -252,6 +261,15 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_do_reboot, daemon=True).start()
             return
 
+        if parsed.path == "/shutdown":
+            with _lock:
+                if _running:
+                    self._send_json({"shutting_down": False, "error": "A run is still in progress."}, status=409)
+                    return
+            self._send_json({"shutting_down": True})
+            threading.Thread(target=_do_shutdown, daemon=True).start()
+            return
+
         self.send_error(404)
 
 
@@ -261,9 +279,10 @@ def main():
     # (delete + reinstall, sudo reboot) - anyone on the same network can reach
     # it. Acceptable on a private home/observatory LAN; do not expose this
     # port beyond that.
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    global _server
+    _server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
-    server.serve_forever()
+    _server.serve_forever()
 
 
 if __name__ == "__main__":
