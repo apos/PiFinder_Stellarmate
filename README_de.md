@@ -37,6 +37,15 @@ bash gui_installer/launch_setup_gui.sh
 gleichen Netzwerk aus (keine Desktop-Sitzung auf dem Pi nötig). Details siehe
 [Setup-GUI](#setup-gui-optional).
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="700"></a><br>
+<sub>Die Setup-GUI, von einem anderen Gerät im Netzwerk aus geöffnet</sub>
+</td>
+</tr>
+</table>
+
 **2. Terminal-Installation**
 
 ```bash

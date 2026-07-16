@@ -36,6 +36,15 @@ bash gui_installer/launch_setup_gui.sh
 Then open the page in a browser — on the Pi itself, or from any other device on the same network
 (no desktop session on the Pi required). See [Setup GUI](#setup-gui-optional) for details.
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="700"></a><br>
+<sub>The Setup GUI opened remotely, from another device on the network</sub>
+</td>
+</tr>
+</table>
+
 **2. Terminal install**
 
 ```bash
