@@ -115,6 +115,15 @@ or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon.
 the same installer underneath — useful mainly if you're repeating installs/reinstalls often (e.g.
 while testing).
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="700"></a><br>
+<sub>The Setup GUI: live progress bar, step checklist, and terminal output side by side</sub>
+</td>
+</tr>
+</table>
+
 ## Using the INDI Driver
 
 `pifinder_stellarmate_setup.sh` builds and installs both INDI drivers for you (stopping any
