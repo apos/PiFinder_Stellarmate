@@ -23,6 +23,20 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 
 ---
 
+## Schnellstart
+
+```bash
+git clone https://github.com/apos/PiFinder_Stellarmate.git
+cd PiFinder_Stellarmate
+./pifinder_stellarmate_setup.sh
+```
+
+Lieber im Browser statt roher Terminal-Ausgabe? Nutze stattdessen die [Setup-GUI](#setup-gui-optional) —
+per SSH `bash gui_installer/launch_setup_gui.sh` ausführen, dann die Seite von jedem Gerät im
+Netzwerk aus öffnen (keine Desktop-Sitzung auf dem Pi nötig). Alle Details: [Installation](#installation).
+
+---
+
 ## Hauptfunktionen & Änderungen
 
 Dieses Setup passt die Standard-PiFinder-Installation an, um sie besser mit Stellarmate zu integrieren:
