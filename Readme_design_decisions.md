@@ -6,6 +6,21 @@ A condensed summary of the key design decisions behind the [PiFinder LX200 INDI
 integration](Readme_PiFinder_LX200.md) (the `PiFinder LX200` driver and the optional `PiFinder
 Mount Bridge`). See that document for the full rationale, code references, and diagrams.
 
+## Guiding Principles
+
+Everything below follows from a small set of principles:
+
+- **Leave the PiFinder software itself mostly untouched** — patch only where truly necessary.
+  Every diff carries maintenance cost and merge-conflict risk against upstream PiFinder releases.
+- **Decouple everything as much as possible** — the Mount Bridge works with *any* INDI-compatible
+  mount, not a hardcoded one: generic INDI properties, never a mount-specific protocol.
+- **Reuse KStars/INDI/SkySafari capabilities rather than reinventing them** — use INDI in the most
+  convenient, idiomatic way (standard properties, standard client patterns) instead of building a
+  parallel mechanism.
+- **StellarMate is the primary target platform, not a generic INDI distribution** — a deliberate
+  choice, not an oversight: it justifies assumptions like the Web Manager profile workflow and the
+  restart/catalog quirks documented here.
+
 ## Architecture
 
 - **Standalone build instead of a fat-binary/`indi-source` checkout**: the drivers link directly

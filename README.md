@@ -1,5 +1,7 @@
 # PiFinder on Stellarmate
 
+*[Deutsche Version](README_de.md)*
+
 This project provides a set of scripts to seamlessly install, patch, and integrate the [PiFinder](https://www.pifinder.io/) software into a [Stellarmate](https://www.stellarmate.com/) environment. It automates the entire setup process, ensuring that PiFinder works correctly alongside Stellarmate's existing services.
 
 The primary goal is to allow users to leverage the powerful plate-solving and object-finding capabilities of PiFinder on a device that is also running Stellarmate for astrophotography, EAA, and full equipment control.
@@ -155,5 +157,6 @@ This will stop and disable the `pifinder` services, remove the systemd files, an
 ## See Also
 
 *   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
+*   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions.
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
