@@ -205,12 +205,21 @@ dann "Connect".
 
 ### Schritt 4: KStars/Ekos (Remote-Modus)
 
-**Wichtig:** StellarMate-App und Flatpak-KStars haben ihre **eigenen, unabhängigen
-Treiber-Kataloge**, die nicht live `/usr/share/indi/drivers.xml` lesen. Der zuverlässige Weg ist
-daher, sich im **Remote-Modus** direkt mit dem bereits laufenden `indiserver` zu verbinden, statt
-im lokalen Geräte-Auswahlbaum nach "PiFinder" zu suchen:
+**Kritisch: das Ekos-Profil muss den Modus "Remote Host" verwenden, nicht "Local".** StellarMate-App
+und Flatpak-KStars haben ihre **eigenen, unabhängigen Treiber-Kataloge**, die nicht live
+`/usr/share/indi/drivers.xml` lesen — im Modus **Local** versucht Ekos, Treiber selbst aus diesem
+lokalen Katalog zu starten, und findet unsere selbstgebauten Treiber dort nie. Im Modus
+**Remote Host** startet oder sucht Ekos lokal überhaupt nichts: es ist rein ein Netzwerk-Client des
+`indiserver`, den der Web-Manager bereits gestartet hat — welchen Treiber-Katalog Ekos selbst hat,
+spielt dabei keine Rolle.
 
-- Ekos-Profil-Editor → Modus **Remote**, Host `127.0.0.1`, Port **`7624`**
+![Ekos Profil-Editor: Modus auf "Remote Host", Host "localhost", Port 7624, "INDI Web Manager" aktiviert mit Port 8624, Buttons "Web Manager" und "Scan"](docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png)
+
+- Ekos-Profil-Editor → **Modus: Remote Host** (nicht "Local"!), Host `localhost`, Port **`7624`**
+  (der `indiserver`-Port aus dem Web-Manager-Profil)
+- Zusätzlich **"INDI Web Manager"** aktivieren, Port **`8624`** — damit kann Ekos mit der eigenen
+  API des Web-Managers sprechen (Start/Stop wirkt dann auf das entfernte Profil), und der
+  **"Scan"**-Button kann ihn im Netzwerk automatisch finden statt den Host manuell einzutippen
 - "Start" klicken → Ekos verbindet sich zum laufenden Server → alle bereits verbundenen Geräte
   erscheinen automatisch im INDI Control Panel / Mount-Tab
 
