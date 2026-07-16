@@ -203,8 +203,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"PiFinder setup GUI listening on http://localhost:{PORT}/")
+    # 0.0.0.0: reachable from other devices on the LAN, not just this Pi.
+    # There is no login on this server and it can trigger destructive actions
+    # (delete + reinstall, sudo reboot) - anyone on the same network can reach
+    # it. Acceptable on a private home/observatory LAN; do not expose this
+    # port beyond that.
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
     server.serve_forever()
 
 

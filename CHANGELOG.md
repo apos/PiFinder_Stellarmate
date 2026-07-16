@@ -21,7 +21,9 @@ All notable changes to this project are documented in this file. Format loosely 
   the new flag is entirely optional. Shows a 10-step progress bar and checklist driven by new
   `phase()` markers in the setup script (tracks the furthest phase reached, so the venv bootstrap's
   self-restart doesn't make progress appear to jump backwards), and offers a Reboot button once the
-  run finishes successfully.
+  run finishes successfully. Listens on all network interfaces (not just localhost) so it's also
+  reachable from another device on the same LAN — there is no login, so don't expose this port
+  beyond a trusted home/observatory network.
 
 ### Changed
 
