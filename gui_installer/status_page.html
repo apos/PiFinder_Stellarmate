@@ -27,13 +27,27 @@
   }
   h1 { font-size: 1.3rem; margin: 0 0 1rem; }
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
+  #top-images {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
   #header-image {
     display: block;
     width: 100%;
-    max-width: 260px;
+    max-width: 150px;
     height: auto;
     border-radius: 8px;
-    margin-bottom: 1rem;
+  }
+  #pifinder-screen {
+    display: block;
+    width: 128px;
+    height: 128px;
+    image-rendering: pixelated;
+    border-radius: 4px;
+    background: #000;
+    flex-shrink: 0;
   }
   #progress-wrap { margin-bottom: 0.8rem; }
   #progress-track {
@@ -166,7 +180,10 @@
 
 <div class="page">
   <div class="left-col">
-    <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
+    <div id="top-images">
+      <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
+      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+    </div>
 
     <div class="subtitle" id="subtitle">live status</div>
 
@@ -374,7 +391,44 @@ async function pollLog() {
   }
 }
 
+// Mirrors PiFinder's own live OLED screen (its /image endpoint) once PiFinder
+// is actually running. Before that (or if it's unreachable), the <img> just
+// keeps showing the static splash bitmap already set as its default src.
+let pifinderScreenUrl = null;
+
+function tryPiFinderScreenUrls(urls, index) {
+  if (index >= urls.length) return; // none worked - static fallback stays as-is
+  const probe = new Image();
+  probe.onload = () => {
+    pifinderScreenUrl = urls[index];
+    refreshPiFinderScreen();
+  };
+  probe.onerror = () => tryPiFinderScreenUrls(urls, index + 1);
+  probe.src = urls[index] + '?t=' + Date.now();
+}
+
+function refreshPiFinderScreen() {
+  if (!pifinderScreenUrl) return;
+  const probe = new Image();
+  probe.onload = () => {
+    document.getElementById('pifinder-screen').src = probe.src;
+    setTimeout(refreshPiFinderScreen, 1000);
+  };
+  probe.onerror = () => {
+    // PiFinder stopped responding - drop back to the static splash image.
+    pifinderScreenUrl = null;
+    document.getElementById('pifinder-screen').src = '/pifinder_welcome.png';
+  };
+  probe.src = pifinderScreenUrl + '?t=' + Date.now();
+}
+
+function initPiFinderScreen() {
+  const host = location.hostname;
+  tryPiFinderScreenUrls([`http://${host}/image`, `http://${host}:8080/image`], 0);
+}
+
 async function init() {
+  initPiFinderScreen();
   const resp = await fetch('/state');
   const data = await resp.json();
   phaseLabels = data.phases || [];

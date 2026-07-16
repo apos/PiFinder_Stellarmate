@@ -27,6 +27,9 @@ PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo.png"
+# PiFinder's own splash bitmap (shown by pifinder_splash.service before the
+# main app is up) - only exists once PiFinder has actually been installed.
+PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 
@@ -173,6 +176,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/heyapos_logo.png":
             self._send_file(HEYAPOS_LOGO, "image/png")
+            return
+
+        if parsed.path == "/pifinder_welcome.png":
+            self._send_file(PIFINDER_WELCOME_IMAGE, "image/png")
             return
 
         if parsed.path == "/state":

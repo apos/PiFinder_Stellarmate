@@ -24,7 +24,10 @@ All notable changes to this project are documented in this file. Format loosely 
   run finishes successfully. Listens on all network interfaces (not just localhost) so it's also
   reachable from another device on the same LAN — there is no login, so don't expose this port
   beyond a trusted home/observatory network. The page also lists every non-loopback IP as a
-  clickable link below the terminal, so it can be reopened from another device.
+  clickable link below the terminal, so it can be reopened from another device. Shows PiFinder's
+  own OLED screen next to the header image - mirrors PiFinder's live `/image` endpoint once it's
+  running, falling back to (and back to, if PiFinder stops responding) the static splash bitmap
+  `~/PiFinder/images/welcome.png` otherwise.
 
 ### Fixed
 
