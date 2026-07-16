@@ -440,7 +440,7 @@ else
 
     # Patch picamera2 drm_preview.py (pykms not available on Arch) (Risiko 2)
     echo "🔧 Applying drm_preview.py patch post pip-install ..."
-    PICAM_VER=$("${python_venv}/bin/python" -c "import picamera2; print(picamera2.__version__)" 2>/dev/null || echo "unknown")
+    PICAM_VER=$("${python_venv}/bin/python" -c "import importlib.metadata; print(importlib.metadata.version('picamera2'))" 2>/dev/null || echo "unknown")
     DRM_PY=$(find "${python_venv}" -name "drm_preview.py" 2>/dev/null | head -1)
     if [ -n "$DRM_PY" ]; then
         if grep -q "_pykms_available" "$DRM_PY"; then
@@ -600,12 +600,19 @@ fi
 
 echo "🔧 Ensuring required config.txt entries are present ..."
 
+# Tracks whether this run actually changed /boot/config.txt - the only thing
+# in this script that needs a real reboot (Pi firmware overlays are only
+# applied at boot). Everything else (code, services, INDI drivers) is already
+# restarted live by the end of this script.
+CONFIG_CHANGED=false
+
 # Add a line globally if not already present anywhere in config.txt
 add_if_missing() {
     local line="$1"
     if ! grep -Fxq "$line" "$CONFIG_FILE"; then
         echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
         echo "✅ Added: $line"
+        CONFIG_CHANGED=true
     else
         echo "ℹ️  Already present: $line"
     fi
@@ -630,6 +637,7 @@ add_to_section() {
         sudo sed -i "/^\[$section\]/a $line" "$CONFIG_FILE"
         echo "✅ Added to [$section]: $line"
     fi
+    CONFIG_CHANGED=true
 }
 
 # Global entries (apply to all Pi models)
@@ -729,7 +737,7 @@ current_os=$(lsb_release -sc 2>/dev/null || grep "^ID=" /etc/os-release | cut -d
 
 LIBCAM_FULL=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}')
 PYLIBCAM_FULL=$(pacman -Q python-libcamera 2>/dev/null | awk '{print $2}')
-PICAM_FULL=$("${python_venv}/bin/python" -c "import picamera2; print(picamera2.__version__)" 2>/dev/null || echo "unknown")
+PICAM_FULL=$("${python_venv}/bin/python" -c "import importlib.metadata; print(importlib.metadata.version('picamera2'))" 2>/dev/null || echo "unknown")
 SKYFIELD_FULL=$("${python_venv}/bin/python" -c "import skyfield; print(skyfield.__version__)" 2>/dev/null || echo "unknown")
 NUMPY_FULL=$("${python_venv}/bin/python" -c "import numpy; print(numpy.__version__)" 2>/dev/null || echo "unknown")
 PYTHON_FULL=$("${python_venv}/bin/python" --version 2>&1 | awk '{print $2}')
@@ -769,8 +777,13 @@ else
 fi
 echo "##############################################"
 echo ""
-echo "  ➡️  Please reboot now to activate all changes:"
-echo "     sudo reboot"
+if [ "$CONFIG_CHANGED" = true ]; then
+    echo "  ➡️  /boot/config.txt was changed — please reboot now to activate it:"
+    echo "     sudo reboot"
+else
+    echo "  ✅ No reboot needed — /boot/config.txt was already up to date."
+    echo "     (Services, INDI drivers, and code were already restarted live.)"
+fi
 echo "##############################################"
 rm -f "$warnings_file"
 

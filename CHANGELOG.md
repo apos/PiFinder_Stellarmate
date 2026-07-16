@@ -26,6 +26,17 @@ All notable changes to this project are documented in this file. Format loosely 
   beyond a trusted home/observatory network. The page also lists every non-loopback IP as a
   clickable link below the terminal, so it can be reopened from another device.
 
+### Fixed
+
+- The Installation Summary always reported `picamera2: unknown` — it read the package's
+  `__version__` attribute, which `picamera2` doesn't define. Now reads the version via
+  `importlib.metadata.version()` instead.
+- `pifinder_stellarmate_setup.sh` unconditionally told the user to reboot at the end of every run,
+  even though the only step that actually requires one is a `/boot/config.txt` overlay change
+  (Pi firmware overlays only apply at boot) — everything else (code, services, INDI drivers) is
+  already restarted live. Now tracks whether `config.txt` was actually modified this run and only
+  suggests a reboot when it was.
+
 ### Changed
 
 - `pifinder_stellarmate_setup.sh` now builds and installs the PiFinder LX200 and Mount Bridge
