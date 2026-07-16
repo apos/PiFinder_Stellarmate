@@ -35,7 +35,8 @@ All notable changes to this project are documented in this file. Format loosely 
   even though the only step that actually requires one is a `/boot/config.txt` overlay change
   (Pi firmware overlays only apply at boot) — everything else (code, services, INDI drivers) is
   already restarted live. Now tracks whether `config.txt` was actually modified this run and only
-  suggests a reboot when it was.
+  suggests a reboot when it was. The setup GUI's Reboot button follows the same signal (a new
+  `###REBOOT_NEEDED###` marker) instead of showing up after every successful run regardless.
 
 ### Changed
 

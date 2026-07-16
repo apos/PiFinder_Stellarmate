@@ -363,7 +363,9 @@ async function pollLog() {
   } else {
     if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
-      document.getElementById('reboot-wrap').style.display = 'block';
+      if (data.reboot_needed === true) {
+        document.getElementById('reboot-wrap').style.display = 'block';
+      }
     } else if (data.exit_code === null) {
       setStatus('Idle', 'status-idle');
     } else {

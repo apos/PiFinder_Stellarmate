@@ -778,9 +778,11 @@ fi
 echo "##############################################"
 echo ""
 if [ "$CONFIG_CHANGED" = true ]; then
+    echo "###REBOOT_NEEDED### true"
     echo "  ➡️  /boot/config.txt was changed — please reboot now to activate it:"
     echo "     sudo reboot"
 else
+    echo "###REBOOT_NEEDED### false"
     echo "  ✅ No reboot needed — /boot/config.txt was already up to date."
     echo "     (Services, INDI drivers, and code were already restarted live.)"
 fi
