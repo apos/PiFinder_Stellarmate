@@ -2,6 +2,8 @@
 
 *[Deutsche Version](README_de.md)*
 
+![PiFinder mounted on a telescope under the night sky](docs/images/readme/PiFinder.jpg)
+
 This project provides a set of scripts to seamlessly install, patch, and integrate the [PiFinder](https://www.pifinder.io/) software into a [Stellarmate](https://www.stellarmate.com/) environment. It automates the entire setup process, ensuring that PiFinder works correctly alongside Stellarmate's existing services.
 
 The primary goal is to allow users to leverage the powerful plate-solving and object-finding capabilities of PiFinder on a device that is also running Stellarmate for astrophotography, EAA, and full equipment control.
