@@ -142,6 +142,15 @@ regardless of the selected mode — useful for a single manual correction withou
 
 ### Schritt 1: Treiber bauen und installieren
 
+Das übernimmt `pifinder_stellarmate_setup.sh` automatisch für dich: es stoppt zuerst eine
+eventuell laufende Treiber-Instanz (um "Text file busy" zu vermeiden), baut und installiert beide
+Treiber, und startet danach den StellarMate Web Manager neu, damit sie in dessen Katalog
+auftauchen. Bei einer normalen Installation ist hier nichts weiter zu tun.
+
+Die Build-Skripte musst du nur dann selbst aufrufen, wenn du **nur** die Treiber neu bauen willst,
+ohne das komplette Setup erneut laufen zu lassen (z.B. nach dem Pullen einer reinen
+Treiber-Code-Änderung):
+
 ```bash
 cd ~/PiFinder_Stellarmate
 bash bin/build_indi_driver.sh     # PiFinder LX200
@@ -152,8 +161,8 @@ Falls ein Treiber schon läuft (z.B. über den Web-Manager gestartet), vorher st
 die Installation mit "Text file busy" fehl.
 
 **Wichtig:** Der StellarMate Web-Manager (`stellarmatewebmanager`, Port 8624) liest seinen
-Treiber-Katalog **nur beim eigenen Prozessstart** ein. Nach dem allerersten Build (oder nach einer
-Treiber-Versionsänderung) einmal neu starten:
+Treiber-Katalog **nur beim eigenen Prozessstart** ein. Nach einem manuellen Rebuild (oder nach
+einer Treiber-Versionsänderung) einmal neu starten:
 
 ```bash
 systemctl --user restart stellarmatewebmanager.service

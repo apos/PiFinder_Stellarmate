@@ -28,7 +28,7 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 Dieses Setup passt die Standard-PiFinder-Installation an, um sie besser mit Stellarmate zu integrieren:
 
 *   **Automatisierte Installation:** Ein einziges Skript kümmert sich um das Herunterladen der richtigen PiFinder-Version, das Anlegen einer Python-Virtual-Environment, die Installation der Abhängigkeiten und das Anwenden aller notwendigen Patches.
-*   **INDI-Integration für KStars/Ekos & SkySafari:** Ein eigenständiger `PiFinder LX200`-INDI-Treiber meldet PiFinders gesolvte Position und leitet GoTo-Anfragen als Push-to-Ziel an PiFinder weiter. Ein optionaler `PiFinder Mount Bridge`-Treiber kann diese Position an jeden echten INDI-Mount-Treiber koppeln (Verify/Alert, Auto-Correct bei Drift, oder vollständiges event-basiertes GoTo-Weiterreichen). Linkt direkt gegen System-`libindi` — kein INDI-Source-Checkout, kein kompletter INDI-Build nötig. Wird **nicht** automatisch vom Haupt-Setup-Skript installiert — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) für die vollständige Build-/Deployment-Anleitung, technische Referenz und bebilderte Einrichtungsschritte.
+*   **INDI-Integration für KStars/Ekos & SkySafari:** Ein eigenständiger `PiFinder LX200`-INDI-Treiber meldet PiFinders gesolvte Position und leitet GoTo-Anfragen als Push-to-Ziel an PiFinder weiter. Ein optionaler `PiFinder Mount Bridge`-Treiber kann diese Position an jeden echten INDI-Mount-Treiber koppeln (Verify/Alert, Auto-Correct bei Drift, oder vollständiges event-basiertes GoTo-Weiterreichen). Linkt direkt gegen System-`libindi` — kein INDI-Source-Checkout, kein kompletter INDI-Build nötig. Wird automatisch vom Haupt-Setup-Skript gebaut und installiert — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) für die technische Referenz und bebilderte Einrichtungsschritte (Web-Manager-Profil, INDI Control Panel, KStars/Ekos, SkySafari).
 *   **Stellarmate-GPS-Integration:** PiFinder ist so konfiguriert, dass es Stellarmate/KStars als GPS-Quelle nutzt — ein separates GPS-Modul am PiFinder ist damit überflüssig.
 *   **Netzwerkverwaltung deaktiviert:** Alle Netzwerk-Konfigurationsoptionen (WLAN-Modus, AP/Client-Umschaltung) wurden aus PiFinders OLED-Menü und Weboberfläche entfernt. Das verhindert Konflikte, da Stellarmate für die gesamte Netzwerkverwaltung zuständig ist.
 *   **Robustes Patchen:** Änderungen werden über `diff`-Patches angewendet, was den Prozess zuverlässiger und wartbarer macht als manuelle Dateiänderungen.
@@ -97,15 +97,21 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
     source /home/stellarmate/PiFinder/python/.venv/bin/activate
     ./pifinder_stellarmate_setup.sh
     ```
-    Danach wird die Installation abgeschlossen und die PiFinder-Dienste werden gestartet. Der INDI-Treiber ist ein separater Schritt — siehe [Der INDI-Treiber](#der-indi-treiber) unten.
+    Danach wird die Installation abgeschlossen, die PiFinder-Dienste werden gestartet, und die
+    PiFinder-LX200- + Mount-Bridge-INDI-Treiber werden automatisch gebaut und installiert — siehe
+    [Der INDI-Treiber](#der-indi-treiber) unten für das Web-Manager-Profil-Setup.
 
 ## Der INDI-Treiber
 
-Der INDI-Treiber (und die optionale Mount Bridge zur Kopplung von PiFinder an eine echte motorisierte Montierung) ist ein **separater, manueller Build-Schritt** — nicht Teil von `pifinder_stellarmate_setup.sh`:
+`pifinder_stellarmate_setup.sh` baut und installiert beide INDI-Treiber für dich (stoppt zuerst
+eine ggf. laufende Instanz, startet danach den StellarMate Web Manager neu, damit die
+neuen/aktualisierten Treiber in seinem Katalog auftauchen). Die Build-Skripte musst du nur dann
+selbst aufrufen, wenn du **nur** die Treiber neu bauen willst, ohne das komplette Setup erneut
+laufen zu lassen (z.B. nach dem Pullen einer reinen Treiber-Code-Änderung):
 
 ```bash
 cd ~/PiFinder_Stellarmate
-bash bin/build_indi_driver.sh     # PiFinder LX200 (erforderlich)
+bash bin/build_indi_driver.sh     # PiFinder LX200
 bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, nur bei echter Montierung)
 ```
 

@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- `pifinder_stellarmate_setup.sh` now builds and installs the PiFinder LX200 and Mount Bridge
+  INDI drivers automatically (stopping any already-running instance first, then restarting the
+  StellarMate Web Manager so the catalog is up to date). Previously this was a fully separate,
+  manual step (`bin/build_indi_driver.sh` / `bin/build_indi_bridge.sh`) — those scripts still
+  exist for rebuilding just the drivers without rerunning the whole setup.
+
 ## [1.0.0] - 2026-07-16
 
 **First tagged release.** Built and verified for **PiFinder 2.6.0** on **StellarMate OS 2.2.1**

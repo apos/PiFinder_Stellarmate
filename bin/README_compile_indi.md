@@ -11,6 +11,9 @@ The driver links directly against the system's `libindi` package (`libindilx200`
 `libindidriver` - already installed on any StellarMate system). It does **not** need an INDI
 source checkout or a full INDI build.
 
+`pifinder_stellarmate_setup.sh` already builds and installs this (and the Mount Bridge) for you.
+Use the commands below only to rebuild manually, e.g. after pulling a driver-only code change.
+
 ## Build & install
 
 ```bash

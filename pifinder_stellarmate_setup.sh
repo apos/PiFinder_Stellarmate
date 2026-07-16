@@ -613,12 +613,36 @@ sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
-# INDI driver (PiFinder LX200) and the optional Mount Bridge are a separate,
-# manual build step - see bin/build_indi_driver.sh, bin/build_indi_bridge.sh,
-# and Readme_PiFinder_LX200.md. Not installed by this script.
-echo "ℹ️  INDI driver not installed by this script — run bin/build_indi_driver.sh"
-echo "    (and bin/build_indi_bridge.sh for the optional Mount Bridge) separately."
-echo "    See Readme_PiFinder_LX200.md for the full setup guide."
+# Build and install the PiFinder INDI drivers (PiFinder LX200 + Mount Bridge).
+# See Readme_PiFinder_LX200.md for what these do and how to use them.
+echo "🔧 Building and installing PiFinder INDI drivers ..."
+
+# Stop any already-running instance first, or installing the new binary fails
+# with "Text file busy". Try a graceful Web Manager stop, then make sure via pkill
+# regardless of whether the server was started through the Web Manager or manually.
+if curl -s -o /dev/null http://localhost:8624/api/server/status 2>/dev/null; then
+    curl -s -X POST http://localhost:8624/api/server/stop >/dev/null 2>&1 || true
+fi
+pkill -f indi_pifinder_lx200 2>/dev/null || true
+pkill -f indi_pifinder_mount_bridge 2>/dev/null || true
+sleep 1
+
+bash "${pifinder_stellarmate_bin}/build_indi_driver.sh" \
+    && echo "✅ PiFinder LX200 driver installed." \
+    || add_warning "PiFinder LX200 INDI driver build/install FAILED — run bin/build_indi_driver.sh manually to see why."
+
+bash "${pifinder_stellarmate_bin}/build_indi_bridge.sh" \
+    && echo "✅ PiFinder Mount Bridge driver installed." \
+    || add_warning "PiFinder Mount Bridge INDI driver build/install FAILED — run bin/build_indi_bridge.sh manually to see why."
+
+# The StellarMate Web Manager caches its driver catalog at its own process
+# startup - restart it so newly built/updated drivers show up. Requires a
+# GUI/VNC user session; skip quietly if unavailable (e.g. run over plain SSH).
+if systemctl --user restart stellarmatewebmanager.service 2>/dev/null; then
+    echo "✅ StellarMate Web Manager restarted — INDI driver catalog is up to date."
+else
+    add_warning "Could not restart stellarmatewebmanager.service (no GUI/VNC session?). Restart it manually so the PiFinder INDI drivers show up in its catalog: systemctl --user restart stellarmatewebmanager.service"
+fi
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)

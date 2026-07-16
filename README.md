@@ -28,7 +28,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 This setup modifies the stock PiFinder installation to better integrate with Stellarmate:
 
 *   **Automated Installation:** A single script handles downloading the correct PiFinder version, creating a Python virtual environment, installing dependencies, and applying all necessary patches.
-*   **INDI Integration for KStars/Ekos & SkySafari:** A standalone `PiFinder LX200` INDI driver reports PiFinder's solved position and forwards GoTo requests as push-to targets. An optional `PiFinder Mount Bridge` driver can couple that position to any real INDI mount driver (verify/alert, auto-correct on drift, or full event-driven GoTo-forwarding). Built directly against system `libindi` — no INDI source checkout, no full INDI build. **Not** installed automatically by the main setup script — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) for the full build/deployment guide, technical reference, and illustrated setup instructions.
+*   **INDI Integration for KStars/Ekos & SkySafari:** A standalone `PiFinder LX200` INDI driver reports PiFinder's solved position and forwards GoTo requests as push-to targets. An optional `PiFinder Mount Bridge` driver can couple that position to any real INDI mount driver (verify/alert, auto-correct on drift, or full event-driven GoTo-forwarding). Built directly against system `libindi` — no INDI source checkout, no full INDI build. Built and installed automatically by the main setup script — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) for the technical reference and illustrated setup instructions (Web Manager profile, INDI Control Panel, KStars/Ekos, SkySafari).
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
@@ -97,17 +97,22 @@ The setup process is designed to be straightforward. It will guide you through a
     source /home/stellarmate/PiFinder/python/.venv/bin/activate
     ./pifinder_stellarmate_setup.sh
     ```
-    After this, the installation will complete and the PiFinder services will be started. The INDI
-    driver is a separate step — see [Using the INDI Driver](#using-the-indi-driver) below.
+    After this, the installation will complete, the PiFinder services will be started, and the
+    PiFinder LX200 + Mount Bridge INDI drivers will be built and installed automatically — see
+    [Using the INDI Driver](#using-the-indi-driver) below for what that gives you and how to set
+    up the Web Manager profile.
 
 ## Using the INDI Driver
 
-The INDI driver (and the optional Mount Bridge for coupling PiFinder to a real motorized mount) is
-a **separate, manual build step** — not part of `pifinder_stellarmate_setup.sh`:
+`pifinder_stellarmate_setup.sh` builds and installs both INDI drivers for you (stopping any
+already-running instance first, then restarting the StellarMate Web Manager so the new/updated
+drivers show up in its catalog). You only need to run the build scripts yourself when you want to
+rebuild just the drivers without rerunning the whole setup (e.g. after pulling a driver-only code
+change):
 
 ```bash
 cd ~/PiFinder_Stellarmate
-bash bin/build_indi_driver.sh     # PiFinder LX200 (required)
+bash bin/build_indi_driver.sh     # PiFinder LX200
 bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, only if you have a real mount)
 ```
 
