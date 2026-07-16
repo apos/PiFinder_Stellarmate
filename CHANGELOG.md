@@ -34,6 +34,13 @@ All notable changes to this project are documented in this file. Format loosely 
   a while to come back up after a restart), and doubles as the signal for a "Waiting for PiFinder to
   start…" progress indicator shown until it actually answers.
 
+### Removed
+
+- **"Software Upd" from the OLED Tools menu**: PiFinder's own update mechanism isn't compatible
+  with a StellarMate-managed install (it would pull code the Stellarmate patches then have to be
+  reapplied to) and could leave the install in a broken state. Removed until there's a proper
+  update strategy that accounts for this (tracked as a low-priority follow-up).
+
 ### Fixed
 
 - The Installation Summary always reported `picamera2: unknown` — it read the package's

@@ -1,6 +1,6 @@
---- python/PiFinder/ui/menu_structure.py.orig	2026-05-31 17:40:06.308609391 +0200
-+++ python/PiFinder/ui/menu_structure.py	2026-05-31 17:39:02.147942040 +0200
-@@ -897,24 +897,7 @@
+--- python/PiFinder/ui/menu_structure.py.orig
++++ python/PiFinder/ui/menu_structure.py
+@@ -994,24 +994,7 @@ pifinder_menu = {
                          },
                      ],
                  },
@@ -26,7 +26,7 @@
                  {
                      "name": _("Mount Type"),
                      "class": UITextMenu,
-@@ -1015,6 +998,10 @@
+@@ -1112,6 +1095,10 @@ pifinder_menu = {
                                              "name": _("GPSD (generic)"),
                                              "value": "gpsd",
                                          },
@@ -37,3 +37,11 @@
                                      ],
                                  },
                                  {
+@@ -1217,7 +1204,6 @@ pifinder_menu = {
+                     ],
+                 },
+                 {"name": _("Console"), "class": UIConsole},
+-                {"name": _("Software Upd"), "class": UISoftware},
+                 {"name": _("Test Mode"), "callback": callbacks.activate_debug},
+                 {
+                     "name": _("Experimental"),
