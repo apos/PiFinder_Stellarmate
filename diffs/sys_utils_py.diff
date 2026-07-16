@@ -1,0 +1,37 @@
+--- python/PiFinder/sys_utils.py.orig
++++ python/PiFinder/sys_utils.py
+@@ -233,6 +233,34 @@
+             s.close()
+         return ip
+ 
++    def all_ips(self):
++        """
++        Returns every non-loopback IPv4 address currently assigned, across
++        all interfaces (WiFi, wired LAN, VPN/WireGuard, etc.) - unlike
++        local_ip(), which only returns the one address the OS would pick
++        for outbound traffic.
++        """
++        if self._wifi_mode == "AP":
++            return ["10.10.10.1"]
++
++        ips = []
++        try:
++            # _tty_out=False: sh allocates a pty for subprocess stdout by
++            # default, which makes `ip` think it's talking to a terminal and
++            # colorize its output with ANSI escape codes.
++            output = sh.ip("-4", "-o", "addr", "show", _tty_out=False)
++        except Exception as e:
++            logger.error(f"Error listing network interfaces: {e}")
++            return [self.local_ip()]
++
++        for line in str(output).splitlines():
++            fields = line.split()
++            if len(fields) < 4 or fields[1] == "lo":
++                continue
++            ips.append(fields[3].split("/")[0])
++
++        return ips or [self.local_ip()]
++
+ 
+ def go_wifi_ap():
+     logger.info("SYS: Switching to AP")

@@ -1,0 +1,12 @@
+--- python/PiFinder/sys_utils_fake.py.orig
++++ python/PiFinder/sys_utils_fake.py
+@@ -74,6 +74,9 @@
+     def local_ip(self):
+         return "NONE"
+ 
++    def all_ips(self):
++        return ["NONE"]
++
+ 
+ def remove_backup():
+     """

@@ -1,0 +1,13 @@
+--- python/PiFinder/server.py.orig
++++ python/PiFinder/server.py
+@@ -241,7 +241,9 @@
+                 title=gettext("Home"),
+                 software_version=software_version,
+                 wifi_mode=self.network.wifi_mode(),
+-                ip=self.network.local_ip(),
++                # Every non-loopback IP (WiFi, LAN, VPN/WireGuard, etc.), not
++                # just the one the OS would pick for outbound traffic.
++                ip=", ".join(self.network.all_ips()),
+                 network_name=self.network.get_connected_ssid(),
+                 gps_icon=gps_icon,
+                 gps_text=gps_text,

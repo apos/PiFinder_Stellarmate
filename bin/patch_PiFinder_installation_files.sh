@@ -481,12 +481,50 @@ if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
     sed -i "s|sys_utils.verify_password(\"pifinder\", password)|sys_utils.verify_password(\"$(whoami)\", password)|" "$server_py"
     # Replace hardcoded 'pifinder' with dynamic username in password_change function
     sed -i "s|sys_utils.change_password(\"pifinder\", current_password, new_passworda)|sys_utils.change_password(\"$(whoami)\", current_password, new_passworda)|" "$server_py"
+    # Web-UI home page: show every non-loopback IP (WiFi/LAN/WireGuard), not just one
+    patch -N "$server_py" < "${pifinder_stellarmate_dir}/diffs/server_py.diff"
 else
     echo "⏩ Skipping patch for server.py: ❌ incompatible version/pi/os"
 fi
 
 show_diff_if_changed "$server_py"
 python3 -m py_compile "$server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder sys_utils.py / sys_utils_fake.py: all_ips() for comprehensive
+# IP address display (WiFi/LAN/WireGuard, etc.) on Web-UI + OLED status screen
+echo "🔧 Updating sys_utils.py / sys_utils_fake.py (all_ips) ..."
+cp "$sys_utils_py" "$sys_utils_py.bak"
+cp "$sys_utils_fake_py" "$sys_utils_fake_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+    patch -N "$sys_utils_py" < "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
+    patch -N "$sys_utils_fake_py" < "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
+else
+    echo "⏩ Skipping patch for sys_utils.py/sys_utils_fake.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$sys_utils_py"
+show_diff_if_changed "$sys_utils_fake_py"
+python3 -m py_compile "$sys_utils_py" "$sys_utils_fake_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder ui/status.py: show every non-loopback IP on the OLED status screen
+echo "🔧 Updating ui/status.py (all_ips) ..."
+cp "$status_py" "$status_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+    patch -N "$status_py" < "${pifinder_stellarmate_dir}/diffs/status_py.diff"
+else
+    echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$status_py"
+python3 -m py_compile "$status_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
 ##################################################

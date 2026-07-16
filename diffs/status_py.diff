@@ -1,0 +1,16 @@
+--- python/PiFinder/ui/status.py.orig
++++ python/PiFinder/ui/status.py
+@@ -164,8 +164,11 @@
+ 
+         if time.time() - self.last_IP_time > 20:
+             self.last_IP_time = time.time()
+-            # IP address
+-            self.status_dict["IP"] = self.net.local_ip()
++            # IP address(es) - every non-loopback interface (WiFi, LAN,
++            # VPN/WireGuard, etc.), not just the one the OS would pick for
++            # outbound traffic. Joined into one value so the existing
++            # per-row horizontal scroller (see _render_row) handles overflow.
++            self.status_dict["IP"] = ", ".join(self.net.all_ips())
+             if self.net.wifi_mode() == "AP":
+                 self.status_dict["SSID"] = self.net.get_ap_name()
+             else:
