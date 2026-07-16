@@ -131,13 +131,6 @@ regardless of the selected mode — useful for a single manual correction withou
 
 ## Installation & bebilderte Anleitung
 
-> **📷 Hinweis zu den Screenshots in diesem Abschnitt:** Die Platzhalter unten (`📷 Screenshot: ...`)
-> markieren Stellen, an denen ein Bild eingefügt werden sollte. Lege die Bilder unter
-> `docs/images/pfinder_lx200/` ab und ersetze den Platzhalter-Block durch
-> `![Beschreibung](docs/images/pfinder_lx200/dateiname.png)`. Die Screenshots aus dieser
-> Entwicklungssession lagen nur als Chat-Anhänge vor und konnten nicht automatisch in dieses Repo
-> übernommen werden — bitte bei Gelegenheit frisch einfügen.
-
 ### Voraussetzungen
 
 - StellarMate OS mit installiertem PiFinder (siehe [README.md](README.md))
@@ -170,8 +163,7 @@ Das muss aus der echten GUI/VNC-Desktop-Session laufen, nicht aus einer reinen S
 
 Im Browser: `http://<pi-adresse>:8624` öffnen.
 
-> 📷 Screenshot: StellarMate Web Manager mit einem Profil, das "PiFinder LX200", ggf. "LX200
-> \<deine Mount\>" und "PiFinder Mount Bridge" als Treiber enthält (Dropdown "Drivers" oben links).
+![StellarMate Web Manager: Profil "PiFinder OnStepX Bridge" mit den Treibern PiFinder Mount Bridge, LX200 OnStep, PiFinder LX200 sowie Server Status, alle drei online](docs/images/pfinder_lx200/webmanager_profile.png)
 
 - **Driver Source**: "System INDI Drivers"
 - Unter "Telescopes": **PiFinder LX200** hinzufügen, ggf. auch den Treiber deiner echten Mount
@@ -181,25 +173,33 @@ Im Browser: `http://<pi-adresse>:8624` öffnen.
 
 ### Schritt 3: INDI Control Panel — Geräte verbinden
 
-> 📷 Screenshot: INDI Control Panel mit den drei Tabs "LX200 OnStep", "PiFinder LX200", "PiFinder
-> Mount Bridge" nebeneinander.
+Die Tab-Leiste oben zeigt alle drei Geräte nebeneinander, sobald das Profil läuft:
+
+![INDI Control Panel: Tabs LX200 OnStep, PiFinder LX200, PiFinder Mount Bridge; PiFinder LX200 → Connection-Tab mit TCP 127.0.0.1:4030](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png)
 
 **PiFinder LX200** verbinden:
 - Tab "PiFinder LX200" → Connection
 - Connection Mode: **TCP**, Address `127.0.0.1`, Port **`4030`**
 - "Connect" klicken
 
+Danach im Tab "Main Control" bestätigen — hier ist auch direkt sichtbar, dass es unter "On Set"
+nur **Track/Slew** gibt, kein Sync (siehe [Was passiert bei einem GoTo](#was-passiert-bei-einem-goto-auf-pifinder-lx200)):
+
+![PiFinder LX200 → Main Control: Connection, On Set (nur Track/Slew), Eq. Coordinates, Abort Motion](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png)
+
 **Deine echte Mount** verbinden (Beispiel OnStepX): je nach Anbindung Serial-Port oder TCP wählen,
 dann "Connect".
 
 **PiFinder Mount Bridge** verbinden (falls verwendet):
-- Tab "PiFinder Mount Bridge" → "Active devices" → `Mount` auf den Namen deiner Mount setzen (z.B.
-  "LX200 OnStep")
-- "Connect" klicken
+- Tab "PiFinder Mount Bridge" → Untertab "Options" → "Active devices" → `PiFinder` und `Mount` auf
+  die richtigen Gerätenamen setzen (z.B. "PiFinder LX200" / "LX200 OnStep")
+
+![PiFinder Mount Bridge → Options: Active devices auf "PiFinder LX200" / "LX200 OnStep" gesetzt](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png)
+
+- "Connect" klicken (Main Control-Tab)
 - Danach "Coupling" auf den gewünschten Modus setzen (siehe Tabelle oben)
 
-> 📷 Screenshot: "PiFinder Mount Bridge"-Tab mit sichtbaren Controls: Connection, Coupling,
-> Auto-correct action, Manual (one-shot), Drift Threshold, Status (`DRIFT_STATUS` in arcmin).
+![PiFinder Mount Bridge → Main Control: Connection, Coupling (Verify/Alert only aktiv), Auto-correct action, Manual (one-shot) Sync Now/Goto Now, Drift Threshold, Status mit aktuellem Drift-Wert](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png)
 
 ### Schritt 4: KStars/Ekos (Remote-Modus)
 
@@ -212,9 +212,16 @@ im lokalen Geräte-Auswahlbaum nach "PiFinder" zu suchen:
 - "Start" klicken → Ekos verbindet sich zum laufenden Server → alle bereits verbundenen Geräte
   erscheinen automatisch im INDI Control Panel / Mount-Tab
 
-> 📷 Screenshot: KStars-Himmelskarte mit Rechtsklick-Kontextmenü auf einem Stern, das sowohl
-> "LX200 OnStep" als auch "PiFinder LX200" als Ziel-Geräte anbietet (Sync/Goto-Optionen je nach
-> Gerät unterschiedlich, siehe [Technische Referenz](#technische-referenz)).
+Rechtsklick auf einen Stern zeigt beide Geräte als getrennte Ziele im Kontextmenü — die roten
+Fadenkreuze markieren, wo PiFinder aktuell "hinsieht" und wo die Mount tatsächlich steht (hier
+absichtlich weit auseinander, zur Illustration):
+
+![KStars-Himmelskarte: Fadenkreuz-Marker "Position PiFinder" und "Position Mount" an unterschiedlichen Stellen, Kontextmenü zeigt "LX200 OnStep" und "PiFinder LX200" als getrennte Ziel-Geräte](docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png)
+
+Untermenü "PiFinder LX200" aufgeklappt — nur **Goto / Abort / Find Telescope**, kein Sync (siehe
+[Warum kein TELESCOPE_CAN_SYNC?](#warum-kein-telescope_can_sync)):
+
+![KStars-Kontextmenü: Untermenü "PiFinder LX200" zeigt nur Goto, Abort, Find Telescope](docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png)
 
 ### Schritt 5: SkySafari anbinden
 
@@ -227,8 +234,10 @@ SkySafari verbindet sich **nicht** direkt auf Port 7624, sondern über den mitge
   trennen/neu verbinden.
 - In der SkySafari-App: Server-IP der StellarMate-Box eintragen, **Port 9624**
 
-> 📷 Screenshot: SkySafari-App, Teleskop-Verbindungsdialog mit IP + Port 9624, und die
-> Sternkarte mit sichtbarem PiFinder-Positionsmarker nach erfolgreicher Verbindung.
+![SkySafari Netzwerkverbindungen: Teleskop-Auswahl (LX200-kompatibel), IP-Adresse und Port-Nummer 9624](docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png)
+
+SkySafari braucht selbst kein PiFinder-spezifisches Profil — es spricht generisches LX200 zum
+`indi_skysafari`-Treiber, der (via `ACTIVE_DEVICES` → Telescope) auf "PiFinder LX200" zeigt.
 
 Kompletter Verbindungsstack zur Übersicht:
 
@@ -444,7 +453,7 @@ Für Nachvollziehbarkeit und als Warnung für ähnliche zukünftige Änderungen:
   `/usr/share/indi/drivers.xml` lesen. Nach jedem Neu-Bau/jeder Versionsänderung eines Treibers:
   `systemctl --user restart stellarmatewebmanager.service` (aus der GUI/VNC-Session, nicht SSH).
   Für KStars: **Remote-Modus** verwenden (siehe [Schritt 4](#schritt-4-kstarsekos-remote-modus))
-  statt im lokalen lokalen Geräte-Baum zu suchen.
+  statt im lokalen Geräte-Baum zu suchen.
 - **`LOGF_INFO`/`LOG_ERROR` der Treiber erscheinen nicht** im servereigenen Log
   (`/tmp/indiserver.log`, wenn über den Web-Manager gestartet) — sie werden aber korrekt als
   INDI-Message an verbundene Clients gesendet und sind im INDI Control Panel (unterer
