@@ -29,7 +29,10 @@ All notable changes to this project are documented in this file. Format loosely 
   running, falling back to (and back to, if PiFinder stops responding) the static splash bitmap
   `~/PiFinder/images/welcome.png` otherwise. On success, also shows PiFinder's own web UI links
   (same IPs, whichever port - 80 or 8080 - was actually detected working) plus the default remote
-  password, so there's a direct path from "setup finished" to "using PiFinder."
+  password, so there's a direct path from "setup finished" to "using PiFinder." The detection probe
+  now retries indefinitely every 2s instead of giving up after one failed attempt (PiFinder can take
+  a while to come back up after a restart), and doubles as the signal for a "Waiting for PiFinder to
+  start…" progress indicator shown until it actually answers.
 
 ### Fixed
 

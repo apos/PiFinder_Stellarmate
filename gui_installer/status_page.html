@@ -164,6 +164,25 @@
     margin-right: 1rem;
   }
   #pifinder-access a:hover { text-decoration: underline; }
+  .waiting-bar-track {
+    background: #262626;
+    border-radius: 5px;
+    height: 6px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+    position: relative;
+  }
+  .waiting-bar-fill {
+    background: #2a6fdb;
+    height: 100%;
+    width: 30%;
+    position: absolute;
+    animation: waiting-slide 1.2s ease-in-out infinite;
+  }
+  @keyframes waiting-slide {
+    0% { left: -30%; }
+    100% { left: 100%; }
+  }
   #docs-links {
     margin-top: 0.4rem;
     margin-bottom: 1.2rem;
@@ -303,10 +322,11 @@ function renderRemoteLinks(ips, port) {
   el.innerHTML = 'Reach this page from another device on the network:<br>' + links;
 }
 
-// PiFinder's own web UI, once setup has finished. Reuses whichever port the
-// OLED-screen probe (see initPiFinderScreen) found working; if that probe
-// hasn't succeeded yet, falls back to 8080 (the common case whenever
-// something else - like StellarMate's own dashboard - already holds port 80).
+// PiFinder's own web UI, once setup has finished. Waits for the same live
+// probe that drives the OLED-screen mirror (see initPiFinderScreen) to
+// confirm PiFinder is actually answering before showing real links - a
+// restart/reinstall can take a while to come back up, so showing dead links
+// immediately would be misleading. Reuses whichever port that probe found.
 function showPiFinderAccess() {
   setupSucceeded = true;
   const el = document.getElementById('pifinder-access');
@@ -314,9 +334,14 @@ function showPiFinderAccess() {
     el.style.display = 'none';
     return;
   }
-  const port = pifinderScreenUrl
-    ? new URL(pifinderScreenUrl).port || 80
-    : 8080;
+  el.style.display = 'block';
+  if (!pifinderScreenUrl) {
+    el.innerHTML =
+      'Waiting for PiFinder to start&hellip;' +
+      '<div class="waiting-bar-track"><div class="waiting-bar-fill"></div></div>';
+    return;
+  }
+  const port = new URL(pifinderScreenUrl).port || 80;
   const links = knownIps.map(ip => {
     const url = `http://${ip}:${port}/`;
     return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
@@ -324,7 +349,6 @@ function showPiFinderAccess() {
   el.innerHTML =
     'PiFinder is ready — open it in your browser:<br>' + links +
     '<br>Default remote password: <code>smate</code>';
-  el.style.display = 'block';
 }
 
 function showChoices(existingInstall) {
@@ -436,16 +460,28 @@ async function pollLog() {
 // Mirrors PiFinder's own live OLED screen (its /image endpoint) once PiFinder
 // is actually running. Before that (or if it's unreachable), the <img> just
 // keeps showing the static splash bitmap already set as its default src.
+// PiFinder can take a while to come up after a setup run restarts it, so this
+// keeps retrying indefinitely rather than giving up after one failed attempt -
+// same probe also doubles as the "is PiFinder actually reachable yet" signal
+// for the post-success access-links box below.
 let pifinderScreenUrl = null;
 
+function piFinderProbeUrls() {
+  const host = location.hostname;
+  return [`http://${host}/image`, `http://${host}:8080/image`];
+}
+
 function tryPiFinderScreenUrls(urls, index) {
-  if (index >= urls.length) return; // none worked - static fallback stays as-is
+  if (index >= urls.length) {
+    setTimeout(() => tryPiFinderScreenUrls(urls, 0), 2000);
+    return;
+  }
   const probe = new Image();
   probe.onload = () => {
     pifinderScreenUrl = urls[index];
     refreshPiFinderScreen();
     // The port may have just been discovered after the access-links box
-    // already rendered with a guessed port - refresh it now it's known.
+    // already rendered with a "waiting" state - upgrade it now it's known.
     if (setupSucceeded) showPiFinderAccess();
   };
   probe.onerror = () => tryPiFinderScreenUrls(urls, index + 1);
@@ -460,16 +496,19 @@ function refreshPiFinderScreen() {
     setTimeout(refreshPiFinderScreen, 1000);
   };
   probe.onerror = () => {
-    // PiFinder stopped responding - drop back to the static splash image.
+    // PiFinder stopped responding - drop back to the static splash image
+    // and resume the discovery loop so it recovers automatically if
+    // PiFinder comes back.
     pifinderScreenUrl = null;
     document.getElementById('pifinder-screen').src = '/pifinder_welcome.png';
+    if (setupSucceeded) showPiFinderAccess();
+    tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
   };
   probe.src = pifinderScreenUrl + '?t=' + Date.now();
 }
 
 function initPiFinderScreen() {
-  const host = location.hostname;
-  tryPiFinderScreenUrls([`http://${host}/image`, `http://${host}:8080/image`], 0);
+  tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
 }
 
 async function init() {
