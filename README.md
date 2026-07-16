@@ -102,6 +102,19 @@ The setup process is designed to be straightforward. It will guide you through a
     [Using the INDI Driver](#using-the-indi-driver) below for what that gives you and how to set
     up the Web Manager profile.
 
+### Setup GUI (optional)
+
+If you'd rather not watch raw terminal output, `gui_installer/` provides a small local web page
+that runs the same setup script with a live, auto-scrolling status view in your browser — including
+automatically handling the "activate the venv and rerun" step and the reinstall/update choice via
+buttons, so nothing needs to be typed at a prompt. Run it with:
+```bash
+bash gui_installer/launch_setup_gui.sh
+```
+or copy/symlink `gui_installer/PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon. It's
+the same installer underneath — useful mainly if you're repeating installs/reinstalls often (e.g.
+while testing).
+
 ## Using the INDI Driver
 
 `pifinder_stellarmate_setup.sh` builds and installs both INDI drivers for you (stopping any

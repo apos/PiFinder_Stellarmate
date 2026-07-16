@@ -101,6 +101,20 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
     PiFinder-LX200- + Mount-Bridge-INDI-Treiber werden automatisch gebaut und installiert — siehe
     [Der INDI-Treiber](#der-indi-treiber) unten für das Web-Manager-Profil-Setup.
 
+### Setup-GUI (optional)
+
+Wer nicht die rohe Terminal-Ausgabe beobachten möchte: `gui_installer/` bietet eine kleine lokale
+Webseite, die dasselbe Setup-Skript mit einer live mitscrollenden Statusanzeige im Browser
+ausführt — inklusive automatischer Behandlung des "venv aktivieren und neu starten"-Schritts sowie
+der Reinstall/Update-Auswahl per Button, sodass nichts mehr an einem Prompt eingetippt werden muss.
+Starten mit:
+```bash
+bash gui_installer/launch_setup_gui.sh
+```
+oder `gui_installer/PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für ein klickbares
+Icon. Es ist derselbe Installer darunter — nützlich vor allem, wenn man Installationen/Reinstalls
+häufiger wiederholt (z.B. beim Testen).
+
 ## Der INDI-Treiber
 
 `pifinder_stellarmate_setup.sh` baut und installiert beide INDI-Treiber für dich (stoppt zuerst

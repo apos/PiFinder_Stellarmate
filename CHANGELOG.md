@@ -12,6 +12,13 @@ All notable changes to this project are documented in this file. Format loosely 
   address the OS happens to pick for outbound traffic. Implemented via a new `Network.all_ips()`
   in `sys_utils.py` (with a `sys_utils_fake.py` stub for testing), wired through `ui/status.py`
   (OLED, reusing the existing per-row horizontal scroller for overflow) and `server.py` (Web UI).
+- **Setup GUI** (`gui_installer/`): a small stdlib-only (`http.server`) local web page that runs
+  `pifinder_stellarmate_setup.sh` with a live, auto-scrolling status view in the browser instead of
+  a bare terminal, and drives the script through a new `--action=reinstall|update|cancel` flag so
+  the existing-install choice and the venv-bootstrap two-pass restart are both handled without
+  manual terminal input. Launch via `bash gui_installer/launch_setup_gui.sh` or the included
+  `PiFinder Setup.desktop` icon. Non-interactive/terminal use of the setup script is unaffected —
+  the new flag is entirely optional.
 
 ### Changed
 

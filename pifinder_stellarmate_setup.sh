@@ -18,6 +18,18 @@ smos_version_testing="2.2.1"
 # MAIN
 ############################################################
 
+# --action=reinstall|update|cancel: drive the existing-install menu and the
+# venv bootstrap non-interactively (used by gui_installer/server.py). Without
+# it, behavior is unchanged — the script still prompts on a terminal.
+ACTION=""
+for arg in "$@"; do
+    case "$arg" in
+        --action=*)
+            ACTION="${arg#--action=}"
+            ;;
+    esac
+done
+
 SETUP_START=$SECONDS
 
 ############################################################
@@ -146,8 +158,20 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         echo "   1. Delete the existing installation and reinstall from scratch."
         echo "   2. Update the existing installation with 'git reset --hard origin/release'."
         echo "   3. Cancel the installation."
-        read -p "Enter your choice (1, 2, or 3): " choice
-        choice="${choice//[$'\r\n']}"
+
+        case "$ACTION" in
+            reinstall) choice="1" ;;
+            update)    choice="2" ;;
+            cancel)    choice="3" ;;
+            "")
+                read -p "Enter your choice (1, 2, or 3): " choice
+                choice="${choice//[$'\r\n']}"
+                ;;
+            *)
+                echo "❌ Unknown --action='$ACTION' (expected reinstall|update|cancel)."
+                exit 1
+                ;;
+        esac
 
         case "$choice" in
             1)
@@ -300,30 +324,37 @@ if ! is_venv_active "${python_venv}"; then
     echo "Python venv directory does not exist."
     # Create venv
     if create_venv "${python_venv}"; then
+      touch "${lock_file}"
+      if [ -n "$ACTION" ]; then
+        echo "🔁 Virtual environment created — re-executing inside it automatically ..."
+        exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
+      fi
       echo " "
       echo "##### STOP ##########################################################"
       echo "##### DO NOT CLOSE THIS TERMINAL !!! MANUAL INPUT REQUIRED !!! ######"
       echo "The Python virtual environment was successfully created and MUST be activated manually."
       echo "Please run the following command in this terminal to activate the virtual environment."
       echo "Then rerun the scipt from within the new virtual environment (you see somthing like (.venv) after activation:"
-      echo "" 
+      echo ""
       echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
       echo "source ${python_venv}/bin/activate"
       echo "./pifinder_stellarmate_setup.sh"
-      echo "" 
-      # Create the lock file before exiting
-      touch "${lock_file}"
+      echo ""
       # Exit the script, because venv must be activated   manually for Requirements installation
       exit 1
     else
       echo "Error creating Python venv. Aborting."
-      exit 1 
+      exit 1
     fi
   else
-     echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
-     echo "source ${python_venv}/bin/activate"
-     echo -e "\nTHEN: run the script again to install the Requirements."
-     exit 1 # Exit script because venv must be activated manually for Requirements installation
+    if [ -n "$ACTION" ]; then
+      echo "🔁 Virtual environment directory exists but isn't active — re-executing inside it automatically ..."
+      exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
+    fi
+    echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
+    echo "source ${python_venv}/bin/activate"
+    echo -e "\nTHEN: run the script again to install the Requirements."
+    exit 1 # Exit script because venv must be activated manually for Requirements installation
   fi
 else
   # Venv seems active, but let's double-check if the directory is actually there
