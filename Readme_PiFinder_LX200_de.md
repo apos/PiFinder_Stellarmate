@@ -1,5 +1,7 @@
 # PiFinder LX200 INDI Integration
 
+*[English version](Readme_PiFinder_LX200.md)*
+
 > ### ✅ Built & verified against
 >
 > * **PiFinder software 2.6.0**

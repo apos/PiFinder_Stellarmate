@@ -24,10 +24,10 @@ All notable changes to this project are documented in this file. Format loosely 
     real mount, waits for the slew to finish, then verifies arrival via a fresh PiFinder solve and
     auto-corrects any residual with a Sync.
   - Plus a manual, mode-independent "Sync Now" / "Goto Now" one-shot trigger.
-- **`Readme_PFinder_LX200.md`**: full documentation for the INDI/Mount-Bridge integration —
-  illustrated setup guide (StellarMate Web Manager, INDI Control Panel, KStars/Ekos, SkySafari),
-  complete LX200 command and INDI property reference, and an explanation of the code, deployment,
-  and design strategy.
+- **`Readme_PiFinder_LX200.md`** (also available in German as `Readme_PiFinder_LX200_de.md`): full
+  documentation for the INDI/Mount-Bridge integration — illustrated setup guide (StellarMate Web
+  Manager, INDI Control Panel, KStars/Ekos, SkySafari), complete LX200 command and INDI property
+  reference, and an explanation of the code, deployment, and design strategy.
 - This changelog.
 - End-to-end verification against real hardware: a Skywatcher EQ5 with an OnStepX controller
   (`indi_lx200_OnStep` 1.27) — both Sync and GoTo forwarding confirmed with a real, visible slew.

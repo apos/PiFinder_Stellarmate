@@ -15,7 +15,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
 > * **Raspberry Pi 5**: Partially supported — GPS ✅, Web UI ✅. OLED display not yet working (SPI driver issue under investigation). Camera requires 15-pin FFC CSI adapter cable.
-> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PFinder_LX200.md](Readme_PFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
+> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -24,7 +24,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 This setup modifies the stock PiFinder installation to better integrate with Stellarmate:
 
 *   **Automated Installation:** A single script handles downloading the correct PiFinder version, creating a Python virtual environment, installing dependencies, and applying all necessary patches.
-*   **INDI Integration for KStars/Ekos & SkySafari:** A standalone `PiFinder LX200` INDI driver reports PiFinder's solved position and forwards GoTo requests as push-to targets. An optional `PiFinder Mount Bridge` driver can couple that position to any real INDI mount driver (verify/alert, auto-correct on drift, or full event-driven GoTo-forwarding). Built directly against system `libindi` — no INDI source checkout, no full INDI build. **Not** installed automatically by the main setup script — see [Readme_PFinder_LX200.md](Readme_PFinder_LX200.md) for the full build/deployment guide, technical reference, and illustrated setup instructions.
+*   **INDI Integration for KStars/Ekos & SkySafari:** A standalone `PiFinder LX200` INDI driver reports PiFinder's solved position and forwards GoTo requests as push-to targets. An optional `PiFinder Mount Bridge` driver can couple that position to any real INDI mount driver (verify/alert, auto-correct on drift, or full event-driven GoTo-forwarding). Built directly against system `libindi` — no INDI source checkout, no full INDI build. **Not** installed automatically by the main setup script — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) for the full build/deployment guide, technical reference, and illustrated setup instructions.
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
@@ -109,7 +109,7 @@ bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, only if you
 
 For the full setup walkthrough (StellarMate Web Manager profile, INDI Control Panel, KStars/Ekos
 Remote mode, SkySafari), the complete LX200 command/property reference, and an explanation of the
-code and deployment strategy, see **[Readme_PFinder_LX200.md](Readme_PFinder_LX200.md)**.
+code and deployment strategy, see **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)**.
 
 ## SMOS Updates
 
@@ -154,6 +154,6 @@ This will stop and disable the `pifinder` services, remove the systemd files, an
 
 ## See Also
 
-*   **[Readme_PFinder_LX200.md](Readme_PFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy.
+*   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.

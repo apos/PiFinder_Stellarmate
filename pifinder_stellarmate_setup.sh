@@ -615,10 +615,10 @@ sudo systemctl start pifinder_splash
 
 # INDI driver (PiFinder LX200) and the optional Mount Bridge are a separate,
 # manual build step - see bin/build_indi_driver.sh, bin/build_indi_bridge.sh,
-# and Readme_PFinder_LX200.md. Not installed by this script.
+# and Readme_PiFinder_LX200.md. Not installed by this script.
 echo "ℹ️  INDI driver not installed by this script — run bin/build_indi_driver.sh"
 echo "    (and bin/build_indi_bridge.sh for the optional Mount Bridge) separately."
-echo "    See Readme_PFinder_LX200.md for the full setup guide."
+echo "    See Readme_PiFinder_LX200.md for the full setup guide."
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)
