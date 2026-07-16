@@ -25,6 +25,7 @@ REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
+AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 
@@ -131,6 +132,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_file(self, path, content_type):
+        if not path.is_file():
+            self.send_error(404)
+            return
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urlparse(self.path)
 
@@ -144,15 +156,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/pifinder.jpg":
-            if not PIFINDER_IMAGE.is_file():
-                self.send_error(404)
-                return
-            body = PIFINDER_IMAGE.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/jpeg")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_file(PIFINDER_IMAGE, "image/jpeg")
+            return
+
+        if parsed.path == "/avvp_logo.png":
+            self._send_file(AVVP_LOGO, "image/png")
             return
 
         if parsed.path == "/state":
