@@ -26,6 +26,7 @@ SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
+HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 
@@ -161,6 +162,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/avvp_logo.png":
             self._send_file(AVVP_LOGO, "image/png")
+            return
+
+        if parsed.path == "/heyapos_logo.png":
+            self._send_file(HEYAPOS_LOGO, "image/png")
             return
 
         if parsed.path == "/state":
