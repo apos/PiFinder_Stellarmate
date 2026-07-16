@@ -408,6 +408,10 @@ async function start(action) {
   document.getElementById('choices').style.display = 'none';
   document.getElementById('reboot-wrap').style.display = 'none';
   document.getElementById('close-wrap').style.display = 'none';
+  // Leftover from a previous run (real links or the waiting bar) shouldn't
+  // stay visible while this new run is in progress.
+  document.getElementById('pifinder-access').style.display = 'none';
+  setupSucceeded = false;
   setStatus('Starting…', 'status-running');
   const resp = await fetch('/start?action=' + encodeURIComponent(action), { method: 'POST' });
   const data = await resp.json();
