@@ -30,6 +30,12 @@ for arg in "$@"; do
     esac
 done
 
+# Captured once, up front: the script itself does `cd "${pifinder_home}"` etc.
+# further down, which permanently changes this process's cwd. The automated
+# re-execs below rely on `$(pwd)` (via `source $(pwd)/bin/functions.sh`) being
+# the repo root again, so they must `cd` back here first.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 SETUP_START=$SECONDS
 
 ############################################################
@@ -327,6 +333,7 @@ if ! is_venv_active "${python_venv}"; then
       touch "${lock_file}"
       if [ -n "$ACTION" ]; then
         echo "🔁 Virtual environment created — re-executing inside it automatically ..."
+        cd "$SCRIPT_DIR"
         exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
       fi
       echo " "
@@ -349,6 +356,7 @@ if ! is_venv_active "${python_venv}"; then
   else
     if [ -n "$ACTION" ]; then
       echo "🔁 Virtual environment directory exists but isn't active — re-executing inside it automatically ..."
+      cd "$SCRIPT_DIR"
       exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
     fi
     echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
@@ -359,6 +367,15 @@ if ! is_venv_active "${python_venv}"; then
 else
   # Venv seems active, but let's double-check if the directory is actually there
   if ! check_venv_exists "${python_venv}"; then
+    if [ -n "$ACTION" ]; then
+      # Happens when the top-of-script `source .venv/bin/activate` picked up a
+      # venv that a reinstall then deleted+recreated later in this same run —
+      # $VIRTUAL_ENV is now stale. Drop it and re-exec cleanly so the script
+      # re-detects the (missing) venv and goes through the normal create path.
+      echo "🔁 Stale venv reference (directory was removed) — re-executing cleanly ..."
+      cd "$SCRIPT_DIR"
+      exec env -u VIRTUAL_ENV bash "$0" "$@"
+    fi
     echo "###################################################################"
     echo "WARNING: Your shell thinks a virtual environment is active,"
     echo "but the directory has been removed (likely during reinstallation)."

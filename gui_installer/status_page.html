@@ -130,7 +130,13 @@ async function start(action) {
     setStatus('Failed to start: ' + (data.error || 'unknown error'), 'status-failed');
     return;
   }
-  document.getElementById('log').style.display = 'block';
+  // Server resets its log buffer for every new run — reset our read position
+  // and the visible panel too, otherwise we'd keep polling from the previous
+  // run's offset and silently miss everything up to that line count again.
+  logPosition = 0;
+  const logEl = document.getElementById('log');
+  logEl.textContent = '';
+  logEl.style.display = 'block';
   if (!polling) {
     polling = true;
     pollLog();
