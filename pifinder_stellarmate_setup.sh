@@ -613,19 +613,12 @@ sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
-# INDI Driver Installation (Step 5 from indi_driver_compile.md, without indi_add_driver)
-# Requires prior manual compilation — see bin/README_compile_indi.md
-echo "🔧 Installing PiFinder LX200 INDI driver..."
-INDI_BIN=~/indi-source/build/drivers/telescope/indi_pifinder_lx200
-INDI_XML=${pifinder_stellarmate_dir}/indi_pifinder/indi_pifinder_driver.xml.in
-if [ -f "$INDI_BIN" ] && [ -f "$INDI_XML" ]; then
-    sudo cp "$INDI_BIN" /usr/bin/
-    sudo cp "$INDI_XML" /usr/share/indi/pifinder_lx200.xml
-    echo "✅ PiFinder LX200 INDI driver installed."
-else
-    echo "ℹ️  INDI driver binary not found — skipping (requires manual compilation)."
-    echo "    See bin/README_compile_indi.md for instructions."
-fi
+# INDI driver (PiFinder LX200) and the optional Mount Bridge are a separate,
+# manual build step - see bin/build_indi_driver.sh, bin/build_indi_bridge.sh,
+# and Readme_PFinder_LX200.md. Not installed by this script.
+echo "ℹ️  INDI driver not installed by this script — run bin/build_indi_driver.sh"
+echo "    (and bin/build_indi_bridge.sh for the optional Mount Bridge) separately."
+echo "    See Readme_PFinder_LX200.md for the full setup guide."
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)
