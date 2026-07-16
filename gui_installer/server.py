@@ -149,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_total": len(PHASES),
                     "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
                     "phases": PHASES,
+                    "setup_script_path": str(SETUP_SCRIPT),
                 }
             )
             return
