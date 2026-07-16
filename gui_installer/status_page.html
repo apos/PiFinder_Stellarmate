@@ -24,6 +24,16 @@
   .status-running { background: #1a3a5c; color: #7ec8ff; }
   .status-success { background: #1a4a2a; color: #7ee8a0; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
+  .choice-card {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    max-width: 640px;
+  }
+  .choice-card h3 { margin: 0 0 0.3rem; font-size: 1.05rem; }
+  .choice-card p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #choices button, #start-fresh {
     background: #2a6fdb;
     color: white;
@@ -78,15 +88,35 @@ function showChoices(existingInstall) {
   el.style.display = 'block';
   if (existingInstall) {
     el.innerHTML = `
-      <p>An existing PiFinder installation was found. Choose an action:</p>
-      <button onclick="start('reinstall')">Reinstall from scratch</button>
-      <button onclick="start('update')">Update (git reset --hard)</button>
-      <button class="cancel" onclick="start('cancel')">Cancel</button>
+      <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
+      <div class="choice-card">
+        <h3>Reinstall from scratch</h3>
+        <p>Completely deletes the existing PiFinder directory and performs a fresh installation:
+           clones PiFinder from the official <code>release</code> branch and re-applies all
+           StellarMate patches. Use this if the installation is broken or you want a clean slate.</p>
+        <button onclick="start('reinstall')">Reinstall from scratch</button>
+      </div>
+      <div class="choice-card">
+        <h3>Update</h3>
+        <p>Resets your local PiFinder to the official <code>release</code> branch version
+           (<code>git reset --hard</code> + <code>pull</code>) and re-applies all patches. Keeps
+           the existing directory, just brings the code up to date.</p>
+        <button onclick="start('update')">Update (git reset --hard)</button>
+      </div>
+      <div class="choice-card">
+        <h3>Cancel</h3>
+        <p>Does nothing and exits &mdash; leaves the existing installation untouched.</p>
+        <button class="cancel" onclick="start('cancel')">Cancel</button>
+      </div>
     `;
   } else {
     el.innerHTML = `
-      <p>No existing installation found.</p>
-      <button id="start-fresh" onclick="start('fresh')">Start Install</button>
+      <div class="choice-card">
+        <h3>No existing installation found</h3>
+        <p>Clones PiFinder from the official <code>release</code> branch into ~/PiFinder and
+           applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
+        <button id="start-fresh" onclick="start('fresh')">Start Install</button>
+      </div>
     `;
   }
 }
