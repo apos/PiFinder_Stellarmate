@@ -151,9 +151,13 @@ while testing).
 
 <table>
 <tr>
-<td align="center">
-<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="700"></a><br>
-<sub>The Setup GUI: live progress bar, step checklist, and terminal output side by side</sub>
+<td align="center" width="50%">
+<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="380"></a><br>
+<sub>Live progress bar, step checklist, and terminal output side by side</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
+<sub>Setup complete: OLED mirror, PiFinder access links, and password shown right away</sub>
 </td>
 </tr>
 </table>

@@ -152,9 +152,13 @@ häufiger wiederholt (z.B. beim Testen).
 
 <table>
 <tr>
-<td align="center">
-<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="700"></a><br>
-<sub>Die Setup-GUI: Live-Fortschrittsbalken, Schritt-Checkliste und Terminal-Ausgabe nebeneinander</sub>
+<td align="center" width="50%">
+<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="380"></a><br>
+<sub>Live-Fortschrittsbalken, Schritt-Checkliste und Terminal-Ausgabe nebeneinander</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
+<sub>Setup abgeschlossen: OLED-Spiegel, PiFinder-Zugangslinks und Passwort direkt sichtbar</sub>
 </td>
 </tr>
 </table>
