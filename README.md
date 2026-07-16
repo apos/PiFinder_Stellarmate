@@ -111,7 +111,7 @@ buttons, so nothing needs to be typed at a prompt. Run it with:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```
-or copy/symlink `gui_installer/PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon. It's
+or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon. It's
 the same installer underneath — useful mainly if you're repeating installs/reinstalls often (e.g.
 while testing).
 
