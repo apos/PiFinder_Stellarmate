@@ -111,9 +111,18 @@ Starten mit:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```
-oder `gui_installer/PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für ein klickbares
+oder `PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für ein klickbares
 Icon. Es ist derselbe Installer darunter — nützlich vor allem, wenn man Installationen/Reinstalls
 häufiger wiederholt (z.B. beim Testen).
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="700"></a><br>
+<sub>Die Setup-GUI: Live-Fortschrittsbalken, Schritt-Checkliste und Terminal-Ausgabe nebeneinander</sub>
+</td>
+</tr>
+</table>
 
 ## Der INDI-Treiber
 

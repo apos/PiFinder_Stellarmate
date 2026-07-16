@@ -2,7 +2,7 @@
 [Desktop Entry]
 Version=1.0
 Encoding=UTF-8
-Name=PiFinder Setup
+Name=PiFinder on Stellarmate Setup
 Comment=Install or update PiFinder with live status
 Exec=/home/stellarmate/PiFinder_Stellarmate/gui_installer/launch_setup_gui.sh
 Icon=/home/stellarmate/PiFinder_Stellarmate/docs/images/readme/PiFinder.jpg
