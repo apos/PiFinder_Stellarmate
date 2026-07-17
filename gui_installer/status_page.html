@@ -418,6 +418,14 @@ function showChoices(existingInstall) {
 }
 
 async function start(action) {
+  if (action === 'reinstall' &&
+      !confirm('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.')) {
+    return;
+  }
+  if (action === 'update' &&
+      !confirm('Update? This runs "git reset --hard" on ~/PiFinder, discarding any local changes there.')) {
+    return;
+  }
   document.getElementById('choices').style.display = 'none';
   document.getElementById('reboot-wrap').style.display = 'none';
   document.getElementById('close-wrap').style.display = 'none';
