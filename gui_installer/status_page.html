@@ -87,7 +87,6 @@
     padding: 0.5rem 0.8rem;
     border-radius: 6px;
     display: inline-block;
-    margin-bottom: 0.6rem;
   }
   .status-idle { background: #333; color: #ccc; }
   .status-running { background: #1a3a5c; color: #7ec8ff; }
@@ -133,7 +132,14 @@
     word-break: break-word;
     box-sizing: border-box;
   }
-  #reboot-wrap { margin-top: 1rem; display: none; }
+  #status-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+  #reboot-wrap { display: none; }
   #reboot-button {
     background: #a33;
     color: white;
@@ -144,7 +150,7 @@
     cursor: pointer;
   }
   #reboot-button:hover { filter: brightness(1.15); }
-  #close-wrap { margin-top: 1rem; display: none; }
+  #close-wrap { display: none; }
   #close-button {
     background: #444;
     color: white;
@@ -254,14 +260,6 @@
     <div id="pifinder-access" style="display:none;"></div>
 
     <div id="choices" style="display:none;"></div>
-
-    <div id="reboot-wrap">
-      <button id="reboot-button" onclick="reboot()">Reboot Now</button>
-    </div>
-
-    <div id="close-wrap">
-      <button id="close-button" onclick="closeSetup()">Close Setup</button>
-    </div>
   </div>
 
   <div class="right-col">
@@ -270,7 +268,15 @@
       <a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">📖 Project docs</a>
       <a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">🔭 INDI / LX200 docs</a>
     </div>
-    <div id="status" class="status-idle">Checking current state&hellip;</div>
+    <div id="status-row">
+      <div id="status" class="status-idle">Checking current state&hellip;</div>
+      <div id="reboot-wrap">
+        <button id="reboot-button" onclick="reboot()">Reboot Now</button>
+      </div>
+      <div id="close-wrap">
+        <button id="close-button" onclick="closeSetup()">Close Setup</button>
+      </div>
+    </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
 
     <div id="footer-logos">
