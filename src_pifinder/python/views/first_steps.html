@@ -8,43 +8,44 @@
   </div>
 </div>
 
-<div class="card grey darken-2">
-  <div class="card-content">
-    <span class="card-title grey-text">1. {{ _('Access PiFinder Remotely') }}</span>
-    <p class="grey-text text-lighten-1">
-      {{ _('PiFinder is reachable on your network at:') }}
-    </p>
-    <ul class="grey-text text-lighten-1">
-      {% for ip in ips %}
-      <li><a href="http://{{ ip }}/remote" target="_blank" rel="noopener">{{ ip }}</a></li>
-      {% endfor %}
-    </ul>
-    <p class="grey-text text-lighten-1">
-      {{ _('Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
-    </p>
-  </div>
-</div>
+<style>
+  .first-steps-links { list-style: none; padding: 0; margin: 0.5rem 0; }
+  .first-steps-links li { padding: 0.1rem 0; }
+  .first-steps-links a { color: #7ec8ff; }
+</style>
 
-<div class="card grey darken-2">
-  <div class="card-content">
-    <span class="card-title grey-text">2. {{ _('Set up the StellarMate Web Manager') }}</span>
-    <p class="grey-text text-lighten-1">
-      {{ _('This is where the INDI drivers (PiFinder LX200, and the optional Mount Bridge if you have a motorized mount) get added to an Equipment Profile and started.') }}
-    </p>
-    <ol class="grey-text text-lighten-1">
-      <li>{{ _('Open the Web Manager (link below), create or select an Equipment Profile.') }}</li>
-      <li>{{ _('Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount).') }}</li>
-      <li>{{ _('Click Start.') }}</li>
-    </ol>
-    <p class="grey-text text-lighten-1">
-      {{ _('Full walkthrough with screenshots (Web Manager profile, INDI Control Panel, KStars/Ekos, SkySafari):') }}
-      <a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">Readme_PiFinder_LX200.md</a>
-    </p>
+<div class="row">
+  <div class="col s12 m6">
+    <div class="card grey darken-2">
+      <div class="card-content">
+        <span class="card-title grey-text">1. {{ _('Access PiFinder Remotely') }}</span>
+        <p class="grey-text text-lighten-1">{{ _('PiFinder is reachable on your network at:') }}</p>
+        <ul class="first-steps-links">
+          {% for ip in ips %}
+          <li><a href="http://{{ ip }}/remote" target="_blank" rel="noopener">{{ ip }}</a></li>
+          {% endfor %}
+        </ul>
+        <p class="grey-text text-lighten-1">
+          {{ _('Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
+        </p>
+      </div>
+    </div>
   </div>
-  <div class="card-action">
-    {% for ip in ips %}
-    <a href="http://{{ ip }}:8624" target="_blank" rel="noopener">{{ _('Web Manager') }} ({{ ip }})</a>
-    {% endfor %}
+
+  <div class="col s12 m6">
+    <div class="card grey darken-2">
+      <div class="card-content">
+        <span class="card-title grey-text">2. {{ _('Set up the StellarMate Web Manager') }}</span>
+        <img src="/images/webmanager_profile.png"
+             alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
+             style="width:100%; border-radius:4px; margin: 0.5rem 0;">
+        <ul class="first-steps-links">
+          {% for ip in ips %}
+          <li><a href="http://{{ ip }}:8624" target="_blank" rel="noopener">{{ ip }}:8624</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
