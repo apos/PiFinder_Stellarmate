@@ -12,6 +12,7 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_piFinderEqNP = m_mountEqNP = nullptr;
     m_piFinderTargetNP = nullptr;
     m_mountOnCoordSetSP = nullptr;
+    m_mountMountTypeSP = nullptr;
 
     watchDevice(m_piFinderName.c_str());
     watchDevice(m_mountName.c_str());
@@ -39,6 +40,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountEqNP = property.getNumber();
     else if (fromMount && property.isNameMatch("ON_COORD_SET"))
         m_mountOnCoordSetSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("TELESCOPE_MOUNT_TYPE"))
+        m_mountMountTypeSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
@@ -55,6 +58,8 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountEqNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
+    else if (property.getSwitch() == m_mountMountTypeSP)
+        m_mountMountTypeSP = nullptr;
 }
 
 bool PiFinderBridgeClient::getPiFinderRADE(double &ra, double &dec) const
@@ -90,6 +95,26 @@ bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
 bool PiFinderBridgeClient::isMountSlewing() const
 {
     return m_mountEqNP != nullptr && m_mountEqNP->getState() == IPS_BUSY;
+}
+
+bool PiFinderBridgeClient::getMountType(std::string &outType) const
+{
+    if (m_mountMountTypeSP == nullptr)
+        return false;
+
+    // Read by index, not by switch-item name: INDI::Telescope's own enum
+    // (inditelescope.h) fixes the order MOUNT_ALTAZ=0, MOUNT_EQ_FORK=1,
+    // MOUNT_EQ_GEM=2 for every driver derived from it - more robust than
+    // guessing the exact item-name strings a given driver used.
+    const int onIndex = m_mountMountTypeSP->findOnSwitchIndex();
+    if (onIndex == 0)
+        outType = "Alt/Az";
+    else if (onIndex == 1 || onIndex == 2)
+        outType = "EQ";
+    else
+        return false;
+
+    return true;
 }
 
 bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *coordSetName)

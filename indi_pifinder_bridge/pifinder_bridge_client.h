@@ -39,6 +39,13 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
+        // Reads the mount's own TELESCOPE_MOUNT_TYPE switch (every INDI::Telescope
+        // has it: MOUNT_ALTAZ / MOUNT_EQ_FORK / MOUNT_EQ_GEM) and maps it to
+        // PiFinder's own "Alt/Az" / "EQ" setting values. Returns false if the
+        // mount hasn't reported this property yet (not connected, or a driver
+        // that doesn't set it).
+        bool getMountType(std::string &outType) const;
+
     protected:
         void newDevice(INDI::BaseDevice dp) override;
         void newProperty(INDI::Property property) override;
@@ -54,4 +61,5 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_piFinderTargetNP = nullptr;
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
 };

@@ -13,18 +13,20 @@ include(GNUInstallDirs)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(INDI REQUIRED libindi)
+pkg_check_modules(CURL REQUIRED libcurl)
 
 add_executable(indi_pifinder_mount_bridge
     pifinder_mount_bridge.cpp
     pifinder_bridge_client.cpp
 )
 
-target_include_directories(indi_pifinder_mount_bridge PRIVATE ${INDI_INCLUDE_DIRS})
+target_include_directories(indi_pifinder_mount_bridge PRIVATE ${INDI_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS})
 target_compile_definitions(indi_pifinder_mount_bridge PRIVATE _XOPEN_SOURCE=700)
 
 target_link_libraries(indi_pifinder_mount_bridge
     indidriver
     indiclient
+    ${CURL_LIBRARIES}
 )
 
 configure_file(indi_pifinder_mount_bridge_driver.xml.in indi_pifinder_mount_bridge_driver.xml @ONLY)

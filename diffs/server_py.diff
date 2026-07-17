@@ -1,5 +1,5 @@
---- python/PiFinder/server.py.orig
-+++ python/PiFinder/server.py
+--- python/PiFinder/server.py.orig	2026-07-17 17:55:04.529701665 +0200
++++ python/PiFinder/server.py	2026-07-17 17:52:16.074293407 +0200
 @@ -241,7 +241,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
@@ -11,3 +11,40 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
+@@ -260,7 +262,7 @@
+                 origin_url = request.form.get("origin_url") or session.get(
+                     "origin_url", "/"
+                 )
+-                if sys_utils.verify_password("pifinder", password):
++                if sys_utils.verify_password("stellarmate", password):
+                     session["authenticated"] = True
+                     session.pop("origin_url", None)
+                     return redirect(origin_url)
+@@ -522,6 +524,27 @@
+             self.network.set_host_name(host_name)
+             return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
+ 
++        @app.route("/api/set_mount_type", methods=["POST"])
++        def api_set_mount_type():
++            # Called by the PiFinder Mount Bridge INDI driver (StellarMate
++            # integration) to keep PiFinder's own Mount Type setting in sync
++            # with whatever real INDI mount is currently connected. Local
++            # machine-to-machine call, not a browser session - no @auth_required,
++            # restricted to loopback instead.
++            if request.remote_addr not in ("127.0.0.1", "::1"):
++                return jsonify({"error": "forbidden"}), 403
++
++            payload = request.get_json(silent=True) or {}
++            mount_type = request.form.get("mount_type") or payload.get("mount_type")
++            if mount_type not in ("EQ", "Alt/Az"):
++                return jsonify({"error": "mount_type must be 'EQ' or 'Alt/Az'"}), 400
++
++            cfg = config.Config()
++            cfg.load_config()
++            cfg.set_option("mount_type", mount_type)
++            self.ui_queue.put("reload_config")
++            return jsonify({"ok": True, "mount_type": mount_type})
++
+         @app.route("/tools/pwchange", methods=["POST"])
+         @auth_required
+         def password_change():

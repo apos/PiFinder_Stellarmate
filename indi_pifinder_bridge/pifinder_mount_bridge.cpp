@@ -6,7 +6,41 @@
 #include <cstring>
 #include <memory>
 
+#include <curl/curl.h>
+
 static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBridge());
+
+namespace
+{
+// Single-threaded INDI driver (TimerHit callback style) - no explicit
+// curl_global_init() needed, curl_easy_init() does it lazily on first use.
+bool httpPostMountType(const std::string &url, const std::string &mountType)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    const std::string body = R"({"mount_type":")" + mountType + R"("})";
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && httpCode == 200;
+}
+} // namespace
 
 PiFinderMountBridge::PiFinderMountBridge()
 {
@@ -136,10 +170,32 @@ bool PiFinderMountBridge::Disconnect()
     return true;
 }
 
+void PiFinderMountBridge::syncMountTypeToPiFinder()
+{
+    std::string mountType;
+    if (!m_client || !m_client->getMountType(mountType))
+        return;
+
+    if (mountType == m_lastSyncedMountType)
+        return;
+
+    // PiFinder's web server falls back to 8080 if port 80 is already taken
+    // (e.g. StellarMate's own nginx/dashboard) - same probe order the
+    // gui_installer status page already uses for its OLED mirror.
+    if (httpPostMountType("http://127.0.0.1/api/set_mount_type", mountType) ||
+        httpPostMountType("http://127.0.0.1:8080/api/set_mount_type", mountType))
+    {
+        LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
+        m_lastSyncedMountType = mountType;
+    }
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
         return;
+
+    syncMountTypeToPiFinder();
 
     if (BridgeModeS[MODE_OFF].s == ISS_ON || !m_client->isReady())
     {

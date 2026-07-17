@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <memory>
+#include <string>
 
 class PiFinderBridgeClient;
 
@@ -43,6 +44,14 @@ class PiFinderMountBridge : public INDI::DefaultDevice
     private:
         void applyMode();
         double angularSeparationArcmin(double ra1, double dec1, double ra2, double dec2) const;
+
+        // Pushes the active mount's TELESCOPE_MOUNT_TYPE (Alt/Az vs EQ) to
+        // PiFinder's own Mount Type setting via HTTP, independent of
+        // BridgeModeSP - this should stay in sync regardless of which
+        // coupling mode (or Off) is selected. No-op if unchanged since the
+        // last successful push, or if the mount hasn't reported it yet.
+        void syncMountTypeToPiFinder();
+        std::string m_lastSyncedMountType;
 
         std::unique_ptr<PiFinderBridgeClient> m_client;
 

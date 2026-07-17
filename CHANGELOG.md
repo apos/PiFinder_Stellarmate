@@ -7,6 +7,16 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Automatic Mount Type sync**: the PiFinder Mount Bridge now reads the active INDI mount's own
+  `TELESCOPE_MOUNT_TYPE` property (Alt/Az, EQ fork, or EQ GEM - every `INDI::Telescope`-derived
+  driver exposes this) and pushes the matching value to PiFinder's own "Mount Type" setting via a
+  new `POST /api/set_mount_type` endpoint in `server.py` (loopback-only, triggers PiFinder's
+  existing `reload_config` live-reload mechanism - the same one every other web-UI setting change
+  already uses). No more manually keeping PiFinder's own Alt/Az-vs-EQ setting in sync with
+  whatever real mount is connected. Works independent of the bridge's coupling mode (including
+  Off), only re-pushes on an actual change. Verified end-to-end against `indi_simulator_telescope`
+  (both Alt/Az and EQ, live config.json update confirmed) — see basic-memory
+  pifinder-stellarmate/00017.
 - **Comprehensive IP address display**: the Web UI home page and the OLED status screen now show
   every non-loopback IPv4 address (WiFi, wired LAN, WireGuard/VPN, etc.) instead of just the one
   address the OS happens to pick for outbound traffic. Implemented via a new `Network.all_ips()`
