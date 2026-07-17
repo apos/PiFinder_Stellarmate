@@ -75,4 +75,6 @@ else
     fi
 fi
 
+echo "   Zum Beenden: $0 --shutdown-webserver"
+
 xdg-open "http://localhost:${PORT}/" >/dev/null 2>&1 &

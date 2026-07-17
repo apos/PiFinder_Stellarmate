@@ -29,7 +29,7 @@
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
   #top-images {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 1rem;
     margin-bottom: 1rem;
   }
@@ -87,7 +87,6 @@
     padding: 0.5rem 0.8rem;
     border-radius: 6px;
     display: inline-block;
-    margin-bottom: 1rem;
   }
   .status-idle { background: #333; color: #ccc; }
   .status-running { background: #1a3a5c; color: #7ec8ff; }
@@ -115,6 +114,10 @@
   #choices button.danger { background: #a33; }
   #choices button.cancel { background: #444; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
+  #log.log-placeholder {
+    color: #666;
+    font-style: italic;
+  }
   #log {
     background: #000;
     color: #b8f0b8;
@@ -226,6 +229,7 @@
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+      <div id="status" class="status-idle">Checking current state&hellip;</div>
     </div>
 
     <div class="subtitle" id="subtitle">live status</div>
@@ -236,8 +240,6 @@
     </div>
 
     <ul id="phase-checklist" style="display:none;"></ul>
-
-    <div id="status" class="status-idle">Checking current state&hellip;</div>
 
     <div id="pifinder-access" style="display:none;"></div>
 
@@ -258,7 +260,7 @@
       <a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">📖 Project docs</a>
       <a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">🔭 INDI / LX200 docs</a>
     </div>
-    <pre id="log" style="display:none;"></pre>
+    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
 
     <div id="footer-logos">
       <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
@@ -425,6 +427,7 @@ async function start(action) {
   logPosition = 0;
   const logEl = document.getElementById('log');
   logEl.textContent = '';
+  logEl.classList.remove('log-placeholder');
   logEl.style.display = 'block';
   if (!polling) {
     polling = true;
@@ -474,6 +477,7 @@ async function pollLog() {
   const data = await resp.json();
   if (data.lines.length > 0) {
     const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
     const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
     logEl.textContent += data.lines.join('\n') + '\n';
     logPosition = data.position;

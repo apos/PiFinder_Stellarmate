@@ -158,12 +158,14 @@ Webserver gestartet.
    Setup-GUI erreichbar unter:
      http://192.168.0.105:8765/
      http://10.250.250.1:8765/
+   Zum Beenden: gui_installer/launch_setup_gui.sh --shutdown-webserver
 
 $ bash gui_installer/launch_setup_gui.sh
 Setup-GUI-Webserver läuft bereits.
    Setup-GUI erreichbar unter:
      http://192.168.0.105:8765/
      http://10.250.250.1:8765/
+   Zum Beenden: gui_installer/launch_setup_gui.sh --shutdown-webserver
 ```
 To stop the background web server again:
 ```bash
