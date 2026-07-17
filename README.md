@@ -149,6 +149,27 @@ or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon.
 the same installer underneath — useful mainly if you're repeating installs/reinstalls often (e.g.
 while testing).
 
+The launcher is idempotent and always prints where things stand — running it again while the
+server is already up just reports that instead of starting a second one:
+```
+$ bash gui_installer/launch_setup_gui.sh
+Starte Setup-GUI-Webserver...
+Webserver gestartet.
+   Setup-GUI erreichbar unter:
+     http://192.168.0.105:8765/
+     http://10.250.250.1:8765/
+
+$ bash gui_installer/launch_setup_gui.sh
+Setup-GUI-Webserver läuft bereits.
+   Setup-GUI erreichbar unter:
+     http://192.168.0.105:8765/
+     http://10.250.250.1:8765/
+```
+To stop the background web server again:
+```bash
+bash gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
 <table>
 <tr>
 <td align="center" width="50%">
