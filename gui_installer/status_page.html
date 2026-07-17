@@ -87,6 +87,7 @@
     padding: 0.5rem 0.8rem;
     border-radius: 6px;
     display: inline-block;
+    margin-bottom: 0.6rem;
   }
   .status-idle { background: #333; color: #ccc; }
   .status-running { background: #1a3a5c; color: #7ec8ff; }
@@ -218,18 +219,27 @@
   }
   #footer-logos:hover { opacity: 1; }
   #footer-logos img { height: 78px; width: auto; display: block; }
+  #conn-lost-banner {
+    background: #5c1a1a;
+    color: #ff8f8f;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
 </style>
 </head>
 <body>
 
 <h1>PiFinder on Stellarmate Setup</h1>
 
+<div id="conn-lost-banner" style="display:none;"></div>
+
 <div class="page">
   <div class="left-col">
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
-      <div id="status" class="status-idle">Checking current state&hellip;</div>
     </div>
 
     <div class="subtitle" id="subtitle">live status</div>
@@ -260,6 +270,7 @@
       <a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">📖 Project docs</a>
       <a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">🔭 INDI / LX200 docs</a>
     </div>
+    <div id="status" class="status-idle">Checking current state&hellip;</div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
 
     <div id="footer-logos">
@@ -435,18 +446,53 @@ async function start(action) {
   }
 }
 
+// Set once the setup-GUI webserver itself becomes unreachable (e.g. the Pi
+// actually reboots, or the server was stopped) - as opposed to PiFinder
+// merely being slow to come back up, which the OLED-mirror probe already
+// handles on its own. Nothing here restarts the server automatically, so
+// once this fires the page is just a frozen snapshot until reloaded against
+// a freshly (re-)started server.
+let serverConnectionLost = false;
+
+function showServerLostBanner() {
+  if (serverConnectionLost) return;
+  serverConnectionLost = true;
+  const banner = document.getElementById('conn-lost-banner');
+  banner.textContent = '⚠ Connection to the setup webserver was lost (the Pi is rebooting, or the ' +
+    'server was stopped). This page now only shows the last known state - once the Pi is back up, ' +
+    'reload the page or run launch_setup_gui.sh again.';
+  banner.style.display = 'block';
+}
+
+async function watchForServerLoss() {
+  if (serverConnectionLost) return;
+  try {
+    await fetch('/state', { cache: 'no-store' });
+    setTimeout(watchForServerLoss, 2000);
+  } catch (e) {
+    showServerLostBanner();
+  }
+}
+
 async function reboot() {
   if (!confirm('Reboot the Pi now?')) return;
   const btn = document.getElementById('reboot-button');
   btn.disabled = true;
   btn.textContent = 'Rebooting…';
-  const resp = await fetch('/reboot', { method: 'POST' });
-  const data = await resp.json();
-  if (!data.rebooting) {
-    btn.disabled = false;
-    btn.textContent = 'Reboot Now';
-    alert('Could not reboot: ' + (data.error || 'unknown error'));
+  try {
+    const resp = await fetch('/reboot', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.rebooting) {
+      btn.disabled = false;
+      btn.textContent = 'Reboot Now';
+      alert('Could not reboot: ' + (data.error || 'unknown error'));
+      return;
+    }
+  } catch (e) {
+    // Network error here can also mean the server went down right as it
+    // accepted the request - treat it the same as a confirmed reboot.
   }
+  watchForServerLoss();
 }
 
 async function closeSetup() {
@@ -473,8 +519,17 @@ async function closeSetup() {
 }
 
 async function pollLog() {
-  const resp = await fetch('/log?position=' + logPosition);
-  const data = await resp.json();
+  let data;
+  try {
+    const resp = await fetch('/log?position=' + logPosition);
+    data = await resp.json();
+  } catch (e) {
+    // Server went away mid-run (e.g. the Pi rebooted unexpectedly) -
+    // stop polling and tell the user this view is now frozen.
+    polling = false;
+    showServerLostBanner();
+    return;
+  }
   if (data.lines.length > 0) {
     const logEl = document.getElementById('log');
     logEl.classList.remove('log-placeholder');
