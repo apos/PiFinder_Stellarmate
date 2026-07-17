@@ -10,15 +10,18 @@
 
 <div class="card grey darken-2">
   <div class="card-content">
-    <span class="card-title grey-text">1. {{ _('Configure PiFinder') }}</span>
+    <span class="card-title grey-text">1. {{ _('Access PiFinder Remotely') }}</span>
     <p class="grey-text text-lighten-1">
-      {{ _('Set your location (if not using GPS), add your telescope/eyepiece equipment, and check the software version.') }}
+      {{ _('PiFinder is reachable on your network at:') }}
     </p>
-  </div>
-  <div class="card-action">
-    <a href="/locations">{{ _('Locations') }}</a>
-    <a href="/equipment">{{ _('Equipment') }}</a>
-    <a href="/">{{ _('Home') }}</a>
+    <ul class="grey-text text-lighten-1">
+      {% for ip in ips %}
+      <li><a href="http://{{ ip }}/remote" target="_blank" rel="noopener">{{ ip }}</a></li>
+      {% endfor %}
+    </ul>
+    <p class="grey-text text-lighten-1">
+      {{ _('Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
+    </p>
   </div>
 </div>
 
