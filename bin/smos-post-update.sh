@@ -5,10 +5,15 @@
 # damit SD und externer Storage sich beim gleichzeitigen Betrieb nicht in die Quere kommen.
 #
 # Verwendung:
-#   sudo ./smos-post-update.sh                    – normaler Post-Update-Lauf (von NVMe/SSD oder SD)
-#   sudo ./smos-post-update.sh --updatesd         – Post-Update + SD-Karte aktualisieren (nur ext. Boot)
-#   sudo ./smos-post-update.sh --updatenvme_memory – Memory-Sync SD → ext. Storage (nur SD-Boot)
-#   sudo ./smos-post-update.sh --sync-memory      – basic-memory + .claude ↔ Nextcloud (rclone bisync)
+#   sudo ./smos-post-update.sh                          – normaler Post-Update-Lauf (von NVMe/SSD oder SD)
+#   sudo ./smos-post-update.sh --enable-dual-boot-sd-nvme
+#                                                          – zusaetzlich: UUID-Fixup + _NVE/_NVM-Label-Rename.
+#                                                            NUR wenn SD UND NVMe/SSD gleichzeitig als
+#                                                            Boot-Medien genutzt werden - Standard-Installationen
+#                                                            brauchen das nicht und sollten es NICHT setzen!
+#   sudo ./smos-post-update.sh --updatesd               – Post-Update + SD-Karte aktualisieren (nur ext. Boot)
+#   sudo ./smos-post-update.sh --updatenvme_memory       – Memory-Sync SD → ext. Storage (nur SD-Boot)
+#   sudo ./smos-post-update.sh --sync-memory            – basic-memory + .claude ↔ Nextcloud (rclone bisync)
 #
 # Unterstützte Hardware:
 #   Pi5: NVMe via PCIe (/dev/nvme0n1) – Labels _NVE, PCIe Gen3 config
@@ -25,11 +30,13 @@ fi
 UPDATE_SD=0
 UPDATE_NVME_MEMORY=0
 SYNC_MEMORY=0
+DUAL_BOOT=0
 for arg in "$@"; do
     case "$arg" in
         --updatesd)           UPDATE_SD=1 ;;
         --updatenvme_memory)  UPDATE_NVME_MEMORY=1 ;;
         --sync-memory)        SYNC_MEMORY=1 ;;
+        --enable-dual-boot-sd-nvme)          DUAL_BOOT=1 ;;
     esac
 done
 
@@ -270,14 +277,22 @@ install_extra_packages() {
 }
 
 restore_wireguard() {
-    if [ "$BOOT_FROM_NVME" -eq 0 ]; then
-        echo ">> WireGuard Restore: übersprungen (SD-Boot – nur auf NVMe sinnvoll)"
+    local service="wg-nethserver-client"
+    local backup_file="/home/stellarmate/bin/backup_files/${service}.service"
+
+    # Bei SD-Boot zeigt NVME_FSTAB auf das temporaer gemountete NVMe-Subvolume
+    # (${NVME_ROOT_TMP}/${nvme_subvol}/etc/fstab), bei NVMe-Boot einfach auf
+    # /etc/fstab -> Praefix-Trick liefert in beiden Faellen den richtigen "etc"-Ort,
+    # analog zu restore_file()/fix_uuids(). Frueher wurde dieser ganze Schritt bei
+    # SD-Boot uebersprungen - genau der Fall, in dem die NVMe-/etc nach einem
+    # fehlgeschlagenen Update-Reboot repariert werden muss (Snapshot-Wechsel kann
+    # manuell angelegte /etc-Dateien wie diesen Service verlieren).
+    if [ -z "$NVME_FSTAB" ]; then
+        echo "!! WireGuard Restore: übersprungen (NVMe-Subvolume nicht ermittelbar)"
         return 0
     fi
-
-    local service="wg-nethserver-client"
-    local service_file="/etc/systemd/system/${service}.service"
-    local backup_file="/home/stellarmate/bin/backup_files/${service}.service"
+    local etc_prefix="${NVME_FSTAB%/etc/fstab}"
+    local service_file="${etc_prefix}/etc/systemd/system/${service}.service"
 
     # Service aus Backup wiederherstellen falls fehlt
     if [ ! -f "$service_file" ]; then
@@ -285,12 +300,26 @@ restore_wireguard() {
         echo "   Quelle:  $backup_file"
         echo "   Ziel:    $service_file"
         cp "$backup_file" "$service_file"
-        systemctl daemon-reload
-        systemctl enable --now "${service}.service"
-        echo ">> Service wiederhergestellt, aktiviert und gestartet."
+        if [ "$BOOT_FROM_NVME" -eq 1 ]; then
+            systemctl daemon-reload
+            systemctl enable --now "${service}.service"
+            echo ">> Service wiederhergestellt, aktiviert und gestartet."
+        else
+            if systemctl --root="$etc_prefix" enable "${service}.service" 2>/dev/null; then
+                echo ">> Service wiederhergestellt und fuer den naechsten NVMe-Boot aktiviert (offline via --root)."
+            else
+                echo "!! Service-Datei wiederhergestellt, 'systemctl --root enable' schlug fehl."
+                echo "   Nach dem naechsten NVMe-Boot manuell: sudo systemctl enable --now ${service}.service"
+            fi
+        fi
     else
         echo ">> Service-File: vorhanden"
         echo "   Pfad:  $service_file"
+    fi
+
+    if [ "$BOOT_FROM_NVME" -eq 0 ]; then
+        echo ">> Live-Status übersprungen (SD-Boot, NVMe-System läuft nicht)"
+        return 0
     fi
 
     if systemctl is-active --quiet "${service}.service"; then
@@ -635,17 +664,24 @@ restore_file /boot/cmdline.txt
 restore_file /boot/config.txt
 restore_file /etc/pacman.conf
 
-echo ""
-echo "=== UUID-Fixup ==="
-fix_uuids
+if [ "$DUAL_BOOT" -eq 1 ]; then
+    echo ""
+    echo "=== UUID-Fixup ==="
+    fix_uuids
+else
+    echo ""
+    echo "=== UUID-Fixup / Label-Rename: übersprungen (kein --enable-dual-boot-sd-nvme) ==="
+fi
 
 echo ""
 echo "=== NVMe Config-Fixup ==="
 fix_nvme_config
 
-echo ""
-echo "=== NVMe Label-Rename ==="
-rename_nvme_labels
+if [ "$DUAL_BOOT" -eq 1 ]; then
+    echo ""
+    echo "=== NVMe Label-Rename ==="
+    rename_nvme_labels
+fi
 
 echo ""
 echo "=== Extra-Pakete ==="
