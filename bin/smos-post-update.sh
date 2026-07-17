@@ -16,6 +16,12 @@
 
 set -e
 
+if [ "$EUID" -ne 0 ]; then
+    echo "!! Dieses Skript benoetigt Root-Rechte (blkid/fstab/config.txt/pacman brauchen root)."
+    echo "   Bitte mit sudo starten: sudo bash $(basename "$0") $*"
+    exit 1
+fi
+
 UPDATE_SD=0
 UPDATE_NVME_MEMORY=0
 SYNC_MEMORY=0
@@ -525,14 +531,51 @@ update_nvme_memory() {
 sync_memory() {
     local RCLONE_REMOTE="nextcloud:basic-memory"
     local LOCAL_MEMORY="/home/stellarmate/basic-memory"
+    local RCLONE_CONF="/home/stellarmate/.config/rclone/rclone.conf"
+    local RCLONE_BACKUP="/home/stellarmate/bin/backup_files/rclone.conf"
     local BISYNC_FLAG=""
 
+    # rclone installieren falls fehlt
     if ! command -v rclone &>/dev/null; then
-        echo "!! rclone nicht gefunden – bitte installieren: sudo pacman -S rclone"
-        return 1
+        echo ">> rclone nicht gefunden – wird installiert..."
+        local tmp_conf
+        tmp_conf=$(mktemp)
+        cat /etc/pacman.conf > "$tmp_conf"
+        if ! grep -q '^\[extra\]' "$tmp_conf"; then
+            printf '\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n' >> "$tmp_conf"
+        fi
+        if pacman -Sy --noconfirm --config "$tmp_conf" rclone; then
+            echo ">> rclone: installiert."
+        else
+            echo "!! rclone: Installation fehlgeschlagen – bitte manuell: sudo pacman -S rclone"
+            rm -f "$tmp_conf"
+            return 1
+        fi
+        rm -f "$tmp_conf"
+    else
+        echo ">> rclone: vorhanden."
     fi
 
-    if ! rclone lsd "$RCLONE_REMOTE" --max-depth 0 &>/dev/null; then
+    # rclone.conf wiederherstellen falls fehlt
+    if [ ! -f "$RCLONE_CONF" ]; then
+        if [ -f "$RCLONE_BACKUP" ]; then
+            echo ">> rclone.conf fehlt – wird aus Backup wiederhergestellt..."
+            mkdir -p "$(dirname "$RCLONE_CONF")"
+            cp "$RCLONE_BACKUP" "$RCLONE_CONF"
+            chmod 600 "$RCLONE_CONF"
+            echo ">> rclone.conf: wiederhergestellt."
+        else
+            echo "!! rclone.conf fehlt und kein Backup unter $RCLONE_BACKUP"
+            echo "   Bitte manuell konfigurieren: rclone config"
+            return 1
+        fi
+    fi
+
+    # Als User "stellarmate" ausfuehren (nicht als root): rclone sucht Config UND
+    # bisync-State-Cache relativ zu $HOME. Unter sudo/root waere das /root/... statt
+    # /home/stellarmate/... - Config faende sich per --config noch, der bisync-State
+    # (~/.cache/rclone/bisync) aber nicht, was einen unnoetigen --resync erzwingen wuerde.
+    if ! sudo -u stellarmate rclone lsd "$RCLONE_REMOTE" --max-depth 0 &>/dev/null; then
         echo "!! Nextcloud nicht erreichbar oder Remote 'nextcloud' nicht konfiguriert"
         echo "   Setup: rclone config (WebDAV, https://nextcloud.blue-it.org/remote.php/webdav/, vendor=other)"
         return 1
@@ -546,7 +589,7 @@ sync_memory() {
     fi
 
     echo ">> basic-memory bisync: lokal ↔ Nextcloud ..."
-    if rclone bisync "$LOCAL_MEMORY" "$RCLONE_REMOTE" \
+    if sudo -u stellarmate rclone bisync "$LOCAL_MEMORY" "$RCLONE_REMOTE" \
         --size-only \
         --exclude ".obsidian/**" \
         --create-empty-src-dirs \
