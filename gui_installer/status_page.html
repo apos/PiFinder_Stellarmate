@@ -161,14 +161,18 @@
     cursor: pointer;
   }
   #close-button:hover { filter: brightness(1.3); }
+  #top-tiles-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
   #quick-links-tile {
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
-    margin-bottom: 1rem;
     font-size: 0.82rem;
-    display: inline-block;
   }
   #pifinder-status-line { font-weight: bold; margin-bottom: 0.5rem; }
   .ql-section { margin-top: 0.4rem; }
@@ -242,7 +246,6 @@
   <div class="left-col">
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
-      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
     </div>
 
     <div class="subtitle" id="subtitle">live status</div>
@@ -260,11 +263,14 @@
   </div>
 
   <div class="right-col">
-    <div id="quick-links-tile">
-      <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
-      <div class="ql-section"><span class="ql-label">First Steps:</span><span id="wizard-link">not available yet</span></div>
-      <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
-      <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+    <div id="top-tiles-row">
+      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+      <div id="quick-links-tile">
+        <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
+        <div class="ql-section"><span class="ql-label">First Steps:</span><span id="wizard-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
+        <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+      </div>
     </div>
     <div id="status-row">
       <div id="status" class="status-idle">Checking current state&hellip;</div>
@@ -361,7 +367,7 @@ function updatePiFinderStatusAndWizardLink() {
   if (pifinderScreenUrl) {
     statusEl.textContent = '🟢 PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
-    wizardEl.innerHTML = `<a href="${base}/first-steps" target="_blank" rel="noopener">Open guide</a>`;
+    wizardEl.innerHTML = `<a href="${base}/first-steps" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a>`;
   } else {
     statusEl.textContent = '⚪ PiFinder not detected yet';
     wizardEl.textContent = 'not available yet';
