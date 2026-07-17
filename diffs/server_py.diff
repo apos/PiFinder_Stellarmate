@@ -1,6 +1,17 @@
---- python/PiFinder/server.py.orig	2026-07-17 18:18:57.794371556 +0200
-+++ python/PiFinder/server.py	2026-07-17 18:17:33.779183440 +0200
-@@ -241,7 +241,9 @@
+--- python/PiFinder/server.py.orig	2026-07-17 18:43:45.077991392 +0200
++++ python/PiFinder/server.py	2026-07-17 18:42:56.926028991 +0200
+@@ -105,6 +105,10 @@
+         self.gps_queue = gps_queue or multiprocessing.Queue()
+         self.shared_state = shared_state or MockSharedState()
+         self.ki = KeyboardInterface()
++        # Actual bound port - run() sets this to 80 or 8080 depending on
++        # which one it managed to grab. Defaults to 80 so routes that read
++        # it (e.g. first_steps()) don't fail if called before run().
++        self.port = 80
+         # gps info
+         self.lat = None
+         self.lon = None
+@@ -241,7 +245,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
                  wifi_mode=self.network.wifi_mode(),
@@ -11,7 +22,7 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -252,6 +254,13 @@
+@@ -252,6 +258,14 @@
                  dec_text=dec_text,
              )
  
@@ -20,12 +31,13 @@
 +            return app.jinja_env.get_template("first_steps.html").render(
 +                title=_("First Steps"),
 +                ips=self.network.all_ips(),
++                port=self.port,
 +            )
 +
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -260,7 +269,7 @@
+@@ -260,7 +274,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -34,7 +46,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -522,6 +531,27 @@
+@@ -522,6 +536,27 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -62,3 +74,17 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
+@@ -1218,11 +1253,13 @@
+         # If the PiFinder software is running as a service
+         # it can grab port 80.  If not, it needs to use 8080
+         try:
++            self.port = 80
+             waitress_serve(self.app, host="0.0.0.0", port=80)
+             logger.info("Webserver started on port 80")
+         except (PermissionError, OSError) as e:
+             logger.debug(f"Permission denied on port 80, trying 8080. {e}")
+             try:
++                self.port = 8080
+                 waitress_serve(self.app, host="0.0.0.0", port=8080)
+                 logger.info("Webserver started on port 8080")
+             except Exception as e2:

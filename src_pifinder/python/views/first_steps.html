@@ -19,15 +19,14 @@
     <div class="card grey darken-2">
       <div class="card-content">
         <span class="card-title grey-text">1. {{ _('Access PiFinder Remotely') }}</span>
-        <p class="grey-text text-lighten-1">{{ _('PiFinder is reachable on your network at:') }}</p>
+        <p class="grey-text text-lighten-1">
+          {{ _('PiFinder is reachable on your network. Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
+        </p>
         <ul class="first-steps-links">
           {% for ip in ips %}
-          <li><a href="http://{{ ip }}/remote" target="_blank" rel="noopener">{{ ip }}</a></li>
+          <li><a href="http://{{ ip }}:{{ port }}/remote" target="_blank" rel="noopener">{{ ip }}{% if port != 80 %}:{{ port }}{% endif %}</a></li>
           {% endfor %}
         </ul>
-        <p class="grey-text text-lighten-1">
-          {{ _('Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
-        </p>
       </div>
     </div>
   </div>
@@ -39,6 +38,9 @@
         <img src="/images/webmanager_profile.png"
              alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
              style="width:100%; border-radius:4px; margin: 0.5rem 0;">
+        <p class="grey-text text-lighten-1">
+          {{ _('Open the Web Manager (links below), create or select an Equipment Profile. Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount), then click Start.') }}
+        </p>
         <ul class="first-steps-links">
           {% for ip in ips %}
           <li><a href="http://{{ ip }}:8624" target="_blank" rel="noopener">{{ ip }}:8624</a></li>
