@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Setup Wizard control + auto idle-shutdown**: card 3 on `/first-steps` shows whether the Setup
+  GUI webserver is running and lets you start/stop it from the browser (no SSH needed) - status/stop
+  via cross-origin fetches to its existing `/state`/`/shutdown` routes (now CORS-enabled), start via
+  a new `POST /api/setup_gui/start` in `server.py` that spawns `launch_setup_gui.sh`. The Setup GUI
+  webserver also now shuts itself down automatically after 60s of no requests at all, since it has
+  no login and can trigger destructive actions.
 - **"First Steps" page** (`/first-steps`, new nav link): a dedicated checklist for what to do right
   after a fresh install or a reboot, as two side-by-side cards. Card 1 lists every detected network
   address, each linking straight to the Remote page (default password `smate`) so PiFinder can be
