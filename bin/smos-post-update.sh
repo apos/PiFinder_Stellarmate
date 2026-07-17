@@ -333,6 +333,17 @@ update_sd() {
         echo ">> SD-Partitionen werden ausgehängt..."
         umount "$MNT_SD_BOOT"   2>/dev/null || true
         umount "$MNT_SD_BTRFS"  2>/dev/null || true
+
+        # Zusaetzliche Mounts derselben Geraete aushaengen (z.B. Desktop-Automount
+        # via udisks2, das beim Einstecken der Karte unabhaengig vom Skript unter
+        # /run/media/... mountet) - sonst ist die Karte trotz "SD-Update abgeschlossen"
+        # noch belegt und laesst sich nicht sicher entnehmen.
+        local dev extra_mnt
+        for dev in "$SD_BOOT_DEV" "$SD_ROOT_DEV"; do
+            while read -r extra_mnt; do
+                [ -n "$extra_mnt" ] && umount "$extra_mnt" 2>/dev/null
+            done < <(findmnt -n -o TARGET -S "$dev" 2>/dev/null)
+        done
     }
     trap _cleanup_sd EXIT
 
