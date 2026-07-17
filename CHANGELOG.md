@@ -7,12 +7,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
-- **"First Steps" page** (`/first-steps`, new nav link): a dedicated checklist for what to do
-  right after a fresh install or a reboot — configure PiFinder itself (location, equipment) and
-  set up the StellarMate Web Manager (add the PiFinder LX200 / Mount Bridge INDI drivers, start
-  the profile), with direct links and a pointer to the full `Readme_PiFinder_LX200.md` walkthrough.
-  Lives in PiFinder's own webserver (unlike the ephemeral Setup GUI, it survives a reboot without
-  needing to be manually relaunched) and needs no login, matching the Home page.
+- **"First Steps" page** (`/first-steps`, new nav link): a dedicated checklist for what to do right
+  after a fresh install or a reboot, as two side-by-side cards. Card 1 lists every detected network
+  address, each linking straight to the Remote page (default password `smate`) so PiFinder can be
+  driven from a browser. Card 2 shows the bundled StellarMate Web Manager setup screenshot plus
+  direct links to it on every detected address, with a pointer to the full
+  `Readme_PiFinder_LX200.md` walkthrough for adding the PiFinder LX200 / Mount Bridge INDI drivers.
+  All links open in a new tab. Lives in PiFinder's own webserver (unlike the ephemeral Setup GUI,
+  it survives a reboot without needing to be manually relaunched) and needs no login, matching the
+  Home page.
 - **Automatic Mount Type sync**: the PiFinder Mount Bridge now reads the active INDI mount's own
   `TELESCOPE_MOUNT_TYPE` property (Alt/Az, EQ fork, or EQ GEM - every `INDI::Telescope`-derived
   driver exposes this) and pushes the matching value to PiFinder's own "Mount Type" setting via a
