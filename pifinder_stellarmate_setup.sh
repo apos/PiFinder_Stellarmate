@@ -212,6 +212,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
                 find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/first_steps.html" "${pifinder_home}/PiFinder/python/views/"
                 ;;
             2)
                 sudo systemctl stop pifinder
@@ -223,6 +224,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/PiFinder/gps_stellarmate.py" "${pifinder_home}/PiFinder/python/PiFinder/"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/first_steps.html" "${pifinder_home}/PiFinder/python/views/"
                 ;;
             3)
                 echo "ℹ️  Installation cancelled by user."

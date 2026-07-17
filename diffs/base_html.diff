@@ -1,6 +1,6 @@
---- python/views/base.html.orig
-+++ python/views/base.html
-@@ -16,7 +16,7 @@
+--- python/views/base.html.orig	2026-07-17 18:18:57.830371158 +0200
++++ python/views/base.html	2026-07-17 18:17:16.511312316 +0200
+@@ -16,23 +16,25 @@
        <ul class="right hide-on-med-and-down">
          <li><a href="/">{{ _('Home') }}</a></li>
          <li><a href="/remote">{{ _('Remote') }}</a></li>
@@ -9,7 +9,11 @@
          <li><a href="/observations">{{ _('Observations') }}</a></li>
          <li><a href="/locations">{{ _('Locations') }}</a></li>
          <li><a href="/equipment">{{ _('Equipment') }}</a></li>
-@@ -27,7 +27,7 @@
+         <li><a href="/tools">{{ _('Tools') }}</a></li>
+         <li><a href="/logs">{{ _('Logs') }}</a></li>
++        <li><a href="/first-steps">{{ _('First Steps') }}</a></li>
+       </ul>
+ 
        <ul id="nav-mobile" class="sidenav">
          <li><a href="/">{{ _('Home') }}</a></li>
          <li><a href="/remote">{{ _('Remote') }}</a></li>
@@ -18,3 +22,9 @@
          <li><a href="/observations">{{ _('Observations') }}</a></li>
          <li><a href="/locations">{{ _('Locations') }}</a></li>
          <li><a href="/equipment">{{ _('Equipment') }}</a></li>
+         <li><a href="/tools">{{ _('Tools') }}</a></li>
+         <li><a href="/logs">{{ _('Logs') }}</a></li>
++        <li><a href="/first-steps">{{ _('First Steps') }}</a></li>
+       </ul>
+       <a href="#" data-target="nav-mobile" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+     </div>

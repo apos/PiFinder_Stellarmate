@@ -1,5 +1,5 @@
---- python/PiFinder/server.py.orig	2026-07-17 17:55:04.529701665 +0200
-+++ python/PiFinder/server.py	2026-07-17 17:52:16.074293407 +0200
+--- python/PiFinder/server.py.orig	2026-07-17 18:18:57.794371556 +0200
++++ python/PiFinder/server.py	2026-07-17 18:17:33.779183440 +0200
 @@ -241,7 +241,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
@@ -11,7 +11,21 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -260,7 +262,7 @@
+@@ -252,6 +254,13 @@
+                 dec_text=dec_text,
+             )
+ 
++        @app.route("/first-steps")
++        def first_steps():
++            return app.jinja_env.get_template("first_steps.html").render(
++                title=_("First Steps"),
++                ips=self.network.all_ips(),
++            )
++
+         @app.route("/login", methods=["GET", "POST"])
+         def login():
+             if request.method == "POST":
+@@ -260,7 +269,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -20,7 +34,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -522,6 +524,27 @@
+@@ -522,6 +531,27 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
