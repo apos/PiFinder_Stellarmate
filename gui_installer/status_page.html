@@ -300,6 +300,10 @@ let polling = false;
 let phaseLabels = [];
 let knownIps = [];
 let setupSucceeded = false;
+// Cancel is only ever offered on the existing-install choice screen, so this
+// is always true by the time a "Cancelled" status needs to re-show it - but
+// keep it in sync with what /state actually reports, not just assumed.
+let existingInstallKnown = true;
 
 function setStatus(text, cls) {
   const el = document.getElementById('status');
@@ -576,7 +580,12 @@ async function pollLog() {
     setStatus('Running…', 'status-running');
     setTimeout(pollLog, 1000);
   } else {
-    if (data.exit_code === 0) {
+    if (data.exit_code === 0 && data.action === 'cancel') {
+      // Cancel exits 0 too (nothing went wrong) but nothing was installed -
+      // showing "Success" + PiFinder-ready links here would be misleading.
+      setStatus('Cancelled', 'status-idle');
+      showChoices(existingInstallKnown);
+    } else if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
       showPiFinderAccess();
       if (data.reboot_needed === true) {
@@ -660,6 +669,7 @@ async function init() {
     document.getElementById('subtitle').textContent = data.setup_script_path + ' — live status';
   }
   knownIps = data.ips || [];
+  existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);

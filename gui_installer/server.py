@@ -56,6 +56,9 @@ _exit_code = None
 _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
+_last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
+# frontend tell a genuine successful install apart from a no-op Cancel run,
+# both of which exit 0.
 
 
 def _get_all_ips():
@@ -104,7 +107,7 @@ def _reader_thread(proc):
 
 
 def _start_run(action):
-    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed
+    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action
     with _lock:
         if _running:
             return False, "A run is already in progress."
@@ -113,6 +116,7 @@ def _start_run(action):
         _exit_code = None
         _phase_index = -1
         _reboot_needed = None
+        _last_action = action
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
         _process = subprocess.Popen(
             cmd,
@@ -197,6 +201,7 @@ class Handler(BaseHTTPRequestHandler):
                 exit_code = _exit_code
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
+                last_action = _last_action
             self._send_json(
                 {
                     "existing_install": PIFINDER_DIR.is_dir(),
@@ -210,6 +215,7 @@ class Handler(BaseHTTPRequestHandler):
                     "ips": _get_all_ips(),
                     "port": PORT,
                     "reboot_needed": reboot_needed,
+                    "action": last_action,
                 }
             )
             return
@@ -224,6 +230,7 @@ class Handler(BaseHTTPRequestHandler):
                 exit_code = _exit_code
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
+                last_action = _last_action
             self._send_json(
                 {
                     "lines": new_lines,
@@ -234,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_total": len(PHASES),
                     "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
                     "reboot_needed": reboot_needed,
+                    "action": last_action,
                 }
             )
             return
