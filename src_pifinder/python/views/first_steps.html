@@ -50,4 +50,74 @@
     </div>
   </div>
 </div>
+
+<div class="row">
+  <div class="col s12">
+    <div class="card grey darken-2">
+      <div class="card-content">
+        <span class="card-title grey-text">3. {{ _('Setup Wizard') }}</span>
+        <p class="grey-text text-lighten-1" id="setup-gui-status-text">{{ _('Checking status…') }}</p>
+        <p class="grey-text text-lighten-1">
+          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It has no login and can trigger destructive actions (delete + reinstall), so leave it running only while you need it - it shuts itself down automatically after a minute of inactivity.') }}
+        </p>
+        <button id="setup-gui-toggle-btn" class="btn grey darken-1" onclick="setupGuiToggle()">{{ _('Checking…') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SETUP_GUI_PORT = 8765;
+
+  function setupGuiBaseUrl() {
+    return `http://${location.hostname}:${SETUP_GUI_PORT}`;
+  }
+
+  async function refreshSetupGuiStatus() {
+    const statusText = document.getElementById('setup-gui-status-text');
+    const btn = document.getElementById('setup-gui-toggle-btn');
+    try {
+      const resp = await fetch(setupGuiBaseUrl() + '/state', { cache: 'no-store' });
+      if (!resp.ok) throw new Error('not ok');
+      statusText.textContent = '🟢 {{ _("Running.") }}';
+      btn.textContent = '{{ _("Stop Setup Wizard") }}';
+      btn.onclick = setupGuiStop;
+    } catch (e) {
+      statusText.textContent = '⚪ {{ _("Not running.") }}';
+      btn.textContent = '{{ _("Start Setup Wizard") }}';
+      btn.onclick = setupGuiStart;
+    }
+  }
+
+  async function setupGuiStart() {
+    try {
+      await fetch('/api/setup_gui/start', { method: 'POST' });
+    } catch (e) {
+      // ignore - refreshSetupGuiStatus below will show the real state
+    }
+    setTimeout(refreshSetupGuiStatus, 1500);
+  }
+
+  async function setupGuiStop() {
+    if (!confirm('{{ _("Stop the Setup Wizard webserver?") }}')) return;
+    try {
+      await fetch(setupGuiBaseUrl() + '/shutdown', { method: 'POST' });
+    } catch (e) {
+      // network error here can also mean it shut down successfully
+    }
+    setTimeout(refreshSetupGuiStatus, 1000);
+  }
+
+  function setupGuiToggle() {
+    // onclick is reassigned by refreshSetupGuiStatus() to the right action
+    // once the real state is known - this initial handler only fires if
+    // clicked before the first check completes.
+    refreshSetupGuiStatus();
+  }
+
+  refreshSetupGuiStatus();
+  setInterval(refreshSetupGuiStatus, 5000);
+</script>
 {% endblock %}

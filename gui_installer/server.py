@@ -60,6 +60,31 @@ _last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
 # frontend tell a genuine successful install apart from a no-op Cancel run,
 # both of which exit 0.
 
+# This server has no login (see the comment in main() below) and is only
+# meant to be up for the duration of an active setup session - auto-shut down
+# after a stretch of no requests at all, so it doesn't sit reachable on the
+# LAN indefinitely if someone forgets to close it.
+IDLE_TIMEOUT_SECONDS = 60
+_last_activity = time.time()
+
+
+def _touch_activity():
+    global _last_activity
+    with _lock:
+        _last_activity = time.time()
+
+
+def _idle_shutdown_watcher():
+    while True:
+        time.sleep(5)
+        with _lock:
+            idle_for = time.time() - _last_activity
+            running = _running
+        if not running and idle_for > IDLE_TIMEOUT_SECONDS:
+            print(f"No activity for {int(idle_for)}s - shutting down.", flush=True)
+            _do_shutdown()
+            return
+
 
 def _get_all_ips():
     """Every non-loopback IPv4 address on this machine, for the remote-access links."""
@@ -153,6 +178,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        # This server has no auth (see main()'s comment) and is meant to be
+        # freely reachable on the LAN - CORS headers don't change that, they
+        # just let PiFinder's own "First Steps" page (served from a different
+        # port, hence a different origin) read the response via fetch().
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -168,6 +198,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        _touch_activity()
         parsed = urlparse(self.path)
 
         if parsed.path == "/":
@@ -249,6 +280,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        _touch_activity()
         parsed = urlparse(self.path)
         if parsed.path == "/start":
             qs = parse_qs(parsed.query)
@@ -290,6 +322,7 @@ def main():
     global _server
     _server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
+    threading.Thread(target=_idle_shutdown_watcher, daemon=True).start()
     _server.serve_forever()
 
 

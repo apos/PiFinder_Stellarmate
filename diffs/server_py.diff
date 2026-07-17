@@ -1,6 +1,14 @@
---- python/PiFinder/server.py.orig	2026-07-17 18:43:45.077991392 +0200
-+++ python/PiFinder/server.py	2026-07-17 18:42:56.926028991 +0200
-@@ -105,6 +105,10 @@
+--- python/PiFinder/server.py.orig	2026-07-17 19:09:32.313969940 +0200
++++ python/PiFinder/server.py	2026-07-17 19:07:31.335209087 +0200
+@@ -6,6 +6,7 @@
+ import os
+ import argparse
+ import sys
++import subprocess
+ import multiprocessing
+ from datetime import datetime, timezone
+ 
+@@ -105,6 +106,10 @@
          self.gps_queue = gps_queue or multiprocessing.Queue()
          self.shared_state = shared_state or MockSharedState()
          self.ki = KeyboardInterface()
@@ -11,7 +19,7 @@
          # gps info
          self.lat = None
          self.lon = None
-@@ -241,7 +245,9 @@
+@@ -241,7 +246,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
                  wifi_mode=self.network.wifi_mode(),
@@ -22,7 +30,7 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -252,6 +258,14 @@
+@@ -252,6 +259,29 @@
                  dec_text=dec_text,
              )
  
@@ -34,10 +42,25 @@
 +                port=self.port,
 +            )
 +
++        @app.route("/api/setup_gui/start", methods=["POST"])
++        def api_start_setup_gui():
++            # No @auth_required / no loopback check: this button lives on the
++            # unauthenticated First Steps page (same reasoning as that page
++            # itself) and the Setup GUI it launches is equally unauthenticated
++            # once running - starting it a little early changes nothing about
++            # who could already reach it once it's up.
++            launcher = (
++                "/home/stellarmate/PiFinder_Stellarmate/gui_installer/launch_setup_gui.sh"
++            )
++            if not os.path.isfile(launcher):
++                return jsonify({"error": f"launcher not found: {launcher}"}), 404
++            subprocess.Popen(["bash", launcher], start_new_session=True)
++            return jsonify({"ok": True})
++
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -260,7 +274,7 @@
+@@ -260,7 +290,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -46,7 +69,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -522,6 +536,27 @@
+@@ -522,6 +552,27 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -74,7 +97,7 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -1218,11 +1253,13 @@
+@@ -1218,11 +1269,13 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
