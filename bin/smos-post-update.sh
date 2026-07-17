@@ -41,6 +41,7 @@ for arg in "$@"; do
 done
 
 REBOOT_NEEDED=0
+SCRIPT_HAD_ERRORS=0
 
 # ===== Externer Storage: Gerät und Typ automatisch erkennen =====
 NVME_BOOT_DEV=""
@@ -667,7 +668,7 @@ restore_file /etc/pacman.conf
 if [ "$DUAL_BOOT" -eq 1 ]; then
     echo ""
     echo "=== UUID-Fixup ==="
-    fix_uuids
+    fix_uuids || SCRIPT_HAD_ERRORS=1
 else
     echo ""
     echo "=== UUID-Fixup / Label-Rename: übersprungen (kein --enable-dual-boot-sd-nvme) ==="
@@ -685,7 +686,7 @@ fi
 
 echo ""
 echo "=== Extra-Pakete ==="
-install_extra_packages
+install_extra_packages || SCRIPT_HAD_ERRORS=1
 
 echo ""
 echo "=== WireGuard Restore ==="
@@ -694,7 +695,7 @@ restore_wireguard
 if [ "$UPDATE_SD" -eq 1 ]; then
     echo ""
     echo "=== SD-Update ==="
-    update_sd
+    update_sd || SCRIPT_HAD_ERRORS=1
 fi
 
 # Cleanup NVMe-Mounts (falls von SD gebootet)
@@ -709,4 +710,9 @@ if [ "$REBOOT_NEEDED" -eq 1 ]; then
     echo "=== Fertig. Reboot erforderlich: sudo reboot ==="
 else
     echo "=== Fertig. Kein Reboot nötig. ==="
+fi
+
+if [ "$SCRIPT_HAD_ERRORS" -eq 1 ]; then
+    echo "!! Mindestens ein Schritt ist fehlgeschlagen (siehe Meldungen oben) - bitte pruefen."
+    exit 1
 fi
