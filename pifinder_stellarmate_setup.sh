@@ -350,6 +350,19 @@ if [ -f "${python_venv}/bin/python" ]; then
     if [ -n "$venv_ver" ] && [ "$venv_ver" != "$sys_ver" ]; then
         echo "⚠️  Python version mismatch: venv=$venv_ver, system=$sys_ver — deleting venv for rebuild."
         rm -rf "${python_venv}"
+        if [ -n "$VIRTUAL_ENV" ]; then
+            # Same staleness as the reinstall branch above: $VIRTUAL_ENV
+            # (sourced at script start) now points into what we just
+            # deleted. is_venv_active() only string-compares $VIRTUAL_ENV
+            # against the path, so without this it would still report
+            # "active", fall into the "directory missing" abort path below,
+            # and demand a manual deactivate+re-run — for every install mode
+            # (fresh/reinstall/update), not just reinstall, since this runs
+            # after they've all merged back into one flow.
+            echo "🔁 Deactivating the now-deleted venv reference ..."
+            type deactivate >/dev/null 2>&1 && deactivate
+            unset VIRTUAL_ENV
+        fi
     else
         echo "ℹ️  Python version OK: venv=$venv_ver, system=$sys_ver"
     fi
