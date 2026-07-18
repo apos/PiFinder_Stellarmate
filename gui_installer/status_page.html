@@ -251,6 +251,7 @@
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
+        <div class="ql-section"><span class="ql-label">Remote:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI Drivers:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
@@ -351,14 +352,17 @@ function renderRemoteLinks(ips, port) {
 // separate "PiFinder is ready" access-links box was dropped as redundant).
 function updatePiFinderStatusAndWizardLink() {
   const statusEl = document.getElementById('pifinder-status-line');
+  const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
   if (pifinderScreenUrl) {
     statusEl.textContent = '🟢 PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
+    remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Control PiFinder</a> (password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
     statusEl.textContent = '⚪ PiFinder not detected yet';
+    remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
   }
 }
