@@ -11,6 +11,7 @@ installs its pip requirements in the first place — it must work with nothing
 but the bare system python3.
 """
 
+import base64
 import json
 import subprocess
 import threading
@@ -19,7 +20,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+import pam_auth
+
 PORT = 8765
+# Same account + mechanism PiFinder's own Remote login checks
+# (sys_utils.verify_password("stellarmate", password)) - one password to
+# remember for both. Only the page and state-changing actions require it;
+# /state and /log stay open so PiFinder's First Steps page can cross-origin
+# poll status and show "Setup Wizard is running" without a login prompt.
+AUTH_USER = "stellarmate"
+AUTH_REALM = "PiFinder Setup"
 GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
@@ -59,31 +69,6 @@ _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 _last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
 # frontend tell a genuine successful install apart from a no-op Cancel run,
 # both of which exit 0.
-
-# This server has no login (see the comment in main() below) and is only
-# meant to be up for the duration of an active setup session - auto-shut down
-# after a stretch of no requests at all, so it doesn't sit reachable on the
-# LAN indefinitely if someone forgets to close it.
-IDLE_TIMEOUT_SECONDS = 60
-_last_activity = time.time()
-
-
-def _touch_activity():
-    global _last_activity
-    with _lock:
-        _last_activity = time.time()
-
-
-def _idle_shutdown_watcher():
-    while True:
-        time.sleep(5)
-        with _lock:
-            idle_for = time.time() - _last_activity
-            running = _running
-        if not running and idle_for > IDLE_TIMEOUT_SECONDS:
-            print(f"No activity for {int(idle_for)}s - shutting down.", flush=True)
-            _do_shutdown()
-            return
 
 
 def _get_all_ips():
@@ -173,15 +158,36 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep the terminal quiet; the browser is the UI
 
+    def _require_auth(self):
+        """Checks HTTP Basic Auth against the stellarmate account's own
+        password via PAM. Sends the 401 challenge itself and returns False
+        if missing/invalid; caller should return immediately in that case."""
+        header = self.headers.get("Authorization", "")
+        password = None
+        if header.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(header[len("Basic "):]).decode("utf-8")
+                _, _, password = decoded.partition(":")
+            except Exception:
+                password = None
+        if password and pam_auth.verify_password(AUTH_USER, password):
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
+
     def _send_json(self, obj, status=200):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        # This server has no auth (see main()'s comment) and is meant to be
-        # freely reachable on the LAN - CORS headers don't change that, they
-        # just let PiFinder's own "First Steps" page (served from a different
-        # port, hence a different origin) read the response via fetch().
+        # /state and /log (the only _send_json callers reachable without
+        # auth, see _require_auth()) are meant to be freely reachable on the
+        # LAN - CORS headers don't change that, they just let PiFinder's own
+        # "First Steps" page (served from a different port, hence a
+        # different origin) read the response via fetch().
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
@@ -198,8 +204,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        _touch_activity()
         parsed = urlparse(self.path)
+
+        if parsed.path not in ("/state", "/log") and not self._require_auth():
+            return
 
         if parsed.path == "/":
             body = STATUS_PAGE.read_bytes()
@@ -280,8 +288,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        _touch_activity()
         parsed = urlparse(self.path)
+
+        # /shutdown stays open: PiFinder's First Steps page (a different
+        # origin/port) cross-origin-POSTs here to stop the installer, and
+        # cross-origin requests never carry this page's cached Basic Auth
+        # credentials. Shutting the installer down isn't destructive, unlike
+        # /start and /reboot below, which do require auth.
+        if parsed.path != "/shutdown" and not self._require_auth():
+            return
+
         if parsed.path == "/start":
             qs = parse_qs(parsed.query)
             action = qs.get("action", [""])[0]
@@ -315,14 +331,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     # 0.0.0.0: reachable from other devices on the LAN, not just this Pi.
-    # There is no login on this server and it can trigger destructive actions
-    # (delete + reinstall, sudo reboot) - anyone on the same network can reach
-    # it. Acceptable on a private home/observatory LAN; do not expose this
-    # port beyond that.
+    # The page itself and the destructive actions (delete + reinstall, sudo
+    # reboot) require the stellarmate account's own password (see
+    # _require_auth()); /state, /log, /shutdown stay open (see their own
+    # comments). Do not expose this port beyond a private home/observatory
+    # LAN regardless.
     global _server
     _server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
-    threading.Thread(target=_idle_shutdown_watcher, daemon=True).start()
     _server.serve_forever()
 
 
