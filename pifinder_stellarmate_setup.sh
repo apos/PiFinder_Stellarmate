@@ -157,10 +157,24 @@ done
 # Add rights accessing hardware to user
 sudo usermod -a -G spi,gpio,i2c,video,kmem,input ${USER}
 
-# udev rule for /dev/gpiomem access (Arch Linux)
-echo 'SUBSYSTEM=="gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpiomem.rules
+# udev rule for /dev/gpiomem access (Arch Linux). Pi5's RP1 chip exposes
+# several numbered nodes (/dev/gpiomem0..4), each its OWN subsystem
+# (SUBSYSTEM=gpiomem0, gpiomem1, ...) - not a shared "gpiomem" subsystem,
+# and not the single unnumbered /dev/gpiomem Pi4 has. The old exact-match
+# SUBSYSTEM=="gpiomem"/KERNEL=="gpiomem" rule silently matched nothing on
+# Pi5, leaving gpiomem0-4 at their root:root 0600 default and printing
+# "Failed to open the device '/dev/gpiomem': No such device" from the old
+# --action=change /dev/gpiomem below (that hardcoded path doesn't exist on
+# Pi5 either). Currently harmless in practice - PiFinder's actual GPIO
+# access goes through /dev/gpiochip* (rpi-lgpio/lgpio), already group=uucp
+# which stellarmate is also in - but the rule should still do what it says
+# on both Pi4 and Pi5. Verified live: --subsystem-match='gpiomem*' (one
+# glob argument) reaches all of gpiomem0-4 in a single trigger; passing
+# each subsystem name as its own --subsystem-match flag does not (some
+# devices silently keep their old permissions).
+echo 'SUBSYSTEM=="gpiomem*", KERNEL=="gpiomem*", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpiomem.rules
 sudo udevadm control --reload-rules
-sudo udevadm trigger --action=change /dev/gpiomem
+sudo udevadm trigger --subsystem-match='gpiomem*' --action=change
 
 sudo chown -R ${USER}:${USER} ${pifinder_stellarmate_dir}
 
