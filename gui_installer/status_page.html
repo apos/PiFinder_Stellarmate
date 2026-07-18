@@ -385,7 +385,9 @@ function showChoices(existingInstall) {
       </div>
       <div class="choice-card">
         <h3>Cancel</h3>
-        <p>Does nothing and exits &mdash; leaves the existing installation untouched.</p>
+        <p>Does nothing to the existing installation and shuts down this setup webserver.
+           Run <code>launch_setup_gui.sh</code> again (or the "Start Setup Wizard" button on
+           PiFinder's own website) if you need it later.</p>
         <button class="cancel" onclick="start('cancel')">Cancel</button>
       </div>
     `;
@@ -483,23 +485,35 @@ async function reboot() {
   watchForServerLoss();
 }
 
+// Shared by closeSetup() and the post-Cancel auto-shutdown below - there's
+// no more idle-timeout to fall back on (removed per user feedback: it once
+// cut off a still-in-progress session), so anything that means "I'm done
+// here" should actually stop the server rather than leave it dangling.
+async function shutdownServer() {
+  try {
+    const resp = await fetch('/shutdown', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.shutting_down) {
+      return data.error || 'unknown error';
+    }
+  } catch (e) {
+    // The server closing its own connection can look like a network error
+    // here even on success - treat it the same as a confirmed shutdown.
+  }
+  return null;
+}
+
 async function closeSetup() {
   if (!confirm('Close the setup GUI? This stops the local webserver, not PiFinder itself.')) return;
   const btn = document.getElementById('close-button');
   btn.disabled = true;
   btn.textContent = 'Closing…';
-  try {
-    const resp = await fetch('/shutdown', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.shutting_down) {
-      btn.disabled = false;
-      btn.textContent = 'Close Setup';
-      alert('Could not close: ' + (data.error || 'unknown error'));
-      return;
-    }
-  } catch (e) {
-    // The server closing its own connection can look like a network error
-    // here even on success - treat it the same as a confirmed shutdown.
+  const error = await shutdownServer();
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Close Setup';
+    alert('Could not close: ' + error);
+    return;
   }
   document.getElementById('status').textContent = 'Closed';
   document.getElementById('status').className = 'status-idle';
@@ -535,8 +549,18 @@ async function pollLog() {
     if (data.exit_code === 0 && data.action === 'cancel') {
       // Cancel exits 0 too (nothing went wrong) but nothing was installed -
       // showing "Success" + PiFinder-ready links here would be misleading.
-      setStatus('Cancelled', 'status-idle');
-      showChoices(existingInstallKnown);
+      // Cancel means "I'm done here", and there's no idle-timeout anymore
+      // to close the server if the user just walks away - so shut it down
+      // rather than leave it sitting there re-showing the same choices.
+      setStatus('Cancelled — closing setup GUI…', 'status-idle');
+      shutdownServer().then((error) => {
+        if (error) {
+          setStatus('Cancelled (could not close: ' + error + ')', 'status-idle');
+          showChoices(existingInstallKnown);
+        } else {
+          setStatus('Cancelled — you can close this tab', 'status-idle');
+        }
+      });
     } else if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
       if (data.reboot_needed === true) {
