@@ -26,7 +26,7 @@ PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
 # (sys_utils.verify_password("stellarmate", password)) - one password to
 # remember for both. Only the page and state-changing actions require it;
-# /state and /log stay open so PiFinder's Prepare SMOS page can cross-origin
+# /state and /log stay open so PiFinder's INDI Drivers page can cross-origin
 # poll status and show "Setup Wizard is running" without a login prompt.
 AUTH_USER = "stellarmate"
 AUTH_REALM = "PiFinder Setup"
@@ -186,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
         # /state and /log (the only _send_json callers reachable without
         # auth, see _require_auth()) are meant to be freely reachable on the
         # LAN - CORS headers don't change that, they just let PiFinder's own
-        # "Prepare SMOS" page (served from a different port, hence a
+        # "INDI Drivers" page (served from a different port, hence a
         # different origin) read the response via fetch().
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
@@ -296,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
 
-        # /shutdown stays open: PiFinder's Prepare SMOS page (a different
+        # /shutdown stays open: PiFinder's INDI Drivers page (a different
         # origin/port) cross-origin-POSTs here to stop the installer, and
         # cross-origin requests never carry this page's cached Basic Auth
         # credentials. Shutting the installer down isn't destructive, unlike

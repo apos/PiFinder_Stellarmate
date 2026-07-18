@@ -251,7 +251,7 @@
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
-        <div class="ql-section"><span class="ql-label">Prepare SMOS:</span><span id="wizard-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">INDI Drivers:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
@@ -345,7 +345,7 @@ function renderRemoteLinks(ips, port) {
 }
 
 // Reflects whether PiFinder itself is currently reachable (same probe that
-// drives the OLED-screen mirror) and links to its "Prepare SMOS" wizard page
+// drives the OLED-screen mirror) and links to its "INDI Drivers" wizard page
 // once it is. Called whenever that probe's result changes, not just once.
 // This is the only place PiFinder's own reachability/link is shown now (the
 // separate "PiFinder is ready" access-links box was dropped as redundant).

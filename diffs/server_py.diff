@@ -26,14 +26,14 @@
 +        @app.route("/smos")
 +        def smos():
 +            return app.jinja_env.get_template("smos.html").render(
-+                title=_("Prepare SMOS"),
++                title=_("INDI Drivers"),
 +                ips=self.network.all_ips(),
 +            )
 +
 +        @app.route("/api/setup_gui/start", methods=["POST"])
 +        def api_start_setup_gui():
 +            # No @auth_required / no loopback check: this button lives on the
-+            # unauthenticated Prepare SMOS page (same reasoning as that page
++            # unauthenticated INDI Drivers page (same reasoning as that page
 +            # itself) and the Setup GUI it launches is equally unauthenticated
 +            # once running - starting it a little early changes nothing about
 +            # who could already reach it once it's up.
