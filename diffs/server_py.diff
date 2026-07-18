@@ -94,3 +94,19 @@
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
+@@ -1215,6 +1261,15 @@
+         self.app = app
+ 
+     def run(self):
++        # Opt-in override for a second, parallel instance (e.g. headless
++        # testing alongside the real service) - unset in normal operation,
++        # which keeps the 80/8080 behavior below completely unchanged.
++        override_port = os.environ.get("PIFINDER_WEB_PORT")
++        if override_port:
++            waitress_serve(self.app, host="0.0.0.0", port=int(override_port))
++            logger.info(f"Webserver started on port {override_port} (PIFINDER_WEB_PORT override)")
++            return
++
+         # If the PiFinder software is running as a service
+         # it can grab port 80.  If not, it needs to use 8080
+         try:
