@@ -548,10 +548,16 @@ async function pollLog() {
   } else {
     if (data.exit_code === 0 && data.action === 'cancel') {
       // Cancel exits 0 too (nothing went wrong) but nothing was installed -
-      // showing "Success" + PiFinder-ready links here would be misleading.
-      // Cancel means "I'm done here", and there's no idle-timeout anymore
-      // to close the server if the user just walks away - so shut it down
-      // rather than leave it sitting there re-showing the same choices.
+      // showing "Success" + PiFinder-ready links, or a checklist with green
+      // checkmarks for whatever phase it happened to reach, would both be
+      // misleading (updateChecklist() above just marked those phases
+      // "done"). Hide the progress UI entirely - cancelling means none of
+      // it counts. Cancel also means "I'm done here", and there's no
+      // idle-timeout anymore to close the server if the user just walks
+      // away - so shut it down rather than leave it sitting there
+      // re-showing the same choices.
+      document.getElementById('progress-wrap').style.display = 'none';
+      document.getElementById('phase-checklist').style.display = 'none';
       setStatus('Cancelled — closing setup GUI…', 'status-idle');
       shutdownServer().then((error) => {
         if (error) {
