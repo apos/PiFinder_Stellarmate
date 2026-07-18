@@ -32,6 +32,9 @@ print('   Setup-GUI erreichbar unter:')
 for ip in ips:
     print(f'     http://{ip}:{port}/')
 " "$state" "$PORT"
+    echo "   Login: Benutzername egal, Passwort = dein stellarmate-Systempasswort"
+    echo "   (schuetzt die Seite selbst sowie Reinstall/Update/Reboot; /state,"
+    echo "   /log und /shutdown bleiben ohne Login erreichbar)"
 }
 
 if [ "${1:-}" = "--shutdown-webserver" ]; then
