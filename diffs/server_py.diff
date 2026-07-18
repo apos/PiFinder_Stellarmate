@@ -1,5 +1,5 @@
---- python/PiFinder/server.py.orig	2026-07-17 19:09:32.313969940 +0200
-+++ python/PiFinder/server.py	2026-07-17 19:07:31.335209087 +0200
+--- python/PiFinder/server.py.orig
++++ python/PiFinder/server.py
 @@ -6,6 +6,7 @@
  import os
  import argparse
@@ -97,6 +97,15 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
+@@ -537,7 +588,7 @@
+ 
+             if new_passworda == new_passwordb:
+                 if sys_utils.change_password(
+-                    "pifinder", current_password, new_passworda
++                    "stellarmate", current_password, new_passworda
+                 ):
+                     return app.jinja_env.get_template("tools.html").render(
+                         title=_("Tools"), status_message=_("Password Changed")
 @@ -1218,11 +1269,13 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080

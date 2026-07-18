@@ -482,11 +482,15 @@ cp "$server_py" "$server_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
-    # Replace hardcoded 'pifinder' with dynamic username in login function
-    sed -i "s|sys_utils.verify_password(\"pifinder\", password)|sys_utils.verify_password(\"$(whoami)\", password)|" "$server_py"
-    # Replace hardcoded 'pifinder' with dynamic username in password_change function
-    sed -i "s|sys_utils.change_password(\"pifinder\", current_password, new_passworda)|sys_utils.change_password(\"$(whoami)\", current_password, new_passworda)|" "$server_py"
-    # Web-UI home page: show every non-loopback IP (WiFi/LAN/WireGuard), not just one
+    # Login/password-change username, mount-type sync, First Steps route,
+    # Setup Wizard control, port tracking, etc. are all in server_py.diff now.
+    # (Used to also run two sed replacements here for the login/password-
+    # change username: one was redundant with the diff's own hunk for
+    # verify_password, always failing harmlessly ["Hunk FAILED" - already
+    # applied]; the other, for change_password, used a single-line pattern
+    # that never matched the actual multi-line call, so it silently never
+    # ran and change_password() kept resetting the unused "pifinder" account
+    # instead of "stellarmate" - see diffs/server_py.diff instead now.)
     patch -N "$server_py" < "${pifinder_stellarmate_dir}/diffs/server_py.diff"
 else
     echo "⏩ Skipping patch for server.py: ❌ incompatible version/pi/os"
