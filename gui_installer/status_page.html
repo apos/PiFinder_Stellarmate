@@ -345,7 +345,7 @@ function renderRemoteLinks(ips, port) {
 }
 
 // Reflects whether PiFinder itself is currently reachable (same probe that
-// drives the OLED-screen mirror) and links to its "First Steps" wizard page
+// drives the OLED-screen mirror) and links to its "Prepare SMOS" wizard page
 // once it is. Called whenever that probe's result changes, not just once.
 // This is the only place PiFinder's own reachability/link is shown now (the
 // separate "PiFinder is ready" access-links box was dropped as redundant).
@@ -356,7 +356,7 @@ function updatePiFinderStatusAndWizardLink() {
     statusEl.textContent = '🟢 PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
-    wizardEl.innerHTML = `<a href="${base}/first-steps" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
+    wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
     statusEl.textContent = '⚪ PiFinder not detected yet';
     wizardEl.textContent = 'not available yet';
