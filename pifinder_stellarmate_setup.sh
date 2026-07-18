@@ -204,6 +204,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
 
         case "$choice" in
             1)
+                echo "➡️  Selected: 1. Delete the existing installation and reinstall from scratch."
                 sudo systemctl stop pifinder
                 echo "🗑️  Deleting the existing PiFinder installation directory..."
                 sudo rm -rf "${pifinder_home}/PiFinder"
@@ -239,6 +240,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/images/webmanager_profile.png" "${pifinder_home}/PiFinder/python/views/images/"
                 ;;
             2)
+                echo "➡️  Selected: 2. Update the existing installation with 'git reset --hard origin/release'."
                 sudo systemctl stop pifinder
                 echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
                 cd "${pifinder_home}/PiFinder"
@@ -253,10 +255,12 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/images/webmanager_profile.png" "${pifinder_home}/PiFinder/python/views/images/"
                 ;;
             3)
+                echo "➡️  Selected: 3. Cancel the installation."
                 echo "ℹ️  Installation cancelled by user."
                 exit 0
                 ;;
             *)
+                echo "➡️  Selected: $choice (invalid)"
                 echo "❌ Invalid choice. Please run the script again and select 1, 2, or 3."
                 exit 1
                 ;;
