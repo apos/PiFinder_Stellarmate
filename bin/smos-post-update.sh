@@ -1,29 +1,29 @@
 #!/bin/bash
 # StellarMate OS - Post-Update Boot Restore
-# Stellt cmdline.txt, config.txt und pacman.conf nach einem pacman-Update wieder her.
-# Ersetzt danach LABEL= durch UUID= in cmdline.txt und /etc/fstab,
-# damit SD und externer Storage sich beim gleichzeitigen Betrieb nicht in die Quere kommen.
+# Restores cmdline.txt, config.txt, and pacman.conf after a pacman update.
+# Then replaces LABEL= with UUID= in cmdline.txt and /etc/fstab, so SD and
+# external storage don't collide with each other when running side by side.
 #
-# Verwendung:
-#   sudo ./smos-post-update.sh                          – normaler Post-Update-Lauf (von NVMe/SSD oder SD)
+# Usage:
+#   sudo ./smos-post-update.sh                          - normal post-update run (from NVMe/SSD or SD)
 #   sudo ./smos-post-update.sh --enable-dual-boot-sd-nvme
-#                                                          – zusaetzlich: UUID-Fixup + _NVE/_NVM-Label-Rename.
-#                                                            NUR wenn SD UND NVMe/SSD gleichzeitig als
-#                                                            Boot-Medien genutzt werden - Standard-Installationen
-#                                                            brauchen das nicht und sollten es NICHT setzen!
-#   sudo ./smos-post-update.sh --updatesd               – Post-Update + SD-Karte aktualisieren (nur ext. Boot)
-#   sudo ./smos-post-update.sh --updatenvme_memory       – Memory-Sync SD → ext. Storage (nur SD-Boot)
-#   sudo ./smos-post-update.sh --sync-memory            – basic-memory + .claude ↔ Nextcloud (rclone bisync)
+#                                                          - additionally: UUID fixup + _NVE/_NVM label rename.
+#                                                            ONLY if SD AND NVMe/SSD are used as boot media at
+#                                                            the same time - standard installs don't need this
+#                                                            and should NOT set it!
+#   sudo ./smos-post-update.sh --updatesd               - post-update + update the SD card (external boot only)
+#   sudo ./smos-post-update.sh --updatenvme_memory       - memory sync SD -> ext. storage (SD boot only)
+#   sudo ./smos-post-update.sh --sync-memory            - basic-memory + .claude <-> Nextcloud (rclone bisync)
 #
-# Unterstützte Hardware:
-#   Pi5: NVMe via PCIe (/dev/nvme0n1) – Labels _NVE, PCIe Gen3 config
-#   Pi4: SSD/NVMe via USB (/dev/sda)  – Labels _NVM, kein PCIe-Fix
+# Supported hardware:
+#   Pi5: NVMe via PCIe (/dev/nvme0n1) - labels _NVE, PCIe Gen3 config
+#   Pi4: SSD/NVMe via USB (/dev/sda)  - labels _NVM, no PCIe fix
 
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-    echo "!! Dieses Skript benoetigt Root-Rechte (blkid/fstab/config.txt/pacman brauchen root)."
-    echo "   Bitte mit sudo starten: sudo bash $(basename "$0") $*"
+    echo "!! This script requires root privileges (blkid/fstab/config.txt/pacman need root)."
+    echo "   Please run with sudo: sudo bash $(basename "$0") $*"
     exit 1
 fi
 
@@ -43,13 +43,13 @@ done
 REBOOT_NEEDED=0
 SCRIPT_HAD_ERRORS=0
 
-# ===== Externer Storage: Gerät und Typ automatisch erkennen =====
+# ===== External storage: auto-detect device and type =====
 NVME_BOOT_DEV=""
 NVME_ROOT_DEV=""
 NVME_BOOT_TMP=""
 NVME_ROOT_TMP=""
-STORAGE_TYPE=""   # "nvme" (PCIe, Pi5) oder "usb" (USB SSD/NVMe, Pi4)
-LABEL_POSTFIX=""  # "_NVE" für Pi5 NVMe, "_NVM" für Pi4 USB
+STORAGE_TYPE=""   # "nvme" (PCIe, Pi5) or "usb" (USB SSD/NVMe, Pi4)
+LABEL_POSTFIX=""  # "_NVE" for Pi5 NVMe, "_NVM" for Pi4 USB
 
 _detect_external_storage() {
     if [ -b "/dev/nvme0n1p1" ]; then
@@ -57,7 +57,7 @@ _detect_external_storage() {
         NVME_ROOT_DEV="/dev/nvme0n1p2"
         STORAGE_TYPE="nvme"
         LABEL_POSTFIX="_NVE"
-        echo "   Externer Storage: NVMe PCIe (/dev/nvme0n1) – Pi5-Modus"
+        echo "   External storage: NVMe PCIe (/dev/nvme0n1) - Pi5 mode"
         return 0
     fi
     for base in /dev/sda /dev/sdb /dev/sdc; do
@@ -66,11 +66,11 @@ _detect_external_storage() {
             NVME_ROOT_DEV="${base}2"
             STORAGE_TYPE="usb"
             LABEL_POSTFIX="_NVM"
-            echo "   Externer Storage: USB SSD/NVMe (${base}) – Pi4-Modus"
+            echo "   External storage: USB SSD/NVMe (${base}) - Pi4 mode"
             return 0
         fi
     done
-    echo "!! Kein externer Storage gefunden (kein /dev/nvme0n1 und kein /dev/sdX)"
+    echo "!! No external storage found (neither /dev/nvme0n1 nor /dev/sdX)"
     return 1
 }
 
@@ -84,13 +84,13 @@ _setup_nvme_dirs() {
         BOOT_FROM_NVME=1
         NVME_BOOT_DIR="/boot"
         NVME_FSTAB="/etc/fstab"
-        echo "   Boot-Quelle: NVMe ($root_dev)"
+        echo "   Boot source: NVMe ($root_dev)"
     else
         BOOT_FROM_NVME=0
-        echo "   Boot-Quelle: SD ($root_dev) – NVMe-Partitionen werden gemountet..."
+        echo "   Boot source: SD ($root_dev) - mounting NVMe partitions..."
 
         if [ ! -b "$NVME_BOOT_DEV" ]; then
-            echo "!! NVMe nicht gefunden ($NVME_BOOT_DEV) – Abbruch."
+            echo "!! NVMe not found ($NVME_BOOT_DEV) - aborting."
             exit 1
         fi
 
@@ -102,14 +102,14 @@ _setup_nvme_dirs() {
 
         NVME_BOOT_DIR="$NVME_BOOT_TMP"
 
-        # Aktives Subvolume aus NVMe cmdline.txt lesen, fstab-Pfad ermitteln
+        # Read the active subvolume from NVMe's cmdline.txt, determine the fstab path
         local nvme_subvol
         nvme_subvol=$(grep -oP 'subvol=\K[^\s]+' "${NVME_BOOT_TMP}/cmdline.txt" | sed 's|^/||')
         if [ -n "$nvme_subvol" ] && [ -d "${NVME_ROOT_TMP}/${nvme_subvol}" ]; then
             NVME_FSTAB="${NVME_ROOT_TMP}/${nvme_subvol}/etc/fstab"
-            echo "   NVMe Subvolume: $nvme_subvol"
+            echo "   NVMe subvolume: $nvme_subvol"
         else
-            echo "!! NVMe-Subvolume nicht ermittelbar – fstab-Fixup wird übersprungen."
+            echo "!! Could not determine NVMe subvolume - skipping fstab fixup."
             NVME_FSTAB=""
         fi
 
@@ -121,11 +121,11 @@ _setup_nvme_dirs() {
     fi
 }
 
-# ===== Funktionen =====
+# ===== Functions =====
 
 restore_file() {
     local src="$1"
-    # Pfad auf NVMe-Boot-Partition umleiten wenn nötig
+    # Redirect path to the NVMe boot partition if needed
     local target
     if [[ "$src" == /boot/* ]]; then
         target="${NVME_BOOT_DIR}/${src#/boot/}"
@@ -134,10 +134,10 @@ restore_file() {
     fi
     if [ -f "${target}.pacsave" ]; then
         cp "${target}.pacsave" "${target}"
-        echo ">> $(basename "$src") wiederhergestellt."
+        echo ">> $(basename "$src") restored."
         REBOOT_NEEDED=1
     else
-        echo ">> $(basename "$src").pacsave nicht vorhanden – keine Wiederherstellung nötig."
+        echo ">> $(basename "$src").pacsave not present - no restore needed."
     fi
 }
 
@@ -151,11 +151,11 @@ rename_nvme_labels() {
 
     if [ "$boot_label" = "SM_BOOT" ]; then
         fatlabel "$NVME_BOOT_DEV" "$new_boot_label" \
-            && echo ">> [Storage] Partition-Label: SM_BOOT → ${new_boot_label}" \
-            || echo "!! [Storage] fatlabel fehlgeschlagen – manuell: sudo fatlabel $NVME_BOOT_DEV $new_boot_label"
+            && echo ">> [Storage] Partition label: SM_BOOT -> ${new_boot_label}" \
+            || echo "!! [Storage] fatlabel failed - manually: sudo fatlabel $NVME_BOOT_DEV $new_boot_label"
         REBOOT_NEEDED=1
     else
-        echo ">> [Storage] Partition-Label /boot: OK (${boot_label})"
+        echo ">> [Storage] Partition label /boot: OK (${boot_label})"
     fi
 
     if [ "$root_label" = "SM_ROOT" ]; then
@@ -164,10 +164,10 @@ rename_nvme_labels() {
         else
             btrfs filesystem label "$NVME_ROOT_TMP" "$new_root_label"
         fi
-        echo ">> [Storage] Partition-Label: SM_ROOT → ${new_root_label}"
+        echo ">> [Storage] Partition label: SM_ROOT -> ${new_root_label}"
         REBOOT_NEEDED=1
     else
-        echo ">> [Storage] Partition-Label /root: OK (${root_label})"
+        echo ">> [Storage] Partition label /root: OK (${root_label})"
     fi
 }
 
@@ -177,35 +177,35 @@ fix_uuids() {
     root_uuid=$(blkid -s UUID -o value "$NVME_ROOT_DEV")
 
     if [ -z "$boot_uuid" ] || [ -z "$root_uuid" ]; then
-        echo "!! UUID-Ermittlung fehlgeschlagen – LABEL= bleibt unverändert!"
+        echo "!! Could not determine UUIDs - LABEL= stays unchanged!"
         return 1
     fi
 
-    # cmdline.txt auf NVMe-Boot-Partition: root=LABEL= → root=UUID=
+    # cmdline.txt on the NVMe boot partition: root=LABEL= -> root=UUID=
     local cmdline="${NVME_BOOT_DIR}/cmdline.txt"
     if grep -q 'root=LABEL=SM_ROOT' "$cmdline"; then
         sed -i "s|root=LABEL=SM_ROOT|root=UUID=${root_uuid}|g" "$cmdline"
-        echo ">> [NVMe] cmdline.txt:  geändert  (LABEL=SM_ROOT → UUID=${root_uuid})"
+        echo ">> [NVMe] cmdline.txt:  changed  (LABEL=SM_ROOT -> UUID=${root_uuid})"
         REBOOT_NEEDED=1
     else
         echo ">> [NVMe] cmdline.txt:  OK"
     fi
 
-    # fstab auf NVMe: LABEL=SM_BOOT und LABEL=SM_ROOT → UUIDs
+    # fstab on NVMe: LABEL=SM_BOOT and LABEL=SM_ROOT -> UUIDs
     if [ -z "$NVME_FSTAB" ]; then
-        echo ">> [NVMe] fstab:        übersprungen (kein Pfad ermittelt)"
+        echo ">> [NVMe] fstab:        skipped (no path determined)"
         return 0
     fi
     if grep -q 'LABEL=SM_BOOT' "$NVME_FSTAB"; then
         sed -i "s|LABEL=SM_BOOT|UUID=${boot_uuid}|g" "$NVME_FSTAB"
-        echo ">> [NVMe] fstab /boot:  geändert  (LABEL=SM_BOOT → UUID=${boot_uuid})"
+        echo ">> [NVMe] fstab /boot:  changed  (LABEL=SM_BOOT -> UUID=${boot_uuid})"
         REBOOT_NEEDED=1
     else
         echo ">> [NVMe] fstab /boot:  OK"
     fi
     if grep -q 'LABEL=SM_ROOT' "$NVME_FSTAB"; then
         sed -i "s|LABEL=SM_ROOT|UUID=${root_uuid}|g" "$NVME_FSTAB"
-        echo ">> [NVMe] fstab /:      geändert  (LABEL=SM_ROOT → UUID=${root_uuid})"
+        echo ">> [NVMe] fstab /:      changed  (LABEL=SM_ROOT -> UUID=${root_uuid})"
         REBOOT_NEEDED=1
     else
         echo ">> [NVMe] fstab /:      OK"
@@ -213,18 +213,18 @@ fix_uuids() {
 }
 
 fix_nvme_config() {
-    # PCIe Gen3 nur relevant für echten NVMe (Pi5), nicht für USB SSD (Pi4)
+    # PCIe Gen3 only matters for real NVMe (Pi5), not USB SSD (Pi4)
     if [ "$STORAGE_TYPE" != "nvme" ]; then
-        echo ">> [Storage] config.txt PCIe-Fix: übersprungen (USB-Modus, kein PCIe)"
+        echo ">> [Storage] config.txt PCIe fix: skipped (USB mode, no PCIe)"
         return 0
     fi
 
     local config="${NVME_BOOT_DIR}/config.txt"
 
-    # dtparam=pciex1_gen=3 sicherstellen (PCIe Gen3 für NVMe, ~985 MB/s statt ~500 MB/s)
+    # Ensure dtparam=pciex1_gen=3 is set (PCIe Gen3 for NVMe, ~985 MB/s instead of ~500 MB/s)
     if ! grep -q 'dtparam=pciex1_gen=3' "$config"; then
         sed -i 's/\[pi5\]/[pi5]\ndtparam=pciex1_gen=3/' "$config"
-        echo ">> [NVMe] config.txt: dtparam=pciex1_gen=3 eingetragen (PCIe Gen3)"
+        echo ">> [NVMe] config.txt: dtparam=pciex1_gen=3 added (PCIe Gen3)"
         REBOOT_NEEDED=1
     else
         echo ">> [NVMe] config.txt: dtparam=pciex1_gen=3 OK"
@@ -233,7 +233,7 @@ fix_nvme_config() {
 
 install_extra_packages() {
     if [ "$BOOT_FROM_NVME" -eq 0 ]; then
-        echo ">> Extra-Pakete: übersprungen (SD-Boot – nur auf NVMe sinnvoll)"
+        echo ">> Extra packages: skipped (SD boot - only relevant on NVMe)"
         return 0
     fi
 
@@ -241,85 +241,85 @@ install_extra_packages() {
     pkg_list="$(dirname "$(realpath "$0")")/package.list"
 
     if [ ! -f "$pkg_list" ]; then
-        echo "!! package.list nicht gefunden: $pkg_list – Abbruch."
+        echo "!! package.list not found: $pkg_list - aborting."
         return 1
     fi
 
     local tmp_conf
     tmp_conf=$(mktemp)
     cat /etc/pacman.conf > "$tmp_conf"
-    # [core] ist in pacman.conf bereits aktiv; [extra] als Fallback ergänzen
+    # [core] is already active in pacman.conf; add [extra] as a fallback
     if ! grep -q '^\[extra\]' "$tmp_conf"; then
         printf '\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n' >> "$tmp_conf"
     fi
 
     local installed=0 skipped=0 failed=0
     while IFS= read -r pkg || [ -n "$pkg" ]; do
-        # Leerzeilen und Kommentare überspringen
+        # Skip blank lines and comments
         [[ -z "$pkg" || "$pkg" =~ ^# ]] && continue
 
         if pacman -Q "$pkg" &>/dev/null; then
-            echo ">> ${pkg}: vorhanden."
+            echo ">> ${pkg}: present."
             (( skipped++ )) || true
         else
-            echo ">> ${pkg} fehlt – wird installiert..."
+            echo ">> ${pkg} missing - installing..."
             if pacman -Sy --noconfirm --config "$tmp_conf" "$pkg"; then
-                echo ">> ${pkg}: installiert."
+                echo ">> ${pkg}: installed."
                 (( installed++ )) || true
             else
-                echo "!! ${pkg}: Installation fehlgeschlagen – bitte manuell installieren."
+                echo "!! ${pkg}: installation failed - please install manually."
                 (( failed++ )) || true
             fi
         fi
     done < "$pkg_list"
 
     rm -f "$tmp_conf"
-    echo "   Ergebnis: ${installed} installiert, ${skipped} bereits vorhanden, ${failed} fehlgeschlagen."
+    echo "   Result: ${installed} installed, ${skipped} already present, ${failed} failed."
 }
 
 restore_wireguard() {
     local service="wg-nethserver-client"
     local backup_file="/home/stellarmate/bin/backup_files/${service}.service"
 
-    # Bei SD-Boot zeigt NVME_FSTAB auf das temporaer gemountete NVMe-Subvolume
-    # (${NVME_ROOT_TMP}/${nvme_subvol}/etc/fstab), bei NVMe-Boot einfach auf
-    # /etc/fstab -> Praefix-Trick liefert in beiden Faellen den richtigen "etc"-Ort,
-    # analog zu restore_file()/fix_uuids(). Frueher wurde dieser ganze Schritt bei
-    # SD-Boot uebersprungen - genau der Fall, in dem die NVMe-/etc nach einem
-    # fehlgeschlagenen Update-Reboot repariert werden muss (Snapshot-Wechsel kann
-    # manuell angelegte /etc-Dateien wie diesen Service verlieren).
+    # On SD boot, NVME_FSTAB points at the temporarily-mounted NVMe subvolume
+    # (${NVME_ROOT_TMP}/${nvme_subvol}/etc/fstab); on NVMe boot it's simply
+    # /etc/fstab -> the prefix trick gives the right "etc" location either way,
+    # same as restore_file()/fix_uuids(). This whole step used to be skipped on
+    # SD boot - exactly the case where the NVMe /etc needs repairing after a
+    # failed update reboot (a snapshot switch can lose manually-created /etc
+    # files like this service).
     if [ -z "$NVME_FSTAB" ]; then
-        echo "!! WireGuard Restore: übersprungen (NVMe-Subvolume nicht ermittelbar)"
+        echo "!! WireGuard restore: skipped (NVMe subvolume not determinable)"
         return 0
     fi
     local etc_prefix="${NVME_FSTAB%/etc/fstab}"
     local service_file="${etc_prefix}/etc/systemd/system/${service}.service"
 
-    # Service aus Backup wiederherstellen falls fehlt
+    # Restore the service from backup if missing
     if [ ! -f "$service_file" ]; then
-        echo ">> Service-File fehlt – wird aus Backup wiederhergestellt..."
-        echo "   Quelle:  $backup_file"
-        echo "   Ziel:    $service_file"
+        echo ">> Service file missing - restoring from backup..."
+        echo "   Source:      $backup_file"
+        echo "   Destination: $service_file"
         cp "$backup_file" "$service_file"
         if [ "$BOOT_FROM_NVME" -eq 1 ]; then
             systemctl daemon-reload
             systemctl enable --now "${service}.service"
-            echo ">> Service wiederhergestellt, aktiviert und gestartet."
+            echo ">> Service restored, enabled, and started."
         else
             if systemctl --root="$etc_prefix" enable "${service}.service" 2>/dev/null; then
-                echo ">> Service wiederhergestellt und fuer den naechsten NVMe-Boot aktiviert (offline via --root)."
+                echo ">> Service restored and enabled for the next NVMe boot (offline via --root)."
             else
-                echo "!! Service-Datei wiederhergestellt, 'systemctl --root enable' schlug fehl."
-                echo "   Nach dem naechsten NVMe-Boot manuell: sudo systemctl enable --now ${service}.service"
+                echo "!! Service file restored, but 'systemctl --root enable' failed."
+                echo "   After the next NVMe boot, run manually: sudo systemctl enable --now ${service}.service"
             fi
         fi
     else
-        echo ">> Service-File: vorhanden"
-        echo "   Pfad:  $service_file"
+        echo ">> Service file: present"
+        echo "   Path:  $service_file"
     fi
 
     if [ "$BOOT_FROM_NVME" -eq 0 ]; then
-        echo ">> Live-Status übersprungen (SD-Boot, NVMe-System läuft nicht)"
+        echo ">> Live status skipped (SD boot, NVMe system isn't running)"
         return 0
     fi
 
@@ -329,20 +329,20 @@ restore_wireguard() {
         wg_ip=$(ip -4 addr show "$wg_iface" 2>/dev/null | awk '/inet / {print $2}')
         wg_endpoint=$(wg show "$wg_iface" endpoints 2>/dev/null | awk '{print $2}')
         wg_handshake=$(wg show "$wg_iface" latest-handshakes 2>/dev/null | awk '{print $2}')
-        echo ">> Service: läuft"
+        echo ">> Service: running"
         echo "   Interface:  $wg_iface"
-        echo "   Tunnel-IP:  ${wg_ip:-unbekannt}"
-        echo "   Endpoint:   ${wg_endpoint:-unbekannt}"
-        echo "   Handshake:  $(date -d "@${wg_handshake}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'noch kein Handshake')"
+        echo "   Tunnel IP:  ${wg_ip:-unknown}"
+        echo "   Endpoint:   ${wg_endpoint:-unknown}"
+        echo "   Handshake:  $(date -d "@${wg_handshake}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'no handshake yet')"
     else
-        echo "!! Service: nicht aktiv!"
+        echo "!! Service: not active!"
     fi
 }
 
 update_sd() {
     if [ "$BOOT_FROM_NVME" -eq 0 ]; then
-        echo "!! --updatesd erfordert NVMe-Boot (Sync läuft NVMe → SD)."
-        echo "   Bitte von NVMe booten und erneut ausführen."
+        echo "!! --updatesd requires NVMe boot (sync runs NVMe -> SD)."
+        echo "   Please boot from NVMe and run again."
         return 1
     fi
 
@@ -351,23 +351,23 @@ update_sd() {
     local MNT_SD_BTRFS="/mnt/sd-btrfs-root"
     local MNT_SD_BOOT="/mnt/sd-boot"
 
-    # SD-Karte prüfen (vor trap, noch kein Cleanup nötig)
+    # Check the SD card (before the trap, no cleanup needed yet)
     if [ ! -b "$SD_ROOT_DEV" ]; then
-        echo "!! SD-Karte nicht gefunden ($SD_ROOT_DEV) – SD-Update übersprungen."
-        echo "   SD einlegen und erneut mit --updatesd ausführen."
+        echo "!! SD card not found ($SD_ROOT_DEV) - SD update skipped."
+        echo "   Insert the SD card and run again with --updatesd."
         return 1
     fi
 
-    # Cleanup-Funktion – wird bei EXIT oder Fehler ausgeführt
+    # Cleanup function - runs on EXIT or error
     _cleanup_sd() {
-        echo ">> SD-Partitionen werden ausgehängt..."
+        echo ">> Unmounting SD partitions..."
         umount "$MNT_SD_BOOT"   2>/dev/null || true
         umount "$MNT_SD_BTRFS"  2>/dev/null || true
 
-        # Zusaetzliche Mounts derselben Geraete aushaengen (z.B. Desktop-Automount
-        # via udisks2, das beim Einstecken der Karte unabhaengig vom Skript unter
-        # /run/media/... mountet) - sonst ist die Karte trotz "SD-Update abgeschlossen"
-        # noch belegt und laesst sich nicht sicher entnehmen.
+        # Unmount any additional mounts of the same devices (e.g. a desktop
+        # automount via udisks2, which mounts under /run/media/... on card
+        # insert independently of this script) - otherwise the card is still
+        # in use despite "SD update complete" and can't be safely removed.
         local dev extra_mnt
         for dev in "$SD_BOOT_DEV" "$SD_ROOT_DEV"; do
             while read -r extra_mnt; do
@@ -379,42 +379,42 @@ update_sd() {
 
     mkdir -p "$MNT_SD_BTRFS" "$MNT_SD_BOOT"
 
-    echo ">> SD-Partitionen mounten..."
+    echo ">> Mounting SD partitions..."
     mount -o subvolid=5 "$SD_ROOT_DEV" "$MNT_SD_BTRFS"
     mount "$SD_BOOT_DEV" "$MNT_SD_BOOT"
 
-    # NVMe-UUIDs (wir sind auf NVMe, blkid direkt)
+    # NVMe UUIDs (we're on NVMe, blkid directly)
     local nvme_boot_uuid nvme_root_uuid
     nvme_boot_uuid=$(blkid -s UUID -o value "$NVME_BOOT_DEV")
     nvme_root_uuid=$(blkid -s UUID -o value "$NVME_ROOT_DEV")
 
-    # Aktives NVMe-Subvolume ermitteln
+    # Determine the active NVMe subvolume
     local active_subvol
     active_subvol=$(findmnt -n -o OPTIONS / | grep -oP 'subvol=\K[^,\]]+')
     if [ -z "$active_subvol" ]; then
-        echo "!! Aktives NVMe-Subvolume nicht ermittelbar – Abbruch."
+        echo "!! Could not determine the active NVMe subvolume - aborting."
         return 1
     fi
-    echo "   Aktives Subvolume: $active_subvol"
+    echo "   Active subvolume: $active_subvol"
 
-    # Ziel-Subvolume auf SD anlegen falls nicht vorhanden
+    # Create the target subvolume on SD if it doesn't exist
     local sd_subvol_path="${MNT_SD_BTRFS}/${active_subvol}"
     if [ ! -d "$sd_subvol_path" ]; then
-        echo ">> Subvolume ${active_subvol} auf SD anlegen..."
+        echo ">> Creating subvolume ${active_subvol} on SD..."
         btrfs subvolume create "$sd_subvol_path"
     else
-        echo ">> Subvolume ${active_subvol} auf SD: vorhanden."
+        echo ">> Subvolume ${active_subvol} on SD: present."
     fi
 
-    # @home auf SD anlegen falls nicht vorhanden
+    # Create @home on SD if it doesn't exist
     if [ ! -d "${MNT_SD_BTRFS}/@home" ]; then
-        echo ">> @home-Subvolume auf SD anlegen..."
+        echo ">> Creating @home subvolume on SD..."
         btrfs subvolume create "${MNT_SD_BTRFS}/@home"
     fi
 
-    # --- Platz-Check ---
+    # --- Space check ---
     echo ""
-    echo ">> Platz-Check..."
+    echo ">> Space check..."
     local sys_size home_size boot_size total_needed sd_free
     sys_size=$(du -sx \
         --exclude=proc --exclude=sys --exclude=dev --exclude=run \
@@ -424,130 +424,130 @@ update_sd() {
         --exclude=Pictures --exclude=Videos --exclude=Downloads --exclude=.cache \
         /home/stellarmate 2>/dev/null | awk '{print $1}')
     boot_size=$(du -sx /boot 2>/dev/null | awk '{print $1}')
-    total_needed=$(( (sys_size + home_size + boot_size) * 12 / 10 ))  # +20% Puffer
+    total_needed=$(( (sys_size + home_size + boot_size) * 12 / 10 ))  # +20% buffer
 
     sd_free=$(df --output=avail "$MNT_SD_BTRFS" | tail -1)
 
     printf "   System: %4d MiB  |  Home: %4d MiB  |  Boot: %4d MiB\n" \
         "$(( sys_size  / 1024 ))" "$(( home_size / 1024 ))" "$(( boot_size / 1024 ))"
-    printf "   Benötigt (inkl. 20%% Puffer): %d MiB  |  SD frei: %d MiB\n" \
+    printf "   Needed (incl. 20%% buffer): %d MiB  |  SD free: %d MiB\n" \
         "$(( total_needed / 1024 ))" "$(( sd_free / 1024 ))"
 
     if [ "$total_needed" -gt "$sd_free" ]; then
-        echo "!! Nicht genug Platz auf SD – Abbruch."
+        echo "!! Not enough space on SD - aborting."
         return 1
     fi
-    echo "   Platz: OK"
+    echo "   Space: OK"
 
-    # --- System-Sync ---
+    # --- System sync ---
     echo ""
-    echo ">> System-Sync NVMe → SD (${active_subvol})..."
+    echo ">> System sync NVMe -> SD (${active_subvol})..."
     rsync -aHAX --delete --one-file-system \
         --exclude=/proc --exclude=/sys --exclude=/dev --exclude=/run \
         --exclude=/tmp  --exclude=/boot --exclude=/home --exclude=/mnt \
         --exclude=/lost+found \
         --info=progress2 \
         / "${sd_subvol_path}/"
-    echo ">> System-Sync: OK"
+    echo ">> System sync: OK"
 
-    # --- Boot-Sync ---
+    # --- Boot sync ---
     echo ""
-    echo ">> Boot-Sync NVMe → SD..."
+    echo ">> Boot sync NVMe -> SD..."
     rsync -aH --delete --info=progress2 /boot/ "${MNT_SD_BOOT}/"
-    echo ">> Boot-Sync: OK"
+    echo ">> Boot sync: OK"
 
-    # --- Home-Sync ---
+    # --- Home sync ---
     echo ""
-    echo ">> Home-Sync /home/stellarmate → SD..."
+    echo ">> Home sync /home/stellarmate -> SD..."
     mkdir -p "${MNT_SD_BTRFS}/@home/stellarmate"
     rsync -aHAX --delete \
         --exclude=Pictures --exclude=Videos --exclude=Downloads --exclude=.cache \
         --info=progress2 \
         /home/stellarmate/ "${MNT_SD_BTRFS}/@home/stellarmate/"
-    echo ">> Home-Sync: OK"
+    echo ">> Home sync: OK"
 
-    # --- cmdline.txt auf SD patchen: NVMe-UUID → LABEL= (Herstellerstandard) ---
+    # --- Patch cmdline.txt on SD: NVMe UUID -> LABEL= (vendor default) ---
     echo ""
-    echo ">> SD cmdline.txt patchen..."
+    echo ">> Patching SD cmdline.txt..."
     if grep -q "$nvme_root_uuid" "${MNT_SD_BOOT}/cmdline.txt"; then
         sed -i "s|root=UUID=${nvme_root_uuid}|root=LABEL=SM_ROOT|g" "${MNT_SD_BOOT}/cmdline.txt"
-        echo "   root=: UUID → LABEL=SM_ROOT  OK"
+        echo "   root=: UUID -> LABEL=SM_ROOT  OK"
     else
-        echo "   root=: bereits korrekt"
+        echo "   root=: already correct"
     fi
     if grep -q 'subvol=' "${MNT_SD_BOOT}/cmdline.txt"; then
         sed -i "s|subvol=[^ ,]*|subvol=${active_subvol}|g" "${MNT_SD_BOOT}/cmdline.txt"
         echo "   subvol=: ${active_subvol}  OK"
     fi
 
-    # --- fstab im SD-Subvolume patchen: NVMe-UUIDs → LABEL= (Herstellerstandard) ---
-    echo ">> SD fstab patchen..."
+    # --- Patch fstab in the SD subvolume: NVMe UUIDs -> LABEL= (vendor default) ---
+    echo ">> Patching SD fstab..."
     local sd_fstab="${sd_subvol_path}/etc/fstab"
     sed -i \
         "s|UUID=${nvme_boot_uuid}|LABEL=SM_BOOT|g; \
          s|UUID=${nvme_root_uuid}|LABEL=SM_ROOT|g" \
         "$sd_fstab"
-    echo "   UUIDs → LABEL=SM_BOOT / LABEL=SM_ROOT  OK"
+    echo "   UUIDs -> LABEL=SM_BOOT / LABEL=SM_ROOT  OK"
 
-    # Trap zurücksetzen, dann manuell aufräumen
+    # Reset the trap, then clean up manually
     trap - EXIT
     _cleanup_sd
     echo ""
-    echo ">> SD-Update abgeschlossen."
+    echo ">> SD update complete."
 }
 
 update_nvme_memory() {
     local NVME_BTRFS_MNT="/mnt/nvme-btrfs-root"
     local NVME_HOME="${NVME_BTRFS_MNT}/@home/stellarmate"
 
-    # Prüfen ob von SD gebootet
+    # Check whether booted from SD
     if [ "$BOOT_FROM_NVME" -eq 1 ]; then
-        echo "!! Nicht von SD gebootet – dieser Befehl ist nur auf SD-Boot sinnvoll."
+        echo "!! Not booted from SD - this command only makes sense on SD boot."
         return 1
     fi
-    echo "   Boot-Quelle: SD  ✓"
+    echo "   Boot source: SD  OK"
 
-    # NVMe prüfen
+    # Check NVMe
     if [ ! -b "$NVME_ROOT_DEV" ]; then
-        echo "!! NVMe nicht gefunden ($NVME_ROOT_DEV) – Abbruch."
+        echo "!! NVMe not found ($NVME_ROOT_DEV) - aborting."
         return 1
     fi
 
     _cleanup_nvme_mem() {
-        echo ">> NVMe aushängen..."
+        echo ">> Unmounting NVMe..."
         umount "$NVME_BTRFS_MNT" 2>/dev/null || true
     }
     trap _cleanup_nvme_mem EXIT
 
     mkdir -p "$NVME_BTRFS_MNT"
-    echo ">> NVMe mounten (subvolid=5)..."
+    echo ">> Mounting NVMe (subvolid=5)..."
     mount -o subvolid=5 "$NVME_ROOT_DEV" "$NVME_BTRFS_MNT"
 
     if [ ! -d "$NVME_HOME" ]; then
-        echo "!! NVMe @home nicht gefunden: $NVME_HOME – Abbruch."
+        echo "!! NVMe @home not found: $NVME_HOME - aborting."
         return 1
     fi
 
-    # Platz-Check
+    # Space check
     echo ""
-    echo ">> Platz-Check..."
+    echo ">> Space check..."
     local mem_size nvme_free
     mem_size=$(du -sx /home/stellarmate/basic-memory /home/stellarmate/.claude 2>/dev/null | awk '{sum += $1} END {print sum}')
-    mem_size=$(( mem_size * 12 / 10 ))  # +20% Puffer
+    mem_size=$(( mem_size * 12 / 10 ))  # +20% buffer
     nvme_free=$(df --output=avail "$NVME_BTRFS_MNT" | tail -1)
 
-    printf "   Memory-Daten (inkl. 20%% Puffer): %d KiB  |  NVMe frei: %d MiB\n" \
+    printf "   Memory data (incl. 20%% buffer): %d KiB  |  NVMe free: %d MiB\n" \
         "$mem_size" "$(( nvme_free / 1024 ))"
 
     if [ "$mem_size" -gt "$nvme_free" ]; then
-        echo "!! Nicht genug Platz auf NVMe – Abbruch."
+        echo "!! Not enough space on NVMe - aborting."
         return 1
     fi
-    echo "   Platz: OK"
+    echo "   Space: OK"
 
     # basic-memory sync
     echo ""
-    echo ">> basic-memory: SD → NVMe..."
+    echo ">> basic-memory: SD -> NVMe..."
     mkdir -p "${NVME_HOME}/basic-memory"
     rsync -aHAX --delete --info=progress2 \
         /home/stellarmate/basic-memory/ \
@@ -556,7 +556,7 @@ update_nvme_memory() {
 
     # .claude sync
     echo ""
-    echo ">> .claude: SD → NVMe..."
+    echo ">> .claude: SD -> NVMe..."
     mkdir -p "${NVME_HOME}/.claude"
     rsync -aHAX --delete --info=progress2 \
         /home/stellarmate/.claude/ \
@@ -566,7 +566,7 @@ update_nvme_memory() {
     trap - EXIT
     _cleanup_nvme_mem
     echo ""
-    echo ">> Memory-Sync abgeschlossen. NVMe ist auf aktuellem Stand."
+    echo ">> Memory sync complete. NVMe is up to date."
 }
 
 sync_memory() {
@@ -576,9 +576,9 @@ sync_memory() {
     local RCLONE_BACKUP="/home/stellarmate/bin/backup_files/rclone.conf"
     local BISYNC_FLAG=""
 
-    # rclone installieren falls fehlt
+    # Install rclone if missing
     if ! command -v rclone &>/dev/null; then
-        echo ">> rclone nicht gefunden – wird installiert..."
+        echo ">> rclone not found - installing..."
         local tmp_conf
         tmp_conf=$(mktemp)
         cat /etc/pacman.conf > "$tmp_conf"
@@ -586,50 +586,51 @@ sync_memory() {
             printf '\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n' >> "$tmp_conf"
         fi
         if pacman -Sy --noconfirm --config "$tmp_conf" rclone; then
-            echo ">> rclone: installiert."
+            echo ">> rclone: installed."
         else
-            echo "!! rclone: Installation fehlgeschlagen – bitte manuell: sudo pacman -S rclone"
+            echo "!! rclone: installation failed - please install manually: sudo pacman -S rclone"
             rm -f "$tmp_conf"
             return 1
         fi
         rm -f "$tmp_conf"
     else
-        echo ">> rclone: vorhanden."
+        echo ">> rclone: present."
     fi
 
-    # rclone.conf wiederherstellen falls fehlt
+    # Restore rclone.conf if missing
     if [ ! -f "$RCLONE_CONF" ]; then
         if [ -f "$RCLONE_BACKUP" ]; then
-            echo ">> rclone.conf fehlt – wird aus Backup wiederhergestellt..."
+            echo ">> rclone.conf missing - restoring from backup..."
             mkdir -p "$(dirname "$RCLONE_CONF")"
             cp "$RCLONE_BACKUP" "$RCLONE_CONF"
             chmod 600 "$RCLONE_CONF"
-            echo ">> rclone.conf: wiederhergestellt."
+            echo ">> rclone.conf: restored."
         else
-            echo "!! rclone.conf fehlt und kein Backup unter $RCLONE_BACKUP"
-            echo "   Bitte manuell konfigurieren: rclone config"
+            echo "!! rclone.conf missing and no backup under $RCLONE_BACKUP"
+            echo "   Please configure manually: rclone config"
             return 1
         fi
     fi
 
-    # Als User "stellarmate" ausfuehren (nicht als root): rclone sucht Config UND
-    # bisync-State-Cache relativ zu $HOME. Unter sudo/root waere das /root/... statt
-    # /home/stellarmate/... - Config faende sich per --config noch, der bisync-State
-    # (~/.cache/rclone/bisync) aber nicht, was einen unnoetigen --resync erzwingen wuerde.
+    # Run as user "stellarmate" (not as root): rclone looks up its config AND
+    # the bisync state cache relative to $HOME. Under sudo/root that would be
+    # /root/... instead of /home/stellarmate/... - the config would still be
+    # found via --config, but not the bisync state (~/.cache/rclone/bisync),
+    # which would force an unnecessary --resync.
     if ! sudo -u stellarmate rclone lsd "$RCLONE_REMOTE" --max-depth 0 &>/dev/null; then
-        echo "!! Nextcloud nicht erreichbar oder Remote 'nextcloud' nicht konfiguriert"
+        echo "!! Nextcloud unreachable or remote 'nextcloud' not configured"
         echo "   Setup: rclone config (WebDAV, https://nextcloud.blue-it.org/remote.php/webdav/, vendor=other)"
         return 1
     fi
 
-    # Beim ersten Lauf --resync setzen (kein bisync-Status vorhanden)
+    # Set --resync on the first run (no bisync state present yet)
     local bisync_state_dir="/home/stellarmate/.cache/rclone/bisync"
     if [ ! -d "$bisync_state_dir" ] || [ -z "$(ls -A "$bisync_state_dir" 2>/dev/null)" ]; then
-        echo "   Erster Lauf – initialer Resync (--resync)"
+        echo "   First run - initial resync (--resync)"
         BISYNC_FLAG="--resync"
     fi
 
-    echo ">> basic-memory bisync: lokal ↔ Nextcloud ..."
+    echo ">> basic-memory bisync: local <-> Nextcloud ..."
     if sudo -u stellarmate rclone bisync "$LOCAL_MEMORY" "$RCLONE_REMOTE" \
         --size-only \
         --exclude ".obsidian/**" \
@@ -637,21 +638,21 @@ sync_memory() {
         $BISYNC_FLAG 2>&1; then
         echo ">> basic-memory: OK"
     else
-        echo "!! basic-memory bisync fehlgeschlagen – bitte manuell prüfen"
+        echo "!! basic-memory bisync failed - please check manually"
         return 1
     fi
 }
 
-# ===== Hauptprogramm =====
+# ===== Main program =====
 
 if [ "$SYNC_MEMORY" -eq 1 ]; then
-    echo "=== Memory-Sync ↔ Nextcloud ==="
+    echo "=== Memory sync <-> Nextcloud ==="
     sync_memory
     exit 0
 fi
 
 if [ "$UPDATE_NVME_MEMORY" -eq 1 ]; then
-    echo "=== Memory-Sync SD → NVMe ==="
+    echo "=== Memory sync SD -> NVMe ==="
     _setup_nvme_dirs
     update_nvme_memory
     exit 0
@@ -667,38 +668,38 @@ restore_file /etc/pacman.conf
 
 if [ "$DUAL_BOOT" -eq 1 ]; then
     echo ""
-    echo "=== UUID-Fixup ==="
+    echo "=== UUID fixup ==="
     fix_uuids || SCRIPT_HAD_ERRORS=1
 else
     echo ""
-    echo "=== UUID-Fixup / Label-Rename: übersprungen (kein --enable-dual-boot-sd-nvme) ==="
+    echo "=== UUID fixup / label rename: skipped (no --enable-dual-boot-sd-nvme) ==="
 fi
 
 echo ""
-echo "=== NVMe Config-Fixup ==="
+echo "=== NVMe config fixup ==="
 fix_nvme_config
 
 if [ "$DUAL_BOOT" -eq 1 ]; then
     echo ""
-    echo "=== NVMe Label-Rename ==="
+    echo "=== NVMe label rename ==="
     rename_nvme_labels
 fi
 
 echo ""
-echo "=== Extra-Pakete ==="
+echo "=== Extra packages ==="
 install_extra_packages || SCRIPT_HAD_ERRORS=1
 
 echo ""
-echo "=== WireGuard Restore ==="
+echo "=== WireGuard restore ==="
 restore_wireguard
 
 if [ "$UPDATE_SD" -eq 1 ]; then
     echo ""
-    echo "=== SD-Update ==="
+    echo "=== SD update ==="
     update_sd || SCRIPT_HAD_ERRORS=1
 fi
 
-# Cleanup NVMe-Mounts (falls von SD gebootet)
+# Clean up NVMe mounts (if booted from SD)
 if [ -n "$NVME_BOOT_TMP" ]; then
     trap - EXIT
     umount "$NVME_BOOT_TMP" 2>/dev/null; rmdir "$NVME_BOOT_TMP" 2>/dev/null || true
@@ -707,12 +708,12 @@ fi
 
 echo ""
 if [ "$REBOOT_NEEDED" -eq 1 ]; then
-    echo "=== Fertig. Reboot erforderlich: sudo reboot ==="
+    echo "=== Done. Reboot required: sudo reboot ==="
 else
-    echo "=== Fertig. Kein Reboot nötig. ==="
+    echo "=== Done. No reboot needed. ==="
 fi
 
 if [ "$SCRIPT_HAD_ERRORS" -eq 1 ]; then
-    echo "!! Mindestens ein Schritt ist fehlgeschlagen (siehe Meldungen oben) - bitte pruefen."
+    echo "!! At least one step failed (see messages above) - please check."
     exit 1
 fi

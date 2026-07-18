@@ -251,16 +251,16 @@ add_if_missing() {
     fi
 }
 
-# Optionaler Marker, um PiFinder-Block zu kennzeichnen
+# Optional marker to identify the PiFinder block
 add_if_missing "#Pifinder"
 
-# Interfaces und Overlays
+# Interfaces and overlays
 add_if_missing "dtparam=spi=on"
 add_if_missing "dtparam=i2c_arm=on"
 add_if_missing "dtparam=i2c_arm_baudrate=10000"
 add_if_missing "dtoverlay=pwm,pin=13,func=4"
 add_if_missing "dtoverlay=uart3"
-add_if_missing "dtoverlay=pwm-2chan"  # Speziell für Bookworm
+add_if_missing "dtoverlay=pwm-2chan"  # Specifically for Bookworm
 
 echo "✅ config.txt checks complete."
 

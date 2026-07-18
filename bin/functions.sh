@@ -46,49 +46,49 @@ keyboard_py="${pifinder_dir}/python/PiFinder/keyboard_pi.py"
 # FUNCTIONS
 #############################################################
 
-# Funktion zum Einfügen von Zeilen definieren
+# Function to insert lines after a matched line
 insert_lines_after_search() {
   local file_path="$1"
   local search_pattern="$2"
   local lines_to_insert="$3"
 
-  # Überprüfen, ob die Datei existiert
+  # Check whether the file exists
   if [ -f "${file_path}" ]; then
-    # Mit sed die Zeilen nach der Zielzeile einfügen
+    # Insert the lines after the target line using sed
     sed -i "/${search_pattern}/a ${lines_to_insert}" "${file_path}"
-    echo "Zeilen erfolgreich nach '${search_pattern}' in '${file_path}' eingefügt."
+    echo "Lines successfully inserted after '${search_pattern}' in '${file_path}'."
   else
-    echo "Datei '${file_path}' nicht gefunden."
+    echo "File '${file_path}' not found."
     exit 1
   fi
 }
 
 ############################################################
-# Funktion zum Erstellen der Datei und Einfügen von Zeilen definieren (korrigiert und erweitert)
+# Function to create the file and insert lines at the top
 create_dir_file_and_insert_lines() {
   local dir_path="$1"
   local file_name="$2"
   local lines_to_insert="$3"
 
-  # Verzeichnis erstellen, falls es nicht existiert (Korrektur 2: mkdir -p verwenden)
+  # Create the directory if it doesn't exist
   mkdir -p "${dir_path}"
 
-  # Datei erstellen, falls sie nicht existiert (Korrektur 3: Datei __init__.py erstellen)
+  # Create the file if it doesn't exist
   if [ ! -f "${dir_path}" ]; then
     touch "${dir_path}/${file_name}"
   fi
 
-  # Zeilen am Anfang der Datei einfügen
+  # Insert the lines at the top of the file
   {
     echo -e "${lines_to_insert}"
     cat ""${dir_path}/${file_name}""
   } > temp_file && mv temp_file ""${dir_path}/${file_name}""
 
-  echo "Zeilen erfolgreich am Anfang der Datei '"${dir_path}/${file_name}"' eingefügt."
+  echo "Lines successfully inserted at the top of '"${dir_path}/${file_name}"'."
 }
 
 ############################################################
-# Funktion zum Auskommentieren einer Zeile definieren
+# Function to comment out a line
 comment_out_line() {
   local file_path="$1"
   local line_to_comment="$2"
@@ -108,21 +108,21 @@ comment_out_line() {
 comment_out_line_awk() {
   local file_path="$1"
   local line_to_comment="$2"
-  local commented_line="# COMMENTED " # Leerzeichen am Ende für bessere Lesbarkeit
+  local commented_line="# COMMENTED " # Trailing space for better readability
 
   if [ -f "${file_path}" ]; then
     # Use awk to comment out the line, preserving indentation
 
     awk_command='
-      BEGIN {line_to_find = ENVIRON["line_to_comment"]}  # Übergebe line_to_comment als Variable
+      BEGIN {line_to_find = ENVIRON["line_to_comment"]}  # Pass line_to_comment in as a variable
       {
-        if ($0 ~ "^[[:space:]]*" line_to_find) {        # Suche nach der Zeile mit Einzug
-          sub(/^[[:space:]]*/, "&" ENVIRON["commented_line"], $0) # Kommentiere aus, Einzug erhalten
+        if ($0 ~ "^[[:space:]]*" line_to_find) {        # Look for the line, keeping indentation
+          sub(/^[[:space:]]*/, "&" ENVIRON["commented_line"], $0) # Comment it out, keep indentation
         }
-        print $0                                          # Gib jede Zeile aus (geändert oder nicht)
+        print $0                                          # Print every line (changed or not)
       }
     '
-    export line_to_comment commented_line # Exportiere Variablen für awk
+    export line_to_comment commented_line # Export variables for awk
 
     awk "${awk_command}" "${file_path}" > /tmp/solver.py.new && sudo mv /tmp/solver.py.new "${file_path}"
 

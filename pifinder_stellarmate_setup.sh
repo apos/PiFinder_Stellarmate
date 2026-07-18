@@ -309,7 +309,7 @@ fi
 grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
 
-# Risiko 1: libcamera Major-Version prüfen — python-libcamera 0.7.0 ist nur für 0.7.x kompatibel
+# Risk 1: check libcamera major version - python-libcamera 0.7.0 is only compatible with 0.7.x
 LIBCAM_VER=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)
 LIBCAM_MAJOR=$(pacman -Q libcamera 2>/dev/null | awk '{print $2}' | cut -d. -f1)
 if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
@@ -519,18 +519,18 @@ else
         echo "  ⚠️  picamera2 not found in venv — skipping"
     fi
 
-    # Pi5: lgpio C-Bibliothek + rpi-lgpio (RPi.GPIO Drop-in für Pi5 RP1-GPIO)
+    # Pi5: lgpio C library + rpi-lgpio (RPi.GPIO drop-in for the Pi5 RP1 GPIO)
     hw_model_setup=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
     if echo "$hw_model_setup" | grep -q "Raspberry Pi 5"; then
         echo "🔧 [Pi5] lgpio / rpi-lgpio Setup ..."
 
-        # swig installieren (Builddep für lgpio Python-Bindings)
+        # Install swig (build dep for the lgpio Python bindings)
         if ! command -v swig &>/dev/null; then
             echo "  Installing swig ..."
             sudo pacman -S --noconfirm swig 2>/dev/null && echo "  ✅ swig installed." || echo "  ⚠️  swig install failed — lgpio Python bindings may not build."
         fi
 
-        # lgpio-Quellcode clonen falls nicht vorhanden
+        # Clone the lgpio source if not present
         LGPIO_SRC="${pifinder_home}/lgpio-src"
         if [ ! -d "$LGPIO_SRC" ]; then
             echo "  Cloning lgpio source to $LGPIO_SRC ..."
@@ -541,7 +541,7 @@ else
             echo "  ✅ lgpio source: already present ($LGPIO_SRC)"
         fi
 
-        # liblgpio.so bauen und installieren
+        # Build and install liblgpio.so
         if [ ! -f /usr/local/lib/liblgpio.so ]; then
             echo "  Building liblgpio.so ..."
             make -C "$LGPIO_SRC" -s && sudo make -C "$LGPIO_SRC" install -s && sudo ldconfig \
@@ -660,7 +660,7 @@ if [ -f "/boot/firmware/config.txt" ]; then
 elif [ -f "/boot/config.txt" ]; then
     CONFIG_FILE="/boot/config.txt"
 else
-    echo "❌ config.txt nicht gefunden!"; exit 1
+    echo "❌ config.txt not found!"; exit 1
 fi
 
 echo "🔧 Ensuring required config.txt entries are present ..."
@@ -713,9 +713,9 @@ add_if_missing "dtparam=i2c_arm=on"
 hw_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
 if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
     # Pi5: PWM on GPIO13 (ALT0), imx296
-    # ACHTUNG: dtoverlay=uart3 auf Pi5/RP1 belegt GPIO9 (UART3-RX) = SPI0-MISO → SPI-Konflikt!
-    # Auf Pi4/BCM2711 ist uart3 auf GPIO4/5 → kein Konflikt.
-    # TODO Pi5 GPS-Dongle/UBLOX: SPI-freie UART-Pins auf RP1 ermitteln und hier eintragen.
+    # WARNING: dtoverlay=uart3 on Pi5/RP1 occupies GPIO9 (UART3-RX) = SPI0-MISO -> SPI conflict!
+    # On Pi4/BCM2711, uart3 is on GPIO4/5 -> no conflict.
+    # TODO Pi5 GPS dongle/UBLOX: determine SPI-free UART pins on RP1 and add them here.
     add_to_section "pi5" "dtparam=i2c_arm_baudrate=10000"
     add_to_section "pi5" "dtoverlay=pwm,pin=13,func=4"
     add_to_section "pi5" "dtoverlay=pwm-2chan"

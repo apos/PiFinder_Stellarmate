@@ -256,7 +256,7 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 if should_apply_patch "2.3.0" "P5" "bookworm"; then
     if ! grep -q 'from luma.core.interface.serial import noop' "$display_py"; then
         sed -i '1i from luma.core.interface.serial import noop' "$display_py"
-        echo "✅ Import für noop hinzugefügt"
+        echo "✅ Import for noop added"
     fi
 
     sed -i 's|serial = spi(device=0, port=0, |serial = spi(gpio=noop(), device=0, port=10, |' "$display_py"
@@ -691,10 +691,10 @@ if [ -f "$tetra3_main_py" ]; then
         sed -i 's/np\.math\.factorial/math.factorial/g' "$tetra3_main_py"
         echo "✅ tetra3/main.py: np.math.factorial → math.factorial"
     else
-        echo "⏩ tetra3/main.py: bereits gepatcht oder nicht nötig"
+        echo "⏩ tetra3/main.py: already patched or not needed"
     fi
 else
-    echo "⚠️ tetra3/main.py nicht gefunden, skipping"
+    echo "⚠️ tetra3/main.py not found, skipping"
 fi
 echo "------------------------------------"
 

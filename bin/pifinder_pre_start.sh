@@ -1,28 +1,28 @@
 #!/bin/bash
 # PiFinder Pre-Start Script
-# Wird als ExecStartPre in pifinder.service ausgeführt (als root)
-# Stellt sicher dass alle Gruppen, Permissions und Overlays vorhanden sind
+# Runs as ExecStartPre in pifinder.service (as root)
+# Ensures all groups, permissions, and overlays are present
 
-# Gruppen anlegen falls nicht vorhanden
+# Create groups if they don't exist
 getent group spi  > /dev/null 2>&1 || groupadd spi
 getent group gpio > /dev/null 2>&1 || groupadd gpio
 getent group i2c  > /dev/null 2>&1 || groupadd i2c
 getent group kmem  > /dev/null 2>&1 || groupadd kmem
 getent group input > /dev/null 2>&1 || groupadd input
 
-# User zu Gruppen hinzufügen
+# Add the user to the groups
 PIFINDER_USER=${1:-stellarmate}
 usermod -a -G spi,gpio,i2c,video,kmem,input "${PIFINDER_USER}" 2>/dev/null || true
 
-# udev: /dev/gpiomem für gpio-Gruppe freigeben
+# udev: open up /dev/gpiomem for the gpio group
 udevadm trigger --action=change /dev/gpiomem 2>/dev/null || true
 
-# PWM Overlay laden falls nicht aktiv (GPIO13, ALT0 = PWM1)
+# Load the PWM overlay if not active (GPIO13, ALT0 = PWM1)
 if [ ! -d /sys/class/pwm/pwmchip0 ]; then
     dtoverlay pwm pin=13 func=4 2>/dev/null || true
 fi
 
-# Swap aktivieren falls nicht aktiv
+# Enable swap if not active
 if [ -f /swapfile ] && ! swapon --show | grep -q /swapfile; then
     swapon /swapfile 2>/dev/null || true
 fi
@@ -38,12 +38,12 @@ if [ -f "$VENV_PY" ]; then
     fi
 fi
 
-# WirePlumber + PipeWire: Services dauerhaft maskieren + pipewire-libcamera entfernen
-# WirePlumber/PipeWire greifen auf /dev/video0 (Unicam/IMX296) zu und bringen
-# den Sensor in einen defekten I2C-Zustand → Kamera zeigt nur schwarz, selbst
-# nach Reboot (nur Power-Cycle hilft dann). Kein Audio nötig auf diesem Astro-Computer.
-# pipewire-libcamera muss entfernt werden (kommt nach BTRFS-Reset zurück).
-# Symlinks in /home überleben BTRFS-Reset.
+# WirePlumber + PipeWire: mask the services permanently + remove pipewire-libcamera
+# WirePlumber/PipeWire grab /dev/video0 (Unicam/IMX296) and leave the sensor in a
+# broken I2C state -> camera shows only black, even after a reboot (only a power
+# cycle fixes it). No audio needed on this astro computer.
+# pipewire-libcamera must be removed (it comes back after a BTRFS reset).
+# Symlinks under /home survive a BTRFS reset.
 SYSTEMD_USER_DIR="/home/${PIFINDER_USER}/.config/systemd/user"
 mkdir -p "${SYSTEMD_USER_DIR}"
 
@@ -52,9 +52,9 @@ _mask_user_unit() {
     local target="${SYSTEMD_USER_DIR}/${unit}"
     if [ ! -L "${target}" ] || [ "$(readlink "${target}")" != "/dev/null" ]; then
         ln -sf /dev/null "${target}"
-        echo "✅ ${unit} maskiert"
+        echo "✅ ${unit} masked"
     else
-        echo "✅ ${unit} bereits maskiert — OK"
+        echo "✅ ${unit} already masked - OK"
     fi
 }
 
@@ -65,20 +65,20 @@ _mask_user_unit "pipewire.socket"
 _mask_user_unit "pipewire-pulse.socket"
 chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "${SYSTEMD_USER_DIR}"
 
-# pipewire-libcamera entfernen — greift direkt auf Kamera zu, ohne WirePlumber
+# Remove pipewire-libcamera - it accesses the camera directly, bypassing WirePlumber
 if pacman -Q pipewire-libcamera &>/dev/null; then
     pacman -R --noconfirm pipewire-libcamera 2>/dev/null \
-        && echo "✅ pipewire-libcamera entfernt" \
-        || echo "⚠️  pipewire-libcamera konnte nicht entfernt werden"
+        && echo "✅ pipewire-libcamera removed" \
+        || echo "⚠️  Could not remove pipewire-libcamera"
 else
-    echo "✅ pipewire-libcamera nicht installiert — OK"
+    echo "✅ pipewire-libcamera not installed - OK"
 fi
 
-# ===== Pi5: rpi-lgpio (GPIO-Kompatibilität für Pi5 RP1-GPIO) =====
-# RPi.GPIO kennt den Pi5-SoC (RP1) nicht → rpi-lgpio als Drop-in-Replacement.
-# liblgpio.so liegt in /usr/local/lib/ → geht bei BTRFS-Reset verloren.
-# Rebuild: nur gcc nötig (kein swig, kein Internet) — Source bleibt in /home/.
-# Wheels liegen in packages/ → kein Internet für pip install nötig.
+# ===== Pi5: rpi-lgpio (GPIO compatibility for the Pi5 RP1 GPIO) =====
+# RPi.GPIO doesn't know the Pi5 SoC (RP1) -> rpi-lgpio as a drop-in replacement.
+# liblgpio.so lives under /usr/local/lib/ -> lost on a BTRFS reset.
+# Rebuild: only needs gcc (no swig, no internet) - the source stays under /home.
+# Wheels live under packages/ -> no internet needed for pip install.
 PIFINDER_VENV="/home/${PIFINDER_USER}/PiFinder/python/.venv"
 PIFINDER_SM_DIR="/home/${PIFINDER_USER}/PiFinder_Stellarmate"
 HW_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
@@ -86,20 +86,20 @@ if echo "$HW_MODEL" | grep -q "Raspberry Pi 5"; then
     LGPIO_SRC="/home/${PIFINDER_USER}/lgpio-src"
     LGPIO_LIB="/usr/local/lib/liblgpio.so"
 
-    # /usr/local/lib im ldconfig-Suchpfad sicherstellen (geht bei BTRFS-Reset verloren)
+    # Ensure /usr/local/lib is in ldconfig's search path (lost on a BTRFS reset)
     if [ ! -f /etc/ld.so.conf.d/local.conf ] || ! grep -q '/usr/local/lib' /etc/ld.so.conf.d/local.conf; then
         echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf
         ldconfig
-        echo ">> [Pi5] /usr/local/lib: ldconfig-Pfad eingetragen."
+        echo ">> [Pi5] /usr/local/lib: added to ldconfig path."
     fi
 
-    # liblgpio.so neu bauen falls fehlt (nach BTRFS-Reset)
-    # Nur gcc nötig — kein swig, kein make install, kein Internet
+    # Rebuild liblgpio.so if missing (after a BTRFS reset)
+    # Only needs gcc - no swig, no make install, no internet
     if [ ! -f "$LGPIO_LIB" ]; then
-        echo ">> [Pi5] liblgpio.so fehlt – wird neu gebaut..."
+        echo ">> [Pi5] liblgpio.so missing - rebuilding..."
         if [ ! -d "$LGPIO_SRC" ]; then
-            echo "!! [Pi5] lgpio-Quellcode fehlt: $LGPIO_SRC"
-            echo "   Bitte Setup-Script erneut ausführen: bash pifinder_stellarmate_setup.sh"
+            echo "!! [Pi5] lgpio source missing: $LGPIO_SRC"
+            echo "   Please rerun the setup script: bash pifinder_stellarmate_setup.sh"
         else
             (
                 cd "$LGPIO_SRC"
@@ -114,24 +114,24 @@ if echo "$HW_MODEL" | grep -q "Raspberry Pi 5"; then
             ) && install -m 0755 "${LGPIO_SRC}/liblgpio.so.1" /usr/local/lib/ \
               && ln -sf /usr/local/lib/liblgpio.so.1 /usr/local/lib/liblgpio.so \
               && ldconfig \
-              && echo ">> [Pi5] liblgpio.so: neu gebaut." \
-              || echo "!! [Pi5] liblgpio.so: Build fehlgeschlagen."
+              && echo ">> [Pi5] liblgpio.so: rebuilt." \
+              || echo "!! [Pi5] liblgpio.so: build failed."
         fi
     else
         echo ">> [Pi5] liblgpio.so: OK"
     fi
 
-    # rpi-lgpio im venv installieren falls nicht importierbar
-    # Installation aus lokalem packages/ – kein Internet nötig
+    # Install rpi-lgpio into the venv if it isn't importable
+    # Installed from local packages/ - no internet needed
     if [ -f "${PIFINDER_VENV}/bin/python" ]; then
         if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO" &>/dev/null; then
-            echo ">> [Pi5] rpi-lgpio fehlt – wird aus packages/ installiert..."
+            echo ">> [Pi5] rpi-lgpio missing - installing from packages/..."
             if "${PIFINDER_VENV}/bin/pip" install --quiet \
                 --no-index --find-links="${PIFINDER_SM_DIR}/packages/" \
                 rpi-lgpio lgpio; then
-                echo ">> [Pi5] rpi-lgpio: installiert."
+                echo ">> [Pi5] rpi-lgpio: installed."
             else
-                echo "!! [Pi5] rpi-lgpio: Installation fehlgeschlagen."
+                echo "!! [Pi5] rpi-lgpio: installation failed."
             fi
         else
             echo ">> [Pi5] rpi-lgpio (RPi.GPIO): OK"
