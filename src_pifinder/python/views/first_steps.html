@@ -3,8 +3,12 @@
 {% block content %}
 <div class="row valign-wrapper" style="margin: 0px;">
   <div class="col s12">
-    <h5 class="grey-text">{{ _('First Steps') }}</h5>
-    <p class="grey-text text-lighten-1">{{ _('Two things to do after a fresh install or a reboot:') }}</p>
+    <h5 class="grey-text">{{ _('Prepare SMOS') }}</h5>
+    <p class="grey-text text-lighten-1">
+      {{ _('Two things to do after installing or updating PiFinder via the') }}
+      <a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">PiFinder_Stellarmate</a>
+      {{ _('project, or after a reboot:') }}
+    </p>
   </div>
 </div>
 
@@ -15,29 +19,13 @@
 </style>
 
 <div class="row">
-  <div class="col s12 m6">
+  <div class="col s12">
     <div class="card grey darken-2">
       <div class="card-content">
-        <span class="card-title grey-text">1. {{ _('Access PiFinder Remotely') }}</span>
-        <p class="grey-text text-lighten-1">
-          {{ _('PiFinder is reachable on your network. Open the Remote page to control PiFinder from a browser (default password:') }} <code>smate</code>).
-        </p>
-        <ul class="first-steps-links">
-          {% for ip in ips %}
-          <li><a href="http://{{ ip }}:{{ port }}/remote" target="_blank" rel="noopener">{{ ip }}{% if port != 80 %}:{{ port }}{% endif %}</a></li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="col s12 m6">
-    <div class="card grey darken-2">
-      <div class="card-content">
-        <span class="card-title grey-text">2. {{ _('Set up the StellarMate Web Manager') }}</span>
+        <span class="card-title grey-text">1. {{ _('Set up the StellarMate Web Manager') }}</span>
         <img src="/images/webmanager_profile.png"
              alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
-             style="width:100%; border-radius:4px; margin: 0.5rem 0;">
+             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;">
         <p class="grey-text text-lighten-1">
           {{ _('Open the Web Manager (links below), create or select an Equipment Profile. Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount), then click Start.') }}
         </p>
@@ -55,11 +43,17 @@
   <div class="col s12">
     <div class="card grey darken-2">
       <div class="card-content">
-        <span class="card-title grey-text">3. {{ _('Setup Wizard') }}</span>
+        <span class="card-title grey-text">2. {{ _('Setup Wizard') }}</span>
         <p class="grey-text text-lighten-1" id="setup-gui-status-text">{{ _('Checking status…') }}</p>
         <p class="grey-text text-lighten-1">
           {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It has no login and can trigger destructive actions (delete + reinstall), so leave it running only while you need it - it shuts itself down automatically after a minute of inactivity.') }}
         </p>
+        <p class="grey-text text-lighten-1">{{ _('Setup Wizard reachable at:') }}</p>
+        <ul class="first-steps-links">
+          {% for ip in ips %}
+          <li><a href="http://{{ ip }}:8765/" target="_blank" rel="noopener">{{ ip }}:8765</a></li>
+          {% endfor %}
+        </ul>
         <button id="setup-gui-toggle-btn" class="btn grey darken-1" onclick="setupGuiToggle()">{{ _('Checking…') }}</button>
       </div>
     </div>

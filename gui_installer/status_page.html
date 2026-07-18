@@ -183,20 +183,6 @@
     margin-right: 0.7rem;
   }
   #quick-links-tile a:hover { text-decoration: underline; }
-  #pifinder-access {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 0.8rem 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
-  }
-  #pifinder-access a {
-    color: #7ec8ff;
-    text-decoration: none;
-    margin-right: 1rem;
-  }
-  #pifinder-access a:hover { text-decoration: underline; }
   .waiting-bar-track {
     background: #262626;
     border-radius: 5px;
@@ -257,8 +243,6 @@
 
     <ul id="phase-checklist" style="display:none;"></ul>
 
-    <div id="pifinder-access" style="display:none;"></div>
-
     <div id="choices" style="display:none;"></div>
   </div>
 
@@ -267,7 +251,7 @@
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
-        <div class="ql-section"><span class="ql-label">First Steps:</span><span id="wizard-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">Prepare SMOS:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
@@ -299,7 +283,6 @@ let logPosition = 0;
 let polling = false;
 let phaseLabels = [];
 let knownIps = [];
-let setupSucceeded = false;
 // Cancel is only ever offered on the existing-install choice screen, so this
 // is always true by the time a "Cancelled" status needs to re-show it - but
 // keep it in sync with what /state actually reports, not just assumed.
@@ -351,60 +334,33 @@ function updateChecklist(phaseIndex, running, exitCode) {
 
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
-// Compact: IP only (the link's href carries the full URL), part of the
-// consolidated quick-links tile - not a full URL per line.
+// Part of the consolidated quick-links tile.
 function renderRemoteLinks(ips, port) {
   const el = document.getElementById('remote-links');
   if (!ips || ips.length === 0) {
     el.innerHTML = 'n/a';
     return;
   }
-  el.innerHTML = ips.map(ip => `<a href="http://${ip}:${port}/">${ip}</a>`).join('');
+  el.innerHTML = ips.map(ip => `<a href="http://${ip}:${port}/">${ip}:${port}</a>`).join('');
 }
 
 // Reflects whether PiFinder itself is currently reachable (same probe that
 // drives the OLED-screen mirror) and links to its "First Steps" wizard page
 // once it is. Called whenever that probe's result changes, not just once.
+// This is the only place PiFinder's own reachability/link is shown now (the
+// separate "PiFinder is ready" access-links box was dropped as redundant).
 function updatePiFinderStatusAndWizardLink() {
   const statusEl = document.getElementById('pifinder-status-line');
   const wizardEl = document.getElementById('wizard-link');
   if (pifinderScreenUrl) {
     statusEl.textContent = '🟢 PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
-    wizardEl.innerHTML = `<a href="${base}/first-steps" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a>`;
+    const port = new URL(pifinderScreenUrl).port || 80;
+    wizardEl.innerHTML = `<a href="${base}/first-steps" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
     statusEl.textContent = '⚪ PiFinder not detected yet';
     wizardEl.textContent = 'not available yet';
   }
-}
-
-// PiFinder's own web UI, once setup has finished. Waits for the same live
-// probe that drives the OLED-screen mirror (see initPiFinderScreen) to
-// confirm PiFinder is actually answering before showing real links - a
-// restart/reinstall can take a while to come back up, so showing dead links
-// immediately would be misleading. Reuses whichever port that probe found.
-function showPiFinderAccess() {
-  setupSucceeded = true;
-  const el = document.getElementById('pifinder-access');
-  if (!knownIps || knownIps.length === 0) {
-    el.style.display = 'none';
-    return;
-  }
-  el.style.display = 'block';
-  if (!pifinderScreenUrl) {
-    el.innerHTML =
-      'Waiting for PiFinder to start&hellip;' +
-      '<div class="waiting-bar-track"><div class="waiting-bar-fill"></div></div>';
-    return;
-  }
-  const port = new URL(pifinderScreenUrl).port || 80;
-  const links = knownIps.map(ip => {
-    const url = `http://${ip}:${port}/`;
-    return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
-  }).join('');
-  el.innerHTML =
-    'PiFinder is ready — open it in your browser:<br>' + links +
-    '<br>Default remote password: <code>smate</code>';
 }
 
 function showChoices(existingInstall) {
@@ -457,10 +413,6 @@ async function start(action) {
   document.getElementById('choices').style.display = 'none';
   document.getElementById('reboot-wrap').style.display = 'none';
   document.getElementById('close-wrap').style.display = 'none';
-  // Leftover from a previous run (real links or the waiting bar) shouldn't
-  // stay visible while this new run is in progress.
-  document.getElementById('pifinder-access').style.display = 'none';
-  setupSucceeded = false;
   setStatus('Starting…', 'status-running');
   const resp = await fetch('/start?action=' + encodeURIComponent(action), { method: 'POST' });
   const data = await resp.json();
@@ -587,7 +539,6 @@ async function pollLog() {
       showChoices(existingInstallKnown);
     } else if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
-      showPiFinderAccess();
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
       } else {
@@ -628,9 +579,6 @@ function tryPiFinderScreenUrls(urls, index) {
     pifinderScreenUrl = urls[index];
     refreshPiFinderScreen();
     updatePiFinderStatusAndWizardLink();
-    // The port may have just been discovered after the access-links box
-    // already rendered with a "waiting" state - upgrade it now it's known.
-    if (setupSucceeded) showPiFinderAccess();
   };
   probe.onerror = () => tryPiFinderScreenUrls(urls, index + 1);
   probe.src = urls[index] + '?t=' + Date.now();
@@ -650,7 +598,6 @@ function refreshPiFinderScreen() {
     pifinderScreenUrl = null;
     document.getElementById('pifinder-screen').src = '/pifinder_welcome.png';
     updatePiFinderStatusAndWizardLink();
-    if (setupSucceeded) showPiFinderAccess();
     tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
   };
   probe.src = pifinderScreenUrl + '?t=' + Date.now();

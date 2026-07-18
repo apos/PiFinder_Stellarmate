@@ -30,16 +30,15 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -252,6 +259,29 @@
+@@ -252,6 +259,28 @@
                  dec_text=dec_text,
              )
  
 +        @app.route("/first-steps")
 +        def first_steps():
 +            return app.jinja_env.get_template("first_steps.html").render(
-+                title=_("First Steps"),
++                title=_("Prepare SMOS"),
 +                ips=self.network.all_ips(),
-+                port=self.port,
 +            )
 +
 +        @app.route("/api/setup_gui/start", methods=["POST"])
@@ -60,7 +59,7 @@
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -260,7 +290,7 @@
+@@ -260,7 +289,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -69,7 +68,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -522,6 +552,27 @@
+@@ -522,6 +551,27 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -97,7 +96,7 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -537,7 +588,7 @@
+@@ -537,7 +587,7 @@
  
              if new_passworda == new_passwordb:
                  if sys_utils.change_password(
@@ -106,7 +105,7 @@
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
-@@ -1218,11 +1269,13 @@
+@@ -1218,11 +1268,13 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
