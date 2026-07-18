@@ -45,17 +45,12 @@ source $(pwd)/bin/functions.sh
 # Define a lock file for resuming the script after venv activation
 lock_file="${pifinder_stellarmate_dir}/.resume_from_venv"
 
-# Warnings file — persists across both runs for final summary
-warnings_file="${pifinder_stellarmate_dir}/.setup_warnings"
-
-# Clear warnings on first run (no lock file = first run)
+# warnings_file and add_warning() come from functions.sh now (shared with
+# patch_PiFinder_installation_files.sh, which runs as its own bash process).
+# Clear warnings on first run only (no lock file = first run) - a resumed
+# run (after manual venv activation) should keep whatever the first pass
+# already found.
 [ ! -f "$lock_file" ] && > "$warnings_file"
-
-# Helper: add a critical warning (shown in final summary)
-add_warning() {
-    echo "  ⚠️  $1"
-    echo "$1" >> "$warnings_file"
-}
 
 # Machine-readable phase marker for gui_installer/server.py's progress bar.
 # Because the venv bootstrap re-execs this whole script from the top (see

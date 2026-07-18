@@ -226,6 +226,35 @@ create_venv() {
 }
 
 ############################################################
+# Warnings collected across both this script and
+# patch_PiFinder_installation_files.sh (run as a separate bash process, so
+# it needs the same variable/function via functions.sh rather than
+# inheriting them from the calling script's shell). pifinder_stellarmate_
+# setup.sh clears this file at the start of a fresh run and prints/removes
+# it in the final summary; add_warning() just appends to whatever's there.
+warnings_file="${pifinder_stellarmate_dir}/.setup_warnings"
+
+add_warning() {
+  echo "  ⚠️  $1"
+  echo "$1" >> "$warnings_file"
+}
+
+############################################################
+# Wraps `patch -N` so a partially-failed patch (upstream PiFinder changed
+# lines near ours, breaking the context - see 00014_workflow-regeln-
+# update-install.md) is a loud, unmissable warning in the final summary,
+# not just a "N out of M hunks FAILED" line buried in the scroll-by log.
+apply_patch_or_warn() {
+  local target_file="$1"
+  local diff_file="$2"
+  rm -f "${target_file}.rej"
+  patch -N "$target_file" < "$diff_file"
+  if [ -f "${target_file}.rej" ]; then
+    add_warning "Patch didn't fully apply: $(basename "$diff_file") -> $target_file (see ${target_file}.rej) - upstream PiFinder likely changed nearby lines; the diff needs regenerating."
+  fi
+}
+
+############################################################
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."

@@ -469,7 +469,7 @@ echo "🔧 Updating main.py ..."
 cp "$main_py" "$main_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-    patch -N "$main_py" < "${pifinder_stellarmate_dir}/diffs/main_py.diff"
+    apply_patch_or_warn "$main_py" "${pifinder_stellarmate_dir}/diffs/main_py.diff"
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
@@ -491,7 +491,7 @@ if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
     # that never matched the actual multi-line call, so it silently never
     # ran and change_password() kept resetting the unused "pifinder" account
     # instead of "stellarmate" - see diffs/server_py.diff instead now.)
-    patch -N "$server_py" < "${pifinder_stellarmate_dir}/diffs/server_py.diff"
+    apply_patch_or_warn "$server_py" "${pifinder_stellarmate_dir}/diffs/server_py.diff"
 else
     echo "⏩ Skipping patch for server.py: ❌ incompatible version/pi/os"
 fi
@@ -509,8 +509,8 @@ cp "$sys_utils_fake_py" "$sys_utils_fake_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
-    patch -N "$sys_utils_py" < "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
-    patch -N "$sys_utils_fake_py" < "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
+    apply_patch_or_warn "$sys_utils_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
+    apply_patch_or_warn "$sys_utils_fake_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
 else
     echo "⏩ Skipping patch for sys_utils.py/sys_utils_fake.py: ❌ incompatible version/pi/os"
 fi
@@ -527,7 +527,7 @@ cp "$status_py" "$status_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
-    patch -N "$status_py" < "${pifinder_stellarmate_dir}/diffs/status_py.diff"
+    apply_patch_or_warn "$status_py" "${pifinder_stellarmate_dir}/diffs/status_py.diff"
 else
     echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
 fi
@@ -543,10 +543,10 @@ cp "$index_tpl" "$index_tpl.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if [ -f "${pifinder_dir}/python/views/index.html" ]; then
-    patch -N "${pifinder_dir}/python/views/index.html" < "${pifinder_stellarmate_dir}/diffs/index_html.diff"
+    apply_patch_or_warn "${pifinder_dir}/python/views/index.html" "${pifinder_stellarmate_dir}/diffs/index_html.diff"
     show_diff_if_changed "${pifinder_dir}/python/views/index.html"
 elif [ -f "$index_tpl" ]; then
-    patch -N "$index_tpl" < "${pifinder_stellarmate_dir}/diffs/index_tpl.diff"
+    apply_patch_or_warn "$index_tpl" "${pifinder_stellarmate_dir}/diffs/index_tpl.diff"
     show_diff_if_changed "$index_tpl"
 fi
 echo "------------------------------------"
@@ -558,10 +558,10 @@ cp "$header_tpl" "$header_tpl.bak" 2>/dev/null || true
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
 if [ -f "${pifinder_dir}/python/views/base.html" ]; then
-    patch -N "${pifinder_dir}/python/views/base.html" < "${pifinder_stellarmate_dir}/diffs/base_html.diff"
+    apply_patch_or_warn "${pifinder_dir}/python/views/base.html" "${pifinder_stellarmate_dir}/diffs/base_html.diff"
     show_diff_if_changed "${pifinder_dir}/python/views/base.html"
 elif [ -f "$header_tpl" ]; then
-    patch -N "$header_tpl" < "${pifinder_stellarmate_dir}/diffs/header_tpl.diff"
+    apply_patch_or_warn "$header_tpl" "${pifinder_stellarmate_dir}/diffs/header_tpl.diff"
     show_diff_if_changed "$header_tpl"
 fi
 echo "------------------------------------"
@@ -572,7 +572,7 @@ echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
-    patch -N "$menu_py" < "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
+    apply_patch_or_warn "$menu_py" "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"
 python3 -m py_compile "$menu_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
@@ -590,7 +590,7 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
 if should_apply_patch "general" "P4|P5" "arch"; then
     cp "$keyboard_py" "$keyboard_py.bak"
     if grep -q 'context_type=libinput.ContextType.UDEV' "$keyboard_py"; then
-        patch -N "$keyboard_py" < "${pifinder_stellarmate_dir}/diffs/keyboard_pi_smos.diff"
+        apply_patch_or_warn "$keyboard_py" "${pifinder_stellarmate_dir}/diffs/keyboard_pi_smos.diff"
         echo "✅ Patched keyboard_pi.py for python-libinput 0.1.0"
     else
         echo "ℹ️ keyboard_pi.py already patched or pattern not found"
@@ -615,7 +615,7 @@ if should_apply_patch "general" "P4|P5" "arch"; then
             echo "ℹ️ drm_preview.py already patched"
         else
             cp "$drm_preview_py" "$drm_preview_py.bak"
-            patch -N "$drm_preview_py" < "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff"
+            apply_patch_or_warn "$drm_preview_py" "${pifinder_stellarmate_dir}/diffs/drm_preview_smos.diff"
             echo "✅ Patched drm_preview.py for missing pykms"
             show_diff_if_changed "$drm_preview_py"
         fi
@@ -639,7 +639,7 @@ if should_apply_patch "general" "P4|P5" "arch"; then
             echo "ℹ️ starlib.py already patched"
         else
             cp "$starlib_py" "$starlib_py.bak"
-            patch -N "$starlib_py" < "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff"
+            apply_patch_or_warn "$starlib_py" "${pifinder_stellarmate_dir}/diffs/starlib_numpy2_smos.diff"
             echo "✅ Patched starlib.py for numpy 2.0"
             show_diff_if_changed "$starlib_py"
         fi
@@ -672,7 +672,7 @@ if should_apply_patch "general" "P4|P5" "arch"; then
             echo "ℹ️ keplerlib.py: bug pattern not present in this skyfield version (<1.51 or already fixed upstream) — no patch needed"
         else
             cp "$keplerlib_py" "$keplerlib_py.bak"
-            patch -N "$keplerlib_py" < "${pifinder_stellarmate_dir}/diffs/keplerlib_batch_propagate_smos.diff"
+            apply_patch_or_warn "$keplerlib_py" "${pifinder_stellarmate_dir}/diffs/keplerlib_batch_propagate_smos.diff"
             echo "✅ Patched keplerlib.py for batch comet propagation"
             show_diff_if_changed "$keplerlib_py"
         fi
@@ -702,7 +702,7 @@ echo "------------------------------------"
 echo "🔧 Patching catalogs.py (background loader CPU throttling) ..."
 if [ -f "$catalogs_py" ]; then
     cp "$catalogs_py" "$catalogs_py.bak"
-    patch -N "$catalogs_py" < "${pifinder_stellarmate_dir}/diffs/catalogs_py.diff"
+    apply_patch_or_warn "$catalogs_py" "${pifinder_stellarmate_dir}/diffs/catalogs_py.diff"
     echo "✅ Patched catalogs.py (os.nice + yield_time)"
     show_diff_if_changed "$catalogs_py"
 else
