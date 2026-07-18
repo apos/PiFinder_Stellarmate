@@ -151,8 +151,13 @@ echo "------------------------------------"
     # protobuf: metaclass incompatibility with Python 3.14
     sed -i 's/^protobuf==.*/protobuf/' "$python_requirements" && echo "  ✅ protobuf unpinned"
 
-    # skyfield: uses numpy.float_ which was removed in numpy 2.0
-    sed -i 's/^skyfield==.*/skyfield/' "$python_requirements" && echo "  ✅ skyfield unpinned"
+    # skyfield: PiFinder pins 1.45, which uses numpy.float_ (removed in numpy
+    # 2.0). >=1.48 drops float_, but >=1.51 has a batch-orbit propagate()
+    # regression (skyfielders/python-skyfield#1138) that breaks PiFinder's
+    # vectorized comet propagation (comets.py _calc_comets_vectorized()).
+    # 1.50 is the last version with neither problem — pin there instead of
+    # unpinning to "whatever's newest".
+    sed -i 's/^skyfield==.*/skyfield==1.50/' "$python_requirements" && echo "  ✅ skyfield pinned to 1.50 (numpy 2.0-safe, before the #1138 regression)"
 
     # bottle: uses cgi module which was removed in Python 3.13
     sed -i 's/^bottle==.*/bottle/' "$python_requirements" && echo "  ✅ bottle unpinned"
@@ -639,6 +644,39 @@ if should_apply_patch "general" "P4|P5" "arch"; then
     fi
 else
     echo "⏩ Skipping starlib.py patch: not on Arch Linux"
+fi
+echo "------------------------------------"
+
+#######################################
+# Patch skyfield keplerlib.py: batch-propagating N>1 comets to one shared
+# observation time drops the per-orbit dimension in propagate()'s output
+# shape ("cannot reshape array of size 3*N into shape (3,)"), hit in
+# PiFinder's _calc_comets_vectorized(). Also reported upstream to
+# skyfielders/python-skyfield (PR #1138). Requirements.txt now pins
+# skyfield==1.50, which predates this bug (introduced in 1.51), so this is
+# a defensive no-op for the normal case — only kicks in if skyfield ever
+# ends up unpinned/newer again.
+echo "🔧 Patching skyfield keplerlib.py (batch comet propagation) ..."
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "general" "P4|P5" "arch"; then
+    keplerlib_py=$(find "${python_venv}" -name "keplerlib.py" -path "*/skyfield/*" 2>/dev/null | head -1)
+    if [ -n "$keplerlib_py" ]; then
+        if grep -q "n_orbits" "$keplerlib_py"; then
+            echo "ℹ️ keplerlib.py already patched"
+        elif ! grep -q "output_shape = (3,) + t1.shape" "$keplerlib_py"; then
+            echo "ℹ️ keplerlib.py: bug pattern not present in this skyfield version (<1.51 or already fixed upstream) — no patch needed"
+        else
+            cp "$keplerlib_py" "$keplerlib_py.bak"
+            patch -N "$keplerlib_py" < "${pifinder_stellarmate_dir}/diffs/keplerlib_batch_propagate_smos.diff"
+            echo "✅ Patched keplerlib.py for batch comet propagation"
+            show_diff_if_changed "$keplerlib_py"
+        fi
+    else
+        echo "⚠️ skyfield not installed in venv, skipping keplerlib.py patch"
+    fi
+else
+    echo "⏩ Skipping keplerlib.py patch: not on Arch Linux"
 fi
 echo "------------------------------------"
 

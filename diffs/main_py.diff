@@ -1,6 +1,6 @@
---- python/PiFinder/main.py.orig	2026-06-01 23:40:06.237388731 +0200
-+++ python/PiFinder/main.py	2026-06-01 23:39:49.745809447 +0200
-@@ -135,11 +135,19 @@
+--- python/PiFinder/main.py.orig
++++ python/PiFinder/main.py
+@@ -141,11 +141,19 @@
  
  
  class PowerManager:
@@ -20,13 +20,13 @@
  
      def register_activity(self):
          """
-@@ -173,29 +181,77 @@
+@@ -179,28 +187,76 @@
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
 +    def _has_solve(self):
 +        solution = self.shared_state.solution()
-+        return solution is not None and solution.get("RA") is not None
++        return solution is not None and solution.has_pointing()
 +
 +    def _enter_state(self, state):
 +        self._solve_state = state
@@ -62,7 +62,7 @@
 -        else:  # We are asleepd, should we wake up?
 -            _imu = self.shared_state.imu()
 -            if _imu:
--                if _imu["moving"]:
+-                if _imu.moving:
 +        if self._solve_state == self._SOLVED:
 +            if not has_solve:
 +                # Lost solve (clouds etc.) — restart warmup
@@ -75,10 +75,9 @@
 +                    self.go_to_sleep()
 +            else:
 +                _imu = self.shared_state.imu()
-+                if _imu and _imu["moving"]:
++                if _imu and _imu.moving:
                      self.wake_up()
  
--        # should we pause execution for a bit?
 +        elif self._solve_state == self._WARMUP:
 +            if has_solve:
 +                self._enter_state(self._SOLVED)
@@ -107,14 +106,13 @@
 +            else:
 +                self.register_activity()
 +
-+        # Pause execution while sleeping
-         if self.shared_state.power_state() < 1:
-             time.sleep(0.2)
- 
-@@ -571,13 +627,6 @@
-                             if (
-                                 not location.source == "WEB"
+     def get_sleep_timeout(self):
+         """
+         returns the sleep timeout amount
+@@ -666,13 +722,6 @@
                                  and not location.source.startswith("CONFIG:")
+                                 and not location.source == "MANUAL"
+                                 and not location.source == "replay"
 -                                and (
 -                                    location.error_in_m == 0
 -                                    or float(gps_content["error_in_m"])
@@ -123,9 +121,9 @@
 -                                    )  # Only if new error is smaller
 -                                )
                              ):
-                                 logger.info(
+                                 logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -1004,6 +1053,8 @@
+@@ -1126,6 +1175,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")

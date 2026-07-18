@@ -1,0 +1,22 @@
+--- /tmp/keplerlib_before_patch.py	2026-07-18 20:04:36.626642075 +0200
++++ /home/stellarmate/PiFinder/python/.venv/lib/python3.14/site-packages/skyfield/keplerlib.py	2026-07-18 20:04:42.430133107 +0200
+@@ -451,7 +451,18 @@
+     gm : float
+         Gravitational parameter in units that match the other arguments
+     """
+-    output_shape = (3,) + t1.shape
++    # Bug: for a single shared observation time (t1 is 0-d) this drops the
++    # per-orbit dimension entirely, so a batch of N>1 orbits propagated to
++    # one shared t1 later gets force-reshaped from its real (3, N, 1) into
++    # (3,), raising "cannot reshape array of size 3*N into shape (3,)".
++    # position.ndim/shape[1] already reflects the caller's orbit count here
++    # (the ndim==1 -> [:, newaxis] normalization below hasn't run yet), so
++    # recover N and only override the legacy single-orbit shape when needed.
++    n_orbits = position.shape[1] if position.ndim > 1 else 1
++    if n_orbits > 1 and t1.shape == ():
++        output_shape = (3, n_orbits)
++    else:
++        output_shape = (3,) + t1.shape
+ 
+     gm = atleast_1d(gm)
+     if (gm <= 0).any():

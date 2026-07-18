@@ -444,6 +444,30 @@ else
         echo "  ⚠️  skyfield not found in venv — skipping"
     fi
 
+    # Patch skyfield keplerlib.py: batch-propagating N>1 comets to one shared
+    # observation time drops the per-orbit dimension in propagate()'s output
+    # shape, raising "cannot reshape array of size 3*N into shape (3,)" (hit
+    # in PiFinder's _calc_comets_vectorized(), see comets.py). Also reported
+    # upstream to skyfielders/python-skyfield (PR #1138). Requirements.txt
+    # now pins skyfield==1.50, which predates this bug (introduced in 1.51),
+    # so this is a defensive no-op for the normal case — only kicks in if
+    # skyfield ever ends up unpinned/newer again.
+    echo "🔧 Patching skyfield keplerlib.py (batch comet propagation) ..."
+    KEPLERLIB_PY=$(find "${python_venv}" -name "keplerlib.py" -path "*/skyfield/*" 2>/dev/null | head -1)
+    if [ -n "$KEPLERLIB_PY" ]; then
+        if grep -q "n_orbits" "$KEPLERLIB_PY"; then
+            echo "  ℹ️  keplerlib.py already patched (skyfield $SKYFIELD_VER)"
+        elif ! grep -q "output_shape = (3,) + t1.shape" "$KEPLERLIB_PY"; then
+            echo "  ℹ️  keplerlib.py: bug pattern not present in skyfield $SKYFIELD_VER (<1.51 or already fixed upstream) — no patch needed"
+        else
+            patch -N "$KEPLERLIB_PY" < "${pifinder_stellarmate_dir}/diffs/keplerlib_batch_propagate_smos.diff" && \
+                echo "  ✅ keplerlib.py patched for skyfield $SKYFIELD_VER" || \
+                add_warning "keplerlib.py patch FAILED for skyfield $SKYFIELD_VER — update diffs/keplerlib_batch_propagate_smos.diff! Comet display may crash/hang."
+        fi
+    else
+        echo "  ⚠️  skyfield not found in venv — skipping"
+    fi
+
     # Patch picamera2 drm_preview.py (pykms not available on Arch) (Risiko 2)
     echo "🔧 Applying drm_preview.py patch post pip-install ..."
     PICAM_VER=$("${python_venv}/bin/python" -c "import importlib.metadata; print(importlib.metadata.version('picamera2'))" 2>/dev/null || echo "unknown")
