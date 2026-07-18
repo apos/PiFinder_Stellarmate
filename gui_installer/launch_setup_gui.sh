@@ -3,9 +3,9 @@
 # in the background if it isn't already listening, prints the URLs it's
 # reachable under, then opens the status page in a browser.
 #
-# Verwendung:
-#   ./launch_setup_gui.sh                     - startet (falls noetig) und oeffnet den Browser
-#   ./launch_setup_gui.sh --shutdown-webserver - stoppt einen laufenden Webserver wieder
+# Usage:
+#   ./launch_setup_gui.sh                     - starts it (if needed) and opens the browser
+#   ./launch_setup_gui.sh --shutdown-webserver - stops an already-running webserver
 
 set -u
 
@@ -28,40 +28,40 @@ port = data.get('port', sys.argv[2])
 ips = data.get('ips') or []
 if not ips:
     ips = ['localhost']
-print('   Setup-GUI erreichbar unter:')
+print('   Setup GUI reachable at:')
 for ip in ips:
     print(f'     http://{ip}:{port}/')
 " "$state" "$PORT"
-    echo "   Login: Benutzername egal, Passwort = dein stellarmate-Systempasswort"
-    echo "   (schuetzt die Seite selbst sowie Reinstall/Update/Reboot; /state,"
-    echo "   /log und /shutdown bleiben ohne Login erreichbar)"
+    echo "   Login: any username, password = your stellarmate system password"
+    echo "   (protects the page itself plus Reinstall/Update/Reboot; /state,"
+    echo "   /log and /shutdown stay reachable without login)"
 }
 
 if [ "${1:-}" = "--shutdown-webserver" ]; then
     state="$(_state_json)"
     if [ -z "$state" ]; then
-        echo "Setup-GUI-Webserver läuft nicht (nichts zu beenden)."
+        echo "Setup GUI webserver isn't running (nothing to stop)."
         exit 0
     fi
     curl -s -X POST -m 2 "http://localhost:${PORT}/shutdown" -o /dev/null
-    echo "Setup-GUI-Webserver wird beendet..."
+    echo "Stopping setup GUI webserver..."
     for _ in $(seq 1 20); do
         if [ -z "$(_state_json)" ]; then
-            echo "Webserver gestoppt."
+            echo "Webserver stopped."
             exit 0
         fi
         sleep 0.25
     done
-    echo "!! Webserver antwortet nach 5s noch - laeuft evtl. gerade ein Setup (Shutdown wird dann abgelehnt)."
+    echo "!! Webserver still responding after 5s - a setup run may be in progress (shutdown is refused while it is)."
     exit 1
 fi
 
 existing_state="$(_state_json)"
 if [ -n "$existing_state" ]; then
-    echo "Setup-GUI-Webserver läuft bereits."
+    echo "Setup GUI webserver is already running."
     _print_urls "$existing_state"
 else
-    echo "Starte Setup-GUI-Webserver..."
+    echo "Starting setup GUI webserver..."
     nohup python3 "${SCRIPT_DIR}/server.py" >/tmp/pifinder_gui_installer.log 2>&1 &
     state=""
     for _ in $(seq 1 20); do
@@ -70,14 +70,14 @@ else
         sleep 0.25
     done
     if [ -n "$state" ]; then
-        echo "Webserver gestartet."
+        echo "Webserver started."
         _print_urls "$state"
     else
-        echo "!! Webserver antwortet nach 5s nicht - siehe /tmp/pifinder_gui_installer.log"
+        echo "!! Webserver not responding after 5s - see /tmp/pifinder_gui_installer.log"
         exit 1
     fi
 fi
 
-echo "   Zum Beenden: $0 --shutdown-webserver"
+echo "   To stop: $0 --shutdown-webserver"
 
 xdg-open "http://localhost:${PORT}/" >/dev/null 2>&1 &
