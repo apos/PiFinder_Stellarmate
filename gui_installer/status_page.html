@@ -469,6 +469,42 @@ async function watchForServerLoss() {
   }
 }
 
+// Runs continuously whenever this tab isn't actively polling a run (i.e.
+// whenever pollLog()'s loop has stopped - idle, cancelled, succeeded, or
+// failed). Catches the case where a run gets started some other way (a
+// manual terminal invocation, or another browser tab) while this tab is
+// left open showing a stale "Success"/"Close Setup" (or "Failed") state -
+// without this, that stale state never updates on its own, and someone
+// could be tempted to click "Close Setup" while a real run is in progress
+// elsewhere. Harmless either way (the server refuses to shut down mid-run),
+// but confusing, so resume live tracking instead of leaving it stale.
+async function watchForNewRun() {
+  if (serverConnectionLost) return;
+  if (!polling) {
+    try {
+      const resp = await fetch('/state', { cache: 'no-store' });
+      const data = await resp.json();
+      if (data.running) {
+        document.getElementById('reboot-wrap').style.display = 'none';
+        document.getElementById('close-wrap').style.display = 'none';
+        document.getElementById('choices').style.display = 'none';
+        logPosition = 0;
+        const logEl = document.getElementById('log');
+        logEl.textContent = '';
+        logEl.classList.remove('log-placeholder');
+        logEl.style.display = 'block';
+        setStatus('Running…', 'status-running');
+        polling = true;
+        pollLog();
+      }
+    } catch (e) {
+      // Connection loss here is already handled by pollLog()/reboot()'s own
+      // paths when they're active - nothing extra to do while idle.
+    }
+  }
+  setTimeout(watchForNewRun, 3000);
+}
+
 async function reboot() {
   if (!confirm('Reboot the Pi now?')) return;
   const btn = document.getElementById('reboot-button');
@@ -672,6 +708,10 @@ async function init() {
 }
 
 init();
+// Deferred so init()'s own /state fetch always gets to set `polling` first -
+// otherwise this could race init() on page load and start a second,
+// independent pollLog() cycle before `polling` is set.
+setTimeout(watchForNewRun, 3000);
 </script>
 
 </body>
