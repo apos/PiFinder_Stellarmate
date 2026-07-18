@@ -18,7 +18,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 >
 > * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
-> * **Raspberry Pi 5**: Partially supported — GPS ✅, Web UI ✅. OLED display not yet working (SPI driver issue under investigation). Camera requires 15-pin FFC CSI adapter cable.
+> * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, keyboard ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
 > * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -66,9 +66,10 @@ This setup modifies the stock PiFinder installation to better integrate with Ste
 *   **Stellarmate GPS Integration:** PiFinder is configured to use Stellarmate/KStars as its GPS source, removing the need for a separate GPS module on the PiFinder.
 *   **Network Management Disabled:** All network configuration options (WiFi Mode, AP/Client switching) have been removed from the PiFinder's OLED menu and Web Interface. This prevents conflicts, as Stellarmate is responsible for all network management.
 *   **Robust Patching:** Changes are applied using `diff` patches, making the process more reliable and easier to maintain than manual file edits.
-*   **Compatibility:** The scripts are designed for Raspberry Pi 4 and Pi 5 running Stellarmate OS (Arch Linux). Pi 4 is fully tested and stable. Pi 5 support is in active development (GPS ✅, camera adapter cable required).
+*   **Compatibility:** The scripts are designed for Raspberry Pi 4 and Pi 5 running Stellarmate OS (Arch Linux). Both are fully supported — see the version banner above for the current per-Pi status.
 *   **Comprehensive IP Address Display:** The web interface and the device's OLED status screen now show all available non-localhost IP addresses, providing better network visibility.
 *   **Dynamic User:** The web interface authentication is patched to use the current system user (e.g., `stellarmate`) instead of a hardcoded default.
+*   **Password-Protected Setup GUI:** `gui_installer/`'s webserver (destructive reinstall/update/reboot actions) now requires the same system-user password as PiFinder's own Remote login, checked via PAM — no separate password to remember.
 
 ## Hardware Requirements
 
@@ -153,19 +154,25 @@ The launcher is idempotent and always prints where things stand — running it a
 server is already up just reports that instead of starting a second one:
 ```
 $ bash gui_installer/launch_setup_gui.sh
-Starte Setup-GUI-Webserver...
-Webserver gestartet.
-   Setup-GUI erreichbar unter:
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
      http://192.168.0.105:8765/
      http://10.250.250.1:8765/
-   Zum Beenden: gui_installer/launch_setup_gui.sh --shutdown-webserver
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
 
 $ bash gui_installer/launch_setup_gui.sh
-Setup-GUI-Webserver läuft bereits.
-   Setup-GUI erreichbar unter:
+Setup GUI webserver is already running.
+   Setup GUI reachable at:
      http://192.168.0.105:8765/
      http://10.250.250.1:8765/
-   Zum Beenden: gui_installer/launch_setup_gui.sh --shutdown-webserver
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
 ```
 To stop the background web server again:
 ```bash
@@ -180,10 +187,29 @@ bash gui_installer/launch_setup_gui.sh --shutdown-webserver
 </td>
 <td align="center" width="50%">
 <a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
-<sub>Setup complete: OLED mirror, PiFinder access links, and password shown right away</sub>
+<sub>Setup complete: OLED mirror and quick-links tile (PiFinder status, INDI Drivers page, this page's own links, GitHub docs)</sub>
 </td>
 </tr>
 </table>
+
+> **Note:** the screenshot above predates the password-protection and quick-links-tile changes
+> described below and needs retaking.
+
+## After Installation: PiFinder's "INDI Drivers" Page
+
+Once PiFinder is up, its own website (`/remote`, password `smate` by default) gets a new
+**"INDI Drivers"** nav entry (`/smos`). It's the on-device companion to the two manual steps below:
+
+1. **Set up the StellarMate Web Manager** — shows the same screenshot as
+   [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) plus direct links to the Web Manager for
+   every IP this Pi has, so you don't have to hunt down the port (`8624`) yourself.
+2. **Setup Wizard status/control** — shows whether `gui_installer/`'s webserver is currently
+   running, with Start/Stop buttons, so you can relaunch it (e.g. to update PiFinder later) without
+   opening a terminal. Reachable-at links for the wizard itself are listed too.
+
+This page requires no login (same reasoning as PiFinder's own home page — it needs to work right
+after a fresh boot) and is meant to be the first thing you check after a fresh install, an update,
+or a reboot.
 
 ## Using the INDI Driver
 
@@ -230,8 +256,8 @@ bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
-| 2.6.0 | 2.2.1 | ✅ fully tested | ⚠️ GPS/Web UI only — OLED pending |
-| 2.6.0 | 2.1.1 | ✅ tested | ⚠️ same |
+| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/keyboard/OLED confirmed — camera adapter cable pending |
+| 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) |
 | 2.5.1 | 2.1.1 | ✅ tested | — |
 
 ## Uninstallation
