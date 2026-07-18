@@ -199,6 +199,19 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 echo "🗑️  Deleting the existing PiFinder installation directory..."
                 sudo rm -rf "${pifinder_home}/PiFinder"
                 sleep 2 # Give some time for the deletion to complete
+                if [ -n "$VIRTUAL_ENV" ]; then
+                    # The directory we just deleted is what $VIRTUAL_ENV
+                    # (sourced at script start, line ~70) points into — left
+                    # alone, this goes stale and later trips the "Creating
+                    # Python venv" phase's activation check, aborting the run
+                    # deep in after the deletion + package installs already
+                    # happened. Clear it here, right where it becomes stale,
+                    # so the later check simply sees "not active" and creates
+                    # a fresh venv normally.
+                    echo "🔁 Deactivating the now-deleted venv reference ..."
+                    type deactivate >/dev/null 2>&1 && deactivate
+                    unset VIRTUAL_ENV
+                fi
                 if [ -d "${pifinder_home}/PiFinder" ]; then
                     echo "❌ ERROR: The PiFinder folder still exists after deletion. Aborting setup."
                     exit 1
