@@ -214,6 +214,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            # This page's JS/HTML has changed repeatedly across sessions -
+            # a browser caching a stale copy after an update makes fixed
+            # bugs look like they're still there (e.g. a renamed route the
+            # cached JS still links to). Never worth caching for a page
+            # that's only open during an active install/update anyway.
+            self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
             return
