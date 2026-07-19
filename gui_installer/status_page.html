@@ -406,6 +406,25 @@ let modeLogPolling = false;
 let lastHwCamera = null;
 let lastHwImu = null;
 let lastDebugSolve = null;
+
+// Builds "camera", "IMU", or "camera/IMU" from whichever of the two is
+// actually missing - both "not functional" messages below used to hardcode
+// "camera/IMU missing" even when only one of them was actually absent.
+// GPS is deliberately NOT part of this "functional" gate: StellarMate/KStars
+// already provides location and time over INDI, so a PiFinder HAT variant
+// with no GPS module at all is a legitimate, fully-functional configuration
+// (older HAT revisions shipped this way) - unlike a missing camera or IMU,
+// a missing GPS here doesn't mean something's broken. The hw-status
+// checklist's job is to surface whatever hardware IS actually present, not
+// to assume every HAT has all of it - see basic-memory/pifinder-stellarmate/
+// 00026 for the longer-term direction (IMU + keypad/OLED only, or even just
+// IMU with everything else driven from a phone).
+function missingHardwareLabel() {
+  const missing = [];
+  if (lastHwCamera === false) missing.push('camera');
+  if (lastHwImu === false) missing.push('IMU');
+  return missing.join('/');
+}
 // Cancel is only ever offered on the existing-install choice screen, so this
 // is always true by the time a "Cancelled" status needs to re-show it - but
 // keep it in sync with what /state actually reports, not just assumed.
@@ -494,7 +513,7 @@ function updatePiFinderStatusAndWizardLink() {
       // (same known upstream issue the mode tile already accounts for).
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = 'PiFinder is running, but not functional (camera/IMU missing - see Hardware below)';
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Hardware below)`;
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
@@ -1136,7 +1155,7 @@ async function refreshMode() {
       // reserved for that (see the `data.error` branch above).
       if (lastHwCamera === false || lastHwImu === false) {
         dotEl.className = 'status-dot dot-yellow';
-        textEl.textContent = 'Real Mode running, but not functional (camera/IMU missing - see Hardware below)';
+        textEl.textContent = `Real Mode running, but not functional (${missingHardwareLabel()} missing - see Hardware below)`;
       } else {
         dotEl.className = 'status-dot dot-green';
         textEl.textContent = 'Real Mode (hardware)';

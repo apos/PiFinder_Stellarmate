@@ -1,6 +1,6 @@
---- /tmp/keyboard_pi_orig.py	2026-05-22 16:56:25.439186516 +0200
-+++ python/PiFinder/keyboard_pi.py	2026-04-24 20:49:31.740558869 +0200
-@@ -76,9 +76,9 @@
+--- /tmp/keyboard_pi_orig.py
++++ python/PiFinder/keyboard_pi.py
+@@ -49,9 +49,9 @@
          ]
          # fmt: on
  
@@ -13,7 +13,7 @@
  
      def get_keyboard_key(self) -> int:
          """
-@@ -98,17 +98,16 @@
+@@ -71,17 +71,23 @@
          }
  
          while True:
@@ -37,7 +37,14 @@
 +            if event.type == libinput.constant.Event.KEYBOARD_KEY:
 +                kbev = event.get_keyboard_event()
 +                if kbev.get_key_state() == libinput.constant.KeyState.RELEASED:
-+                    return key_mapping.get(int(kbev.get_key()), 0)
++                    # get_key() returns a libinput.evcodes.Key enum member
++                    # (plain Enum, not IntEnum) - int() on it raises
++                    # "TypeError: int() argument ... not 'Key'"; .value is
++                    # the actual integer keycode. Found live: this crashed
++                    # the whole keyboard subprocess on the very first key
++                    # release, making the physical keypad appear completely
++                    # dead - see basic-memory/pifinder-stellarmate/00032.
++                    return key_mapping.get(kbev.get_key().value, 0)
  
      def run_keyboard(self, log_queue):
          """
