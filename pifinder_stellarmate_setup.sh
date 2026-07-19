@@ -762,6 +762,11 @@ echo "✅ System fixes applied"
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder.service /etc/systemd/system/pifinder.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder_splash.service /etc/systemd/system/pifinder_splash.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service /etc/systemd/system/pifinder-setup.service
+# Stellarmate-specific units with no stock-PiFinder analogue (so not part of
+# ~/PiFinder/pi_config_files/, only installed here) - see basic-memory/
+# pifinder-stellarmate/00030.
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-fake-mode-autostart.service /etc/systemd/system/pifinder-fake-mode-autostart.service
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-control-center.service /etc/systemd/system/pifinder-control-center.service
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
@@ -769,6 +774,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable pifinder
 sudo systemctl enable pifinder_splash
 sudo systemctl enable pifinder-setup
+# Its own ConditionPathExists=/dev/fb1 gates whether it actually does
+# anything at a given boot - always enabled, like pifinder itself.
+sudo systemctl enable pifinder-fake-mode-autostart
+# Deliberately NOT enabled here - the Control Center is only meant to run
+# when the user explicitly starts it (launch_setup_gui.sh: `systemctl enable
+# --now`) or stops it (server.py's /shutdown: `systemctl disable`), which is
+# also what makes it persist correctly across a reboot either way.
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder-setup

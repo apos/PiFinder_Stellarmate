@@ -343,7 +343,7 @@
       <div id="mode-tile">
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-        <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header - mirrors PiFinder's screen onto it (test_tools/fb_screen_mirror.py). In Fake Mode, also bridges a plain USB/BT numpad to the keypad (test_tools/fb_keyboard_bridge.py) - not in Real Mode, since a real HAT keypad needs exclusive GPIO. Stopped automatically whenever Fake/Real Mode switches.">Checking&hellip;</button>
+        <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. Enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">Checking&hellip;</button>
         <div id="display-status-line"><span id="display-status-text">External SPI LCD (optional, needs extra hardware):</span> <span class="status-dot dot-white" id="display-status-dot"></span><span id="display-status-state">checking&hellip;</span></div>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
           <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
@@ -577,13 +577,15 @@ async function toggleDebugSolve() {
   // interval isn't wired to this, so nothing else will pick it up later.
 }
 
-// Independent of the Fake/Real Mode switch above - mirrors whichever
-// instance is currently up onto an attached small SPI display (see
-// basic-memory/pifinder-stellarmate/00024). The backend stops it
-// automatically on every mode switch (its target port may change or
-// disappear), so this can go from "on" to "off" without this button being
-// clicked - refreshDisplayBridge()'s own poll picks that up.
-let lastDisplayBridgeRunning = null;
+// Independent of the Fake/Real Mode switch above - controls whether the
+// Waveshare LCD's device-tree overlay is active (see basic-memory/
+// pifinder-stellarmate/00024, 00030). Pi firmware overlays only apply at
+// boot, so this always means editing /boot/config.txt and rebooting - there
+// is no live on/off, unlike the mode switch above. Once enabled, a systemd
+// unit (pifinder-fake-mode-autostart.service) starts Fake Mode plus the
+// screen/keyboard bridges automatically at boot - nothing more to click
+// after the reboot completes.
+let lastLcdOverlayEnabled = null;
 
 async function refreshDisplayBridge() {
   const dotEl = document.getElementById('display-status-dot');
@@ -592,8 +594,8 @@ async function refreshDisplayBridge() {
   try {
     const resp = await fetch('/api/display_bridge', { cache: 'no-store' });
     const data = await resp.json();
-    lastDisplayBridgeRunning = data.running;
-    if (data.running) {
+    lastLcdOverlayEnabled = data.enabled;
+    if (data.enabled) {
       dotEl.className = 'status-dot dot-green';
       stateEl.textContent = 'on';
       btn.textContent = 'Turn LCD Off';
@@ -611,21 +613,35 @@ async function refreshDisplayBridge() {
 }
 
 async function toggleDisplayBridge() {
+  const wantEnable = !lastLcdOverlayEnabled;
+  const verb = wantEnable ? 'enable' : 'disable';
+  const conflict = wantEnable
+    ? 'This also means a real PiFinder HAT (OLED/keypad) cannot be used at the same time - they need the same GPIO lines.'
+    : 'PiFinder will go back to normal (real HAT) operation after the reboot.';
+  if (!confirm(`Really ${verb} the external LCD? This edits /boot/config.txt and reboots the Pi now. ${conflict}`)) return;
+  const action = wantEnable ? 'start' : 'stop';
   const btn = document.getElementById('display-toggle-btn');
   const stateEl = document.getElementById('display-status-state');
-  const action = lastDisplayBridgeRunning ? 'stop' : 'start';
   btn.disabled = true;
-  stateEl.textContent = action === 'start' ? 'starting…' : 'stopping…';
+  stateEl.textContent = 'rebooting…';
   try {
     const resp = await fetch('/api/display_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();
     if (!data.success) {
-      alert('Could not toggle display: ' + (data.error || 'unknown error'));
+      alert('Could not toggle the LCD overlay: ' + (data.error || 'unknown error'));
+      refreshDisplayBridge();
+      return;
+    }
+    if (!data.rebooting) {
+      // Already in the requested state - no reboot was needed.
+      refreshDisplayBridge();
+      return;
     }
   } catch (e) {
-    // fall through to refreshDisplayBridge() below either way
+    // Network error here can also mean the server went down right as it
+    // accepted the request - treat it the same as a confirmed reboot.
   }
-  refreshDisplayBridge();
+  watchForServerLoss();
 }
 
 function showChoices(existingInstall) {
@@ -1112,10 +1128,6 @@ async function toggleMode() {
   // Settle-check on the backend takes up to ~8s - refresh hardware status
   // shortly after instead of waiting for the next regular 20s tick.
   setTimeout(refreshHardwareStatus, 9000);
-  // The backend stops the display bridge as soon as this switch starts (see
-  // _run_fake_mode_action() in server.py) - refresh sooner than the regular
-  // 5s poll so the button doesn't look stuck on "on" mid-switch.
-  setTimeout(refreshDisplayBridge, 1000);
 }
 
 // Separate poll loop from the install/update run's own pollLog(), but writes

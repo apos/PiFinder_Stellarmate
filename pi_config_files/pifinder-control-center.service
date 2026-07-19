@@ -1,0 +1,20 @@
+[Unit]
+Description=PiFinder on Stellarmate Control Center (Setup GUI)
+After=network.target
+
+[Service]
+Type=simple
+User=stellarmate
+WorkingDirectory=/home/stellarmate/PiFinder_Stellarmate/gui_installer
+ExecStart=/usr/bin/python3 /home/stellarmate/PiFinder_Stellarmate/gui_installer/server.py
+
+# Not enabled by default (see [Install] below) - enabled/started only when
+# the user actually starts it (launch_setup_gui.sh: `systemctl enable
+# --now`), disabled/stopped when they close it (server.py's /shutdown route:
+# `systemctl disable`). This makes "was it running before the last
+# shutdown/reboot?" persist automatically across reboots using systemd's own
+# enabled-state, instead of a separate custom flag file. See basic-memory/
+# pifinder-stellarmate/00030.
+
+[Install]
+WantedBy=multi-user.target

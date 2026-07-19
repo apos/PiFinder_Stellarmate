@@ -2,6 +2,14 @@
 Description=PiFinder
 After=basic.target pifinder-setup.service
 Requires=pifinder-setup.service
+# The Waveshare LCD dev overlay (waveshare35b-v2, toggled via the Control
+# Center's "Turn LCD On/Off" button) claims GPIO lines the real HAT's OLED
+# needs too - starting anyway crashes on 'lgpio.error: GPIO not allocated'.
+# /dev/fb1 only exists when that overlay is active, so skip cleanly (not a
+# failure - systemd logs a condition-check skip, not a crash) instead of
+# starting and immediately dying. See basic-memory/pifinder-stellarmate/
+# 00024 and 00030.
+ConditionPathExists=!/dev/fb1
 
 [Service]
 Type=idle

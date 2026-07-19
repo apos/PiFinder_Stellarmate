@@ -1,0 +1,19 @@
+[Unit]
+Description=PiFinder Fake Mode auto-start (Waveshare LCD dev overlay active)
+After=basic.target pifinder-setup.service network.target
+Requires=pifinder-setup.service
+# Only relevant when the Waveshare LCD dev overlay (toggled via the Control
+# Center's "Turn LCD On/Off" button) is active - pifinder.service itself
+# skips in that same case (see its own ConditionPathExists=!/dev/fb1), so
+# this keeps "some" normal PiFinder mode running either way.
+ConditionPathExists=/dev/fb1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=stellarmate
+WorkingDirectory=/home/stellarmate/PiFinder_Stellarmate
+ExecStart=/usr/bin/bash /home/stellarmate/PiFinder_Stellarmate/bin/lcd_dev_mode_autostart.sh
+
+[Install]
+WantedBy=basic.target

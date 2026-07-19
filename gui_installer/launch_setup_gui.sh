@@ -45,10 +45,19 @@ for ip in ips:
     echo "   /log and /shutdown stay reachable without login)"
 }
 
+# Managed via systemd (pifinder-control-center.service) rather than a plain
+# background process, so "was it running before the last shutdown/reboot?"
+# persists automatically across reboots via systemd's own enabled-state -
+# see the unit's own header comment. server.py's own /shutdown handler
+# disables the unit as part of shutting itself down; starting here enables
+# it. Both still go through the HTTP routes (not `systemctl start/stop`
+# directly) so /shutdown's "refuse while a run is in progress" safety check
+# still applies.
 if [ "${1:-}" = "--shutdown-webserver" ]; then
     state="$(_state_json)"
     if [ -z "$state" ]; then
         echo "Setup GUI webserver isn't running (nothing to stop)."
+        sudo systemctl disable pifinder-control-center.service 2>/dev/null || true
         exit 0
     fi
     curl -s -X POST -m 2 "http://localhost:${PORT}/shutdown" -o /dev/null
@@ -70,7 +79,7 @@ if [ -n "$existing_state" ]; then
     _print_urls "$existing_state"
 else
     echo "Starting setup GUI webserver..."
-    nohup python3 "${SCRIPT_DIR}/server.py" >/tmp/pifinder_gui_installer.log 2>&1 &
+    sudo systemctl enable --now pifinder-control-center.service
     state=""
     for _ in $(seq 1 20); do
         state="$(_state_json)"
@@ -81,7 +90,7 @@ else
         echo "Webserver started."
         _print_urls "$state"
     else
-        echo "!! Webserver not responding after 5s - see /tmp/pifinder_gui_installer.log"
+        echo "!! Webserver not responding after 5s - see: journalctl -u pifinder-control-center -n 50"
         exit 1
     fi
 fi
