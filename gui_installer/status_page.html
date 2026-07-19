@@ -702,7 +702,14 @@ let pifinderScreenUrl = null;
 
 function piFinderProbeUrls() {
   const host = location.hostname;
-  return [`http://${host}/image`, `http://${host}:8080/image`];
+  // 80/8080: the real pifinder.service (with its historical port-80-busy
+  // fallback). 8081: test_tools/fake_mode.sh's fake-hardware instance
+  // (FAKE_MODE_PORT in server.py / DEFAULT_PORT in pf_remote.py) - without
+  // this, switching to Test Mode left "PiFinder Remote Page"/"INDI driver
+  // setup" stuck on "not available yet" and the OLED mirror frozen, even
+  // though the fake instance was reachable the whole time, just on a port
+  // this probe never looked at.
+  return [`http://${host}/image`, `http://${host}:8080/image`, `http://${host}:8081/image`];
 }
 
 function tryPiFinderScreenUrls(urls, index) {
