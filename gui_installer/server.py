@@ -16,6 +16,7 @@ import json
 import subprocess
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -42,6 +43,12 @@ HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_log
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
+# Deliberately decoupled from PiFinder's own web server/codebase: this just
+# shells out to test_tools/fake_mode.sh (see its own header comment for the
+# full rationale), which itself toggles between the real systemd service and
+# a fake-hardware instance via the pifinder-remote skill's pf_remote.py.
+FAKE_MODE_SCRIPT = REPO_ROOT / "test_tools" / "fake_mode.sh"
+FAKE_MODE_PORT = 8081
 
 # Must match the phase() call sites (and their order) in pifinder_stellarmate_setup.sh.
 PHASES = [
@@ -69,6 +76,34 @@ _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 _last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
 # frontend tell a genuine successful install apart from a no-op Cancel run,
 # both of which exit 0.
+
+_mode_action_running = False  # True while fake_mode.sh start/stop is in flight
+
+
+def _fake_mode_up() -> bool:
+    """Whether the fake-hardware PiFinder instance is currently answering."""
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{FAKE_MODE_PORT}/api/status", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+def _real_service_active() -> bool:
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", "pifinder.service"]
+    ).returncode == 0
+
+
+def _run_fake_mode_action(action):
+    global _mode_action_running
+    try:
+        subprocess.run(["bash", str(FAKE_MODE_SCRIPT), action], timeout=120)
+    except Exception:
+        pass
+    finally:
+        with _lock:
+            _mode_action_running = False
 
 
 def _get_all_ips():
@@ -265,6 +300,20 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/pifinder_mode":
+            with _lock:
+                transitioning = _mode_action_running
+            fake_up = _fake_mode_up()
+            real_active = _real_service_active()
+            if fake_up:
+                mode = "fake"
+            elif real_active:
+                mode = "real"
+            else:
+                mode = "none"
+            self._send_json({"mode": mode, "transitioning": transitioning})
+            return
+
         if parsed.path == "/log":
             qs = parse_qs(parsed.query)
             position = int(qs.get("position", ["0"])[0])
@@ -330,6 +379,23 @@ class Handler(BaseHTTPRequestHandler):
                     return
             self._send_json({"shutting_down": True})
             threading.Thread(target=_do_shutdown, daemon=True).start()
+            return
+
+        if parsed.path == "/api/pifinder_mode":
+            global _mode_action_running
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            if action not in ("enable_fake", "disable_fake"):
+                self._send_json({"started": False, "error": f"invalid action '{action}'"}, status=400)
+                return
+            with _lock:
+                if _mode_action_running:
+                    self._send_json({"started": False, "error": "A mode switch is already in progress."}, status=409)
+                    return
+                _mode_action_running = True
+            script_arg = "start" if action == "enable_fake" else "stop"
+            threading.Thread(target=_run_fake_mode_action, args=(script_arg,), daemon=True).start()
+            self._send_json({"started": True})
             return
 
         self.send_error(404)

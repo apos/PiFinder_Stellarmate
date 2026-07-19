@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>PiFinder on Stellarmate Setup</title>
+<title>PiFinder on Stellarmate Control Center</title>
 <style>
   body {
     background: #111;
@@ -183,6 +183,26 @@
     margin-right: 0.7rem;
   }
   #quick-links-tile a:hover { text-decoration: underline; }
+  #top-tiles-row { flex-wrap: wrap; }
+  #mode-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+  }
+  #mode-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  #mode-toggle-btn {
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #mode-toggle-btn:disabled { background: #444; cursor: default; }
+  #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
   .waiting-bar-track {
     background: #262626;
     border-radius: 5px;
@@ -224,7 +244,7 @@
 </head>
 <body>
 
-<h1>PiFinder on Stellarmate Setup</h1>
+<h1>PiFinder on Stellarmate Control Center</h1>
 
 <div id="conn-lost-banner" style="display:none;"></div>
 
@@ -255,6 +275,10 @@
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+      </div>
+      <div id="mode-tile">
+        <div id="mode-status-line">Checking mode&hellip;</div>
+        <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
       </div>
     </div>
     <div id="status-row">
@@ -707,11 +731,71 @@ async function init() {
   }
 }
 
+// Deliberately decoupled from PiFinder's own web server/codebase (see
+// gui_installer/server.py's FAKE_MODE_SCRIPT comment) - this just reflects
+// and drives test_tools/fake_mode.sh via the setup GUI's own backend, not
+// anything inside PiFinder itself.
+async function refreshMode() {
+  const statusEl = document.getElementById('mode-status-line');
+  const btn = document.getElementById('mode-toggle-btn');
+  try {
+    const resp = await fetch('/api/pifinder_mode', { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.transitioning) {
+      statusEl.textContent = '⏳ Switching mode…';
+      btn.disabled = true;
+      btn.textContent = 'Switching…';
+      return;
+    }
+    if (data.mode === 'fake') {
+      statusEl.textContent = '🧪 Test Mode (no hardware)';
+      btn.textContent = 'Switch to Real Mode';
+    } else if (data.mode === 'real') {
+      statusEl.textContent = '🔌 Real Mode (hardware)';
+      btn.textContent = 'Switch to Test Mode';
+    } else {
+      statusEl.textContent = '⚪ Neither mode running';
+      btn.textContent = 'Switch to Test Mode';
+    }
+    btn.disabled = false;
+  } catch (e) {
+    statusEl.textContent = '⚠ Could not check mode';
+    btn.disabled = true;
+    btn.textContent = 'Unavailable';
+  }
+}
+
+async function toggleMode() {
+  const statusEl = document.getElementById('mode-status-line');
+  const btn = document.getElementById('mode-toggle-btn');
+  const wantFake = btn.textContent.includes('Test Mode');
+  const action = wantFake ? 'enable_fake' : 'disable_fake';
+  const verb = wantFake ? 'switch to Test Mode (stops the real pifinder.service)'
+                        : 'switch to Real Mode (stops the fake-hardware instance)';
+  if (!confirm(`Really ${verb}?`)) return;
+  btn.disabled = true;
+  btn.textContent = 'Switching…';
+  statusEl.textContent = '⏳ Switching mode…';
+  try {
+    const resp = await fetch('/api/pifinder_mode?action=' + action, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.started) {
+      alert('Could not switch mode: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    // fall through to refreshMode() below either way
+  }
+  setTimeout(refreshMode, 1000);
+}
+
 init();
 // Deferred so init()'s own /state fetch always gets to set `polling` first -
 // otherwise this could race init() on page load and start a second,
 // independent pollLog() cycle before `polling` is set.
 setTimeout(watchForNewRun, 3000);
+
+refreshMode();
+setInterval(refreshMode, 5000);
 </script>
 
 </body>
