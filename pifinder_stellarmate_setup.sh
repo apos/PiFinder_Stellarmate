@@ -246,6 +246,9 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/smos.html" "${pifinder_home}/PiFinder/python/views/"
                 mkdir -p "${pifinder_home}/PiFinder/python/views/images"
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/images/webmanager_profile.png" "${pifinder_home}/PiFinder/python/views/images/"
+                mkdir -p "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/SKILL.md" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/scripts/pf_remote.py" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts/"
                 ;;
             2)
                 echo "➡️  Selected: 2. Update the existing installation with 'git reset --hard origin/release'."
@@ -262,6 +265,9 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/smos.html" "${pifinder_home}/PiFinder/python/views/"
                 mkdir -p "${pifinder_home}/PiFinder/python/views/images"
                 cp "${pifinder_stellarmate_dir}/src_pifinder/python/views/images/webmanager_profile.png" "${pifinder_home}/PiFinder/python/views/images/"
+                mkdir -p "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/SKILL.md" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/"
+                cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/scripts/pf_remote.py" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts/"
                 ;;
             3)
                 echo "➡️  Selected: 3. Cancel the installation."

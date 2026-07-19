@@ -150,6 +150,16 @@ case/my_printer
 *.db-wal
 .devenv/
 .claude/
+# Exception: pf_remote.py's own session customizations aren't covered by the
+# diffs/*.diff patch system (unlike everything else copied from src_pifinder)
+# and get silently reverted by a reinstall's fresh clone otherwise - see
+# basic-memory/pifinder-stellarmate/00028_pf-remote-py-reverted-by-reinstall.md
+!.claude/
+!.claude/skills/
+!.claude/skills/pifinder-remote/
+!.claude/skills/pifinder-remote/SKILL.md
+!.claude/skills/pifinder-remote/scripts/
+!.claude/skills/pifinder-remote/scripts/pf_remote.py
 astro_data/comets.txt
 python/tetra3
 
