@@ -175,6 +175,19 @@
     font-size: 0.82rem;
   }
   #pifinder-status-line { font-weight: bold; margin-bottom: 0.5rem; }
+  .status-dot {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    margin-right: 0.45rem;
+    vertical-align: middle;
+    background: #e8e8e8;
+    border: 1px solid #555;
+  }
+  .status-dot.dot-white { background: #e8e8e8; }
+  .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
+  .status-dot.dot-red { background: #e53935; border-color: #e53935; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
   #quick-links-tile a {
@@ -270,14 +283,14 @@
     <div id="top-tiles-row">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
-        <div id="pifinder-status-line">⚪ PiFinder not detected yet</div>
+        <div id="pifinder-status-line"><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
         <div class="ql-section"><span class="ql-label">Remote:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
       <div id="mode-tile">
-        <div id="mode-status-line">Checking mode&hellip;</div>
+        <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
       </div>
     </div>
@@ -376,17 +389,20 @@ function renderRemoteLinks(ips, port) {
 // This is the only place PiFinder's own reachability/link is shown now (the
 // separate "PiFinder is ready" access-links box was dropped as redundant).
 function updatePiFinderStatusAndWizardLink() {
-  const statusEl = document.getElementById('pifinder-status-line');
+  const dotEl = document.getElementById('pifinder-status-dot');
+  const textEl = document.getElementById('pifinder-status-text');
   const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
   if (pifinderScreenUrl) {
-    statusEl.textContent = '🟢 PiFinder is running';
+    dotEl.className = 'status-dot dot-green';
+    textEl.textContent = 'PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Control PiFinder</a> (password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
-    statusEl.textContent = '⚪ PiFinder not detected yet';
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'PiFinder not detected yet';
     remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
   }
@@ -736,37 +752,44 @@ async function init() {
 // and drives test_tools/fake_mode.sh via the setup GUI's own backend, not
 // anything inside PiFinder itself.
 async function refreshMode() {
-  const statusEl = document.getElementById('mode-status-line');
+  const dotEl = document.getElementById('mode-status-dot');
+  const textEl = document.getElementById('mode-status-text');
   const btn = document.getElementById('mode-toggle-btn');
   try {
     const resp = await fetch('/api/pifinder_mode', { cache: 'no-store' });
     const data = await resp.json();
     if (data.transitioning) {
-      statusEl.textContent = '⏳ Switching mode…';
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'Switching mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
       return;
     }
     if (data.mode === 'fake') {
-      statusEl.textContent = '🧪 Test Mode (no hardware)';
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = 'Test Mode (no hardware)';
       btn.textContent = 'Switch to Real Mode';
     } else if (data.mode === 'real') {
-      statusEl.textContent = '🔌 Real Mode (hardware)';
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = 'Real Mode (hardware)';
       btn.textContent = 'Switch to Test Mode';
     } else {
-      statusEl.textContent = '⚪ Neither mode running';
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'Neither mode running';
       btn.textContent = 'Switch to Test Mode';
     }
     btn.disabled = false;
   } catch (e) {
-    statusEl.textContent = '⚠ Could not check mode';
+    dotEl.className = 'status-dot dot-red';
+    textEl.textContent = 'Could not check mode';
     btn.disabled = true;
     btn.textContent = 'Unavailable';
   }
 }
 
 async function toggleMode() {
-  const statusEl = document.getElementById('mode-status-line');
+  const dotEl = document.getElementById('mode-status-dot');
+  const textEl = document.getElementById('mode-status-text');
   const btn = document.getElementById('mode-toggle-btn');
   const wantFake = btn.textContent.includes('Test Mode');
   const action = wantFake ? 'enable_fake' : 'disable_fake';
@@ -775,7 +798,8 @@ async function toggleMode() {
   if (!confirm(`Really ${verb}?`)) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
-  statusEl.textContent = '⏳ Switching mode…';
+  dotEl.className = 'status-dot dot-white';
+  textEl.textContent = 'Switching mode…';
   try {
     const resp = await fetch('/api/pifinder_mode?action=' + action, { method: 'POST' });
     const data = await resp.json();
