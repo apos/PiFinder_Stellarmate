@@ -18,7 +18,7 @@
      """
      MultiprocLogging.configurer(log_queue)
  
-@@ -272,7 +283,15 @@
+@@ -272,7 +283,21 @@
      if exposure_time == "auto":
          exposure_time = 400000  # Start with default 400ms
  
@@ -31,6 +31,12 @@
 +        from PiFinder.camera_debug import CameraDebug
 +
 +        camera_hardware = CameraDebug(exposure_time)
++        # debug_solve is otherwise only ever set by the explicit "debug"
++        # command (Solve Simulation toggle) - without this, it stays False
++        # here even though images are already synthetic, which reads as
++        # "Solve Simulation: off" while it's actually unavoidably on. See
++        # basic-memory/pifinder-stellarmate/00037.
++        shared_state.set_debug_solve(True)
 +
      camera_hardware.get_image_loop(
          shared_state, camera_image, command_queue, console_queue, cfg
