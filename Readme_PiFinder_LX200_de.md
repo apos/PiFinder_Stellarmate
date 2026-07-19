@@ -12,6 +12,19 @@
 > If you're on different versions, the concepts below still apply, but property names/behavior of
 > third-party mount drivers (like OnStep) may differ slightly between libindi releases.
 
+> ### ⚠️ Zwingend erforderlich: geht nur über den StellarMate Web Manager
+>
+> Die PiFinder-LX200-/Mount-Bridge-Treiber existieren **ausschließlich** im eigenen Treiber-Katalog
+> des Web Managers, unter **"System INDI Drivers"** — sonst nirgends. Ekos hat seinen eigenen,
+> separaten, eingebauten Katalog und kann diese Treiber **in keinem Modus** selbst finden oder
+> starten. Es gibt keinen Weg, das komplett aus KStars/Ekos heraus einzurichten: Das
+> Equipment-Profil muss zuerst im Web Manager angelegt werden
+> ([Schritt 2](#schritt-2-equipment-profil-im-web-manager-anlegen)), Ekos verbindet sich danach nur
+> noch remote dazu, im Modus **"Remote Host"**, niemals "Local"
+> ([Schritt 4](#schritt-4-kstarsekos-remote-modus)). Wird der Web Manager übersprungen, oder bleibt
+> Ekos auf "Local" stehen, tauchen die Treiber schlicht nie auf — das ist mit Abstand die häufigste
+> Ursache, warum dieses Setup nicht funktioniert.
+
 This document covers the **INDI integration layer** that connects PiFinder to KStars/Ekos,
 SkySafari, and (optionally) a real motorized mount. It is a companion to the main
 [README.md](README.md), which covers the base PiFinder-on-StellarMate installation.
@@ -172,15 +185,28 @@ Das muss aus der echten GUI/VNC-Desktop-Session laufen, nicht aus einer reinen S
 
 ### Schritt 2: Equipment-Profil im Web-Manager anlegen
 
+> **⚠️ Dieser Schritt ist zwingend erforderlich und geht nicht aus Ekos heraus.** Den StellarMate
+> Web Manager direkt öffnen (nicht über KStars) und das Profil hier anlegen — das ist der **einzige**
+> Ort, an dem die PiFinder-Treiber überhaupt existieren.
+
 Im Browser: `http://<pi-adresse>:8624` öffnen.
 
-![StellarMate Web Manager: Profil "PiFinder OnStepX Bridge" mit den Treibern PiFinder Mount Bridge, LX200 OnStep, PiFinder LX200 sowie Server Status, alle drei online](docs/images/pfinder_lx200/webmanager_profile.png)
-
-- **Driver Source**: "System INDI Drivers"
+- **Driver Source**: **"System INDI Drivers"** — das ist der einzige Tab/die einzige Quelle im Web
+  Manager, unter der die PiFinder-Treiber auftauchen. Sie stehen nirgends sonst zur Auswahl, und
+  auch nicht im eigenen Treiber-Katalog von Ekos (siehe Warnung am Anfang dieses Dokuments).
 - Unter "Telescopes": **PiFinder LX200** hinzufügen, ggf. auch den Treiber deiner echten Mount
   (z.B. "LX200 OnStep")
 - Unter "Auxiliary": **PiFinder Mount Bridge** hinzufügen (nur falls gewünscht)
 - Profil speichern, **Start** klicken
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="600"></a><br>
+<sub>StellarMate Web Manager: Profil "PiFinder OnStepX Bridge" mit den Treibern PiFinder Mount Bridge, LX200 OnStep, PiFinder LX200 sowie Server Status, alle drei online — Driver Source auf "System INDI Drivers" gesetzt</sub>
+</td>
+</tr>
+</table>
 
 ### Schritt 3: INDI Control Panel — Geräte verbinden
 

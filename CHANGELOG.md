@@ -212,6 +212,14 @@ All notable changes to this project are documented in this file. Format loosely 
   boards, not a Pi 5 or software limitation, and specific to setups with that UPS shield attached.
   The Uninstallation section now describes everything the rewritten uninstall script actually
   covers (see Fixed, above) instead of the stale, narrower description.
+- **`Readme_PiFinder_LX200.md`/`_de.md`: made the Web-Manager requirement much harder to miss.** The
+  drivers only ever show up under the Web Manager's own "System INDI Drivers" catalog - Ekos has a
+  completely separate driver catalog and can't see them at all, in any mode. This was previously
+  only called out once, in Step 4; now repeated as its own warning box right at the top of the
+  document and again inline in Step 2, both cross-linking to the full explanation. Step 2's
+  screenshot also moved from an inline full-width image at the top of the section to the same
+  click-to-enlarge gallery format used everywhere else in the doc, placed at the end of the section
+  instead of before the instructions it illustrates.
 
 ## [1.0.0] - 2026-07-16
 
