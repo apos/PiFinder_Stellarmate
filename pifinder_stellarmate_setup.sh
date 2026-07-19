@@ -36,6 +36,13 @@ done
 # the repo root again, so they must `cd` back here first.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Pull the latest PiFinder_Stellarmate before anything else runs - see
+# bin/self_update.sh for the safety model (skips cleanly during active
+# development, aborts loudly on a real failure instead of continuing on an
+# uncertain checkout).
+source "${SCRIPT_DIR}/bin/self_update.sh"
+self_update_pifinder_stellarmate "$SCRIPT_DIR" "$@"
+
 SETUP_START=$SECONDS
 
 ############################################################

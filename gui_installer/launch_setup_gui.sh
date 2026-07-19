@@ -11,6 +11,14 @@ set -u
 
 PORT=8765
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Pull the latest PiFinder_Stellarmate before anything else runs - see
+# bin/self_update.sh for the safety model (skips cleanly during active
+# development, aborts loudly on a real failure instead of continuing on an
+# uncertain checkout).
+source "${REPO_DIR}/bin/self_update.sh"
+self_update_pifinder_stellarmate "$REPO_DIR" "$@"
 
 _state_json() {
     curl -s -m 2 "http://localhost:${PORT}/state" 2>/dev/null
