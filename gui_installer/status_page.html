@@ -344,7 +344,7 @@
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
         <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header - mirrors PiFinder's screen onto it (test_tools/fb_screen_mirror.py). In Fake Mode, also bridges a plain USB/BT numpad to the keypad (test_tools/fb_keyboard_bridge.py) - not in Real Mode, since a real HAT keypad needs exclusive GPIO. Stopped automatically whenever Fake/Real Mode switches.">Checking&hellip;</button>
-        <div id="display-status-line"><span id="display-status-text">External SPI LCD mirror (optional, needs extra hardware):</span> <span class="status-dot dot-white" id="display-status-dot"></span><span id="display-status-state">checking&hellip;</span></div>
+        <div id="display-status-line"><span id="display-status-text">External SPI LCD (optional, needs extra hardware):</span> <span class="status-dot dot-white" id="display-status-dot"></span><span id="display-status-state">checking&hellip;</span></div>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
           <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
@@ -596,11 +596,11 @@ async function refreshDisplayBridge() {
     if (data.running) {
       dotEl.className = 'status-dot dot-green';
       stateEl.textContent = 'on';
-      btn.textContent = 'Turn LCD Mirror Off';
+      btn.textContent = 'Turn LCD Off';
     } else {
       dotEl.className = 'status-dot dot-white';
       stateEl.textContent = 'off';
-      btn.textContent = 'Turn LCD Mirror On';
+      btn.textContent = 'Turn LCD On';
     }
     btn.disabled = false;
   } catch (e) {
