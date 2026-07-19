@@ -307,8 +307,6 @@ SkySafari verbindet sich **nicht** direkt auf Port 7624, sondern über den mitge
   trennen/neu verbinden.
 - In der SkySafari-App: Server-IP der StellarMate-Box eintragen, **Port 9624**
 
-![SkySafari Netzwerkverbindungen: Teleskop-Auswahl (LX200-kompatibel), IP-Adresse und Port-Nummer 9624](docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png)
-
 SkySafari braucht selbst kein PiFinder-spezifisches Profil — es spricht generisches LX200 zum
 `indi_skysafari`-Treiber, der (via `ACTIVE_DEVICES` → Telescope) auf "PiFinder LX200" zeigt.
 
@@ -323,6 +321,15 @@ KStars/Ekos (Remote, Port 7624) ─────────────(INDI-Pro
                                                                                           ↓
                                                                                   PiFinder pos_server.py
 ```
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png"><img src="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png" width="380"></a><br>
+<sub>SkySafari Netzwerkverbindungen: Teleskop-Auswahl (LX200-kompatibel), IP-Adresse und Port-Nummer 9624</sub>
+</td>
+</tr>
+</table>
 
 ---
 

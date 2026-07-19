@@ -219,7 +219,8 @@ All notable changes to this project are documented in this file. Format loosely 
   document and again inline in Step 2, both cross-linking to the full explanation. Step 2's
   screenshot also moved from an inline full-width image at the top of the section to the same
   click-to-enlarge gallery format used everywhere else in the doc, placed at the end of the section
-  instead of before the instructions it illustrates.
+  instead of before the instructions it illustrates. Step 5's SkySafari screenshot got the same
+  treatment.
 
 ## [1.0.0] - 2026-07-16
 
