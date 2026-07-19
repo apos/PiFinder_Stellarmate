@@ -62,6 +62,38 @@ All notable changes to this project are documented in this file. Format loosely 
   reboot being required — if a reboot is needed, that button is shown instead, since rebooting
   takes the webserver down anyway.
 
+- **Control Center: Fake/Real Mode switch tile**: the Setup GUI was renamed "Control Center" and
+  gained a decoupled mode-status tile showing whether PiFinder is currently running for real
+  (`pifinder.service`) or in a fake-hardware instance for dev/testing (`test_tools/fake_mode.sh`,
+  `.claude/skills/pifinder-remote`'s `pf_remote.py`), with a one-click switch button between them.
+  Status is a color dot (white/green/yellow/red) rather than emoji; Real Mode is shown degraded
+  (yellow) rather than green if the camera or IMU hardware isn't actually detected, since
+  `pifinder.service` can report "active" even with a crashed camera subprocess. A per-component
+  hardware checklist (camera/IMU/GPS) checks each directly against the hardware
+  (`rpicam-hello`/a raw I2C scan/a direct `gpsd` query), independent of what PiFinder's own software
+  believes. Also added: a direct toggle for PiFinder's own "Tools → Test Mode" (`Solve Simulation`
+  row, proxied via a new `POST /api/debug_solve` bridged through PiFinder's `ui_queue` - menu
+  navigation via keyboard simulation was found to drop keypresses unreliably), and always-available
+  "Reboot Pi"/"Shutdown Pi" buttons (a new `/poweroff` route alongside the existing conditional
+  `/reboot`).
+- **Hardware-free dev/test tooling** (`test_tools/`): `fake_mode.sh` toggles between the real
+  systemd service and a fake-hardware instance; `keypad_gpio_matrix_test.py` is a raw GPIO
+  diagnostic for the physical keypad, independent of PiFinder's own software; `fb_screen_mirror.py`
+  and `fb_keyboard_bridge.py` let a small SPI display (e.g. Waveshare 3.5" LCD) and a plain
+  USB/Bluetooth numpad stand in for the real OLED/keypad HAT entirely - the former mirrors
+  PiFinder's `/api/screen` directly onto `/dev/fb1` (Pi 5 removed the DispmanX/`fbcp` path Waveshare's
+  own instructions rely on), the latter bridges raw evdev key events to `/api/key`, replicating the
+  real keypad's NumLock-aware digit/nav dual mapping, hold-to-repeat, long-press, and ALT-combo
+  behavior. The Control Center's mode tile has a matching "Toggle Display" button that starts both
+  together in Fake Mode, or just the screen mirror in Real Mode (a real HAT keypad needs exclusive
+  GPIO the numpad bridge would otherwise compete for), and stops them automatically on every mode
+  switch.
+- **Self-update**: both entry points (`pifinder_stellarmate_setup.sh`,
+  `gui_installer/launch_setup_gui.sh`) now `git pull` this repo itself before doing anything else, so
+  a reinstall/update always runs the latest scripts/patches/GUI - not just whatever was checked out
+  at initial clone time. Skips safely (not a failure) whenever the working tree isn't in a clean,
+  fast-forwardable state, so in-progress local changes are never touched.
+
 ### Removed
 
 - **"Software Upd" from the OLED Tools menu**: PiFinder's own update mechanism isn't compatible
@@ -74,6 +106,20 @@ All notable changes to this project are documented in this file. Format loosely 
 - The Installation Summary always reported `picamera2: unknown` — it read the package's
   `__version__` attribute, which `picamera2` doesn't define. Now reads the version via
   `importlib.metadata.version()` instead.
+- **Reinstall/update left stale state behind in two different ways**, both only reachable once Fake
+  Mode dev/testing existed to expose them: (1) a running fake-hardware instance (no systemd unit)
+  survived a reinstall's `rm -rf ~/PiFinder` unnoticed - Linux keeps already-open files/mmaps valid
+  even after their directory entries are deleted, so it kept running on stale in-memory code instead
+  of crashing. Now stopped explicitly before either the reinstall or update branch touches the
+  directory. (2) `.claude/skills/pifinder-remote/scripts/pf_remote.py`'s own port-handling fixes
+  (binds a fixed port instead of guessing across 80/8080, avoiding a collision with a real
+  already-running service) lived inside that same deleted-and-recloned directory and, unlike every
+  other PiFinder customization here, weren't tracked through the `diffs/*.diff` patch system - a
+  reinstall silently reverted them. Now mirrored into this repo's own `src_pifinder/` and copied back
+  in on every reinstall/update, the same way as `gps_stellarmate.py`/`smos.html`. Same root cause,
+  same fix, for a hand-installed `evdev` (needed by `fb_keyboard_bridge.py` above) that a venv
+  recreation silently dropped - added to `bin/requirements_additional.txt` so it's provisioned like
+  every other extra dependency from now on.
 - `pifinder_stellarmate_setup.sh` unconditionally told the user to reboot at the end of every run,
   even though the only step that actually requires one is a `/boot/config.txt` overlay change
   (Pi firmware overlays only apply at boot) — everything else (code, services, INDI drivers) is
@@ -83,6 +129,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- The Control Center now asks for confirmation before a destructive Reinstall/Update/Reboot/Shutdown
+  action, instead of firing immediately on click.
 - `pifinder_stellarmate_setup.sh` now builds and installs the PiFinder LX200 and Mount Bridge
   INDI drivers automatically (stopping any already-running instance first, then restarting the
   StellarMate Web Manager so the catalog is up to date). Previously this was a fully separate,

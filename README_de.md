@@ -35,7 +35,7 @@ bash gui_installer/launch_setup_gui.sh
 
 Öffne die Seite anschließend im Browser — direkt auf dem Pi oder von jedem anderen Gerät im
 gleichen Netzwerk aus (keine Desktop-Sitzung auf dem Pi nötig). Details siehe
-[Setup-GUI](#setup-gui-optional).
+[Setup-GUI / Control Center](#setup-gui--control-center-optional).
 
 <table>
 <tr>
@@ -137,13 +137,19 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
     PiFinder-LX200- + Mount-Bridge-INDI-Treiber werden automatisch gebaut und installiert — siehe
     [Der INDI-Treiber](#der-indi-treiber) unten für das Web-Manager-Profil-Setup.
 
-### Setup-GUI (optional)
+### Setup-GUI / Control Center (optional)
 
 Wer nicht die rohe Terminal-Ausgabe beobachten möchte: `gui_installer/` bietet eine kleine lokale
-Webseite, die dasselbe Setup-Skript mit einer live mitscrollenden Statusanzeige im Browser
-ausführt — inklusive automatischer Behandlung des "venv aktivieren und neu starten"-Schritts sowie
-der Reinstall/Update-Auswahl per Button, sodass nichts mehr an einem Prompt eingetippt werden muss.
-Starten mit:
+Webseite — das "PiFinder on Stellarmate Control Center" —, die dasselbe Setup-Skript mit einer live
+mitscrollenden Statusanzeige im Browser ausführt, inklusive automatischer Behandlung des "venv
+aktivieren und neu starten"-Schritts sowie der Reinstall/Update-Auswahl per Button (jeweils mit
+Bestätigungsabfrage), sodass nichts mehr an einem Prompt eingetippt werden muss. Über die
+Installation/Aktualisierung hinaus dient sie auch als laufendes Dashboard: eine Modus-Kachel zeigt,
+ob PiFinder gerade real läuft oder in einer entkoppelten Fake-Hardware-Instanz für Entwicklung/Tests
+(mit Umschalt-Button und einer Hardware-Checkliste — Kamera/IMU/GPS, direkt gegen die Hardware
+geprüft statt PiFinders eigenem Software-Status vertrauend), ein "Solve Simulation"-Umschalter für
+PiFinders eigenen Test-Modus, ein "Toggle Display"-Button für ein optionales kleines SPI-Zweitdisplay
+(siehe `test_tools/`) sowie immer verfügbare Reboot-/Shutdown-Buttons für den ganzen Pi. Starten mit:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```

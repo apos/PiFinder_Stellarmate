@@ -343,8 +343,8 @@
       <div id="mode-tile">
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-        <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled title="Mirrors PiFinder's screen onto an attached small SPI display (e.g. Waveshare 3.5&quot; LCD, test_tools/fb_screen_mirror.py). In Fake Mode, also bridges a plain USB/BT numpad to the keypad (test_tools/fb_keyboard_bridge.py) - not in Real Mode, since a real HAT keypad needs exclusive GPIO. Stopped automatically whenever Fake/Real Mode switches.">Checking&hellip;</button>
-        <div id="display-status-line"><span class="status-dot dot-white" id="display-status-dot"></span><span id="display-status-text">Display: checking&hellip;</span></div>
+        <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header - mirrors PiFinder's screen onto it (test_tools/fb_screen_mirror.py). In Fake Mode, also bridges a plain USB/BT numpad to the keypad (test_tools/fb_keyboard_bridge.py) - not in Real Mode, since a real HAT keypad needs exclusive GPIO. Stopped automatically whenever Fake/Real Mode switches.">Checking&hellip;</button>
+        <div id="display-status-line"><span id="display-status-text">External SPI LCD mirror (optional, needs extra hardware):</span> <span class="status-dot dot-white" id="display-status-dot"></span><span id="display-status-state">checking&hellip;</span></div>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
           <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
@@ -587,7 +587,7 @@ let lastDisplayBridgeRunning = null;
 
 async function refreshDisplayBridge() {
   const dotEl = document.getElementById('display-status-dot');
-  const textEl = document.getElementById('display-status-text');
+  const stateEl = document.getElementById('display-status-state');
   const btn = document.getElementById('display-toggle-btn');
   try {
     const resp = await fetch('/api/display_bridge', { cache: 'no-store' });
@@ -595,27 +595,27 @@ async function refreshDisplayBridge() {
     lastDisplayBridgeRunning = data.running;
     if (data.running) {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = 'Display: on';
-      btn.textContent = 'Turn Display Off';
+      stateEl.textContent = 'on';
+      btn.textContent = 'Turn LCD Mirror Off';
     } else {
       dotEl.className = 'status-dot dot-white';
-      textEl.textContent = 'Display: off';
-      btn.textContent = 'Turn Display On';
+      stateEl.textContent = 'off';
+      btn.textContent = 'Turn LCD Mirror On';
     }
     btn.disabled = false;
   } catch (e) {
     dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'Display: unknown';
+    stateEl.textContent = 'unknown';
     btn.disabled = true;
   }
 }
 
 async function toggleDisplayBridge() {
   const btn = document.getElementById('display-toggle-btn');
-  const textEl = document.getElementById('display-status-text');
+  const stateEl = document.getElementById('display-status-state');
   const action = lastDisplayBridgeRunning ? 'stop' : 'start';
   btn.disabled = true;
-  textEl.textContent = action === 'start' ? 'Starting…' : 'Stopping…';
+  stateEl.textContent = action === 'start' ? 'starting…' : 'stopping…';
   try {
     const resp = await fetch('/api/display_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();

@@ -34,7 +34,7 @@ bash gui_installer/launch_setup_gui.sh
 ```
 
 Then open the page in a browser — on the Pi itself, or from any other device on the same network
-(no desktop session on the Pi required). See [Setup GUI](#setup-gui-optional) for details.
+(no desktop session on the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-optional) for details.
 
 <table>
 <tr>
@@ -137,12 +137,19 @@ The setup process is designed to be straightforward. It will guide you through a
     [Using the INDI Driver](#using-the-indi-driver) below for what that gives you and how to set
     up the Web Manager profile.
 
-### Setup GUI (optional)
+### Setup GUI / Control Center (optional)
 
-If you'd rather not watch raw terminal output, `gui_installer/` provides a small local web page
-that runs the same setup script with a live, auto-scrolling status view in your browser — including
-automatically handling the "activate the venv and rerun" step and the reinstall/update choice via
-buttons, so nothing needs to be typed at a prompt. Run it with:
+If you'd rather not watch raw terminal output, `gui_installer/` provides a small local web page —
+the "PiFinder on Stellarmate Control Center" — that runs the same setup script with a live,
+auto-scrolling status view in your browser, including automatically handling the "activate the venv
+and rerun" step and the reinstall/update choice via buttons (each asks for confirmation first), so
+nothing needs to be typed at a prompt. Beyond installing/updating, it also doubles as an ongoing
+dashboard: a mode-status tile shows whether PiFinder is running for real or in a decoupled
+fake-hardware instance for dev/testing (with a one-click switch and a per-component hardware
+checklist — camera/IMU/GPS, checked directly against the hardware rather than trusting PiFinder's own
+software state), a "Solve Simulation" toggle for PiFinder's own Test Mode, a "Toggle Display" button
+for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
+buttons for the whole Pi. Run it with:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```
