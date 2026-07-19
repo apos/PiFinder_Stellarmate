@@ -3,3 +3,4 @@ picamera2
 RPi.GPIO
 spidev
 aiofiles
+evdev

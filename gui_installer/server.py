@@ -13,7 +13,9 @@ but the bare system python3.
 
 import base64
 import json
+import os
 import re
+import signal
 import socket
 import subprocess
 import threading
@@ -54,6 +56,16 @@ STATUS_PAGE = GUI_DIR / "status_page.html"
 FAKE_MODE_SCRIPT = REPO_ROOT / "test_tools" / "fake_mode.sh"
 FAKE_MODE_PORT = 8081
 
+# Waveshare 3.5" LCD dev/test setup (basic-memory/pifinder-stellarmate/00024)
+# - mirrors whichever PiFinder instance is currently reachable onto the
+# small SPI screen. The numpad bridge additionally needs exclusive evdev
+# access and duplicates GPIO territory a real HAT keypad also uses, so it's
+# only ever started alongside Fake Mode, never Real Mode - see
+# _start_display_bridge().
+SCREEN_MIRROR_SCRIPT = REPO_ROOT / "test_tools" / "fb_screen_mirror.py"
+KEYBOARD_BRIDGE_SCRIPT = REPO_ROOT / "test_tools" / "fb_keyboard_bridge.py"
+DISPLAY_ROTATE = "90"  # physically confirmed HAT mount orientation, see 00024
+
 # Must match the phase() call sites (and their order) in pifinder_stellarmate_setup.sh.
 PHASES = [
     "Checking versions",
@@ -86,6 +98,9 @@ _mode_lines = []  # fake_mode.sh's own stdout/stderr, shown in the shared Termin
 _mode_exit_code = None
 _mode_error = None  # short human reason the last mode switch failed, None if last one succeeded
 _mode_target = None  # "fake" | "real" - which mode the in-flight/last switch was aiming for
+
+_display_screen_proc = None  # fb_screen_mirror.py Popen, or None if not running
+_display_keyboard_proc = None  # fb_keyboard_bridge.py Popen, or None (Fake Mode only)
 
 # How long to wait, after fake_mode.sh itself exits, for the target mode to
 # actually be reachable. `systemctl start` (and `pf_remote.py launch`) return
@@ -125,6 +140,68 @@ def _real_service_failed() -> bool:
     return subprocess.run(
         ["systemctl", "is-failed", "--quiet", "pifinder.service"]
     ).returncode == 0
+
+
+def _display_bridge_running() -> bool:
+    with _lock:
+        return _display_screen_proc is not None and _display_screen_proc.poll() is None
+
+
+def _stop_display_bridge():
+    """Stops fb_screen_mirror.py/fb_keyboard_bridge.py if running. Called both
+    from the explicit stop action and before any Fake/Real Mode switch (see
+    _run_fake_mode_action()) - a switch changes or removes the very instance
+    the bridge is pointed at, so leaving it running would mirror a stale or
+    dead target."""
+    global _display_screen_proc, _display_keyboard_proc
+    with _lock:
+        procs = [p for p in (_display_screen_proc, _display_keyboard_proc) if p is not None]
+        _display_screen_proc = None
+        _display_keyboard_proc = None
+    for proc in procs:
+        if proc.poll() is not None:
+            continue
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                pass
+
+
+def _start_display_bridge():
+    """Starts the screen mirror against whichever PiFinder instance is
+    currently up (Fake Mode's fixed port, or Real Mode's auto-probed one) -
+    plus the numpad-to-keypad bridge, but only in Fake Mode. A real HAT
+    keypad needs exclusive GPIO the Waveshare overlay already partially
+    conflicts with (see basic-memory/pifinder-stellarmate/00024); running our
+    own evdev keyboard bridge on top in Real Mode would just be a second,
+    unrelated input source fighting over screen focus, not something anyone
+    asked for. Returns (ok, error)."""
+    global _display_screen_proc, _display_keyboard_proc
+    if not PIFINDER_VENV_PY.exists():
+        return False, "PiFinder venv not found - install PiFinder first."
+    fake = _fake_mode_up()
+    real = _real_service_active()
+    if not fake and not real:
+        return False, "PiFinder is not running (neither Fake nor Real Mode) - start one first."
+    base_url = f"http://127.0.0.1:{FAKE_MODE_PORT}" if fake else None
+    screen_cmd = [str(PIFINDER_VENV_PY), str(SCREEN_MIRROR_SCRIPT), "--rotate", DISPLAY_ROTATE]
+    if base_url:
+        screen_cmd += ["--base-url", base_url]
+    with _lock:
+        _display_screen_proc = subprocess.Popen(
+            screen_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+        _display_keyboard_proc = None
+        if fake:
+            keyboard_cmd = [str(PIFINDER_VENV_PY), str(KEYBOARD_BRIDGE_SCRIPT), "--base-url", base_url]
+            _display_keyboard_proc = subprocess.Popen(
+                keyboard_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+            )
+    return True, None
 
 
 def _camera_hardware_present():
@@ -265,6 +342,12 @@ def _run_fake_mode_action(action):
         _mode_exit_code = None
         _mode_error = None
         _mode_target = target
+    # The display bridge points at whichever instance is up right now - a
+    # mode switch is about to stop that instance (and maybe start a
+    # different one on a different port), so any running bridge would be
+    # left mirroring a dead or wrong target. Stop it first; the user can
+    # toggle it back on for the new mode afterwards.
+    _stop_display_bridge()
     try:
         proc = subprocess.Popen(
             ["bash", str(FAKE_MODE_SCRIPT), action],
@@ -564,6 +647,10 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/display_bridge":
+            self._send_json({"running": _display_bridge_running()})
+            return
+
         if parsed.path == "/api/hardware_status":
             self._send_json(
                 {
@@ -693,6 +780,27 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             self._send_json({"success": _pifinder_toggle_debug_solve(port)})
+            return
+
+        if parsed.path == "/api/display_bridge":
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            if action not in ("start", "stop"):
+                self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
+                return
+            with _lock:
+                if _mode_action_running or _running:
+                    self._send_json({"success": False, "error": "An install/update or mode switch is in progress - wait for it to finish first."}, status=409)
+                    return
+            if action == "stop":
+                _stop_display_bridge()
+                self._send_json({"success": True})
+                return
+            if _display_bridge_running():
+                self._send_json({"success": True})
+                return
+            ok, error = _start_display_bridge()
+            self._send_json({"success": ok, "error": error})
             return
 
         self.send_error(404)
