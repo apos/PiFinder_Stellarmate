@@ -93,6 +93,33 @@ All notable changes to this project are documented in this file. Format loosely 
   a reinstall/update always runs the latest scripts/patches/GUI - not just whatever was checked out
   at initial clone time. Skips safely (not a failure) whenever the working tree isn't in a clean,
   fast-forwardable state, so in-progress local changes are never touched.
+- **Waveshare LCD overlay is now reboot-toggleable from the Control Center**, instead of a fixed
+  choice baked in at install time - flips the `dtoverlay`/framebuffer lines in `/boot/config.txt`
+  (backed up first) and reboots. `pifinder-fake-mode-autostart.service` (new,
+  `ConditionPathExists=/dev/fb1`) brings Fake Mode + the screen mirror up automatically on a boot
+  where the LCD is active; `pifinder.service` itself now gets `ConditionPathExists=!/dev/fb1` so the
+  two never race for the same framebuffer. The Control Center's own web UI persists across reboots
+  the same way, via a new `pifinder-control-center.service` unit.
+- **Numpad bridge is now its own independent, permanently-on toggle**: split out of the LCD tile
+  into its own row and backed by a new `pifinder-numpad-bridge.service` (`Type=simple`,
+  `Restart=always`, enabled/disabled via the Control Center's toggle button, same
+  enable/disable-persists-across-reboots pattern as `pifinder-control-center.service`). Replaces the
+  previous plain-`Popen`-in-the-server-process approach, which couldn't survive a reboot at all.
+  `fb_keyboard_bridge.py` also self-heals across a Fake/Real Mode switch on its own now (drops its
+  cached target URL on a failed send and re-probes on the next keypress) instead of needing to be
+  externally stopped/restarted when the mode changes.
+- **Numpad remapped to put navigation entirely off NumLock**: `NumLock` -> LEFT, `/` -> UP, `*` ->
+  DOWN, `Backspace` -> RIGHT, with `0`-`9` always plain digits. Removes the previous
+  NumLock-state-dependent dual mapping entirely - important for a wireless numpad, where there's no
+  reliable way to see or set its NumLock LED remotely.
+- **Camera process now falls back to the debug/synthetic camera instead of crashing** when no real
+  camera hardware is detected (e.g. `Picamera2()` raising because nothing is physically attached).
+  Previously an uncaught init failure crashed the whole camera subprocess before it ever reached the
+  shared image loop, silently taking every other command on that process's queue down with it -
+  including the "Solve Simulation" / Test Mode toggle, which is itself just another command on the
+  same queue. A crashed process can't be toggled into debug mode; it has to already be running one
+  to receive the toggle at all. This is also what Solve Simulation is actually *for* in the field
+  (no camera attached), so the toggle now works in exactly the situation it exists to cover.
 
 ### Removed
 
@@ -126,6 +153,27 @@ All notable changes to this project are documented in this file. Format loosely 
   already restarted live. Now tracks whether `config.txt` was actually modified this run and only
   suggests a reboot when it was. The setup GUI's Reboot button follows the same signal (a new
   `###REBOOT_NEEDED###` marker) instead of showing up after every successful run regardless.
+- **`keyboard_pi.py` crashed on every single keypress** once python-libinput was updated to 0.1.0:
+  `KeyboardEvent.get_key()` now returns a plain `enum.Enum` (`libinput.evcodes.Key`) instead of an
+  `IntEnum`, so the existing `int(key)` conversion raised `TypeError` on every event. Fixed by
+  reading `.value` instead. This lived entirely inside the StellarMate-authored python-libinput
+  API-migration patch itself, not in upstream PiFinder code.
+- **Solve Simulation status display drifted out of sync with the real internal toggle state**, in
+  two layered ways found back-to-back while testing the camera fallback above: (1) the automatic
+  fallback engaged the debug camera without updating the *displayed* `debug_solve` flag, so the UI
+  kept showing "off" while synthetic images were already being served; (2) after fixing that by
+  setting the flag directly from the fallback path, the flag and the toggle handler's own internal
+  state variable (the one that actually decides whether a canned test image gets loaded) could still
+  be set independently and drift apart - e.g. clicking "off" while running on the fallback camera
+  left the internal state effectively "on" underneath a UI that now said "off". Fixed by giving
+  `get_image_loop()` an `initial_debug` parameter so the fallback path seeds the *same* state the
+  toggle handler reads/writes, instead of poking the displayed flag separately from outside.
+- The Control Center's hardware-status tile always said "camera" in its degraded-mode label, even
+  when the IMU (or both) was the actual problem. Now names whichever piece of hardware is actually
+  missing.
+- The Setup GUI/Control Center's post-run "success" screen could show a stale StellarMate Web
+  Manager restart status; fixed alongside adding an explicit warning before Reboot/Shutdown while an
+  install/update run is still in progress.
 
 ### Changed
 
@@ -136,6 +184,14 @@ All notable changes to this project are documented in this file. Format loosely 
   StellarMate Web Manager so the catalog is up to date). Previously this was a fully separate,
   manual step (`bin/build_indi_driver.sh` / `bin/build_indi_bridge.sh`) — those scripts still
   exist for rebuilding just the drivers without rerunning the whole setup.
+- Control Center status rows now use a consistent dot-then-label-then-status layout throughout, and
+  the Solve Simulation toggle moved out of the quick-links tile into the hardware-status tile,
+  alongside the camera/IMU/GPS checks it's most related to. The hardware tile also now hides itself
+  entirely while an install/update run is in progress, instead of showing stale/misleading status
+  underneath the live log.
+- `pifinder_stellarmate_setup.sh`'s smos.html now includes a Control Center screenshot alongside
+  its existing setup instructions; `README.md`/`README_de.md` got a retaken, up-to-date setup
+  screenshot plus the previously-missing INDI Drivers screenshots.
 
 ## [1.0.0] - 2026-07-16
 
