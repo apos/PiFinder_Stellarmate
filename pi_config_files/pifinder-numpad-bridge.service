@@ -1,0 +1,22 @@
+[Unit]
+Description=PiFinder numpad-to-keypad bridge (fb_keyboard_bridge.py)
+After=network.target
+
+[Service]
+Type=simple
+User=stellarmate
+WorkingDirectory=/home/stellarmate/PiFinder_Stellarmate
+ExecStart=/home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/fb_keyboard_bridge.py
+Restart=always
+RestartSec=3
+
+# Not enabled by default (see [Install] below) - enabled/started only when
+# the user turns it on via the Control Center's "Turn Numpad On" button
+# (`systemctl enable --now`), disabled/stopped via "Turn Numpad Off"
+# (`systemctl disable --now`). Same pattern as pifinder-control-center.
+# service: systemd's own enabled-state IS the persistence mechanism, so
+# "on" survives every reboot automatically without any separate tracking.
+# See basic-memory/pifinder-stellarmate/00035.
+
+[Install]
+WantedBy=multi-user.target

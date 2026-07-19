@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
 Bridges a plain USB/wireless keyboard or numpad (any evdev keyboard device)
-to PiFinder's Remote API (POST /api/key) - for controlling PiFinder without
-physical keypad/HAT hardware attached. Meant to be run alongside
-test_tools/fb_screen_mirror.py for a fully hardware-independent dev/test
-setup (e.g. Fake Mode + a small SPI screen + a plain keypad).
+to PiFinder's Remote API (POST /api/key) - a stand-in keypad usable
+alongside the real HAT keypad, or on its own, in either Real or Fake Mode.
+Not tied to any particular display/dev setup (earlier versions bundled it
+with the Waveshare LCD's Fake Mode autostart - split out, see
+basic-memory/pifinder-stellarmate/00031 and 00035).
+
+Deployed as pifinder-numpad-bridge.service (see pi_config_files/),
+enabled/disabled via the Control Center's "Turn Numpad On/Off" button -
+systemd's own enabled-state persists that choice across reboots, same
+pattern as pifinder-control-center.service itself. Self-heals across a
+Fake/Real Mode switch on its own (drops its cached target and re-probes
+on the next keypress after a failed send, see send() in main()) rather
+than needing to be stopped/restarted externally when the mode changes.
 
 Deliberately decoupled from PiFinder's own code: reads raw evdev key events
 (works with or without an X11/desktop session - PiFinder's own
@@ -13,19 +22,17 @@ to the same stable, hardware-independent /api/key endpoint already used by
 pf_remote.py and the Setup GUI.
 
 Tuned for a numpad-only device (e.g. LogiLink ID0120) with no dedicated
-arrow keys, per the confirmed physical layout:
+arrow keys. Remapped (2026-07-19) so navigation lives entirely on keys
+that never double as digits, eliminating any NumLock-state dependency -
+important since this is a wireless numpad, so there's no reliable way to
+see (or set) its NumLock LED remotely anyway:
 
-    NumLock off:  4=LEFT  8=UP  6=RIGHT  2=DOWN   +=PLUS  -=MINUS  Enter=SQUARE
-    NumLock on:   4/8/6/2 are plain digits (for catalog-number entry etc.)
-                  +/-/Enter unchanged either way
-    Backspace/Delete: always LEFT (a second, convenient "back" key)
-    1/3/5/7/9/0, /, *: always plain digits / unused
-
-NumLock doesn't change the raw evdev keycode a genuine numpad key reports
-(that only happens at a higher, keymap/text-input layer we deliberately
-bypass) - so this script tracks NumLock state itself (seeded from the
-device's current LED state at startup, then toggled on every NumLock
-keypress) to decide how to interpret KP_4/KP_8/KP_6/KP_2 dynamically.
+    NumLock   -> LEFT
+    /         -> UP
+    *         -> DOWN
+    Backspace -> RIGHT
+    +/-/Enter -> PLUS/MINUS/SQUARE (unchanged)
+    0-9       -> always plain digits (catalog-number entry etc.)
 
 Also matches keyboard_pi.py's real-hardware behavior:
 - Holding UP/DOWN repeats the short press every ~1s (fast list scrolling).
@@ -61,9 +68,13 @@ LONG_PRESS_SECONDS = 1.0
 REPEAT_SECONDS = 1.0
 
 SQUARE_KEYS = {ecodes.KEY_ENTER, ecodes.KEY_KPENTER}
-FIXED_NAV = {  # always LEFT/etc regardless of NumLock
-    ecodes.KEY_BACKSPACE: "LEFT",
-    ecodes.KEY_DELETE: "LEFT",
+FIXED_NAV = {
+    ecodes.KEY_NUMLOCK: "LEFT",
+    ecodes.KEY_KPSLASH: "UP",
+    ecodes.KEY_KPASTERISK: "DOWN",
+    ecodes.KEY_BACKSPACE: "RIGHT",
+    # Genuine dedicated arrow keys - independent of the numpad remap above,
+    # in case this script is ever pointed at a different keyboard.
     ecodes.KEY_LEFT: "LEFT",
     ecodes.KEY_RIGHT: "RIGHT",
     ecodes.KEY_UP: "UP",
@@ -73,16 +84,9 @@ FIXED_BTN = {
     ecodes.KEY_KPPLUS: "PLUS",
     ecodes.KEY_KPMINUS: "MINUS",
 }
-NUMPAD_NAV_WHEN_NUMLOCK_OFF = {
-    ecodes.KEY_KP4: "LEFT",
-    ecodes.KEY_KP8: "UP",
-    ecodes.KEY_KP6: "RIGHT",
-    ecodes.KEY_KP2: "DOWN",
-}
-DUAL_KEY_DIGIT_VALUE = {ecodes.KEY_KP4: 4, ecodes.KEY_KP8: 8, ecodes.KEY_KP6: 6, ecodes.KEY_KP2: 2}
 ALWAYS_DIGIT = {
-    ecodes.KEY_KP0: 0, ecodes.KEY_KP1: 1, ecodes.KEY_KP3: 3,
-    ecodes.KEY_KP5: 5, ecodes.KEY_KP7: 7, ecodes.KEY_KP9: 9,
+    ecodes.KEY_KP0: 0, ecodes.KEY_KP1: 1, ecodes.KEY_KP2: 2, ecodes.KEY_KP3: 3, ecodes.KEY_KP4: 4,
+    ecodes.KEY_KP5: 5, ecodes.KEY_KP6: 6, ecodes.KEY_KP7: 7, ecodes.KEY_KP8: 8, ecodes.KEY_KP9: 9,
     ecodes.KEY_0: 0, ecodes.KEY_1: 1, ecodes.KEY_2: 2, ecodes.KEY_3: 3, ecodes.KEY_4: 4,
     ecodes.KEY_5: 5, ecodes.KEY_6: 6, ecodes.KEY_7: 7, ecodes.KEY_8: 8, ecodes.KEY_9: 9,
 }
@@ -91,21 +95,15 @@ REPEAT_VALUES = {"UP", "DOWN"}
 NAV_ALT = {"LEFT": "ALT_LEFT", "RIGHT": "ALT_RIGHT", "UP": "ALT_UP", "DOWN": "ALT_DOWN"}
 
 
-def classify(code, numlock_on):
+def classify(code):
     """Returns (kind, value) or None to ignore. kind is one of:
-    "numlock", "square", "nav", "btn", "digit"."""
-    if code == ecodes.KEY_NUMLOCK:
-        return ("numlock", None)
+    "square", "nav", "btn", "digit"."""
     if code in SQUARE_KEYS:
         return ("square", None)
     if code in FIXED_NAV:
         return ("nav", FIXED_NAV[code])
     if code in FIXED_BTN:
         return ("btn", FIXED_BTN[code])
-    if code in NUMPAD_NAV_WHEN_NUMLOCK_OFF:
-        if numlock_on:
-            return ("digit", DUAL_KEY_DIGIT_VALUE[code])
-        return ("nav", NUMPAD_NAV_WHEN_NUMLOCK_OFF[code])
     if code in ALWAYS_DIGIT:
         return ("digit", ALWAYS_DIGIT[code])
     return None
@@ -138,7 +136,7 @@ def find_keyboard_device(explicit):
     return None
 
 
-def send_key(base_url, button):
+def send_key(base_url, button) -> bool:
     body = json.dumps({"button": button}).encode()
     req = urllib.request.Request(
         f"{base_url}/api/key", data=body,
@@ -147,8 +145,10 @@ def send_key(base_url, button):
     try:
         urllib.request.urlopen(req, timeout=2)
         print(f"-> {button}")
+        return True
     except Exception as e:
         print(f"send_key({button!r}) failed: {e}", file=sys.stderr)
+        return False
 
 
 def main():
@@ -162,9 +162,6 @@ def main():
         print("No keyboard/numpad-like input device found.", file=sys.stderr)
         sys.exit(1)
     print(f"Keyboard: {dev.name} ({dev.path})")
-
-    numlock_on = ecodes.LED_NUML in dev.leds()
-    print(f"NumLock currently: {'ON (4/8/6/2 = digits)' if numlock_on else 'OFF (4/8/6/2 = arrows)'}")
 
     base_url = find_base_url(args.base_url)
     if base_url is None:
@@ -194,22 +191,34 @@ def main():
             base_url = find_base_url(args.base_url)
         return base_url
 
-    def fire_hold(code, kind, value):
+    def send(button):
+        """Sends via whatever instance is currently known, re-probing first
+        if none is cached yet. On failure, drops the cached base_url so the
+        *next* keypress re-probes from scratch instead of retrying the same
+        now-dead target forever - this is what lets the bridge survive a
+        Fake/Real Mode switch on its own (a switch changes which port is
+        actually reachable) without needing to be stopped/restarted
+        externally. See basic-memory/pifinder-stellarmate/00035."""
+        nonlocal base_url
         url = get_base_url()
         if url is None:
             return
+        if not send_key(url, button):
+            base_url = None
+
+    def fire_hold(code, kind, value):
         if kind == "nav" and value in REPEAT_VALUES:
-            send_key(url, value)
+            send(value)
             t = Timer(REPEAT_SECONDS, fire_hold, args=(code, kind, value))
             t.daemon = True
             t.start()
             hold_timers[code] = t
         elif kind == "nav":
             fired_codes.add(code)
-            send_key(url, NAV_LONG[value])
+            send(NAV_LONG[value])
         elif kind == "square":
             fired_codes.add(code)
-            send_key(url, "LNG_SQUARE")
+            send("LNG_SQUARE")
 
     print("Listening for key presses (Ctrl-C to stop)...")
     for event in dev.read_loop():
@@ -218,14 +227,10 @@ def main():
         code = event.code
 
         if event.value == 1:  # key down
-            c = classify(code, numlock_on)
+            c = classify(code)
             if c is None:
                 continue
             kind, value = c
-            if kind == "numlock":
-                numlock_on = not numlock_on
-                print(f"NumLock toggled: {'ON (4/8/6/2 = digits)' if numlock_on else 'OFF (4/8/6/2 = arrows)'}")
-                continue
             active[code] = c
             if kind == "square":
                 square_held = True
@@ -253,9 +258,7 @@ def main():
             if kind == "square":
                 square_held = False
                 if not fired:
-                    url = get_base_url()
-                    if url:
-                        send_key(url, "SQUARE")
+                    send("SQUARE")
                 continue
 
             if fired and value not in REPEAT_VALUES:
@@ -263,19 +266,15 @@ def main():
                 # the short action (matches keyboard_pi.py's hold_sent logic).
                 continue
 
-            url = get_base_url()
-            if url is None:
-                continue
-
             if kind == "nav":
-                send_key(url, NAV_ALT[value] if square_held else value)
+                send(NAV_ALT[value] if square_held else value)
             elif kind == "btn":
-                send_key(url, ("ALT_" + value) if square_held else value)
+                send(("ALT_" + value) if square_held else value)
             elif kind == "digit":
                 if square_held and value == 0:
-                    send_key(url, "ALT_0")
+                    send("ALT_0")
                 else:
-                    send_key(url, value)
+                    send(value)
 
 
 if __name__ == "__main__":

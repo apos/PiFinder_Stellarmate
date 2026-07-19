@@ -13,9 +13,7 @@ but the bare system python3.
 
 import base64
 import json
-import os
 import re
-import signal
 import socket
 import subprocess
 import threading
@@ -69,13 +67,16 @@ WAVESHARE_OVERLAY = "dtoverlay=waveshare35b-v2"
 LCD_FRAMEBUFFER = Path("/dev/fb1")  # exists iff the overlay is currently active
 
 # A plain USB/2.4GHz-dongle numpad bridged to PiFinder's /api/key (evdev,
-# see the script's own header) - unlike the LCD above, this needs no GPIO or
-# overlay at all, works against either Real or Fake Mode (auto-probed), and
-# has nothing to do with the physical display - it was wrongly bundled with
-# the LCD's autostart at first (see 00031), split out into its own
-# independent, no-reboot toggle.
-KEYBOARD_BRIDGE_SCRIPT = REPO_ROOT / "test_tools" / "fb_keyboard_bridge.py"
-_keyboard_bridge_proc = None  # Popen, or None if not running
+# see test_tools/fb_keyboard_bridge.py's own header) - unlike the LCD above,
+# this needs no GPIO or overlay at all, works against either Real or Fake
+# Mode (auto-probed, and self-heals across a mode switch on its own - see
+# the script's send()), and has nothing to do with the physical display - it
+# was wrongly bundled with the LCD's autostart at first (see 00031). Managed
+# as its own systemd unit (pifinder-numpad-bridge.service, see
+# pi_config_files/) rather than a tracked Popen, so "on" persists across
+# reboots the same way pifinder-control-center.service's own enabled-state
+# does - see 00035.
+KEYBOARD_BRIDGE_SERVICE = "pifinder-numpad-bridge.service"
 
 # Must match the phase() call sites (and their order) in pifinder_stellarmate_setup.sh.
 PHASES = [
@@ -199,46 +200,26 @@ def _set_lcd_overlay(enable: bool):
 
 
 def _keyboard_bridge_running() -> bool:
-    with _lock:
-        return _keyboard_bridge_proc is not None and _keyboard_bridge_proc.poll() is None
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", KEYBOARD_BRIDGE_SERVICE]
+    ).returncode == 0
 
 
 def _stop_keyboard_bridge():
-    """Stops fb_keyboard_bridge.py if running. Also called before any
-    Fake/Real Mode switch (see _run_fake_mode_action()) - it auto-probes and
-    latches onto whichever instance answered first at startup, so a mode
-    switch would otherwise leave it silently POSTing keys to a now-dead
-    instance instead of the new one."""
-    global _keyboard_bridge_proc
-    with _lock:
-        proc = _keyboard_bridge_proc
-        _keyboard_bridge_proc = None
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        proc.wait(timeout=5)
-    except Exception:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except Exception:
-            pass
+    """Disables + stops pifinder-numpad-bridge.service - systemd's own
+    enabled-state is the persistence mechanism (same as
+    pifinder-control-center.service), so this is what makes "off" survive
+    a reboot too, not just the current session."""
+    subprocess.run(["sudo", "systemctl", "disable", "--now", KEYBOARD_BRIDGE_SERVICE])
 
 
 def _start_keyboard_bridge():
-    """Starts fb_keyboard_bridge.py against whichever PiFinder instance is
-    currently reachable (the script auto-probes 80/8080/8081 itself).
-    Returns (ok, error)."""
-    global _keyboard_bridge_proc
-    if not PIFINDER_VENV_PY.exists():
-        return False, "PiFinder venv not found - install PiFinder first."
+    """Enables + starts pifinder-numpad-bridge.service. Returns (ok, error)."""
     if not (_fake_mode_up() or _real_service_active()):
         return False, "PiFinder is not running (neither Fake nor Real Mode) - start one first."
-    with _lock:
-        _keyboard_bridge_proc = subprocess.Popen(
-            [str(PIFINDER_VENV_PY), str(KEYBOARD_BRIDGE_SCRIPT)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-        )
+    result = subprocess.run(["sudo", "systemctl", "enable", "--now", KEYBOARD_BRIDGE_SERVICE])
+    if result.returncode != 0:
+        return False, f"systemctl enable --now {KEYBOARD_BRIDGE_SERVICE} failed (exit {result.returncode})."
     return True, None
 
 
@@ -380,7 +361,6 @@ def _run_fake_mode_action(action):
         _mode_exit_code = None
         _mode_error = None
         _mode_target = target
-    _stop_keyboard_bridge()
     try:
         proc = subprocess.Popen(
             ["bash", str(FAKE_MODE_SCRIPT), action],

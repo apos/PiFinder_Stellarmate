@@ -359,7 +359,7 @@
             <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
             <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
           </div>
-          <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Stopped automatically whenever Fake/Real Mode switches.">
+          <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
             <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
             <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
           </div>
@@ -687,13 +687,13 @@ async function toggleDisplayBridge() {
 }
 
 // A plain USB/2.4GHz-dongle numpad bridged to PiFinder's own /api/key - no
-// GPIO/overlay involved (unlike the LCD above), so this is a quick
-// process start/stop with no reboot, works against either Real or Fake
-// Mode. The backend stops it automatically on every mode switch (it
-// latches onto whichever instance answered first at startup, so a switch
-// would otherwise leave it silently pointed at a dead one) - this can go
-// from "on" to "off" without the button being clicked, refreshKeyboardBridge()'s
-// own poll picks that up.
+// GPIO/overlay involved (unlike the LCD above), so no reboot is needed to
+// toggle it, works against either Real or Fake Mode, and re-probes on its
+// own after a mode switch (the script drops its cached target on a failed
+// send and re-probes on the next keypress - see fb_keyboard_bridge.py's
+// send()). Backed by its own systemd unit (pifinder-numpad-bridge.service)
+// enabled/disabled here, so "on" persists across reboots too - same
+// pattern as the Control Center's own persistence.
 let lastKeyboardBridgeRunning = null;
 
 async function refreshKeyboardBridge() {
@@ -1233,10 +1233,6 @@ async function toggleMode() {
   // Settle-check on the backend takes up to ~8s - refresh hardware status
   // shortly after instead of waiting for the next regular 20s tick.
   setTimeout(refreshHardwareStatus, 9000);
-  // The backend stops the numpad bridge as soon as this switch starts (see
-  // _run_fake_mode_action() in server.py) - refresh sooner than the regular
-  // 5s poll so the button doesn't look stuck on "on" mid-switch.
-  setTimeout(refreshKeyboardBridge, 1000);
 }
 
 // Separate poll loop from the install/update run's own pollLog(), but writes

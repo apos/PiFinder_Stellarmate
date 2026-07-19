@@ -769,6 +769,7 @@ sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-setup.service /etc/
 # pifinder-stellarmate/00030.
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-fake-mode-autostart.service /etc/systemd/system/pifinder-fake-mode-autostart.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-control-center.service /etc/systemd/system/pifinder-control-center.service
+sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-numpad-bridge.service /etc/systemd/system/pifinder-numpad-bridge.service
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
@@ -779,10 +780,13 @@ sudo systemctl enable pifinder-setup
 # Its own ConditionPathExists=/dev/fb1 gates whether it actually does
 # anything at a given boot - always enabled, like pifinder itself.
 sudo systemctl enable pifinder-fake-mode-autostart
-# Deliberately NOT enabled here - the Control Center is only meant to run
-# when the user explicitly starts it (launch_setup_gui.sh: `systemctl enable
-# --now`) or stops it (server.py's /shutdown: `systemctl disable`), which is
-# also what makes it persist correctly across a reboot either way.
+# Deliberately NOT enabled here, for both of the below - the Control
+# Center is only meant to run when the user explicitly starts it
+# (launch_setup_gui.sh: `systemctl enable --now`) or stops it (server.py's
+# /shutdown: `systemctl disable`); the numpad bridge is the same via the
+# Control Center's own "Turn Numpad On/Off" button. Either way, systemd's
+# own enabled-state is what makes "on" (or "off") persist correctly across
+# a reboot, once the user has chosen it once.
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder-setup
