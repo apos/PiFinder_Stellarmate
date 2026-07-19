@@ -41,10 +41,18 @@
   <div class="col s12">
     <div class="card grey darken-2">
       <div class="card-content">
-        <span class="card-title grey-text">2. {{ _('Setup Wizard') }}</span>
+        <span class="card-title grey-text">2. {{ _('PiFinder Stellarmate Control Center') }}</span>
+        <img src="/images/control_center.png"
+             alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
+             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;">
         <p class="grey-text text-lighten-1" id="setup-gui-status-text">{{ _('Checking status…') }}</p>
         <p class="grey-text text-lighten-1">
-          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. Protected by your StellarMate account password, but it can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
+          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
+        </p>
+        <p class="grey-text text-lighten-1">
+          {{ _('The site is protected by your StellarMate account password. You can start and stop it below (see') }}
+          <a href="https://github.com/apos/PiFinder_Stellarmate#setup-gui--control-center-optional" target="_blank" rel="noopener">{{ _('Setup GUI / Control Center') }}</a>
+          {{ _('on GitHub for details).') }}
         </p>
         <p class="grey-text text-lighten-1">{{ _('Setup Wizard reachable at:') }}</p>
         <ul class="first-steps-links">
