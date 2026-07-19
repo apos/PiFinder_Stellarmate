@@ -1,0 +1,33 @@
+--- python/PiFinder/api_extensions.py.orig	2026-07-19 12:48:07.710375719 +0200
++++ python/PiFinder/api_extensions.py	2026-07-19 12:45:40.050888561 +0200
+@@ -160,6 +160,7 @@
+                 "power_state": ss.power_state(),
+                 "solve_state": ss.solve_state(),
+                 "camera_type": ss.camera_type(),
++                "debug_solve": ss.debug_solve(),
+                 "location": loc.to_dict() if loc else None,
+                 "solution": _solution_to_dict(sol),
+                 "datetime": {
+@@ -750,6 +751,22 @@
+     # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
+     # ───────────────────────────────────────────────
+ 
++    @app.route("/api/debug_solve", methods=["POST"])
++    def api_debug_solve():
++        """Toggle the same "debug"/test-image substitution as Tools -> Test
++        Mode (callbacks.activate_debug()), without going through menu
++        navigation/keyboard_queue - useful for automation that wants this
++        reliably, since simulating the equivalent keypresses is not (menu
++        navigation via keyboard_queue can silently drop or ignore input).
++        Read the resulting state back via "debug_solve" in GET /api/status.
++        """
++        try:
++            server_instance.ui_queue.put("toggle_debug_solve")
++            return _json_response({"success": True})
++        except Exception as e:
++            logger.error("api/debug_solve error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
+     @app.route("/api/key", methods=["POST"])
+     def api_key():
+         """Simulate button input. JSON body: {"button": "UP"} or {"button": 1}"""

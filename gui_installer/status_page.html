@@ -217,6 +217,18 @@
   }
   #mode-toggle-btn:disabled { background: #444; cursor: default; }
   #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .ql-small-btn {
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+  }
+  .ql-small-btn:disabled { background: #444; cursor: default; }
+  .ql-small-btn:not(:disabled):hover { filter: brightness(1.15); }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -297,6 +309,10 @@
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
         <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
+        <div class="ql-section" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this page's Fake Mode tile (which runs a whole separate headless instance with no hardware at all).">
+          <span class="ql-label">Solve Simulation:</span><span class="status-dot dot-white" id="debug-solve-dot"></span><span id="debug-solve-text">unknown</span>
+          <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+        </div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
@@ -346,6 +362,7 @@ let modeLogPolling = false;
 // branch below.
 let lastHwCamera = null;
 let lastHwImu = null;
+let lastDebugSolve = null;
 // Cancel is only ever offered on the existing-install choice screen, so this
 // is always true by the time a "Cancelled" status needs to re-show it - but
 // keep it in sync with what /state actually reports, not just assumed.
@@ -440,6 +457,81 @@ function updatePiFinderStatusAndWizardLink() {
     remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
   }
+  refreshDebugSolve();
+}
+
+// PiFinder's own "Tools -> Test Mode" (callbacks.activate_debug() ->
+// shared_state.debug_solve()) - entirely separate from this page's Fake Mode
+// tile. Triggered via gui_installer/server.py's own proxy (POST/GET
+// /api/debug_solve?port=N, always dialing 127.0.0.1 on that port) rather
+// than fetching PiFinder's API directly from the browser, since PiFinder
+// sets no CORS headers and this page is served from a different port.
+async function refreshDebugSolve() {
+  const dotEl = document.getElementById('debug-solve-dot');
+  const textEl = document.getElementById('debug-solve-text');
+  const btn = document.getElementById('debug-solve-btn');
+  if (!pifinderScreenUrl) {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'unknown (PiFinder not reachable)';
+    btn.disabled = true;
+    lastDebugSolve = null;
+    return null;
+  }
+  const port = new URL(pifinderScreenUrl).port || '80';
+  try {
+    const resp = await fetch(`/api/debug_solve?port=${port}`, { cache: 'no-store' });
+    const data = await resp.json();
+    lastDebugSolve = data.debug_solve;
+    if (data.debug_solve === true) {
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = 'ON (using simulated test images)';
+    } else if (data.debug_solve === false) {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'off (real camera)';
+    } else {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'unknown';
+    }
+    btn.disabled = false;
+    return data.debug_solve;
+  } catch (e) {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'unknown';
+    btn.disabled = true;
+    lastDebugSolve = null;
+    return null;
+  }
+}
+
+// The toggle itself is reliable (a real queued message PiFinder's main loop
+// always eventually drains - unlike menu navigation via keyboard_queue,
+// which can silently drop keypresses), but has been observed to take
+// anywhere from under a second up to ~10-15s to actually land in
+// shared_state, depending on what else PiFinder's main loop is doing at the
+// time. So: poll for an actual change rather than a single fixed-delay
+// refresh, which would often show stale state right after clicking.
+async function toggleDebugSolve() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const btn = document.getElementById('debug-solve-btn');
+  const textEl = document.getElementById('debug-solve-text');
+  const before = lastDebugSolve;
+  btn.disabled = true;
+  textEl.textContent = 'Toggling…';
+  try {
+    await fetch(`/api/debug_solve?port=${port}`, { method: 'POST' });
+  } catch (e) {
+    // fall through to the poll loop below either way
+  }
+  const deadline = Date.now() + 16000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1000));
+    const now = await refreshDebugSolve();
+    if (now !== before) return;
+  }
+  // Didn't change within 16s - leave whatever refreshDebugSolve() last
+  // showed rather than spinning forever; the regular 20s hardware-status
+  // interval isn't wired to this, so nothing else will pick it up later.
 }
 
 function showChoices(existingInstall) {
@@ -979,6 +1071,12 @@ setInterval(refreshMode, 5000);
 // waiting up to 5s for the next regular refreshMode() tick.
 refreshHardwareStatus().then(refreshMode);
 setInterval(refreshHardwareStatus, 20000);
+
+// Passive fallback so Solve Simulation status doesn't just go stale forever
+// once the initial detection/toggle-triggered refreshes are done with -
+// updatePiFinderStatusAndWizardLink() only calls refreshDebugSolve() on
+// PiFinder connect/disconnect transitions, not on every OLED-mirror tick.
+setInterval(refreshDebugSolve, 20000);
 </script>
 
 </body>

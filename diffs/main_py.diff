@@ -1,5 +1,5 @@
---- python/PiFinder/main.py.orig
-+++ python/PiFinder/main.py
+--- python/PiFinder/main.py.orig	2026-07-19 12:48:18.010278255 +0200
++++ python/PiFinder/main.py	2026-07-19 12:45:10.615001681 +0200
 @@ -141,11 +141,19 @@
  
  
@@ -123,7 +123,20 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -1126,6 +1175,8 @@
+@@ -744,6 +793,12 @@
+                         "All catalogs loaded - WDS and extended catalogs available"
+                     )
+                     menu_manager.message(_("Catalogs\nFully Loaded"), 2)
++                elif ui_command == "toggle_debug_solve":
++                    # Same effect as picking "Tools -> Test Mode" from the
++                    # menu (callbacks.activate_debug()), reachable directly
++                    # via the web API instead of simulating menu navigation
++                    # keypresses through keyboard_queue.
++                    command_queues["camera"].put("debug")
+                 elif ui_command == "test_mode":
+                     dt = datetime.datetime(2025, 6, 28, 11, 0, 0)
+                     shared_state.set_datetime(dt)
+@@ -1126,6 +1181,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")

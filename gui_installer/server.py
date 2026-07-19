@@ -96,6 +96,15 @@ _mode_target = None  # "fake" | "real" - which mode the in-flight/last switch wa
 _MODE_SETTLE_TIMEOUT = 8
 _MODE_SETTLE_INTERVAL = 1
 
+# Ports PiFinder itself might be listening on (real service on 80, its
+# historical port-80-busy fallback 8080, or the fake-hardware instance on
+# FAKE_MODE_PORT) - used to validate the ?port= the frontend passes when
+# proxying to PiFinder's own /api/debug_solve, so this never becomes an
+# open proxy to an arbitrary host/port. Always dials 127.0.0.1 regardless
+# of which IP the browser used to reach this page - this server and
+# PiFinder always run on the same Pi.
+_ALLOWED_PIFINDER_PORTS = {"80", "8080", str(FAKE_MODE_PORT)}
+
 
 def _fake_mode_up() -> bool:
     """Whether the fake-hardware PiFinder instance is currently answering."""
@@ -215,6 +224,37 @@ def _gps_hardware_present():
         return len(json.loads(m.group(1))) > 0
     except Exception:
         return None
+
+
+def _pifinder_debug_solve_status(port: str):
+    """GET the currently-reachable PiFinder instance's own /api/status and
+    pull out debug_solve (Tools -> Test Mode's on/off state - PiFinder's own
+    feature, unrelated to this tile's Fake/Real Mode). None if unreachable."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+            data = json.loads(resp.read())
+        return data.get("debug_solve")
+    except Exception:
+        return None
+
+
+def _pifinder_toggle_debug_solve(port: str) -> bool:
+    """POST to PiFinder's own /api/debug_solve - toggles Tools -> Test Mode
+    directly via PiFinder's ui_queue, bypassing menu navigation/keyboard_queue
+    (which drops keypresses unreliably - see basic-memory/pifinder-stellarmate/
+    00021 for how this was found)."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/debug_solve", method="POST", data=b""
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _run_fake_mode_action(action):
@@ -526,6 +566,12 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/debug_solve":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            self._send_json({"debug_solve": _pifinder_debug_solve_status(port)})
+            return
+
         if parsed.path == "/api/pifinder_mode_log":
             qs = parse_qs(parsed.query)
             position = int(qs.get("position", ["0"])[0])
@@ -624,6 +670,12 @@ class Handler(BaseHTTPRequestHandler):
             script_arg = "start" if action == "enable_fake" else "stop"
             threading.Thread(target=_run_fake_mode_action, args=(script_arg,), daemon=True).start()
             self._send_json({"started": True})
+            return
+
+        if parsed.path == "/api/debug_solve":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            self._send_json({"success": _pifinder_toggle_debug_solve(port)})
             return
 
         self.send_error(404)

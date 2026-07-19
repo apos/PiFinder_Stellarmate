@@ -1,0 +1,10 @@
+--- python/PiFinder/camera_interface.py.orig	2026-07-19 12:48:07.706318216 +0200
++++ python/PiFinder/camera_interface.py	2026-07-19 12:44:59.103045862 +0200
+@@ -388,6 +388,7 @@
+                                 debug = False
+                             else:
+                                 debug = True
++                            shared_state.set_debug_solve(debug)
+ 
+                         if command.startswith("set_exp"):
+                             exp_value = command.split(":")[1]

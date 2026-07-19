@@ -475,6 +475,42 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 echo "------------------------------------"
 
 ##################################################
+# PiFinder state.py - exposes debug_solve (Tools -> Test Mode's on/off
+# state, previously a local-only variable with no way to read it back)
+
+echo "🔧 Updating state.py ..."
+cp "$state_py" "$state_py.bak"
+
+    apply_patch_or_warn "$state_py" "${pifinder_stellarmate_dir}/diffs/state_py.diff"
+show_diff_if_changed "$state_py"
+python3 -m py_compile "$state_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder camera_interface.py - reports debug_solve toggles into shared_state
+
+echo "🔧 Updating camera_interface.py ..."
+cp "$camera_interface_py" "$camera_interface_py.bak"
+
+    apply_patch_or_warn "$camera_interface_py" "${pifinder_stellarmate_dir}/diffs/camera_interface_py.diff"
+show_diff_if_changed "$camera_interface_py"
+python3 -m py_compile "$camera_interface_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder api_extensions.py - POST /api/debug_solve to toggle Test Mode
+# directly (reliable, bypasses menu navigation/keyboard_queue), plus
+# debug_solve in GET /api/status to read the resulting state back
+
+echo "🔧 Updating api_extensions.py ..."
+cp "$api_extensions_py" "$api_extensions_py.bak"
+
+    apply_patch_or_warn "$api_extensions_py" "${pifinder_stellarmate_dir}/diffs/api_extensions_py.diff"
+show_diff_if_changed "$api_extensions_py"
+python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder server.py
 server_py="${pifinder_dir}/python/PiFinder/server.py"
 echo "🔧 Updating server.py ..."
