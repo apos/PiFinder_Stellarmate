@@ -570,11 +570,8 @@ update_nvme_memory() {
 }
 
 sync_memory() {
-    local RCLONE_REMOTE="nextcloud:basic-memory"
-    local LOCAL_MEMORY="/home/stellarmate/basic-memory"
     local RCLONE_CONF="/home/stellarmate/.config/rclone/rclone.conf"
     local RCLONE_BACKUP="/home/stellarmate/bin/backup_files/rclone.conf"
-    local BISYNC_FLAG=""
 
     # Install rclone if missing
     if ! command -v rclone &>/dev/null; then
@@ -612,30 +609,25 @@ sync_memory() {
         fi
     fi
 
+    # The actual bisync logic (reachability check, --resync-on-first-run
+    # detection, the bisync call itself) lives in one place -
+    # basic-memory/basic-memory/scripts/sync_basic_memory.sh - and is also
+    # what basic-memory-sync.timer (systemd --user, every 15 min, set up via
+    # setup_basic_memory_sync.sh in the same directory) runs automatically.
+    # This function's own job is just the root-only recovery above (rclone
+    # missing / rclone.conf missing after an SMOS update wiped the root
+    # filesystem) before delegating to it - not duplicating the sync logic.
+    #
     # Run as user "stellarmate" (not as root): rclone looks up its config AND
     # the bisync state cache relative to $HOME. Under sudo/root that would be
-    # /root/... instead of /home/stellarmate/... - the config would still be
-    # found via --config, but not the bisync state (~/.cache/rclone/bisync),
-    # which would force an unnecessary --resync.
-    if ! sudo -u stellarmate rclone lsd "$RCLONE_REMOTE" --max-depth 0 &>/dev/null; then
-        echo "!! Nextcloud unreachable or remote 'nextcloud' not configured"
-        echo "   Setup: rclone config (WebDAV, https://nextcloud.blue-it.org/remote.php/webdav/, vendor=other)"
+    # /root/... instead of /home/stellarmate/....
+    local sync_script="/home/stellarmate/basic-memory/basic-memory/scripts/sync_basic_memory.sh"
+    if [ ! -f "$sync_script" ]; then
+        echo "!! ${sync_script} missing - basic-memory checkout incomplete?"
         return 1
     fi
-
-    # Set --resync on the first run (no bisync state present yet)
-    local bisync_state_dir="/home/stellarmate/.cache/rclone/bisync"
-    if [ ! -d "$bisync_state_dir" ] || [ -z "$(ls -A "$bisync_state_dir" 2>/dev/null)" ]; then
-        echo "   First run - initial resync (--resync)"
-        BISYNC_FLAG="--resync"
-    fi
-
     echo ">> basic-memory bisync: local <-> Nextcloud ..."
-    if sudo -u stellarmate rclone bisync "$LOCAL_MEMORY" "$RCLONE_REMOTE" \
-        --size-only \
-        --exclude ".obsidian/**" \
-        --create-empty-src-dirs \
-        $BISYNC_FLAG 2>&1; then
+    if sudo -u stellarmate bash "$sync_script"; then
         echo ">> basic-memory: OK"
     else
         echo "!! basic-memory bisync failed - please check manually"
