@@ -427,7 +427,7 @@ function updatePiFinderStatusAndWizardLink() {
     // wording rather than reusing the mode-tile's "degraded" yellow text.
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = 'PiFinder is running (Test Mode)';
+      textEl.textContent = 'PiFinder is running (Fake Mode)';
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
@@ -714,7 +714,7 @@ function piFinderProbeUrls() {
   // 80/8080: the real pifinder.service (with its historical port-80-busy
   // fallback). 8081: test_tools/fake_mode.sh's fake-hardware instance
   // (FAKE_MODE_PORT in server.py / DEFAULT_PORT in pf_remote.py) - without
-  // this, switching to Test Mode left "PiFinder Remote Page"/"INDI driver
+  // this, switching to Fake Mode left "PiFinder Remote Page"/"INDI driver
   // setup" stuck on "not available yet" and the OLED mirror frozen, even
   // though the fake instance was reachable the whole time, just on a port
   // this probe never looked at.
@@ -806,7 +806,7 @@ async function refreshMode() {
     const data = await resp.json();
     if (data.transitioning) {
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Test Mode…';
+      textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Fake Mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
       if (!modeLogPolling) { modeLogPolling = true; pollModeLog(); }
@@ -819,13 +819,13 @@ async function refreshMode() {
       // *wasn't* the failed target, not retrying blindly.
       dotEl.className = 'status-dot dot-red';
       textEl.textContent = data.error;
-      btn.textContent = data.target === 'real' ? 'Back to Test Mode' : 'Back to Real Mode';
+      btn.textContent = data.target === 'real' ? 'Back to Fake Mode' : 'Back to Real Mode';
       btn.disabled = false;
       return;
     }
     if (data.mode === 'fake') {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = 'Test Mode (no hardware)';
+      textEl.textContent = 'Fake Mode (no hardware, fake hardware)';
       btn.textContent = 'Switch to Real Mode';
     } else if (data.mode === 'real') {
       // systemd/the process being "active" doesn't mean PiFinder can
@@ -841,11 +841,11 @@ async function refreshMode() {
         dotEl.className = 'status-dot dot-green';
         textEl.textContent = 'Real Mode (hardware)';
       }
-      btn.textContent = 'Switch to Test Mode';
+      btn.textContent = 'Switch to Fake Mode';
     } else {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'Neither mode running';
-      btn.textContent = 'Switch to Test Mode';
+      btn.textContent = 'Switch to Fake Mode';
     }
     btn.disabled = false;
   } catch (e) {
@@ -860,15 +860,15 @@ async function toggleMode() {
   const dotEl = document.getElementById('mode-status-dot');
   const textEl = document.getElementById('mode-status-text');
   const btn = document.getElementById('mode-toggle-btn');
-  const wantFake = btn.textContent.includes('Test Mode');
+  const wantFake = btn.textContent.includes('Fake Mode');
   const action = wantFake ? 'enable_fake' : 'disable_fake';
-  const verb = wantFake ? 'switch to Test Mode (stops the real pifinder.service)'
+  const verb = wantFake ? 'switch to Fake Mode (stops the real pifinder.service)'
                         : 'switch to Real Mode (stops the fake-hardware instance)';
   if (!confirm(`Really ${verb}?`)) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
   dotEl.className = 'status-dot dot-yellow';
-  textEl.textContent = wantFake ? 'Starting Test Mode…' : 'Starting Real Mode…';
+  textEl.textContent = wantFake ? 'Starting Fake Mode…' : 'Starting Real Mode…';
   // Fresh terminal for this attempt - but only if no install/update run
   // currently owns it (the backend already refuses to run both at once, so
   // this is just about not stomping on a still-visible previous log).

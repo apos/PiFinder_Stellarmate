@@ -287,7 +287,7 @@ def _run_fake_mode_action(action):
                     missing.append("IMU")
                 if missing:
                     _mode_error = (f"No PiFinder {' and '.join(missing)} hardware detected - "
-                                   "reconnect the HAT, then try again, or use 'Back to Test Mode' below.")
+                                   "reconnect the HAT, then try again, or use 'Back to Fake Mode' below.")
                 else:
                     _mode_error = "Real Mode failed to start - see Terminal below."
                 _mode_lines.append("")
@@ -298,7 +298,7 @@ def _run_fake_mode_action(action):
                 ).stdout
                 _mode_lines.extend(journal.splitlines())
             else:
-                _mode_error = "Test Mode failed to start - see Terminal below."
+                _mode_error = "Fake Mode failed to start - see Terminal below."
         _mode_action_running = False
 
 
