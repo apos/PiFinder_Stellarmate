@@ -72,6 +72,72 @@ guessing across camera/GPIO/software/menu-logic all at once.
   inspection or repair, but you still want to poke at PiFinder's web UI,
   test a code change, or just confirm the software side is healthy.
 
+## fb_screen_mirror.py
+
+- **Purpose:** mirror a running PiFinder instance's screen onto a small
+  local SPI display (e.g. the Waveshare 3.5inch RPi LCD (B) dev/testing
+  screen, see `pifinder_stellarmate_setup.sh`'s/`/boot/config.txt`'s
+  `waveshare35b-v2` overlay comment) - so Fake Mode (or Real Mode) can be
+  watched visually without the real HAT's OLED attached.
+- **What it does:** polls PiFinder's own `GET /api/screen` (the same stable,
+  hardware-independent endpoint the Setup GUI's OLED mirror and
+  `pf_remote.py` use), scales/letterboxes/rotates the 128x128 image to fit
+  the target framebuffer, and writes raw RGB565 pixels directly to it (e.g.
+  `/dev/fb1`) - no `fbcp`/DispmanX involved, which is broken on Pi5 (DispmanX
+  was removed in favor of DRM/KMS). Auto-probes ports 80/8080/8081, verifying
+  each candidate actually returns a decodable image (not just HTTP 200) -
+  StellarMate's own nginx dashboard squats on port 80 and returns HTTP 200
+  with an HTML body for *any* path, a known false-positive trap.
+- **Usage:**
+  ```bash
+  /home/stellarmate/PiFinder/python/.venv/bin/python3 \
+      test_tools/fb_screen_mirror.py [--fb /dev/fb1] [--rotate 0|90|180|270]
+  ```
+  Uses PiFinder's own venv (already has Pillow + numpy - no new system
+  packages needed). `--rotate` is degrees counter-clockwise ("left").
+- **When to use:** developing/testing with the physical HAT disconnected but
+  a small SPI screen attached instead - see
+  `basic-memory/pifinder-stellarmate/00024_waveshare-lcd-fake-mode-dev-setup.md`
+  for the full overlay setup and a documented GPIO conflict with the real
+  keypad matrix.
+
+## fb_keyboard_bridge.py
+
+- **Purpose:** control PiFinder from a plain USB/wireless keyboard or numpad
+  with no physical PiFinder keypad/HAT attached - the natural input-side
+  companion to `fb_screen_mirror.py` for a fully hardware-independent
+  dev/test setup.
+- **What it does:** reads raw evdev key events (works with or without an
+  X11/desktop session, unlike PiFinder's own `--keyboard local` mode, which
+  needs X11 via `pynput`) and posts them to the same stable `/api/key`
+  endpoint `pf_remote.py` and the Setup GUI use. Ships with a mapping tuned
+  for a numpad-only device (confirmed against a LogiLink ID0120): NumLock
+  off = `4/8/6/2` are arrows, NumLock on = plain digits (state tracked
+  internally, since NumLock doesn't change a numpad key's raw evdev keycode -
+  only a higher keymap layer this tool deliberately bypasses); `+`/`-` always
+  PLUS/MINUS; Enter always SQUARE; Backspace/Delete always a second LEFT.
+  Replicates the real keypad's hold behavior too: holding UP/DOWN repeats;
+  holding LEFT/RIGHT/SQUARE >1s sends the LNG_* variant instead (LNG_SQUARE
+  opens/closes PiFinder's marking menu); holding SQUARE while pressing
+  another mapped key sends its ALT_* variant.
+- **Usage:**
+  ```bash
+  /home/stellarmate/PiFinder/python/.venv/bin/pip install evdev   # once
+  /home/stellarmate/PiFinder/python/.venv/bin/python3 \
+      test_tools/fb_keyboard_bridge.py [--device /dev/input/eventN]
+  ```
+  Auto-detects the first keyboard/numpad-like input device if `--device` is
+  omitted. `evdev` is deliberately *not* added to PiFinder_Stellarmate's
+  `requirements_additional.txt` - it's only needed for this dev tool, not
+  for every end-user install.
+- **When to use:** same scenario as `fb_screen_mirror.py` - no physical
+  keypad attached. Live-tested (LogiLink ID0120): navigation, long-press,
+  and the marking menu all confirmed working - see
+  `basic-memory/pifinder-stellarmate/00024_waveshare-lcd-fake-mode-dev-setup.md`
+  for two real bugs found and fixed during that testing (a missed
+  long-press timer, and a thread race that closed the marking menu
+  immediately on release).
+
 ## Related: the `pifinder-remote` Claude Code skill
 
 Not in this directory (it lives in the PiFinder checkout itself, under
