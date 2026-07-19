@@ -445,6 +445,13 @@ function updatePiFinderStatusAndWizardLink() {
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
       textEl.textContent = 'PiFinder is running (Fake Mode)';
+    } else if (lastHwCamera === false || lastHwImu === false) {
+      // Reachable (web server/OLED mirror up) does not mean functional - the
+      // real instance keeps running fine even with no camera/IMU attached
+      // (same known upstream issue the mode tile already accounts for).
+      // Mirror that tile's wording here instead of contradicting it.
+      dotEl.className = 'status-dot dot-yellow';
+      textEl.textContent = 'PiFinder is running, but not functional (camera/IMU missing - see Hardware below)';
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
@@ -1072,11 +1079,17 @@ setTimeout(watchForNewRun, 3000);
 refreshMode();
 setInterval(refreshMode, 5000);
 
-// Re-render mode once hardware status resolves too, so the very first paint
-// already reflects a degraded "real but no camera/IMU" state instead of
-// waiting up to 5s for the next regular refreshMode() tick.
-refreshHardwareStatus().then(refreshMode);
-setInterval(refreshHardwareStatus, 20000);
+// Re-render both the mode tile and the quick-links "PiFinder is running"
+// text once hardware status resolves - both read the same
+// lastHwCamera/lastHwImu, and should never show contradictory statuses.
+function refreshHardwareStatusAndDependents() {
+  return refreshHardwareStatus().then(() => {
+    refreshMode();
+    updatePiFinderStatusAndWizardLink();
+  });
+}
+refreshHardwareStatusAndDependents();
+setInterval(refreshHardwareStatusAndDependents, 20000);
 
 // Passive fallback so Solve Simulation status doesn't just go stale forever
 // once the initial detection/toggle-triggered refreshes are done with -
