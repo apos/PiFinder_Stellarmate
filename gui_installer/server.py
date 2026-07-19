@@ -13,6 +13,8 @@ but the bare system python3.
 
 import base64
 import json
+import re
+import socket
 import subprocess
 import threading
 import time
@@ -35,6 +37,8 @@ GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
+PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
+GPSD_PORT = 2947
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo.png"
@@ -135,6 +139,82 @@ def _camera_hardware_present():
     except Exception:
         return None
     return "No cameras available" not in result.stdout
+
+
+# BNO055 (the IMU PiFinder uses) answers on I2C address 0x28, or 0x29 if its
+# ADR pin is pulled high.
+_BNO055_I2C_ADDRESSES = ("0x28", "0x29")
+
+_IMU_SCAN_SCRIPT = (
+    "import board\n"
+    "i2c = board.I2C()\n"
+    "if not i2c.try_lock():\n"
+    "    print('LOCK_FAILED')\n"
+    "else:\n"
+    "    try:\n"
+    "        print(','.join(hex(a) for a in i2c.scan()))\n"
+    "    finally:\n"
+    "        i2c.unlock()\n"
+)
+
+
+def _imu_hardware_present():
+    """True/False via a raw I2C bus scan for the IMU's address, None if the
+    check itself couldn't run (no venv, board/blinka missing, bus busy).
+
+    Runs through PiFinder's own venv (board.I2C()/adafruit_bno055 aren't
+    installed system-wide) so bus resolution matches whatever PiFinder itself
+    would use on this particular Pi - but the scan itself is independent of
+    whether PiFinder is currently running: I2C bus scanning is a shared,
+    non-exclusive operation (unlike the keypad's GPIO lines), so this is safe
+    to run alongside a live pifinder.service.
+    """
+    if not PIFINDER_VENV_PY.exists():
+        return None
+    try:
+        result = subprocess.run(
+            [str(PIFINDER_VENV_PY), "-c", _IMU_SCAN_SCRIPT],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0 or "LOCK_FAILED" in result.stdout:
+        return None
+    return any(addr in result.stdout for addr in _BNO055_I2C_ADDRESSES)
+
+
+def _gps_hardware_present():
+    """True/False via a direct query to gpsd's own DEVICES report, None if
+    gpsd itself couldn't be reached.
+
+    gpsd is a shared daemon designed for concurrent clients, so this is safe
+    to run alongside PiFinder's own gpsd connection - and it reports whatever
+    serial/USB GPS receiver gpsd has actually opened, independent of whether
+    a fix has been acquired yet (a "not locked" GPS is still present hardware,
+    unlike a genuinely absent one).
+    """
+    try:
+        s = socket.create_connection(("127.0.0.1", GPSD_PORT), timeout=2)
+        s.settimeout(2)
+        s.recv(4096)  # version banner
+        s.sendall(b'?WATCH={"enable":true}\n')
+        data = b""
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and b'"class":"DEVICES"' not in data:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        s.close()
+    except Exception:
+        return None
+    m = re.search(rb'"class":"DEVICES","devices":(\[.*?\])', data)
+    if not m:
+        return None
+    try:
+        return len(json.loads(m.group(1))) > 0
+    except Exception:
+        return None
 
 
 def _run_fake_mode_action(action):
@@ -425,6 +505,16 @@ class Handler(BaseHTTPRequestHandler):
                 mode = "none"
             self._send_json(
                 {"mode": mode, "transitioning": transitioning, "error": error, "target": target}
+            )
+            return
+
+        if parsed.path == "/api/hardware_status":
+            self._send_json(
+                {
+                    "camera": _camera_hardware_present(),
+                    "imu": _imu_hardware_present(),
+                    "gps": _gps_hardware_present(),
+                }
             )
             return
 
