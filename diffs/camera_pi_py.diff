@@ -1,0 +1,37 @@
+--- python/PiFinder/camera_pi.py.orig
++++ python/PiFinder/camera_pi.py
+@@ -262,6 +262,17 @@
+     """
+     Instantiates the camera hardware
+     then calls the universal image loop
++
++    Falls back to the debug camera if the real hardware fails to
++    initialize (e.g. no camera physically attached) - without this, this
++    whole process crashes before it ever reaches get_image_loop(), taking
++    down every command this process would otherwise still service (Solve
++    Simulation / Test Mode included, since that's just a "debug" command
++    on this same process's command_queue - see camera_interface.py's
++    command loop). A crashed process can't "toggle into" debug mode; it
++    has to already be running one to receive the toggle at all. See
++    basic-memory/pifinder-stellarmate/00001 ("Test Mode kann abgestuerzten
++    Kamera-Prozess nicht retten") and 00034.
+     """
+     MultiprocLogging.configurer(log_queue)
+ 
+@@ -272,7 +283,15 @@
+     if exposure_time == "auto":
+         exposure_time = 400000  # Start with default 400ms
+ 
+-    camera_hardware = CameraPI(exposure_time)
++    try:
++        camera_hardware = CameraPI(exposure_time)
++    except Exception as e:
++        logger.error(f"Real camera init failed ({e}) - falling back to debug camera")
++        console_queue.put("CAM: No hardware, using debug camera")
++        from PiFinder.camera_debug import CameraDebug
++
++        camera_hardware = CameraDebug(exposure_time)
++
+     camera_hardware.get_image_loop(
+         shared_state, camera_image, command_queue, console_queue, cfg
+     )

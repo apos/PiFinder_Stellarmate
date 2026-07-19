@@ -452,6 +452,17 @@ if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
         { print }
         ' "$camera_file.bak" > "$camera_file"
     fi
+    # Falls back to the debug camera if the real hardware fails to
+    # initialize, instead of crashing the whole camera process - without
+    # this, Solve Simulation/Test Mode can never be toggled on when no
+    # camera is attached, since that toggle is itself a command the (now
+    # dead) camera process would have to be alive to receive. See
+    # basic-memory/pifinder-stellarmate/00001 and 00034.
+    if grep -q "camera_hardware = CameraPI(exposure_time)" "$camera_file"; then
+        apply_patch_or_warn "$camera_file" "${pifinder_stellarmate_dir}/diffs/camera_pi_py.diff"
+    else
+        echo "ℹ️ camera_pi.py already patched or pattern not found"
+    fi
 else
     echo "⏩ Skipping patch for camera_pi.py: ❌ incompatible version/pi/os"
 fi
