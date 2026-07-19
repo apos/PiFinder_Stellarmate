@@ -81,13 +81,23 @@ self_update_pifinder_stellarmate() {
         exit 1
     fi
 
+    # Don't require HEAD == upstream_hash exactly: if the local branch was
+    # already ahead of upstream (unpushed local commits), `merge --ff-only`
+    # correctly no-ops ("Already up to date") without moving HEAD at all -
+    # that's success, not a failure. What actually matters is that upstream
+    # is now an ancestor of (or equal to) HEAD, i.e. nothing from upstream
+    # got lost or diverged from.
     local after
     after="$(git -C "$repo_dir" rev-parse HEAD)"
-    if [ "$after" != "$upstream_hash" ]; then
-        echo "❌ Self-update FAILED: HEAD after merge (${after:0:8}) does not match" >&2
-        echo "   upstream (${upstream_hash:0:8}). Please check manually:" >&2
+    if ! git -C "$repo_dir" merge-base --is-ancestor "$upstream_hash" HEAD; then
+        echo "❌ Self-update FAILED: HEAD after merge (${after:0:8}) does not contain" >&2
+        echo "   upstream (${upstream_hash:0:8}) as an ancestor. Please check manually:" >&2
         echo "   cd ${repo_dir} && git status" >&2
         exit 1
+    fi
+    if [ "$after" = "$before" ]; then
+        echo "✅ Self-update: local '${branch}' was already ahead of '${upstream}' - nothing to do."
+        return 0
     fi
 
     echo "✅ Self-update: ${branch} updated ${before:0:8} -> ${after:0:8}."
