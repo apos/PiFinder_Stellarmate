@@ -418,6 +418,14 @@ def _do_reboot():
     subprocess.run(["sudo", "reboot"])
 
 
+def _do_poweroff():
+    # Deliberately a separate function/route from _do_shutdown() below, which
+    # only stops this GUI's own web server process - this one powers off the
+    # whole Pi, matching the "Shutdown Pi" button (distinct from "Close Setup").
+    time.sleep(1)  # give the HTTP response a moment to reach the browser
+    subprocess.run(["sudo", "poweroff"])
+
+
 _server = None  # set in main(); used by /shutdown to stop serve_forever()
 
 
@@ -650,6 +658,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
             self._send_json({"shutting_down": True})
             threading.Thread(target=_do_shutdown, daemon=True).start()
+            return
+
+        if parsed.path == "/poweroff":
+            with _lock:
+                if _running:
+                    self._send_json({"powering_off": False, "error": "A run is still in progress."}, status=409)
+                    return
+            self._send_json({"powering_off": True})
+            threading.Thread(target=_do_poweroff, daemon=True).start()
             return
 
         if parsed.path == "/api/pifinder_mode":

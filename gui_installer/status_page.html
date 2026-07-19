@@ -198,6 +198,29 @@
   }
   #quick-links-tile a:hover { text-decoration: underline; }
   #top-tiles-row { flex-wrap: wrap; }
+  #power-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+  #power-tile .power-btn {
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #power-reboot-btn { background: #2a6fdb; }
+  #power-poweroff-btn { background: #a33; }
+  #power-tile .power-btn:hover { filter: brightness(1.15); }
+  #power-tile .power-btn:disabled { background: #444; cursor: default; filter: none; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -325,6 +348,10 @@
           <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
           <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
         </div>
+      </div>
+      <div id="power-tile" title="Affects this whole Pi, not just PiFinder or this setup page.">
+        <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
+        <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
       </div>
     </div>
     <div id="status-row">
@@ -701,6 +728,38 @@ async function reboot() {
   } catch (e) {
     // Network error here can also mean the server went down right as it
     // accepted the request - treat it the same as a confirmed reboot.
+  }
+  watchForServerLoss();
+}
+
+// Always-available Pi power controls (distinct from the conditional
+// "Reboot Now" prompt above, which only appears after a config-changing
+// install/update run, and from "Close Setup"/shutdownServer() below, which
+// only stops this GUI's own web server, not the Pi itself).
+async function powerAction(kind) {
+  const isReboot = kind === 'reboot';
+  const verb = isReboot ? 'Reboot' : 'Shut down';
+  if (!confirm(`${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`)) return;
+  const rebootBtn = document.getElementById('power-reboot-btn');
+  const poweroffBtn = document.getElementById('power-poweroff-btn');
+  const btn = isReboot ? rebootBtn : poweroffBtn;
+  rebootBtn.disabled = true;
+  poweroffBtn.disabled = true;
+  btn.textContent = isReboot ? 'Rebooting…' : 'Shutting down…';
+  try {
+    const resp = await fetch(`/${isReboot ? 'reboot' : 'poweroff'}`, { method: 'POST' });
+    const data = await resp.json();
+    const started = isReboot ? data.rebooting : data.powering_off;
+    if (!started) {
+      rebootBtn.disabled = false;
+      poweroffBtn.disabled = false;
+      btn.textContent = isReboot ? 'Reboot Pi' : 'Shutdown Pi';
+      alert(`Could not ${verb.toLowerCase()}: ` + (data.error || 'unknown error'));
+      return;
+    }
+  } catch (e) {
+    // Network error here can also mean the server went down right as it
+    // accepted the request - treat it the same as a confirmed action.
   }
   watchForServerLoss();
 }
