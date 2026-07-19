@@ -78,6 +78,19 @@ _last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
 # both of which exit 0.
 
 _mode_action_running = False  # True while fake_mode.sh start/stop is in flight
+_mode_lines = []  # fake_mode.sh's own stdout/stderr, shown in the shared Terminal tile
+_mode_exit_code = None
+_mode_error = None  # short human reason the last mode switch failed, None if last one succeeded
+_mode_target = None  # "fake" | "real" - which mode the in-flight/last switch was aiming for
+
+# How long to wait, after fake_mode.sh itself exits, for the target mode to
+# actually be reachable. `systemctl start` (and `pf_remote.py launch`) return
+# as soon as the process is spawned, not once it's actually up - trusting
+# that exit code alone would report "success" even when the target crashes
+# a moment later (e.g. the real service with no HAT attached). Settle-check
+# instead of trusting the exit code.
+_MODE_SETTLE_TIMEOUT = 8
+_MODE_SETTLE_INTERVAL = 1
 
 
 def _fake_mode_up() -> bool:
@@ -95,15 +108,68 @@ def _real_service_active() -> bool:
     ).returncode == 0
 
 
+def _real_service_failed() -> bool:
+    return subprocess.run(
+        ["systemctl", "is-failed", "--quiet", "pifinder.service"]
+    ).returncode == 0
+
+
 def _run_fake_mode_action(action):
-    global _mode_action_running
+    global _mode_action_running, _mode_lines, _mode_exit_code, _mode_error, _mode_target
+    target = "fake" if action == "start" else "real"
+    with _lock:
+        _mode_lines = []
+        _mode_exit_code = None
+        _mode_error = None
+        _mode_target = target
     try:
-        subprocess.run(["bash", str(FAKE_MODE_SCRIPT), action], timeout=120)
-    except Exception:
-        pass
-    finally:
+        proc = subprocess.Popen(
+            ["bash", str(FAKE_MODE_SCRIPT), action],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            with _lock:
+                _mode_lines.append(line.rstrip("\n"))
+        proc.wait(timeout=120)
         with _lock:
-            _mode_action_running = False
+            _mode_exit_code = proc.returncode
+    except Exception as e:
+        with _lock:
+            _mode_lines.append(f"[setup GUI] failed to run {FAKE_MODE_SCRIPT.name}: {e}")
+            _mode_exit_code = -1
+
+    # The subprocess exiting isn't the same as the target actually being up -
+    # settle-check the real, observable state before declaring success.
+    ok = False
+    deadline = time.monotonic() + _MODE_SETTLE_TIMEOUT
+    while time.monotonic() < deadline:
+        if target == "fake":
+            ok = _fake_mode_up()
+        else:
+            ok = _real_service_active() and not _real_service_failed()
+        if ok:
+            break
+        time.sleep(_MODE_SETTLE_INTERVAL)
+
+    with _lock:
+        if ok:
+            _mode_error = None
+        else:
+            if target == "real":
+                _mode_error = "Real Mode failed to start (no hardware attached?) - see Terminal below."
+                _mode_lines.append("")
+                _mode_lines.append("--- pifinder.service journal (last 40 lines) ---")
+                journal = subprocess.run(
+                    ["journalctl", "-u", "pifinder.service", "-n", "40", "--no-pager", "--output=cat"],
+                    capture_output=True, text=True,
+                ).stdout
+                _mode_lines.extend(journal.splitlines())
+            else:
+                _mode_error = "Test Mode failed to start - see Terminal below."
+        _mode_action_running = False
 
 
 def _get_all_ips():
@@ -156,6 +222,8 @@ def _start_run(action):
     with _lock:
         if _running:
             return False, "A run is already in progress."
+        if _mode_action_running:
+            return False, "A PiFinder mode switch is still in progress - wait for it to finish first."
         _lines = []
         _running = True
         _exit_code = None
@@ -303,6 +371,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/pifinder_mode":
             with _lock:
                 transitioning = _mode_action_running
+                error = _mode_error
+                target = _mode_target
             fake_up = _fake_mode_up()
             real_active = _real_service_active()
             if fake_up:
@@ -311,7 +381,22 @@ class Handler(BaseHTTPRequestHandler):
                 mode = "real"
             else:
                 mode = "none"
-            self._send_json({"mode": mode, "transitioning": transitioning})
+            self._send_json(
+                {"mode": mode, "transitioning": transitioning, "error": error, "target": target}
+            )
+            return
+
+        if parsed.path == "/api/pifinder_mode_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _mode_lines[position:]
+                new_position = len(_mode_lines)
+                running = _mode_action_running
+                exit_code = _mode_exit_code
+            self._send_json(
+                {"lines": new_lines, "position": new_position, "running": running, "exit_code": exit_code}
+            )
             return
 
         if parsed.path == "/log":
@@ -391,6 +476,9 @@ class Handler(BaseHTTPRequestHandler):
             with _lock:
                 if _mode_action_running:
                     self._send_json({"started": False, "error": "A mode switch is already in progress."}, status=409)
+                    return
+                if _running:
+                    self._send_json({"started": False, "error": "An install/update run is in progress - wait for it to finish first."}, status=409)
                     return
                 _mode_action_running = True
             script_arg = "start" if action == "enable_fake" else "stop"

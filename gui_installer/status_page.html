@@ -186,6 +186,7 @@
     border: 1px solid #555;
   }
   .status-dot.dot-white { background: #e8e8e8; }
+  .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
   .ql-section { margin-top: 0.4rem; }
@@ -321,6 +322,8 @@ let logPosition = 0;
 let polling = false;
 let phaseLabels = [];
 let knownIps = [];
+let modeLogPosition = 0;
+let modeLogPolling = false;
 // Cancel is only ever offered on the existing-install choice screen, so this
 // is always true by the time a "Cancelled" status needs to re-show it - but
 // keep it in sync with what /state actually reports, not just assumed.
@@ -751,6 +754,11 @@ async function init() {
 // gui_installer/server.py's FAKE_MODE_SCRIPT comment) - this just reflects
 // and drives test_tools/fake_mode.sh via the setup GUI's own backend, not
 // anything inside PiFinder itself.
+//
+// Reuses the same Terminal tile (#log) as install/update runs, via its own
+// separate /api/pifinder_mode_log endpoint - never the install run's own
+// /log endpoint/state (the backend refuses to run both at once, see
+// _start_run()/_mode_action_running in server.py).
 async function refreshMode() {
   const dotEl = document.getElementById('mode-status-dot');
   const textEl = document.getElementById('mode-status-text');
@@ -759,10 +767,22 @@ async function refreshMode() {
     const resp = await fetch('/api/pifinder_mode', { cache: 'no-store' });
     const data = await resp.json();
     if (data.transitioning) {
-      dotEl.className = 'status-dot dot-white';
-      textEl.textContent = 'Switching mode…';
+      dotEl.className = 'status-dot dot-yellow';
+      textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Test Mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
+      if (!modeLogPolling) { modeLogPolling = true; pollModeLog(); }
+      return;
+    }
+    if (data.error) {
+      // Whichever target failed, the other mode was already stopped as part
+      // of the attempt (fake_mode.sh always stops one before starting the
+      // other) - so recovery always means going back to the mode that
+      // *wasn't* the failed target, not retrying blindly.
+      dotEl.className = 'status-dot dot-red';
+      textEl.textContent = data.error;
+      btn.textContent = data.target === 'real' ? 'Back to Test Mode' : 'Back to Real Mode';
+      btn.disabled = false;
       return;
     }
     if (data.mode === 'fake') {
@@ -798,18 +818,59 @@ async function toggleMode() {
   if (!confirm(`Really ${verb}?`)) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
-  dotEl.className = 'status-dot dot-white';
-  textEl.textContent = 'Switching mode…';
+  dotEl.className = 'status-dot dot-yellow';
+  textEl.textContent = wantFake ? 'Starting Test Mode…' : 'Starting Real Mode…';
+  // Fresh terminal for this attempt - but only if no install/update run
+  // currently owns it (the backend already refuses to run both at once, so
+  // this is just about not stomping on a still-visible previous log).
+  if (!polling) {
+    const logEl = document.getElementById('log');
+    logEl.textContent = '';
+    logEl.classList.add('log-placeholder');
+    modeLogPosition = 0;
+  }
   try {
     const resp = await fetch('/api/pifinder_mode?action=' + action, { method: 'POST' });
     const data = await resp.json();
     if (!data.started) {
       alert('Could not switch mode: ' + (data.error || 'unknown error'));
+      refreshMode();
+      return;
     }
+    if (!modeLogPolling) { modeLogPolling = true; pollModeLog(); }
   } catch (e) {
     // fall through to refreshMode() below either way
   }
   setTimeout(refreshMode, 1000);
+}
+
+// Separate poll loop from the install/update run's own pollLog(), but writes
+// into the same visible #log element - guarded by `polling` so it never
+// overwrites an install/update run's own output (mutually exclusive at the
+// backend level too, see _start_run()/POST /api/pifinder_mode in server.py).
+async function pollModeLog() {
+  if (polling) { modeLogPolling = false; return; }
+  let data;
+  try {
+    const resp = await fetch('/api/pifinder_mode_log?position=' + modeLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    modeLogPolling = false;
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    modeLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollModeLog, 1000);
+  } else {
+    modeLogPolling = false;
+  }
 }
 
 init();
