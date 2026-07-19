@@ -34,7 +34,7 @@ bash gui_installer/launch_setup_gui.sh
 ```
 
 Then open the page in a browser — on the Pi itself, or from any other device on the same network
-(no desktop session on the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-optional) for details.
+(no desktop session on the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-recommended) for details.
 
 <table>
 <tr>
@@ -137,7 +137,7 @@ The setup process is designed to be straightforward. It will guide you through a
     [Using the INDI Driver](#using-the-indi-driver) below for what that gives you and how to set
     up the Web Manager profile.
 
-### Setup GUI / Control Center (optional)
+### Setup GUI / Control Center (recommended)
 
 If you'd rather not watch raw terminal output, `gui_installer/` provides a small local web page —
 the "PiFinder on Stellarmate Control Center" — that runs the same setup script with a live,
@@ -199,9 +199,6 @@ bash gui_installer/launch_setup_gui.sh --shutdown-webserver
 </tr>
 </table>
 
-> **Note:** the screenshot above predates the password-protection and quick-links-tile changes
-> described below and needs retaking.
-
 ## After Installation: PiFinder's "INDI Drivers" Page
 
 Once PiFinder is up, its own website (`/remote`, password `smate` by default) gets a new
@@ -210,13 +207,27 @@ Once PiFinder is up, its own website (`/remote`, password `smate` by default) ge
 1. **Set up the StellarMate Web Manager** — shows the same screenshot as
    [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) plus direct links to the Web Manager for
    every IP this Pi has, so you don't have to hunt down the port (`8624`) yourself.
-2. **Setup Wizard status/control** — shows whether `gui_installer/`'s webserver is currently
-   running, with Start/Stop buttons, so you can relaunch it (e.g. to update PiFinder later) without
-   opening a terminal. Reachable-at links for the wizard itself are listed too.
+2. **PiFinder Stellarmate Control Center status/control** — shows whether `gui_installer/`'s
+   webserver is currently running, with Start/Stop buttons, so you can relaunch it (e.g. to update
+   PiFinder later) without opening a terminal. Reachable-at links for the Control Center itself are
+   listed too.
 
 This page requires no login (same reasoning as PiFinder's own home page — it needs to work right
 after a fresh boot) and is meant to be the first thing you check after a fresh install, an update,
 or a reboot.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="380"></a><br>
+<sub>Card 1: StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
+<sub>Card 2: PiFinder Stellarmate Control Center status/control</sub>
+</td>
+</tr>
+</table>
 
 ## Using the INDI Driver
 
@@ -231,6 +242,9 @@ cd ~/PiFinder_Stellarmate
 bash bin/build_indi_driver.sh     # PiFinder LX200
 bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, only if you have a real mount)
 ```
+
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="380"></a><br>
+<sub>PiFinder LX200's own INDI Control Panel tab, connected and reporting a live solved position</sub>
 
 For the full setup walkthrough (StellarMate Web Manager profile, INDI Control Panel, KStars/Ekos
 Remote mode, SkySafari), the complete LX200 command/property reference, and an explanation of the
