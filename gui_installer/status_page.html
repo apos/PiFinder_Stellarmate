@@ -478,6 +478,10 @@ async function refreshDebugSolve() {
     return null;
   }
   const port = new URL(pifinderScreenUrl).port || '80';
+  // Port 8081 (Fake Mode) already runs PiFinder's separate CameraDebug class
+  // (its own cycling synthetic images, independent of this toggle) - "off"
+  // there does NOT mean a real camera, unlike when a real instance answers.
+  const isFakeModePort = String(port) === '8081';
   try {
     const resp = await fetch(`/api/debug_solve?port=${port}`, { cache: 'no-store' });
     const data = await resp.json();
@@ -487,7 +491,9 @@ async function refreshDebugSolve() {
       textEl.textContent = 'ON (using simulated test images)';
     } else if (data.debug_solve === false) {
       dotEl.className = 'status-dot dot-white';
-      textEl.textContent = 'off (real camera)';
+      textEl.textContent = isFakeModePort
+        ? 'off (Fake Mode is already simulating its own images)'
+        : 'off (real camera)';
     } else {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'unknown';
