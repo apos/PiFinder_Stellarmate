@@ -45,6 +45,33 @@ guessing across camera/GPIO/software/menu-logic all at once.
   rules out a genuine hardware fault (electrical signal never changes,
   reproducible even with zero physical contact during the scan).
 
+## fake_mode.sh
+
+- **Purpose:** run PiFinder with zero real hardware attached (camera,
+  keyboard, display all faked) as a normal, browsable web service - useful
+  whenever the physical HAT is disconnected (repair, inspection, bench work)
+  but you still want the web UI up for development/testing. Interactive:
+  start it now, stop it later whenever you're done, in two separate SSH
+  commands.
+- **What it does:** a thin wrapper around the `pifinder-remote` Claude Code
+  skill's `pf_remote.py` (see below) plus the real `pifinder.service`: `start`
+  stops the real service and launches a fake-hardware instance (`--camera
+  debug --keyboard none --display headless`) on port 8081; `stop` reverses
+  that (stops the fake instance, restarts the real service); `status` reports
+  which of the two is currently active. Once started, it's a completely
+  normal PiFinder web server - browse to it like any other instance, log in
+  with the usual password, no need to keep using this script or
+  `pf_remote.py` to interact with it.
+- **Usage:**
+  ```bash
+  test_tools/fake_mode.sh start    # stop the real service, start fake mode
+  test_tools/fake_mode.sh status   # check which mode is active
+  test_tools/fake_mode.sh stop     # stop fake mode, restart the real service
+  ```
+- **When to use:** the HAT (camera/keyboard/OLED) is off the device for
+  inspection or repair, but you still want to poke at PiFinder's web UI,
+  test a code change, or just confirm the software side is healthy.
+
 ## Related: the `pifinder-remote` Claude Code skill
 
 Not in this directory (it lives in the PiFinder checkout itself, under
