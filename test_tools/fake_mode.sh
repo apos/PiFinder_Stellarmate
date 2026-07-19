@@ -43,21 +43,39 @@ case "${1:-}" in
             exit 0
         fi
         echo "Stopping the real pifinder.service ..."
-        sudo systemctl stop pifinder.service
+        if ! sudo systemctl stop pifinder.service; then
+            echo "ERROR: could not stop pifinder.service - aborting." >&2
+            exit 1
+        fi
         echo "Starting fake-hardware PiFinder (camera debug, keyboard none, display headless) ..."
-        python3 "$PF_REMOTE" --repo "$PIFINDER_REPO" launch
+        # --port is a global option (must precede the subcommand); --repo
+        # belongs to `launch` itself and must come after it - the reverse
+        # order silently fails argparse's subcommand matching.
+        if ! python3 "$PF_REMOTE" --port "$FAKE_PORT" launch --repo "$PIFINDER_REPO"; then
+            echo "ERROR: pf_remote.py launch failed - fake-hardware mode did not start." >&2
+            exit 1
+        fi
         echo ""
         _print_urls
         ;;
     stop)
-        if ! _fake_running; then
-            echo "Fake-hardware mode isn't running."
-        else
+        if _fake_running; then
             echo "Stopping fake-hardware PiFinder ..."
-            python3 "$PF_REMOTE" --repo "$PIFINDER_REPO" --port "$FAKE_PORT" stop
+            # `stop` only knows --port, not --repo (that's a `launch`-only
+            # option) - passing it here made argparse reject the whole
+            # command before it ever touched the running instance.
+            if ! python3 "$PF_REMOTE" --port "$FAKE_PORT" stop; then
+                echo "ERROR: could not stop the fake-hardware instance - aborting rather than starting the real service alongside it." >&2
+                exit 1
+            fi
+        else
+            echo "Fake-hardware mode isn't running."
         fi
         echo "Starting the real pifinder.service ..."
-        sudo systemctl start pifinder.service
+        if ! sudo systemctl start pifinder.service; then
+            echo "ERROR: could not start pifinder.service - aborting." >&2
+            exit 1
+        fi
         ;;
     status)
         if _fake_running; then

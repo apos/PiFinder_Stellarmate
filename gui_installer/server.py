@@ -114,6 +114,29 @@ def _real_service_failed() -> bool:
     ).returncode == 0
 
 
+def _camera_hardware_present():
+    """True/False if rpicam-hello can tell us whether a camera is physically
+    attached, None if that tool isn't available (inconclusive either way).
+
+    Deliberately independent of PiFinder's own process/software: a real-mode
+    switch can settle as "systemd active" even with no camera at all (the
+    camera subprocess crashes but the rest of the app - web server, GPS, IMU -
+    keeps running, a known upstream issue - see
+    basic-memory/pifinder-stellarmate/00001, "Test Mode kann abgestürzten
+    Kamera-Prozess nicht retten"). Checking the raw hardware directly, the
+    same way test_tools/keypad_gpio_matrix_test.py checks the keypad below
+    PiFinder's own software layer, is the only way to catch that case.
+    """
+    try:
+        result = subprocess.run(
+            ["rpicam-hello", "--list-cameras"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        return None
+    return "No cameras available" not in result.stdout
+
+
 def _run_fake_mode_action(action):
     global _mode_action_running, _mode_lines, _mode_exit_code, _mode_error, _mode_target
     target = "fake" if action == "start" else "real"
@@ -141,25 +164,44 @@ def _run_fake_mode_action(action):
             _mode_lines.append(f"[setup GUI] failed to run {FAKE_MODE_SCRIPT.name}: {e}")
             _mode_exit_code = -1
 
-    # The subprocess exiting isn't the same as the target actually being up -
-    # settle-check the real, observable state before declaring success.
+    with _lock:
+        script_failed = _mode_exit_code not in (0, None)
+
     ok = False
-    deadline = time.monotonic() + _MODE_SETTLE_TIMEOUT
-    while time.monotonic() < deadline:
-        if target == "fake":
-            ok = _fake_mode_up()
-        else:
-            ok = _real_service_active() and not _real_service_failed()
-        if ok:
-            break
-        time.sleep(_MODE_SETTLE_INTERVAL)
+    cam_present = None
+    if not script_failed:
+        # The subprocess exiting 0 isn't the same as the target actually
+        # being up - settle-check the real, observable state before
+        # declaring success.
+        deadline = time.monotonic() + _MODE_SETTLE_TIMEOUT
+        while time.monotonic() < deadline:
+            if target == "fake":
+                ok = _fake_mode_up()
+            else:
+                ok = _real_service_active() and not _real_service_failed()
+            if ok:
+                break
+            time.sleep(_MODE_SETTLE_INTERVAL)
+
+        if ok and target == "real":
+            # systemd can report "active" with no camera attached at all
+            # (see _camera_hardware_present() docstring) - a raw hardware
+            # check is the only reliable way to catch that specific case.
+            cam_present = _camera_hardware_present()
+            if cam_present is False:
+                ok = False
 
     with _lock:
         if ok:
             _mode_error = None
         else:
             if target == "real":
-                _mode_error = "Real Mode failed to start (no hardware attached?) - see Terminal below."
+                if cam_present is False:
+                    _mode_error = ("No PiFinder camera hardware detected (rpicam-hello reports "
+                                   "no cameras) - reconnect the HAT/camera, then try again, or "
+                                   "use 'Back to Test Mode' below.")
+                else:
+                    _mode_error = "Real Mode failed to start - see Terminal below."
                 _mode_lines.append("")
                 _mode_lines.append("--- pifinder.service journal (last 40 lines) ---")
                 journal = subprocess.run(
