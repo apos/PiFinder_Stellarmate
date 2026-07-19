@@ -247,6 +247,42 @@ add_warning() {
 # lines near ours, breaking the context - see 00014_workflow-regeln-
 # update-install.md) is a loud, unmissable warning in the final summary,
 # not just a "N out of M hunks FAILED" line buried in the scroll-by log.
+############################################################
+# Stops test_tools/fake_mode.sh's fake-hardware PiFinder instance if one is
+# running, before any install/update step touches the PiFinder directory.
+# Without this, a running Fake Mode process keeps its already-open files
+# mapped in memory even after they're deleted/replaced out from under it
+# (normal Unix "unlinked but still open" behavior) - it keeps running, but
+# on stale pre-reinstall code, and the Setup GUI's own mode tile then shows
+# a confusing "Fake Mode running" status for a process that no longer
+# reflects what was just installed. Found live during a from-scratch
+# reinstall (2026-07-19) - see
+# basic-memory/pifinder-stellarmate/00027_fake-mode-not-stopped-during-reinstall.md.
+#
+# Fails loud (aborts) rather than silently continuing if the stop attempt
+# itself fails - proceeding to delete/replace files out from under a
+# process we know is still running is exactly the failure mode this
+# guards against.
+stop_fake_mode_if_running() {
+  local fake_port=8081
+  if ! curl -s -m 2 "http://127.0.0.1:${fake_port}/api/status" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "🛑 Fake Mode is running - stopping it first (its files would otherwise go stale mid-install)..."
+  local pf_remote="${pifinder_dir}/.claude/skills/pifinder-remote/scripts/pf_remote.py"
+  if [ ! -f "$pf_remote" ]; then
+    echo "❌ ERROR: ${pf_remote} not found - cannot stop the running Fake Mode instance." >&2
+    echo "   Aborting rather than reinstalling/updating out from under it." >&2
+    exit 1
+  fi
+  if ! python3 "$pf_remote" --port "$fake_port" stop; then
+    echo "❌ ERROR: could not stop the running Fake Mode instance." >&2
+    echo "   Aborting rather than reinstalling/updating out from under it." >&2
+    exit 1
+  fi
+  echo "✅ Fake Mode stopped."
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"

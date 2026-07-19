@@ -212,6 +212,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         case "$choice" in
             1)
                 echo "➡️  Selected: 1. Delete the existing installation and reinstall from scratch."
+                stop_fake_mode_if_running
                 sudo systemctl stop pifinder
                 echo "🗑️  Deleting the existing PiFinder installation directory..."
                 sudo rm -rf "${pifinder_home}/PiFinder"
@@ -248,6 +249,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 ;;
             2)
                 echo "➡️  Selected: 2. Update the existing installation with 'git reset --hard origin/release'."
+                stop_fake_mode_if_running
                 sudo systemctl stop pifinder
                 echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
                 cd "${pifinder_home}/PiFinder"
