@@ -265,7 +265,13 @@ Dies stellt alles wieder her, was PiFinder benötigt: Pacman-Repos, Systempakete
 
 ### Synchronisation von basic-memory / Claude-Kontext mit Nextcloud
 
-Das Post-Update-Skript kümmert sich auch um die Synchronisation des Claude-AI-Gedächtnisses und -Kontexts mit Nextcloud:
+> **Das ist ein persönlicher Workflow des Maintainers, kein allgemeiner Setup-Schritt für
+> PiFinder_Stellarmate.** Relevant nur, wenn man selbst [basic-memory](https://github.com/basicmachines-co/basic-memory)
+> für Claude-Sitzungskontext nutzt und bereits einen eigenen Nextcloud-WebDAV-Remote eingerichtet
+> hat — die meisten Nutzer haben beides nicht und können diesen Abschnitt einfach überspringen; er
+> hat keinerlei Auswirkung auf PiFinder selbst.
+
+Für alle, die das nutzen, kann das Post-Update-Skript zusätzlich diesen lokalen Claude-AI-Kontext mit Nextcloud synchronisieren:
 
 ```bash
 bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
