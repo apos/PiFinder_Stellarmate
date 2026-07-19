@@ -18,7 +18,7 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 >
 > * Gebaut und verifiziert für **PiFinder-Software 2.6.0** auf **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12).
-> * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, Tastatur ✅, OLED ✅. (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
+> * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅. (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
 > * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -283,7 +283,7 @@ bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
-| 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/Tastatur/OLED bestätigt — Kamera-Adapterkabel ausstehend |
+| 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend |
 | 2.6.0 | 2.1.1 | ✅ getestet | ⚠️ seit dem OLED-Fix nicht erneut verifiziert (hardwarebasiert, sollte also übertragbar sein — siehe Zeile 2.2.1) |
 | 2.5.1 | 2.1.1 | ✅ getestet | — |
 
@@ -295,7 +295,18 @@ Ein Skript zum sicheren Entfernen der PiFinder-Installation und -Dienste steht b
 ~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh
 ```
 
-Dies stoppt und deaktiviert die `pifinder`-Dienste, entfernt die systemd-Dateien und löscht das `~/PiFinder`-Verzeichnis. Das Verzeichnis `~/PiFinder_data` sowie das `PiFinder_Stellarmate`-Repository selbst werden dabei nicht entfernt.
+Dies stoppt und deaktiviert jeden systemd-Unit, den dieses Projekt installiert (`pifinder`,
+`pifinder_splash`, `pifinder-setup`, `pifinder-fake-mode-autostart`, `pifinder-control-center`,
+`pifinder-numpad-bridge`), entfernt die PiFinder-LX200-/Mount-Bridge-INDI-Treiber (Binaries und
+ihre `drivers.xml`-Katalog-Einträge), entfernt die `/dev/gpiomem*`-udev-Regel, demaskiert
+WirePlumber/PipeWire (beim Setup maskiert, damit es sich nicht die Kamera greift), entfernt die
+Pi-5-`lgpio`-Build-Artefakte und löscht das `~/PiFinder`-Verzeichnis. Das Verzeichnis
+`~/PiFinder_data` sowie das `PiFinder_Stellarmate`-Repository selbst werden dabei nicht entfernt
+(bei Bedarf manuell löschen — das Skript gibt den passenden Befehl aus). Bewusst unangetastet
+bleiben außerdem ein paar echt geteilte Systemkonfigurationsteile (die SPI/I2C/Overlay-Zeilen in
+`/boot/config.txt`, der `python-libcamera`-Pacman-Versions-Pin sowie die dem eigenen User
+hinzugefügten Hardware-Gruppenmitgliedschaften) — das Skript zeigt am Ende, welche das genau sind
+und warum, falls man auch diese von Hand entfernen möchte.
 
 ## Siehe auch
 

@@ -18,7 +18,7 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 >
 > * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
-> * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, keyboard ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
+> * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
 > * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -283,7 +283,7 @@ bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
-| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/keyboard/OLED confirmed — camera adapter cable pending |
+| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending |
 | 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) |
 | 2.5.1 | 2.1.1 | ✅ tested | — |
 
@@ -295,7 +295,17 @@ A script is provided to safely remove the PiFinder installation and services.
 ~/PiFinder_Stellarmate/bin/uninstall_pifinder_stellarmate.sh
 ```
 
-This will stop and disable the `pifinder` services, remove the systemd files, and delete the `~/PiFinder` directory. It will not remove the `~/PiFinder_data` directory or the `PiFinder_Stellarmate` repository itself.
+This stops and disables every systemd unit this project installs (`pifinder`, `pifinder_splash`,
+`pifinder-setup`, `pifinder-fake-mode-autostart`, `pifinder-control-center`,
+`pifinder-numpad-bridge`), removes the PiFinder LX200 / Mount Bridge INDI drivers (binaries and
+their `drivers.xml` catalog entries), removes the `/dev/gpiomem*` udev rule, unmasks
+WirePlumber/PipeWire (masked during install to stop it from grabbing the camera), removes the Pi 5
+`lgpio` build artifacts, and deletes the `~/PiFinder` directory. It will not remove the
+`~/PiFinder_data` directory or the `PiFinder_Stellarmate` repository itself (delete those manually
+if you want them gone too — the script prints the exact command). It also leaves a few genuinely
+shared pieces of system config in place on purpose (the `/boot/config.txt` SPI/I2C/overlay lines,
+the `python-libcamera` pacman version pin, and the hardware group memberships added to your user) —
+the script prints what those are and why, in case you want to remove them by hand too.
 
 ## See Also
 

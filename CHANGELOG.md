@@ -174,6 +174,17 @@ All notable changes to this project are documented in this file. Format loosely 
 - The Setup GUI/Control Center's post-run "success" screen could show a stale StellarMate Web
   Manager restart status; fixed alongside adding an explicit warning before Reboot/Shutdown while an
   install/update run is still in progress.
+- **`bin/uninstall_pifinder_stellarmate.sh` had drifted badly out of date** - it referenced a
+  `pifinder_kstars_location_writer.service` that no longer gets installed by anything, while missing
+  every systemd unit added since (`pifinder-setup`, `pifinder-fake-mode-autostart`,
+  `pifinder-control-center`, `pifinder-numpad-bridge`), and never touched the PiFinder LX200/Mount
+  Bridge INDI drivers, the `/dev/gpiomem*` udev rule, the WirePlumber/PipeWire masking, or the Pi 5
+  `lgpio` build artifacts at all - all installed by `pifinder_stellarmate_setup.sh` but never
+  reverted. Rewritten to cover all of it (deduplicated into shared functions so the three previously
+  independently-drifting code paths - default run, `--run` after `--selfmove`, and future changes -
+  can't silently diverge again the same way), and to explicitly print out what's deliberately left
+  in place (`/boot/config.txt` overlay lines, the `python-libcamera` pacman pin, hardware group
+  memberships) instead of silently doing nothing about them.
 
 ### Changed
 
@@ -192,6 +203,15 @@ All notable changes to this project are documented in this file. Format loosely 
 - `pifinder_stellarmate_setup.sh`'s smos.html now includes a Control Center screenshot alongside
   its existing setup instructions; `README.md`/`README_de.md` got a retaken, up-to-date setup
   screenshot plus the previously-missing INDI Drivers screenshots.
+- **README accuracy fixes**: the "Syncing basic-memory / Claude context to Nextcloud" section now
+  explicitly says this is a personal maintainer workflow (requires your own `basic-memory` setup and
+  Nextcloud remote), not a general PiFinder_Stellarmate step — it previously read as if every user
+  needed it. The Pi 5 compatibility banner and version table no longer claim the keyboard as fully
+  working: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's
+  column 0, permanently disabling those keys (7/4/1/LEFT) — a real hardware conflict between the two
+  boards, not a Pi 5 or software limitation, and specific to setups with that UPS shield attached.
+  The Uninstallation section now describes everything the rewritten uninstall script actually
+  covers (see Fixed, above) instead of the stale, narrower description.
 
 ## [1.0.0] - 2026-07-16
 
