@@ -295,7 +295,7 @@
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-        <div class="ql-section"><span class="ql-label">Remote:</span><span id="pifinder-remote-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
@@ -340,6 +340,12 @@ let phaseLabels = [];
 let knownIps = [];
 let modeLogPosition = 0;
 let modeLogPolling = false;
+// Last known hardware-status results (from refreshHardwareStatus(), on its
+// own slower poll cycle) - refreshMode() reads these to tell "systemd says
+// active" apart from "actually functional", see refreshMode()'s "real"
+// branch below.
+let lastHwCamera = null;
+let lastHwImu = null;
 // Cancel is only ever offered on the existing-install choice screen, so this
 // is always true by the time a "Cancelled" status needs to re-show it - but
 // keep it in sync with what /state actually reports, not just assumed.
@@ -417,7 +423,7 @@ function updatePiFinderStatusAndWizardLink() {
     textEl.textContent = 'PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
-    remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Control PiFinder</a> (password: <code>smate</code>)`;
+    remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
     dotEl.className = 'status-dot dot-white';
@@ -806,8 +812,19 @@ async function refreshMode() {
       textEl.textContent = 'Test Mode (no hardware)';
       btn.textContent = 'Switch to Real Mode';
     } else if (data.mode === 'real') {
-      dotEl.className = 'status-dot dot-green';
-      textEl.textContent = 'Real Mode (hardware)';
+      // systemd/the process being "active" doesn't mean PiFinder can
+      // actually do its job - a real instance with no camera or IMU keeps
+      // running (a known upstream issue) but can't solve anything. Yellow
+      // rather than red: this is a standing, ongoing condition ("running,
+      // but not fully functional"), not a just-failed action - red stays
+      // reserved for that (see the `data.error` branch above).
+      if (lastHwCamera === false || lastHwImu === false) {
+        dotEl.className = 'status-dot dot-yellow';
+        textEl.textContent = 'Real Mode running, but not functional (camera/IMU missing - see Hardware below)';
+      } else {
+        dotEl.className = 'status-dot dot-green';
+        textEl.textContent = 'Real Mode (hardware)';
+      }
       btn.textContent = 'Switch to Test Mode';
     } else {
       dotEl.className = 'status-dot dot-white';
@@ -921,10 +938,14 @@ async function refreshHardwareStatus() {
     setHwRow('camera', data.camera);
     setHwRow('imu', data.imu);
     setHwRow('gps', data.gps);
+    lastHwCamera = data.camera;
+    lastHwImu = data.imu;
   } catch (e) {
     setHwRow('camera', null);
     setHwRow('imu', null);
     setHwRow('gps', null);
+    lastHwCamera = null;
+    lastHwImu = null;
   }
 }
 
@@ -937,7 +958,10 @@ setTimeout(watchForNewRun, 3000);
 refreshMode();
 setInterval(refreshMode, 5000);
 
-refreshHardwareStatus();
+// Re-render mode once hardware status resolves too, so the very first paint
+// already reflects a degraded "real but no camera/IMU" state instead of
+// waiting up to 5s for the next regular refreshMode() tick.
+refreshHardwareStatus().then(refreshMode);
 setInterval(refreshHardwareStatus, 20000);
 </script>
 

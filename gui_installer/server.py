@@ -249,6 +249,7 @@ def _run_fake_mode_action(action):
 
     ok = False
     cam_present = None
+    imu_present = None
     if not script_failed:
         # The subprocess exiting 0 isn't the same as the target actually
         # being up - settle-check the real, observable state before
@@ -264,11 +265,14 @@ def _run_fake_mode_action(action):
             time.sleep(_MODE_SETTLE_INTERVAL)
 
         if ok and target == "real":
-            # systemd can report "active" with no camera attached at all
+            # systemd can report "active" with no camera/IMU attached at all
             # (see _camera_hardware_present() docstring) - a raw hardware
-            # check is the only reliable way to catch that specific case.
+            # check is the only reliable way to catch that specific case. A
+            # real instance without either isn't functional, so a switch
+            # attempt should fail rather than report success.
             cam_present = _camera_hardware_present()
-            if cam_present is False:
+            imu_present = _imu_hardware_present()
+            if cam_present is False or imu_present is False:
                 ok = False
 
     with _lock:
@@ -276,10 +280,14 @@ def _run_fake_mode_action(action):
             _mode_error = None
         else:
             if target == "real":
+                missing = []
                 if cam_present is False:
-                    _mode_error = ("No PiFinder camera hardware detected (rpicam-hello reports "
-                                   "no cameras) - reconnect the HAT/camera, then try again, or "
-                                   "use 'Back to Test Mode' below.")
+                    missing.append("camera")
+                if imu_present is False:
+                    missing.append("IMU")
+                if missing:
+                    _mode_error = (f"No PiFinder {' and '.join(missing)} hardware detected - "
+                                   "reconnect the HAT, then try again, or use 'Back to Test Mode' below.")
                 else:
                     _mode_error = "Real Mode failed to start - see Terminal below."
                 _mode_lines.append("")
