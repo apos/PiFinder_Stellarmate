@@ -1,12 +1,25 @@
 [Unit]
 Description=PiFinder on Stellarmate Control Center (Setup GUI)
-After=network.target
+After=network.target user@1000.service
 
 [Service]
 Type=simple
 User=stellarmate
 WorkingDirectory=/home/stellarmate/PiFinder_Stellarmate/gui_installer
 ExecStart=/usr/bin/python3 /home/stellarmate/PiFinder_Stellarmate/gui_installer/server.py
+# Without these, pifinder_stellarmate_setup.sh (run as our subprocess during
+# an install) can't reach `systemctl --user restart stellarmatewebmanager.
+# service` - that call needs XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS to find
+# the user's session bus, which a plain systemd System unit doesn't set on
+# its own (unlike the interactive SSH shell this used to be launched from
+# before it became a systemd unit - see basic-memory/pifinder-stellarmate/
+# 00030 and 00033). Requires `loginctl enable-linger stellarmate` so the
+# user bus exists independent of any actual login session - already set up
+# as part of the basic-memory sync timer setup. Hardcoded UID 1000
+# (stellarmate) - %U resolves to the *manager's* UID (0/root) for a system
+# unit's User=, not the configured service user, so it can't be used here.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 
 # Not enabled by default (see [Install] below) - enabled/started only when
 # the user actually starts it (launch_setup_gui.sh: `systemctl enable

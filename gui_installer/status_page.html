@@ -436,6 +436,16 @@ function setStatus(text, cls) {
   el.className = cls;
 }
 
+// Hidden while an install/update run is in progress - none of the mode
+// switch/hardware checks/Solve Simulation/LCD/numpad controls are relevant
+// (or safe to touch) mid-run, and the tile just clutters the page while the
+// terminal is the only thing that matters. Shown again as soon as the run
+// finishes (success, failure, or cancel) or on page load if nothing is
+// running - see pollLog()'s data.running branch.
+function setModeTileVisible(visible) {
+  document.getElementById('mode-tile').style.display = visible ? '' : 'none';
+}
+
 function updateProgress(phaseIndex, phaseTotal, phaseLabel) {
   const wrap = document.getElementById('progress-wrap');
   if (phaseIndex === null || phaseIndex < 0) {
@@ -849,6 +859,7 @@ async function watchForNewRun() {
         document.getElementById('reboot-wrap').style.display = 'none';
         document.getElementById('close-wrap').style.display = 'none';
         document.getElementById('choices').style.display = 'none';
+        setModeTileVisible(false);
         logPosition = 0;
         const logEl = document.getElementById('log');
         logEl.textContent = '';
@@ -894,7 +905,14 @@ async function reboot() {
 async function powerAction(kind) {
   const isReboot = kind === 'reboot';
   const verb = isReboot ? 'Reboot' : 'Shut down';
-  if (!confirm(`${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`)) return;
+  // The backend also refuses this outright while a run is in progress (see
+  // /reboot and /poweroff's own _running check in server.py) - this is just
+  // an earlier, more prominent warning so it's not a surprise 409 error
+  // after already committing to the action.
+  const message = polling
+    ? `⚠ A setup/update run is currently in progress! ${verb}ing now would interrupt it and could leave the installation in a broken state. Wait for it to finish (or Cancel it) first. Really ${verb.toLowerCase()} anyway?`
+    : `${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`;
+  if (!confirm(message)) return;
   const rebootBtn = document.getElementById('power-reboot-btn');
   const poweroffBtn = document.getElementById('power-poweroff-btn');
   const btn = isReboot ? rebootBtn : poweroffBtn;
@@ -976,6 +994,7 @@ async function pollLog() {
   }
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
+  setModeTileVisible(!data.running);
   if (data.running) {
     setStatus('Running…', 'status-running');
     setTimeout(pollLog, 1000);
@@ -1091,6 +1110,7 @@ async function init() {
   renderRemoteLinks(data.ips, data.port);
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
+  setModeTileVisible(!data.running);
   if (data.running) {
     document.getElementById('log').style.display = 'block';
     setStatus('Running…', 'status-running');
