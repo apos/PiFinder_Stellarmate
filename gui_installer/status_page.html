@@ -419,10 +419,19 @@ function updatePiFinderStatusAndWizardLink() {
   const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
   if (pifinderScreenUrl) {
-    dotEl.className = 'status-dot dot-green';
-    textEl.textContent = 'PiFinder is running';
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
+    // Port 8081 is test_tools/fake_mode.sh's fake-hardware instance (see
+    // FAKE_MODE_PORT in server.py) - this is genuinely a different, non-real
+    // PiFinder process, not just a degraded real one, so it gets its own
+    // wording rather than reusing the mode-tile's "degraded" yellow text.
+    if (String(port) === '8081') {
+      dotEl.className = 'status-dot dot-yellow';
+      textEl.textContent = 'PiFinder is running (Test Mode)';
+    } else {
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = 'PiFinder is running';
+    }
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
