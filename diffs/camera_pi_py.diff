@@ -18,11 +18,12 @@
      """
      MultiprocLogging.configurer(log_queue)
  
-@@ -272,7 +283,21 @@
+@@ -272,7 +283,26 @@
      if exposure_time == "auto":
          exposure_time = 400000  # Start with default 400ms
  
 -    camera_hardware = CameraPI(exposure_time)
++    fell_back = False
 +    try:
 +        camera_hardware = CameraPI(exposure_time)
 +    except Exception as e:
@@ -31,13 +32,18 @@
 +        from PiFinder.camera_debug import CameraDebug
 +
 +        camera_hardware = CameraDebug(exposure_time)
-+        # debug_solve is otherwise only ever set by the explicit "debug"
-+        # command (Solve Simulation toggle) - without this, it stays False
-+        # here even though images are already synthetic, which reads as
-+        # "Solve Simulation: off" while it's actually unavoidably on. See
-+        # basic-memory/pifinder-stellarmate/00037.
-+        shared_state.set_debug_solve(True)
++        fell_back = True
 +
++    # initial_debug=True (only on fallback) seeds get_image_loop()'s own
++    # "debug" toggle state to match, instead of separately poking
++    # shared_state.debug_solve() from out here - that used to leave the
++    # *displayed* flag and the loop's own internal debug variable (which
++    # actually gates whether a canned test image is loaded) out of sync,
++    # so the very next Solve Simulation toggle click flipped from the
++    # real, unseen state rather than the one the UI showed. See
++    # basic-memory/pifinder-stellarmate/00037 and 00038.
      camera_hardware.get_image_loop(
-         shared_state, camera_image, command_queue, console_queue, cfg
+-        shared_state, camera_image, command_queue, console_queue, cfg
++        shared_state, camera_image, command_queue, console_queue, cfg,
++        initial_debug=fell_back,
      )
