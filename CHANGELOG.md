@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Full documentation for the Control Center and the Keyboard Bridge**: `Readme_ControlCenter.md`
+  and `Readme_KeyboardBridge.md` (both with German translations), matching the depth and structure
+  of the existing `Readme_PiFinder_LX200.md` — architecture diagrams, design principles, a full API
+  reference, persistence/security model, known limitations, and a prioritized strategic roadmap for
+  each. Intended as the canonical reference to link from GitHub issues instead of re-explaining
+  either component's design from scratch every time.
 - **Setup Wizard control + auto idle-shutdown**: card 3 on `/first-steps` shows whether the Setup
   GUI webserver is running and lets you start/stop it from the browser (no SSH needed) - status/stop
   via cross-origin fetches to its existing `/state`/`/shutdown` routes (now CORS-enabled), start via

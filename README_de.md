@@ -311,6 +311,8 @@ und warum, falls man auch diese von Hand entfernen möchte.
 ## Siehe auch
 
 *   **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)** — vollständige INDI/Mount-Bridge-Dokumentation: bebilderte Einrichtungsanleitung, LX200-Kommando-/Property-Referenz, Code- und Deployment-Strategie. ([English version](Readme_PiFinder_LX200.md))
+*   **[Readme_ControlCenter_de.md](Readme_ControlCenter_de.md)** — vollständige Control-Center-Dokumentation: Architektur, Designprinzipien, Feature-Übersicht, API-Referenz, strategische Roadmap. ([English version](Readme_ControlCenter.md))
+*   **[Readme_KeyboardBridge_de.md](Readme_KeyboardBridge_de.md)** — vollständige Keyboard-Bridge-Dokumentation (Numpad als Tastatur): Architektur, Tastenbelegung, Selbstheilungs-Design, Roadmap. ([English version](Readme_KeyboardBridge.md))
 *   **[Readme_design_decisions_de.md](Readme_design_decisions_de.md)** — Zusammenfassung der wichtigsten Design-Entscheidungen.
 *   **[CHANGELOG.md](CHANGELOG.md)** — Versionshistorie.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — kurze Build-Referenz für den PiFinder-LX200-Treiber.

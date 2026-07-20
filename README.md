@@ -310,6 +310,8 @@ the script prints what those are and why, in case you want to remove them by han
 ## See Also
 
 *   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
+*   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, API reference, strategic roadmap. ([Deutsche Version](Readme_ControlCenter_de.md))
+*   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — full Keyboard Bridge (numpad-as-keypad) documentation: architecture, key mapping, self-healing design, roadmap. ([Deutsche Version](Readme_KeyboardBridge_de.md))
 *   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions.
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
