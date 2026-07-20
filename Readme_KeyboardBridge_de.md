@@ -178,6 +178,19 @@ Doku-Aufgabe (s. <a href="#strategische-roadmap">Strategische Roadmap</a>).</sub
 </tr>
 </table>
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/keyboard_brigde_and_lcd.png"><img src="docs/images/readme/keyboard_brigde_and_lcd.png" width="500"></a><br>
+<sub>Keyboard Bridge und externes SPI-LCD im tatsächlichen Zusammenspiel — der Nummernblock als
+Ersatz für die physische Tastatur, das LCD als Spiegel von PiFinders OLED-Ausgabe, beide unabhängig
+voneinander angebunden (s.
+<a href="Readme_ControlCenter_de.md#hardware--peripheriegeräte">Readme_ControlCenter_de.md</a> für
+den LCD-Toggle).</sub>
+</td>
+</tr>
+</table>
+
 Direkt für manuelles Testen/Debugging ausführen (erkennt sowohl Gerät als auch PiFinder-Instanz
 automatisch):
 

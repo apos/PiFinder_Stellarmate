@@ -170,6 +170,18 @@ section shown here. A dedicated close-up screenshot of that row is a documentati
 </tr>
 </table>
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/keyboard_brigde_and_lcd.png"><img src="docs/images/readme/keyboard_brigde_and_lcd.png" width="500"></a><br>
+<sub>The Keyboard Bridge and the external SPI LCD in actual use together - the numpad standing in
+for the physical keypad, the LCD mirroring PiFinder's OLED output, both bridged independently of
+each other (see <a href="Readme_ControlCenter.md#hardware--peripherals">Readme_ControlCenter.md</a>
+for the LCD toggle).</sub>
+</td>
+</tr>
+</table>
+
 Run directly for manual testing/debugging (auto-detects both device and PiFinder instance):
 
 ```bash
