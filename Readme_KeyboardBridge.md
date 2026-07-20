@@ -182,7 +182,11 @@ for the LCD toggle).</sub>
 </tr>
 </table>
 
-Run directly for manual testing/debugging (auto-detects both device and PiFinder instance):
+Run directly for manual testing/debugging (auto-detects both device and PiFinder instance). Note
+that `fb_keyboard_bridge.py` itself is **this project's own script** (`PiFinder_Stellarmate/test_tools/`,
+not part of PiFinder's own codebase) - the command below just happens to run it with PiFinder's own
+venv Python interpreter, since that's where its one dependency (`evdev`) is installed (see
+[Architecture](#architecture) above); `PiFinder_Stellarmate` has no separate venv of its own:
 
 ```bash
 cd ~/PiFinder_Stellarmate

@@ -192,7 +192,11 @@ den LCD-Toggle).</sub>
 </table>
 
 Direkt für manuelles Testen/Debugging ausführen (erkennt sowohl Gerät als auch PiFinder-Instanz
-automatisch):
+automatisch). Zur Klarstellung: `fb_keyboard_bridge.py` selbst ist **ein eigenes Skript dieses
+Projekts** (`PiFinder_Stellarmate/test_tools/`, nicht Teil von PiFinders eigenem Code) — der
+folgende Befehl führt es nur zufällig mit PiFinders eigenem venv-Python-Interpreter aus, weil dort
+die einzige Abhängigkeit (`evdev`) installiert ist (s. [Architektur](#architektur) oben);
+`PiFinder_Stellarmate` hat kein eigenes venv:
 
 ```bash
 cd ~/PiFinder_Stellarmate
