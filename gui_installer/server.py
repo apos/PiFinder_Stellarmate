@@ -24,6 +24,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import pam_auth
+import indi_client
 
 PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
@@ -671,6 +672,24 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/keyboard_bridge":
             self._send_json({"running": _keyboard_bridge_running()})
+            return
+
+        if parsed.path == "/api/mount_bridge_status":
+            # Phase 1 of the Mount Bridge web integration (see
+            # docs/concepts/mount_bridge_web_integration.md) - read-only
+            # snapshot via indi_client.py's minimal INDI client, talking
+            # directly to indiserver (default 127.0.0.1:7624). Coupling
+            # mode/drift are only ever populated once the device is
+            # actually connected (BRIDGE_MODE/DRIFT_STATUS aren't defined
+            # by the driver until then - verified against
+            # indi_pifinder_bridge's own updateProperties()) - "running":
+            # true with everything else null/None is the normal, expected
+            # shape for "loaded but not yet connected", not a bug.
+            try:
+                status = indi_client.mount_bridge_status()
+            except indi_client.INDIClientError as e:
+                status = {"running": False, "error": str(e)}
+            self._send_json(status)
             return
 
         if parsed.path == "/api/hardware_status":

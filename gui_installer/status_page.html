@@ -353,6 +353,9 @@
             <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
+          <div class="hw-row" title="Read-only status of the PiFinder Mount Bridge INDI driver, queried directly from indiserver (127.0.0.1:7624) - independent of whether a browser tab has the INDI Control Panel open. Coupling mode and drift only ever show once the driver is actually connected (it doesn't define those properties before then) - 'loaded, not connected' is the normal state until you connect it via the INDI Control Panel or (once built) this page's own controls. See docs/concepts/mount_bridge_web_integration.md.">
+            <span class="status-dot dot-white" id="mount-bridge-dot"></span>Mount Bridge: <span id="mount-bridge-text">checking&hellip;</span>
+          </div>
         </div>
         <div id="ext-hw-status">
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
@@ -1303,6 +1306,40 @@ async function refreshHardwareStatus() {
     lastHwImu = null;
   }
 }
+
+// Phase 1 of the Mount Bridge web integration (see
+// docs/concepts/mount_bridge_web_integration.md) - read-only status only,
+// no controls yet (Phases 2-4 add those). "running" means the driver is
+// loaded in the currently-running profile; coupling_mode/drift_arcmin stay
+// null until it's actually connected, which is expected, not an error.
+async function refreshMountBridgeStatus() {
+  const dotEl = document.getElementById('mount-bridge-dot');
+  const textEl = document.getElementById('mount-bridge-text');
+  try {
+    const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.running) {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'not loaded in the current profile';
+      return;
+    }
+    if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
+      dotEl.className = 'status-dot dot-green';
+      const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
+      textEl.textContent = `${data.coupling_mode.replace('MODE_', '').replace('_', ' ').toLowerCase()}${drift}`;
+    } else {
+      dotEl.className = 'status-dot dot-yellow';
+      textEl.textContent = data.active_mount
+        ? 'connected, coupling off'
+        : 'loaded, not connected (see INDI Control Panel)';
+    }
+  } catch (e) {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'unknown (check unavailable)';
+  }
+}
+setInterval(refreshMountBridgeStatus, 20000);
+refreshMountBridgeStatus();
 
 init();
 // Deferred so init()'s own /state fetch always gets to set `polling` first -

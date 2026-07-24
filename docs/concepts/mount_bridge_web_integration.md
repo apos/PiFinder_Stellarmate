@@ -114,10 +114,34 @@ driver-specific connection *parameters* (§1's explicit non-goal).
 | Auto-correct on drift | `MODE_AUTO_CORRECT` | set | set (default: `ACTION_SYNC`, matching the driver's own default) |
 | Goto-Forward | `MODE_GOTO_FORWARD` | not relevant | not relevant |
 
-**Web Manager REST endpoints needed** (profile list/select/drivers/start-stop) — the exact paths
-need confirming against Web Manager's own live `/docs` (Swagger UI) before implementation; not
-re-verified today, only the INDI-protocol side above was checked against this repo's actual driver
-source.
+**Web Manager REST endpoints** — verified live against the actual running Web Manager's own
+OpenAPI schema (`/openapi.json`) on 2026-07-20, not guessed:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/profiles/` | List profiles (UC3) |
+| `GET /api/profiles/{name}/labels` | Which drivers a profile has |
+| `POST /api/profiles/{name}/drivers` | Add drivers to a profile — body: `[{"label": "..."}]`. **Confirmed additive** (existing drivers stay) despite one earlier, non-reproducing test suggesting otherwise — retested twice, consistently additive, matching its own OpenAPI description. |
+| `GET /api/server/status` | Whether a profile is currently running, and which one |
+| `POST /api/server/start/{profile}` | Start `indiserver` for a profile (UC2) |
+| `POST /api/server/stop` | Stop the running `indiserver` (UC2) |
+| `GET /api/drivers` | Full driver catalog — confirmed `PiFinder LX200` (family `Telescopes`) and `PiFinder Mount Bridge` (family `Auxiliary`) are both registered correctly |
+
+**Open question for Phase 2 (driver *removal*, UC4's other half)**: no endpoint among the above
+removes a single driver from a profile — `DELETE /api/profiles/{name}` deletes the *entire*
+profile, and there's no visible "remove one driver" route. Needs further investigation before
+Phase 2 is implemented (possibilities: a route not yet found, or delete-and-recreate-the-profile as
+a fallback — used once already, live, just to restore this Pi's own test profile back to its
+original driver list after verifying the above).
+
+**Also confirmed live**: `BRIDGE_MODE`/`CORRECTION_ACTION`/`DRIFT_THRESHOLD`/`DRIFT_STATUS` are
+only defined by the driver once it's actually connected (`updateProperties()` in
+`pifinder_mount_bridge.cpp` only calls `defineProperty()` for these after `DefaultDevice::updateProperties()`,
+which INDI only calls on connect) — confirmed both by reading the source and by querying a live,
+disconnected instance, which correctly returned only `CONNECTION`/`DRIVER_INFO`/`DEBUG`/
+`CONFIG_PROCESS`/`BRIDGE_SETTINGS`/`ACTIVE_DEVICES`, none of the coupling-related properties. This
+means Phase 4 (setting `BRIDGE_MODE`) is *not just organizationally* dependent on Phase 3 (Connect)
+— the properties it needs to write **do not exist at all** until the device is connected.
 
 ## 5. Design Principles
 
@@ -195,13 +219,18 @@ same as today.
 - **Hand-rolled INDI protocol parsing** needs to handle partial TCP reads and multiple devices'
   interleaved property updates correctly. Mitigation: keep the client deliberately narrow (only the
   properties in §4, not a general-purpose INDI client) to bound how much protocol surface needs to
-  be right.
+  be right. Update: the trickiest part of this (indiserver's multi-root XML stream vs. a strict
+  single-document parser) is resolved and verified live in Phase 1's implementation — see
+  `gui_installer/indi_client.py`'s own docstring for the synthetic-wrapper-root technique used.
 - **Distinguishing "which driver is a mount"** in UC5's dropdown: INDI doesn't generically expose a
   driver's device class through simple property introspection. Simplest, safest option for a first
   version: list every non-PiFinder device in the profile and trust the user to pick correctly,
   rather than trying to auto-detect "is this a telescope driver."
-- **Web Manager REST paths** (§4) need live confirmation against `/docs` before coding — not done
-  as part of this concept pass.
+- **Removing a single driver from a profile** (Phase 2's other half, UC4) — no Web Manager endpoint
+  for this was found during Phase 1's API exploration (see §4). Still open; needs resolving before
+  Phase 2 is implemented.
+- ~~Web Manager REST paths need live confirmation~~ — done, see §4 (verified against the live
+  `/openapi.json` on 2026-07-20).
 
 ## 11. Effort & Priority
 
