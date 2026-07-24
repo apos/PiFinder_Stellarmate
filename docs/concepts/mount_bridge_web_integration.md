@@ -206,9 +206,11 @@ same as today.
 ## 11. Effort & Priority
 
 Per this project's [GitHub-Projects schema](../../Readme_ControlCenter.md) convention
-(`basic-memory/basic-memory/00019_bm-github-project-schema-todo-format.md`): **Priority P2, Size
+(`basic-memory/basic-memory/00019_bm-github-project-schema-todo-format.md`): **Priority low, Size
 L** — substantial (a new protocol client plus a multi-step UI flow), but bounded by the explicit
-non-goal (§1) keeping it well short of a general INDI client or profile editor.
+non-goal (§1) keeping it well short of a general INDI client or profile editor. (Priority field
+naming updated 2026-07-20: the board's Priority options were renamed from `P0`/`P1`/`P2` to
+`high`/`medium`/`low` — same three tiers, same underlying option IDs, just relabeled.)
 
 ## 12. Strategic Sequencing
 
