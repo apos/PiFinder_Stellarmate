@@ -242,6 +242,7 @@
   }
   .ql-small-btn:disabled { background: #444; cursor: default; }
   .ql-small-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .ql-small-btn.mb-btn-active { background: #2e7d32; }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -889,24 +890,15 @@ function showChoices(existingInstall) {
     el.innerHTML = `
       <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
       <div class="choice-card">
-        <h3>Reinstall from scratch</h3>
-        <p>Completely deletes the existing PiFinder directory and performs a fresh installation:
-           clones PiFinder from the official <code>release</code> branch and re-applies all
-           StellarMate patches. Use this if the installation is broken or you want a clean slate.</p>
+        <h3 title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</h3>
         <button onclick="start('reinstall')">Reinstall from scratch</button>
       </div>
       <div class="choice-card">
-        <h3>Update</h3>
-        <p>Resets your local PiFinder to the official <code>release</code> branch version
-           (<code>git reset --hard</code> + <code>pull</code>) and re-applies all patches. Keeps
-           the existing directory, just brings the code up to date.</p>
+        <h3 title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update</h3>
         <button onclick="start('update')">Update (git reset --hard)</button>
       </div>
       <div class="choice-card">
-        <h3>Cancel</h3>
-        <p>Does nothing to the existing installation and shuts down this setup webserver.
-           Run <code>launch_setup_gui.sh</code> again (or the "Start Setup Wizard" button on
-           PiFinder's own website) if you need it later.</p>
+        <h3 title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</h3>
         <button class="cancel" onclick="start('cancel')">Cancel</button>
       </div>
     `;
@@ -1548,6 +1540,9 @@ function updateMbDiagram(data) {
 // completion always triggers an immediate, fresh refresh anyway.
 let mbActionInFlight = false;
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
+let wmPifinderConnected = null;
+let wmBridgeConnected = null;
+let wmMountConnected = null;
 let mbLogPosition = 0;
 async function pollMbLog() {
   try {
@@ -1584,14 +1579,20 @@ async function refreshMountBridgeStatus() {
       updateWmCouplingGate(false, false);
       updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
       wmActiveMount = null;
+      wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
       refreshWmActiveButton();
+      refreshConnectButtons();
       updateStepIndicators();
       return;
     }
     updateWmCouplingGate(data.active_mount, data.coupling_mode !== null);
     updateMbDiagram(data);
     wmActiveMount = data.active_mount;
+    wmPifinderConnected = data.pifinder_connected;
+    wmBridgeConnected = data.bridge_connected;
+    wmMountConnected = data.mount_connected;
     refreshWmActiveButton();
+    refreshConnectButtons();
     updateStepIndicators();
     if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
       dotEl.className = 'status-dot dot-green';
@@ -1608,6 +1609,8 @@ async function refreshMountBridgeStatus() {
     textEl.textContent = 'unknown (check unavailable)';
     updateWmCouplingGate(false, false);
     updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
+    wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
+    refreshConnectButtons();
   }
 }
 setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
@@ -1820,13 +1823,20 @@ async function refreshWmConnectRow() {
     mountBtn.disabled = true;
     noMountHint.style.display = 'none';
   }
+  refreshConnectButtons();
   refreshWmConnectAllButton();
 }
 
 function connectAllAvailable() {
-  if (!document.getElementById('wm-connect-lx200-btn').disabled) connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn');
-  if (!document.getElementById('wm-connect-bridge-btn').disabled) connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn');
-  if (!document.getElementById('wm-connect-mount-btn').disabled) connectWmSelectedMount();
+  // Only ever connects, never toggles an already-connected device off -
+  // "available" means "ready to connect", not "click every button".
+  if (!document.getElementById('wm-connect-lx200-btn').disabled && !wmPifinderConnected)
+    _setDeviceConnection('PiFinder LX200', 'wm-connect-lx200-btn', false);
+  if (!document.getElementById('wm-connect-bridge-btn').disabled && !wmBridgeConnected)
+    _setDeviceConnection('PiFinder Mount Bridge', 'wm-connect-bridge-btn', false);
+  const mount = document.getElementById('wm-mount-select').value;
+  if (!document.getElementById('wm-connect-mount-btn').disabled && mount && !wmMountConnected)
+    _setDeviceConnection(mount, 'wm-connect-mount-btn', false);
 }
 
 async function setWmActiveDevices() {
@@ -1857,27 +1867,55 @@ async function setWmActiveDevices() {
   setStepBusy(3, false);
 }
 
-async function connectWmDevice(deviceName, btnId) {
+// Green + "Disconnect X" once a device is actually connected, per live
+// feedback - matches the same idea already used for the driver add/remove
+// buttons and Link/Unlink Mount. Skips a button while it's disabled (mid
+// own action, or gated off because the profile isn't running/no mount
+// picked) - its own code owns the label in that case, same pattern as
+// refreshWmActiveButton().
+function setConnectButtonState(btnId, label, connected) {
+  const btn = document.getElementById(btnId);
+  if (btn.disabled) return;
+  btn.textContent = connected ? `Disconnect ${label}` : `Connect ${label}`;
+  btn.classList.toggle('mb-btn-active', !!connected);
+}
+
+function refreshConnectButtons() {
+  setConnectButtonState('wm-connect-lx200-btn', 'PiFinder LX200', wmPifinderConnected);
+  setConnectButtonState('wm-connect-bridge-btn', 'Bridge', wmBridgeConnected);
+  setConnectButtonState('wm-connect-mount-btn', 'Mount', wmMountConnected);
+}
+
+async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   mbActionInFlight = true;
   setStepBusy(4, true);
   const btn = document.getElementById(btnId);
   btn.disabled = true;
-  const originalText = btn.textContent;
-  btn.textContent = 'connecting…';
+  btn.textContent = disconnecting ? 'disconnecting…' : 'connecting…';
   try {
     const params = new URLSearchParams({ device: deviceName });
+    if (disconnecting) params.set('action', 'disconnect');
     if (wmSelectedProfile) params.set('profile', wmSelectedProfile);
     const resp = await fetch(`/api/mount_bridge_connect?${params}`, { method: 'POST' });
     const data = await resp.json();
-    btn.textContent = data.success ? 'Connect ✓' : (data.error || 'failed');
+    btn.textContent = data.success ? (disconnecting ? 'Disconnected' : 'Connected') : (data.error || 'failed');
   } catch (e) {
     btn.textContent = 'failed';
   }
   pollMbLog();
   await refreshMountBridgeStatus();
-  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  setTimeout(() => { btn.disabled = false; refreshConnectButtons(); }, 1500);
   mbActionInFlight = false;
   setStepBusy(4, false);
+}
+
+function connectWmDevice(deviceName, btnId) {
+  // Toggle: pick disconnect if this specific device is currently tracked
+  // as connected, connect otherwise.
+  const connected = deviceName === 'PiFinder LX200' ? wmPifinderConnected
+    : deviceName === 'PiFinder Mount Bridge' ? wmBridgeConnected
+    : wmMountConnected;
+  return _setDeviceConnection(deviceName, btnId, !!connected);
 }
 
 function connectWmSelectedMount() {
@@ -1902,10 +1940,12 @@ function setWmDriverButton(driver, present) {
   if (present === null) {
     btn.textContent = `${label}: unknown`;
     btn.disabled = true;
+    btn.classList.remove('mb-btn-active');
     updateStepIndicators();
     return;
   }
   btn.textContent = present ? `${label}: remove` : `${label}: add`;
+  btn.classList.toggle('mb-btn-active', present);
   btn.disabled = false;
   updateStepIndicators();
 }

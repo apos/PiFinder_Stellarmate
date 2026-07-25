@@ -352,6 +352,14 @@ def connect_device(
     set_switch(device, "CONNECTION", "CONNECT", host, port, timeout)
 
 
+def disconnect_device(
+    device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> None:
+    """Triggers the standard INDI CONNECTION.DISCONNECT switch - the
+    opposite of connect_device(), same generic applicability."""
+    set_switch(device, "CONNECTION", "DISCONNECT", host, port, timeout)
+
+
 PIFINDER_LX200_TCP_HOST = "127.0.0.1"
 PIFINDER_LX200_TCP_PORT = "4030"  # pos_server.py's fixed LX200 port - see Readme_PiFinder_LX200.md
 
