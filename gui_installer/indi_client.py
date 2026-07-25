@@ -82,6 +82,18 @@ def get_properties(
             current["elements"] = {}
             current["_active"] = None
         elif name in _ELEMENT_TAGS and current:
+            if "elements" not in current:
+                # Reproduced live against real indiserver traffic (see
+                # basic-memory pifinder-stellarmate note on this bug): a
+                # def{Text,Switch,Number} element occasionally arrives while
+                # `current` still holds a stale, non-empty leftover from
+                # elsewhere in the stream without an "elements" key (exact
+                # trigger not fully pinned down - intermittent, ~1 in 10-50
+                # queries against an actively-polling device). Crashing the
+                # whole read (and thus the HTTP request calling it) on a
+                # single unexpected element is worse than dropping that one
+                # element - every other property still parses fine.
+                return
             current["_active"] = attrs.get("name")
             current["elements"][current["_active"]] = ""
 
@@ -149,6 +161,14 @@ def get_properties(
                 parser.Parse(chunk, False)
         except xml.parsers.expat.ExpatError as e:
             raise INDIClientError(f"Malformed INDI XML from indiserver: {e}") from e
+        except OSError as e:
+            # sendall()/recv() can also fail after connect() succeeded (e.g.
+            # ConnectionResetError if indiserver restarts mid-read while a
+            # profile's driver list changes) - only socket.timeout above is
+            # a normal/expected outcome, everything else here means the
+            # caller got an empty/partial result for the wrong reason and
+            # should see why, not silently read as "device not loaded".
+            raise INDIClientError(f"Lost connection to indiserver while reading: {e}") from e
     finally:
         sock.close()
 
@@ -249,6 +269,8 @@ def _send(message: str, host: str, port: int, timeout: float) -> None:
         raise INDIClientError(f"Could not connect to indiserver at {host}:{port}: {e}") from e
     try:
         sock.sendall(message.encode())
+    except OSError as e:
+        raise INDIClientError(f"Lost connection to indiserver while sending: {e}") from e
     finally:
         sock.close()
 

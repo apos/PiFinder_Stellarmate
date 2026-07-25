@@ -228,6 +228,33 @@ devices' own `CONNECTION` state (two extra short, targeted `get_properties()` ca
 `active_pifinder`/`active_mount` are actually set) - previously it only reported Mount Bridge's own
 properties.
 
+### 6.2 Action log + parser crash fix (live user feedback, 2026-07-25)
+
+Further live testing surfaced two more items in one round:
+
+- **No visibility into what the tile was doing** ("schwierig, dem ganzen zu folgen"). Fixed with a
+  small log panel (`#mb-log`) inside the tile: every user-triggered action (driver add/remove, link
+  mount, connect, coupling preset) now writes an attempt + result line to a server-side buffer
+  (`server.py`'s `_mb_lines`/`_mb_log()`, same pattern as the existing Hardware Test log), polled by
+  the frontend (`GET /api/mount_bridge_log`) both on an interval and immediately after each action.
+  `/api/mount_bridge_status`'s own poll also now logs a line whenever the reported `running` state
+  *changes*, so a transient drop is visible even without the user having clicked anything.
+- **Root cause of the reported "tile flips to not-loaded, then jumps back" bug**: while adding this
+  logging, live testing turned up a real, reproducible crash in `indi_client.py`'s XML callback -
+  `start_element()` raised `KeyError: 'elements'` intermittently (roughly 1 in 10-50 calls) when
+  querying an actively-polling, already-connected device. Confirmed via `journalctl` (the crash was
+  actually happening in production, not just hypothetically) and reproduced directly against the
+  real module and the real running `indiserver` multiple times. An uncaught exception here crashes
+  the whole HTTP request handling it, which the frontend's existing `catch` block then renders as
+  the fully-degraded/disconnected state described - this is almost certainly what the user saw,
+  independent of anything to do with the Mount dropdown itself (which has no event handler attached
+  at all). The exact byte-level trigger wasn't pinned down despite two isolated reproductions, but
+  the fix is a minimal, safe guard: if an unexpected `def*` element arrives while the parser's
+  `current` vector-in-progress state doesn't have an `"elements"` key yet, drop that one element
+  instead of crashing (every other property in the same response still parses normally). Re-verified
+  with 300 queries (150 iterations x 2 real, connected devices) against the live instance after the
+  fix: zero errors, versus a reliable crash within 2-8 calls before it.
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same

@@ -313,6 +313,20 @@
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
+  #mb-log {
+    margin-top: 0.6rem;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #9c9;
+    max-height: 6.5em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  #mb-log:empty::before { content: "No actions yet."; color: #666; }
   .waiting-bar-track {
     background: #262626;
     border-radius: 5px;
@@ -465,6 +479,7 @@
           <option value="goto">Goto/Track</option>
         </select>
       </div>
+      <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
     <div id="status-row">
       <div id="status" class="status-idle">Checking current state&hellip;</div>
@@ -1486,6 +1501,29 @@ function updateMbDiagram(data) {
   }
 }
 
+// Server-side log of every Mount Bridge action this tile has triggered
+// (driver add/remove, link mount, connect, coupling presets) plus
+// running-state transitions picked up by refreshMountBridgeStatus()'s own
+// poll - added after live user testing showed the tile's before/after state
+// alone was too hard to follow ("schwierig, dem ganzen zu folgen").
+let mbLogPosition = 0;
+async function pollMbLog() {
+  try {
+    const resp = await fetch(`/api/mount_bridge_log?position=${mbLogPosition}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.lines && data.lines.length) {
+      const logEl = document.getElementById('mb-log');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + data.lines.join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    mbLogPosition = data.position;
+  } catch (e) {
+    // diagnostic aid only - failing silently here is fine
+  }
+}
+setInterval(pollMbLog, 4000);
+pollMbLog();
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -1544,6 +1582,7 @@ async function setWmCoupling(mode) {
     // buttons on this page.
   }
   btn.textContent = originalText;
+  pollMbLog();
   refreshMountBridgeStatus();
 }
 
@@ -1651,6 +1690,7 @@ async function setWmActiveDevices() {
     btn.textContent = 'failed';
   }
   setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  pollMbLog();
   refreshMountBridgeStatus();
 }
 
@@ -1667,6 +1707,7 @@ async function connectWmDevice(deviceName, btnId) {
     btn.textContent = 'failed';
   }
   setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  pollMbLog();
   refreshMountBridgeStatus();
 }
 
@@ -1721,6 +1762,7 @@ async function toggleWmDriver(driver) {
     // fall through - refreshWmDriverButtons() below reflects whatever the
     // actual state ended up being, success or not, rather than assuming.
   }
+  pollMbLog();
   refreshWmDriverButtons();
 }
 

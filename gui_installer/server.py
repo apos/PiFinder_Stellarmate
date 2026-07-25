@@ -653,6 +653,15 @@ def _hwtest_log(line: str):
         _hwtest_lines.append(line)
 
 
+_mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
+_mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
+
+
+def _mb_log(line: str):
+    with _lock:
+        _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
+
+
 def _run_hardware_test():
     """Runs all three checks in sequence and stores the combined result.
     Camera/IMU/GPS are deliberately sequential, not parallel: the camera
@@ -1058,10 +1067,20 @@ class Handler(BaseHTTPRequestHandler):
             # indi_pifinder_bridge's own updateProperties()) - "running":
             # true with everything else null/None is the normal, expected
             # shape for "loaded but not yet connected", not a bug.
+            global _mb_last_running
             try:
                 status = indi_client.mount_bridge_status()
             except indi_client.INDIClientError as e:
                 status = {"running": False, "error": str(e)}
+                _mb_log(f"status check failed: {e}")
+            if status.get("running") != _mb_last_running:
+                _mb_log(
+                    "Mount Bridge status changed: running={} bridge_connected={} "
+                    "active_mount={}".format(
+                        status.get("running"), status.get("bridge_connected"), status.get("active_mount")
+                    )
+                )
+                _mb_last_running = status.get("running")
             self._send_json(status)
             return
 
@@ -1141,6 +1160,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(
                 {"lines": new_lines, "position": new_position, "running": running, "result": result}
             )
+            return
+
+        if parsed.path == "/api/mount_bridge_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _mb_lines[position:]
+                new_position = len(_mb_lines)
+            self._send_json({"lines": new_lines, "position": new_position})
             return
 
         if parsed.path == "/api/pifinder_mode_log":
@@ -1331,11 +1359,15 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
+            driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+            _mb_log(f"{action} {driver_label} {'to' if action == 'add' else 'from'} profile '{profile}'...")
             try:
                 setter(profile, action == "add")
             except webmanager_client.WebManagerError as e:
+                _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            _mb_log(f"  done.")
             self._send_json({"success": True})
             return
 
@@ -1350,11 +1382,14 @@ class Handler(BaseHTTPRequestHandler):
             if not mount:
                 self._send_json({"success": False, "error": "missing 'mount' query param"}, status=400)
                 return
+            _mb_log(f"linking Mount Bridge to mount '{mount}'...")
             try:
                 indi_client.set_mount_bridge_active_devices("PiFinder LX200", mount)
             except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            _mb_log(f"  done.")
             self._send_json({"success": True})
             return
 
@@ -1370,11 +1405,14 @@ class Handler(BaseHTTPRequestHandler):
             if not device:
                 self._send_json({"success": False, "error": "missing 'device' query param"}, status=400)
                 return
+            _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)
             except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            _mb_log(f"  done.")
             self._send_json({"success": True})
             return
 
@@ -1405,6 +1443,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
                 return
+            _mb_log(
+                f"setting coupling mode {mode_arg} (threshold={threshold_arg or 'default'}, "
+                f"action={action_arg or 'default'})..."
+            )
             try:
                 indi_client.set_coupling_mode(
                     mode_map[mode_arg],
@@ -1412,8 +1454,10 @@ class Handler(BaseHTTPRequestHandler):
                     correction_action=action_arg or None,
                 )
             except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            _mb_log(f"  done.")
             self._send_json({"success": True})
             return
 
