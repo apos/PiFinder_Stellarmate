@@ -139,8 +139,7 @@
   #choices button.danger { background: #a33; }
   #choices button.cancel { background: #444; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
-  .choice-btn { display: block; width: fit-content; margin: 0 0 0.6rem 0; }
-  .choice-btn:last-child { margin-bottom: 0; }
+  .choice-btn { margin: 0 0.6rem 0.6rem 0; }
   #log.log-placeholder {
     color: #666;
     font-style: italic;
@@ -531,12 +530,13 @@
         <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
-      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync.">
+      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the one thing it can't (which driver is your mount).">
         <span class="mb-row-label">Coupling:</span>
-        <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="setWmCoupling('verify_alert')" disabled>Verify/Alert only</button>
-        <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="setWmCoupling('auto_correct')" disabled>Auto-correct on drift</button>
-        <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="setWmCoupling('goto_forward')" disabled>Goto-Forward</button>
+        <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+        <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
+        <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
       </div>
+      <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" title="Only used by Auto-correct: how far off before it corrects, and how.">
         <span class="mb-row-label">Threshold:</span>
         <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
@@ -1517,11 +1517,13 @@ async function refreshHardwareStatus() {
 // loaded in the currently-running profile; coupling_mode/drift_arcmin stay
 // null until it's actually connected, which is expected, not an error.
 // Phase 4: the three preset buttons only make sense once Mount Bridge is
-// actually connected to a mount (drift is PiFinder-vs-mount - all three
-// presets need one, see UC7 in the concept doc) - gated here off the same
-// status this row already polls, rather than a separate check.
-function updateWmCouplingGate(active_mount, connected) {
-  const enabled = Boolean(active_mount) && connected;
+// Only require a profile to be selected, not full readiness - per the
+// Autoconnect feature (see onCouplingPresetClick() below), clicking a
+// preset before setup is finished is exactly how Autoconnect gets
+// triggered, so these can't stay hard-disabled until everything else is
+// already done.
+function updateWmCouplingGate() {
+  const enabled = !!wmSelectedProfile;
   ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
@@ -1662,7 +1664,7 @@ async function refreshMountBridgeStatus() {
     if (!data.running) {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
-      updateWmCouplingGate(false, false);
+      updateWmCouplingGate();
       updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
       wmActiveMount = null;
       wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
@@ -1671,7 +1673,7 @@ async function refreshMountBridgeStatus() {
       updateStepIndicators();
       return;
     }
-    updateWmCouplingGate(data.active_mount, data.coupling_mode !== null);
+    updateWmCouplingGate();
     updateMbDiagram(data);
     wmActiveMount = data.active_mount;
     wmPifinderConnected = data.pifinder_connected;
@@ -1693,7 +1695,7 @@ async function refreshMountBridgeStatus() {
   } catch (e) {
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
-    updateWmCouplingGate(false, false);
+    updateWmCouplingGate();
     updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
     wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
     refreshConnectButtons();
@@ -1729,6 +1731,100 @@ async function setWmCoupling(mode) {
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+}
+
+// Autoconnect: clicking a Coupling preset before setup (steps 1-5) is
+// actually finished kicks off the rest automatically instead of just
+// failing/doing nothing. Automates everything that has one obviously
+// correct answer (start the profile, add both PiFinder drivers, connect
+// everything once linked) and pauses with a visible, inline prompt for the
+// one step that's a genuine judgment call - which loaded driver is the
+// user's mount - resuming on its own once that's done. KStars Link (step
+// 2) is deliberately NOT auto-fixed here even if missing, same reasoning
+// as its own Recheck button: this project never writes to KStars' own
+// database, only reads it (see _kstars_webmanager_link_status() in
+// server.py) - a missing link is surfaced elsewhere, not blocked on here.
+let autoconnectMode = null;  // the coupling mode Autoconnect is working toward, or null if idle
+let autoconnectPoll = null;
+
+function isFullyReadyForCoupling() {
+  return !!wmSelectedProfile && wmServerRunning && wmHasLx200 === true && wmHasBridge === true && !!wmActiveMount;
+}
+
+function setAutoconnectStatus(text) {
+  const el = document.getElementById('mb-autoconnect-status');
+  if (!text) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  el.style.display = '';
+  el.textContent = text;
+}
+
+function onCouplingPresetClick(mode) {
+  if (isFullyReadyForCoupling()) {
+    setWmCoupling(mode);
+    return;
+  }
+  startAutoconnect(mode);
+}
+
+async function startAutoconnect(mode) {
+  autoconnectMode = mode;
+  if (!wmSelectedProfile) {
+    setAutoconnectStatus('Autoconnect: pick a profile above first.');
+    autoconnectMode = null;
+    return;
+  }
+  setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
+  if (!wmServerRunning) await toggleWmServer();
+  if (wmHasLx200 === false) await toggleWmDriver('lx200');
+  if (wmHasBridge === false) await toggleWmDriver('bridge');
+
+  if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
+
+  if (!wmActiveMount) {
+    setAutoconnectStatus('⏳ Autoconnect: pick your mount above and click "Link Mount" to continue.');
+    waitForMountLink(mode);
+    return;
+  }
+  await finishAutoconnect(mode);
+}
+
+function waitForMountLink(mode) {
+  if (autoconnectPoll) clearInterval(autoconnectPoll);
+  autoconnectPoll = setInterval(() => {
+    if (autoconnectMode !== mode) {
+      clearInterval(autoconnectPoll);
+      autoconnectPoll = null;
+      return;
+    }
+    if (wmActiveMount) {
+      clearInterval(autoconnectPoll);
+      autoconnectPoll = null;
+      finishAutoconnect(mode);
+    }
+  }, 1500);
+}
+
+async function finishAutoconnect(mode) {
+  setAutoconnectStatus('Autoconnect: connecting devices…');
+  connectAllAvailable();
+  // connectAllAvailable() fires its connects without waiting for them -
+  // poll briefly for them to actually finish before applying the coupling
+  // mode, same idea as the server-side "wait for indiserver" polls.
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline && autoconnectMode === mode) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const targets = _availableConnectTargets();
+    if (targets.length > 0 && targets.every(([, , connected]) => connected)) break;
+  }
+  if (autoconnectMode !== mode) return;
+  setAutoconnectStatus('Autoconnect: applying coupling mode…');
+  await setWmCoupling(mode);
+  setAutoconnectStatus(null);
+  autoconnectMode = null;
 }
 
 // Phase 2 of the Mount Bridge web integration - profile selection (UC3,
