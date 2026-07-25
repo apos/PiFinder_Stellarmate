@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PiFinder on Stellarmate Control Center</title>
 <style>
   body {
@@ -10,6 +11,10 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     padding: 1.5rem;
+    box-sizing: border-box;
+  }
+  @media (max-width: 767px) {
+    body { padding: 0.8rem; }
   }
   .page {
     display: flex;
@@ -24,6 +29,26 @@
   .right-col {
     width: 60%;
     box-sizing: border-box;
+  }
+  /* Minimal responsive layout. Phones: always single column, both
+     orientations - a phone's long side rarely exceeds ~900px even in
+     landscape, well under the tablet range this project cares about, so
+     one width breakpoint covers both phone orientations. Tablets: portrait
+     is single column, landscape is the normal two-column split (already
+     the default below, needs no extra rule) - except large tablets
+     (>=1366px, e.g. 12.9" iPad Pro), which behave like a PC regardless of
+     orientation since the portrait-collapse rule is capped below that
+     width. PCs: the existing 40%/60% split already scales with the actual
+     window width with no extra rule needed - narrowing a desktop window
+     below 768px falls into the same phone rule above, so "depends on the
+     window" falls out of these two rules rather than needing a third. */
+  @media (max-width: 767px) {
+    .page { flex-direction: column; gap: 1rem; }
+    .left-col, .right-col { width: 100%; min-width: 0; }
+  }
+  @media (min-width: 768px) and (max-width: 1365px) and (orientation: portrait) {
+    .page { flex-direction: column; gap: 1rem; }
+    .left-col, .right-col { width: 100%; min-width: 0; }
   }
   h1 { font-size: 1.3rem; margin: 0 0 1rem; }
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
@@ -114,6 +139,8 @@
   #choices button.danger { background: #a33; }
   #choices button.cancel { background: #444; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
+  .choice-btn { display: block; width: fit-content; margin: 0 0 0.6rem 0; }
+  .choice-btn:last-child { margin-bottom: 0; }
   #log.log-placeholder {
     color: #666;
     font-style: italic;
@@ -282,6 +309,7 @@
   #mb-diagram {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.3rem;
     margin: 0.6rem 0 0.3rem 0;
   }
@@ -888,18 +916,12 @@ function showChoices(existingInstall) {
   el.style.display = 'block';
   if (existingInstall) {
     el.innerHTML = `
-      <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
       <div class="choice-card">
-        <h3 title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</h3>
-        <button onclick="start('reinstall')">Reinstall from scratch</button>
-      </div>
-      <div class="choice-card">
-        <h3 title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update</h3>
-        <button onclick="start('update')">Update (git reset --hard)</button>
-      </div>
-      <div class="choice-card">
-        <h3 title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</h3>
-        <button class="cancel" onclick="start('cancel')">Cancel</button>
+        <h3 class="tile-heading">Install or Update</h3>
+        <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
+        <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
+        <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
+        <button class="choice-btn cancel" onclick="start('cancel')" title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</button>
       </div>
     `;
   } else {
