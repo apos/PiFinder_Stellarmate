@@ -25,6 +25,7 @@ from urllib.parse import urlparse, parse_qs
 
 import pam_auth
 import indi_client
+import webmanager_client
 
 PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
@@ -1064,6 +1065,41 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(status)
             return
 
+        if parsed.path == "/api/webmanager/profiles":
+            # Phase 2 of the Mount Bridge web integration (see
+            # docs/concepts/mount_bridge_web_integration.md) - UC3 (profile
+            # selection, read-only list) + server running-state, so the
+            # frontend can show which profile is actually active right now.
+            try:
+                profiles = webmanager_client.list_profiles()
+                status = webmanager_client.server_status()
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+                return
+            self._send_json(
+                {
+                    "profiles": [p.get("name") for p in profiles],
+                    "running": status["running"],
+                    "active_profile": status["active_profile"],
+                }
+            )
+            return
+
+        if parsed.path == "/api/webmanager/pifinder_drivers":
+            # UC4/UC5 groundwork: whether PiFinder LX200 / Mount Bridge are
+            # currently in the given profile - drives the two toggle
+            # buttons' checked state.
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            try:
+                self._send_json(webmanager_client.pifinder_driver_status(profile))
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+            return
+
         if parsed.path == "/api/hardware_status":
             self._send_json(
                 {
@@ -1261,6 +1297,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok, error = _start_keyboard_bridge()
             self._send_json({"success": ok, "error": error})
+            return
+
+        if parsed.path == "/api/webmanager/pifinder_drivers":
+            # UC4: add/remove ONLY PiFinder LX200 / PiFinder Mount Bridge to/
+            # from a profile - no other profile editing. See
+            # webmanager_client.py's module docstring for why removal uses a
+            # delete-and-recreate-the-profile workaround (a StellarMate Web
+            # Manager quirk found and verified live while building this -
+            # not present in the open-source project it's based on).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            driver = qs.get("driver", [""])[0]
+            action = qs.get("action", [""])[0]
+            if not profile or driver not in ("lx200", "bridge") or action not in ("add", "remove"):
+                self._send_json(
+                    {"success": False, "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"},
+                    status=400,
+                )
+                return
+            setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
+            try:
+                setter(profile, action == "add")
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            self._send_json({"success": True})
             return
 
         self.send_error(404)

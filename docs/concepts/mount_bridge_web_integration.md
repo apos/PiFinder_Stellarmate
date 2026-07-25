@@ -127,12 +127,25 @@ OpenAPI schema (`/openapi.json`) on 2026-07-20, not guessed:
 | `POST /api/server/stop` | Stop the running `indiserver` (UC2) |
 | `GET /api/drivers` | Full driver catalog — confirmed `PiFinder LX200` (family `Telescopes`) and `PiFinder Mount Bridge` (family `Auxiliary`) are both registered correctly |
 
-**Open question for Phase 2 (driver *removal*, UC4's other half)**: no endpoint among the above
-removes a single driver from a profile — `DELETE /api/profiles/{name}` deletes the *entire*
-profile, and there's no visible "remove one driver" route. Needs further investigation before
-Phase 2 is implemented (possibilities: a route not yet found, or delete-and-recreate-the-profile as
-a fallback — used once already, live, just to restore this Pi's own test profile back to its
-original driver list after verifying the above).
+**Resolved for Phase 2 (driver *removal*, UC4's other half)**: `POST /api/profiles/{name}/drivers`
+is a **full replace** of the profile's driver list, confirmed two ways — reading the open-source
+reference this is based on (`github.com/knro/indiwebmanager`'s `Database.save_profile_drivers()`:
+`DELETE FROM driver WHERE profile=?` then re-inserting exactly the given list), and a clean live
+test (posting a list missing one previously-present stock driver correctly removed it). So in
+principle, "add" and "remove" are the same read-modify-write operation against one endpoint — fetch
+current labels, add/drop the one that matters, POST the full list back.
+
+**However — a StellarMate-specific quirk, found and reproduced live, not present in the reference
+implementation's logic**: once `PiFinder LX200` has been part of a profile, a later replace call
+that excludes it does **not** actually remove it — reproduced 3 times from a guaranteed-clean
+profile (delete + recreate immediately before each attempt), while removing a stock driver (e.g.
+`Focuser Simulator`) the same way works correctly every time. Root cause unknown —
+`stellarmatewebmanager` is a closed, PyArmor-obfuscated fork, not something this project can debug
+by reading its source, and no further reverse-engineering was attempted. **Workaround implemented
+and verified live**: removal never tries to update a profile in place — it deletes the whole
+profile and recreates it (same name/port/autostart/autoconnect/driver_source, fetched first)
+with the trimmed driver list from scratch. Heavier than the endpoint this was meant to use, but
+reliable. See `gui_installer/webmanager_client.py`'s module docstring for the full writeup.
 
 **Also confirmed live**: `BRIDGE_MODE`/`CORRECTION_ACTION`/`DRIFT_THRESHOLD`/`DRIFT_STATUS` are
 only defined by the driver once it's actually connected (`updateProperties()` in

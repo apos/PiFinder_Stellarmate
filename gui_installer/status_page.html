@@ -372,6 +372,12 @@
           <div class="hw-row" title="Read-only status of the PiFinder Mount Bridge INDI driver, queried directly from indiserver (127.0.0.1:7624) - independent of whether a browser tab has the INDI Control Panel open. Coupling mode and drift only ever show once the driver is actually connected (it doesn't define those properties before then) - 'loaded, not connected' is the normal state until you connect it via the INDI Control Panel or (once built) this page's own controls. See docs/concepts/mount_bridge_web_integration.md.">
             <span class="status-dot dot-white" id="mount-bridge-dot"></span>Mount Bridge: <span id="mount-bridge-text">checking&hellip;</span>
           </div>
+          <div class="hw-row" id="wm-drivers-row" title="Phase 2 of the Mount Bridge web integration: adds/removes ONLY the two PiFinder drivers to/from the selected Web Manager profile - no other profile editing happens here. Pick the profile first (same list as the Web Manager's own Equipment Profile dropdown).">
+            Profile:
+            <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+            <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+            <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+          </div>
         </div>
         <div id="ext-hw-status">
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
@@ -1376,6 +1382,99 @@ async function refreshMountBridgeStatus() {
 }
 setInterval(refreshMountBridgeStatus, 20000);
 refreshMountBridgeStatus();
+
+// Phase 2 of the Mount Bridge web integration - profile selection (UC3,
+// read-only list, no create/edit) + add/remove ONLY the two PiFinder
+// drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
+let wmSelectedProfile = null;
+
+async function loadWmProfiles() {
+  const selectEl = document.getElementById('wm-profile-select');
+  try {
+    const resp = await fetch('/api/webmanager/profiles', { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error || !data.profiles) throw new Error(data.error || 'no profiles');
+    const previousValue = wmSelectedProfile;
+    selectEl.innerHTML = '';
+    data.profiles.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name === data.active_profile ? `${name} (running)` : name;
+      selectEl.appendChild(opt);
+    });
+    // Keep the previous selection if it still exists, otherwise fall back
+    // to the actually-running profile if there is one, else the first.
+    if (previousValue && data.profiles.includes(previousValue)) {
+      selectEl.value = previousValue;
+    } else if (data.active_profile) {
+      selectEl.value = data.active_profile;
+    }
+    wmSelectedProfile = selectEl.value || null;
+    selectEl.disabled = data.profiles.length === 0;
+    if (wmSelectedProfile) {
+      refreshWmDriverButtons();
+    } else {
+      setWmDriverButton('lx200', null);
+      setWmDriverButton('bridge', null);
+    }
+  } catch (e) {
+    selectEl.innerHTML = '<option>unavailable</option>';
+    setWmDriverButton('lx200', null);
+    setWmDriverButton('bridge', null);
+  }
+}
+
+function onWmProfileChange() {
+  wmSelectedProfile = document.getElementById('wm-profile-select').value;
+  refreshWmDriverButtons();
+}
+
+function setWmDriverButton(driver, present) {
+  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
+  if (present === null) {
+    btn.textContent = `${label}: unknown`;
+    btn.disabled = true;
+    return;
+  }
+  btn.textContent = present ? `${label}: remove` : `${label}: add`;
+  btn.disabled = false;
+}
+
+async function refreshWmDriverButtons() {
+  if (!wmSelectedProfile) return;
+  try {
+    const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    setWmDriverButton('lx200', data.has_lx200);
+    setWmDriverButton('bridge', data.has_bridge);
+  } catch (e) {
+    setWmDriverButton('lx200', null);
+    setWmDriverButton('bridge', null);
+  }
+}
+
+async function toggleWmDriver(driver) {
+  if (!wmSelectedProfile) return;
+  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  const wantsAdd = btn.textContent.trim().endsWith('add');
+  btn.disabled = true;
+  btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  try {
+    const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=${driver}&action=${wantsAdd ? 'add' : 'remove'}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - refreshWmDriverButtons() below reflects whatever the
+    // actual state ended up being, success or not, rather than assuming.
+  }
+  refreshWmDriverButtons();
+}
+
+loadWmProfiles();
+setInterval(loadWmProfiles, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU
 // read / PiFinder's own GPS status), classified as hardware/driver/python on
