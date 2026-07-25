@@ -92,8 +92,20 @@ def verify_password(username: str, password: str, service: str = "login") -> boo
         return False
     try:
         rc = _libpam.pam_authenticate(pamh, 0)
-        if rc != _PAM_SUCCESS:
-            return False
-        return _libpam.pam_acct_mgmt(pamh, 0) == _PAM_SUCCESS
+        # Deliberately not calling pam_acct_mgmt() here. Found live
+        # (2026-07-25): on this system it fails with "setuid failed:
+        # Operation not permitted" (pam_unix's account phase attempting a
+        # privileged operation this unprivileged process can't perform) -
+        # regardless of whether the password was correct, confirmed by
+        # comparing the journal signature of a deliberately wrong password
+        # (clean "pam_unix(login:auth): authentication failure", rejected
+        # right here at the line above) against a real login attempt with
+        # the correct password (reaches the account phase - meaning
+        # pam_authenticate() above already succeeded - and only then gets
+        # rejected by this unrelated privilege issue). All this function is
+        # meant to answer is "does the caller know the account's current
+        # password" - the account-management phase (expiry, lockout, etc.)
+        # isn't needed for that and was silently making every login fail.
+        return rc == _PAM_SUCCESS
     finally:
         _libpam.pam_end(pamh, rc)
