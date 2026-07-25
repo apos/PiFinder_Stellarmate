@@ -44,6 +44,7 @@ instance on 2026-07-20/25 (not assumed from documentation):
 """
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Optional
 
@@ -57,6 +58,15 @@ PIFINDER_BRIDGE_LABEL = "PiFinder Mount Bridge"
 
 class WebManagerError(Exception):
     """Raised for connection/HTTP failures talking to the Web Manager."""
+
+
+def _q(profile: str) -> str:
+    """URL-encodes a profile name for use as a path segment. Profile names
+    are free text (e.g. "Simulation PFSM" has a space) - found live: an
+    unencoded space in the request path meant a profile with a space in its
+    name silently failed to start via /api/server/start/{profile}, while
+    "Simulators" (no special characters) had worked fine by coincidence."""
+    return urllib.parse.quote(profile, safe="")
 
 
 def _request(method: str, path: str, host: str, port: int, timeout: float, body=None):
@@ -85,7 +95,7 @@ def get_profile_labels(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> list:
     """Current driver labels (e.g. ["Telescope Simulator", ...]) for a profile."""
-    result = _request("GET", f"/api/profiles/{profile}/labels", host, port, timeout) or []
+    result = _request("GET", f"/api/profiles/{_q(profile)}/labels", host, port, timeout) or []
     return [d["label"] for d in result if "label" in d]
 
 
@@ -94,7 +104,7 @@ def set_profile_drivers(
 ) -> None:
     """Full replace of a profile's driver list - see module docstring."""
     _request(
-        "POST", f"/api/profiles/{profile}/drivers", host, port, timeout,
+        "POST", f"/api/profiles/{_q(profile)}/drivers", host, port, timeout,
         body=[{"label": label} for label in labels],
     )
 
@@ -113,10 +123,10 @@ def _recreate_profile_with_drivers(
     driver_source) with exactly the given driver list. Used for driver
     *removal* only - see the module docstring for why the plain replace
     endpoint isn't reliable for that specific case."""
-    _request("DELETE", f"/api/profiles/{profile}", host, port, timeout)
-    _request("POST", f"/api/profiles/{profile}", host, port, timeout)
+    _request("DELETE", f"/api/profiles/{_q(profile)}", host, port, timeout)
+    _request("POST", f"/api/profiles/{_q(profile)}", host, port, timeout)
     _request(
-        "PUT", f"/api/profiles/{profile}", host, port, timeout,
+        "PUT", f"/api/profiles/{_q(profile)}", host, port, timeout,
         body={
             "port": meta.get("port"),
             "autostart": bool(meta.get("autostart")),
@@ -174,7 +184,7 @@ def server_status(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: f
 def start_server(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> None:
-    _request("POST", f"/api/server/start/{profile}", host, port, timeout, body=[])
+    _request("POST", f"/api/server/start/{_q(profile)}", host, port, timeout, body=[])
 
 
 def stop_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> None:
