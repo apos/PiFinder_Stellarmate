@@ -302,8 +302,35 @@
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
     margin-top: 1rem;
+    position: relative;
   }
   #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  /* Big drift readout, top-right - only shown once coupling is actually
+     watching drift (Verify/Alert or Auto-correct; Goto-Forward has no
+     threshold concept, see setWmCoupling()'s own docstring reference).
+     Green/yellow/red thresholds: green up to the configured Auto-correct/
+     Verify-Alert threshold, yellow beyond that but still inside the
+     assumed eyepiece field of view, red once past that FOV estimate -
+     0.5 degrees (full-moon diameter) is a reasonable generic assumption
+     per user request, not a measured value (actual FOV depends on the
+     eyepiece/camera actually in use). */
+  #mb-drift-badge {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.9rem;
+    font-size: 1.7rem;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0.3rem 0.6rem;
+    border-radius: 8px;
+    background: #222;
+    border: 1px solid #444;
+    color: #888;
+    text-align: right;
+  }
+  #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
+  #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
+  #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   #mb-diagram {
@@ -495,6 +522,7 @@
            which now follow underneath rather than being interleaved. -->
       <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge</h3>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+      <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera)."></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
         <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
@@ -1532,6 +1560,22 @@ function updateCouplingButtons(mode) {
   });
 }
 
+const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
+
+function updateDriftBadge(driftArcmin, threshold) {
+  const badge = document.getElementById('mb-drift-badge');
+  if (driftArcmin === null || driftArcmin === undefined) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  badge.textContent = `${driftArcmin.toFixed(1)}'`;
+  badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red');
+  if (driftArcmin >= MB_FOV_LIMIT_ARCMIN) badge.classList.add('mb-drift-red');
+  else if (driftArcmin > threshold) badge.classList.add('mb-drift-yellow');
+  else badge.classList.add('mb-drift-green');
+}
+
 function updateMbDiagram(data) {
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-node-lx200-dot', data.pifinder_connected);
@@ -1541,6 +1585,7 @@ function updateMbDiagram(data) {
 
   const captionEl = document.getElementById('mb-mode-caption');
   const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
+  updateDriftBadge(data.drift_arcmin, threshold);
 
   if (!data.coupling_mode || data.coupling_mode === 'MODE_OFF') {
     setMbArrow('mb-arrow-left', 'off');
