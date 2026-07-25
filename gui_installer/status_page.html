@@ -1435,9 +1435,16 @@ async function runHardwareTest() {
     btn.disabled = false;
     return;
   }
-  const logEl = document.getElementById('log');
-  logEl.classList.remove('log-placeholder');
-  logEl.style.display = 'block';
+  // Fresh terminal for this run - but only if no install/update run or mode
+  // switch currently owns it (the backend already refuses to run those
+  // together with a hardware test, so this is just about not stomping on a
+  // still-visible previous log), same guard as toggleMode() uses.
+  if (!polling && !modeLogPolling) {
+    const logEl = document.getElementById('log');
+    logEl.textContent = '';
+    logEl.classList.add('log-placeholder');
+  }
+  document.getElementById('log').style.display = 'block';
   hwTestLogPosition = 0;
   hwTestPolling = true;
   pollHwTestLog();
@@ -1457,6 +1464,7 @@ async function pollHwTestLog() {
   }
   if (data.lines.length > 0) {
     const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
     const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
     logEl.textContent += data.lines.join('\n') + '\n';
     hwTestLogPosition = data.position;
