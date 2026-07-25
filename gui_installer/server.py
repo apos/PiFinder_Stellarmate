@@ -671,6 +671,27 @@ def _run_hardware_test():
         _hwtest_running = False
 
 
+def _startup_hardware_test(timeout=120, interval=2):
+    """Runs at Control Center startup (see main()). pifinder-control-center.
+    service has no ordering dependency on pifinder.service (deliberately -
+    the Control Center must be able to start standalone, e.g. before PiFinder
+    is even installed) - the two race independently at boot. Running the
+    test immediately then reliably lost that race: PiFinder's own web server
+    typically isn't up for several seconds after its service starts, so the
+    very first startup test kept reporting a stale "PiFinder API
+    unreachable" Camera/GPS result that then sat there until someone
+    clicked the button by hand (live-reproduced across two reboots - see
+    basic-memory pifinder-stellarmate/00048). Poll for PiFinder to answer
+    first, then run the real test - if it never comes up within `timeout`,
+    run anyway (accurately reports "not running" rather than waiting forever)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
+            break
+        time.sleep(interval)
+    _run_hardware_test()
+
+
 def _pifinder_debug_solve_status(port: str):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state - PiFinder's own
@@ -1243,7 +1264,7 @@ def main():
     # feature - see basic-memory pifinder-stellarmate/00048). No mutex check
     # needed here: nothing else can possibly be running yet this early.
     _hwtest_running = True
-    threading.Thread(target=_run_hardware_test, daemon=True).start()
+    threading.Thread(target=_startup_hardware_test, daemon=True).start()
     _server.serve_forever()
 
 
