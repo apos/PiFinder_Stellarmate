@@ -313,6 +313,10 @@
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
+  #mb-settings-divider {
+    border-top: 1px solid #333;
+    margin: 0.9rem 0 0.8rem 0;
+  }
   #mb-log {
     margin-top: 0.6rem;
     background: #111;
@@ -437,28 +441,12 @@
       </div>
     </div>
     <div id="mount-bridge-tile">
+      <!-- Current status first: connection diagram, Connect buttons,
+           Coupling, Threshold - the "operate it" workflow, in this order,
+           per live user feedback. Visually separated (see #mb-settings-divider
+           below) from the one-time "set it up" rows (Profile/Drivers/Mount),
+           which now follow underneath rather than being interleaved. -->
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
-
-      <div class="mb-row" title="Start or stop this profile's indiserver. Restart it after adding/removing a driver so the change actually takes effect.">
-        <span class="mb-row-label">Profile:</span>
-        <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
-        <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
-      </div>
-      <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-label">Drivers:</span>
-        <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-        <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
-      </div>
-      <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-label">Mount:</span>
-        <select id="wm-mount-select" disabled><option>&hellip;</option></select>
-        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
-      </div>
-
-      <!-- Connection status, Connect buttons, Coupling, Threshold: kept as
-           one visual group, in this order, per live user feedback - these
-           four are the "operate it" workflow, separate from the "set it up"
-           rows above (Profile/Drivers/Mount). -->
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
         <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
@@ -487,6 +475,25 @@
           <option value="goto">Goto/Track</option>
         </select>
       </div>
+
+      <div id="mb-settings-divider"></div>
+
+      <div class="mb-row" title="Start or stop this profile's indiserver. Restart it after adding/removing a driver so the change actually takes effect.">
+        <span class="mb-row-label">Profile:</span>
+        <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+        <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+      </div>
+      <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
+        <span class="mb-row-label">Drivers:</span>
+        <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+        <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+      </div>
+      <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+        <span class="mb-row-label">Mount:</span>
+        <select id="wm-mount-select" disabled><option>&hellip;</option></select>
+        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
+      </div>
+
       <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
     <div id="status-row">
