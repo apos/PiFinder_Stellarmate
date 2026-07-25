@@ -528,23 +528,24 @@
       </div>
       <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       <div id="wm-kstars-link-row" class="mb-row" style="display:none;">
+        <span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span>
         <span id="wm-kstars-link-text"></span>
         <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
       </div>
 
       <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-label mb-step-label" id="wm-step2-label">2. Drivers:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span>
         <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
         <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
       </div>
       <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-label mb-step-label" id="wm-step3-label">3. Mount:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span>
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
       <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Connect:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span>
         <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
         <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
@@ -1578,6 +1579,7 @@ function updateMbDiagram(data) {
 // completion always triggers an immediate, fresh refresh anyway.
 let mbActionInFlight = false;
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
+let wmKstarsLinked = null;
 let wmPifinderConnected = null;
 let wmBridgeConnected = null;
 let wmMountConnected = null;
@@ -1751,12 +1753,19 @@ async function checkKstarsLink() {
   const row = document.getElementById('wm-kstars-link-row');
   const textEl = document.getElementById('wm-kstars-link-text');
   const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
-  if (!wmSelectedProfile) { row.style.display = 'none'; return; }
+  if (!wmSelectedProfile) { row.style.display = 'none'; wmKstarsLinked = null; updateStepIndicators(); return; }
   try {
     const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
-    if (!data.checked) { row.style.display = 'none'; return; }  // no KStars DB found - nothing to report
+    if (!data.checked) {  // no KStars DB found - nothing to report, not a real checkpoint here
+      row.style.display = 'none';
+      wmKstarsLinked = null;
+      updateStepIndicators();
+      return;
+    }
     row.style.display = '';
+    wmKstarsLinked = !!data.linked;
+    updateStepIndicators();
     // Recheck itself doesn't change anything - it's colored to reflect
     // whether the underlying check currently passes, same "green means
     // satisfied" idea used everywhere else on this tile.
@@ -1773,6 +1782,8 @@ async function checkKstarsLink() {
     }
   } catch (e) {
     row.style.display = 'none';
+    wmKstarsLinked = null;
+    updateStepIndicators();
   }
 }
 
@@ -1919,7 +1930,7 @@ async function setWmActiveDevices() {
   const mount = document.getElementById('wm-mount-select').value;
   if (!unlinking && !mount) return;
   mbActionInFlight = true;
-  setStepBusy(3, true);
+  setStepBusy(4, true);
   const btn = document.getElementById('wm-set-active-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -1936,7 +1947,7 @@ async function setWmActiveDevices() {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
   mbActionInFlight = false;
-  setStepBusy(3, false);
+  setStepBusy(4, false);
 }
 
 // Green + "Disconnect X" once a device is actually connected, per live
@@ -1960,7 +1971,7 @@ function refreshConnectButtons() {
 
 async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   mbActionInFlight = true;
-  setStepBusy(4, true);
+  setStepBusy(5, true);
   const btn = document.getElementById(btnId);
   btn.disabled = true;
   btn.textContent = disconnecting ? 'disconnecting…' : 'connecting…';
@@ -1978,7 +1989,7 @@ async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.disabled = false; refreshConnectButtons(); }, 1500);
   mbActionInFlight = false;
-  setStepBusy(4, false);
+  setStepBusy(5, false);
 }
 
 function connectWmDevice(deviceName, btnId) {
@@ -2027,25 +2038,26 @@ function setWmDriverButton(driver, present) {
 // or not" at a glance.
 function updateStepIndicators() {
   document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
-  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
-  document.getElementById('wm-step3-label').classList.toggle('mb-step-done', !!wmActiveMount);
+  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmKstarsLinked === true);
+  document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
+  document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
   const connectTargets = _availableConnectTargets();
-  document.getElementById('wm-step4-label').classList.toggle(
+  document.getElementById('wm-step5-label').classList.toggle(
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
 // per live feedback, the green/grey checkmark alone didn't show "working on
-// it right now" while a click was in flight. wmStep4Busy is a counter, not
+// it right now" while a click was in flight. wmStep5Busy is a counter, not
 // a bool, since "Connect all" can have 2-3 connects running at once.
-let wmStep4Busy = 0;
+let wmStep5Busy = 0;
 function setStepBusy(stepNum, busy) {
   const el = document.getElementById(`wm-step${stepNum}-label`);
-  if (stepNum === 4) {
-    wmStep4Busy = Math.max(0, wmStep4Busy + (busy ? 1 : -1));
-    el.classList.toggle('mb-step-busy', wmStep4Busy > 0);
-    if (wmStep4Busy === 0) updateStepIndicators();
+  if (stepNum === 5) {
+    wmStep5Busy = Math.max(0, wmStep5Busy + (busy ? 1 : -1));
+    el.classList.toggle('mb-step-busy', wmStep5Busy > 0);
+    if (wmStep5Busy === 0) updateStepIndicators();
     return;
   }
   el.classList.toggle('mb-step-busy', busy);
@@ -2069,7 +2081,7 @@ async function refreshWmDriverButtons() {
 async function toggleWmDriver(driver) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
-  setStepBusy(2, true);
+  setStepBusy(3, true);
   const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
   const wantsAdd = btn.textContent.trim().endsWith('add');
   btn.disabled = true;
@@ -2088,7 +2100,7 @@ async function toggleWmDriver(driver) {
   await loadWmProfiles();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
-  setStepBusy(2, false);
+  setStepBusy(3, false);
 }
 
 loadWmProfiles();
