@@ -1233,9 +1233,17 @@ def main():
     # _require_auth()); /state, /log, /shutdown stay open (see their own
     # comments). Do not expose this port beyond a private home/observatory
     # LAN regardless.
-    global _server
+    global _server, _hwtest_running
     _server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
+    # Run Test Hardware once automatically on every Control Center start
+    # (not just on a manual button click) - the tile would otherwise sit on
+    # the bare "present (not yet tested)" presence check, possibly for a long
+    # time, after every restart (including the one that just deployed this
+    # feature - see basic-memory pifinder-stellarmate/00048). No mutex check
+    # needed here: nothing else can possibly be running yet this early.
+    _hwtest_running = True
+    threading.Thread(target=_run_hardware_test, daemon=True).start()
     _server.serve_forever()
 
 

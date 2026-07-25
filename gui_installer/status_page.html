@@ -1480,6 +1480,37 @@ async function pollHwTestLog() {
   }
 }
 
+// Picks up an already-running or already-completed Test Hardware run on page
+// load - the backend now auto-runs one on every Control Center start (see
+// main()'s startup thread in server.py), so a freshly opened page should
+// reflect that instead of sitting on the bare presence check until someone
+// clicks the button.
+async function checkHwTestOnLoad() {
+  let data;
+  try {
+    const resp = await fetch('/api/hardware_test_log?position=0');
+    data = await resp.json();
+  } catch (e) {
+    return;
+  }
+  if (data.running) {
+    document.getElementById('hwtest-btn').disabled = true;
+    document.getElementById('hwtest-status-text').textContent = 'Running…';
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    logEl.style.display = 'block';
+    hwTestLogPosition = 0;
+    hwTestPolling = true;
+    pollHwTestLog();
+  } else if (data.result && (data.result.camera || data.result.imu || data.result.gps)) {
+    // Already finished before this page loaded (e.g. the startup auto-run) -
+    // just reflect the result in the tile, without replaying its log lines
+    // into a Terminal reserved for actions taken from this page.
+    applyHwTestResult(data.result);
+  }
+}
+checkHwTestOnLoad();
+
 init();
 // Deferred so init()'s own /state fetch always gets to set `polling` first -
 // otherwise this could race init() on page load and start a second,
