@@ -1378,6 +1378,45 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_coupling":
+            # Phase 4: the three one-click Coupling presets. mode is
+            # "verify_alert"|"auto_correct"|"goto_forward" (short form here,
+            # translated to the driver's own MODE_* constants in
+            # indi_client.set_coupling_mode()). threshold/action are only
+            # meaningful for verify_alert/auto_correct - harmless if sent
+            # for goto_forward, indi_client.py ignores them there.
+            qs = parse_qs(parsed.query)
+            mode_arg = qs.get("mode", [""])[0]
+            mode_map = {
+                "verify_alert": "MODE_VERIFY_ALERT",
+                "auto_correct": "MODE_AUTO_CORRECT",
+                "goto_forward": "MODE_GOTO_FORWARD",
+            }
+            if mode_arg not in mode_map:
+                self._send_json(
+                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward"},
+                    status=400,
+                )
+                return
+            threshold_arg = qs.get("threshold", [""])[0]
+            action_arg = qs.get("action", [""])[0]
+            try:
+                threshold = float(threshold_arg) if threshold_arg else None
+            except ValueError:
+                self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
+                return
+            try:
+                indi_client.set_coupling_mode(
+                    mode_map[mode_arg],
+                    drift_threshold=threshold,
+                    correction_action=action_arg or None,
+                )
+            except indi_client.INDIClientError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 

@@ -235,13 +235,18 @@ same as today.
   be right. Update: the trickiest part of this (indiserver's multi-root XML stream vs. a strict
   single-document parser) is resolved and verified live in Phase 1's implementation — see
   `gui_installer/indi_client.py`'s own docstring for the synthetic-wrapper-root technique used.
+  **Second update (Phase 4)**: a related but distinct bug was found and fixed - the original read
+  loop stopped on a *silence* timeout, which hangs indefinitely against an already-connected device
+  continuously broadcasting updates (reproduced live: 120+ second hang). Fixed with a hard
+  wall-clock read deadline instead - see Phase 4's entry in §12 for the full writeup.
 - **Distinguishing "which driver is a mount"** in UC5's dropdown: INDI doesn't generically expose a
   driver's device class through simple property introspection. Simplest, safest option for a first
   version: list every non-PiFinder device in the profile and trust the user to pick correctly,
   rather than trying to auto-detect "is this a telescope driver."
-- **Removing a single driver from a profile** (Phase 2's other half, UC4) — no Web Manager endpoint
-  for this was found during Phase 1's API exploration (see §4). Still open; needs resolving before
-  Phase 2 is implemented.
+- ~~Removing a single driver from a profile~~ — resolved in Phase 2 (see §4 and §12's Phase 2
+  entry): the endpoint *is* a full replace, but a StellarMate-specific quirk meant removing
+  `PiFinder LX200` specifically didn't work via in-place replace - worked around with a
+  delete-and-recreate-the-profile fallback, verified live.
 - ~~Web Manager REST paths need live confirmation~~ — done, see §4 (verified against the live
   `/openapi.json` on 2026-07-20).
 
@@ -276,6 +281,28 @@ build is lower-risk than one large change:
    live-queried from the profile's other drivers) plus three Connect buttons, all disabled unless
    the selected profile's `indiserver` is actually running.
 4. **Phase 4 — the three one-click presets** (UC6/UC7 complete): builds directly on Phase 3.
+   **Done and verified live (2026-07-25)**. `indi_client.py` gained `set_number()` and
+   `set_coupling_mode()` (sets `DRIFT_THRESHOLD`/`CORRECTION_ACTION` *before* `BRIDGE_MODE` itself,
+   so there's no window where coupling is active with stale supporting values). New UI: three preset
+   buttons (Verify/Alert only, Auto-correct on drift, Goto-Forward) plus an editable
+   threshold/Sync-or-Goto pair pre-filled with the driver's own defaults, all disabled until a mount
+   is selected and Mount Bridge is actually connected (UC7). Full live test cycled through all three
+   presets against a real `indiserver` and confirmed via `get_properties()` afterward: Verify/Alert
+   set `THRESHOLD_ARCMIN` correctly; Auto-Correct set both `THRESHOLD_ARCMIN` and
+   `CORRECTION_ACTION` (`ACTION_GOTO`) correctly; Goto-Forward left the still-set threshold from the
+   previous preset **untouched**, exactly matching §4's reference table.
+
+   **A real bug was found and fixed while testing this phase**, in `indi_client.py`'s
+   `get_properties()` (used by every phase, not just this one): the original read loop stopped
+   reading once the socket had ~`timeout` seconds of *silence* - which works fine for a
+   disconnected/idle device, but a **connected** device (the normal case from Phase 3 onward)
+   continuously broadcasts periodic property updates (e.g. a connected mount's coordinates), so the
+   connection never goes quiet and the old loop hung indefinitely. Reproduced live: a single
+   `get_properties()` call against an already-connected `Telescope Simulator` hung for 120+ seconds
+   before being killed. Fixed by switching to a hard wall-clock read deadline (stop after `timeout`
+   seconds total, regardless of how much traffic keeps arriving) instead of a silence-based one -
+   verified the fix returns in exactly the requested timeout against the same connected device that
+   triggered the bug.
 5. **Phase 5 (stretch, separate decision)** — port the framework-agnostic module into PiFinder's own
    web interface (§7).
 

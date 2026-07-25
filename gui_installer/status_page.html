@@ -387,6 +387,19 @@
             <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
             <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
           </div>
+          <div class="hw-row" id="wm-coupling-row" title="Phase 4: one-click Coupling presets, using PiFinder's own terminology instead of raw INDI property names - see docs/concepts/mount_bridge_web_integration.md. Disabled until a mount is selected/connected above (all three presets need one - drift is PiFinder-vs-mount). Threshold/Sync-or-Goto only apply to Verify/Alert and Auto-correct - pre-filled with the driver's own defaults, editable before clicking.">
+            Coupling:
+            <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="setWmCoupling('verify_alert')" disabled>Verify/Alert only</button>
+            <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="setWmCoupling('auto_correct')" disabled>Auto-correct on drift</button>
+            <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="setWmCoupling('goto_forward')" disabled>Goto-Forward</button>
+            <br>
+            Threshold: <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
+            Correction:
+            <select id="wm-action-select">
+              <option value="sync" selected>Sync</option>
+              <option value="goto">Goto/Track</option>
+            </select>
+          </div>
         </div>
         <div id="ext-hw-status">
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
@@ -1363,6 +1376,17 @@ async function refreshHardwareStatus() {
 // no controls yet (Phases 2-4 add those). "running" means the driver is
 // loaded in the currently-running profile; coupling_mode/drift_arcmin stay
 // null until it's actually connected, which is expected, not an error.
+// Phase 4: the three preset buttons only make sense once Mount Bridge is
+// actually connected to a mount (drift is PiFinder-vs-mount - all three
+// presets need one, see UC7 in the concept doc) - gated here off the same
+// status this row already polls, rather than a separate check.
+function updateWmCouplingGate(active_mount, connected) {
+  const enabled = Boolean(active_mount) && connected;
+  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+    document.getElementById(id).disabled = !enabled;
+  });
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -1372,8 +1396,10 @@ async function refreshMountBridgeStatus() {
     if (!data.running) {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
+      updateWmCouplingGate(false, false);
       return;
     }
+    updateWmCouplingGate(data.active_mount, data.coupling_mode !== null);
     if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
       dotEl.className = 'status-dot dot-green';
       const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
@@ -1387,10 +1413,37 @@ async function refreshMountBridgeStatus() {
   } catch (e) {
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
+    updateWmCouplingGate(false, false);
   }
 }
 setInterval(refreshMountBridgeStatus, 20000);
 refreshMountBridgeStatus();
+
+async function setWmCoupling(mode) {
+  const btnId = { verify_alert: 'wm-preset-verify-btn', auto_correct: 'wm-preset-auto-btn', goto_forward: 'wm-preset-goto-btn' }[mode];
+  const btn = document.getElementById(btnId);
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'setting…';
+  const threshold = document.getElementById('wm-threshold-input').value;
+  const action = document.getElementById('wm-action-select').value;
+  try {
+    const params = new URLSearchParams({ mode });
+    if (mode !== 'goto_forward') {
+      params.set('threshold', threshold);
+      if (mode === 'auto_correct') params.set('action', action);
+    }
+    const resp = await fetch(`/api/mount_bridge_coupling?${params}`, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - refreshMountBridgeStatus() below reflects whatever the
+    // actual state ended up being, same pattern as the other toggle
+    // buttons on this page.
+  }
+  btn.textContent = originalText;
+  refreshMountBridgeStatus();
+}
 
 // Phase 2 of the Mount Bridge web integration - profile selection (UC3,
 // read-only list, no create/edit) + add/remove ONLY the two PiFinder

@@ -27,6 +27,7 @@ with a strict incremental XML parser; verified live against a real
 property and 25 others) before being written here as this module.
 """
 import socket
+import time
 import xml.parsers.expat
 from typing import Optional
 from xml.sax.saxutils import escape as _xml_escape
@@ -116,21 +117,36 @@ def get_properties(
         raise INDIClientError(f"Could not connect to indiserver at {host}:{port}: {e}") from e
 
     try:
-        sock.settimeout(timeout)
         request = (
             f'<getProperties version="1.7" device="{device}"/>'
             if device
             else '<getProperties version="1.7"/>'
         )
         sock.sendall(request.encode())
+        # Hard wall-clock deadline for the whole read, NOT "stop after N
+        # seconds of silence" - a *connected* device (the normal case once
+        # Phase 3 has run) keeps the connection continuously busy with
+        # periodic setXxxVector updates (e.g. a connected mount broadcasting
+        # its coordinates), which never produces a quiet gap for a
+        # silence-based read loop to stop on. Found live: a single
+        # get_properties() call against an already-connected "Telescope
+        # Simulator" hung indefinitely under the old silence-based version
+        # of this function - fixed by capping total read time instead,
+        # regardless of how much traffic keeps arriving.
+        deadline = time.monotonic() + timeout
         try:
             while True:
-                chunk = sock.recv(65536)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                sock.settimeout(remaining)
+                try:
+                    chunk = sock.recv(65536)
+                except socket.timeout:
+                    break
                 if not chunk:
                     break
                 parser.Parse(chunk, False)
-        except socket.timeout:
-            pass  # expected: indiserver keeps the connection open, we only read the initial burst
         except xml.parsers.expat.ExpatError as e:
             raise INDIClientError(f"Malformed INDI XML from indiserver: {e}") from e
     finally:
@@ -285,3 +301,65 @@ def set_mount_bridge_active_devices(
         {"ACTIVE_PIFINDER": pifinder_device, "ACTIVE_MOUNT": mount_device},
         host, port, timeout,
     )
+
+
+def set_number(
+    device: str,
+    vector_name: str,
+    values: dict,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets one or more elements of an INDI number vector. `values` is
+    {element_name: float} - like set_text(), elements not included are left
+    untouched by the driver."""
+    lines = [f'<newNumberVector device="{_xml_escape(device)}" name="{_xml_escape(vector_name)}">']
+    for element, value in values.items():
+        lines.append(f'<oneNumber name="{_xml_escape(element)}">{value}</oneNumber>')
+    lines.append("</newNumberVector>")
+    _send("\n".join(lines), host, port, timeout)
+
+
+# Phase 4: the three Coupling-mode presets. See docs/concepts/
+# mount_bridge_web_integration.md §4 for the verified reference table this
+# maps to - which mode needs DRIFT_THRESHOLD/CORRECTION_ACTION and which
+# doesn't (MODE_GOTO_FORWARD needs neither, confirmed against
+# pifinder_mount_bridge.cpp's TimerHit()).
+COUPLING_MODES = {"MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD"}
+DRIFT_THRESHOLD_DEFAULT = 5.0  # matches the driver's own IUFillNumber default
+CORRECTION_ACTION_DEFAULT = "sync"  # matches the driver's own default (ACTION_SYNC is ISS_ON)
+
+
+def set_coupling_mode(
+    mode: str,
+    drift_threshold: Optional[float] = None,
+    correction_action: Optional[str] = None,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets PiFinder Mount Bridge's Coupling mode (BRIDGE_MODE) plus exactly
+    the supporting properties that mode actually uses:
+      - MODE_VERIFY_ALERT: DRIFT_THRESHOLD only
+      - MODE_AUTO_CORRECT: DRIFT_THRESHOLD + CORRECTION_ACTION
+      - MODE_GOTO_FORWARD: neither (both args silently ignored if given)
+    `correction_action` is "sync" or "goto" (matching the driver's own
+    Sync/Goto-Track choice). Supporting properties are set *before*
+    BRIDGE_MODE itself, so there's no window where coupling is already
+    active with stale threshold/action values still in effect."""
+    if mode not in COUPLING_MODES:
+        raise INDIClientError(f"Unknown coupling mode {mode!r} (expected one of {COUPLING_MODES})")
+
+    if mode in ("MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT"):
+        set_number(
+            "PiFinder Mount Bridge", "DRIFT_THRESHOLD",
+            {"THRESHOLD_ARCMIN": drift_threshold if drift_threshold is not None else DRIFT_THRESHOLD_DEFAULT},
+            host, port, timeout,
+        )
+    if mode == "MODE_AUTO_CORRECT":
+        action = correction_action or CORRECTION_ACTION_DEFAULT
+        element = "ACTION_GOTO" if action == "goto" else "ACTION_SYNC"
+        set_switch("PiFinder Mount Bridge", "CORRECTION_ACTION", element, host, port, timeout)
+
+    set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
