@@ -1496,6 +1496,21 @@ class Handler(BaseHTTPRequestHandler):
                     _mb_log(f"  failed: {e}")
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
+                # Wait for indiserver to actually be back up before this
+                # request returns - otherwise the frontend's immediate
+                # post-action refresh can land in the brief window where
+                # Web Manager reports "not running" yet, flashing a
+                # confusing "profile not running" state that then
+                # self-corrects a moment later (seen live, 2026-07-25).
+                deadline = time.monotonic() + 8.0
+                while time.monotonic() < deadline:
+                    try:
+                        status = webmanager_client.server_status()
+                    except webmanager_client.WebManagerError:
+                        status = {"running": False, "active_profile": None}
+                    if status["running"] and status["active_profile"] == profile:
+                        break
+                    time.sleep(0.3)
                 _mb_log(f"  done.")
 
             self._send_json({"success": True})
