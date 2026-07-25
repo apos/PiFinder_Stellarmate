@@ -73,6 +73,32 @@ if [ "${1:-}" = "--shutdown-webserver" ]; then
     exit 1
 fi
 
+# These three units are owned entirely by this repo (no stock-PiFinder
+# analogue, only ever installed via pifinder_stellarmate_setup.sh's "Enable
+# service" phase - see pi_config_files/ and basic-memory pifinder-stellarmate/
+# 00030). self_update above only fast-forwards the git checkout; it does not
+# materialize a newly-added or changed unit file onto the running system. On
+# an install whose last full setup run predates such a change, that leaves a
+# stale (or, for a unit added later, entirely missing) file in
+# /etc/systemd/system - the enable --now below would then fail with
+# "Unit ... does not exist" instead of picking up the pulled code.
+for _unit in pifinder-control-center.service pifinder-fake-mode-autostart.service pifinder-numpad-bridge.service; do
+    _src="${REPO_DIR}/pi_config_files/${_unit}"
+    _dst="/etc/systemd/system/${_unit}"
+    if ! cmp -s "$_src" "$_dst" 2>/dev/null; then
+        sudo cp "$_src" "$_dst"
+        _unit_files_changed=1
+    fi
+done
+if [ "${_unit_files_changed:-0}" = "1" ]; then
+    sudo systemctl daemon-reload
+    # Matches pifinder_stellarmate_setup.sh: always enabled (its own
+    # ConditionPathExists gates whether it does anything at a given boot).
+    # numpad-bridge's enabled-state is deliberately left untouched here - it's
+    # user-toggled via the Control Center itself, not tied to this sync.
+    sudo systemctl enable pifinder-fake-mode-autostart.service
+fi
+
 existing_state="$(_state_json)"
 if [ -n "$existing_state" ]; then
     echo "Setup GUI webserver is already running."

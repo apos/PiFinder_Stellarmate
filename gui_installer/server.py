@@ -323,6 +323,376 @@ def _gps_hardware_present():
         return None
 
 
+def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT))):
+    """GETs PiFinder's own /api/status from whichever of `ports` answers
+    first (real service on 80/8080, or the fake-hardware instance). Returns
+    the parsed dict, or None if none of them are reachable. Shared by the
+    camera functional test (reading PiFinder's own CAM_FAILED signal instead
+    of fighting it for the camera device) and the GPS status snapshot."""
+    for port in ports:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+                return json.loads(resp.read())
+        except Exception:
+            continue
+    return None
+
+
+def _journal_grep_since_boot(unit: str, patterns, max_lines=3):
+    """Greps `journalctl -u unit -b` for any of `patterns`, returns the last
+    matching line(s) joined, or None if the check itself failed or nothing
+    matched. Good enough resolution for classifying a failure that's usually
+    still fresh in the log right after it happens - not trying to scope this
+    to the exact current service invocation."""
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", unit, "-b", "--no-pager", "-o", "cat"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    lines = [ln for ln in result.stdout.splitlines() if any(p in ln for p in patterns)]
+    if not lines:
+        return None
+    return " | ".join(lines[-max_lines:])
+
+
+def _as_text(x):
+    if isinstance(x, bytes):
+        return x.decode(errors="replace")
+    return x or ""
+
+
+def _journal_process_crash_detail(unit: str, process_name: str, max_block_lines=25):
+    """Looks for the most recent `Process <process_name>:` crash block (the
+    header Python's multiprocessing prints for an uncaught exception in a
+    named subprocess - see main.py's Process(..., name="Camera"/"IMU", ...))
+    in `journalctl -u unit -b`, and returns its final exception line (e.g.
+    "IndexError: list index out of range"), or None if no such crash block
+    is present.
+
+    Scoped to the named subprocess specifically - a blanket "any Traceback in
+    the whole service journal" search would misattribute an unrelated
+    subprocess's crash (this is exactly how a stale IMU crash got reported as
+    a camera failure during development - the IMU and Camera subprocesses
+    share one journal).
+    """
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", unit, "-b", "--no-pager", "-o", "cat"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    lines = result.stdout.splitlines()
+    header = f"Process {process_name}:"
+    last_start = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == header:
+            last_start = i
+    if last_start is None:
+        return None
+    block = lines[last_start:last_start + max_block_lines]
+    if len(block) < 2 or "Traceback (most recent call last)" not in block[1]:
+        return None
+    # The traceback's final line (the first non-indented line after the
+    # header) is the actual exception, e.g. "IndexError: list index out of
+    # range" - more useful in a one-line status than the full stack.
+    for ln in block[2:]:
+        if ln and not ln.startswith((" ", "\t", "~", "^")):
+            return ln.strip()
+    return None
+
+
+# --- Deeper "functional" hardware tests (the "Test Hardware" button) ------
+#
+# The passive checks above (_camera_hardware_present/_imu_hardware_present)
+# only prove *presence* - a camera that answers "yes I exist" to
+# rpicam-hello can still fail to actually deliver frames (a loose ribbon
+# cable did exactly this - see basic-memory pifinder-stellarmate/00047).
+# These go one step further and try to actually use the hardware, then
+# classify any failure as hardware/driver/python so it's clear at a glance
+# whether this is a cable problem or a PiFinder bug - both in the tile and
+# in the shared Terminal output (see _run_hardware_test() below).
+
+# Substrings from libcamera's own C++-level log output (not a Python
+# exception - picamera2 keeps running after logging these) that specifically
+# indicate a sensor/cable problem rather than a software bug. Seen live after
+# a loose ribbon cable: "Camera frontend has timed out!" - see 00047.
+_CAMERA_DRIVER_ERROR_PATTERNS = (
+    "Camera frontend has timed out",
+    "Timed out waiting for reconfiguration",
+)
+
+_CAMERA_CAPTURE_SCRIPT = (
+    "import json, sys\n"
+    "try:\n"
+    "    from picamera2 import Picamera2\n"
+    "    picam2 = Picamera2()\n"
+    "    picam2.configure(picam2.create_still_configuration())\n"
+    "    picam2.start()\n"
+    "    arr = picam2.capture_array()\n"
+    "    picam2.stop()\n"
+    "    picam2.close()\n"
+    "    print(json.dumps({'ok': True, 'shape': list(arr.shape)}))\n"
+    "except Exception as e:\n"
+    "    print(json.dumps({'ok': False, 'exc_type': type(e).__name__, 'exc_msg': str(e)}))\n"
+    "    sys.exit(1)\n"
+)
+
+_IMU_READ_SCRIPT = (
+    "import json, sys\n"
+    "try:\n"
+    "    import board\n"
+    "    import adafruit_bno055\n"
+    "    i2c = board.I2C()\n"
+    "    sensor = adafruit_bno055.BNO055_I2C(i2c)\n"
+    "    temp = sensor.temperature\n"
+    "    calib = sensor.calibration_status\n"
+    "    print(json.dumps({'ok': True, 'temperature': temp,"
+    " 'calibration_status': list(calib) if calib else None}))\n"
+    "except Exception as e:\n"
+    "    print(json.dumps({'ok': False, 'exc_type': type(e).__name__, 'exc_msg': str(e)}))\n"
+    "    sys.exit(1)\n"
+)
+
+
+def _classify_capture_failure(stdout, stderr, timed_out):
+    """Turns a capture/read subprocess's raw result into (error_type,
+    detail). error_type is "hardware"/"driver"/"python"/"unknown"/None
+    (None = success) - the three buckets the user asked to tell apart at a
+    glance, plus "unknown" for whatever doesn't fit."""
+    combined = _as_text(stdout) + "\n" + _as_text(stderr)
+    if timed_out:
+        return "driver", (
+            "Capture timed out - matches a known sensor/cable connection "
+            "issue (see 'Camera frontend has timed out' in the driver log)."
+        )
+    for pattern in _CAMERA_DRIVER_ERROR_PATTERNS:
+        if pattern in combined:
+            return "driver", f"{pattern} (libcamera) - check the sensor cable/connector."
+    try:
+        data = json.loads(_as_text(stdout).strip().splitlines()[-1])
+    except Exception:
+        return "unknown", (combined.strip()[-500:] or "No output from the test script.")
+    if data.get("ok"):
+        return None, None
+    return "python", f"{data.get('exc_type', 'Exception')}: {data.get('exc_msg', '')}"
+
+
+def _camera_functional_test(log):
+    """Runs the camera functional test, logging progress via log(line).
+    Returns {"status": "functional"|"error"|"absent"|"unknown",
+             "error_type": "hardware"|"driver"|"python"|"unknown"|None,
+             "detail": str|None}."""
+    log("Camera: checking hardware presence (rpicam-hello --list-cameras) ...")
+    present = _camera_hardware_present()
+    if present is None:
+        log("Camera: rpicam-hello unavailable - can't determine presence.")
+        return {"status": "unknown", "error_type": None, "detail": "rpicam-hello unavailable"}
+    if present is False:
+        log("Camera: NOT detected.")
+        return {"status": "absent", "error_type": "hardware", "detail": "No camera detected by rpicam-hello."}
+    log("Camera: hardware present.")
+
+    if _real_service_active():
+        log(
+            "Camera: pifinder.service is running in Real Mode - reading its own live "
+            "status instead of a separate capture test (avoids fighting it for exclusive "
+            "access to the same camera device)."
+        )
+        status = _pifinder_status_snapshot(ports=("80", "8080"))
+        if status is None:
+            log("Camera: PiFinder's own API isn't reachable right now - can't confirm functional status.")
+            return {"status": "unknown", "error_type": None, "detail": "PiFinder API unreachable"}
+        # Deliberately NOT using solution.solve_source ("CAM"/"CAM_FAILED") as
+        # the signal here: that only reflects whether the most recent
+        # plate-solve attempt matched stars, which fails constantly and
+        # completely normally indoors/no-sky-view - it says nothing about
+        # whether the camera itself is working. The two signals that
+        # actually mean "the camera is broken" are (a) PiFinder having
+        # silently fallen back to the simulated camera, and (b) a real
+        # driver/Python error in the journal.
+        camera_type = status.get("camera_type")
+        log(f"Camera: PiFinder reports camera_type={camera_type!r} - checking the journal for driver/Python errors ...")
+        crash_detail = _journal_process_crash_detail("pifinder.service", "Camera")
+        if crash_detail:
+            log(f"Camera: FAILED (python) - {crash_detail}")
+            return {"status": "error", "error_type": "python", "detail": crash_detail}
+        driver_detail = _journal_grep_since_boot("pifinder.service", _CAMERA_DRIVER_ERROR_PATTERNS, max_lines=3)
+        if driver_detail:
+            log(f"Camera: FAILED (driver) - {driver_detail}")
+            return {"status": "error", "error_type": "driver", "detail": driver_detail}
+        if camera_type == "debug":
+            detail = (
+                "PiFinder fell back to the simulated/debug camera - the real camera failed "
+                "to initialize (check the pifinder.service journal around its last startup)."
+            )
+            log(f"Camera: FAILED (hardware) - {detail}")
+            return {"status": "error", "error_type": "hardware", "detail": detail}
+        log("Camera: no driver/Python errors in the journal, real camera_type reported - functional.")
+        return {"status": "functional", "error_type": None, "detail": None}
+
+    log("Camera: PiFinder isn't running in Real Mode - running an isolated capture test via its own camera stack ...")
+    if not PIFINDER_VENV_PY.exists():
+        log("PiFinder venv not found - can't run the test.")
+        return {"status": "unknown", "error_type": None, "detail": "PiFinder venv not found"}
+    try:
+        result = subprocess.run(
+            [str(PIFINDER_VENV_PY), "-c", _CAMERA_CAPTURE_SCRIPT],
+            capture_output=True, text=True, timeout=15,
+        )
+        error_type, detail = _classify_capture_failure(result.stdout, result.stderr, False)
+    except subprocess.TimeoutExpired as e:
+        error_type, detail = _classify_capture_failure(e.stdout, e.stderr, True)
+    except Exception as e:
+        error_type, detail = "python", f"{type(e).__name__}: {e}"
+
+    if error_type is None:
+        log("Camera: capture succeeded - functional.")
+        return {"status": "functional", "error_type": None, "detail": None}
+    log(f"Camera: capture FAILED ({error_type}) - {detail}")
+    return {"status": "error", "error_type": error_type, "detail": detail}
+
+
+def _imu_functional_test(log):
+    """Runs the IMU functional test, logging progress via log(line). Same
+    result shape as _camera_functional_test()."""
+    log("IMU: scanning I2C bus for the BNO055 (address 0x28/0x29) ...")
+    present = _imu_hardware_present()
+    if present is None:
+        log("IMU: I2C scan unavailable - can't determine presence.")
+        return {"status": "unknown", "error_type": None, "detail": "I2C scan unavailable"}
+    if present is False:
+        log("IMU: NOT detected.")
+        return {"status": "absent", "error_type": "hardware", "detail": "No BNO055 found on the I2C bus."}
+    log("IMU: address found on the bus.")
+
+    if _real_service_active():
+        # Unlike the plain bus scan above, a full register read here would
+        # run concurrently with PiFinder's own IMU process polling the same
+        # sensor at ~30Hz (see imu_pi.py) - contention on that read is
+        # exactly what produced a spurious IMU crash during development of
+        # this feature. Check PiFinder's own journal instead of racing it.
+        log("IMU: pifinder.service is running - checking its journal for a crashed IMU process instead of a concurrent read.")
+        crash_detail = _journal_process_crash_detail("pifinder.service", "IMU")
+        if crash_detail:
+            log(f"IMU: FAILED (python) - {crash_detail}")
+            return {"status": "error", "error_type": "python", "detail": crash_detail}
+        log("IMU: no crashed IMU process in the journal - functional.")
+        return {"status": "functional", "error_type": None, "detail": None}
+
+    log("IMU: PiFinder isn't running - reading a live sensor value to confirm it actually responds ...")
+    if not PIFINDER_VENV_PY.exists():
+        log("PiFinder venv not found - can't run the test.")
+        return {"status": "unknown", "error_type": None, "detail": "PiFinder venv not found"}
+    try:
+        result = subprocess.run(
+            [str(PIFINDER_VENV_PY), "-c", _IMU_READ_SCRIPT],
+            capture_output=True, text=True, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        log("IMU: read timed out.")
+        return {"status": "error", "error_type": "driver", "detail": "I2C read timed out."}
+    except Exception as e:
+        detail = f"{type(e).__name__}: {e}"
+        log(f"IMU: read FAILED (python) - {detail}")
+        return {"status": "error", "error_type": "python", "detail": detail}
+    try:
+        data = json.loads(result.stdout.strip().splitlines()[-1])
+    except Exception:
+        detail = (result.stdout + result.stderr).strip()[-500:] or "No output from the read test."
+        log(f"IMU: read FAILED (unknown) - {detail}")
+        return {"status": "error", "error_type": "unknown", "detail": detail}
+    if data.get("ok"):
+        log(f"IMU: read succeeded (temperature={data.get('temperature')}) - functional.")
+        return {"status": "functional", "error_type": None, "detail": None}
+    detail = f"{data.get('exc_type', 'Exception')}: {data.get('exc_msg', '')}"
+    log(f"IMU: read FAILED (python) - {detail}")
+    return {"status": "error", "error_type": "python", "detail": detail}
+
+
+def _gps_status_snapshot(log):
+    """Reads PiFinder's own already-existing GPS/location handling via its
+    /api/status endpoint - deliberately not re-implemented here (the user's
+    own framing: StellarMate/PiFinder already do this, we just want to see
+    the result). Returns the `location` dict PiFinder reports (lat/lon/
+    altitude/timezone/lock/...), or None if PiFinder isn't reachable."""
+    log(
+        "GPS: reading location/time status from PiFinder's own /api/status "
+        "(reuses PiFinder's existing GPS handling, not re-implemented here) ..."
+    )
+    status = _pifinder_status_snapshot()
+    if status is None:
+        log("GPS: PiFinder's API isn't reachable right now (Real or Fake Mode must be running).")
+        return None
+    location = status.get("location") or {}
+    log(
+        "GPS: lock={lock} lat={lat} lon={lon} alt={altitude}m tz={timezone} "
+        "source={source} last_lock={last_gps_lock}".format(
+            lock=location.get("lock"),
+            lat=location.get("lat"),
+            lon=location.get("lon"),
+            altitude=location.get("altitude"),
+            timezone=location.get("timezone"),
+            source=location.get("source"),
+            last_gps_lock=location.get("last_gps_lock"),
+        )
+    )
+    return location
+
+
+_hwtest_running = False  # True while a Test Hardware run is in flight
+_hwtest_lines = []  # progress log, shown in the shared Terminal tile
+_hwtest_result = {"camera": None, "imu": None, "gps": None}
+
+
+def _hwtest_log(line: str):
+    with _lock:
+        _hwtest_lines.append(line)
+
+
+def _run_hardware_test():
+    """Runs all three checks in sequence and stores the combined result.
+    Camera/IMU/GPS are deliberately sequential, not parallel: the camera
+    test's PiFinder-is-running branch and the GPS snapshot both hit the same
+    /api/status endpoint, and running I2C/camera probes concurrently would
+    only make failures harder to attribute to one subsystem."""
+    global _hwtest_running, _hwtest_result
+    with _lock:
+        _hwtest_lines.clear()
+        _hwtest_result = {"camera": None, "imu": None, "gps": None}
+    _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
+    camera_result = _camera_functional_test(_hwtest_log)
+    imu_result = _imu_functional_test(_hwtest_log)
+    gps_location = _gps_status_snapshot(_hwtest_log)
+    _hwtest_log("=== Test Hardware: done ===")
+    with _lock:
+        _hwtest_result = {"camera": camera_result, "imu": imu_result, "gps": gps_location}
+        _hwtest_running = False
+
+
+def _startup_hardware_test(timeout=120, interval=2):
+    """Runs at Control Center startup (see main()). pifinder-control-center.
+    service has no ordering dependency on pifinder.service (deliberately -
+    the Control Center must be able to start standalone, e.g. before PiFinder
+    is even installed) - the two race independently at boot. Running the
+    test immediately then reliably lost that race: PiFinder's own web server
+    typically isn't up for several seconds after its service starts, so the
+    very first startup test kept reporting a stale "PiFinder API
+    unreachable" Camera/GPS result that then sat there until someone
+    clicked the button by hand (live-reproduced across two reboots - see
+    basic-memory pifinder-stellarmate/00048). Poll for PiFinder to answer
+    first, then run the real test - if it never comes up within `timeout`,
+    run anyway (accurately reports "not running" rather than waiting forever)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
+            break
+        time.sleep(interval)
+    _run_hardware_test()
+
+
 def _pifinder_debug_solve_status(port: str):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state - PiFinder's own
@@ -491,6 +861,8 @@ def _start_run(action):
             return False, "A run is already in progress."
         if _mode_action_running:
             return False, "A PiFinder mode switch is still in progress - wait for it to finish first."
+        if _hwtest_running:
+            return False, "A hardware test is still in progress - wait for it to finish first."
         _lines = []
         _running = True
         _exit_code = None
@@ -708,6 +1080,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"debug_solve": _pifinder_debug_solve_status(port)})
             return
 
+        if parsed.path == "/api/hardware_test_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _hwtest_lines[position:]
+                new_position = len(_hwtest_lines)
+                running = _hwtest_running
+                result = _hwtest_result
+            self._send_json(
+                {"lines": new_lines, "position": new_position, "running": running, "result": result}
+            )
+            return
+
         if parsed.path == "/api/pifinder_mode_log":
             qs = parse_qs(parsed.query)
             position = int(qs.get("position", ["0"])[0])
@@ -750,6 +1135,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        global _hwtest_running
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's INDI Drivers page (a different
@@ -811,6 +1197,9 @@ class Handler(BaseHTTPRequestHandler):
                 if _running:
                     self._send_json({"started": False, "error": "An install/update run is in progress - wait for it to finish first."}, status=409)
                     return
+                if _hwtest_running:
+                    self._send_json({"started": False, "error": "A hardware test is in progress - wait for it to finish first."}, status=409)
+                    return
                 _mode_action_running = True
             script_arg = "start" if action == "enable_fake" else "stop"
             threading.Thread(target=_run_fake_mode_action, args=(script_arg,), daemon=True).start()
@@ -823,6 +1212,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": _pifinder_toggle_debug_solve(port)})
             return
 
+        if parsed.path == "/api/hardware_test":
+            with _lock:
+                if _hwtest_running:
+                    self._send_json({"started": False, "error": "A hardware test is already in progress."}, status=409)
+                    return
+                if _running or _mode_action_running:
+                    self._send_json(
+                        {"started": False, "error": "An install/update run or mode switch is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+                _hwtest_running = True
+            threading.Thread(target=_run_hardware_test, daemon=True).start()
+            self._send_json({"started": True})
+            return
+
         if parsed.path == "/api/display_bridge":
             qs = parse_qs(parsed.query)
             action = qs.get("action", [""])[0]
@@ -830,8 +1235,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             with _lock:
-                if _mode_action_running or _running:
-                    self._send_json({"success": False, "error": "An install/update or mode switch is in progress - wait for it to finish first."}, status=409)
+                if _mode_action_running or _running or _hwtest_running:
+                    self._send_json({"success": False, "error": "An install/update, mode switch, or hardware test is in progress - wait for it to finish first."}, status=409)
                     return
             want_enabled = action == "start"
             if _lcd_overlay_active() == want_enabled:
@@ -868,9 +1273,17 @@ def main():
     # _require_auth()); /state, /log, /shutdown stay open (see their own
     # comments). Do not expose this port beyond a private home/observatory
     # LAN regardless.
-    global _server
+    global _server, _hwtest_running
     _server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"PiFinder setup GUI listening on http://0.0.0.0:{PORT}/ (all interfaces)")
+    # Run Test Hardware once automatically on every Control Center start
+    # (not just on a manual button click) - the tile would otherwise sit on
+    # the bare "present (not yet tested)" presence check, possibly for a long
+    # time, after every restart (including the one that just deployed this
+    # feature - see basic-memory pifinder-stellarmate/00048). No mutex check
+    # needed here: nothing else can possibly be running yet this early.
+    _hwtest_running = True
+    threading.Thread(target=_startup_hardware_test, daemon=True).start()
     _server.serve_forever()
 
 

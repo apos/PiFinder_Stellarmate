@@ -7,6 +7,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **"Test Hardware" button (Control Center)**: runs a deeper functional check for Camera/IMU/GPS
+  instead of the previous bare presence check, and classifies any failure as hardware, driver, or
+  Python so it's clear at a glance whether this is a cable problem or a bug - both in the tile and
+  in the shared Terminal output. Camera/IMU avoid touching the hardware directly while
+  `pifinder.service` is already using it (would fight it for exclusive access, or race its own I2C
+  polling) - reads its own live status and journal instead in that case, falling back to an isolated
+  capture/read test only when PiFinder isn't running. GPS deliberately isn't a pass/fail test - it
+  just surfaces PiFinder's own already-existing location data (lat/lon/altitude/timezone/lock).
+  Also now runs automatically once on every Control Center start, not just on a manual click -
+  waits for PiFinder's own web server to answer first (up to 120s) before running, since the two
+  services have no startup ordering dependency between them and race independently at boot.
 - **Full documentation for the Control Center and the Keyboard Bridge**: `Readme_ControlCenter.md`
   and `Readme_KeyboardBridge.md` (both with German translations), matching the depth and structure
   of the existing `Readme_PiFinder_LX200.md` — architecture diagrams, design principles, a full API
@@ -136,6 +147,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`pifinder.service` could crash right after a cold boot** with `PermissionError` on
+  `/sys/class/pwm/pwmchip0/pwm1/enable`: exporting the PWM channel (keypad backlight) creates its
+  sysfs entry root-owned, and the udev rule that makes it group-writable runs asynchronously -
+  `HardwarePWM`'s own constructor already retries its `change_frequency()` call for exactly this
+  race, but its `start()` call didn't. Now retries briefly there too, and `pifinder.service` itself
+  gets `Restart=on-failure` as a second line of defense if a crash still slips through.
+- **`launch_setup_gui.sh`'s self-update only fast-forwarded this repo's own git checkout, not the
+  systemd units derived from it** - an install whose last full setup run predated a new/changed unit
+  (e.g. `pifinder-control-center.service` above) failed outright with "Unit ... does not exist"
+  instead of picking up the pulled code. Now syncs those three repo-owned unit files itself before
+  starting.
 - The Installation Summary always reported `picamera2: unknown` — it read the package's
   `__version__` attribute, which `picamera2` doesn't define. Now reads the version via
   `importlib.metadata.version()` instead.

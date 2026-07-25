@@ -1,6 +1,29 @@
---- python/PiFinder/main.py.orig	2026-07-19 12:48:18.010278255 +0200
-+++ python/PiFinder/main.py	2026-07-19 12:45:10.615001681 +0200
-@@ -141,11 +141,19 @@
+--- python/PiFinder/main.py.orig
++++ python/PiFinder/main.py
+@@ -77,7 +77,21 @@
+     global hardware_platform
+     if hardware_platform == "Pi":
+         keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
+-        keypad_pwm.start(0)
++        # Right after boot, exporting a PWM channel creates its sysfs dir
++        # root-owned; a udev rule then asynchronously chgrp/chmod's it
++        # group-writable. start()'s enable-file write can lose that race and
++        # raise PermissionError - HardwarePWM.__init__() already retries its
++        # own change_frequency() call for the same reason, but start() has no
++        # such protection. Retry briefly instead of crashing the whole
++        # process over a startup timing issue.
++        for attempt in range(10):
++            try:
++                keypad_pwm.start(0)
++                break
++            except PermissionError:
++                if attempt == 9:
++                    raise
++                time.sleep(0.2)
+ 
+ 
+ def set_keypad_brightness(percentage: float):
+@@ -141,11 +155,19 @@
  
  
  class PowerManager:
@@ -20,7 +43,7 @@
  
      def register_activity(self):
          """
-@@ -179,28 +187,76 @@
+@@ -179,28 +201,76 @@
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
@@ -109,7 +132,7 @@
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -666,13 +722,6 @@
+@@ -666,13 +736,6 @@
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -123,7 +146,7 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -744,6 +793,12 @@
+@@ -744,6 +807,12 @@
                          "All catalogs loaded - WDS and extended catalogs available"
                      )
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -136,7 +159,7 @@
                  elif ui_command == "test_mode":
                      dt = datetime.datetime(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1126,6 +1181,8 @@
+@@ -1126,6 +1195,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")

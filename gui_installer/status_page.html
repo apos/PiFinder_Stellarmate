@@ -262,6 +262,15 @@
   .hw-row .status-dot { margin-right: 0.4rem; }
   .hw-keyboard { color: #888; font-style: italic; }
   .hw-keyboard code { font-size: 0.75rem; }
+  .hw-detail {
+    margin: -0.15rem 0 0.4rem 1.1rem;
+    color: #888;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .hw-detail:empty { display: none; }
+  #hwtest-status-text { color: #888; margin-left: 0.5rem; }
   #ext-hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -345,9 +354,16 @@
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
+          <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
+            <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
+            <span id="hwtest-status-text"></span>
+          </div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-camera-detail"></div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-imu-detail"></div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-gps-detail"></div>
           <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
           <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
             <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
@@ -1274,15 +1290,31 @@ async function pollModeLog() {
 // Keyboard isn't included: it needs exclusive GPIO access, so it can't be
 // checked passively alongside a running PiFinder instance - see the
 // dedicated test_tools/keypad_gpio_matrix_test.py instead.
+// Last completed Test Hardware result ({camera: {status,error_type,detail},
+// imu: {...}, gps: <PiFinder's location dict, or null>} - null fields until
+// the button has been clicked at least once). Once a row has a real
+// classified result, the passive 20s presence poll below stops overwriting
+// it with a bare "present"/"not detected" - except a hardware disappearing
+// entirely, which always wins immediately.
+let lastHwTestResult = { camera: null, imu: null, gps: null };
+
 function setHwRow(key, present) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
+  if (key !== 'gps') {
+    const tested = lastHwTestResult[key];
+    if (tested && tested.status !== 'absent' && present !== false) {
+      return; // keep showing the richer, already-classified Test Hardware result
+    }
+  }
   if (present === true) {
     dotEl.className = 'status-dot dot-green';
-    textEl.textContent = 'detected';
+    textEl.textContent = 'present (not yet tested — click Test Hardware)';
   } else if (present === false) {
     dotEl.className = 'status-dot dot-red';
     textEl.textContent = 'not detected';
+    const detailEl = document.getElementById('hw-' + key + '-detail');
+    if (detailEl) detailEl.textContent = '';
   } else {
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
@@ -1295,13 +1327,17 @@ async function refreshHardwareStatus() {
     const data = await resp.json();
     setHwRow('camera', data.camera);
     setHwRow('imu', data.imu);
-    setHwRow('gps', data.gps);
+    if (!lastHwTestResult.gps) {
+      setHwRow('gps', data.gps);
+    }
     lastHwCamera = data.camera;
     lastHwImu = data.imu;
   } catch (e) {
     setHwRow('camera', null);
     setHwRow('imu', null);
-    setHwRow('gps', null);
+    if (!lastHwTestResult.gps) {
+      setHwRow('gps', null);
+    }
     lastHwCamera = null;
     lastHwImu = null;
   }
@@ -1340,6 +1376,177 @@ async function refreshMountBridgeStatus() {
 }
 setInterval(refreshMountBridgeStatus, 20000);
 refreshMountBridgeStatus();
+
+// --- Test Hardware button: deeper functional checks (camera capture / IMU
+// read / PiFinder's own GPS status), classified as hardware/driver/python on
+// failure - see server.py's _run_hardware_test(). Reuses the same shared
+// Terminal (#log) as install/update runs and mode switches, via its own
+// separate /api/hardware_test_log endpoint (mutually exclusive with both at
+// the backend level, see _hwtest_running in server.py).
+let hwTestLogPosition = 0;
+let hwTestPolling = false;
+
+function errorTypeLabel(type) {
+  if (type === 'hardware' || type === 'driver' || type === 'python') return type;
+  return 'unknown';
+}
+
+function applyHwTestRow(key, result) {
+  const dotEl = document.getElementById('hw-' + key + '-dot');
+  const textEl = document.getElementById('hw-' + key + '-text');
+  const detailEl = document.getElementById('hw-' + key + '-detail');
+  if (!result) return;
+  if (result.status === 'functional') {
+    dotEl.className = 'status-dot dot-green';
+    textEl.textContent = 'functional';
+    detailEl.textContent = '';
+  } else if (result.status === 'absent') {
+    dotEl.className = 'status-dot dot-red';
+    textEl.textContent = 'not detected';
+    detailEl.textContent = result.detail || '';
+  } else if (result.status === 'error') {
+    dotEl.className = 'status-dot dot-red';
+    textEl.textContent = 'error (' + errorTypeLabel(result.error_type) + ')';
+    detailEl.textContent = result.detail || '';
+  } else {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'unknown' + (result.detail ? ' (' + result.detail + ')' : '');
+    detailEl.textContent = '';
+  }
+}
+
+// GPS deliberately isn't a pass/fail test - it just surfaces whatever
+// PiFinder's own already-existing GPS handling currently reports (lat/lon/
+// altitude/timezone/lock), per the same "don't reimplement what PiFinder
+// already does" reasoning as _gps_status_snapshot() in server.py.
+function formatGpsDetail(location) {
+  if (!location) return 'PiFinder not reachable — can’t read GPS status right now (Real or Fake Mode must be running).';
+  const parts = [];
+  if (location.lat != null && location.lon != null) {
+    parts.push(location.lat.toFixed(5) + ', ' + location.lon.toFixed(5));
+  }
+  if (location.altitude != null) parts.push(location.altitude.toFixed(0) + ' m');
+  if (location.timezone) parts.push(location.timezone);
+  if (location.last_gps_lock) parts.push('last fix ' + location.last_gps_lock);
+  parts.push('source: ' + (location.source || 'unknown'));
+  return parts.join(', ');
+}
+
+function applyHwTestResult(result) {
+  if (!result) return;
+  lastHwTestResult = result;
+  applyHwTestRow('camera', result.camera);
+  applyHwTestRow('imu', result.imu);
+  const gpsDot = document.getElementById('hw-gps-dot');
+  const gpsText = document.getElementById('hw-gps-text');
+  const gpsDetail = document.getElementById('hw-gps-detail');
+  if (result.gps && result.gps.lock) {
+    gpsDot.className = 'status-dot dot-green';
+    gpsText.textContent = 'locked';
+  } else if (result.gps) {
+    gpsDot.className = 'status-dot dot-yellow';
+    gpsText.textContent = 'no fix yet';
+  } else {
+    gpsDot.className = 'status-dot dot-white';
+    gpsText.textContent = 'not reachable';
+  }
+  gpsDetail.textContent = formatGpsDetail(result.gps);
+}
+
+async function runHardwareTest() {
+  const btn = document.getElementById('hwtest-btn');
+  const statusText = document.getElementById('hwtest-status-text');
+  btn.disabled = true;
+  statusText.textContent = 'Running…';
+  let data;
+  try {
+    const resp = await fetch('/api/hardware_test', { method: 'POST' });
+    data = await resp.json();
+  } catch (e) {
+    statusText.textContent = 'Request failed.';
+    btn.disabled = false;
+    return;
+  }
+  if (!data.started) {
+    statusText.textContent = data.error || 'Could not start.';
+    btn.disabled = false;
+    return;
+  }
+  // Fresh terminal for this run - but only if no install/update run or mode
+  // switch currently owns it (the backend already refuses to run those
+  // together with a hardware test, so this is just about not stomping on a
+  // still-visible previous log), same guard as toggleMode() uses.
+  if (!polling && !modeLogPolling) {
+    const logEl = document.getElementById('log');
+    logEl.textContent = '';
+    logEl.classList.add('log-placeholder');
+  }
+  document.getElementById('log').style.display = 'block';
+  hwTestLogPosition = 0;
+  hwTestPolling = true;
+  pollHwTestLog();
+}
+
+async function pollHwTestLog() {
+  if (!hwTestPolling) return;
+  let data;
+  try {
+    const resp = await fetch('/api/hardware_test_log?position=' + hwTestLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    hwTestPolling = false;
+    document.getElementById('hwtest-btn').disabled = false;
+    document.getElementById('hwtest-status-text').textContent = 'Lost connection.';
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    hwTestLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollHwTestLog, 500);
+  } else {
+    hwTestPolling = false;
+    document.getElementById('hwtest-btn').disabled = false;
+    document.getElementById('hwtest-status-text').textContent = '';
+    applyHwTestResult(data.result);
+  }
+}
+
+// Picks up an already-running or already-completed Test Hardware run on page
+// load - the backend now auto-runs one on every Control Center start (see
+// main()'s startup thread in server.py), so a freshly opened page should
+// reflect that instead of sitting on the bare presence check until someone
+// clicks the button.
+async function checkHwTestOnLoad() {
+  let data;
+  try {
+    const resp = await fetch('/api/hardware_test_log?position=0');
+    data = await resp.json();
+  } catch (e) {
+    return;
+  }
+  if (data.running) {
+    document.getElementById('hwtest-btn').disabled = true;
+    document.getElementById('hwtest-status-text').textContent = 'Running…';
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    logEl.style.display = 'block';
+    hwTestLogPosition = 0;
+    hwTestPolling = true;
+    pollHwTestLog();
+  } else if (data.result && (data.result.camera || data.result.imu || data.result.gps)) {
+    // Already finished before this page loaded (e.g. the startup auto-run) -
+    // just reflect the result in the tile, without replaying its log lines
+    // into a Terminal reserved for actions taken from this page.
+    applyHwTestResult(data.result);
+  }
+}
+checkHwTestOnLoad();
 
 init();
 // Deferred so init()'s own /state fetch always gets to set `polling` first -
