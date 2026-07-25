@@ -113,6 +113,19 @@ _lock = threading.Lock()
 _auth_failures = {}  # client_ip -> (failure_count, first_failure_monotonic)
 _AUTH_LOCKOUT_THRESHOLD = 5
 _AUTH_LOCKOUT_WINDOW = 30.0  # seconds
+# Caps how many PAM calls can run *at once*, regardless of whether they'll
+# turn out right or wrong. Found live: this page fires ~15 independent
+# polling loops - once the credentials are actually correct, enough of them
+# can still land inside pam_authenticate() (real wall-clock work, not
+# instant) at the same moment that a naive "count every attempt, clear on
+# success" scheme false-locks out the *correct* password purely from
+# concurrency (reproduced live: entering the right password worked, then a
+# few seconds later - the next round of concurrent polls - got locked out
+# again, repeatedly). A concurrency cap sidesteps that entirely: it doesn't
+# need to know in advance whether an attempt will succeed, it just makes
+# the rest queue briefly (blocking on the semaphore costs no CPU/GIL time)
+# instead of all hitting PAM's expensive hashing at once.
+_auth_semaphore = threading.Semaphore(2)
 
 _lines = []
 _running = False
@@ -996,22 +1009,20 @@ class Handler(BaseHTTPRequestHandler):
         password via PAM. Sends the 401 challenge itself and returns False
         if missing/invalid; caller should return immediately in that case.
 
-        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD *wrong-
-        password* attempts within _AUTH_LOCKOUT_WINDOW seconds, further
-        attempts are rejected immediately without calling PAM at all - see
-        _auth_failures' own comment for why. Only counts requests that
-        actually included a password and got it wrong - NOT the plain "no
-        Authorization header at all" case, which is the normal first half
-        of the Basic Auth handshake and happens on every request from a
-        browser that hasn't cached this realm's credentials yet. This page
-        fires well over a dozen independent polls on load; missing that
-        distinction locked out the user's own very next (correct) login
-        attempt at the native browser prompt, since those ~15 credential-
-        less first requests alone could cross the threshold before the
-        browser had asked for/cached anything - reproduced live right after
-        following this project's own advice to clear cached site data,
-        which guarantees a burst of simultaneous credential-less polls on
-        the next load."""
+        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD *confirmed
+        wrong-password* attempts within _AUTH_LOCKOUT_WINDOW seconds,
+        further attempts are rejected immediately without calling PAM at
+        all. Only counts requests that actually included a password AND
+        got it wrong (never the plain "no Authorization header at all"
+        case - see _auth_failures' own comment). The PAM call itself is
+        additionally gated by _auth_semaphore, capping how many can run
+        concurrently regardless of outcome - see that semaphore's own
+        comment for why: an earlier version counted every *attempt* before
+        knowing whether it would succeed, which under this page's ~15
+        concurrent polling loops false-locked-out the *correct* password
+        purely from concurrent timing, not from it actually being wrong -
+        reproduced live (entering the right password worked, then locked
+        out again a few seconds later, repeatedly)."""
         header = self.headers.get("Authorization", "")
         password = None
         if header.startswith("Basic "):
@@ -1034,17 +1045,20 @@ class Handler(BaseHTTPRequestHandler):
             if count >= _AUTH_LOCKOUT_THRESHOLD:
                 self._send_401()
                 return False
-            # Recorded as a tentative failure *before* the (slow) PAM call,
-            # under the same lock as the threshold check, so concurrent
-            # requests can't all read the same pre-increment count and all
-            # slip past the gate together - see this method's docstring.
-            _auth_failures[client_ip] = (count + 1, first_failure)
 
-        if pam_auth.verify_password(AUTH_USER, password):
+        with _auth_semaphore:
+            ok = pam_auth.verify_password(AUTH_USER, password)
+
+        if ok:
             with _lock:
                 _auth_failures.pop(client_ip, None)
             return True
 
+        with _lock:
+            count, first_failure = _auth_failures.get(client_ip, (0, now))
+            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
+                count, first_failure = 0, now
+            _auth_failures[client_ip] = (count + 1, first_failure)
         self._send_401()
         return False
 
