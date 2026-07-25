@@ -439,15 +439,6 @@
     <div id="mount-bridge-tile">
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
 
-      <div id="mb-diagram">
-        <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
-        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-bridge"><span class="status-dot dot-white" id="mb-node-bridge-dot"></span>Bridge</div>
-        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
-      </div>
-      <div id="mb-mode-caption">Not coupled yet</div>
-
       <div class="mb-row" title="Start or stop this profile's indiserver. Restart it after adding/removing a driver so the change actually takes effect.">
         <span class="mb-row-label">Profile:</span>
         <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
@@ -463,6 +454,19 @@
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
+
+      <!-- Connection status, Connect buttons, Coupling, Threshold: kept as
+           one visual group, in this order, per live user feedback - these
+           four are the "operate it" workflow, separate from the "set it up"
+           rows above (Profile/Drivers/Mount). -->
+      <div id="mb-diagram">
+        <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
+        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-bridge"><span class="status-dot dot-white" id="mb-node-bridge-dot"></span>Bridge</div>
+        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
+      </div>
+      <div id="mb-mode-caption">Not coupled yet</div>
       <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
         <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>

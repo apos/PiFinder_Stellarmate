@@ -1468,13 +1468,28 @@ class Handler(BaseHTTPRequestHandler):
             # whichever mount driver the user selected, since CONNECTION is
             # a standard property every INDI driver has. Connection
             # *parameters* (serial port, baud, TCP host) are never touched
-            # here - see the concept doc's explicit non-goal.
+            # here for the user's own mount - see the concept doc's explicit
+            # non-goal. "PiFinder LX200" is the one exception: its target is
+            # always this project's own pos_server.py (127.0.0.1:4030), a
+            # fixed constant, not something to expect the user to configure
+            # by hand - see ensure_pifinder_lx200_tcp()'s own docstring for
+            # why (left on its default of a shared serial port, it competes
+            # with the user's real mount driver for the same USB adapter).
             qs = parse_qs(parsed.query)
             device = qs.get("device", [""])[0]
             profile = qs.get("profile", [""])[0]
             if not device:
                 self._send_json({"success": False, "error": "missing 'device' query param"}, status=400)
                 return
+
+            if device == "PiFinder LX200":
+                try:
+                    indi_client.ensure_pifinder_lx200_tcp()
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+
             _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)

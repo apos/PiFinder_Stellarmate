@@ -342,8 +342,86 @@ def connect_device(
     trigger; connection *parameters* (serial port, baud, TCP host) are the
     user's own responsibility, already configured and saved through some
     other INDI client before this runs - see docs/concepts/
-    mount_bridge_web_integration.md's explicit non-goal."""
+    mount_bridge_web_integration.md's explicit non-goal.
+
+    Exception: "PiFinder LX200" itself (see ensure_pifinder_lx200_tcp()
+    below) - its connection target is this project's own pos_server.py, a
+    fixed constant on every PFSM install, not user/hardware-specific like a
+    real mount's serial port - so that one is set automatically rather than
+    left to the user."""
     set_switch(device, "CONNECTION", "CONNECT", host, port, timeout)
+
+
+PIFINDER_LX200_TCP_HOST = "127.0.0.1"
+PIFINDER_LX200_TCP_PORT = "4030"  # pos_server.py's fixed LX200 port - see Readme_PiFinder_LX200.md
+
+
+def ensure_pifinder_lx200_tcp(
+    host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT,
+    check_timeout: float = 1.5,
+) -> None:
+    """Forces "PiFinder LX200"'s own connection onto TCP 127.0.0.1:4030
+    (pos_server.py) rather than the INDI/LX200Telescope base class's default
+    of a serial port. Found live (2026-07-25): left at its default, this
+    driver competes for the same physical USB-serial adapter as the user's
+    real mount driver (e.g. "LX200 OnStep"), and whichever connects first
+    locks the other out ("already used by another driver or process") -
+    confirmed with only one USB-serial adapter (lsusb: one CH340) actually
+    present. Unlike a real mount's connection, this one is always the same
+    fixed value on every PFSM install - not something to make the user
+    remember to configure by hand, per Readme_PiFinder_LX200.md's own setup
+    instructions (Connection Mode: TCP, 127.0.0.1:4030).
+
+    Idempotent and safe to call every time before connecting: no-ops if
+    already on TCP with the right address (this first check is the only
+    slow part if the device happens to already be connected and broadcasting
+    - see get_properties()'s own docstring on why an active device's query
+    takes close to the full timeout - everything after an actual change is
+    needed uses the shorter `check_timeout` instead, since a disconnected/
+    reconfiguring device goes quiet quickly). INDI conventionally only
+    accepts connection-parameter changes while disconnected, so this
+    disconnects first if needed and leaves the device disconnected - the
+    caller (see server.py's /api/mount_bridge_connect) does the actual
+    CONNECT afterwards."""
+    props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder LX200")
+    if not device_props:
+        raise INDIClientError("PiFinder LX200: not currently defined (not loaded in the running profile)")
+
+    mode = device_props.get("CONNECTION_MODE", {}).get("elements", {})
+    address = device_props.get("DEVICE_ADDRESS", {}).get("elements", {})
+    already_correct = (
+        mode.get("CONNECTION_TCP") == "On"
+        and address.get("ADDRESS") == PIFINDER_LX200_TCP_HOST
+        and address.get("PORT") == PIFINDER_LX200_TCP_PORT
+    )
+    if already_correct:
+        return
+
+    if _connection_state(device_props):
+        set_switch("PiFinder LX200", "CONNECTION", "DISCONNECT", host, port, check_timeout)
+
+    set_switch("PiFinder LX200", "CONNECTION_MODE", "CONNECTION_TCP", host, port, check_timeout)
+
+    # DEVICE_ADDRESS is only defined by the driver once CONNECTION_TCP has
+    # actually been processed (same "properties only exist once triggered"
+    # pattern as Mount Bridge's own BRIDGE_MODE-derived properties) - poll
+    # briefly rather than assume the switch above has already taken effect
+    # by the time this runs.
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        check = get_properties(device="PiFinder LX200", host=host, port=port, timeout=check_timeout)
+        if "DEVICE_ADDRESS" in check.get("PiFinder LX200", {}):
+            break
+        time.sleep(0.2)
+    else:
+        raise INDIClientError("PiFinder LX200: DEVICE_ADDRESS did not appear after switching to TCP mode")
+
+    set_text(
+        "PiFinder LX200", "DEVICE_ADDRESS",
+        {"ADDRESS": PIFINDER_LX200_TCP_HOST, "PORT": PIFINDER_LX200_TCP_PORT},
+        host, port, check_timeout,
+    )
 
 
 def set_mount_bridge_active_devices(
