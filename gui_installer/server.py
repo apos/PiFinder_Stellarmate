@@ -98,6 +98,22 @@ PHASE_MARKER = "###PHASE### "
 REBOOT_MARKER = "###REBOOT_NEEDED### "
 
 _lock = threading.Lock()
+
+# Failed-auth rate limiting - see _require_auth(). Found live (2026-07-25): a
+# browser tab with stale/wrong cached Basic Auth credentials, combined with
+# several independent polling loops on this page, retried a wrong password
+# on every single poll - well over a hundred failed attempts in a few
+# minutes, briefly bursting past 10/second. Each failed attempt calls into
+# PAM, which does real password-hashing work (deliberately slow, e.g.
+# sha512crypt) - expensive enough, repeated fast enough, to visibly starve
+# the GIL and make unrelated background threads (the startup hardware test,
+# in this case) look hung even though nothing was actually deadlocked. Also
+# a real, if mild, brute-force exposure on its own regardless of that
+# incident - this call site had no limit on repeated attempts at all before.
+_auth_failures = {}  # client_ip -> (failure_count, first_failure_monotonic)
+_AUTH_LOCKOUT_THRESHOLD = 5
+_AUTH_LOCKOUT_WINDOW = 30.0  # seconds
+
 _lines = []
 _running = False
 _exit_code = None
@@ -972,7 +988,37 @@ class Handler(BaseHTTPRequestHandler):
     def _require_auth(self):
         """Checks HTTP Basic Auth against the stellarmate account's own
         password via PAM. Sends the 401 challenge itself and returns False
-        if missing/invalid; caller should return immediately in that case."""
+        if missing/invalid; caller should return immediately in that case.
+
+        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD failed
+        *attempts* within _AUTH_LOCKOUT_WINDOW seconds, further attempts are
+        rejected immediately without calling PAM at all - see
+        _auth_failures' own comment for why (a client retrying a stale/wrong
+        cached password on every background poll was found live to generate
+        well over 100 expensive PAM calls in a couple of minutes, starving
+        the GIL enough to make an unrelated background thread look hung).
+        The count is incremented *before* the PAM call, under the same lock
+        as the threshold check - first version of this incremented only
+        after PAM had already run, which meant several concurrent requests
+        (this server handles each in its own thread) could all read the
+        pre-increment count and all slip past the gate at once before any
+        of them finished recording their own failure - reproduced live,
+        still ~2 PAM calls/second sustained after the first version of this
+        fix, instead of the intended sharp cutoff after 5."""
+        client_ip = self.client_address[0]
+        now = time.monotonic()
+        with _lock:
+            count, first_failure = _auth_failures.get(client_ip, (0, now))
+            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
+                count, first_failure = 0, now
+            if count >= _AUTH_LOCKOUT_THRESHOLD:
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+            _auth_failures[client_ip] = (count + 1, first_failure)
+
         header = self.headers.get("Authorization", "")
         password = None
         if header.startswith("Basic "):
@@ -982,7 +1028,10 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 password = None
         if password and pam_auth.verify_password(AUTH_USER, password):
+            with _lock:
+                _auth_failures.pop(client_ip, None)
             return True
+
         self.send_response(401)
         self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
         self.send_header("Content-Length", "0")
