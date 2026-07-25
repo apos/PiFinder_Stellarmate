@@ -15,6 +15,7 @@ import base64
 import json
 import re
 import socket
+import sqlite3
 import subprocess
 import threading
 import time
@@ -653,6 +654,51 @@ def _hwtest_log(line: str):
         _hwtest_lines.append(line)
 
 
+# KStars stores its own Equipment Profiles (separate from the Web Manager
+# profiles this feature manages) in a local SQLite DB, including whether
+# "INDI Web Manager" is ticked for a given profile (indiwebmanagerport
+# column - NULL if unticked, the Web Manager port if ticked - confirmed live
+# 2026-07-25 by comparing two real rows, one with/one without the checkbox
+# set in KStars' own Profile Editor). Read-only: this file can be open by a
+# live KStars process, and writing to it risks corruption/lost updates -
+# see the wizard's "Step 3" check, which only ever reads this and guides the
+# user to fix it themselves in KStars if needed, never writes to it.
+_KSTARS_USERDB_CANDIDATES = [
+    Path.home() / ".var/app/org.kde.kstars/data/kstars/userdb.sqlite",  # Flatpak (StellarMate default)
+    Path.home() / ".local/share/kstars/userdb.sqlite",  # native package install
+]
+
+
+def _kstars_webmanager_link_status(profile: str) -> dict:
+    """{"checked": bool, "kstars_profile_found": bool, "linked": bool,
+    "host": str|None, "indiwebmanagerport": int|None}. "checked" is False if
+    no KStars user database could be found at all (nothing to report)."""
+    db_path = next((p for p in _KSTARS_USERDB_CANDIDATES if p.exists()), None)
+    if not db_path:
+        return {"checked": False, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None}
+    try:
+        # Open read-only via URI mode - never creates/locks the file for
+        # writing even if KStars has it open at the same time.
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0)
+        try:
+            row = con.execute(
+                "SELECT host, port, indiwebmanagerport FROM profile WHERE name = ?", (profile,)
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        return {"checked": False, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None, "error": str(e)}
+    if not row:
+        return {"checked": True, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None}
+    host, _port, iwm_port = row
+    linked = iwm_port is not None and str(host).lower() in ("localhost", "127.0.0.1")
+    return {"checked": True, "kstars_profile_found": True, "linked": linked,
+            "host": host, "indiwebmanagerport": iwm_port}
+
+
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
@@ -1133,6 +1179,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, status=502)
             return
 
+        if parsed.path == "/api/kstars_webmanager_link":
+            # Setup-wizard step: is this profile's *KStars-side* Equipment
+            # Profile actually set to use the local Web Manager? This is a
+            # separate thing from the Web-Manager-side profile this feature
+            # otherwise manages - KStars keeps its own copy in its own
+            # SQLite DB (read-only check, see _kstars_webmanager_link_status()
+            # docstring for why this is never auto-fixed).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            self._send_json(_kstars_webmanager_link_status(profile))
+            return
+
         if parsed.path == "/api/hardware_status":
             self._send_json(
                 {
@@ -1448,12 +1509,13 @@ class Handler(BaseHTTPRequestHandler):
             # this configurable) rather than left to chance.
             qs = parse_qs(parsed.query)
             mount = qs.get("mount", [""])[0]
-            if not mount:
+            unlink = qs.get("action", [""])[0] == "unlink"
+            if not mount and not unlink:
                 self._send_json({"success": False, "error": "missing 'mount' query param"}, status=400)
                 return
-            _mb_log(f"linking Mount Bridge to mount '{mount}'...")
+            _mb_log("unlinking Mount Bridge's mount..." if unlink else f"linking Mount Bridge to mount '{mount}'...")
             try:
-                indi_client.set_mount_bridge_active_devices("PiFinder LX200", mount)
+                indi_client.set_mount_bridge_active_devices("PiFinder LX200", "" if unlink else mount)
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)

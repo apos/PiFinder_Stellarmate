@@ -317,6 +317,14 @@
     border-top: 1px solid #333;
     margin: 0.9rem 0 0.8rem 0;
   }
+  .mb-hint {
+    color: #e0a030;
+    font-size: 0.74rem;
+    margin: -0.2rem 0 0.6rem 0;
+  }
+  #wm-kstars-link-row { color: #888; font-size: 0.78rem; }
+  #wm-kstars-link-row.wm-link-warn #wm-kstars-link-text { color: #e0a030; }
+  #wm-kstars-link-row.wm-link-ok #wm-kstars-link-text { color: #4caf50; }
   #mb-log {
     margin-top: 0.6rem;
     background: #111;
@@ -478,21 +486,28 @@
 
       <div id="mb-settings-divider"></div>
 
-      <div class="mb-row" title="Start or stop this profile's indiserver. Restart it after adding/removing a driver so the change actually takes effect.">
-        <span class="mb-row-label">Profile:</span>
+      <div class="mb-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+        <span class="mb-row-label">1. Profile:</span>
         <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
         <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
       </div>
+      <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
+      <div id="wm-kstars-link-row" class="mb-row" style="display:none;">
+        <span id="wm-kstars-link-text"></span>
+        <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+      </div>
+
       <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-label">Drivers:</span>
+        <span class="mb-row-label">2. Drivers:</span>
         <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
         <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
       </div>
       <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-label">Mount:</span>
+        <span class="mb-row-label">3. Mount:</span>
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
+      <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
 
       <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
@@ -1521,6 +1536,16 @@ function updateMbDiagram(data) {
 // running-state transitions picked up by refreshMountBridgeStatus()'s own
 // poll - added after live user testing showed the tile's before/after state
 // alone was too hard to follow ("schwierig, dem ganzen zu folgen").
+// Set true for the duration of any user-triggered Mount Bridge action (add/
+// remove driver, start/stop profile, link/unlink mount, connect, coupling
+// preset). The two periodic polls below skip a tick while this is true -
+// found live: a poll landing mid-action (e.g. while a driver removal's
+// delete-and-recreate-the-profile workaround briefly has zero drivers, or
+// mid-restart) could read genuinely transient/incomplete state and flash it
+// on screen before the next successful poll corrected it. The action's own
+// completion always triggers an immediate, fresh refresh anyway.
+let mbActionInFlight = false;
+let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
 let mbLogPosition = 0;
 async function pollMbLog() {
   try {
@@ -1539,6 +1564,12 @@ async function pollMbLog() {
 setInterval(pollMbLog, 4000);
 pollMbLog();
 
+function refreshWmActiveButton() {
+  const btn = document.getElementById('wm-set-active-btn');
+  if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
+  btn.textContent = wmActiveMount ? 'Unlink Mount' : 'Link Mount';
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -1550,10 +1581,14 @@ async function refreshMountBridgeStatus() {
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate(false, false);
       updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
+      wmActiveMount = null;
+      refreshWmActiveButton();
       return;
     }
     updateWmCouplingGate(data.active_mount, data.coupling_mode !== null);
     updateMbDiagram(data);
+    wmActiveMount = data.active_mount;
+    refreshWmActiveButton();
     if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
       dotEl.className = 'status-dot dot-green';
       const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
@@ -1571,10 +1606,11 @@ async function refreshMountBridgeStatus() {
     updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
   }
 }
-setInterval(refreshMountBridgeStatus, 20000);
+setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
 refreshMountBridgeStatus();
 
 async function setWmCoupling(mode) {
+  mbActionInFlight = true;
   const btnId = { verify_alert: 'wm-preset-verify-btn', auto_correct: 'wm-preset-auto-btn', goto_forward: 'wm-preset-goto-btn' }[mode];
   const btn = document.getElementById(btnId);
   const originalText = btn.textContent;
@@ -1598,7 +1634,8 @@ async function setWmCoupling(mode) {
   }
   btn.textContent = originalText;
   pollMbLog();
-  refreshMountBridgeStatus();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
 }
 
 // Phase 2 of the Mount Bridge web integration - profile selection (UC3,
@@ -1609,15 +1646,20 @@ let wmServerRunning = false;
 let wmLastActiveProfile = null;
 let wmLastRunning = false;
 
+const WM_DEFAULT_PROFILE = 'Simulators';  // read-only default - never selectable here (step 1/2)
+
 async function loadWmProfiles() {
   const selectEl = document.getElementById('wm-profile-select');
+  const noProfileHint = document.getElementById('wm-no-profile-hint');
   try {
     const resp = await fetch('/api/webmanager/profiles', { cache: 'no-store' });
     const data = await resp.json();
     if (data.error || !data.profiles) throw new Error(data.error || 'no profiles');
+    const ownProfiles = data.profiles.filter((name) => name !== WM_DEFAULT_PROFILE);
+    noProfileHint.style.display = ownProfiles.length === 0 ? '' : 'none';
     const previousValue = wmSelectedProfile;
     selectEl.innerHTML = '';
-    data.profiles.forEach((name) => {
+    ownProfiles.forEach((name) => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name === data.active_profile ? `${name} (running)` : name;
@@ -1625,23 +1667,26 @@ async function loadWmProfiles() {
     });
     // Keep the previous selection if it still exists, otherwise fall back
     // to the actually-running profile if there is one, else the first.
-    if (previousValue && data.profiles.includes(previousValue)) {
+    if (previousValue && ownProfiles.includes(previousValue)) {
       selectEl.value = previousValue;
-    } else if (data.active_profile) {
+    } else if (ownProfiles.includes(data.active_profile)) {
       selectEl.value = data.active_profile;
     }
+    const changedProfile = wmSelectedProfile !== (selectEl.value || null);
     wmSelectedProfile = selectEl.value || null;
     wmLastActiveProfile = data.active_profile;
     wmLastRunning = data.running;
     wmServerRunning = data.running && data.active_profile === wmSelectedProfile;
-    selectEl.disabled = data.profiles.length === 0;
+    selectEl.disabled = ownProfiles.length === 0;
     refreshWmServerButton();
     if (wmSelectedProfile) {
       refreshWmDriverButtons();
       refreshWmConnectRow();
+      if (changedProfile) checkKstarsLink();
     } else {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
+      document.getElementById('wm-kstars-link-row').style.display = 'none';
     }
   } catch (e) {
     selectEl.innerHTML = '<option>unavailable</option>';
@@ -1650,6 +1695,30 @@ async function loadWmProfiles() {
     const serverBtn = document.getElementById('wm-server-btn');
     serverBtn.textContent = 'unknown';
     serverBtn.disabled = true;
+  }
+}
+
+async function checkKstarsLink() {
+  const row = document.getElementById('wm-kstars-link-row');
+  const textEl = document.getElementById('wm-kstars-link-text');
+  if (!wmSelectedProfile) { row.style.display = 'none'; return; }
+  try {
+    const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.checked) { row.style.display = 'none'; return; }  // no KStars DB found - nothing to report
+    row.style.display = '';
+    if (data.linked) {
+      row.className = 'mb-row wm-link-ok';
+      textEl.textContent = "✓ Linked to this Web Manager in KStars.";
+    } else if (data.kstars_profile_found) {
+      row.className = 'mb-row wm-link-warn';
+      textEl.textContent = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
+    } else {
+      row.className = 'mb-row wm-link-warn';
+      textEl.textContent = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+    }
+  } catch (e) {
+    row.style.display = 'none';
   }
 }
 
@@ -1666,6 +1735,7 @@ function refreshWmServerButton() {
 
 async function toggleWmServer() {
   if (!wmSelectedProfile) return;
+  mbActionInFlight = true;
   const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
   btn.disabled = true;
@@ -1681,8 +1751,9 @@ async function toggleWmServer() {
     // happened, same pattern as the driver toggle buttons.
   }
   pollMbLog();
-  loadWmProfiles();
-  refreshMountBridgeStatus();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
 }
 
 // Phase 3 - Active Devices + Connect (UC5/UC6 groundwork). Only meaningful
@@ -1695,6 +1766,7 @@ async function refreshWmConnectRow() {
   const lx200Btn = document.getElementById('wm-connect-lx200-btn');
   const bridgeBtn = document.getElementById('wm-connect-bridge-btn');
   const mountBtn = document.getElementById('wm-connect-mount-btn');
+  const noMountHint = document.getElementById('wm-no-mount-hint');
   if (!wmServerRunning || !wmSelectedProfile) {
     mountSelect.innerHTML = '<option>profile not running</option>';
     mountSelect.disabled = true;
@@ -1702,6 +1774,7 @@ async function refreshWmConnectRow() {
     lx200Btn.disabled = true;
     bridgeBtn.disabled = true;
     mountBtn.disabled = true;
+    noMountHint.style.display = 'none';
     return;
   }
   lx200Btn.disabled = false;
@@ -1720,36 +1793,46 @@ async function refreshWmConnectRow() {
     });
     if (data.drivers.includes(previousValue)) mountSelect.value = previousValue;
     mountSelect.disabled = data.drivers.length === 0;
-    setBtn.disabled = data.drivers.length === 0;
+    setBtn.disabled = data.drivers.length === 0 && !wmActiveMount;
     mountBtn.disabled = data.drivers.length === 0;
+    noMountHint.style.display = data.drivers.length === 0 ? '' : 'none';
   } catch (e) {
     mountSelect.innerHTML = '<option>unavailable</option>';
     mountSelect.disabled = true;
     setBtn.disabled = true;
     mountBtn.disabled = true;
+    noMountHint.style.display = 'none';
   }
 }
 
 async function setWmActiveDevices() {
+  // Toggles between linking the dropdown-selected mount and unlinking
+  // whatever's currently linked - per live feedback, "Link Mount" no longer
+  // made sense to show once a mount was already linked.
+  const unlinking = !!wmActiveMount;
   const mount = document.getElementById('wm-mount-select').value;
-  if (!mount) return;
+  if (!unlinking && !mount) return;
+  mbActionInFlight = true;
   const btn = document.getElementById('wm-set-active-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = 'setting…';
+  btn.textContent = unlinking ? 'unlinking…' : 'linking…';
   try {
-    const resp = await fetch(`/api/mount_bridge_active_devices?mount=${encodeURIComponent(mount)}`, { method: 'POST' });
+    const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
+    const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
     const data = await resp.json();
-    btn.textContent = data.success ? 'Set ✓' : (data.error || 'failed');
+    btn.textContent = data.success ? (unlinking ? 'Unlinked ✓' : 'Linked ✓') : (data.error || 'failed');
   } catch (e) {
     btn.textContent = 'failed';
   }
-  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
   pollMbLog();
-  refreshMountBridgeStatus();
+  await refreshMountBridgeStatus();
+  setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  mbActionInFlight = false;
 }
 
 async function connectWmDevice(deviceName, btnId) {
+  mbActionInFlight = true;
   const btn = document.getElementById(btnId);
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -1763,9 +1846,10 @@ async function connectWmDevice(deviceName, btnId) {
   } catch (e) {
     btn.textContent = 'failed';
   }
-  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
   pollMbLog();
-  refreshMountBridgeStatus();
+  await refreshMountBridgeStatus();
+  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  mbActionInFlight = false;
 }
 
 function connectWmSelectedMount() {
@@ -1779,6 +1863,7 @@ function onWmProfileChange() {
   refreshWmServerButton();
   refreshWmDriverButtons();
   refreshWmConnectRow();
+  checkKstarsLink();
 }
 
 function setWmDriverButton(driver, present) {
@@ -1809,6 +1894,7 @@ async function refreshWmDriverButtons() {
 
 async function toggleWmDriver(driver) {
   if (!wmSelectedProfile) return;
+  mbActionInFlight = true;
   const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
   const wantsAdd = btn.textContent.trim().endsWith('add');
   btn.disabled = true;
@@ -1823,11 +1909,14 @@ async function toggleWmDriver(driver) {
     // actual state ended up being, success or not, rather than assuming.
   }
   pollMbLog();
-  refreshWmDriverButtons();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
 }
 
 loadWmProfiles();
-setInterval(loadWmProfiles, 30000);
+setInterval(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU
 // read / PiFinder's own GPS status), classified as hardware/driver/python on
