@@ -191,6 +191,43 @@ before destructive actions, context-aware labels). One new principle this featur
 7. Live status row surfaces `DRIFT_STATUS` once coupled, so the user can see it's actually working
    without opening the Control Panel.
 
+### 6.1 UX refinement round (live user feedback, 2026-07-25)
+
+After Phases 1–4 were all live and testable together, hands-on use surfaced four UX issues, all
+addressed:
+
+- **Own tile, not buried in the hardware checklist**: everything from the Mount Bridge status line
+  down through the Coupling row moved out of `#hw-status` into a dedicated `#mount-bridge-tile`,
+  full-width below the existing tile row.
+- **Unambiguous button labels**: "Connect LX200" renamed to "Connect PiFinder LX200" - there are
+  many INDI drivers with "LX200" in the name (e.g. "LX200 OnStep"), so the generic short form was
+  genuinely ambiguous once a real mount driver is also visible in the same tile.
+- **Short, plain-language tooltips**: the original tooltips explained *why* (phase numbers, doc
+  references, INDI property names) - useful for `cpt`-style documentation, wrong for an end-user
+  hover hint. Replaced with one short, plain sentence per row (e.g. "Choose how PiFinder and the
+  mount stay in sync." instead of a paragraph about UC6/UC7 and INDI internals).
+- **A connection diagram**: three small nodes (PiFinder → Bridge → Mount) with colored dots for
+  each device's own live connection state, and an arrow between each pair that reflects what the
+  Bridge is currently doing rather than a literal read/write distinction:
+  - Off: grey dots, no arrow (`⋯`)
+  - Verify/Alert only: blue `↔` both sides ("watching for drift, never moves the mount")
+  - Auto-correct on drift: blue `↔` on the PiFinder side always; the mount-side arrow turns solid
+    orage `→` specifically when `drift_arcmin` currently exceeds the threshold (i.e. a correction is
+    actually happening right now), blue `↔` otherwise
+  - Goto-Forward: solid green `→` both sides ("forwarding goto commands straight to the mount")
+
+  A one-line caption under the diagram spells out the same state in plain language. This maps
+  directly onto the driver's own documented behavior (see
+  [Readme_PiFinder_LX200.md's Data flow diagrams](../../Readme_PiFinder_LX200.md#data-flow-auto-correct--verify-alert-drift-polling))
+  rather than being a generic "connected/not connected" indicator - the goal was to actually show
+  *what's influencing what*, per the original ask ("was mit was verbunden ist und was, was
+  ansteuert").
+
+Backend change needed for this: `mount_bridge_status()` now also queries the linked PiFinder/mount
+devices' own `CONNECTION` state (two extra short, targeted `get_properties()` calls, only when
+`active_pifinder`/`active_mount` are actually set) - previously it only reported Mount Bridge's own
+properties.
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same

@@ -155,26 +155,51 @@ def get_properties(
     return result
 
 
+def _connection_state(device_props: Optional[dict]) -> Optional[bool]:
+    """True/False from a device's own CONNECTION.CONNECT, None if that
+    property isn't defined at all (device not loaded, or never queried)."""
+    if not device_props:
+        return None
+    conn = device_props.get("CONNECTION")
+    if not conn:
+        return None
+    return conn["elements"].get("CONNECT") == "On"
+
+
 def mount_bridge_status(
-    host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    device_timeout: float = 1.5,
 ) -> dict:
     """
-    Phase 1 read-only snapshot of "PiFinder Mount Bridge"'s relevant
-    properties (see docs/concepts/mount_bridge_web_integration.md §4 for the
-    verified property reference this maps to). Returns a dict with:
-      - "running": bool - whether the device answered at all
-      - "active_pifinder"/"active_mount": str - ACTIVE_DEVICES elements
+    Read-only snapshot of "PiFinder Mount Bridge"'s relevant properties (see
+    docs/concepts/mount_bridge_web_integration.md §4 for the verified
+    property reference this maps to), plus each linked device's own
+    connection state - used for the Control Center's connection diagram.
+    Returns a dict with:
+      - "running": bool - whether Mount Bridge answered at all
+      - "bridge_connected": bool or None - Mount Bridge's own CONNECTION state
+      - "active_pifinder"/"active_mount": str or None - ACTIVE_DEVICES elements
+      - "pifinder_connected"/"mount_connected": bool or None - the linked
+        devices' own CONNECTION state (None if not set/queryable yet)
       - "coupling_mode": str or None - whichever BRIDGE_MODE element is "On"
       - "drift_arcmin": float or None - current DRIFT_STATUS reading
     All fields besides "running" are None if the device isn't running/known.
+    `device_timeout` is shorter than `timeout` for the two extra per-device
+    lookups (kept modest since this function is polled regularly - see
+    status_page.html's refreshMountBridgeStatus()).
     """
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
         return {
             "running": False,
+            "bridge_connected": None,
             "active_pifinder": None,
             "active_mount": None,
+            "pifinder_connected": None,
+            "mount_connected": None,
             "coupling_mode": None,
             "drift_arcmin": None,
         }
@@ -185,11 +210,26 @@ def mount_bridge_status(
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    active_pifinder = active_devices.get("ACTIVE_PIFINDER") or None
+    active_mount = active_devices.get("ACTIVE_MOUNT") or None
+
+    pifinder_connected = None
+    if active_pifinder:
+        pf_props = get_properties(device=active_pifinder, host=host, port=port, timeout=device_timeout)
+        pifinder_connected = _connection_state(pf_props.get(active_pifinder))
+
+    mount_connected = None
+    if active_mount:
+        mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
+        mount_connected = _connection_state(mt_props.get(active_mount))
 
     return {
         "running": True,
-        "active_pifinder": active_devices.get("ACTIVE_PIFINDER") or None,
-        "active_mount": active_devices.get("ACTIVE_MOUNT") or None,
+        "bridge_connected": _connection_state(device_props),
+        "active_pifinder": active_pifinder,
+        "active_mount": active_mount,
+        "pifinder_connected": pifinder_connected,
+        "mount_connected": mount_connected,
         "coupling_mode": coupling_mode,
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
     }

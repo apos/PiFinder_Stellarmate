@@ -277,6 +277,42 @@
     border-top: 1px solid #333;
     font-size: 0.78rem;
   }
+  #mount-bridge-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    margin-top: 1rem;
+  }
+  #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
+  .mb-row-label { color: #888; margin-right: 0.4rem; }
+  #mb-diagram {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.6rem 0 0.3rem 0;
+  }
+  .mb-node {
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.35rem 0.6rem;
+    background: #222;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .mb-node .status-dot { margin-right: 0.35rem; }
+  .mb-arrow {
+    font-size: 1.1rem;
+    color: #555;
+    min-width: 2.2rem;
+    text-align: center;
+  }
+  .mb-arrow.mb-arrow-read { color: #5b9bd5; }
+  .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
+  .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
+  #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
   .waiting-bar-track {
     background: #262626;
     border-radius: 5px;
@@ -369,37 +405,6 @@
             <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
-          <div class="hw-row" title="Read-only status of the PiFinder Mount Bridge INDI driver, queried directly from indiserver (127.0.0.1:7624) - independent of whether a browser tab has the INDI Control Panel open. Coupling mode and drift only ever show once the driver is actually connected (it doesn't define those properties before then) - 'loaded, not connected' is the normal state until you connect it via the INDI Control Panel or (once built) this page's own controls. See docs/concepts/mount_bridge_web_integration.md.">
-            <span class="status-dot dot-white" id="mount-bridge-dot"></span>Mount Bridge: <span id="mount-bridge-text">checking&hellip;</span>
-          </div>
-          <div class="hw-row" id="wm-drivers-row" title="Phase 2 of the Mount Bridge web integration: adds/removes ONLY the two PiFinder drivers to/from the selected Web Manager profile - no other profile editing happens here. Pick the profile first (same list as the Web Manager's own Equipment Profile dropdown).">
-            Profile:
-            <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
-            <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-            <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
-          </div>
-          <div class="hw-row" id="wm-connect-row" title="Phase 3: connects PiFinder LX200 / PiFinder Mount Bridge / your selected mount driver (the standard CONNECTION switch every INDI driver has - connection parameters like serial port/baud are never touched here, see docs/concepts/mount_bridge_web_integration.md). Requires the profile to actually be running (started via the Web Manager) first. Pick which loaded driver is your mount, then Set - this writes Mount Bridge's ACTIVE_DEVICES.">
-            Mount:
-            <select id="wm-mount-select" disabled><option>&hellip;</option></select>
-            <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Set Active Devices</button>
-            <br>
-            <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect LX200</button>
-            <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-            <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-          </div>
-          <div class="hw-row" id="wm-coupling-row" title="Phase 4: one-click Coupling presets, using PiFinder's own terminology instead of raw INDI property names - see docs/concepts/mount_bridge_web_integration.md. Disabled until a mount is selected/connected above (all three presets need one - drift is PiFinder-vs-mount). Threshold/Sync-or-Goto only apply to Verify/Alert and Auto-correct - pre-filled with the driver's own defaults, editable before clicking.">
-            Coupling:
-            <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="setWmCoupling('verify_alert')" disabled>Verify/Alert only</button>
-            <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="setWmCoupling('auto_correct')" disabled>Auto-correct on drift</button>
-            <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="setWmCoupling('goto_forward')" disabled>Goto-Forward</button>
-            <br>
-            Threshold: <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
-            Correction:
-            <select id="wm-action-select">
-              <option value="sync" selected>Sync</option>
-              <option value="goto">Goto/Track</option>
-            </select>
-          </div>
         </div>
         <div id="ext-hw-status">
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
@@ -415,6 +420,50 @@
       <div id="power-tile" title="Affects this whole Pi, not just PiFinder or this setup page.">
         <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
         <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
+      </div>
+    </div>
+    <div id="mount-bridge-tile">
+      <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+
+      <div id="mb-diagram">
+        <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
+        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-bridge"><span class="status-dot dot-white" id="mb-node-bridge-dot"></span>Bridge</div>
+        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
+      </div>
+      <div id="mb-mode-caption">Not coupled yet</div>
+
+      <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
+        <span class="mb-row-label">Profile:</span>
+        <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+        <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+        <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+      </div>
+      <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+        <span class="mb-row-label">Mount:</span>
+        <select id="wm-mount-select" disabled><option>&hellip;</option></select>
+        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
+      </div>
+      <div class="mb-row" title="Connect each device. Needs the profile to be running first.">
+        <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+        <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+        <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+      </div>
+      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync.">
+        <span class="mb-row-label">Coupling:</span>
+        <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="setWmCoupling('verify_alert')" disabled>Verify/Alert only</button>
+        <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="setWmCoupling('auto_correct')" disabled>Auto-correct on drift</button>
+        <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="setWmCoupling('goto_forward')" disabled>Goto-Forward</button>
+      </div>
+      <div class="mb-row" title="Only used by Auto-correct: how far off before it corrects, and how.">
+        <span class="mb-row-label">Threshold:</span>
+        <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
+        <span class="mb-row-label" style="margin-left:0.8rem;">Correction:</span>
+        <select id="wm-action-select">
+          <option value="sync" selected>Sync</option>
+          <option value="goto">Goto/Track</option>
+        </select>
       </div>
     </div>
     <div id="status-row">
@@ -1387,6 +1436,56 @@ function updateWmCouplingGate(active_mount, connected) {
   });
 }
 
+// Small connection diagram: PiFinder -> Bridge -> Mount, colored dots for
+// whether each device is actually connected, and the two arrows show what
+// the bridge is currently doing between them - a dotted "reading" arrow
+// while just watching, solid orange when it's about to/just corrected the
+// mount, solid green when forwarding a goto straight through.
+function setMbNodeDot(id, connected) {
+  const el = document.getElementById(id);
+  el.className = 'status-dot ' + (connected === true ? 'dot-green' : connected === false ? 'dot-red' : 'dot-white');
+}
+
+function setMbArrow(id, kind) {
+  const el = document.getElementById(id);
+  el.className = 'mb-arrow';
+  if (kind === 'read') { el.classList.add('mb-arrow-read'); el.textContent = '↔'; }
+  else if (kind === 'write') { el.classList.add('mb-arrow-write'); el.textContent = '→'; }
+  else if (kind === 'goto') { el.classList.add('mb-arrow-goto'); el.textContent = '→'; }
+  else { el.textContent = '⋯'; }
+}
+
+function updateMbDiagram(data) {
+  document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
+  setMbNodeDot('mb-node-lx200-dot', data.pifinder_connected);
+  setMbNodeDot('mb-node-bridge-dot', data.bridge_connected);
+  setMbNodeDot('mb-node-mount-dot', data.mount_connected);
+
+  const captionEl = document.getElementById('mb-mode-caption');
+  const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
+
+  if (!data.coupling_mode || data.coupling_mode === 'MODE_OFF') {
+    setMbArrow('mb-arrow-left', 'off');
+    setMbArrow('mb-arrow-right', 'off');
+    captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
+  } else if (data.coupling_mode === 'MODE_VERIFY_ALERT') {
+    setMbArrow('mb-arrow-left', 'read');
+    setMbArrow('mb-arrow-right', 'read');
+    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
+  } else if (data.coupling_mode === 'MODE_AUTO_CORRECT') {
+    setMbArrow('mb-arrow-left', 'read');
+    const exceeded = data.drift_arcmin !== null && data.drift_arcmin > threshold;
+    setMbArrow('mb-arrow-right', exceeded ? 'write' : 'read');
+    captionEl.textContent = exceeded
+      ? `Correcting the mount now - drift ${data.drift_arcmin.toFixed(1)}' exceeds ${threshold}'`
+      : `Watching for drift - will correct the mount past ${threshold}'`;
+  } else if (data.coupling_mode === 'MODE_GOTO_FORWARD') {
+    setMbArrow('mb-arrow-left', 'goto');
+    setMbArrow('mb-arrow-right', 'goto');
+    captionEl.textContent = 'Forwarding goto commands straight to the mount';
+  }
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -1397,9 +1496,11 @@ async function refreshMountBridgeStatus() {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate(false, false);
+      updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
       return;
     }
     updateWmCouplingGate(data.active_mount, data.coupling_mode !== null);
+    updateMbDiagram(data);
     if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
       dotEl.className = 'status-dot dot-green';
       const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
@@ -1414,6 +1515,7 @@ async function refreshMountBridgeStatus() {
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
     updateWmCouplingGate(false, false);
+    updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
   }
 }
 setInterval(refreshMountBridgeStatus, 20000);
