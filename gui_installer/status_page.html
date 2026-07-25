@@ -378,6 +378,15 @@
             <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
             <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
           </div>
+          <div class="hw-row" id="wm-connect-row" title="Phase 3: connects PiFinder LX200 / PiFinder Mount Bridge / your selected mount driver (the standard CONNECTION switch every INDI driver has - connection parameters like serial port/baud are never touched here, see docs/concepts/mount_bridge_web_integration.md). Requires the profile to actually be running (started via the Web Manager) first. Pick which loaded driver is your mount, then Set - this writes Mount Bridge's ACTIVE_DEVICES.">
+            Mount:
+            <select id="wm-mount-select" disabled><option>&hellip;</option></select>
+            <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Set Active Devices</button>
+            <br>
+            <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect LX200</button>
+            <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+            <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+          </div>
         </div>
         <div id="ext-hw-status">
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
@@ -1387,6 +1396,7 @@ refreshMountBridgeStatus();
 // read-only list, no create/edit) + add/remove ONLY the two PiFinder
 // drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
 let wmSelectedProfile = null;
+let wmServerRunning = false;
 
 async function loadWmProfiles() {
   const selectEl = document.getElementById('wm-profile-select');
@@ -1410,9 +1420,11 @@ async function loadWmProfiles() {
       selectEl.value = data.active_profile;
     }
     wmSelectedProfile = selectEl.value || null;
+    wmServerRunning = data.running && data.active_profile === wmSelectedProfile;
     selectEl.disabled = data.profiles.length === 0;
     if (wmSelectedProfile) {
       refreshWmDriverButtons();
+      refreshWmConnectRow();
     } else {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
@@ -1422,6 +1434,90 @@ async function loadWmProfiles() {
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
   }
+}
+
+// Phase 3 - Active Devices + Connect (UC5/UC6 groundwork). Only meaningful
+// once the selected profile's indiserver is actually running, since it
+// needs live devices to query/connect - disabled otherwise rather than
+// left to fail with a confusing error.
+async function refreshWmConnectRow() {
+  const mountSelect = document.getElementById('wm-mount-select');
+  const setBtn = document.getElementById('wm-set-active-btn');
+  const lx200Btn = document.getElementById('wm-connect-lx200-btn');
+  const bridgeBtn = document.getElementById('wm-connect-bridge-btn');
+  const mountBtn = document.getElementById('wm-connect-mount-btn');
+  if (!wmServerRunning || !wmSelectedProfile) {
+    mountSelect.innerHTML = '<option>profile not running</option>';
+    mountSelect.disabled = true;
+    setBtn.disabled = true;
+    lx200Btn.disabled = true;
+    bridgeBtn.disabled = true;
+    mountBtn.disabled = true;
+    return;
+  }
+  lx200Btn.disabled = false;
+  bridgeBtn.disabled = false;
+  try {
+    const resp = await fetch(`/api/webmanager/other_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error || !data.drivers) throw new Error(data.error || 'no drivers');
+    const previousValue = mountSelect.value;
+    mountSelect.innerHTML = '';
+    data.drivers.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      mountSelect.appendChild(opt);
+    });
+    if (data.drivers.includes(previousValue)) mountSelect.value = previousValue;
+    mountSelect.disabled = data.drivers.length === 0;
+    setBtn.disabled = data.drivers.length === 0;
+    mountBtn.disabled = data.drivers.length === 0;
+  } catch (e) {
+    mountSelect.innerHTML = '<option>unavailable</option>';
+    mountSelect.disabled = true;
+    setBtn.disabled = true;
+    mountBtn.disabled = true;
+  }
+}
+
+async function setWmActiveDevices() {
+  const mount = document.getElementById('wm-mount-select').value;
+  if (!mount) return;
+  const btn = document.getElementById('wm-set-active-btn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'setting…';
+  try {
+    const resp = await fetch(`/api/mount_bridge_active_devices?mount=${encodeURIComponent(mount)}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? 'Set ✓' : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  refreshMountBridgeStatus();
+}
+
+async function connectWmDevice(deviceName, btnId) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'connecting…';
+  try {
+    const resp = await fetch(`/api/mount_bridge_connect?device=${encodeURIComponent(deviceName)}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? 'Connect ✓' : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  refreshMountBridgeStatus();
+}
+
+function connectWmSelectedMount() {
+  const mount = document.getElementById('wm-mount-select').value;
+  if (mount) connectWmDevice(mount, 'wm-connect-mount-btn');
 }
 
 function onWmProfileChange() {

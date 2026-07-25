@@ -1100,6 +1100,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, status=502)
             return
 
+        if parsed.path == "/api/webmanager/other_drivers":
+            # Phase 3 (UC5): candidates for "which loaded driver is the
+            # mount" - every profile driver except the two PiFinder ones.
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            try:
+                self._send_json({"drivers": webmanager_client.other_profile_drivers(profile)})
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+            return
+
         if parsed.path == "/api/hardware_status":
             self._send_json(
                 {
@@ -1320,6 +1334,45 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 setter(profile, action == "add")
             except webmanager_client.WebManagerError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_active_devices":
+            # Phase 3 (UC5): sets PiFinder Mount Bridge's ACTIVE_DEVICES to
+            # point at the user-selected mount driver. ACTIVE_PIFINDER is
+            # always re-asserted as "PiFinder LX200" (its own default -
+            # there is exactly one PiFinder LX200 device, no need to make
+            # this configurable) rather than left to chance.
+            qs = parse_qs(parsed.query)
+            mount = qs.get("mount", [""])[0]
+            if not mount:
+                self._send_json({"success": False, "error": "missing 'mount' query param"}, status=400)
+                return
+            try:
+                indi_client.set_mount_bridge_active_devices("PiFinder LX200", mount)
+            except indi_client.INDIClientError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_connect":
+            # Phase 3 (UC5/UC6 groundwork): generic CONNECTION.CONNECT
+            # trigger - works for PiFinder LX200, PiFinder Mount Bridge, or
+            # whichever mount driver the user selected, since CONNECTION is
+            # a standard property every INDI driver has. Connection
+            # *parameters* (serial port, baud, TCP host) are never touched
+            # here - see the concept doc's explicit non-goal.
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            if not device:
+                self._send_json({"success": False, "error": "missing 'device' query param"}, status=400)
+                return
+            try:
+                indi_client.connect_device(device)
+            except indi_client.INDIClientError as e:
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             self._send_json({"success": True})

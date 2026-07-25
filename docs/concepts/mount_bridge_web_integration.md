@@ -266,6 +266,15 @@ build is lower-risk than one large change:
 2. **Phase 2 — profile driver add/remove** (UC4): pure Web Manager REST calls, no raw INDI needed
    yet — independent of Phase 1's INDI client.
 3. **Phase 3 — Active Devices + Connect** (UC5, part of UC6): first real INDI property *writes*.
+   **Done and verified live (2026-07-25)**: `indi_client.py` gained `set_switch()`/`set_text()`/
+   `connect_device()`/`set_mount_bridge_active_devices()`. Full cycle tested end-to-end against a
+   real `indiserver` (Simulators profile, `Telescope Simulator` standing in for a real mount):
+   connected `Telescope Simulator`, connected `PiFinder LX200`, set Mount Bridge's `ACTIVE_DEVICES`
+   to `("PiFinder LX200", "Telescope Simulator")`, connected `PiFinder Mount Bridge` — afterward
+   `mount_bridge_status()` correctly showed `coupling_mode: "MODE_OFF"` and `drift_arcmin: 0.0`
+   (both `null` before connect, confirming §4's earlier finding). New UI: a "Mount" dropdown (UC5,
+   live-queried from the profile's other drivers) plus three Connect buttons, all disabled unless
+   the selected profile's `indiserver` is actually running.
 4. **Phase 4 — the three one-click presets** (UC6/UC7 complete): builds directly on Phase 3.
 5. **Phase 5 (stretch, separate decision)** — port the framework-agnostic module into PiFinder's own
    web interface (§7).

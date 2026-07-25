@@ -190,3 +190,16 @@ def pifinder_driver_status(
         "has_lx200": PIFINDER_LX200_LABEL in labels,
         "has_bridge": PIFINDER_BRIDGE_LABEL in labels,
     }
+
+
+def other_profile_drivers(
+    profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> list:
+    """Phase 3 (UC5): every driver label in the profile except the two
+    PiFinder ones - candidates for "which one is the mount", queried live
+    rather than hardcoded. Doesn't try to guess which one is actually a
+    telescope driver (INDI doesn't expose device class through simple
+    property introspection) - the user picks from this list themselves, per
+    the concept doc's §10 risk note."""
+    labels = get_profile_labels(profile, host, port, timeout)
+    return [label for label in labels if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL)]
