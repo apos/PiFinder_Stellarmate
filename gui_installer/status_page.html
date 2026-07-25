@@ -1516,11 +1516,26 @@ function setMbArrow(id, kind) {
   else { el.textContent = '⋯'; }
 }
 
+// Green highlight on whichever Coupling preset is actually active right
+// now - per live feedback, matches the same "button reflects the current
+// state" idea used everywhere else on this tile.
+function updateCouplingButtons(mode) {
+  const active = {
+    MODE_VERIFY_ALERT: 'wm-preset-verify-btn',
+    MODE_AUTO_CORRECT: 'wm-preset-auto-btn',
+    MODE_GOTO_FORWARD: 'wm-preset-goto-btn',
+  }[mode];
+  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+    document.getElementById(id).classList.toggle('mb-btn-active', id === active);
+  });
+}
+
 function updateMbDiagram(data) {
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-node-lx200-dot', data.pifinder_connected);
   setMbNodeDot('mb-node-bridge-dot', data.bridge_connected);
   setMbNodeDot('mb-node-mount-dot', data.mount_connected);
+  updateCouplingButtons(data.coupling_mode);
 
   const captionEl = document.getElementById('mb-mode-caption');
   const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
@@ -1734,12 +1749,17 @@ async function loadWmProfiles() {
 async function checkKstarsLink() {
   const row = document.getElementById('wm-kstars-link-row');
   const textEl = document.getElementById('wm-kstars-link-text');
+  const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
   if (!wmSelectedProfile) { row.style.display = 'none'; return; }
   try {
     const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (!data.checked) { row.style.display = 'none'; return; }  // no KStars DB found - nothing to report
     row.style.display = '';
+    // Recheck itself doesn't change anything - it's colored to reflect
+    // whether the underlying check currently passes, same "green means
+    // satisfied" idea used everywhere else on this tile.
+    recheckBtn.classList.toggle('mb-btn-active', !!data.linked);
     if (data.linked) {
       row.className = 'mb-row wm-link-ok';
       textEl.textContent = "✓ Linked to this Web Manager in KStars.";
@@ -1760,9 +1780,15 @@ function refreshWmServerButton() {
   if (!wmSelectedProfile) {
     btn.textContent = '…';
     btn.disabled = true;
+    btn.classList.remove('mb-btn-active');
     return;
   }
+  // Green when running - same "button reflects the state actually being
+  // satisfied" idea as everywhere else, even though the label itself is an
+  // action verb ("Stop"), not a state - per live feedback, "Stop" alone
+  // didn't make clear whether the profile currently *was* running or not.
   btn.textContent = wmServerRunning ? 'Stop' : 'Start';
+  btn.classList.toggle('mb-btn-active', wmServerRunning);
   btn.disabled = false;
 }
 
@@ -1795,11 +1821,30 @@ async function toggleWmServer() {
 // once the selected profile's indiserver is actually running, since it
 // needs live devices to query/connect - disabled otherwise rather than
 // left to fail with a confusing error.
+// Every currently-available (button not disabled) connect target, paired
+// with its device name/button id/current connected state - shared by the
+// "Connect all" button's own label/color and its click handler below.
+function _availableConnectTargets() {
+  const targets = [];
+  if (!document.getElementById('wm-connect-lx200-btn').disabled)
+    targets.push(['PiFinder LX200', 'wm-connect-lx200-btn', wmPifinderConnected]);
+  if (!document.getElementById('wm-connect-bridge-btn').disabled)
+    targets.push(['PiFinder Mount Bridge', 'wm-connect-bridge-btn', wmBridgeConnected]);
+  const mount = document.getElementById('wm-mount-select').value;
+  if (!document.getElementById('wm-connect-mount-btn').disabled && mount)
+    targets.push([mount, 'wm-connect-mount-btn', wmMountConnected]);
+  return targets;
+}
+
 function refreshWmConnectAllButton() {
   const allBtn = document.getElementById('wm-connect-all-btn');
-  const anyAvailable = ['wm-connect-lx200-btn', 'wm-connect-bridge-btn', 'wm-connect-mount-btn']
-    .some((id) => !document.getElementById(id).disabled);
-  allBtn.disabled = !anyAvailable;
+  const targets = _availableConnectTargets();
+  allBtn.disabled = targets.length === 0;
+  // Green + "Disconnect all" once everything available is already
+  // connected - same toggle idea as the individual Connect buttons.
+  const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  allBtn.textContent = allConnected ? 'Disconnect all' : 'Connect all (available)';
+  allBtn.classList.toggle('mb-btn-active', allConnected);
 }
 
 async function refreshWmConnectRow() {
@@ -1851,15 +1896,18 @@ async function refreshWmConnectRow() {
 }
 
 function connectAllAvailable() {
-  // Only ever connects, never toggles an already-connected device off -
-  // "available" means "ready to connect", not "click every button".
-  if (!document.getElementById('wm-connect-lx200-btn').disabled && !wmPifinderConnected)
-    _setDeviceConnection('PiFinder LX200', 'wm-connect-lx200-btn', false);
-  if (!document.getElementById('wm-connect-bridge-btn').disabled && !wmBridgeConnected)
-    _setDeviceConnection('PiFinder Mount Bridge', 'wm-connect-bridge-btn', false);
-  const mount = document.getElementById('wm-mount-select').value;
-  if (!document.getElementById('wm-connect-mount-btn').disabled && mount && !wmMountConnected)
-    _setDeviceConnection(mount, 'wm-connect-mount-btn', false);
+  // Toggle: if everything available is already connected, disconnect it
+  // all; otherwise connect only the ones not yet connected (never toggles
+  // an individual already-connected device off in that case).
+  const targets = _availableConnectTargets();
+  const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  targets.forEach(([deviceName, btnId, connected]) => {
+    if (allConnected) {
+      _setDeviceConnection(deviceName, btnId, true);
+    } else if (!connected) {
+      _setDeviceConnection(deviceName, btnId, false);
+    }
+  });
 }
 
 async function setWmActiveDevices() {
