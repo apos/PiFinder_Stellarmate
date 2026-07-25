@@ -99,7 +99,7 @@
     padding: 1rem 1.2rem;
     margin-bottom: 0.8rem;
   }
-  .choice-card h3 { margin: 0 0 0.3rem; font-size: 1.05rem; }
+  .choice-card h3, .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
   .choice-card p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #choices button, #start-fresh {
     background: #2a6fdb;
@@ -198,29 +198,19 @@
   }
   #quick-links-tile a:hover { text-decoration: underline; }
   #top-tiles-row { flex-wrap: wrap; }
-  #power-tile {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 0.7rem 0.9rem;
-    font-size: 0.82rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    justify-content: center;
-  }
-  #power-tile .power-btn {
+  .power-btn {
     color: white;
     border: none;
     border-radius: 6px;
     padding: 0.5rem 0.9rem;
     font-size: 0.85rem;
     cursor: pointer;
+    margin-left: 0.6rem;
   }
   #power-reboot-btn { background: #2a6fdb; }
   #power-poweroff-btn { background: #a33; }
-  #power-tile .power-btn:hover { filter: brightness(1.15); }
-  #power-tile .power-btn:disabled { background: #444; cursor: default; filter: none; }
+  .power-btn:hover { filter: brightness(1.15); }
+  .power-btn:disabled { background: #444; cursor: default; filter: none; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -327,6 +317,13 @@
   #wm-kstars-link-row.wm-link-ok #wm-kstars-link-text { color: #4caf50; }
   .mb-step-label.mb-step-done { color: #4caf50; }
   .mb-step-label.mb-step-done::before { content: "\2713 "; }
+  .mb-step-label.mb-step-busy { color: #f5a623; }
+  .mb-step-label.mb-step-busy::before {
+    content: "\27F3 ";
+    display: inline-block;
+    animation: mb-spin 1s linear infinite;
+  }
+  @keyframes mb-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   #mb-log {
     margin-top: 0.6rem;
     background: #111;
@@ -408,6 +405,7 @@
     <div id="top-tiles-row">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links</h3>
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
         <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
@@ -415,8 +413,11 @@
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
       <div id="mode-tile">
+        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power</h3>
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+        <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
+        <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')" title="Affects this whole Pi, not just PiFinder or this setup page.">Shutdown Pi</button>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
           <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
             <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
@@ -445,10 +446,6 @@
           </div>
         </div>
       </div>
-      <div id="power-tile" title="Affects this whole Pi, not just PiFinder or this setup page.">
-        <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
-        <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
-      </div>
     </div>
     <div id="mount-bridge-tile">
       <!-- Current status first: connection diagram, Connect buttons,
@@ -456,6 +453,7 @@
            per live user feedback. Visually separated (see #mb-settings-divider
            below) from the one-time "set it up" rows (Profile/Drivers/Mount),
            which now follow underneath rather than being interleaved. -->
+      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge</h3>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
@@ -465,11 +463,6 @@
         <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
-      <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-        <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
-        <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-        <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-      </div>
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync.">
         <span class="mb-row-label">Coupling:</span>
         <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="setWmCoupling('verify_alert')" disabled>Verify/Alert only</button>
@@ -510,6 +503,13 @@
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+      <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Connect:</span>
+        <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+        <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+        <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+        <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+      </div>
 
       <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
@@ -1743,6 +1743,7 @@ function refreshWmServerButton() {
 async function toggleWmServer() {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
+  setStepBusy(1, true);
   const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
   btn.disabled = true;
@@ -1761,12 +1762,20 @@ async function toggleWmServer() {
   await loadWmProfiles();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  setStepBusy(1, false);
 }
 
 // Phase 3 - Active Devices + Connect (UC5/UC6 groundwork). Only meaningful
 // once the selected profile's indiserver is actually running, since it
 // needs live devices to query/connect - disabled otherwise rather than
 // left to fail with a confusing error.
+function refreshWmConnectAllButton() {
+  const allBtn = document.getElementById('wm-connect-all-btn');
+  const anyAvailable = ['wm-connect-lx200-btn', 'wm-connect-bridge-btn', 'wm-connect-mount-btn']
+    .some((id) => !document.getElementById(id).disabled);
+  allBtn.disabled = !anyAvailable;
+}
+
 async function refreshWmConnectRow() {
   const mountSelect = document.getElementById('wm-mount-select');
   const setBtn = document.getElementById('wm-set-active-btn');
@@ -1782,6 +1791,7 @@ async function refreshWmConnectRow() {
     bridgeBtn.disabled = true;
     mountBtn.disabled = true;
     noMountHint.style.display = 'none';
+    refreshWmConnectAllButton();
     return;
   }
   lx200Btn.disabled = false;
@@ -1810,6 +1820,13 @@ async function refreshWmConnectRow() {
     mountBtn.disabled = true;
     noMountHint.style.display = 'none';
   }
+  refreshWmConnectAllButton();
+}
+
+function connectAllAvailable() {
+  if (!document.getElementById('wm-connect-lx200-btn').disabled) connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn');
+  if (!document.getElementById('wm-connect-bridge-btn').disabled) connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn');
+  if (!document.getElementById('wm-connect-mount-btn').disabled) connectWmSelectedMount();
 }
 
 async function setWmActiveDevices() {
@@ -1820,6 +1837,7 @@ async function setWmActiveDevices() {
   const mount = document.getElementById('wm-mount-select').value;
   if (!unlinking && !mount) return;
   mbActionInFlight = true;
+  setStepBusy(3, true);
   const btn = document.getElementById('wm-set-active-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -1836,10 +1854,12 @@ async function setWmActiveDevices() {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
   mbActionInFlight = false;
+  setStepBusy(3, false);
 }
 
 async function connectWmDevice(deviceName, btnId) {
   mbActionInFlight = true;
+  setStepBusy(4, true);
   const btn = document.getElementById(btnId);
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -1857,6 +1877,7 @@ async function connectWmDevice(deviceName, btnId) {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
   mbActionInFlight = false;
+  setStepBusy(4, false);
 }
 
 function connectWmSelectedMount() {
@@ -1898,6 +1919,23 @@ function updateStepIndicators() {
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', !!wmActiveMount);
 }
 
+// Yellow + spinning symbol while a step's own action is actually running -
+// per live feedback, the green/grey checkmark alone didn't show "working on
+// it right now" while a click was in flight. wmStep4Busy is a counter, not
+// a bool, since "Connect all" can have 2-3 connects running at once.
+let wmStep4Busy = 0;
+function setStepBusy(stepNum, busy) {
+  const el = document.getElementById(`wm-step${stepNum}-label`);
+  if (stepNum === 4) {
+    wmStep4Busy = Math.max(0, wmStep4Busy + (busy ? 1 : -1));
+    el.classList.toggle('mb-step-busy', wmStep4Busy > 0);
+    if (wmStep4Busy === 0) updateStepIndicators();
+    return;
+  }
+  el.classList.toggle('mb-step-busy', busy);
+  if (!busy) updateStepIndicators();
+}
+
 async function refreshWmDriverButtons() {
   if (!wmSelectedProfile) return;
   try {
@@ -1915,6 +1953,7 @@ async function refreshWmDriverButtons() {
 async function toggleWmDriver(driver) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
+  setStepBusy(2, true);
   const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
   const wantsAdd = btn.textContent.trim().endsWith('add');
   btn.disabled = true;
@@ -1933,6 +1972,7 @@ async function toggleWmDriver(driver) {
   await loadWmProfiles();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  setStepBusy(2, false);
 }
 
 loadWmProfiles();
