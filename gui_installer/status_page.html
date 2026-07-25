@@ -1587,6 +1587,7 @@ function refreshWmActiveButton() {
   const btn = document.getElementById('wm-set-active-btn');
   if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
   btn.textContent = wmActiveMount ? 'Unlink Mount' : 'Link Mount';
+  btn.classList.toggle('mb-btn-active', !!wmActiveMount);
 }
 
 async function refreshMountBridgeStatus() {
