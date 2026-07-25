@@ -1341,6 +1341,38 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": ok, "error": error})
             return
 
+        if parsed.path == "/api/webmanager/server":
+            # UC2: start/stop the selected profile's indiserver instance -
+            # scoped in the concept doc from the start but never actually
+            # wired up until live testing showed why it matters: indiserver
+            # only reads a profile's driver list at *startup*, so adding/
+            # removing drivers via UC4/UC5 while the profile keeps running
+            # never takes effect on the live indiserver until it's restarted
+            # (found live: "LX200 OnStep" added via Web Manager stayed in
+            # the profile's DB row but never actually started as a process).
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            profile = qs.get("profile", [""])[0]
+            if action not in ("start", "stop"):
+                self._send_json({"success": False, "error": "expected ?action=start|stop"}, status=400)
+                return
+            if action == "start" and not profile:
+                self._send_json({"success": False, "error": "missing 'profile' query param"}, status=400)
+                return
+            _mb_log(f"{'starting' if action == 'start' else 'stopping'} profile{' ' + profile if profile else ''}...")
+            try:
+                if action == "start":
+                    webmanager_client.start_server(profile)
+                else:
+                    webmanager_client.stop_server()
+            except webmanager_client.WebManagerError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/webmanager/pifinder_drivers":
             # UC4: add/remove ONLY PiFinder LX200 / PiFinder Mount Bridge to/
             # from a profile - no other profile editing. See
