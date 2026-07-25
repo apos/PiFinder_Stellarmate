@@ -428,6 +428,17 @@
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="choices" style="display:none;"></div>
+
+    <div id="status-row">
+      <div id="status" class="status-idle">Checking current state&hellip;</div>
+      <div id="reboot-wrap">
+        <button id="reboot-button" onclick="reboot()">Reboot Now</button>
+      </div>
+      <div id="close-wrap">
+        <button id="close-button" onclick="closeSetup()">Close Setup</button>
+      </div>
+    </div>
+    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
   </div>
 
   <div class="right-col">
@@ -542,16 +553,6 @@
 
       <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
-    <div id="status-row">
-      <div id="status" class="status-idle">Checking current state&hellip;</div>
-      <div id="reboot-wrap">
-        <button id="reboot-button" onclick="reboot()">Reboot Now</button>
-      </div>
-      <div id="close-wrap">
-        <button id="close-button" onclick="closeSetup()">Close Setup</button>
-      </div>
-    </div>
-    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
 
     <div id="footer-logos">
       <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
@@ -2028,6 +2029,10 @@ function updateStepIndicators() {
   document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
   document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', !!wmActiveMount);
+  const connectTargets = _availableConnectTargets();
+  document.getElementById('wm-step4-label').classList.toggle(
+    'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
+  );
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
