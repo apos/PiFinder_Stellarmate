@@ -985,40 +985,33 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep the terminal quiet; the browser is the UI
 
+    def _send_401(self):
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _require_auth(self):
         """Checks HTTP Basic Auth against the stellarmate account's own
         password via PAM. Sends the 401 challenge itself and returns False
         if missing/invalid; caller should return immediately in that case.
 
-        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD failed
-        *attempts* within _AUTH_LOCKOUT_WINDOW seconds, further attempts are
-        rejected immediately without calling PAM at all - see
-        _auth_failures' own comment for why (a client retrying a stale/wrong
-        cached password on every background poll was found live to generate
-        well over 100 expensive PAM calls in a couple of minutes, starving
-        the GIL enough to make an unrelated background thread look hung).
-        The count is incremented *before* the PAM call, under the same lock
-        as the threshold check - first version of this incremented only
-        after PAM had already run, which meant several concurrent requests
-        (this server handles each in its own thread) could all read the
-        pre-increment count and all slip past the gate at once before any
-        of them finished recording their own failure - reproduced live,
-        still ~2 PAM calls/second sustained after the first version of this
-        fix, instead of the intended sharp cutoff after 5."""
-        client_ip = self.client_address[0]
-        now = time.monotonic()
-        with _lock:
-            count, first_failure = _auth_failures.get(client_ip, (0, now))
-            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
-                count, first_failure = 0, now
-            if count >= _AUTH_LOCKOUT_THRESHOLD:
-                self.send_response(401)
-                self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return False
-            _auth_failures[client_ip] = (count + 1, first_failure)
-
+        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD *wrong-
+        password* attempts within _AUTH_LOCKOUT_WINDOW seconds, further
+        attempts are rejected immediately without calling PAM at all - see
+        _auth_failures' own comment for why. Only counts requests that
+        actually included a password and got it wrong - NOT the plain "no
+        Authorization header at all" case, which is the normal first half
+        of the Basic Auth handshake and happens on every request from a
+        browser that hasn't cached this realm's credentials yet. This page
+        fires well over a dozen independent polls on load; missing that
+        distinction locked out the user's own very next (correct) login
+        attempt at the native browser prompt, since those ~15 credential-
+        less first requests alone could cross the threshold before the
+        browser had asked for/cached anything - reproduced live right after
+        following this project's own advice to clear cached site data,
+        which guarantees a burst of simultaneous credential-less polls on
+        the next load."""
         header = self.headers.get("Authorization", "")
         password = None
         if header.startswith("Basic "):
@@ -1027,15 +1020,32 @@ class Handler(BaseHTTPRequestHandler):
                 _, _, password = decoded.partition(":")
             except Exception:
                 password = None
-        if password and pam_auth.verify_password(AUTH_USER, password):
+
+        if password is None:
+            self._send_401()
+            return False
+
+        client_ip = self.client_address[0]
+        now = time.monotonic()
+        with _lock:
+            count, first_failure = _auth_failures.get(client_ip, (0, now))
+            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
+                count, first_failure = 0, now
+            if count >= _AUTH_LOCKOUT_THRESHOLD:
+                self._send_401()
+                return False
+            # Recorded as a tentative failure *before* the (slow) PAM call,
+            # under the same lock as the threshold check, so concurrent
+            # requests can't all read the same pre-increment count and all
+            # slip past the gate together - see this method's docstring.
+            _auth_failures[client_ip] = (count + 1, first_failure)
+
+        if pam_auth.verify_password(AUTH_USER, password):
             with _lock:
                 _auth_failures.pop(client_ip, None)
             return True
 
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        self._send_401()
         return False
 
     def _send_json(self, obj, status=200):
