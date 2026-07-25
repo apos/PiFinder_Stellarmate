@@ -463,7 +463,7 @@
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
-      <div class="mb-row" title="Connect each device. Needs the profile to be running first.">
+      <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
         <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
         <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
@@ -1744,7 +1744,9 @@ async function connectWmDevice(deviceName, btnId) {
   const originalText = btn.textContent;
   btn.textContent = 'connecting…';
   try {
-    const resp = await fetch(`/api/mount_bridge_connect?device=${encodeURIComponent(deviceName)}`, { method: 'POST' });
+    const params = new URLSearchParams({ device: deviceName });
+    if (wmSelectedProfile) params.set('profile', wmSelectedProfile);
+    const resp = await fetch(`/api/mount_bridge_connect?${params}`, { method: 'POST' });
     const data = await resp.json();
     btn.textContent = data.success ? 'Connect ✓' : (data.error || 'failed');
   } catch (e) {

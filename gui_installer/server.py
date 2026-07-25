@@ -1392,6 +1392,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
             driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+
+            # indiserver only reads a profile's driver list at startup - a
+            # driver added/removed here never takes effect on an already-
+            # running indiserver until it's restarted (found live: "LX200
+            # OnStep" added via Web Manager sat in the profile's DB row for
+            # over an hour without ever actually starting as a process).
+            # Rather than expect the user to remember "stop, change, start"
+            # as three separate steps, do it automatically here whenever
+            # this profile is the one currently running - one click, fully
+            # visible in the log below.
+            try:
+                srv_status = webmanager_client.server_status()
+            except webmanager_client.WebManagerError:
+                srv_status = {"running": False, "active_profile": None}
+            was_running = srv_status["running"] and srv_status["active_profile"] == profile
+
+            if was_running:
+                _mb_log(f"stopping profile '{profile}' (needed to apply the driver change)...")
+                try:
+                    webmanager_client.stop_server()
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
+
             _mb_log(f"{action} {driver_label} {'to' if action == 'add' else 'from'} profile '{profile}'...")
             try:
                 setter(profile, action == "add")
@@ -1400,6 +1426,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
+
+            if was_running:
+                _mb_log(f"restarting profile '{profile}'...")
+                try:
+                    webmanager_client.start_server(profile)
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
+
             self._send_json({"success": True})
             return
 
@@ -1434,14 +1471,52 @@ class Handler(BaseHTTPRequestHandler):
             # here - see the concept doc's explicit non-goal.
             qs = parse_qs(parsed.query)
             device = qs.get("device", [""])[0]
+            profile = qs.get("profile", [""])[0]
             if not device:
                 self._send_json({"success": False, "error": "missing 'device' query param"}, status=400)
                 return
             _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)
+                _mb_log(f"  done.")
+                self._send_json({"success": True})
+                return
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
+                # Most common cause, seen live: the device was added to the
+                # profile (by this UI or directly in Web Manager) after
+                # indiserver was last started, so it was never actually
+                # spawned as a process - "not currently defined" is INDI's
+                # way of saying "I've never heard of this device". Rather
+                # than surface that cryptic message, restart the profile
+                # once and retry automatically - the user shouldn't have to
+                # know/remember that indiserver needs a restart to pick up
+                # driver-list changes.
+                if "not currently defined" not in str(e) or not profile:
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+
+            _mb_log(f"'{device}' not loaded yet - restarting profile '{profile}' to pick it up...")
+            try:
+                webmanager_client.stop_server()
+                webmanager_client.start_server(profile)
+            except webmanager_client.WebManagerError as e:
+                _mb_log(f"  restart failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            # indiserver needs a moment to actually fork the driver and
+            # complete its own startup handshake before it'll answer
+            # getProperties for it - poll briefly instead of a flat sleep.
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                    break
+                time.sleep(0.3)
+            _mb_log(f"  restarted. retrying connect...")
+            try:
+                indi_client.connect_device(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  still failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
