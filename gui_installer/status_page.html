@@ -2169,7 +2169,7 @@ function proceedPastMountLink(mode) {
   // ever reads this, never calls Ekos's connectDevices()) - same pause-
   // and-poll idea as the mount link above.
   if (wmEkosConnected !== true) {
-    setAutoconnectStatus('⏳ Autoconnect: open Ekos in KStars and click Connect there too, then this continues on its own.');
+    setAutoconnectStatus('⏳ Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
     waitForCondition(mode, () => wmEkosConnected === true, () => finishAutoconnect(mode));
     return;
   }
@@ -2346,7 +2346,7 @@ async function checkEkosStatus() {
       el.textContent = '✓ Ekos is connected in KStars.';
     } else {
       el.className = 'mb-hint';
-      el.textContent = '⚠ Ekos isn\'t connected in KStars yet - open Ekos and click Connect there too.';
+      el.textContent = '⚠ Ekos isn\'t connected yet - in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices.';
     }
   } catch (e) {
     el.style.display = 'none';
