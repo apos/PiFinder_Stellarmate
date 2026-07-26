@@ -87,7 +87,8 @@
 <ul>
   <li><strong>Reinstall from scratch</strong>: deletes that directory entirely and clones a fresh copy from the official <code>release</code> branch, then re-applies all StellarMate patches. Use this if the installation seems broken, or you just want a clean slate.</li>
   <li><strong>Update</strong>: resets the existing directory to the official <code>release</code> branch (<code>git reset --hard</code> + <code>pull</code>) and re-applies all patches, discarding any local changes there. Keeps the directory, just brings the code up to date.</li>
-  <li><strong>Cancel</strong>: does nothing and shuts down this setup webserver. Run <code>launch_setup_gui.sh</code> again (or PiFinder's own "Start Setup Wizard" button) if you need it later.</li>
+  <li><strong>Run Again</strong> (shown after a run finishes): resets this page back to the choice buttons above, without shutting anything down - use this if there's another install/update to do next. This webserver is meant to just keep running; restart it via PiFinder's own "Start Setup Wizard" button on the PFSM page if it's ever off, and stop it deliberately via <code>launch_setup_gui.sh --shutdown-webserver</code> from a terminal if you actually want to.</li>
+  <li><strong>Branch</strong>: which branch of this project's own scripts/patches to use for the run - <code>main</code> (stable) by default for a fresh install, <code>dev</code> (beta) or any other branch by explicit choice. An existing install's Reinstall/Update defaults to (and stays on) whichever branch is already checked out.</li>
 </ul>
 
 <h2 id="mount-bridge">Mount Bridge</h2>

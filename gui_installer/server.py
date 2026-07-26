@@ -139,9 +139,7 @@ _exit_code = None
 _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
-_last_action = None  # "fresh" | "reinstall" | "update" | "cancel" - lets the
-# frontend tell a genuine successful install apart from a no-op Cancel run,
-# both of which exit 0.
+_last_action = None  # "fresh" | "reinstall" | "update"
 
 _mode_action_running = False  # True while fake_mode.sh start/stop is in flight
 _mode_lines = []  # fake_mode.sh's own stdout/stderr, shown in the shared Terminal tile
@@ -1441,7 +1439,13 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/start":
             qs = parse_qs(parsed.query)
             action = qs.get("action", [""])[0]
-            if action not in ("fresh", "reinstall", "update", "cancel"):
+            # "cancel" isn't accepted here - it's still a real interactive-
+            # terminal menu option in pifinder_stellarmate_setup.sh, but the
+            # GUI's own Cancel button (which just round-tripped through the
+            # whole script to print one line and exit 0, then shut the
+            # server down anyway) is gone in favor of "Close Setup" being
+            # shown directly on the choices screen too.
+            if action not in ("fresh", "reinstall", "update"):
                 self._send_json({"started": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             # branch is optional (see bin/switch_branch.sh) - only a plain
