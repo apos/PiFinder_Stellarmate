@@ -252,7 +252,23 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 fi
                 echo "Installation from scratch ..."
                 cd "${pifinder_home}"
-                git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+                if ! git clone --recursive --branch release https://github.com/brickbots/PiFinder.git; then
+                    echo "❌ ERROR: 'git clone' of PiFinder failed (network issue or GitHub unreachable?)."
+                    echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
+                    exit 1
+                fi
+                if [ ! -f "${pifinder_home}/PiFinder/version.txt" ]; then
+                    # Belt-and-suspenders: seen live where the clone command
+                    # itself returned success but still left an incomplete
+                    # checkout behind (missing files, no error surfaced) -
+                    # every later step (patching, building, chown) silently
+                    # operated on that partial tree instead of catching it,
+                    # so the run "finished" looking mostly fine while
+                    # PiFinder itself was actually broken.
+                    echo "❌ ERROR: git clone did not produce a usable PiFinder checkout (no version.txt)."
+                    echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
+                    exit 1
+                fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
@@ -275,8 +291,16 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 sudo systemctl stop pifinder
                 echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
                 cd "${pifinder_home}/PiFinder"
-                git reset --hard origin/release
-                git pull
+                if ! git reset --hard origin/release; then
+                    echo "❌ ERROR: 'git reset --hard origin/release' failed - aborting rather than"
+                    echo "❌ patching/building against a checkout left in an unknown state."
+                    exit 1
+                fi
+                if ! git pull; then
+                    echo "❌ ERROR: 'git pull' failed - aborting rather than patching/building against"
+                    echo "❌ a possibly-stale checkout."
+                    exit 1
+                fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
