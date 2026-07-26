@@ -14,13 +14,13 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Use these scripts at your own risk. The author is not responsible for any damage to your hardware or software.
 > * This process has been tested with the PiFinder version specified in `version.txt`.
 
-> ### ✅ **Current Version — v1.1.0**
+> ### ✅ **Current Version — v1.2.0**
 >
 > * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
 > * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
-> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
-> * **New in this release**: the Mount Bridge "Coupling Dial" setup is now available as a single guided workflow in the Control Center itself, not just via the Web Manager/INDI Control Panel — see [CHANGELOG.md](CHANGELOG.md) and [docs/concepts/mount_bridge_web_integration.md](docs/concepts/mount_bridge_web_integration.md). Verified against `indi_simulator_telescope`/live `indiserver`; practical validation over a real observing session with a real mount is still open ([issue #42](https://github.com/apos/PiFinder_Stellarmate/issues/42)).
+> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount, all four Coupling presets — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
+> * **New in this release**: a branch picker ("Install from") for Reinstall/Update in both entry points; Mount Bridge's Goto-Forward now iteratively refines arrival instead of a single Sync; a manual "Sync mount from PiFinder" button and an explicit "Setup" button; the setup checklist regrouped by which real-world system each step happens in (INDI Web Manager vs Ekos/KStars) — see [CHANGELOG.md](CHANGELOG.md) for the full list. Real-mount practical validation of all Coupling presets is now complete ([issue #42](https://github.com/apos/PiFinder_Stellarmate/issues/42), closed).
 
 ---
 
@@ -151,9 +151,10 @@ checklist — camera/IMU/GPS, checked directly against the hardware rather than 
 software state), a "Solve Simulation" toggle for PiFinder's own Test Mode, a "Toggle Display" button
 for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
 buttons for the whole Pi. A **Mount Bridge** tile folds the Coupling Dial setup (Web Manager profile,
-drivers, mount link, connect, and the three one-click Coupling presets — Verify/Alert only,
-Auto-correct on drift, Goto-Forward) into a single guided checklist, including an "Autoconnect" mode
-that drives the whole thing automatically once you pick a Coupling preset. Run it with:
+drivers, mount link, connect, and four one-click Coupling presets — Verify/Alert only,
+Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward) into a single guided checklist,
+including an "Autoconnect" mode that drives the whole thing automatically once you pick a Coupling
+preset, or an explicit "Setup" button to run that same setup deliberately first. Run it with:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```

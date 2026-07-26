@@ -5,31 +5,52 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-26
+
+### Added
+
+- Control Center: a branch picker ("Install from") for Reinstall/Update - choose which
+  `PiFinder_Stellarmate` branch (`main`/`dev`/other) a run uses, switched before self-update runs,
+  with a manual refresh button and visible click feedback next to the current-branch hint.
+- A "Run Again" button, replacing the earlier combined Cancel/Close-Setup flow.
+- Mount Bridge: a persistent, tile-wide status line that stays visible for the entire duration of
+  any in-flight action, regardless of which button triggered it.
+- Mount Bridge: a "Manual: Sync mount from PiFinder" button - a one-shot sync to PiFinder's current
+  solved position, works regardless of which Coupling preset (or none) is active. Covers the case
+  none of the presets react to on their own: the mount being moved by hand with no Goto involved.
+- Mount Bridge: a "Setup" button that runs the same profile/drivers/connect sequence Autoconnect
+  triggers automatically when clicking a Coupling preset before setup is finished - without
+  applying any preset at the end. Previously the only way to run that sequence was to click a
+  preset and have setup start as a side effect, with no indication that would happen.
+
 ### Changed
 
-- Mount Bridge's setup checklist is now grouped by where you'd actually go to do each step by
-  hand - "INDI Web Manager" (Profile, KStars Link, Drivers) vs "Ekos / KStars" (Mount, a new
-  explicit Ekos-connected step, Connect) - instead of reading as a flat, ungrouped list where
-  "Profile: running" could look like it contradicted "Ekos isn't connected yet" even though
-  they're two independent systems. The Ekos-connected message also now names the profile directly
-  in both states instead of hedging on whether Ekos is using the same one.
+- Install/Update flow simplified: removed the confusing Cancel button (Close Setup now shows
+  directly), then removed Close Setup too since the webserver is meant to just keep running.
+- Ekos-connected/not-connected wording matched to KStars' own two-step terminology (start the
+  profile, then Connect Devices), later simplified further to name the active profile directly in
+  both states instead of hedging on whether Ekos is using the same one.
+- Coupling: split the combined Auto-correct Sync/Goto dropdown into two explicit preset buttons,
+  then grouped all four presets into "Visual" vs "GoTo" categories matching how they're actually
+  used, then removed the now-redundant "Coupling" label entirely.
+- Mount Bridge tile reorganized into priority tiers - always-visible nighttime-observing
+  essentials (diagram, drift, Coupling) vs collapsed setup/diagnostics (numbered checklist, Ekos
+  status, bridge settings, log) - with the same collapsible pattern applied to Mode & Power
+  (renamed to "PiFinder Mode, Test and Power", buttons regrouped by meaning) and Quick Links.
+  Diagram icons enlarged and rescaled for visual consistency. Layout-shift (CLS) fixed for
+  transient status banners (reserved height + opacity fade instead of popping in/out).
+- Mount Bridge's setup checklist further grouped by where you'd actually go to do each step by
+  hand - "INDI Web Manager" (Profile, KStars Link, Drivers) vs "Ekos / KStars" (Mount, an explicit
+  Ekos-connected step, Connect) - instead of reading as a flat list where "Profile: running" could
+  look like it contradicted "Ekos isn't connected yet" even though they're two independent systems.
 - Goto-Forward's post-arrival check now iteratively refines instead of a single Sync: if PiFinder's
   solve after the mount finishes slewing is still outside Threshold, the mount is synced (correcting
   its model) and sent the Goto again, repeating up to 3 times before giving up and logging a warning.
 
-### Added
-
-- Mount Bridge: a "Manual: Sync mount from PiFinder" button - a one-shot sync to PiFinder's current
-  solved position, works regardless of which Coupling preset (or none) is active. Covers the one
-  case none of the presets react to on their own: the mount being moved by hand with no Goto
-  involved at all.
-- Mount Bridge: a "Setup" button that runs the same profile/drivers/connect sequence Autoconnect
-  triggers automatically when clicking a Coupling preset before setup is finished - without
-  applying any preset at the end. Previously the only way to run that sequence at all was to click
-  a preset and have setup start as a side effect, with no indication that would happen.
-
 ### Fixed
 
+- Branch picker preferred a stale prior selection over what's actually checked out on a fresh page
+  load.
 - Auto-correct (Goto & Track) repeatedly aborted the mount mid-slew: the Mount Bridge INDI driver
   re-issued a fresh Goto every 2s poll tick even while the mount was still slewing from the
   previous one, causing jerky movement and continuous "aborted" alerts/sound in KStars/SMOS.
