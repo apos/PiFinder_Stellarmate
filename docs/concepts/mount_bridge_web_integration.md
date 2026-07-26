@@ -255,6 +255,47 @@ Further live testing surfaced two more items in one round:
   with 300 queries (150 iterations x 2 real, connected devices) against the live instance after the
   fix: zero errors, versus a reliable crash within 2-8 calls before it.
 
+### 6.3 UX polish round: 5-step checklist, Autoconnect, help page (2026-07-25/26)
+
+Extended live-testing round with real EQ-5/OnStep hardware. Highlights (full detail in
+basic-memory `pifinder-stellarmate/00053`):
+
+- **Real bug found and fixed, unrelated to this feature's own code**: `gui_installer/pam_auth.py`
+  called `pam_acct_mgmt()` after a successful `pam_authenticate()`, which fails on this system
+  with a privilege error regardless of password correctness - every login was silently rejected
+  after actually succeeding. Fixed by dropping that call; `verify_password()` now returns based on
+  `pam_authenticate()` alone. Confirmed via journal comparison (a deliberately wrong password
+  fails cleanly at the `auth` phase; real attempts reached the `account` phase, proving the
+  password itself was right). A related failed-auth rate limiter was added to `server.py`'s
+  `_require_auth()` (see its own docstring) after two iterations that each had their own false-
+  positive bug.
+- **KStars Link is now its own numbered step** ("2. KStars Link") - Drivers/Mount/Connect shifted
+  to 3/4/5, five steps total.
+- **Green-when-active button color scheme**, applied consistently: driver add/remove buttons,
+  Connect buttons (become "Disconnect X"), Link/Unlink Mount, profile Start/Stop, KStars Recheck,
+  "Connect all" (becomes "Disconnect all"), and the active Coupling preset.
+- **Autoconnect mode**: clicking a Coupling preset before steps 1-5 are finished now runs the
+  automatable parts (start profile, add both PiFinder drivers) automatically, pauses with a
+  visible inline prompt for the one step needing human judgment (picking the mount), then resumes
+  on its own once that's done - connects everything and applies the originally-requested mode.
+  KStars Link is deliberately never auto-fixed, consistent with never writing to KStars' database.
+- **Large color-coded drift readout** (top-right of the tile): green/yellow/red against the
+  configured threshold and an assumed 0.5&deg; field-of-view limit (generic placeholder, not a
+  measured value).
+- **New `gui_installer/help.html`** (own route, same auth) with a small (i) icon next to every
+  heading/step on the main page, linking to the matching section.
+- Various layout fixes: Install/Update/Cancel merged into one "Install or Update" tile;
+  Reboot/Shutdown moved next to the Mode switch; Terminal moved to the left column (was leaving a
+  large empty gap there); minimal responsive layout added (viewport meta tag was missing
+  entirely) - phones and tablet-portrait collapse to one column, tablet-landscape/large-tablet/PC
+  keep the existing two-column split, which already scales with window width.
+
+**Open item, not yet implemented**: the EKOS profile in KStars needs to actually be
+*started/connected*, not just linked (Web-Manager checkbox set) - Coupling commands aren't
+meaningful otherwise, since the StellarMate App is understood to couple to the EKOS instance
+actually running on the device. Needs a way to check EKOS's own connection state, likely another
+read-only check similar to `_kstars_webmanager_link_status()`, not yet designed or built.
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same
