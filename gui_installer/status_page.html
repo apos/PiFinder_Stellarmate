@@ -429,6 +429,12 @@
     align-items: center;
     gap: 0.3rem;
   }
+  /* Rows 1/2/4 all follow "label, one widget (dropdown or status text),
+     button" - giving that middle widget a shared minimum width lines up
+     the action button that follows across all three rows too, not just
+     the label column. Rows 3/5 have no such widget (button right after
+     the label) so naturally start at this same x anyway. */
+  .mb-step-widget { min-width: 13rem; }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
      directly beside the Bridge icon rather than off in a corner - per live
@@ -701,13 +707,13 @@ sudo systemctl start pifinder</pre>
 
       <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
         <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
-        <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+        <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
         <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
       </div>
       <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
         <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
-        <span id="wm-kstars-link-text"></span>
+        <span id="wm-kstars-link-text" class="mb-step-widget"></span>
         <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
       </div>
 
@@ -718,7 +724,7 @@ sudo systemctl start pifinder</pre>
       </div>
       <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
         <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-        <select id="wm-mount-select" disabled><option>&hellip;</option></select>
+        <select id="wm-mount-select" class="mb-step-widget" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
@@ -2223,6 +2229,13 @@ let wmHasBridge = null;
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
 let wmLastRunning = false;
+// Set only by the user actually picking something in THIS dropdown
+// (onWmProfileChange()) - see loadWmProfiles()'s own docstring for why this
+// matters: without it, a profile switched via a different tool entirely
+// (the StellarMate App, Web Manager's own UI, KStars' Ekos profile editor)
+// would never be reflected here, since the old logic preferred whatever was
+// already selected over whatever's actually running.
+let profileTouched = false;
 
 const WM_DEFAULT_PROFILE = 'Simulators';  // read-only default - never selectable here (step 1/2)
 
@@ -2243,12 +2256,20 @@ async function loadWmProfiles() {
       opt.textContent = name === data.active_profile ? `${name} (running)` : name;
       selectEl.appendChild(opt);
     });
-    // Keep the previous selection if it still exists, otherwise fall back
-    // to the actually-running profile if there is one, else the first.
-    if (previousValue && ownProfiles.includes(previousValue)) {
+    // Only keep the previous selection over what's actually running if the
+    // user deliberately picked it themselves (profileTouched) - otherwise
+    // always follow the actually-running profile instead. Found live: the
+    // old "keep previous selection whenever still valid" rule meant a
+    // profile switched via a completely different tool (the StellarMate
+    // App, Web Manager's own UI, KStars' own Ekos profile editor) was never
+    // picked up here, silently leaving this page pointed at a profile
+    // nothing was actually running anymore.
+    if (profileTouched && previousValue && ownProfiles.includes(previousValue)) {
       selectEl.value = previousValue;
     } else if (ownProfiles.includes(data.active_profile)) {
       selectEl.value = data.active_profile;
+    } else if (previousValue && ownProfiles.includes(previousValue)) {
+      selectEl.value = previousValue;
     }
     const changedProfile = wmSelectedProfile !== (selectEl.value || null);
     wmSelectedProfile = selectEl.value || null;
@@ -2343,7 +2364,19 @@ async function checkEkosStatus() {
     el.style.display = '';
     if (data.connected) {
       el.className = 'mb-hint mb-hint-ok';
-      el.textContent = '✓ Ekos is connected in KStars.';
+      // wmSelectedProfile is already known (step 1's own dropdown) rather
+      // than something new to query from Ekos - D-Bus has no "which
+      // profile is currently active" property to read (checked live:
+      // /KStars/Ekos only exposes getProfile(name)/setProfile(name) for a
+      // profile you already name, nothing for "what's active now"). That
+      // also means this can only ever say what THIS page is pointed at,
+      // not confirm Ekos is actually using the same one - if the user
+      // switched to a different profile directly in Ekos' own profile
+      // editor (or via the StellarMate App), this page has no way to know,
+      // so the wording deliberately doesn't claim more than it can verify.
+      el.textContent = wmSelectedProfile
+        ? `✓ Ekos is connected in KStars (this page: "${wmSelectedProfile}" - can't verify Ekos is using the same profile).`
+        : '✓ Ekos is connected in KStars.';
     } else {
       el.className = 'mb-hint';
       el.textContent = '⚠ Ekos isn\'t connected yet - in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices.';
@@ -2601,6 +2634,7 @@ function connectWmSelectedMount() {
 }
 
 function onWmProfileChange() {
+  profileTouched = true;
   wmSelectedProfile = document.getElementById('wm-profile-select').value;
   wmServerRunning = wmLastRunning && wmLastActiveProfile === wmSelectedProfile;
   refreshWmServerButton();
