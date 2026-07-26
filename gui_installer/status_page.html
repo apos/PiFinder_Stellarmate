@@ -91,6 +91,31 @@
     font-size: 0.85rem;
     margin-top: 0.4rem;
   }
+  /* Mount Bridge's own status is assembled from four independent async
+     checks (bridge/status, profile+drivers, KStars link, Ekos status) -
+     shown only once, during the tile's first load, until all four have
+     reported at least once. Deliberately NOT a persistent bar that
+     reappears on every later background refresh - each element already
+     has its own "checking..." state for that, this is just for the one
+     moment where the whole tile is still empty/misleading. */
+  #mb-initial-load-banner { margin-bottom: 0.6rem; }
+  #mb-initial-load-track {
+    background: #262626;
+    border-radius: 5px;
+    height: 6px;
+    overflow: hidden;
+  }
+  #mb-initial-load-fill {
+    background: #2a6fdb;
+    height: 100%;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+  #mb-initial-load-label {
+    color: #999;
+    font-size: 0.74rem;
+    margin: 0.3rem 0 0.6rem 0;
+  }
   #phase-checklist {
     list-style: none;
     margin: 0 0 1.2rem;
@@ -594,6 +619,10 @@ sudo systemctl start pifinder</pre>
            below) from the one-time "set it up" rows (Profile/Drivers/Mount),
            which now follow underneath rather than being interleaved. -->
       <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="mb-initial-load-banner">
+        <div id="mb-initial-load-track"><div id="mb-initial-load-fill"></div></div>
+        <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
+      </div>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
@@ -1802,6 +1831,25 @@ function updateMbDiagram(data) {
 // mid-restart) could read genuinely transient/incomplete state and flash it
 // on screen before the next successful poll corrected it. The action's own
 // completion always triggers an immediate, fresh refresh anyway.
+// Mount Bridge's status is assembled from four independent async checks
+// that only run once (unawaited) on initial page load - this just tracks
+// when each has reported at least once, to hide #mb-initial-load-banner.
+// "kstars" is marked from within loadWmProfiles() itself (see there) since
+// checkKstarsLink() is only called conditionally, nested inside it, not
+// as its own top-level call.
+const _mbInitialLoad = { mb: false, profiles: false, kstars: false, ekos: false };
+function _markMbInitialLoadDone(key) {
+  _mbInitialLoad[key] = true;
+  const done = Object.values(_mbInitialLoad).filter(Boolean).length;
+  const total = Object.keys(_mbInitialLoad).length;
+  const fill = document.getElementById('mb-initial-load-fill');
+  if (fill) fill.style.width = `${Math.round((done / total) * 100)}%`;
+  if (done === total) {
+    const banner = document.getElementById('mb-initial-load-banner');
+    if (banner) banner.style.display = 'none';
+  }
+}
+
 let mbActionInFlight = false;
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
 let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
@@ -1884,7 +1932,7 @@ async function refreshMountBridgeStatus() {
   }
 }
 setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
-refreshMountBridgeStatus();
+refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
 
 async function setWmCoupling(mode) {
   mbActionInFlight = true;
@@ -2074,13 +2122,19 @@ async function loadWmProfiles() {
     if (wmSelectedProfile) {
       refreshWmDriverButtons();
       refreshWmConnectRow();
-      if (changedProfile) checkKstarsLink();
+      if (changedProfile) {
+        checkKstarsLink().then(() => _markMbInitialLoadDone('kstars'));
+      } else {
+        _markMbInitialLoadDone('kstars');  // already checked before - nothing new to await
+      }
     } else {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
       document.getElementById('wm-kstars-link-row').style.display = 'none';
+      _markMbInitialLoadDone('kstars');  // no profile selected - nothing to check
     }
   } catch (e) {
+    _markMbInitialLoadDone('kstars');  // profile load itself failed - nothing to check either
     selectEl.innerHTML = '<option>unavailable</option>';
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
@@ -2161,7 +2215,7 @@ async function checkEkosStatus() {
   }
 }
 setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
-checkEkosStatus();
+checkEkosStatus().then(() => _markMbInitialLoadDone('ekos'));
 
 function refreshWmServerButton() {
   const btn = document.getElementById('wm-server-btn');
@@ -2504,7 +2558,7 @@ async function toggleWmDriver(driver) {
   setStepBusy(3, false);
 }
 
-loadWmProfiles();
+loadWmProfiles().then(() => _markMbInitialLoadDone('profiles'));
 setInterval(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU

@@ -14,12 +14,13 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 > * Die Nutzung dieser Skripte erfolgt auf eigenes Risiko. Der Autor haftet nicht für Schäden an Hardware oder Software.
 > * Dieser Ablauf wurde mit der in `version.txt` angegebenen PiFinder-Version getestet.
 
-> ### ✅ **Aktuelle Version — v1.0.0**
+> ### ✅ **Aktuelle Version — v1.1.0**
 >
 > * Gebaut und verifiziert für **PiFinder-Software 2.6.0** auf **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12).
 > * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅. (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
 > * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
+> * **Neu in diesem Release**: die Mount-Bridge-"Coupling Dial"-Einrichtung ist jetzt als einzelner geführter Workflow direkt im Control Center verfügbar, nicht nur über Web Manager/INDI Control Panel — siehe [CHANGELOG.md](CHANGELOG.md) und [docs/concepts/mount_bridge_web_integration.md](docs/concepts/mount_bridge_web_integration.md). Verifiziert gegen `indi_simulator_telescope`/live `indiserver`; der Praxistest über eine echte Beobachtungssession mit realer Montierung steht noch aus ([Issue #42](https://github.com/apos/PiFinder_Stellarmate/issues/42)).
 
 ---
 
