@@ -587,7 +587,7 @@
       <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
         <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a>
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
-        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
+        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
       <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
@@ -1670,7 +1670,7 @@ pollMbLog();
 function refreshWmActiveButton() {
   const btn = document.getElementById('wm-set-active-btn');
   if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
-  btn.textContent = wmActiveMount ? 'Unlink Mount' : 'Link Mount';
+  btn.textContent = wmActiveMount ? 'Unlink telescope mount' : 'Link telescope mount';
   btn.classList.toggle('mb-btn-active', !!wmActiveMount);
 }
 
@@ -1805,7 +1805,7 @@ async function startAutoconnect(mode) {
   if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
 
   if (!wmActiveMount) {
-    setAutoconnectStatus('⏳ Autoconnect: pick your mount above and click "Link Mount" to continue.');
+    setAutoconnectStatus('⏳ Autoconnect: pick your mount above and click "Link telescope mount" to continue.');
     waitForCondition(mode, () => !!wmActiveMount, () => proceedPastMountLink(mode));
     return;
   }
