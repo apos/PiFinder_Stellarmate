@@ -1464,7 +1464,15 @@ async function start(action) {
   // time (see applyBranchInfo()'s own docstring), and sending that blindly
   // could ask to switch to a branch that no longer even exists. Untouched
   // just means "don't ask for a switch", not "resend the old default".
-  if (branchTouched && branch && branch !== 'main') url += '&branch=' + encodeURIComponent(branch);
+  //
+  // Bug fixed live during #53's reinstall/update test round: this used to
+  // also skip sending when branch === 'main', on the mistaken assumption
+  // that main never needs an explicit switch. That's only true for a FRESH
+  // clone (which starts on main anyway) - for an EXISTING checkout sitting
+  // on some other branch, explicitly picking "main" needs main sent through
+  // just like any other choice, or the switch silently never happens and
+  // whatever branch was already checked out stays checked out.
+  if (branchTouched && branch) url += '&branch=' + encodeURIComponent(branch);
   const resp = await fetch(url, { method: 'POST' });
   const data = await resp.json();
   if (!data.started) {

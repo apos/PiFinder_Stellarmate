@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- Auto-correct (Goto & Track) repeatedly aborted the mount mid-slew: the Mount Bridge INDI driver
+  re-issued a fresh Goto every 2s poll tick even while the mount was still slewing from the
+  previous one, causing jerky movement and continuous "aborted" alerts/sound in KStars/SMOS.
+- Control Center's "Install from: main" branch picker was silently ignored on an existing checkout
+  sitting on another branch - the switch never happened, and whatever branch was already checked
+  out stayed checked out regardless of the picker's selection.
+- `pifinder_stellarmate_setup.sh`'s `git clone` (Reinstall) and `git reset --hard`+`git pull`
+  (Update) had no exit-code check, so a failed/interrupted clone or update silently left a broken
+  installation behind instead of aborting with a clear error.
+
 ## [1.1.0] - 2026-07-26
 
 ### Added
