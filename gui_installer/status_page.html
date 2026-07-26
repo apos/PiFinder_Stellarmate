@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PiFinder on Stellarmate Control Center</title>
 <style>
   body {
@@ -10,6 +11,10 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     padding: 1.5rem;
+    box-sizing: border-box;
+  }
+  @media (max-width: 767px) {
+    body { padding: 0.8rem; }
   }
   .page {
     display: flex;
@@ -24,6 +29,26 @@
   .right-col {
     width: 60%;
     box-sizing: border-box;
+  }
+  /* Minimal responsive layout. Phones: always single column, both
+     orientations - a phone's long side rarely exceeds ~900px even in
+     landscape, well under the tablet range this project cares about, so
+     one width breakpoint covers both phone orientations. Tablets: portrait
+     is single column, landscape is the normal two-column split (already
+     the default below, needs no extra rule) - except large tablets
+     (>=1366px, e.g. 12.9" iPad Pro), which behave like a PC regardless of
+     orientation since the portrait-collapse rule is capped below that
+     width. PCs: the existing 40%/60% split already scales with the actual
+     window width with no extra rule needed - narrowing a desktop window
+     below 768px falls into the same phone rule above, so "depends on the
+     window" falls out of these two rules rather than needing a third. */
+  @media (max-width: 767px) {
+    .page { flex-direction: column; gap: 1rem; }
+    .left-col, .right-col { width: 100%; min-width: 0; }
+  }
+  @media (min-width: 768px) and (max-width: 1365px) and (orientation: portrait) {
+    .page { flex-direction: column; gap: 1rem; }
+    .left-col, .right-col { width: 100%; min-width: 0; }
   }
   h1 { font-size: 1.3rem; margin: 0 0 1rem; }
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
@@ -66,6 +91,31 @@
     font-size: 0.85rem;
     margin-top: 0.4rem;
   }
+  /* Mount Bridge's own status is assembled from four independent async
+     checks (bridge/status, profile+drivers, KStars link, Ekos status) -
+     shown only once, during the tile's first load, until all four have
+     reported at least once. Deliberately NOT a persistent bar that
+     reappears on every later background refresh - each element already
+     has its own "checking..." state for that, this is just for the one
+     moment where the whole tile is still empty/misleading. */
+  #mb-initial-load-banner { margin-bottom: 0.6rem; }
+  #mb-initial-load-track {
+    background: #262626;
+    border-radius: 5px;
+    height: 6px;
+    overflow: hidden;
+  }
+  #mb-initial-load-fill {
+    background: #2a6fdb;
+    height: 100%;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+  #mb-initial-load-label {
+    color: #999;
+    font-size: 0.74rem;
+    margin: 0.3rem 0 0.6rem 0;
+  }
   #phase-checklist {
     list-style: none;
     margin: 0 0 1.2rem;
@@ -92,15 +142,30 @@
   .status-running { background: #1a3a5c; color: #7ec8ff; }
   .status-success { background: #1a4a2a; color: #7ee8a0; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
-  .choice-card {
+  .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
+  .help-link {
+    display: inline-block;
+    margin-left: 0.4rem;
+    width: 1rem;
+    height: 1rem;
+    line-height: 1rem;
+    border-radius: 50%;
+    border: 1px solid #555;
+    color: #777;
+    font-size: 0.68rem;
+    font-weight: normal;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+  }
+  .help-link:hover { color: #ccc; border-color: #999; }
+  #choices p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
+  #install-tile {
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.8rem;
+    padding: 0.7rem 0.9rem;
   }
-  .choice-card h3 { margin: 0 0 0.3rem; font-size: 1.05rem; }
-  .choice-card p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #choices button, #start-fresh {
     background: #2a6fdb;
     color: white;
@@ -114,6 +179,7 @@
   #choices button.danger { background: #a33; }
   #choices button.cancel { background: #444; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
+  .choice-btn { margin: 0 0.6rem 0.6rem 0; }
   #log.log-placeholder {
     color: #666;
     font-style: italic;
@@ -198,29 +264,19 @@
   }
   #quick-links-tile a:hover { text-decoration: underline; }
   #top-tiles-row { flex-wrap: wrap; }
-  #power-tile {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 0.7rem 0.9rem;
-    font-size: 0.82rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    justify-content: center;
-  }
-  #power-tile .power-btn {
+  .power-btn {
     color: white;
     border: none;
     border-radius: 6px;
     padding: 0.5rem 0.9rem;
     font-size: 0.85rem;
     cursor: pointer;
+    margin-left: 0.6rem;
   }
   #power-reboot-btn { background: #2a6fdb; }
   #power-poweroff-btn { background: #a33; }
-  #power-tile .power-btn:hover { filter: brightness(1.15); }
-  #power-tile .power-btn:disabled { background: #444; cursor: default; filter: none; }
+  .power-btn:hover { filter: brightness(1.15); }
+  .power-btn:disabled { background: #444; cursor: default; filter: none; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -252,6 +308,39 @@
   }
   .ql-small-btn:disabled { background: #444; cursor: default; }
   .ql-small-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .ql-small-btn.mb-btn-active { background: #2e7d32; }
+  /* Coupling presets are the tile's central control (per live feedback) -
+     bigger and full-width, with their own label line above instead of
+     squeezed inline to the buttons' left. */
+  .mb-coupling-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #ddd;
+    font-size: 0.85rem;
+  }
+  #mb-coupling-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+  .mb-coupling-btn {
+    flex: 1;
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.65rem 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+  }
+  .mb-coupling-btn:disabled { background: #444; cursor: default; }
+  .mb-coupling-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .mb-coupling-btn.mb-btn-active { background: #2e7d32; }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -262,6 +351,17 @@
   .hw-row .status-dot { margin-right: 0.4rem; }
   .hw-keyboard { color: #888; font-style: italic; }
   .hw-keyboard code { font-size: 0.75rem; }
+  .hw-keyboard-cmd {
+    background: #000;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    margin: -0.15rem 0 0.5rem 1.1rem;
+    font-size: 0.72rem;
+    color: #b8f0b8;
+    white-space: pre-wrap;
+    font-style: normal;
+  }
   .hw-detail {
     margin: -0.15rem 0 0.4rem 1.1rem;
     color: #888;
@@ -277,6 +377,134 @@
     border-top: 1px solid #333;
     font-size: 0.78rem;
   }
+  #mount-bridge-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    margin-top: 1rem;
+    position: relative;
+  }
+  #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
+  .mb-row-label { color: #888; margin-right: 0.4rem; }
+  /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
+     "Mount:"), which pushed each row's dropdown/buttons to a different
+     x position - per live feedback, give the leading label+help-icon a
+     fixed width so everything after it lines up in a column. */
+  .mb-step-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    column-gap: 0.5rem;
+    row-gap: 0.3rem;
+  }
+  .mb-row-lead {
+    flex: 0 0 8.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  /* Icon-first status row: the three nodes carry connection state via the
+     icon's own color (no separate dot anymore), and the drift readout sits
+     directly beside the Bridge icon rather than off in a corner - per live
+     feedback, this is the one thing in the tile the user actually needs at
+     a glance, so it belongs next to the piece that produces it, at full
+     size (not shrunk into a small badge). */
+  #mb-diagram {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.6rem 0 0.3rem 0;
+  }
+  .mb-node {
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    background: #222;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    color: #ccc;
+  }
+  .mb-icon {
+    width: 26px;
+    height: 26px;
+    color: #666;
+  }
+  .mb-icon.mb-icon-connected { color: #4caf50; }
+  .mb-icon.mb-icon-disconnected { color: #e53935; }
+  .mb-arrow {
+    font-size: 1.1rem;
+    color: #555;
+    min-width: 2.2rem;
+    text-align: center;
+  }
+  /* Drift readout - kept at full size next to the Bridge node (not an
+     absolute-positioned corner badge anymore). Green/yellow/red thresholds:
+     green up to the configured Auto-correct/Verify-Alert threshold, yellow
+     beyond that but still inside the assumed eyepiece field of view, red
+     once past that FOV estimate - 0.5 degrees (full-moon diameter) is a
+     reasonable generic assumption per user request, not a measured value
+     (actual FOV depends on the eyepiece/camera actually in use). */
+  #mb-drift-badge {
+    font-size: 1.7rem;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0.3rem 0.7rem;
+    border-radius: 8px;
+    background: #222;
+    border: 1px solid #444;
+    color: #888;
+  }
+  #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
+  #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
+  #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
+  .mb-arrow.mb-arrow-read { color: #5b9bd5; }
+  .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
+  .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
+  #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
+  #mb-settings-divider {
+    border-top: 1px solid #333;
+    margin: 0.9rem 0 0.8rem 0;
+  }
+  .mb-hint {
+    color: #e0a030;
+    font-size: 0.74rem;
+    margin: -0.2rem 0 0.6rem 0;
+  }
+  .mb-hint.mb-hint-ok { color: #4caf50; }
+  #wm-kstars-link-row { color: #888; font-size: 0.78rem; }
+  #wm-kstars-link-row.wm-link-warn #wm-kstars-link-text { color: #e0a030; }
+  #wm-kstars-link-row.wm-link-ok #wm-kstars-link-text { color: #4caf50; }
+  .mb-step-label.mb-step-done { color: #4caf50; }
+  .mb-step-label.mb-step-done::before { content: "\2713 "; }
+  .mb-step-label.mb-step-busy { color: #f5a623; }
+  .mb-step-label.mb-step-busy::before {
+    content: "\27F3 ";
+    display: inline-block;
+    animation: mb-spin 1s linear infinite;
+  }
+  @keyframes mb-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  #mb-log {
+    margin-top: 0.6rem;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #9c9;
+    max-height: 6.5em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  #mb-log:empty::before { content: "No actions yet."; color: #666; }
   .waiting-bar-track {
     background: #262626;
     border-radius: 5px;
@@ -324,6 +552,178 @@
 
 <div class="page">
   <div class="left-col">
+    <div id="top-tiles-row">
+      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+      <div id="quick-links-tile">
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+        <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
+        <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
+        <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+      </div>
+      <div id="mode-tile">
+        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div style="display:flex; gap:1.4rem; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
+            <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+            <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
+            <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')" title="Affects this whole Pi, not just PiFinder or this setup page.">Shutdown Pi</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.4rem;" title="Directly starts/stops/restarts the pifinder.service systemd unit (Real Mode) - shouldn't normally be needed, but useful to recover a crashed/hung instance without a full mode toggle round-trip. Not meaningful while Fake Mode is running (that's a separate process, not this service).">
+            <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start PiFinder</button>
+            <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop PiFinder</button>
+            <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart PiFinder</button>
+          </div>
+        </div>
+        <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
+          <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
+            <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
+            <span id="hwtest-status-text"></span>
+          </div>
+          <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-camera-detail"></div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
+            <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+          </div>
+          <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-imu-detail"></div>
+          <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-gps-detail"></div>
+        </div>
+        <div id="ext-hw-status">
+          <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
+            <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
+            <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row hw-keyboard">
+            <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
+            <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
+          </div>
+          <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
+/home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
+sudo systemctl start pifinder</pre>
+          <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
+            <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
+            <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="mount-bridge-tile">
+      <!-- Current status first: connection diagram, Connect buttons,
+           Coupling, Threshold - the "operate it" workflow, in this order,
+           per live user feedback. Visually separated (see #mb-settings-divider
+           below) from the one-time "set it up" rows (Profile/Drivers/Mount),
+           which now follow underneath rather than being interleaved. -->
+      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="mb-initial-load-banner">
+        <div id="mb-initial-load-track"><div id="mb-initial-load-fill"></div></div>
+        <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
+      </div>
+      <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+      <div id="mb-diagram">
+        <div class="mb-node" id="mb-node-lx200" title="PiFinder">
+          <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
+          </svg>
+          <span>PiFinder</span>
+        </div>
+        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
+          <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="15" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          </svg>
+          <span>Bridge</span>
+        </div>
+        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera)."></div>
+        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
+        <div class="mb-node" id="mb-node-mount" title="Mount">
+          <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4.5" y="9.5" width="14" height="3.2" rx="1.4" transform="rotate(-28 4.5 9.5)" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M6.5 16.5 L12 19.5 L17.5 16.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="19.5" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+          <span id="mb-node-mount-name">Mount</span>
+        </div>
+      </div>
+      <div id="mb-mode-caption">Not coupled yet</div>
+      <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
+      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see the note above if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
+        <div class="mb-coupling-label"><span>Coupling</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a></div>
+        <div id="mb-coupling-buttons">
+          <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+          <button id="wm-preset-auto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
+          <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+        </div>
+      </div>
+      <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
+      <div class="mb-row" title="Only used by Auto-correct: how far off before it corrects, and how.">
+        <span class="mb-row-label">Threshold:</span>
+        <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
+        <span class="mb-row-label" style="margin-left:0.8rem;">Correction:</span>
+        <select id="wm-action-select">
+          <option value="sync" selected>Sync</option>
+          <option value="goto">Goto/Track</option>
+        </select>
+      </div>
+
+      <div id="mb-settings-divider"></div>
+
+      <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+        <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+        <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+      </div>
+      <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
+      <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
+        <span id="wm-kstars-link-text"></span>
+        <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+      </div>
+
+      <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
+        <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+        <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+      </div>
+      <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+        <select id="wm-mount-select" disabled><option>&hellip;</option></select>
+        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+      </div>
+      <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+      <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a></span>
+        <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+        <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+        <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+        <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+      </div>
+      <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+
+      <div id="mb-log" title="What this tile has been doing, in order."></div>
+    </div>
+
+    <div id="footer-logos">
+      <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
+        <img src="/heyapos_logo.png" alt="HeyApos">
+      </a>
+      <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
+        <img src="/avvp_logo.png" alt="AVVP">
+      </a>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div id="install-tile">
+      <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
     </div>
@@ -338,54 +738,7 @@
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="choices" style="display:none;"></div>
-  </div>
 
-  <div class="right-col">
-    <div id="top-tiles-row">
-      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
-      <div id="quick-links-tile">
-        <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-        <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
-        <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
-        <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
-        <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
-      </div>
-      <div id="mode-tile">
-        <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
-        <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-        <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
-          <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
-            <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
-            <span id="hwtest-status-text"></span>
-          </div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-camera-detail"></div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-imu-detail"></div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-gps-detail"></div>
-          <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
-          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-            <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
-            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
-          </div>
-        </div>
-        <div id="ext-hw-status">
-          <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
-            <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
-            <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
-          </div>
-          <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
-            <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
-            <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
-          </div>
-        </div>
-      </div>
-      <div id="power-tile" title="Affects this whole Pi, not just PiFinder or this setup page.">
-        <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
-        <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
-      </div>
-    </div>
     <div id="status-row">
       <div id="status" class="status-idle">Checking current state&hellip;</div>
       <div id="reboot-wrap">
@@ -396,14 +749,6 @@
       </div>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
-
-    <div id="footer-logos">
-      <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
-        <img src="/heyapos_logo.png" alt="HeyApos">
-      </a>
-      <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
-        <img src="/avvp_logo.png" alt="AVVP">
-      </a>
     </div>
   </div>
 </div>
@@ -761,36 +1106,15 @@ function showChoices(existingInstall) {
   if (existingInstall) {
     el.innerHTML = `
       <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
-      <div class="choice-card">
-        <h3>Reinstall from scratch</h3>
-        <p>Completely deletes the existing PiFinder directory and performs a fresh installation:
-           clones PiFinder from the official <code>release</code> branch and re-applies all
-           StellarMate patches. Use this if the installation is broken or you want a clean slate.</p>
-        <button onclick="start('reinstall')">Reinstall from scratch</button>
-      </div>
-      <div class="choice-card">
-        <h3>Update</h3>
-        <p>Resets your local PiFinder to the official <code>release</code> branch version
-           (<code>git reset --hard</code> + <code>pull</code>) and re-applies all patches. Keeps
-           the existing directory, just brings the code up to date.</p>
-        <button onclick="start('update')">Update (git reset --hard)</button>
-      </div>
-      <div class="choice-card">
-        <h3>Cancel</h3>
-        <p>Does nothing to the existing installation and shuts down this setup webserver.
-           Run <code>launch_setup_gui.sh</code> again (or the "Start Setup Wizard" button on
-           PiFinder's own website) if you need it later.</p>
-        <button class="cancel" onclick="start('cancel')">Cancel</button>
-      </div>
+      <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
+      <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
+      <button class="choice-btn cancel" onclick="start('cancel')" title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</button>
     `;
   } else {
     el.innerHTML = `
-      <div class="choice-card">
-        <h3>No existing installation found</h3>
-        <p>Clones PiFinder from the official <code>release</code> branch into ~/PiFinder and
-           applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
-        <button id="start-fresh" onclick="start('fresh')">Start Install</button>
-      </div>
+      <p>No existing installation found. Clones PiFinder from the official <code>release</code> branch into
+         ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
+      <button id="start-fresh" onclick="start('fresh')">Start Install</button>
     `;
   }
 }
@@ -951,6 +1275,33 @@ async function powerAction(kind) {
     // accepted the request - treat it the same as a confirmed action.
   }
   watchForServerLoss();
+}
+
+// Direct pifinder.service control (start/stop/restart) - shouldn't normally
+// be needed (Real/Fake Mode toggling already manages it), but useful to
+// recover a crashed/hung Real Mode instance without a full mode round-trip.
+async function pifinderServiceAction(action) {
+  if (action !== 'start' &&
+      !confirm(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`)) {
+    return;
+  }
+  const btns = ['pifinder-svc-start-btn', 'pifinder-svc-stop-btn', 'pifinder-svc-restart-btn'].map((id) => document.getElementById(id));
+  const btn = document.getElementById(`pifinder-svc-${action}-btn`);
+  const originalText = btn.textContent;
+  btns.forEach((b) => { b.disabled = true; });
+  btn.textContent = { start: 'starting…', stop: 'stopping…', restart: 'restarting…' }[action];
+  try {
+    const resp = await fetch(`/api/pifinder_service?action=${action}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? `${originalText} ✓` : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  setTimeout(() => {
+    btn.textContent = originalText;
+    btns.forEach((b) => { b.disabled = false; });
+    refreshMode();
+  }, 2000);
 }
 
 // Shared by closeSetup() and the post-Cancel auto-shutdown below - there's
@@ -1339,6 +1690,876 @@ async function refreshHardwareStatus() {
     lastHwImu = null;
   }
 }
+
+// Phase 1 of the Mount Bridge web integration (see
+// docs/concepts/mount_bridge_web_integration.md) - read-only status only,
+// no controls yet (Phases 2-4 add those). "running" means the driver is
+// loaded in the currently-running profile; coupling_mode/drift_arcmin stay
+// null until it's actually connected, which is expected, not an error.
+// Phase 4: the three preset buttons only make sense once Mount Bridge is
+// Only require a profile to be selected, not full readiness - per the
+// Autoconnect feature (see onCouplingPresetClick() below), clicking a
+// preset before setup is finished is exactly how Autoconnect gets
+// triggered, so these can't stay hard-disabled until everything else is
+// already done.
+function updateWmCouplingGate() {
+  const enabled = !!wmSelectedProfile;
+  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+    document.getElementById(id).disabled = !enabled;
+  });
+}
+
+// Small connection diagram: PiFinder -> Bridge -> Mount, colored dots for
+// whether each device is actually connected, and the two arrows show what
+// the bridge is currently doing between them - a dotted "reading" arrow
+// while just watching, solid orange when it's about to/just corrected the
+// mount, solid green when forwarding a goto straight through.
+function setMbNodeDot(id, connected) {
+  const el = document.getElementById(id);
+  // el is an <svg> - className is a read-only SVGAnimatedString there
+  // (unlike the <span> the old status-dot used), so plain assignment
+  // silently no-ops. setAttribute is what actually works for SVG elements.
+  el.setAttribute('class', 'mb-icon' + (connected === true ? ' mb-icon-connected' : connected === false ? ' mb-icon-disconnected' : ''));
+}
+
+function setMbArrow(id, kind) {
+  const el = document.getElementById(id);
+  el.className = 'mb-arrow';
+  if (kind === 'read') { el.classList.add('mb-arrow-read'); el.textContent = '↔'; }
+  else if (kind === 'write') { el.classList.add('mb-arrow-write'); el.textContent = '→'; }
+  else if (kind === 'goto') { el.classList.add('mb-arrow-goto'); el.textContent = '→'; }
+  else { el.textContent = '⋯'; }
+}
+
+// Green highlight on whichever Coupling preset is actually active right
+// now - per live feedback, matches the same "button reflects the current
+// state" idea used everywhere else on this tile.
+function updateCouplingButtons(mode) {
+  const active = {
+    MODE_VERIFY_ALERT: 'wm-preset-verify-btn',
+    MODE_AUTO_CORRECT: 'wm-preset-auto-btn',
+    MODE_GOTO_FORWARD: 'wm-preset-goto-btn',
+  }[mode];
+  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+    document.getElementById(id).classList.toggle('mb-btn-active', id === active);
+  });
+}
+
+const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
+
+function updateDriftBadge(driftArcmin, threshold) {
+  const badge = document.getElementById('mb-drift-badge');
+  if (driftArcmin === null || driftArcmin === undefined) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  badge.textContent = `${driftArcmin.toFixed(1)}'`;
+  badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red');
+  if (driftArcmin >= MB_FOV_LIMIT_ARCMIN) badge.classList.add('mb-drift-red');
+  else if (driftArcmin > threshold) badge.classList.add('mb-drift-yellow');
+  else badge.classList.add('mb-drift-green');
+}
+
+// Step 5's own "is this actually pointed at the right things" readout -
+// Mount Bridge's BRIDGE_SETTINGS (which indiserver it thinks it's using)
+// and ACTIVE_DEVICES (which two devices it's bridging), plus the server's
+// own settings_correct verdict - per request, so this is visible in the
+// tile itself rather than only via the INDI Control Panel.
+function updateBridgeSettingsInfo(data) {
+  const el = document.getElementById('mb-bridge-settings');
+  if (!data.running || !data.settings_host) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+  const pifinderName = data.active_pifinder || '(none)';
+  const mountName = data.active_mount || '(none)';
+  if (data.settings_correct) {
+    el.className = 'mb-hint mb-hint-ok';
+    el.textContent = `✓ Settings: ${data.settings_host}:${data.settings_port}, linked to ${pifinderName} / ${mountName}.`;
+  } else {
+    el.className = 'mb-hint';
+    el.textContent = `⚠ Unexpected: ${data.settings_host}:${data.settings_port}, ACTIVE_PIFINDER=${pifinderName} (expected localhost:7624, PiFinder LX200).`;
+  }
+}
+
+function updateMbDiagram(data) {
+  document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
+  setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
+  setMbNodeDot('mb-icon-bridge', data.bridge_connected);
+  setMbNodeDot('mb-icon-mount', data.mount_connected);
+  updateCouplingButtons(data.coupling_mode);
+  updateBridgeSettingsInfo(data);
+
+  const captionEl = document.getElementById('mb-mode-caption');
+  const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
+  updateDriftBadge(data.drift_arcmin, threshold);
+
+  if (!data.coupling_mode || data.coupling_mode === 'MODE_OFF') {
+    setMbArrow('mb-arrow-left', 'off');
+    setMbArrow('mb-arrow-right', 'off');
+    captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
+  } else if (data.coupling_mode === 'MODE_VERIFY_ALERT') {
+    setMbArrow('mb-arrow-left', 'read');
+    setMbArrow('mb-arrow-right', 'read');
+    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
+  } else if (data.coupling_mode === 'MODE_AUTO_CORRECT') {
+    setMbArrow('mb-arrow-left', 'read');
+    const exceeded = data.drift_arcmin !== null && data.drift_arcmin > threshold;
+    setMbArrow('mb-arrow-right', exceeded ? 'write' : 'read');
+    captionEl.textContent = exceeded
+      ? `Correcting the mount now - drift ${data.drift_arcmin.toFixed(1)}' exceeds ${threshold}'`
+      : `Watching for drift - will correct the mount past ${threshold}'`;
+  } else if (data.coupling_mode === 'MODE_GOTO_FORWARD') {
+    setMbArrow('mb-arrow-left', 'goto');
+    setMbArrow('mb-arrow-right', 'goto');
+    captionEl.textContent = 'Forwarding goto commands straight to the mount';
+  }
+}
+
+// Server-side log of every Mount Bridge action this tile has triggered
+// (driver add/remove, link mount, connect, coupling presets) plus
+// running-state transitions picked up by refreshMountBridgeStatus()'s own
+// poll - added after live user testing showed the tile's before/after state
+// alone was too hard to follow ("schwierig, dem ganzen zu folgen").
+// Set true for the duration of any user-triggered Mount Bridge action (add/
+// remove driver, start/stop profile, link/unlink mount, connect, coupling
+// preset). The two periodic polls below skip a tick while this is true -
+// found live: a poll landing mid-action (e.g. while a driver removal's
+// delete-and-recreate-the-profile workaround briefly has zero drivers, or
+// mid-restart) could read genuinely transient/incomplete state and flash it
+// on screen before the next successful poll corrected it. The action's own
+// completion always triggers an immediate, fresh refresh anyway.
+// Mount Bridge's status is assembled from four independent async checks
+// that only run once (unawaited) on initial page load - this just tracks
+// when each has reported at least once, to hide #mb-initial-load-banner.
+// "kstars" is marked from within loadWmProfiles() itself (see there) since
+// checkKstarsLink() is only called conditionally, nested inside it, not
+// as its own top-level call.
+const _mbInitialLoad = { mb: false, profiles: false, kstars: false, ekos: false };
+function _markMbInitialLoadDone(key) {
+  _mbInitialLoad[key] = true;
+  const done = Object.values(_mbInitialLoad).filter(Boolean).length;
+  const total = Object.keys(_mbInitialLoad).length;
+  const fill = document.getElementById('mb-initial-load-fill');
+  if (fill) fill.style.width = `${Math.round((done / total) * 100)}%`;
+  if (done === total) {
+    const banner = document.getElementById('mb-initial-load-banner');
+    if (banner) banner.style.display = 'none';
+  }
+}
+
+let mbActionInFlight = false;
+let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
+let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
+let wmKstarsLinked = null;
+let wmEkosConnected = null;  // null = unknown/KStars not running - see checkEkosStatus()
+let wmPifinderConnected = null;
+let wmBridgeConnected = null;
+let wmMountConnected = null;
+let mbLogPosition = 0;
+async function pollMbLog() {
+  try {
+    const resp = await fetch(`/api/mount_bridge_log?position=${mbLogPosition}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.lines && data.lines.length) {
+      const logEl = document.getElementById('mb-log');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + data.lines.join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    mbLogPosition = data.position;
+  } catch (e) {
+    // diagnostic aid only - failing silently here is fine
+  }
+}
+setInterval(pollMbLog, 4000);
+pollMbLog();
+
+function refreshWmActiveButton() {
+  const btn = document.getElementById('wm-set-active-btn');
+  if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
+  btn.textContent = wmActiveMount ? 'Unlink telescope mount' : 'Link telescope mount';
+  btn.classList.toggle('mb-btn-active', !!wmActiveMount);
+}
+
+async function refreshMountBridgeStatus() {
+  const dotEl = document.getElementById('mount-bridge-dot');
+  const textEl = document.getElementById('mount-bridge-text');
+  try {
+    const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.running) {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'not loaded in the current profile';
+      updateWmCouplingGate();
+      updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
+      if (wmActiveMount) wmAutoLinkAttempted = false;  // was linked, now isn't - allow auto-detect to fire again later
+      wmActiveMount = null;
+      wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
+      refreshWmActiveButton();
+      refreshConnectButtons();
+      updateStepIndicators();
+      return;
+    }
+    updateWmCouplingGate();
+    updateMbDiagram(data);
+    if (wmActiveMount && !data.active_mount) wmAutoLinkAttempted = false;  // freshly unlinked
+    wmActiveMount = data.active_mount;
+    wmPifinderConnected = data.pifinder_connected;
+    wmBridgeConnected = data.bridge_connected;
+    wmMountConnected = data.mount_connected;
+    refreshWmActiveButton();
+    refreshConnectButtons();
+    updateStepIndicators();
+    if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
+      dotEl.className = 'status-dot dot-green';
+      const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
+      textEl.textContent = `${data.coupling_mode.replace('MODE_', '').replace('_', ' ').toLowerCase()}${drift}`;
+    } else {
+      dotEl.className = 'status-dot dot-yellow';
+      textEl.textContent = data.active_mount
+        ? 'connected, coupling off'
+        : 'loaded, not connected (see INDI Control Panel)';
+    }
+  } catch (e) {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'unknown (check unavailable)';
+    updateWmCouplingGate();
+    updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
+    wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
+    refreshConnectButtons();
+  }
+}
+setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
+refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
+
+async function setWmCoupling(mode) {
+  mbActionInFlight = true;
+  const btnId = { verify_alert: 'wm-preset-verify-btn', auto_correct: 'wm-preset-auto-btn', goto_forward: 'wm-preset-goto-btn' }[mode];
+  const btn = document.getElementById(btnId);
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'setting…';
+  const threshold = document.getElementById('wm-threshold-input').value;
+  const action = document.getElementById('wm-action-select').value;
+  try {
+    const params = new URLSearchParams({ mode });
+    if (mode !== 'goto_forward') {
+      params.set('threshold', threshold);
+      if (mode === 'auto_correct') params.set('action', action);
+    }
+    const resp = await fetch(`/api/mount_bridge_coupling?${params}`, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - refreshMountBridgeStatus() below reflects whatever the
+    // actual state ended up being, same pattern as the other toggle
+    // buttons on this page.
+  }
+  btn.textContent = originalText;
+  pollMbLog();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+}
+
+// Autoconnect: clicking a Coupling preset before setup (steps 1-5) is
+// actually finished kicks off the rest automatically instead of just
+// failing/doing nothing. Automates everything that has one obviously
+// correct answer (start the profile, add both PiFinder drivers, connect
+// everything once linked) and pauses with a visible, inline prompt for the
+// one step that's a genuine judgment call - which loaded driver is the
+// user's mount - resuming on its own once that's done. KStars Link (step
+// 2) is deliberately NOT auto-fixed here even if missing, same reasoning
+// as its own Recheck button: this project never writes to KStars' own
+// database, only reads it (see _kstars_webmanager_link_status() in
+// server.py) - a missing link is surfaced elsewhere, not blocked on here.
+let autoconnectMode = null;  // the coupling mode Autoconnect is working toward, or null if idle
+let autoconnectPoll = null;
+
+function isFullyReadyForCoupling() {
+  return !!wmSelectedProfile && wmServerRunning && wmHasLx200 === true && wmHasBridge === true
+    && !!wmActiveMount && wmEkosConnected === true;
+}
+
+function setAutoconnectStatus(text) {
+  const el = document.getElementById('mb-autoconnect-status');
+  if (!text) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  el.style.display = '';
+  el.textContent = text;
+}
+
+function onCouplingPresetClick(mode) {
+  if (isFullyReadyForCoupling()) {
+    setWmCoupling(mode);
+    return;
+  }
+  startAutoconnect(mode);
+}
+
+async function startAutoconnect(mode) {
+  autoconnectMode = mode;
+  if (!wmSelectedProfile) {
+    setAutoconnectStatus('Autoconnect: pick a profile above first.');
+    autoconnectMode = null;
+    return;
+  }
+  setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
+  if (!wmServerRunning) await toggleWmServer();
+  if (wmHasLx200 === false) await toggleWmDriver('lx200');
+  if (wmHasBridge === false) await toggleWmDriver('bridge');
+
+  if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
+
+  if (!wmActiveMount) {
+    setAutoconnectStatus('⏳ Autoconnect: pick your mount above and click "Link telescope mount" to continue.');
+    waitForCondition(mode, () => !!wmActiveMount, () => proceedPastMountLink(mode));
+    return;
+  }
+  proceedPastMountLink(mode);
+}
+
+function proceedPastMountLink(mode) {
+  if (autoconnectMode !== mode) return;
+  // Ekos itself connecting is a manual step in KStars this tile can't do
+  // for the user (see _ekos_indi_status()'s own docstring on why it only
+  // ever reads this, never calls Ekos's connectDevices()) - same pause-
+  // and-poll idea as the mount link above.
+  if (wmEkosConnected !== true) {
+    setAutoconnectStatus('⏳ Autoconnect: open Ekos in KStars and click Connect there too, then this continues on its own.');
+    waitForCondition(mode, () => wmEkosConnected === true, () => finishAutoconnect(mode));
+    return;
+  }
+  finishAutoconnect(mode);
+}
+
+// Generic "pause until this becomes true, then resume" used for both the
+// mount-link and the Ekos-connected waits above - each is a step requiring
+// the user's own action elsewhere that Autoconnect can't take for them.
+function waitForCondition(mode, isDone, onDone) {
+  if (autoconnectPoll) clearInterval(autoconnectPoll);
+  autoconnectPoll = setInterval(() => {
+    if (autoconnectMode !== mode) {
+      clearInterval(autoconnectPoll);
+      autoconnectPoll = null;
+      return;
+    }
+    if (isDone()) {
+      clearInterval(autoconnectPoll);
+      autoconnectPoll = null;
+      onDone();
+    }
+  }, 1500);
+}
+
+async function finishAutoconnect(mode) {
+  setAutoconnectStatus('Autoconnect: connecting devices…');
+  connectAllAvailable();
+  // connectAllAvailable() fires its connects without waiting for them -
+  // poll briefly for them to actually finish before applying the coupling
+  // mode, same idea as the server-side "wait for indiserver" polls.
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline && autoconnectMode === mode) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const targets = _availableConnectTargets();
+    if (targets.length > 0 && targets.every(([, , connected]) => connected)) break;
+  }
+  if (autoconnectMode !== mode) return;
+  setAutoconnectStatus('Autoconnect: applying coupling mode…');
+  await setWmCoupling(mode);
+  setAutoconnectStatus(null);
+  autoconnectMode = null;
+}
+
+// Phase 2 of the Mount Bridge web integration - profile selection (UC3,
+// read-only list, no create/edit) + add/remove ONLY the two PiFinder
+// drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
+let wmSelectedProfile = null;
+let wmHasLx200 = null;
+let wmHasBridge = null;
+let wmServerRunning = false;
+let wmLastActiveProfile = null;
+let wmLastRunning = false;
+
+const WM_DEFAULT_PROFILE = 'Simulators';  // read-only default - never selectable here (step 1/2)
+
+async function loadWmProfiles() {
+  const selectEl = document.getElementById('wm-profile-select');
+  const noProfileHint = document.getElementById('wm-no-profile-hint');
+  try {
+    const resp = await fetch('/api/webmanager/profiles', { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error || !data.profiles) throw new Error(data.error || 'no profiles');
+    const ownProfiles = data.profiles.filter((name) => name !== WM_DEFAULT_PROFILE);
+    noProfileHint.style.display = ownProfiles.length === 0 ? '' : 'none';
+    const previousValue = wmSelectedProfile;
+    selectEl.innerHTML = '';
+    ownProfiles.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name === data.active_profile ? `${name} (running)` : name;
+      selectEl.appendChild(opt);
+    });
+    // Keep the previous selection if it still exists, otherwise fall back
+    // to the actually-running profile if there is one, else the first.
+    if (previousValue && ownProfiles.includes(previousValue)) {
+      selectEl.value = previousValue;
+    } else if (ownProfiles.includes(data.active_profile)) {
+      selectEl.value = data.active_profile;
+    }
+    const changedProfile = wmSelectedProfile !== (selectEl.value || null);
+    wmSelectedProfile = selectEl.value || null;
+    wmLastActiveProfile = data.active_profile;
+    wmLastRunning = data.running;
+    wmServerRunning = data.running && data.active_profile === wmSelectedProfile;
+    selectEl.disabled = ownProfiles.length === 0;
+    refreshWmServerButton();
+    updateStepIndicators();
+    if (wmSelectedProfile) {
+      refreshWmDriverButtons();
+      refreshWmConnectRow();
+      if (changedProfile) {
+        checkKstarsLink().then(() => _markMbInitialLoadDone('kstars'));
+      } else {
+        _markMbInitialLoadDone('kstars');  // already checked before - nothing new to await
+      }
+    } else {
+      setWmDriverButton('lx200', null);
+      setWmDriverButton('bridge', null);
+      document.getElementById('wm-kstars-link-row').style.display = 'none';
+      _markMbInitialLoadDone('kstars');  // no profile selected - nothing to check
+    }
+  } catch (e) {
+    _markMbInitialLoadDone('kstars');  // profile load itself failed - nothing to check either
+    selectEl.innerHTML = '<option>unavailable</option>';
+    setWmDriverButton('lx200', null);
+    setWmDriverButton('bridge', null);
+    const serverBtn = document.getElementById('wm-server-btn');
+    serverBtn.textContent = 'unknown';
+    serverBtn.disabled = true;
+  }
+}
+
+async function checkKstarsLink() {
+  const row = document.getElementById('wm-kstars-link-row');
+  const textEl = document.getElementById('wm-kstars-link-text');
+  const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
+  if (!wmSelectedProfile) { row.style.display = 'none'; wmKstarsLinked = null; updateStepIndicators(); return; }
+  try {
+    const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.checked) {  // no KStars DB found - nothing to report, not a real checkpoint here
+      row.style.display = 'none';
+      wmKstarsLinked = null;
+      updateStepIndicators();
+      return;
+    }
+    row.style.display = '';
+    wmKstarsLinked = !!data.linked;
+    updateStepIndicators();
+    // Recheck itself doesn't change anything - it's colored to reflect
+    // whether the underlying check currently passes, same "green means
+    // satisfied" idea used everywhere else on this tile.
+    recheckBtn.classList.toggle('mb-btn-active', !!data.linked);
+    if (data.linked) {
+      row.className = 'mb-row wm-link-ok';
+      textEl.textContent = "✓ Linked to this Web Manager in KStars.";
+    } else if (data.kstars_profile_found) {
+      row.className = 'mb-row wm-link-warn';
+      textEl.textContent = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
+    } else {
+      row.className = 'mb-row wm-link-warn';
+      textEl.textContent = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+    }
+  } catch (e) {
+    row.style.display = 'none';
+    wmKstarsLinked = null;
+    updateStepIndicators();
+  }
+}
+
+// Gates Coupling (see isFullyReadyForCoupling()): reads Ekos's own INDI
+// connection state via D-Bus (server-side, see _ekos_indi_status() in
+// server.py) - a Coupling command only matters if it reaches the same
+// Ekos session the user (or the StellarMate App) is actually observing
+// through. Hidden entirely if KStars isn't running at all - some setups
+// may never open KStars and drive everything from the StellarMate App
+// directly, so there's nothing useful to say in that case (this tile has
+// no way to tell those two situations apart from here).
+async function checkEkosStatus() {
+  const el = document.getElementById('mb-ekos-status');
+  try {
+    const resp = await fetch('/api/ekos_indi_status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.kstars_running) {
+      el.style.display = 'none';
+      wmEkosConnected = null;
+      return;
+    }
+    wmEkosConnected = !!data.connected;
+    el.style.display = '';
+    if (data.connected) {
+      el.className = 'mb-hint mb-hint-ok';
+      el.textContent = '✓ Ekos is connected in KStars.';
+    } else {
+      el.className = 'mb-hint';
+      el.textContent = '⚠ Ekos isn\'t connected in KStars yet - open Ekos and click Connect there too.';
+    }
+  } catch (e) {
+    el.style.display = 'none';
+    wmEkosConnected = null;
+  }
+}
+setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
+checkEkosStatus().then(() => _markMbInitialLoadDone('ekos'));
+
+function refreshWmServerButton() {
+  const btn = document.getElementById('wm-server-btn');
+  if (!wmSelectedProfile) {
+    btn.textContent = '…';
+    btn.disabled = true;
+    btn.classList.remove('mb-btn-active');
+    return;
+  }
+  // Green when running - same "button reflects the state actually being
+  // satisfied" idea as everywhere else, even though the label itself is an
+  // action verb ("Stop"), not a state - per live feedback, "Stop" alone
+  // didn't make clear whether the profile currently *was* running or not.
+  btn.textContent = wmServerRunning ? 'Stop' : 'Start';
+  btn.classList.toggle('mb-btn-active', wmServerRunning);
+  btn.disabled = false;
+}
+
+async function toggleWmServer() {
+  if (!wmSelectedProfile) return;
+  mbActionInFlight = true;
+  setStepBusy(1, true);
+  const btn = document.getElementById('wm-server-btn');
+  const wantsStart = !wmServerRunning;
+  btn.disabled = true;
+  btn.textContent = wantsStart ? 'starting…' : 'stopping…';
+  try {
+    const url = `/api/webmanager/server?action=${wantsStart ? 'start' : 'stop'}` +
+      (wantsStart ? `&profile=${encodeURIComponent(wmSelectedProfile)}` : '');
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - loadWmProfiles() below reflects whatever actually
+    // happened, same pattern as the driver toggle buttons.
+  }
+  pollMbLog();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  setStepBusy(1, false);
+}
+
+// Phase 3 - Active Devices + Connect (UC5/UC6 groundwork). Only meaningful
+// once the selected profile's indiserver is actually running, since it
+// needs live devices to query/connect - disabled otherwise rather than
+// left to fail with a confusing error.
+// Every currently-available (button not disabled) connect target, paired
+// with its device name/button id/current connected state - shared by the
+// "Connect all" button's own label/color and its click handler below.
+function _availableConnectTargets() {
+  const targets = [];
+  if (!document.getElementById('wm-connect-lx200-btn').disabled)
+    targets.push(['PiFinder LX200', 'wm-connect-lx200-btn', wmPifinderConnected]);
+  if (!document.getElementById('wm-connect-bridge-btn').disabled)
+    targets.push(['PiFinder Mount Bridge', 'wm-connect-bridge-btn', wmBridgeConnected]);
+  const mount = document.getElementById('wm-mount-select').value;
+  if (!document.getElementById('wm-connect-mount-btn').disabled && mount)
+    targets.push([mount, 'wm-connect-mount-btn', wmMountConnected]);
+  return targets;
+}
+
+function refreshWmConnectAllButton() {
+  const allBtn = document.getElementById('wm-connect-all-btn');
+  const targets = _availableConnectTargets();
+  allBtn.disabled = targets.length === 0;
+  // Green + "Disconnect all" once everything available is already
+  // connected - same toggle idea as the individual Connect buttons.
+  const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  allBtn.textContent = allConnected ? 'Disconnect all' : 'Connect all (available)';
+  allBtn.classList.toggle('mb-btn-active', allConnected);
+}
+
+async function refreshWmConnectRow() {
+  const mountSelect = document.getElementById('wm-mount-select');
+  const setBtn = document.getElementById('wm-set-active-btn');
+  const lx200Btn = document.getElementById('wm-connect-lx200-btn');
+  const bridgeBtn = document.getElementById('wm-connect-bridge-btn');
+  const mountBtn = document.getElementById('wm-connect-mount-btn');
+  const noMountHint = document.getElementById('wm-no-mount-hint');
+  if (!wmServerRunning || !wmSelectedProfile) {
+    mountSelect.innerHTML = '<option>profile not running</option>';
+    mountSelect.disabled = true;
+    setBtn.disabled = true;
+    lx200Btn.disabled = true;
+    bridgeBtn.disabled = true;
+    mountBtn.disabled = true;
+    noMountHint.style.display = 'none';
+    refreshWmConnectAllButton();
+    return;
+  }
+  lx200Btn.disabled = false;
+  bridgeBtn.disabled = false;
+  try {
+    const resp = await fetch(`/api/webmanager/other_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error || !data.drivers) throw new Error(data.error || 'no drivers');
+    const labels = data.drivers.map((d) => d.label);
+    const previousValue = mountSelect.value;
+    mountSelect.innerHTML = '';
+    data.drivers.forEach((d) => {
+      const opt = document.createElement('option');
+      opt.value = d.label;
+      opt.textContent = d.label;
+      mountSelect.appendChild(opt);
+    });
+    // Prefer the actually-linked mount (per Mount Bridge's own
+    // ACTIVE_DEVICES) over whatever was last selected in this dropdown -
+    // found live: after a profile restart, this stayed on a stale/default
+    // selection even though a different mount was genuinely linked,
+    // making the dropdown contradict the rest of the tile.
+    if (wmActiveMount && labels.includes(wmActiveMount)) {
+      mountSelect.value = wmActiveMount;
+    } else if (labels.includes(previousValue)) {
+      mountSelect.value = previousValue;
+    }
+    mountSelect.disabled = labels.length === 0;
+    setBtn.disabled = labels.length === 0 && !wmActiveMount;
+    mountBtn.disabled = labels.length === 0;
+    noMountHint.style.display = labels.length === 0 ? '' : 'none';
+
+    // Auto-detect: if nothing is linked yet and exactly one candidate is
+    // family "Telescopes" (see driver_families()/other_profile_drivers()
+    // in webmanager_client.py for the one real exception - PiFinder LX200
+    // is also this family but is already excluded from this list), select
+    // and link it automatically instead of making the user do it by hand.
+    // wmAutoLinkAttempted guards against re-clicking Link every poll while
+    // an attempt is still in flight or failed - it resets once something
+    // actually gets linked or unlinked again, see refreshMountBridgeStatus().
+    const telescopeCandidates = data.drivers.filter((d) => d.is_telescope);
+    if (!wmActiveMount && !wmAutoLinkAttempted && telescopeCandidates.length === 1 && !setBtn.disabled) {
+      wmAutoLinkAttempted = true;
+      mountSelect.value = telescopeCandidates[0].label;
+      setWmActiveDevices();  // its own server-side logging already records this as a normal link action
+    }
+  } catch (e) {
+    mountSelect.innerHTML = '<option>unavailable</option>';
+    mountSelect.disabled = true;
+    setBtn.disabled = true;
+    mountBtn.disabled = true;
+    noMountHint.style.display = 'none';
+  }
+  refreshConnectButtons();
+  refreshWmConnectAllButton();
+}
+
+function connectAllAvailable() {
+  // Toggle: if everything available is already connected, disconnect it
+  // all; otherwise connect only the ones not yet connected (never toggles
+  // an individual already-connected device off in that case).
+  const targets = _availableConnectTargets();
+  const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  targets.forEach(([deviceName, btnId, connected]) => {
+    if (allConnected) {
+      _setDeviceConnection(deviceName, btnId, true);
+    } else if (!connected) {
+      _setDeviceConnection(deviceName, btnId, false);
+    }
+  });
+}
+
+async function setWmActiveDevices() {
+  // Toggles between linking the dropdown-selected mount and unlinking
+  // whatever's currently linked - per live feedback, "Link Mount" no longer
+  // made sense to show once a mount was already linked.
+  const unlinking = !!wmActiveMount;
+  const mount = document.getElementById('wm-mount-select').value;
+  if (!unlinking && !mount) return;
+  mbActionInFlight = true;
+  setStepBusy(4, true);
+  const btn = document.getElementById('wm-set-active-btn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = unlinking ? 'unlinking…' : 'linking…';
+  try {
+    const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
+    const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? (unlinking ? 'Unlinked ✓' : 'Linked ✓') : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  pollMbLog();
+  await refreshMountBridgeStatus();
+  setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  mbActionInFlight = false;
+  setStepBusy(4, false);
+}
+
+// Green + "Disconnect X" once a device is actually connected, per live
+// feedback - matches the same idea already used for the driver add/remove
+// buttons and Link/Unlink Mount. Skips a button while it's disabled (mid
+// own action, or gated off because the profile isn't running/no mount
+// picked) - its own code owns the label in that case, same pattern as
+// refreshWmActiveButton().
+function setConnectButtonState(btnId, label, connected) {
+  const btn = document.getElementById(btnId);
+  if (btn.disabled) return;
+  btn.textContent = connected ? `Disconnect ${label}` : `Connect ${label}`;
+  btn.classList.toggle('mb-btn-active', !!connected);
+}
+
+function refreshConnectButtons() {
+  setConnectButtonState('wm-connect-lx200-btn', 'PiFinder LX200', wmPifinderConnected);
+  setConnectButtonState('wm-connect-bridge-btn', 'Bridge', wmBridgeConnected);
+  setConnectButtonState('wm-connect-mount-btn', 'Mount', wmMountConnected);
+}
+
+async function _setDeviceConnection(deviceName, btnId, disconnecting) {
+  mbActionInFlight = true;
+  setStepBusy(5, true);
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  btn.textContent = disconnecting ? 'disconnecting…' : 'connecting…';
+  try {
+    const params = new URLSearchParams({ device: deviceName });
+    if (disconnecting) params.set('action', 'disconnect');
+    if (wmSelectedProfile) params.set('profile', wmSelectedProfile);
+    const resp = await fetch(`/api/mount_bridge_connect?${params}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? (disconnecting ? 'Disconnected' : 'Connected') : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  pollMbLog();
+  await refreshMountBridgeStatus();
+  setTimeout(() => { btn.disabled = false; refreshConnectButtons(); }, 1500);
+  mbActionInFlight = false;
+  setStepBusy(5, false);
+}
+
+function connectWmDevice(deviceName, btnId) {
+  // Toggle: pick disconnect if this specific device is currently tracked
+  // as connected, connect otherwise.
+  const connected = deviceName === 'PiFinder LX200' ? wmPifinderConnected
+    : deviceName === 'PiFinder Mount Bridge' ? wmBridgeConnected
+    : wmMountConnected;
+  return _setDeviceConnection(deviceName, btnId, !!connected);
+}
+
+function connectWmSelectedMount() {
+  const mount = document.getElementById('wm-mount-select').value;
+  if (mount) connectWmDevice(mount, 'wm-connect-mount-btn');
+}
+
+function onWmProfileChange() {
+  wmSelectedProfile = document.getElementById('wm-profile-select').value;
+  wmServerRunning = wmLastRunning && wmLastActiveProfile === wmSelectedProfile;
+  refreshWmServerButton();
+  updateStepIndicators();
+  refreshWmDriverButtons();
+  refreshWmConnectRow();
+  checkKstarsLink();
+}
+
+function setWmDriverButton(driver, present) {
+  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
+  if (driver === 'lx200') wmHasLx200 = present; else wmHasBridge = present;
+  if (present === null) {
+    btn.textContent = `${label}: unknown`;
+    btn.disabled = true;
+    btn.classList.remove('mb-btn-active');
+    updateStepIndicators();
+    return;
+  }
+  btn.textContent = present ? `${label}: remove` : `${label}: add`;
+  btn.classList.toggle('mb-btn-active', present);
+  btn.disabled = false;
+  updateStepIndicators();
+}
+
+// Green checkmark on each step's label once its condition is actually met -
+// per live feedback, plain grey labels gave no sense of "am I done here yet
+// or not" at a glance.
+function updateStepIndicators() {
+  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
+  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmKstarsLinked === true);
+  document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
+  document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
+  const connectTargets = _availableConnectTargets();
+  document.getElementById('wm-step5-label').classList.toggle(
+    'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
+  );
+}
+
+// Yellow + spinning symbol while a step's own action is actually running -
+// per live feedback, the green/grey checkmark alone didn't show "working on
+// it right now" while a click was in flight. wmStep5Busy is a counter, not
+// a bool, since "Connect all" can have 2-3 connects running at once.
+let wmStep5Busy = 0;
+function setStepBusy(stepNum, busy) {
+  const el = document.getElementById(`wm-step${stepNum}-label`);
+  if (stepNum === 5) {
+    wmStep5Busy = Math.max(0, wmStep5Busy + (busy ? 1 : -1));
+    el.classList.toggle('mb-step-busy', wmStep5Busy > 0);
+    if (wmStep5Busy === 0) updateStepIndicators();
+    return;
+  }
+  el.classList.toggle('mb-step-busy', busy);
+  if (!busy) updateStepIndicators();
+}
+
+async function refreshWmDriverButtons() {
+  if (!wmSelectedProfile) return;
+  try {
+    const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    setWmDriverButton('lx200', data.has_lx200);
+    setWmDriverButton('bridge', data.has_bridge);
+  } catch (e) {
+    setWmDriverButton('lx200', null);
+    setWmDriverButton('bridge', null);
+  }
+}
+
+async function toggleWmDriver(driver) {
+  if (!wmSelectedProfile) return;
+  mbActionInFlight = true;
+  setStepBusy(3, true);
+  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  const wantsAdd = btn.textContent.trim().endsWith('add');
+  btn.disabled = true;
+  btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  try {
+    const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=${driver}&action=${wantsAdd ? 'add' : 'remove'}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - refreshWmDriverButtons() below reflects whatever the
+    // actual state ended up being, success or not, rather than assuming.
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  setStepBusy(3, false);
+}
+
+loadWmProfiles().then(() => _markMbInitialLoadDone('profiles'));
+setInterval(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU
 // read / PiFinder's own GPS status), classified as hardware/driver/python on

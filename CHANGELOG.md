@@ -5,8 +5,43 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-26
+
 ### Added
 
+- **Mount Bridge web integration** (Control Center): folds the Mount Bridge "Coupling Dial" setup -
+  previously split across the INDI Web Manager and the raw INDI Control Panel - into a single
+  guided workflow in a new Mount Bridge tile, using PiFinder's own terminology ("Verify/Alert only",
+  "Auto-correct on drift", "Goto-Forward") instead of raw INDI property names. Built on a new,
+  minimal, framework-agnostic INDI client module (stdlib `socket`+`xml.etree` only - no
+  `PyIndi`/compiled SWIG bindings), so the same module can later be ported into PiFinder's own
+  bottle-based web interface with just a thin adapter layer. Highlights:
+  - A numbered 1.-5. checklist (Profile / KStars Link / Drivers / Mount / Connect) with live
+    done/busy indicators, each step's controls aligned to a shared column regardless of label length.
+  - **Autoconnect**: clicking a Coupling preset before setup is finished drives the whole checklist
+    automatically - starts the profile, adds drivers, waits for the mount link and for Ekos itself
+    to connect in KStars, connects every device, then applies the chosen mode.
+  - A hard gate requiring Ekos's own INDI connection (not just this tile's own connection) via a
+    read-only D-Bus check (`org.kde.kstars.Ekos.indiStatus`) - a Coupling command otherwise doesn't
+    reach the session actually being observed through.
+  - Automatic mount-driver detection: if exactly one Telescope-family driver is present besides
+    PiFinder's own two, it's auto-selected and auto-linked.
+  - An icon-first connection diagram (PiFinder/Bridge/Mount), connection state shown via each icon's
+    own color, with the drift readout at full size beside the Bridge icon.
+  - Bridge settings/active-devices readout (host/port, which two devices are actually bridged)
+    surfaced directly in the tile instead of requiring the INDI Control Panel.
+  - The three Coupling presets as a large, full-width segmented control - the tile's actual central
+    action - with Threshold/Correction as smaller secondary settings underneath.
+  - A one-time loading indicator during initial page load, shown only until the tile's independent
+    status checks have all reported at least once, not a persistent bar on later refreshes.
+  - New `help.html` page, linked from every heading throughout the Control Center.
+  Also fixed a real race: an internal auto-heal (restarting the profile when a device comes back
+  "not currently defined") was silently dropping the Mount Bridge's own mount link as a side effect,
+  since the restart respawns every driver process in the profile - now restores the link immediately
+  afterward instead of relying on the next unrelated periodic poll.
+  See `docs/concepts/mount_bridge_web_integration.md` and GitHub issue #38 for the full concept,
+  phased plan, and design-decision history. Practical validation with a real mount over an actual
+  observing session is still open, tracked in issues #42/#44/#45.
 - **"Test Hardware" button (Control Center)**: runs a deeper functional check for Camera/IMU/GPS
   instead of the previous bare presence check, and classifies any failure as hardware, driver, or
   Python so it's clear at a glance whether this is a cable problem or a bug - both in the tile and
@@ -147,6 +182,16 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Control Center login could reject a correct password**: `pam_auth.py`'s `verify_password()`
+  called `pam_acct_mgmt()` after a successful `pam_authenticate()`, which always failed with a
+  privilege error on this system regardless of the password - every login was silently rejected.
+  Root-caused by comparing journal signatures of a deliberately-wrong password (fails cleanly at
+  the `auth` phase) against real attempts (reached the `account` phase, proving the password was
+  actually right). Fixed by dropping the `pam_acct_mgmt()` call; `verify_password()` now returns
+  based on `pam_authenticate()` alone. Failed logins are also now rate-limited per client IP (5
+  confirmed wrong-password attempts within 30 seconds locks that IP out, plus a semaphore capping
+  concurrent PAM calls at 2) - a basic guard against casual brute-forcing, not a substitute for
+  keeping the server off an untrusted network.
 - **`pifinder.service` could crash right after a cold boot** with `PermissionError` on
   `/sys/class/pwm/pwmchip0/pwm1/enable`: exporting the PWM channel (keypad backlight) creates its
   sysfs entry root-owned, and the udev rule that makes it group-writable runs asynchronously -
@@ -216,6 +261,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- PiFinder's own `/smos` page nav entry renamed from "INDI Drivers" to "PFSM", and restructured to
+  put the Control Center's own live status front and center (checked far more often day to day)
+  with the one-time Web Manager setup steps collapsed into a click-to-expand section below, instead
+  of the other way around.
 - The Control Center now asks for confirmation before a destructive Reinstall/Update/Reboot/Shutdown
   action, instead of firing immediately on click.
 - `pifinder_stellarmate_setup.sh` now builds and installs the PiFinder LX200 and Mount Bridge

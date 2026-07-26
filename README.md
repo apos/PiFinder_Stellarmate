@@ -14,12 +14,13 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Use these scripts at your own risk. The author is not responsible for any damage to your hardware or software.
 > * This process has been tested with the PiFinder version specified in `version.txt`.
 
-> ### ✅ **Current Version — v1.0.0**
+> ### ✅ **Current Version — v1.1.0**
 >
 > * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
 > * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
 > * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
+> * **New in this release**: the Mount Bridge "Coupling Dial" setup is now available as a single guided workflow in the Control Center itself, not just via the Web Manager/INDI Control Panel — see [CHANGELOG.md](CHANGELOG.md) and [docs/concepts/mount_bridge_web_integration.md](docs/concepts/mount_bridge_web_integration.md). Verified against `indi_simulator_telescope`/live `indiserver`; practical validation over a real observing session with a real mount is still open ([issue #42](https://github.com/apos/PiFinder_Stellarmate/issues/42)).
 
 ---
 
@@ -149,7 +150,10 @@ fake-hardware instance for dev/testing (with a one-click switch and a per-compon
 checklist — camera/IMU/GPS, checked directly against the hardware rather than trusting PiFinder's own
 software state), a "Solve Simulation" toggle for PiFinder's own Test Mode, a "Toggle Display" button
 for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
-buttons for the whole Pi. Run it with:
+buttons for the whole Pi. A **Mount Bridge** tile folds the Coupling Dial setup (Web Manager profile,
+drivers, mount link, connect, and the three one-click Coupling presets — Verify/Alert only,
+Auto-correct on drift, Goto-Forward) into a single guided checklist, including an "Autoconnect" mode
+that drives the whole thing automatically once you pick a Coupling preset. Run it with:
 ```bash
 bash gui_installer/launch_setup_gui.sh
 ```
@@ -189,45 +193,49 @@ bash gui_installer/launch_setup_gui.sh --shutdown-webserver
 <table>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="380"></a><br>
-<sub>Live progress bar, step checklist, and terminal output side by side</sub>
+<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
+<sub>Install/Update: live progress, terminal output, and Reboot/Close controls in one tile</sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
-<sub>Setup complete: OLED mirror and quick-links tile (PiFinder status, INDI Drivers page, this page's own links, GitHub docs)</sub>
+<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
+<sub>Quick Links: PiFinder status plus direct links (remote page, PFSM page, this page, GitHub docs)</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
+<sub>Mode & Power: Real/Fake Mode switch, hardware checklist, PiFinder service and Pi power controls</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
+<sub>Mount Bridge: connection diagram, Coupling presets, and the guided setup checklist</sub>
 </td>
 </tr>
 </table>
 
-## After Installation: PiFinder's "INDI Drivers" Page
+## After Installation: PiFinder's "PFSM" Page
 
 Once PiFinder is up, its own website (`/remote`, password `smate` by default) gets a new
-**"INDI Drivers"** nav entry (`/smos`). It's the on-device companion to the two manual steps below:
+**"PFSM"** nav entry (`/smos`). It's the on-device companion to the two manual steps below,
+ordered by how often you actually need them:
 
-1. **Set up the StellarMate Web Manager** — shows the same screenshot as
-   [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) plus direct links to the Web Manager for
-   every IP this Pi has, so you don't have to hunt down the port (`8624`) yourself.
-2. **PiFinder Stellarmate Control Center status/control** — shows whether `gui_installer/`'s
-   webserver is currently running, with Start/Stop buttons, so you can relaunch it (e.g. to update
-   PiFinder later) without opening a terminal. Reachable-at links for the Control Center itself are
-   listed too.
+1. **PFSM Control Center status/control** — shows whether `gui_installer/`'s webserver is
+   currently running, with a Start button when it isn't, so you can relaunch it (e.g. to update
+   PiFinder later) without opening a terminal. Reachable-at links for the Control Center itself
+   are listed too.
+2. **Web Manager setup (one-time)** — collapsed by default (it's only needed once per install);
+   expand it for the same screenshot as [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) plus
+   direct links to the Web Manager for every IP this Pi has, so you don't have to hunt down the
+   port (`8624`) yourself.
 
 This page requires no login (same reasoning as PiFinder's own home page — it needs to work right
 after a fresh boot) and is meant to be the first thing you check after a fresh install, an update,
 or a reboot.
 
-<table>
-<tr>
-<td align="center" width="50%">
+<p align="center">
 <a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="380"></a><br>
-<sub>Card 1: StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
-<sub>Card 2: PiFinder Stellarmate Control Center status/control</sub>
-</td>
-</tr>
-</table>
+<sub>Web Manager setup step (expanded): StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running</sub>
+</p>
 
 ## Using the INDI Driver
 

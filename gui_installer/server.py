@@ -13,8 +13,10 @@ but the bare system python3.
 
 import base64
 import json
+import os
 import re
 import socket
+import sqlite3
 import subprocess
 import threading
 import time
@@ -24,6 +26,8 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import pam_auth
+import indi_client
+import webmanager_client
 
 PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
@@ -39,14 +43,19 @@ SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
 GPSD_PORT = 2947
-PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
-AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
-HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo.png"
+# Thumbnails, not the full-resolution originals used elsewhere (e.g. the
+# README) - these are only ever shown small on this page (128px/78px tall),
+# so serving the originals wasted a lot of load time for nothing (the
+# HeyApos one alone was ~2MB at 1920x1080 for a 78px-tall footer logo).
+PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder_thumb.jpg"
+AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg_thumb.png"
+HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
 # PiFinder's own splash bitmap (shown by pifinder_splash.service before the
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
+HELP_PAGE = GUI_DIR / "help.html"
 # Deliberately decoupled from PiFinder's own web server/codebase: this just
 # shells out to test_tools/fake_mode.sh (see its own header comment for the
 # full rationale), which itself toggles between the real systemd service and
@@ -95,6 +104,35 @@ PHASE_MARKER = "###PHASE### "
 REBOOT_MARKER = "###REBOOT_NEEDED### "
 
 _lock = threading.Lock()
+
+# Failed-auth rate limiting - see _require_auth(). Found live (2026-07-25): a
+# browser tab with stale/wrong cached Basic Auth credentials, combined with
+# several independent polling loops on this page, retried a wrong password
+# on every single poll - well over a hundred failed attempts in a few
+# minutes, briefly bursting past 10/second. Each failed attempt calls into
+# PAM, which does real password-hashing work (deliberately slow, e.g.
+# sha512crypt) - expensive enough, repeated fast enough, to visibly starve
+# the GIL and make unrelated background threads (the startup hardware test,
+# in this case) look hung even though nothing was actually deadlocked. Also
+# a real, if mild, brute-force exposure on its own regardless of that
+# incident - this call site had no limit on repeated attempts at all before.
+_auth_failures = {}  # client_ip -> (failure_count, first_failure_monotonic)
+_AUTH_LOCKOUT_THRESHOLD = 5
+_AUTH_LOCKOUT_WINDOW = 30.0  # seconds
+# Caps how many PAM calls can run *at once*, regardless of whether they'll
+# turn out right or wrong. Found live: this page fires ~15 independent
+# polling loops - once the credentials are actually correct, enough of them
+# can still land inside pam_authenticate() (real wall-clock work, not
+# instant) at the same moment that a naive "count every attempt, clear on
+# success" scheme false-locks out the *correct* password purely from
+# concurrency (reproduced live: entering the right password worked, then a
+# few seconds later - the next round of concurrent polls - got locked out
+# again, repeatedly). A concurrency cap sidesteps that entirely: it doesn't
+# need to know in advance whether an attempt will succeed, it just makes
+# the rest queue briefly (blocking on the semaphore costs no CPU/GIL time)
+# instead of all hitting PAM's expensive hashing at once.
+_auth_semaphore = threading.Semaphore(2)
+
 _lines = []
 _running = False
 _exit_code = None
@@ -651,6 +689,100 @@ def _hwtest_log(line: str):
         _hwtest_lines.append(line)
 
 
+# KStars stores its own Equipment Profiles (separate from the Web Manager
+# profiles this feature manages) in a local SQLite DB, including whether
+# "INDI Web Manager" is ticked for a given profile (indiwebmanagerport
+# column - NULL if unticked, the Web Manager port if ticked - confirmed live
+# 2026-07-25 by comparing two real rows, one with/one without the checkbox
+# set in KStars' own Profile Editor). Read-only: this file can be open by a
+# live KStars process, and writing to it risks corruption/lost updates -
+# see the wizard's "Step 3" check, which only ever reads this and guides the
+# user to fix it themselves in KStars if needed, never writes to it.
+_KSTARS_USERDB_CANDIDATES = [
+    Path.home() / ".var/app/org.kde.kstars/data/kstars/userdb.sqlite",  # Flatpak (StellarMate default)
+    Path.home() / ".local/share/kstars/userdb.sqlite",  # native package install
+]
+
+
+def _kstars_webmanager_link_status(profile: str) -> dict:
+    """{"checked": bool, "kstars_profile_found": bool, "linked": bool,
+    "host": str|None, "indiwebmanagerport": int|None}. "checked" is False if
+    no KStars user database could be found at all (nothing to report)."""
+    db_path = next((p for p in _KSTARS_USERDB_CANDIDATES if p.exists()), None)
+    if not db_path:
+        return {"checked": False, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None}
+    try:
+        # Open read-only via URI mode - never creates/locks the file for
+        # writing even if KStars has it open at the same time.
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0)
+        try:
+            row = con.execute(
+                "SELECT host, port, indiwebmanagerport FROM profile WHERE name = ?", (profile,)
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        return {"checked": False, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None, "error": str(e)}
+    if not row:
+        return {"checked": True, "kstars_profile_found": False, "linked": False,
+                "host": None, "indiwebmanagerport": None}
+    host, _port, iwm_port = row
+    linked = iwm_port is not None and str(host).lower() in ("localhost", "127.0.0.1")
+    return {"checked": True, "kstars_profile_found": True, "linked": linked,
+            "host": host, "indiwebmanagerport": iwm_port}
+
+
+def _ekos_indi_status() -> dict:
+    """Reads KStars/Ekos's *own* INDI connection status via its D-Bus
+    interface (org.kde.kstars.Ekos.indiStatus). This is a different thing
+    from indiserver simply running with drivers connected - it reflects
+    whether Ekos itself has its own client session connected, which is
+    what the StellarMate App is understood to piggyback on. A Coupling
+    preset writing to Mount Bridge while indiserver is up but Ekos was
+    never connected wouldn't be visible in the session the user is
+    actually looking at - found live 2026-07-26: indiStatus read 0 (Idle)
+    even with several devices already connected via this tile's own
+    Web-Manager/INDI-client path.
+
+    Ekos::CommunicationStatus (KStars' own enum): Idle=0, Pending=1,
+    Success=2, Error=3 - verified live via `qdbus6 org.kde.kstars
+    /KStars/Ekos org.kde.kstars.Ekos.indiStatus`.
+
+    Returns {"kstars_running": bool, "connected": bool|None}. "connected"
+    is None when KStars isn't running at all (D-Bus name not registered) -
+    nothing to report, not an error. Only ever reads this property - never
+    calls Ekos's own connectDevices()/disconnectDevices() D-Bus methods,
+    even though they exist, since that would drive a GUI the user may be
+    actively looking at without them having asked for it here."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        result = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos", "org.kde.kstars.Ekos.indiStatus"],
+            env=env, capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"kstars_running": False, "connected": None}
+    if result.returncode != 0:
+        return {"kstars_running": False, "connected": None}
+    try:
+        status = int(result.stdout.strip())
+    except ValueError:
+        return {"kstars_running": True, "connected": None}
+    return {"kstars_running": True, "connected": status == 2}
+
+
+_mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
+_mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
+
+
+def _mb_log(line: str):
+    with _lock:
+        _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
+
+
 def _run_hardware_test():
     """Runs all three checks in sequence and stores the combined result.
     Camera/IMU/GPS are deliberately sequential, not parallel: the camera
@@ -912,10 +1044,31 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep the terminal quiet; the browser is the UI
 
+    def _send_401(self):
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _require_auth(self):
         """Checks HTTP Basic Auth against the stellarmate account's own
         password via PAM. Sends the 401 challenge itself and returns False
-        if missing/invalid; caller should return immediately in that case."""
+        if missing/invalid; caller should return immediately in that case.
+
+        Rate-limited per client IP: after _AUTH_LOCKOUT_THRESHOLD *confirmed
+        wrong-password* attempts within _AUTH_LOCKOUT_WINDOW seconds,
+        further attempts are rejected immediately without calling PAM at
+        all. Only counts requests that actually included a password AND
+        got it wrong (never the plain "no Authorization header at all"
+        case - see _auth_failures' own comment). The PAM call itself is
+        additionally gated by _auth_semaphore, capping how many can run
+        concurrently regardless of outcome - see that semaphore's own
+        comment for why: an earlier version counted every *attempt* before
+        knowing whether it would succeed, which under this page's ~15
+        concurrent polling loops false-locked-out the *correct* password
+        purely from concurrent timing, not from it actually being wrong -
+        reproduced live (entering the right password worked, then locked
+        out again a few seconds later, repeatedly)."""
         header = self.headers.get("Authorization", "")
         password = None
         if header.startswith("Basic "):
@@ -924,12 +1077,35 @@ class Handler(BaseHTTPRequestHandler):
                 _, _, password = decoded.partition(":")
             except Exception:
                 password = None
-        if password and pam_auth.verify_password(AUTH_USER, password):
+
+        if password is None:
+            self._send_401()
+            return False
+
+        client_ip = self.client_address[0]
+        now = time.monotonic()
+        with _lock:
+            count, first_failure = _auth_failures.get(client_ip, (0, now))
+            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
+                count, first_failure = 0, now
+            if count >= _AUTH_LOCKOUT_THRESHOLD:
+                self._send_401()
+                return False
+
+        with _auth_semaphore:
+            ok = pam_auth.verify_password(AUTH_USER, password)
+
+        if ok:
+            with _lock:
+                _auth_failures.pop(client_ip, None)
             return True
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}"')
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+
+        with _lock:
+            count, first_failure = _auth_failures.get(client_ip, (0, now))
+            if now - first_failure >= _AUTH_LOCKOUT_WINDOW:
+                count, first_failure = 0, now
+            _auth_failures[client_ip] = (count + 1, first_failure)
+        self._send_401()
         return False
 
     def _send_json(self, obj, status=200):
@@ -976,6 +1152,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
+            return
+
+        if parsed.path == "/help.html":
+            self._send_file(HELP_PAGE, "text/html; charset=utf-8")
             return
 
         if parsed.path == "/pifinder.jpg":
@@ -1045,6 +1225,111 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"running": _keyboard_bridge_running()})
             return
 
+        if parsed.path == "/api/mount_bridge_status":
+            # Phase 1 of the Mount Bridge web integration (see
+            # docs/concepts/mount_bridge_web_integration.md) - read-only
+            # snapshot via indi_client.py's minimal INDI client, talking
+            # directly to indiserver (default 127.0.0.1:7624). Coupling
+            # mode/drift are only ever populated once the device is
+            # actually connected (BRIDGE_MODE/DRIFT_STATUS aren't defined
+            # by the driver until then - verified against
+            # indi_pifinder_bridge's own updateProperties()) - "running":
+            # true with everything else null/None is the normal, expected
+            # shape for "loaded but not yet connected", not a bug.
+            global _mb_last_running
+            try:
+                status = indi_client.mount_bridge_status()
+            except indi_client.INDIClientError as e:
+                status = {"running": False, "error": str(e)}
+                _mb_log(f"status check failed: {e}")
+            if status.get("running") != _mb_last_running:
+                _mb_log(
+                    "Mount Bridge status changed: running={} bridge_connected={} "
+                    "active_mount={}".format(
+                        status.get("running"), status.get("bridge_connected"), status.get("active_mount")
+                    )
+                )
+                _mb_last_running = status.get("running")
+            self._send_json(status)
+            return
+
+        if parsed.path == "/api/webmanager/profiles":
+            # Phase 2 of the Mount Bridge web integration (see
+            # docs/concepts/mount_bridge_web_integration.md) - UC3 (profile
+            # selection, read-only list) + server running-state, so the
+            # frontend can show which profile is actually active right now.
+            try:
+                profiles = webmanager_client.list_profiles()
+                status = webmanager_client.server_status()
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+                return
+            self._send_json(
+                {
+                    "profiles": [p.get("name") for p in profiles],
+                    "running": status["running"],
+                    "active_profile": status["active_profile"],
+                }
+            )
+            return
+
+        if parsed.path == "/api/webmanager/pifinder_drivers":
+            # UC4/UC5 groundwork: whether PiFinder LX200 / Mount Bridge are
+            # currently in the given profile - drives the two toggle
+            # buttons' checked state.
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            try:
+                self._send_json(webmanager_client.pifinder_driver_status(profile))
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+            return
+
+        if parsed.path == "/api/webmanager/other_drivers":
+            # Phase 3 (UC5): candidates for "which loaded driver is the
+            # mount" - every profile driver except the two PiFinder ones,
+            # each now flagged is_telescope so the frontend can auto-select
+            # an unambiguous single candidate (see other_profile_drivers()'s
+            # own docstring for the one real exception this needs to
+            # account for).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            try:
+                self._send_json({"drivers": webmanager_client.other_profile_drivers(profile)})
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"error": str(e)}, status=502)
+            return
+
+        if parsed.path == "/api/kstars_webmanager_link":
+            # Setup-wizard step: is this profile's *KStars-side* Equipment
+            # Profile actually set to use the local Web Manager? This is a
+            # separate thing from the Web-Manager-side profile this feature
+            # otherwise manages - KStars keeps its own copy in its own
+            # SQLite DB (read-only check, see _kstars_webmanager_link_status()
+            # docstring for why this is never auto-fixed).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"error": "missing 'profile' query param"}, status=400)
+                return
+            self._send_json(_kstars_webmanager_link_status(profile))
+            return
+
+        if parsed.path == "/api/ekos_indi_status":
+            # Gates the Coupling presets (see status_page.html's
+            # isFullyReadyForCoupling()): a Coupling command only matters if
+            # it reaches the same Ekos session the user (or the StellarMate
+            # App) is actually observing through - see
+            # _ekos_indi_status()'s own docstring.
+            self._send_json(_ekos_indi_status())
+            return
+
         if parsed.path == "/api/hardware_status":
             self._send_json(
                 {
@@ -1072,6 +1357,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(
                 {"lines": new_lines, "position": new_position, "running": running, "result": result}
             )
+            return
+
+        if parsed.path == "/api/mount_bridge_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _mb_lines[position:]
+                new_position = len(_mb_lines)
+            self._send_json({"lines": new_lines, "position": new_position})
             return
 
         if parsed.path == "/api/pifinder_mode_log":
@@ -1187,6 +1481,40 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"started": True})
             return
 
+        if parsed.path == "/api/pifinder_service":
+            # Direct pifinder.service (Real Mode) control - shouldn't
+            # normally be needed (the Real/Fake Mode toggle above already
+            # manages it via fake_mode.sh), but useful to recover a
+            # crashed/hung Real Mode instance without a full mode
+            # round-trip. Deliberately does NOT touch Fake Mode's own
+            # separate process (pf_remote.py) - this is only ever the
+            # systemd unit.
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            if action not in ("start", "stop", "restart"):
+                self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
+                return
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running:
+                    self._send_json(
+                        {"success": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+            try:
+                result = subprocess.run(
+                    ["sudo", "systemctl", action, "pifinder.service"],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except subprocess.TimeoutExpired:
+                self._send_json({"success": False, "error": f"systemctl {action} pifinder.service timed out"}, status=502)
+                return
+            if result.returncode != 0:
+                self._send_json({"success": False, "error": result.stderr.strip() or f"systemctl {action} failed"}, status=502)
+                return
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
@@ -1242,6 +1570,306 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok, error = _start_keyboard_bridge()
             self._send_json({"success": ok, "error": error})
+            return
+
+        if parsed.path == "/api/webmanager/server":
+            # UC2: start/stop the selected profile's indiserver instance -
+            # scoped in the concept doc from the start but never actually
+            # wired up until live testing showed why it matters: indiserver
+            # only reads a profile's driver list at *startup*, so adding/
+            # removing drivers via UC4/UC5 while the profile keeps running
+            # never takes effect on the live indiserver until it's restarted
+            # (found live: "LX200 OnStep" added via Web Manager stayed in
+            # the profile's DB row but never actually started as a process).
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            profile = qs.get("profile", [""])[0]
+            if action not in ("start", "stop"):
+                self._send_json({"success": False, "error": "expected ?action=start|stop"}, status=400)
+                return
+            if action == "start" and not profile:
+                self._send_json({"success": False, "error": "missing 'profile' query param"}, status=400)
+                return
+            _mb_log(f"{'starting' if action == 'start' else 'stopping'} profile{' ' + profile if profile else ''}...")
+            try:
+                if action == "start":
+                    webmanager_client.start_server(profile)
+                else:
+                    webmanager_client.stop_server()
+            except webmanager_client.WebManagerError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/webmanager/pifinder_drivers":
+            # UC4: add/remove ONLY PiFinder LX200 / PiFinder Mount Bridge to/
+            # from a profile - no other profile editing. See
+            # webmanager_client.py's module docstring for why removal uses a
+            # delete-and-recreate-the-profile workaround (a StellarMate Web
+            # Manager quirk found and verified live while building this -
+            # not present in the open-source project it's based on).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            driver = qs.get("driver", [""])[0]
+            action = qs.get("action", [""])[0]
+            if not profile or driver not in ("lx200", "bridge") or action not in ("add", "remove"):
+                self._send_json(
+                    {"success": False, "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"},
+                    status=400,
+                )
+                return
+            setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
+            driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+
+            # indiserver only reads a profile's driver list at startup - a
+            # driver added/removed here never takes effect on an already-
+            # running indiserver until it's restarted (found live: "LX200
+            # OnStep" added via Web Manager sat in the profile's DB row for
+            # over an hour without ever actually starting as a process).
+            # Rather than expect the user to remember "stop, change, start"
+            # as three separate steps, do it automatically here whenever
+            # this profile is the one currently running - one click, fully
+            # visible in the log below.
+            try:
+                srv_status = webmanager_client.server_status()
+            except webmanager_client.WebManagerError:
+                srv_status = {"running": False, "active_profile": None}
+            was_running = srv_status["running"] and srv_status["active_profile"] == profile
+
+            if was_running:
+                _mb_log(f"stopping profile '{profile}' (needed to apply the driver change)...")
+                try:
+                    webmanager_client.stop_server()
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
+
+            _mb_log(f"{action} {driver_label} {'to' if action == 'add' else 'from'} profile '{profile}'...")
+            try:
+                setter(profile, action == "add")
+            except webmanager_client.WebManagerError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+
+            if was_running:
+                _mb_log(f"restarting profile '{profile}'...")
+                try:
+                    webmanager_client.start_server(profile)
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                # Wait for indiserver to actually be back up before this
+                # request returns - otherwise the frontend's immediate
+                # post-action refresh can land in the brief window where
+                # Web Manager reports "not running" yet, flashing a
+                # confusing "profile not running" state that then
+                # self-corrects a moment later (seen live, 2026-07-25).
+                deadline = time.monotonic() + 8.0
+                while time.monotonic() < deadline:
+                    try:
+                        status = webmanager_client.server_status()
+                    except webmanager_client.WebManagerError:
+                        status = {"running": False, "active_profile": None}
+                    if status["running"] and status["active_profile"] == profile:
+                        break
+                    time.sleep(0.3)
+                _mb_log(f"  done.")
+
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_active_devices":
+            # Phase 3 (UC5): sets PiFinder Mount Bridge's ACTIVE_DEVICES to
+            # point at the user-selected mount driver. ACTIVE_PIFINDER is
+            # always re-asserted as "PiFinder LX200" (its own default -
+            # there is exactly one PiFinder LX200 device, no need to make
+            # this configurable) rather than left to chance.
+            qs = parse_qs(parsed.query)
+            mount = qs.get("mount", [""])[0]
+            unlink = qs.get("action", [""])[0] == "unlink"
+            if not mount and not unlink:
+                self._send_json({"success": False, "error": "missing 'mount' query param"}, status=400)
+                return
+            _mb_log("unlinking Mount Bridge's mount..." if unlink else f"linking Mount Bridge to mount '{mount}'...")
+            try:
+                indi_client.set_mount_bridge_active_devices("PiFinder LX200", "" if unlink else mount)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_connect":
+            # Phase 3 (UC5/UC6 groundwork): generic CONNECTION.CONNECT/
+            # DISCONNECT trigger - works for PiFinder LX200, PiFinder Mount
+            # Bridge, or whichever mount driver the user selected, since
+            # CONNECTION is a standard property every INDI driver has.
+            # Connection *parameters* (serial port, baud, TCP host) are
+            # never touched here for the user's own mount - see the concept
+            # doc's explicit non-goal. "PiFinder LX200" is the one
+            # exception: its target is always this project's own
+            # pos_server.py (127.0.0.1:4030), a fixed constant, not
+            # something to expect the user to configure by hand - see
+            # ensure_pifinder_lx200_tcp()'s own docstring for why (left on
+            # its default of a shared serial port, it competes with the
+            # user's real mount driver for the same USB adapter). The
+            # not-currently-defined auto-heal (restart the profile, retry)
+            # only applies to connecting - disconnecting a device that
+            # isn't even loaded is just an plain error, nothing to recover.
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            profile = qs.get("profile", [""])[0]
+            disconnecting = qs.get("action", [""])[0] == "disconnect"
+            if not device:
+                self._send_json({"success": False, "error": "missing 'device' query param"}, status=400)
+                return
+
+            if disconnecting:
+                _mb_log(f"disconnecting '{device}'...")
+                try:
+                    indi_client.disconnect_device(device)
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
+                self._send_json({"success": True})
+                return
+
+            if device == "PiFinder LX200":
+                try:
+                    indi_client.ensure_pifinder_lx200_tcp()
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+
+            _mb_log(f"connecting '{device}'...")
+            try:
+                indi_client.connect_device(device)
+                _mb_log(f"  done.")
+                self._send_json({"success": True})
+                return
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                # Most common cause, seen live: the device was added to the
+                # profile (by this UI or directly in Web Manager) after
+                # indiserver was last started, so it was never actually
+                # spawned as a process - "not currently defined" is INDI's
+                # way of saying "I've never heard of this device". Rather
+                # than surface that cryptic message, restart the profile
+                # once and retry automatically - the user shouldn't have to
+                # know/remember that indiserver needs a restart to pick up
+                # driver-list changes.
+                if "not currently defined" not in str(e) or not profile:
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+
+            # This restart doesn't just affect `device` - it kills and
+            # respawns every driver process in the profile, so Mount
+            # Bridge's own ACTIVE_DEVICES link (if it had one) is wiped
+            # along with everything else. Found live: this left the tile
+            # showing "not coupled" for up to 30s afterward (until the
+            # unrelated periodic poll noticed and re-linked it), which
+            # looked like step 4 "hanging" even though nothing was actually
+            # stuck - just waiting on a poll that had no idea a restart had
+            # just happened. Capture the link now, while it's still there,
+            # so it can be restored immediately after rather than left to
+            # that poll's own schedule.
+            mb_before = indi_client.mount_bridge_status()
+            previous_mount = mb_before.get("active_mount") if mb_before.get("running") else None
+            previous_pifinder = mb_before.get("active_pifinder") if mb_before.get("running") else None
+
+            _mb_log(f"'{device}' not loaded yet - restarting profile '{profile}' to pick it up...")
+            try:
+                webmanager_client.stop_server()
+                webmanager_client.start_server(profile)
+            except webmanager_client.WebManagerError as e:
+                _mb_log(f"  restart failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            # indiserver needs a moment to actually fork the driver and
+            # complete its own startup handshake before it'll answer
+            # getProperties for it - poll briefly instead of a flat sleep.
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                    break
+                time.sleep(0.3)
+            _mb_log(f"  restarted. retrying connect...")
+            try:
+                indi_client.connect_device(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  still failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            if previous_mount:
+                _mb_log(f"  restoring Mount Bridge's link to '{previous_mount}' (lost in the restart above)...")
+                try:
+                    indi_client.set_mount_bridge_active_devices(previous_pifinder or "PiFinder LX200", previous_mount)
+                    _mb_log(f"  done.")
+                except indi_client.INDIClientError as e:
+                    # Not fatal to this connect call - the connect itself
+                    # already succeeded above. The periodic poll's own
+                    # auto-link will still catch this as a fallback.
+                    _mb_log(f"  failed: {e} (will retry via the periodic auto-link check instead)")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_coupling":
+            # Phase 4: the three one-click Coupling presets. mode is
+            # "verify_alert"|"auto_correct"|"goto_forward" (short form here,
+            # translated to the driver's own MODE_* constants in
+            # indi_client.set_coupling_mode()). threshold/action are only
+            # meaningful for verify_alert/auto_correct - harmless if sent
+            # for goto_forward, indi_client.py ignores them there.
+            qs = parse_qs(parsed.query)
+            mode_arg = qs.get("mode", [""])[0]
+            mode_map = {
+                "verify_alert": "MODE_VERIFY_ALERT",
+                "auto_correct": "MODE_AUTO_CORRECT",
+                "goto_forward": "MODE_GOTO_FORWARD",
+            }
+            if mode_arg not in mode_map:
+                self._send_json(
+                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward"},
+                    status=400,
+                )
+                return
+            threshold_arg = qs.get("threshold", [""])[0]
+            action_arg = qs.get("action", [""])[0]
+            try:
+                threshold = float(threshold_arg) if threshold_arg else None
+            except ValueError:
+                self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
+                return
+            _mb_log(
+                f"setting coupling mode {mode_arg} (threshold={threshold_arg or 'default'}, "
+                f"action={action_arg or 'default'})..."
+            )
+            try:
+                indi_client.set_coupling_mode(
+                    mode_map[mode_arg],
+                    drift_threshold=threshold,
+                    correction_action=action_arg or None,
+                )
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            self._send_json({"success": True})
             return
 
         self.send_error(404)
