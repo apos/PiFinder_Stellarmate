@@ -295,6 +295,17 @@
   .hw-row .status-dot { margin-right: 0.4rem; }
   .hw-keyboard { color: #888; font-style: italic; }
   .hw-keyboard code { font-size: 0.75rem; }
+  .hw-keyboard-cmd {
+    background: #000;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    margin: -0.15rem 0 0.5rem 1.1rem;
+    font-size: 0.72rem;
+    color: #b8f0b8;
+    white-space: pre-wrap;
+    font-style: normal;
+  }
   .hw-detail {
     margin: -0.15rem 0 0.4rem 1.1rem;
     color: #888;
@@ -522,7 +533,13 @@
             <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
             <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
           </div>
-          <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
+          <div class="hw-row hw-keyboard">
+            <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
+            <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
+          </div>
+          <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
+/home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
+sudo systemctl start pifinder</pre>
           <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
             <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
             <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
