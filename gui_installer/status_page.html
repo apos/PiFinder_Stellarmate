@@ -1512,13 +1512,23 @@ async function init() {
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
   if (data.current_branch) {
+    // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
+    // regardless of which branch PiFinder_Stellarmate's own checkout happens
+    // to be on (e.g. left on "dev" from earlier testing) - switching to dev
+    // or a feature branch is meant to be a deliberate choice, not something
+    // a fresh install silently inherits. An existing install's Reinstall/
+    // Update actions, on the other hand, default to (and stick with)
+    // whatever branch is actually checked out, so a deliberate earlier
+    // switch to "dev" stays in effect on later runs instead of quietly
+    // reverting to main.
     const branchSelect = document.getElementById('branch-select');
+    const defaultBranch = data.existing_install ? data.current_branch : 'main';
     const knownValues = Array.from(branchSelect.options).map((o) => o.value);
-    if (knownValues.includes(data.current_branch)) {
-      branchSelect.value = data.current_branch;
+    if (knownValues.includes(defaultBranch)) {
+      branchSelect.value = defaultBranch;
     } else {
       branchSelect.value = '__other__';
-      document.getElementById('branch-other-input').value = data.current_branch;
+      document.getElementById('branch-other-input').value = defaultBranch;
       onBranchSelectChange();
     }
     document.getElementById('branch-current-hint').textContent = `(currently on: ${data.current_branch})`;
