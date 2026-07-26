@@ -218,17 +218,6 @@
     cursor: pointer;
   }
   #reboot-button:hover { filter: brightness(1.15); }
-  #close-wrap { display: none; }
-  #close-button {
-    background: #444;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 0.6rem 1.1rem;
-    font-size: 0.95rem;
-    cursor: pointer;
-  }
-  #close-button:hover { filter: brightness(1.3); }
   #reset-wrap { display: none; }
   #reset-button {
     background: #2a6fdb;
@@ -772,9 +761,6 @@ sudo systemctl start pifinder</pre>
       <div id="reset-wrap">
         <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
-      <div id="close-wrap">
-        <button id="close-button" onclick="closeSetup()">Close Setup</button>
-      </div>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
@@ -1130,15 +1116,17 @@ async function toggleKeyboardBridge() {
 function showChoices(existingInstall) {
   const el = document.getElementById('choices');
   el.style.display = 'block';
-  // "Close Setup" (see closeSetup()) covers "I don't want to do anything,
-  // just shut this down" more directly than the old Cancel button did -
-  // that one spawned the whole setup script (including the branch-switch/
+  // No "Cancel"/"Close Setup" choice here - this webserver is meant to just
+  // keep running (matching /smos's own "Start" without a "Stop"), and
+  // restarting it when needed is already covered there. The old Cancel
+  // button spawned the whole setup script (including the branch-switch/
   // self-update steps that now run first) just to print one line and exit
-  // 0, after which the JS shut the server down anyway. Cancel itself is
-  // still a real interactive-terminal menu option in
-  // pifinder_stellarmate_setup.sh for people running it directly without
-  // the GUI - only the GUI's own redundant round-trip through it is gone.
-  document.getElementById('close-wrap').style.display = 'block';
+  // 0, then shut the server down anyway - Cancel itself is still a real
+  // interactive-terminal menu option in pifinder_stellarmate_setup.sh for
+  // people running it directly without the GUI, only the GUI's own
+  // redundant round-trip through it (and the equally redundant Close Setup
+  // button) are gone. Actually stopping this webserver deliberately is still
+  // possible via `launch_setup_gui.sh --shutdown-webserver` from a terminal.
   if (existingInstall) {
     el.innerHTML = `
       <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
@@ -1184,7 +1172,6 @@ async function start(action) {
   }
   document.getElementById('choices').style.display = 'none';
   document.getElementById('reboot-wrap').style.display = 'none';
-  document.getElementById('close-wrap').style.display = 'none';
   setStatus('Starting…', 'status-running');
   const branch = getSelectedBranch();
   let url = '/start?action=' + encodeURIComponent(action);
@@ -1254,7 +1241,7 @@ async function watchForNewRun() {
       const data = await resp.json();
       if (data.running) {
         document.getElementById('reboot-wrap').style.display = 'none';
-        document.getElementById('close-wrap').style.display = 'none';
+        document.getElementById('reset-wrap').style.display = 'none';
         document.getElementById('choices').style.display = 'none';
         setModeTileVisible(false);
         logPosition = 0;
@@ -1297,8 +1284,7 @@ async function reboot() {
 
 // Always-available Pi power controls (distinct from the conditional
 // "Reboot Now" prompt above, which only appears after a config-changing
-// install/update run, and from "Close Setup"/shutdownServer() below, which
-// only stops this GUI's own web server, not the Pi itself).
+// install/update run).
 async function powerAction(kind) {
   const isReboot = kind === 'reboot';
   const verb = isReboot ? 'Reboot' : 'Shut down';
@@ -1361,50 +1347,13 @@ async function pifinderServiceAction(action) {
   }, 2000);
 }
 
-// There's no idle-timeout to fall back on (removed per earlier user
-// feedback: it once cut off a still-in-progress session), so closeSetup()
-// below actually has to stop the server itself rather than leaving it
-// dangling once the user is done here.
-async function shutdownServer() {
-  try {
-    const resp = await fetch('/shutdown', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.shutting_down) {
-      return data.error || 'unknown error';
-    }
-  } catch (e) {
-    // The server closing its own connection can look like a network error
-    // here even on success - treat it the same as a confirmed shutdown.
-  }
-  return null;
-}
-
-async function closeSetup() {
-  if (!confirm('Close the setup GUI? This stops the local webserver, not PiFinder itself.')) return;
-  const btn = document.getElementById('close-button');
-  btn.disabled = true;
-  btn.textContent = 'Closing…';
-  const error = await shutdownServer();
-  if (error) {
-    btn.disabled = false;
-    btn.textContent = 'Close Setup';
-    alert('Could not close: ' + error);
-    return;
-  }
-  document.getElementById('status').textContent = 'Closed';
-  document.getElementById('status').className = 'status-idle';
-  btn.textContent = 'Closed — you can close this tab';
-}
-
-// "Close Setup" stops the whole local webserver - per live feedback, that's
-// not what's wanted right after a run finishes if there's another
-// install/update to do next. This just resets the page's own UI back to the
-// choice buttons, same as a fresh page load, without touching the server
-// process at all (the next /start call already resets all of its own state
-// anyway, see _start_run() in server.py).
+// This webserver is meant to just keep running (see showChoices()'s own
+// comment) - there's no "Close Setup" button anymore, only this: reset the
+// page's own UI back to the choice buttons, same as a fresh page load,
+// without touching the server process at all (the next /start call already
+// resets all of its own state anyway, see _start_run() in server.py).
 async function resetToChoices() {
   document.getElementById('reset-wrap').style.display = 'none';
-  document.getElementById('close-wrap').style.display = 'none';
   document.getElementById('reboot-wrap').style.display = 'none';
   document.getElementById('progress-wrap').style.display = 'none';
   document.getElementById('phase-checklist').style.display = 'none';
@@ -1459,19 +1408,16 @@ async function pollLog() {
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
       } else {
-        // Only offer to close/reset when a reboot isn't needed - if it is,
-        // the reboot will take the webserver down anyway.
+        // Only offer to run again when a reboot isn't needed - if it is,
+        // the reboot will take the webserver down (and back up) anyway.
         document.getElementById('reset-wrap').style.display = 'block';
-        document.getElementById('close-wrap').style.display = 'block';
       }
     } else if (data.exit_code === null) {
       setStatus('Idle', 'status-idle');
     } else {
       setStatus('Failed (exit code ' + data.exit_code + ')', 'status-failed');
-      // Same choice as after a success - close the whole webserver, or just
-      // go back to the choices and try again without relaunching it.
+      // Same as after a success - go back to the choices and try again.
       document.getElementById('reset-wrap').style.display = 'block';
-      document.getElementById('close-wrap').style.display = 'block';
     }
     polling = false;
   }
