@@ -19,10 +19,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
-- Mount Bridge: a "Manual: Sync mount to PiFinder" button - a one-shot sync to PiFinder's current
+- Mount Bridge: a "Manual: Sync mount from PiFinder" button - a one-shot sync to PiFinder's current
   solved position, works regardless of which Coupling preset (or none) is active. Covers the one
   case none of the presets react to on their own: the mount being moved by hand with no Goto
   involved at all.
+- Mount Bridge: a "Setup" button that runs the same profile/drivers/connect sequence Autoconnect
+  triggers automatically when clicking a Coupling preset before setup is finished - without
+  applying any preset at the end. Previously the only way to run that sequence at all was to click
+  a preset and have setup start as a side effect, with no indication that would happen.
 
 ### Fixed
 

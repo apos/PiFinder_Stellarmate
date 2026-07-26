@@ -1908,7 +1908,7 @@ class Handler(BaseHTTPRequestHandler):
             # mode - the one case none of the presets react to on their own
             # is the mount having been moved entirely by hand (no Goto at
             # all involved).
-            _mb_log("syncing mount to PiFinder's current position...")
+            _mb_log("syncing mount from PiFinder's current position...")
             try:
                 indi_client.trigger_manual_sync()
             except indi_client.INDIClientError as e:
