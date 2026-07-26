@@ -1775,6 +1775,21 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
 
+            # This restart doesn't just affect `device` - it kills and
+            # respawns every driver process in the profile, so Mount
+            # Bridge's own ACTIVE_DEVICES link (if it had one) is wiped
+            # along with everything else. Found live: this left the tile
+            # showing "not coupled" for up to 30s afterward (until the
+            # unrelated periodic poll noticed and re-linked it), which
+            # looked like step 4 "hanging" even though nothing was actually
+            # stuck - just waiting on a poll that had no idea a restart had
+            # just happened. Capture the link now, while it's still there,
+            # so it can be restored immediately after rather than left to
+            # that poll's own schedule.
+            mb_before = indi_client.mount_bridge_status()
+            previous_mount = mb_before.get("active_mount") if mb_before.get("running") else None
+            previous_pifinder = mb_before.get("active_pifinder") if mb_before.get("running") else None
+
             _mb_log(f"'{device}' not loaded yet - restarting profile '{profile}' to pick it up...")
             try:
                 webmanager_client.stop_server()
@@ -1799,6 +1814,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
+            if previous_mount:
+                _mb_log(f"  restoring Mount Bridge's link to '{previous_mount}' (lost in the restart above)...")
+                try:
+                    indi_client.set_mount_bridge_active_devices(previous_pifinder or "PiFinder LX200", previous_mount)
+                    _mb_log(f"  done.")
+                except indi_client.INDIClientError as e:
+                    # Not fatal to this connect call - the connect itself
+                    # already succeeded above. The periodic poll's own
+                    # auto-link will still catch this as a fallback.
+                    _mb_log(f"  failed: {e} (will retry via the periodic auto-link check instead)")
             self._send_json({"success": True})
             return
 

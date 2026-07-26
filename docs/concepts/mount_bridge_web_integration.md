@@ -397,6 +397,32 @@ order follows DOM order and `.left-col`'s content now renders first, Quick Links
 Bridge stack above the Install routine on phones, matching the "install moves further down"
 expectation, for free.
 
+### 6.8 Real bug: profile-restart auto-heal silently dropped the Mount Bridge link (2026-07-26)
+
+Found via live use, not a design request: switching the Correction dropdown and clicking a
+Coupling preset before Connect (step 5) had fully succeeded made step 4 ("Link telescope mount")
+appear to flap - linked, then unlinked, then linked again a few seconds later, visible in the
+tile's own log (`12:34:35 linking... done` / `12:34:57 status changed: running=False
+active_mount=None` / `12:35:04 linking... done`).
+
+Root cause: `/api/mount_bridge_connect`'s existing auto-heal (§10 - restart the profile once and
+retry if a device comes back "not currently defined", i.e. added to the profile after indiserver
+was last started) restarts *indiserver itself*, which kills and respawns every driver process in
+the profile - including Mount Bridge. That wipes its `ACTIVE_DEVICES` link as a side effect,
+regardless of which specific device the connect call was actually for. Nothing re-established the
+link afterward except the unrelated 30s periodic poll's own auto-detect
+(`refreshWmConnectRow()`/`00055_mount-treiber-auto-erkennung-per-driver-family`) - which does
+work, but not for up to 30 seconds, during which the tile genuinely shows "not coupled" even
+though the user had already linked it moments earlier. Confirmed via `indi_client.mount_bridge_status()`
+called directly (bypassing the web layer) that it does settle correctly on its own - this was a
+real but self-healing race, not a permanent hang.
+
+Fixed at the source: the connect handler now snapshots Mount Bridge's own `active_mount`/
+`active_pifinder` *before* triggering the restart, and immediately re-applies
+`set_mount_bridge_active_devices()` right after the restart+retry succeeds, rather than leaving
+it to the next unrelated poll. Naturally a no-op when Mount Bridge itself is the device that
+needed restarting (nothing was linked before, so nothing to restore).
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same
