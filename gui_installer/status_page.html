@@ -383,6 +383,7 @@
     font-size: 0.74rem;
     margin: -0.2rem 0 0.6rem 0;
   }
+  .mb-hint.mb-hint-ok { color: #4caf50; }
   #wm-kstars-link-row { color: #888; font-size: 0.78rem; }
   #wm-kstars-link-row.wm-link-warn #wm-kstars-link-text { color: #e0a030; }
   #wm-kstars-link-row.wm-link-ok #wm-kstars-link-text { color: #4caf50; }
@@ -546,7 +547,8 @@
         <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
-      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the one thing it can't (which driver is your mount).">
+      <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
+      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see the note above if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <span class="mb-row-label">Coupling:</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a>
         <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
         <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
@@ -1643,6 +1645,7 @@ function updateMbDiagram(data) {
 let mbActionInFlight = false;
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
 let wmKstarsLinked = null;
+let wmEkosConnected = null;  // null = unknown/KStars not running - see checkEkosStatus()
 let wmPifinderConnected = null;
 let wmBridgeConnected = null;
 let wmMountConnected = null;
@@ -1764,7 +1767,8 @@ let autoconnectMode = null;  // the coupling mode Autoconnect is working toward,
 let autoconnectPoll = null;
 
 function isFullyReadyForCoupling() {
-  return !!wmSelectedProfile && wmServerRunning && wmHasLx200 === true && wmHasBridge === true && !!wmActiveMount;
+  return !!wmSelectedProfile && wmServerRunning && wmHasLx200 === true && wmHasBridge === true
+    && !!wmActiveMount && wmEkosConnected === true;
 }
 
 function setAutoconnectStatus(text) {
@@ -1802,13 +1806,30 @@ async function startAutoconnect(mode) {
 
   if (!wmActiveMount) {
     setAutoconnectStatus('⏳ Autoconnect: pick your mount above and click "Link Mount" to continue.');
-    waitForMountLink(mode);
+    waitForCondition(mode, () => !!wmActiveMount, () => proceedPastMountLink(mode));
     return;
   }
-  await finishAutoconnect(mode);
+  proceedPastMountLink(mode);
 }
 
-function waitForMountLink(mode) {
+function proceedPastMountLink(mode) {
+  if (autoconnectMode !== mode) return;
+  // Ekos itself connecting is a manual step in KStars this tile can't do
+  // for the user (see _ekos_indi_status()'s own docstring on why it only
+  // ever reads this, never calls Ekos's connectDevices()) - same pause-
+  // and-poll idea as the mount link above.
+  if (wmEkosConnected !== true) {
+    setAutoconnectStatus('⏳ Autoconnect: open Ekos in KStars and click Connect there too, then this continues on its own.');
+    waitForCondition(mode, () => wmEkosConnected === true, () => finishAutoconnect(mode));
+    return;
+  }
+  finishAutoconnect(mode);
+}
+
+// Generic "pause until this becomes true, then resume" used for both the
+// mount-link and the Ekos-connected waits above - each is a step requiring
+// the user's own action elsewhere that Autoconnect can't take for them.
+function waitForCondition(mode, isDone, onDone) {
   if (autoconnectPoll) clearInterval(autoconnectPoll);
   autoconnectPoll = setInterval(() => {
     if (autoconnectMode !== mode) {
@@ -1816,10 +1837,10 @@ function waitForMountLink(mode) {
       autoconnectPoll = null;
       return;
     }
-    if (wmActiveMount) {
+    if (isDone()) {
       clearInterval(autoconnectPoll);
       autoconnectPoll = null;
-      finishAutoconnect(mode);
+      onDone();
     }
   }, 1500);
 }
@@ -1943,6 +1964,41 @@ async function checkKstarsLink() {
     updateStepIndicators();
   }
 }
+
+// Gates Coupling (see isFullyReadyForCoupling()): reads Ekos's own INDI
+// connection state via D-Bus (server-side, see _ekos_indi_status() in
+// server.py) - a Coupling command only matters if it reaches the same
+// Ekos session the user (or the StellarMate App) is actually observing
+// through. Hidden entirely if KStars isn't running at all - some setups
+// may never open KStars and drive everything from the StellarMate App
+// directly, so there's nothing useful to say in that case (this tile has
+// no way to tell those two situations apart from here).
+async function checkEkosStatus() {
+  const el = document.getElementById('mb-ekos-status');
+  try {
+    const resp = await fetch('/api/ekos_indi_status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.kstars_running) {
+      el.style.display = 'none';
+      wmEkosConnected = null;
+      return;
+    }
+    wmEkosConnected = !!data.connected;
+    el.style.display = '';
+    if (data.connected) {
+      el.className = 'mb-hint mb-hint-ok';
+      el.textContent = '✓ Ekos is connected in KStars.';
+    } else {
+      el.className = 'mb-hint';
+      el.textContent = '⚠ Ekos isn\'t connected in KStars yet - open Ekos and click Connect there too.';
+    }
+  } catch (e) {
+    el.style.display = 'none';
+    wmEkosConnected = null;
+  }
+}
+setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
+checkEkosStatus();
 
 function refreshWmServerButton() {
   const btn = document.getElementById('wm-server-btn');

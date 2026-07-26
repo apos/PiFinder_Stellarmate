@@ -13,6 +13,7 @@ but the bare system python3.
 
 import base64
 import json
+import os
 import re
 import socket
 import sqlite3
@@ -729,6 +730,46 @@ def _kstars_webmanager_link_status(profile: str) -> dict:
             "host": host, "indiwebmanagerport": iwm_port}
 
 
+def _ekos_indi_status() -> dict:
+    """Reads KStars/Ekos's *own* INDI connection status via its D-Bus
+    interface (org.kde.kstars.Ekos.indiStatus). This is a different thing
+    from indiserver simply running with drivers connected - it reflects
+    whether Ekos itself has its own client session connected, which is
+    what the StellarMate App is understood to piggyback on. A Coupling
+    preset writing to Mount Bridge while indiserver is up but Ekos was
+    never connected wouldn't be visible in the session the user is
+    actually looking at - found live 2026-07-26: indiStatus read 0 (Idle)
+    even with several devices already connected via this tile's own
+    Web-Manager/INDI-client path.
+
+    Ekos::CommunicationStatus (KStars' own enum): Idle=0, Pending=1,
+    Success=2, Error=3 - verified live via `qdbus6 org.kde.kstars
+    /KStars/Ekos org.kde.kstars.Ekos.indiStatus`.
+
+    Returns {"kstars_running": bool, "connected": bool|None}. "connected"
+    is None when KStars isn't running at all (D-Bus name not registered) -
+    nothing to report, not an error. Only ever reads this property - never
+    calls Ekos's own connectDevices()/disconnectDevices() D-Bus methods,
+    even though they exist, since that would drive a GUI the user may be
+    actively looking at without them having asked for it here."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        result = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos", "org.kde.kstars.Ekos.indiStatus"],
+            env=env, capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"kstars_running": False, "connected": None}
+    if result.returncode != 0:
+        return {"kstars_running": False, "connected": None}
+    try:
+        status = int(result.stdout.strip())
+    except ValueError:
+        return {"kstars_running": True, "connected": None}
+    return {"kstars_running": True, "connected": status == 2}
+
+
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
@@ -1270,6 +1311,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "missing 'profile' query param"}, status=400)
                 return
             self._send_json(_kstars_webmanager_link_status(profile))
+            return
+
+        if parsed.path == "/api/ekos_indi_status":
+            # Gates the Coupling presets (see status_page.html's
+            # isFullyReadyForCoupling()): a Coupling command only matters if
+            # it reaches the same Ekos session the user (or the StellarMate
+            # App) is actually observing through - see
+            # _ekos_indi_status()'s own docstring.
+            self._send_json(_ekos_indi_status())
             return
 
         if parsed.path == "/api/hardware_status":
