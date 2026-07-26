@@ -204,19 +204,6 @@ the same network (no desktop session on the Pi required; the server binds `0.0.0
 
 <table>
 <tr>
-<td align="center" width="50%">
-<a href="docs/images/readme/Setup_Browser.png"><img src="docs/images/readme/Setup_Browser.png" width="380"></a><br>
-<sub>Live progress bar, step checklist, and terminal output side by side during an install/update run</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/readme/Setup_Ready.png"><img src="docs/images/readme/Setup_Ready.png" width="380"></a><br>
-<sub>Run complete: OLED mirror plus the quick-links tile (PiFinder status, INDI Drivers page, this page's own links, GitHub docs)</sub>
-</td>
-</tr>
-</table>
-
-<table>
-<tr>
 <td align="center">
 <a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="600"></a><br>
 <sub>Opened remotely from another device on the network — no desktop session on the Pi needed</sub>
@@ -228,9 +215,30 @@ the same network (no desktop session on the Pi required; the server binds `0.0.0
 <tr>
 <td align="center">
 <a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="600"></a><br>
-<sub>The full Control Center page, as linked from PiFinder's own "INDI Drivers" page. Close-up
-screenshots of the individual live-status tiles (Mode switch, Hardware checklist, Solve Simulation,
-LCD/Numpad toggles, Power) are a documentation follow-up, see <a href="#strategic-roadmap">Strategic Roadmap</a>.</sub>
+<sub>The full Control Center page, as linked from PiFinder's own "PFSM" page.</sub>
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
+<sub>Install/Update: live progress, terminal output, and Reboot/Close controls in one tile</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
+<sub>Quick Links: PiFinder status plus direct links (remote page, PFSM page, this page, GitHub docs)</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
+<sub>Mode & Power: Real/Fake Mode switch, hardware checklist, PiFinder service and Pi power controls</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
+<sub>Mount Bridge: connection diagram, Coupling presets, and the guided setup checklist</sub>
 </td>
 </tr>
 </table>
@@ -298,12 +306,16 @@ code) and `00035` (the numpad bridge's original design).
   remember for both.
 - `/state`, `/log`, `/shutdown` are intentionally open (see the API table above) — none of the three
   can do anything destructive to the Pi itself.
-- The server binds `0.0.0.0` (reachable from any device on the LAN, not just the Pi) — **there is no
-  rate limiting or lockout on failed auth attempts**, so this should never be exposed beyond a
-  trusted home/observatory network. This is documented in the server's own top-level comment and
-  repeated here deliberately.
+- Failed logins are rate-limited per client IP: 5 *confirmed wrong-password* attempts within 30
+  seconds locks that IP out until the window elapses, and a semaphore caps concurrent PAM calls at
+  2 regardless of outcome (found live: this page's own ~15 concurrent polls on load could otherwise
+  starve the GIL with password-hashing work, or trip the lockout purely from the resulting race —
+  neither is a real attack). This is a basic guard against casual brute-forcing, not a substitute
+  for keeping the server off an untrusted network.
+- The server binds `0.0.0.0` (reachable from any device on the LAN, not just the Pi), so this
+  should never be exposed beyond a trusted home/observatory network regardless of the above.
 - CORS (`Access-Control-Allow-Origin: *`) is only set on the auth-exempt JSON routes, specifically to
-  let PiFinder's own "INDI Drivers" page (a different origin/port) read them via `fetch()` —
+  let PiFinder's own "PFSM" page (a different origin/port) read them via `fetch()` —
   widening CORS to the authenticated routes would defeat the purpose of requiring auth at all.
 
 ---
@@ -346,7 +358,6 @@ included since several of these build on each other:
 
 | Priority | Size | Item | Depends on |
 |---|---|---|---|
-| P2 | XS | Close-up screenshots of the newer live-status tiles (Mode switch, Hardware checklist, Solve Simulation row, LCD/Numpad toggle rows, Power tile) for this document and the main README | None — pure documentation task |
 | P2 | L | Guided, GUI-driven test workflow (user request, 2026-07-16): step through enabling Test Mode, configuring the Web Manager, checking Ekos settings, all from one screen | Benefits from the second Control Center page below existing first, to avoid overloading the current single-page layout |
 | P2 | M | Second, decoupled Control Center page for PiFinder-mode details and multiple test-runner buttons (Keypad GPIO test, Fake LX200 simulator) — first page stays focused on Setup/Update/Install | None, but the guided test workflow above would build on it |
 | P2 | L | Persistent, password-protected admin webserver replacing the on-demand setup-GUI-server model — would also structurally fix the reboot-disconnects-the-browser problem, and could host `smos-post-update.sh` actions, an IgnorePkg-pin status dashboard, and INDI-driver rebuilds as buttons | None — independent, larger architectural change; see `basic-memory/pifinder-stellarmate/00015` for the original brainstorm |
