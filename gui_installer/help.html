@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiFinder Control Center - Help</title>
+<style>
+  body {
+    background: #111;
+    color: #ddd;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 1.5rem;
+    max-width: 780px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+  h2 {
+    font-size: 1.1rem;
+    margin: 2rem 0 0.6rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid #333;
+    scroll-margin-top: 1rem;
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 0.95rem; margin: 1.2rem 0 0.4rem; scroll-margin-top: 1rem; }
+  p, li { line-height: 1.5; color: #ccc; }
+  code {
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 0.85em;
+  }
+  a { color: #7ec8ff; }
+  #toc {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.8rem 1.2rem;
+    margin-bottom: 1.5rem;
+  }
+  #toc ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+  .dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-right: 0.4rem; vertical-align: middle; }
+  .dot-green { background: #4caf50; }
+  .dot-yellow { background: #f5a623; }
+  .dot-red { background: #e53935; }
+  .close-note { color: #888; font-size: 0.82rem; margin-top: 2.5rem; }
+</style>
+</head>
+<body>
+<h1>PiFinder Control Center - Help</h1>
+<p class="close-note" style="margin-top:0;">Opened from the (i) icons on the main page. Each link below jumps to the matching section - use your browser's back button, or just close this tab, to return.</p>
+
+<div id="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#quick-links">Quick Links</a></li>
+    <li><a href="#mode-power">Mode &amp; Power</a></li>
+    <li><a href="#install-update">Install or Update</a></li>
+    <li><a href="#mount-bridge">Mount Bridge</a>
+      <ul>
+        <li><a href="#step1-profile">1. Profile</a></li>
+        <li><a href="#step2-kstars">2. KStars Link</a></li>
+        <li><a href="#step3-drivers">3. Drivers</a></li>
+        <li><a href="#step4-mount">4. Mount</a></li>
+        <li><a href="#step5-connect">5. Connect</a></li>
+        <li><a href="#coupling">Coupling &amp; Autoconnect</a></li>
+        <li><a href="#drift-badge">Drift readout</a></li>
+      </ul>
+    </li>
+  </ul>
+</div>
+
+<h2 id="quick-links">Quick Links</h2>
+<p>Direct links to things you'd otherwise have to look up: PiFinder's own remote page (its web UI), the INDI/mount setup wizard running on PiFinder itself, this Control Center's own address (useful if you're bookmarking it or opening it on another device), and the project's documentation on GitHub. The status line at the top reflects whether PiFinder's web server is answering at all - it can say "running" even if a piece of hardware (camera, IMU, GPS) is missing, since that's a separate check (see Mode &amp; Power below).</p>
+
+<h2 id="mode-power">Mode &amp; Power</h2>
+<p><strong>Real Mode</strong> uses the actual PiFinder hardware (camera, IMU, GPS). <strong>Fake Mode</strong> runs a completely separate, headless instance with everything simulated - useful for testing this Control Center, the Mount Bridge, or anything else without needing the physical hardware attached or working.</p>
+<p><strong>Test Hardware</strong> runs a deeper functional check against each subsystem (an actual camera capture, an actual IMU read, PiFinder's own GPS status) and classifies any failure as a hardware problem, a driver problem, or a Python error - not just "is it plugged in." Runs automatically once when this Control Center starts, and again any time you click the button. Output also appears in the Terminal on the left.</p>
+<p><strong>Solve Simulation</strong> is PiFinder's own "Tools -&gt; Test Mode" feature - it substitutes canned test images for the camera so plate-solving can be exercised without sky access, while the IMU/keypad/GPS stay live. This is <em>not</em> the same thing as Fake Mode above (which runs a whole separate instance with no hardware at all).</p>
+<p>The two optional rows below (External SPI LCD, External numpad bridge) only matter if you've attached that specific extra hardware - leave them off otherwise.</p>
+<p><strong>Reboot Pi / Shutdown Pi</strong> affect the whole Raspberry Pi, not just PiFinder or this page.</p>
+
+<h2 id="install-update">Install or Update</h2>
+<p>Only shown when an existing PiFinder installation is found at <code>~/PiFinder</code>.</p>
+<ul>
+  <li><strong>Reinstall from scratch</strong>: deletes that directory entirely and clones a fresh copy from the official <code>release</code> branch, then re-applies all StellarMate patches. Use this if the installation seems broken, or you just want a clean slate.</li>
+  <li><strong>Update</strong>: resets the existing directory to the official <code>release</code> branch (<code>git reset --hard</code> + <code>pull</code>) and re-applies all patches, discarding any local changes there. Keeps the directory, just brings the code up to date.</li>
+  <li><strong>Cancel</strong>: does nothing and shuts down this setup webserver. Run <code>launch_setup_gui.sh</code> again (or PiFinder's own "Start Setup Wizard" button) if you need it later.</li>
+</ul>
+
+<h2 id="mount-bridge">Mount Bridge</h2>
+<p>Couples PiFinder's own solved sky position with a real telescope mount, via the <strong>PiFinder Mount Bridge</strong> INDI driver - so you don't need to open the separate INDI Control Panel for the common cases. The tile is organized as a numbered setup checklist (below the divider line) plus a live status/operate area (above it): connection diagram, Coupling presets, and the drift readout.</p>
+<p>Each numbered step shows a green checkmark once it's actually satisfied, and a yellow spinning symbol while its own action is running.</p>
+
+<h3 id="step1-profile">1. Profile</h3>
+<p>Pick the Web Manager Equipment Profile you want to use. <strong>"Simulators" is intentionally not selectable here</strong> - it's a read-only default meant for testing, not for a real setup. Create your own profile first, in Web Manager or the StellarMate App, if none exists yet. The Start/Stop button next to it starts or stops that profile's <code>indiserver</code> instance - it turns green while the profile is actually running.</p>
+
+<h3 id="step2-kstars">2. KStars Link</h3>
+<p>Checks whether the matching Equipment Profile <em>in KStars itself</em> has "INDI Web Manager" enabled and pointed at this same Web Manager (the checkbox you'd see in KStars' own Profile Editor). This is read from KStars' own local database - <strong>never written</strong>, since KStars may have that file open at the same time, and you might deliberately want a different setup there. If it shows a warning, follow the steps shown (open KStars' Profile Editor, tick the box, save) and click Recheck.</p>
+
+<h3 id="step3-drivers">3. Drivers</h3>
+<p>Adds or removes exactly two drivers in the profile: <strong>PiFinder LX200</strong> (reports PiFinder's solved position as a telescope) and <strong>PiFinder Mount Bridge</strong> (does the actual coupling). Nothing else in the profile is touched. If the profile is currently running, adding or removing a driver here automatically stops and restarts it for you - <code>indiserver</code> only reads a profile's driver list once, at startup, so a restart is unavoidable for the change to actually take effect.</p>
+
+<h3 id="step4-mount">4. Mount</h3>
+<p>Pick which other driver already in the profile is your actual mount, then click <strong>Link Mount</strong> - this is the one step that needs your judgment, since there's no reliable way to auto-detect "which driver is a telescope." Once linked, the button turns green and becomes <strong>Unlink Mount</strong>.</p>
+<p>This step does <em>not</em> connect to your mount's own hardware (serial port, baud rate, etc.) - that's assumed to already be configured and working, either from a previous session or via the INDI Control Panel. Mount Bridge only needs to know <em>which loaded driver</em> is the mount.</p>
+
+<h3 id="step5-connect">5. Connect</h3>
+<p>Connects (or disconnects) each device's own <code>CONNECTION</code> property. <strong>Connect all (available)</strong> connects everything that's ready and not yet connected in one click - it turns green and becomes <strong>Disconnect all</strong> once everything is already connected. "PiFinder LX200" is a special case: it's automatically pointed at PiFinder's own internal position server (<code>127.0.0.1:4030</code>, fixed on every install) before connecting, since left on its default it would otherwise try to use a serial port - which is what your real mount's own driver usually needs instead.</p>
+
+<h3 id="coupling">Coupling &amp; Autoconnect</h3>
+<p>Three one-click presets, applied to the Mount Bridge driver:</p>
+<ul>
+  <li><strong>Verify/Alert only</strong>: watches the drift between PiFinder's solved position and the mount's reported position. Never moves the mount - just a passive "is my mount still aligned?" check.</li>
+  <li><strong>Auto-correct on drift</strong>: same watching, but automatically corrects the mount (Sync or Goto/Track, your choice below) once drift exceeds the Threshold.</li>
+  <li><strong>Goto-Forward</strong>: forwards every Goto command sent to PiFinder straight through to the real mount too, keeping them moving together. Threshold doesn't apply to this mode.</li>
+</ul>
+<p>The active mode is highlighted green.</p>
+<p><strong>Autoconnect</strong>: clicking any preset before steps 1-5 are actually finished doesn't just fail - it runs the rest of the setup automatically. It starts the profile and adds both PiFinder drivers if needed, then pauses with a visible yellow message asking you to pick and link your mount (the one step it can't decide for you). Once you do that, it resumes on its own: connects everything, and finally applies the coupling mode you originally clicked.</p>
+
+<h3 id="drift-badge">Drift readout</h3>
+<p>The large number top-right of the tile is the current angular drift between PiFinder's solved position and the mount's reported position, in arcminutes:</p>
+<ul>
+  <li><span class="dot dot-green"></span><strong>Green</strong>: within the Threshold you've set.</li>
+  <li><span class="dot dot-yellow"></span><strong>Yellow</strong>: past the Threshold.</li>
+  <li><span class="dot dot-red"></span><strong>Red</strong>: past roughly 0.5&deg; (about the diameter of a full moon) - a generic placeholder for "probably out of your eyepiece's field of view," not a measurement of your actual eyepiece/camera.</li>
+</ul>
+<p>Only shown while coupling is actively watching drift (Verify/Alert or Auto-correct) and connected - hidden otherwise.</p>
+
+<p class="close-note">This help page is a static file served alongside the Control Center - it isn't kept open or polled by the main page, so it's safe to leave it in its own tab while you work.</p>
+</body>
+</html>

@@ -50,6 +50,7 @@ HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_log
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
+HELP_PAGE = GUI_DIR / "help.html"
 # Deliberately decoupled from PiFinder's own web server/codebase: this just
 # shells out to test_tools/fake_mode.sh (see its own header comment for the
 # full rationale), which itself toggles between the real systemd service and
@@ -1106,6 +1107,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
+            return
+
+        if parsed.path == "/help.html":
+            self._send_file(HELP_PAGE, "text/html; charset=utf-8")
             return
 
         if parsed.path == "/pifinder.jpg":

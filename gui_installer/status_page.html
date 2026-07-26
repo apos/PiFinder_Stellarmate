@@ -125,6 +125,22 @@
     margin-bottom: 0.8rem;
   }
   .choice-card h3, .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
+  .help-link {
+    display: inline-block;
+    margin-left: 0.4rem;
+    width: 1rem;
+    height: 1rem;
+    line-height: 1rem;
+    border-radius: 50%;
+    border: 1px solid #555;
+    color: #777;
+    font-size: 0.68rem;
+    font-weight: normal;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+  }
+  .help-link:hover { color: #ccc; border-color: #999; }
   .choice-card p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #choices button, #start-fresh {
     background: #2a6fdb;
@@ -471,7 +487,7 @@
     <div id="top-tiles-row">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
-        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links</h3>
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
         <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
         <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
@@ -479,7 +495,7 @@
         <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
       </div>
       <div id="mode-tile">
-        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power</h3>
+        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
         <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
         <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
@@ -519,7 +535,7 @@
            per live user feedback. Visually separated (see #mb-settings-divider
            below) from the one-time "set it up" rows (Profile/Drivers/Mount),
            which now follow underneath rather than being interleaved. -->
-      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge</h3>
+      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
       <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera)."></div>
       <div id="mb-diagram">
@@ -531,7 +547,7 @@
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the one thing it can't (which driver is your mount).">
-        <span class="mb-row-label">Coupling:</span>
+        <span class="mb-row-label">Coupling:</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a>
         <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
         <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
         <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
@@ -550,30 +566,30 @@
       <div id="mb-settings-divider"></div>
 
       <div class="mb-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-        <span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a>
         <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
         <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
       </div>
       <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       <div id="wm-kstars-link-row" class="mb-row" style="display:none;">
-        <span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a>
         <span id="wm-kstars-link-text"></span>
         <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
       </div>
 
       <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a>
         <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
         <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
       </div>
       <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a>
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link Mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
       <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-        <span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span>
+        <span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a>
         <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
         <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
@@ -947,7 +963,7 @@ function showChoices(existingInstall) {
   if (existingInstall) {
     el.innerHTML = `
       <div class="choice-card">
-        <h3 class="tile-heading">Install or Update</h3>
+        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
         <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
         <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
         <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
