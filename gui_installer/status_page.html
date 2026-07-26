@@ -331,34 +331,14 @@
     position: relative;
   }
   #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
-  /* Big drift readout, top-right - only shown once coupling is actually
-     watching drift (Verify/Alert or Auto-correct; Goto-Forward has no
-     threshold concept, see setWmCoupling()'s own docstring reference).
-     Green/yellow/red thresholds: green up to the configured Auto-correct/
-     Verify-Alert threshold, yellow beyond that but still inside the
-     assumed eyepiece field of view, red once past that FOV estimate -
-     0.5 degrees (full-moon diameter) is a reasonable generic assumption
-     per user request, not a measured value (actual FOV depends on the
-     eyepiece/camera actually in use). */
-  #mb-drift-badge {
-    position: absolute;
-    top: 0.7rem;
-    right: 0.9rem;
-    font-size: 1.7rem;
-    font-weight: bold;
-    line-height: 1;
-    padding: 0.3rem 0.6rem;
-    border-radius: 8px;
-    background: #222;
-    border: 1px solid #444;
-    color: #888;
-    text-align: right;
-  }
-  #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
-  #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
-  #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
+  /* Icon-first status row: the three nodes carry connection state via the
+     icon's own color (no separate dot anymore), and the drift readout sits
+     directly beside the Bridge icon rather than off in a corner - per live
+     feedback, this is the one thing in the tile the user actually needs at
+     a glance, so it belongs next to the piece that produces it, at full
+     size (not shrunk into a small badge). */
   #mb-diagram {
     display: flex;
     align-items: center;
@@ -369,18 +349,49 @@
   .mb-node {
     border: 1px solid #444;
     border-radius: 6px;
-    padding: 0.35rem 0.6rem;
+    padding: 0.4rem 0.7rem;
     background: #222;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     white-space: nowrap;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    color: #ccc;
   }
-  .mb-node .status-dot { margin-right: 0.35rem; }
+  .mb-icon {
+    width: 26px;
+    height: 26px;
+    color: #666;
+  }
+  .mb-icon.mb-icon-connected { color: #4caf50; }
+  .mb-icon.mb-icon-disconnected { color: #e53935; }
   .mb-arrow {
     font-size: 1.1rem;
     color: #555;
     min-width: 2.2rem;
     text-align: center;
   }
+  /* Drift readout - kept at full size next to the Bridge node (not an
+     absolute-positioned corner badge anymore). Green/yellow/red thresholds:
+     green up to the configured Auto-correct/Verify-Alert threshold, yellow
+     beyond that but still inside the assumed eyepiece field of view, red
+     once past that FOV estimate - 0.5 degrees (full-moon diameter) is a
+     reasonable generic assumption per user request, not a measured value
+     (actual FOV depends on the eyepiece/camera actually in use). */
+  #mb-drift-badge {
+    font-size: 1.7rem;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0.3rem 0.7rem;
+    border-radius: 8px;
+    background: #222;
+    border: 1px solid #444;
+    color: #888;
+  }
+  #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
+  #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
+  #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
   .mb-arrow.mb-arrow-read { color: #5b9bd5; }
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
@@ -564,13 +575,34 @@ sudo systemctl start pifinder</pre>
            which now follow underneath rather than being interleaved. -->
       <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
-      <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera)."></div>
       <div id="mb-diagram">
-        <div class="mb-node" id="mb-node-lx200"><span class="status-dot dot-white" id="mb-node-lx200-dot"></span>PiFinder</div>
+        <div class="mb-node" id="mb-node-lx200" title="PiFinder">
+          <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
+          </svg>
+          <span>PiFinder</span>
+        </div>
         <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-bridge"><span class="status-dot dot-white" id="mb-node-bridge-dot"></span>Bridge</div>
+        <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
+          <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="15" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          </svg>
+          <span>Bridge</span>
+        </div>
+        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera)."></div>
         <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-mount"><span class="status-dot dot-white" id="mb-node-mount-dot"></span><span id="mb-node-mount-name">Mount</span></div>
+        <div class="mb-node" id="mb-node-mount" title="Mount">
+          <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4.5" y="9.5" width="14" height="3.2" rx="1.4" transform="rotate(-28 4.5 9.5)" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M6.5 16.5 L12 19.5 L17.5 16.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="19.5" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+          <span id="mb-node-mount-name">Mount</span>
+        </div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
       <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
@@ -1608,7 +1640,7 @@ function updateWmCouplingGate() {
 // mount, solid green when forwarding a goto straight through.
 function setMbNodeDot(id, connected) {
   const el = document.getElementById(id);
-  el.className = 'status-dot ' + (connected === true ? 'dot-green' : connected === false ? 'dot-red' : 'dot-white');
+  el.className = 'mb-icon' + (connected === true ? ' mb-icon-connected' : connected === false ? ' mb-icon-disconnected' : '');
 }
 
 function setMbArrow(id, kind) {
@@ -1675,9 +1707,9 @@ function updateBridgeSettingsInfo(data) {
 
 function updateMbDiagram(data) {
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
-  setMbNodeDot('mb-node-lx200-dot', data.pifinder_connected);
-  setMbNodeDot('mb-node-bridge-dot', data.bridge_connected);
-  setMbNodeDot('mb-node-mount-dot', data.mount_connected);
+  setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
+  setMbNodeDot('mb-icon-bridge', data.bridge_connected);
+  setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateCouplingButtons(data.coupling_mode);
   updateBridgeSettingsInfo(data);
 

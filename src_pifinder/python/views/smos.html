@@ -4,9 +4,6 @@
 <div class="row valign-wrapper" style="margin: 0px;">
   <div class="col s12">
     <h5 class="grey-text">{{ _('Prepare StellarMate OS for PiFinder INDI drivers') }}</h5>
-    <p class="grey-text text-lighten-1">
-      {{ _("To use PiFinder as a telescope in StellarMate's Ekos/KStars, install its INDI drivers once via the StellarMate Web Manager below. You'll need to repeat this after a fresh install, an update, or a reboot.") }}
-    </p>
   </div>
 </div>
 
@@ -27,26 +24,49 @@
   }
   #img-lightbox.open { display: flex; }
   #img-lightbox img { max-width: 95vw; max-height: 95vh; border-radius: 4px; }
+  #pfsm-cc-row { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+  #pfsm-cc-row img { width: 140px; border-radius: 4px; flex-shrink: 0; }
+  #wm-setup-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #bbb;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #wm-setup-toggle:hover { color: #ddd; }
+  #wm-setup-details { display: none; margin-top: 0.8rem; }
 </style>
 
 <div class="row">
   <div class="col s12">
     <div class="card grey darken-2">
       <div class="card-content">
-        <span class="card-title grey-text">1. {{ _('Set up the StellarMate Web Manager') }}</span>
-        <img src="/images/webmanager_profile_thumb.png"
-             alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
-             class="first-steps-img"
-             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;"
-             onclick="openImgLightbox('/images/webmanager_profile.png', this.alt)">
-        <p class="grey-text text-lighten-1">
-          {{ _('Open the Web Manager (links below), create or select an Equipment Profile. Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount), then click Start.') }}
+        <span class="card-title grey-text">{{ _('PFSM Control Center') }}</span>
+        <div id="pfsm-cc-row">
+          <img src="/images/control_center_thumb.png"
+               alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
+               class="first-steps-img"
+               onclick="openImgLightbox('/images/control_center.png', this.alt)">
+          <div style="flex: 1; min-width: 200px;">
+            <p class="grey-text text-lighten-1" id="setup-gui-status-text" style="margin-top: 0;">{{ _('Checking status…') }}</p>
+            <button id="setup-gui-toggle-btn" class="btn grey darken-1" onclick="setupGuiToggle()">{{ _('Checking…') }}</button>
+            <p class="grey-text text-lighten-1" style="margin-bottom: 0.2rem;">{{ _('Reachable at:') }}</p>
+            <ul class="first-steps-links">
+              {% for ip in ips %}
+              <li><a href="http://{{ ip }}:8765/" target="_blank" rel="noopener">{{ ip }}:8765</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+        <p class="grey-text text-lighten-1" style="margin-top: 0.8rem;">
+          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
         </p>
-        <ul class="first-steps-links">
-          {% for ip in ips %}
-          <li><a href="http://{{ ip }}:8624" target="_blank" rel="noopener">{{ ip }}:8624</a></li>
-          {% endfor %}
-        </ul>
+        <p class="grey-text text-lighten-1">
+          {{ _('The site is protected by your StellarMate account password (see') }}
+          <a href="https://github.com/apos/PiFinder_Stellarmate#setup-gui--control-center-optional" target="_blank" rel="noopener">{{ _('Setup GUI / Control Center') }}</a>
+          {{ _('on GitHub for details).') }}
+        </p>
       </div>
     </div>
   </div>
@@ -55,29 +75,26 @@
 <div class="row">
   <div class="col s12">
     <div class="card grey darken-2">
-      <div class="card-content">
-        <span class="card-title grey-text">2. {{ _('PiFinder Stellarmate Control Center') }}</span>
-        <img src="/images/control_center_thumb.png"
-             alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
-             class="first-steps-img"
-             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;"
-             onclick="openImgLightbox('/images/control_center.png', this.alt)">
-        <p class="grey-text text-lighten-1" id="setup-gui-status-text">{{ _('Checking status…') }}</p>
-        <p class="grey-text text-lighten-1">
-          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
-        </p>
-        <p class="grey-text text-lighten-1">
-          {{ _('The site is protected by your StellarMate account password. You can start and stop it below (see') }}
-          <a href="https://github.com/apos/PiFinder_Stellarmate#setup-gui--control-center-optional" target="_blank" rel="noopener">{{ _('Setup GUI / Control Center') }}</a>
-          {{ _('on GitHub for details).') }}
-        </p>
-        <p class="grey-text text-lighten-1">{{ _('Setup Wizard reachable at:') }}</p>
-        <ul class="first-steps-links">
-          {% for ip in ips %}
-          <li><a href="http://{{ ip }}:8765/" target="_blank" rel="noopener">{{ ip }}:8765</a></li>
-          {% endfor %}
-        </ul>
-        <button id="setup-gui-toggle-btn" class="btn grey darken-1" onclick="setupGuiToggle()">{{ _('Checking…') }}</button>
+      <div class="card-content" style="padding-bottom: 0.6rem;">
+        <a id="wm-setup-toggle" onclick="toggleWmSetup()">
+          <span>{{ _('Web Manager setup (one-time)') }}</span>
+          <i class="material-icons" id="wm-setup-chevron">expand_more</i>
+        </a>
+        <div id="wm-setup-details">
+          <img src="/images/webmanager_profile_thumb.png"
+               alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
+               class="first-steps-img"
+               style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;"
+               onclick="openImgLightbox('/images/webmanager_profile.png', this.alt)">
+          <p class="grey-text text-lighten-1">
+            {{ _('Open the Web Manager (links below), create or select an Equipment Profile. Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount), then click Start.') }}
+          </p>
+          <ul class="first-steps-links">
+            {% for ip in ips %}
+            <li><a href="http://{{ ip }}:8624" target="_blank" rel="noopener">{{ ip }}:8624</a></li>
+            {% endfor %}
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -103,6 +120,17 @@
     document.getElementById('img-lightbox').classList.remove('open');
   }
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeImgLightbox(); });
+
+  // Web Manager setup is a once-per-install chore, not something checked
+  // day to day - collapsed by default so the Control Center (what people
+  // actually look at regularly) is what the page opens on.
+  function toggleWmSetup() {
+    const details = document.getElementById('wm-setup-details');
+    const chevron = document.getElementById('wm-setup-chevron');
+    const open = details.style.display === 'block';
+    details.style.display = open ? 'none' : 'block';
+    chevron.textContent = open ? 'expand_more' : 'expand_less';
+  }
 
   const SETUP_GUI_PORT = 8765;
 

@@ -318,6 +318,35 @@ requirements (technically correct *and* visually clear/appropriate), and the int
 process/edge-cases - verified deliberately, not just exercised once live and moved past. Slower,
 more rigorous, better-documented iteration is the explicit priority over speed from here.
 
+### 6.5 Icon-first status row + PFSM page refocus (2026-07-26)
+
+Direct follow-up to 6.4's process note: applied the same "use case over technical substrate"
+lens to the tile's own top status area and to PiFinder's own `/smos` page.
+
+**Mount Bridge diagram**: the three text-label nodes (PiFinder/Bridge/Mount) plus a separate,
+absolute-positioned drift badge read as cluttered per live feedback. Replaced with icon-first
+nodes - hand-drawn inline SVG (no Tabler webfont in the real project, that's only available in
+the `mcp__visualize` mockup sandbox used to iterate the design with the user first): a stylized
+Telrad circle for PiFinder, two overlapping circles for the Bridge, a simple telescope silhouette
+for the Mount. Connection state now lives on the icon's own color (`currentColor` + a
+`.mb-icon-connected`/`.mb-icon-disconnected` class) instead of a separate status dot. The drift
+number stays at its original large size, moved to sit directly beside the Bridge icon (the one
+number the user actually needs at a glance) rather than in a corner badge - confirmed via two
+rounds of mockup iteration (Option B chosen, then re-rendered with the drift number kept large
+per explicit request instead of shrunk into a badge).
+
+**PiFinder's own `/smos` page**: same shift in emphasis - the page opened on Web Manager setup
+instructions (a once-per-install chore) before the Control Center status (what's actually
+checked day to day). Restructured into one prominent card for "PFSM Control Center" (compact
+inline thumbnail + live status + start/stop, no scrolling required) with the Web Manager steps
+demoted into a collapsed, click-to-expand card below. Renamed the nav entry from "INDI Drivers"
+to "PFSM" (user wants this as the project's short-form name going forward). Worth remembering
+for future edits here: `smos.html` deploys via `src_pifinder/` (see 6.3/§10), but `base.html`
+(where the nav link lives) is a genuine upstream file patched via `diffs/base_html.diff` - editing
+only the live checkout would have silently reverted on the next install/update. Verified the
+patch still applies cleanly with a reverse-then-forward round-trip test against the live file
+rather than needing the pristine upstream original.
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same
