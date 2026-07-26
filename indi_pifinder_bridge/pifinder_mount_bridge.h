@@ -109,5 +109,13 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         int m_settleTicksRemaining = 0;
         static constexpr int SETTLE_TICKS = 3; // poll cycles to wait for a fresh PiFinder solve after slew
 
+        // A residual after arrival usually means the mount's own model was
+        // slightly off at this sky position - Sync corrects that model with
+        // PiFinder's solve, then re-issuing the Goto (now benefiting from
+        // the corrected model) should land closer. Bounded so a genuinely
+        // noisy solve can't loop forever chasing it.
+        int m_settleRetriesRemaining = 0;
+        static constexpr int MAX_SETTLE_RETRIES = 3;
+
         void handleGotoForward();
 };

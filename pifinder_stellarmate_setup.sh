@@ -21,11 +21,19 @@ smos_version_testing="2.2.1"
 # --action=reinstall|update|cancel: drive the existing-install menu and the
 # venv bootstrap non-interactively (used by gui_installer/server.py). Without
 # it, behavior is unchanged — the script still prompts on a terminal.
+# --branch=<name>: switch this repo (PiFinder_Stellarmate itself, not the
+# PiFinder checkout) to a different branch (e.g. "dev") before anything else
+# runs - see bin/switch_branch.sh. Optional; a no-op when omitted, same as
+# --action.
 ACTION=""
+BRANCH=""
 for arg in "$@"; do
     case "$arg" in
         --action=*)
             ACTION="${arg#--action=}"
+            ;;
+        --branch=*)
+            BRANCH="${arg#--branch=}"
             ;;
     esac
 done
@@ -35,6 +43,14 @@ done
 # re-execs below rely on `$(pwd)` (via `source $(pwd)/bin/functions.sh`) being
 # the repo root again, so they must `cd` back here first.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Branch switch (if requested) runs before self-update, which only ever
+# fast-forwards whichever branch is already checked out - it has no notion
+# of switching to a different one. See bin/switch_branch.sh for the safety
+# model (mirrors self_update.sh: skip cleanly when there's nothing to do,
+# abort loudly rather than risk a dirty tree).
+source "${SCRIPT_DIR}/bin/switch_branch.sh"
+switch_pifinder_stellarmate_branch "$SCRIPT_DIR" "$BRANCH"
 
 # Pull the latest PiFinder_Stellarmate before anything else runs - see
 # bin/self_update.sh for the safety model (skips cleanly during active
@@ -236,7 +252,23 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 fi
                 echo "Installation from scratch ..."
                 cd "${pifinder_home}"
-                git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+                if ! git clone --recursive --branch release https://github.com/brickbots/PiFinder.git; then
+                    echo "❌ ERROR: 'git clone' of PiFinder failed (network issue or GitHub unreachable?)."
+                    echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
+                    exit 1
+                fi
+                if [ ! -f "${pifinder_home}/PiFinder/version.txt" ]; then
+                    # Belt-and-suspenders: seen live where the clone command
+                    # itself returned success but still left an incomplete
+                    # checkout behind (missing files, no error surfaced) -
+                    # every later step (patching, building, chown) silently
+                    # operated on that partial tree instead of catching it,
+                    # so the run "finished" looking mostly fine while
+                    # PiFinder itself was actually broken.
+                    echo "❌ ERROR: git clone did not produce a usable PiFinder checkout (no version.txt)."
+                    echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
+                    exit 1
+                fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
@@ -259,8 +291,16 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 sudo systemctl stop pifinder
                 echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
                 cd "${pifinder_home}/PiFinder"
-                git reset --hard origin/release
-                git pull
+                if ! git reset --hard origin/release; then
+                    echo "❌ ERROR: 'git reset --hard origin/release' failed - aborting rather than"
+                    echo "❌ patching/building against a checkout left in an unknown state."
+                    exit 1
+                fi
+                if ! git pull; then
+                    echo "❌ ERROR: 'git pull' failed - aborting rather than patching/building against"
+                    echo "❌ a possibly-stale checkout."
+                    exit 1
+                fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
                 echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
                 bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
@@ -853,7 +893,7 @@ echo "##############################################"
 echo "  PiFinder Setup — Installation Summary"
 echo "##############################################"
 echo "  PiFinder:             $github_version"
-echo "  SM Scripts:           $pifinder_local_version"
+echo "  SM Scripts:           $pifinder_local_version  [branch: $(git -C "$SCRIPT_DIR" symbolic-ref --short -q HEAD || echo unknown)]"
 echo "  SMOS:                 ${current_smos_version:-unknown}  [tested: $smos_version_stable]"
 echo "  Hardware:             $current_pi"
 echo "  OS:                   $current_os"

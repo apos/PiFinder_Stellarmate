@@ -204,6 +204,9 @@ def mount_bridge_status(
       - "pifinder_connected"/"mount_connected": bool or None - the linked
         devices' own CONNECTION state (None if not set/queryable yet)
       - "coupling_mode": str or None - whichever BRIDGE_MODE element is "On"
+      - "correction_action": "sync"/"goto"/None - whichever CORRECTION_ACTION
+        element is "On", normalized to set_coupling_mode()'s own short-form
+        vocabulary - only meaningful when coupling_mode is MODE_AUTO_CORRECT
       - "drift_arcmin": float or None - current DRIFT_STATUS reading
       - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
         own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
@@ -232,6 +235,7 @@ def mount_bridge_status(
             "pifinder_connected": None,
             "mount_connected": None,
             "coupling_mode": None,
+            "correction_action": None,
             "drift_arcmin": None,
             "settings_host": None,
             "settings_port": None,
@@ -244,6 +248,9 @@ def mount_bridge_status(
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
+    correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
+    correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
+    correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
     active_pifinder = active_devices.get("ACTIVE_PIFINDER") or None
     active_mount = active_devices.get("ACTIVE_MOUNT") or None
@@ -276,6 +283,7 @@ def mount_bridge_status(
         "pifinder_connected": pifinder_connected,
         "mount_connected": mount_connected,
         "coupling_mode": coupling_mode,
+        "correction_action": correction_action,
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
         "settings_host": settings_host,
         "settings_port": settings_port,
@@ -539,3 +547,16 @@ def set_coupling_mode(
         set_switch("PiFinder Mount Bridge", "CORRECTION_ACTION", element, host, port, timeout)
 
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
+
+
+def trigger_manual_sync(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: syncs the mount to PiFinder's current solved position right
+    now (MANUAL_TRIGGER's TRIGGER_SYNC_NOW element) - works regardless of
+    which Coupling mode (or Off) is active. Useful after moving the mount by
+    hand (no Goto involved at all), where none of the Coupling presets would
+    otherwise react."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)

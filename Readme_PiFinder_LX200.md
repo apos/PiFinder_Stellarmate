@@ -135,7 +135,7 @@ real mount are coupled:
 | **Off** | No coupling at all. Pure push-to. | Dobson, no motor. |
 | **Verify/Alert only** | Continuously compares PiFinder's solved position to the mount's reported position; logs a warning if they disagree by more than the configured threshold. Never writes to the mount. | Astrophotography: a passive "is my mount still correctly aligned?" sanity check. |
 | **Auto-correct on drift** | Same comparison, but if drift exceeds the threshold, automatically sends a `Sync` or `Goto/Track` (configurable via `CORRECTION_ACTION`) to the mount. | Manual push-to-then-correct workflows: you slew by hand until PiFinder shows on-target, the Bridge picks up the resulting drift and straightens the mount out afterwards. |
-| **Goto-Forward** *(new)* | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and auto-corrects any residual with a `Sync`. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
+| **Goto-Forward** *(new)* | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and, if still outside the threshold, syncs the mount and re-sends the Goto - repeating (bounded) until it lands within threshold or gives up. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
 
 There's also a **Manual (one-shot)** control (`MANUAL_TRIGGER`: "Sync Now" / "Goto Now") that works
 regardless of the selected mode — useful for a single manual correction without switching modes.
@@ -432,16 +432,22 @@ stateDiagram-v2
     SLEWING --> SLEWING: mount still busy
     SLEWING --> SETTLING: mount finished slewing
     SETTLING --> SETTLING: settle ticks (3× poll cycle)\nwaiting for a fresh PiFinder solve
-    SETTLING --> IDLE: drift computed;\nSync sent if exceeded
+    SETTLING --> SLEWING: drift exceeds threshold,\nretries left: Sync + Goto re-sent
+    SETTLING --> IDLE: within threshold,\nor retries exhausted
 ```
 
 Why a settle delay? After the mount it's mounted on physically moves, PiFinder needs a moment to
 solve again — the Bridge waits 3 poll cycles (default: 6 seconds at a 2s poll period) before
 treating the "actual" position as trustworthy.
 
-Why a **Sync** at the end instead of another Goto? The mount has already physically arrived via
-the preceding Goto — a remaining deviation is a calibration/model error, not a missed slew.
-Another Goto would cause unnecessary back-and-forth movement ("hunting").
+Why a **Sync followed by another Goto**, not just a Sync? The mount has already physically
+arrived via the preceding Goto, so a residual is usually the mount's own model being slightly off
+at this sky position rather than a missed slew - a Sync alone would just relabel the mount's
+coordinates to match PiFinder without moving anything closer to the actual target. Syncing first
+corrects the model with PiFinder's more precise solve, then re-issuing the Goto (now benefiting
+from that corrected model) should land closer. This repeats - re-verify, sync + re-Goto again if
+still outside the threshold - up to `MAX_SETTLE_RETRIES` (3) attempts before giving up and logging
+a warning, so a genuinely noisy solve can't chase itself forever.
 
 Why does the Bridge snoop `TARGET_EOD_COORD` instead of a property of its own? `INDI::Telescope`
 (the base class of every LX200-style driver, including `PiFinder LX200`) already publishes this
