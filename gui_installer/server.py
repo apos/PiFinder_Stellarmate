@@ -43,9 +43,13 @@ SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
 GPSD_PORT = 2947
-PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder.jpg"
-AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg.png"
-HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo.png"
+# Thumbnails, not the full-resolution originals used elsewhere (e.g. the
+# README) - these are only ever shown small on this page (128px/78px tall),
+# so serving the originals wasted a lot of load time for nothing (the
+# HeyApos one alone was ~2MB at 1920x1080 for a 78px-tall footer logo).
+PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder_thumb.jpg"
+AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg_thumb.png"
+HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
 # PiFinder's own splash bitmap (shown by pifinder_splash.service before the
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
@@ -1475,6 +1479,40 @@ class Handler(BaseHTTPRequestHandler):
             script_arg = "start" if action == "enable_fake" else "stop"
             threading.Thread(target=_run_fake_mode_action, args=(script_arg,), daemon=True).start()
             self._send_json({"started": True})
+            return
+
+        if parsed.path == "/api/pifinder_service":
+            # Direct pifinder.service (Real Mode) control - shouldn't
+            # normally be needed (the Real/Fake Mode toggle above already
+            # manages it via fake_mode.sh), but useful to recover a
+            # crashed/hung Real Mode instance without a full mode
+            # round-trip. Deliberately does NOT touch Fake Mode's own
+            # separate process (pf_remote.py) - this is only ever the
+            # systemd unit.
+            qs = parse_qs(parsed.query)
+            action = qs.get("action", [""])[0]
+            if action not in ("start", "stop", "restart"):
+                self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
+                return
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running:
+                    self._send_json(
+                        {"success": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+            try:
+                result = subprocess.run(
+                    ["sudo", "systemctl", action, "pifinder.service"],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except subprocess.TimeoutExpired:
+                self._send_json({"success": False, "error": f"systemctl {action} pifinder.service timed out"}, status=502)
+                return
+            if result.returncode != 0:
+                self._send_json({"success": False, "error": result.stderr.strip() or f"systemctl {action} failed"}, status=502)
+                return
+            self._send_json({"success": True})
             return
 
         if parsed.path == "/api/debug_solve":

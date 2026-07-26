@@ -508,10 +508,19 @@
       </div>
       <div id="mode-tile">
         <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
-        <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-        <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
-        <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')" title="Affects this whole Pi, not just PiFinder or this setup page.">Shutdown Pi</button>
+        <div style="display:flex; gap:1.4rem; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
+            <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+            <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
+            <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')" title="Affects this whole Pi, not just PiFinder or this setup page.">Shutdown Pi</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.4rem;" title="Directly starts/stops/restarts the pifinder.service systemd unit (Real Mode) - shouldn't normally be needed, but useful to recover a crashed/hung instance without a full mode toggle round-trip. Not meaningful while Fake Mode is running (that's a separate process, not this service).">
+            <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start PiFinder</button>
+            <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop PiFinder</button>
+            <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart PiFinder</button>
+          </div>
+        </div>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
           <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
             <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
@@ -1158,6 +1167,33 @@ async function powerAction(kind) {
     // accepted the request - treat it the same as a confirmed action.
   }
   watchForServerLoss();
+}
+
+// Direct pifinder.service control (start/stop/restart) - shouldn't normally
+// be needed (Real/Fake Mode toggling already manages it), but useful to
+// recover a crashed/hung Real Mode instance without a full mode round-trip.
+async function pifinderServiceAction(action) {
+  if (action !== 'start' &&
+      !confirm(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`)) {
+    return;
+  }
+  const btns = ['pifinder-svc-start-btn', 'pifinder-svc-stop-btn', 'pifinder-svc-restart-btn'].map((id) => document.getElementById(id));
+  const btn = document.getElementById(`pifinder-svc-${action}-btn`);
+  const originalText = btn.textContent;
+  btns.forEach((b) => { b.disabled = true; });
+  btn.textContent = { start: 'starting…', stop: 'stopping…', restart: 'restarting…' }[action];
+  try {
+    const resp = await fetch(`/api/pifinder_service?action=${action}`, { method: 'POST' });
+    const data = await resp.json();
+    btn.textContent = data.success ? `${originalText} ✓` : (data.error || 'failed');
+  } catch (e) {
+    btn.textContent = 'failed';
+  }
+  setTimeout(() => {
+    btn.textContent = originalText;
+    btns.forEach((b) => { b.disabled = false; });
+    refreshMode();
+  }, 2000);
 }
 
 // Shared by closeSetup() and the post-Cancel auto-shutdown below - there's
