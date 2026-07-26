@@ -410,6 +410,21 @@
     position: relative;
   }
   #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  /* Deliberately more prominent than the per-button "setting…"/"linking…"
+     text it supplements - per live feedback, a label on the one button
+     someone happened to click is easy to miss (and disappears the moment
+     that specific action finishes), especially once Autoconnect or a
+     multi-step action is driving several buttons in sequence. This stays
+     visible for the entire duration of ANY in-flight action on this tile,
+     regardless of which button triggered it. */
+  #mb-action-status {
+    background: #1a3a5c;
+    color: #7ec8ff;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.8rem;
+  }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
@@ -653,6 +668,7 @@ sudo systemctl start pifinder</pre>
         <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
       </div>
       <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+      <div id="mb-action-status" style="display:none;"></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -1996,6 +2012,15 @@ function _markMbInitialLoadDone(key) {
 }
 
 let mbActionInFlight = false;
+
+function setMbActionStatus(text) {
+  const el = document.getElementById('mb-action-status');
+  el.textContent = text;
+  el.style.display = '';
+}
+function clearMbActionStatus() {
+  document.getElementById('mb-action-status').style.display = 'none';
+}
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
 let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
 let wmKstarsLinked = null;
@@ -2081,6 +2106,7 @@ refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
 
 async function setWmCoupling(mode) {
   mbActionInFlight = true;
+  setMbActionStatus('⏳ Setting coupling mode…');
   const btnId = { verify_alert: 'wm-preset-verify-btn', auto_correct: 'wm-preset-auto-btn', goto_forward: 'wm-preset-goto-btn' }[mode];
   const btn = document.getElementById(btnId);
   const originalText = btn.textContent;
@@ -2106,6 +2132,7 @@ async function setWmCoupling(mode) {
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
 }
 
 // Autoconnect: clicking a Coupling preset before setup (steps 1-5) is
@@ -2412,6 +2439,7 @@ async function toggleWmServer() {
   setStepBusy(1, true);
   const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
+  setMbActionStatus(wantsStart ? `⏳ Starting profile "${wmSelectedProfile}"…` : `⏳ Stopping profile "${wmSelectedProfile}"…`);
   btn.disabled = true;
   btn.textContent = wantsStart ? 'starting…' : 'stopping…';
   try {
@@ -2428,6 +2456,7 @@ async function toggleWmServer() {
   await loadWmProfiles();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
   setStepBusy(1, false);
 }
 
@@ -2558,6 +2587,7 @@ async function setWmActiveDevices() {
   if (!unlinking && !mount) return;
   mbActionInFlight = true;
   setStepBusy(4, true);
+  setMbActionStatus(unlinking ? '⏳ Unlinking mount…' : `⏳ Linking mount "${mount}"…`);
   const btn = document.getElementById('wm-set-active-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -2574,6 +2604,7 @@ async function setWmActiveDevices() {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
   mbActionInFlight = false;
+  clearMbActionStatus();
   setStepBusy(4, false);
 }
 
@@ -2599,6 +2630,7 @@ function refreshConnectButtons() {
 async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   mbActionInFlight = true;
   setStepBusy(5, true);
+  setMbActionStatus(disconnecting ? `⏳ Disconnecting ${deviceName}…` : `⏳ Connecting ${deviceName}…`);
   const btn = document.getElementById(btnId);
   btn.disabled = true;
   btn.textContent = disconnecting ? 'disconnecting…' : 'connecting…';
@@ -2616,6 +2648,7 @@ async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   await refreshMountBridgeStatus();
   setTimeout(() => { btn.disabled = false; refreshConnectButtons(); }, 1500);
   mbActionInFlight = false;
+  clearMbActionStatus();
   setStepBusy(5, false);
 }
 
@@ -2712,6 +2745,8 @@ async function toggleWmDriver(driver) {
   setStepBusy(3, true);
   const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
   const wantsAdd = btn.textContent.trim().endsWith('add');
+  const driverLabel = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
+  setMbActionStatus(wantsAdd ? `⏳ Adding ${driverLabel} driver…` : `⏳ Removing ${driverLabel} driver…`);
   btn.disabled = true;
   btn.textContent = wantsAdd ? 'adding…' : 'removing…';
   try {
@@ -2728,6 +2763,7 @@ async function toggleWmDriver(driver) {
   await loadWmProfiles();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
   setStepBusy(3, false);
 }
 
