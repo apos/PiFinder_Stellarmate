@@ -21,11 +21,19 @@ smos_version_testing="2.2.1"
 # --action=reinstall|update|cancel: drive the existing-install menu and the
 # venv bootstrap non-interactively (used by gui_installer/server.py). Without
 # it, behavior is unchanged — the script still prompts on a terminal.
+# --branch=<name>: switch this repo (PiFinder_Stellarmate itself, not the
+# PiFinder checkout) to a different branch (e.g. "dev") before anything else
+# runs - see bin/switch_branch.sh. Optional; a no-op when omitted, same as
+# --action.
 ACTION=""
+BRANCH=""
 for arg in "$@"; do
     case "$arg" in
         --action=*)
             ACTION="${arg#--action=}"
+            ;;
+        --branch=*)
+            BRANCH="${arg#--branch=}"
             ;;
     esac
 done
@@ -35,6 +43,14 @@ done
 # re-execs below rely on `$(pwd)` (via `source $(pwd)/bin/functions.sh`) being
 # the repo root again, so they must `cd` back here first.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Branch switch (if requested) runs before self-update, which only ever
+# fast-forwards whichever branch is already checked out - it has no notion
+# of switching to a different one. See bin/switch_branch.sh for the safety
+# model (mirrors self_update.sh: skip cleanly when there's nothing to do,
+# abort loudly rather than risk a dirty tree).
+source "${SCRIPT_DIR}/bin/switch_branch.sh"
+switch_pifinder_stellarmate_branch "$SCRIPT_DIR" "$BRANCH"
 
 # Pull the latest PiFinder_Stellarmate before anything else runs - see
 # bin/self_update.sh for the safety model (skips cleanly during active

@@ -33,7 +33,7 @@ PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
 # (sys_utils.verify_password("stellarmate", password)) - one password to
 # remember for both. Only the page and state-changing actions require it;
-# /state and /log stay open so PiFinder's INDI Drivers page can cross-origin
+# /state and /log stay open so PiFinder's PFSM page can cross-origin
 # poll status and show "Setup Wizard is running" without a login prompt.
 AUTH_USER = "stellarmate"
 AUTH_REALM = "PiFinder Setup"
@@ -985,7 +985,21 @@ def _reader_thread(proc):
         _exit_code = proc.returncode
 
 
-def _start_run(action):
+def _current_pifinder_stellarmate_branch():
+    """Best-effort - None if this isn't a git checkout or the command fails,
+    which the branch-picker UI treats as "can't tell, show nothing"."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "symbolic-ref", "--short", "-q", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        branch = result.stdout.strip()
+        return branch if result.returncode == 0 and branch else None
+    except Exception:
+        return None
+
+
+def _start_run(action, branch=None):
     global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action
     with _lock:
         if _running:
@@ -1001,6 +1015,8 @@ def _start_run(action):
         _reboot_needed = None
         _last_action = action
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
+        if branch:
+            cmd.append(f"--branch={branch}")
         _process = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
@@ -1116,7 +1132,7 @@ class Handler(BaseHTTPRequestHandler):
         # /state and /log (the only _send_json callers reachable without
         # auth, see _require_auth()) are meant to be freely reachable on the
         # LAN - CORS headers don't change that, they just let PiFinder's own
-        # "INDI Drivers" page (served from a different port, hence a
+        # "PFSM" page (served from a different port, hence a
         # different origin) read the response via fetch().
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
@@ -1195,6 +1211,7 @@ class Handler(BaseHTTPRequestHandler):
                     "port": PORT,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
+                    "current_branch": _current_pifinder_stellarmate_branch(),
                 }
             )
             return
@@ -1413,7 +1430,7 @@ class Handler(BaseHTTPRequestHandler):
         global _hwtest_running
         parsed = urlparse(self.path)
 
-        # /shutdown stays open: PiFinder's INDI Drivers page (a different
+        # /shutdown stays open: PiFinder's PFSM page (a different
         # origin/port) cross-origin-POSTs here to stop the installer, and
         # cross-origin requests never carry this page's cached Basic Auth
         # credentials. Shutting the installer down isn't destructive, unlike
@@ -1427,7 +1444,16 @@ class Handler(BaseHTTPRequestHandler):
             if action not in ("fresh", "reinstall", "update", "cancel"):
                 self._send_json({"started": False, "error": f"invalid action '{action}'"}, status=400)
                 return
-            started, error = _start_run(action)
+            # branch is optional (see bin/switch_branch.sh) - only a plain
+            # branch-name shape is accepted here, since this becomes a shell
+            # argument; git's own naming rules already rule out most of the
+            # dangerous characters, but this is a defense-in-depth check, not
+            # a git-refname validator.
+            branch = qs.get("branch", [""])[0].strip()
+            if branch and not re.fullmatch(r"[A-Za-z0-9._/-]+", branch):
+                self._send_json({"started": False, "error": f"invalid branch name '{branch}'"}, status=400)
+                return
+            started, error = _start_run(action, branch or None)
             self._send_json({"started": started, "error": error})
             return
 
