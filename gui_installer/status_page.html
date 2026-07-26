@@ -2104,7 +2104,16 @@ async function refreshWmConnectRow() {
       opt.textContent = name;
       mountSelect.appendChild(opt);
     });
-    if (data.drivers.includes(previousValue)) mountSelect.value = previousValue;
+    // Prefer the actually-linked mount (per Mount Bridge's own
+    // ACTIVE_DEVICES) over whatever was last selected in this dropdown -
+    // found live: after a profile restart, this stayed on a stale/default
+    // selection even though a different mount was genuinely linked,
+    // making the dropdown contradict the rest of the tile.
+    if (wmActiveMount && data.drivers.includes(wmActiveMount)) {
+      mountSelect.value = wmActiveMount;
+    } else if (data.drivers.includes(previousValue)) {
+      mountSelect.value = previousValue;
+    }
     mountSelect.disabled = data.drivers.length === 0;
     setBtn.disabled = data.drivers.length === 0 && !wmActiveMount;
     mountBtn.disabled = data.drivers.length === 0;
