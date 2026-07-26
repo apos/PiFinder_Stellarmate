@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- Mount Bridge's setup checklist is now grouped by where you'd actually go to do each step by
+  hand - "INDI Web Manager" (Profile, KStars Link, Drivers) vs "Ekos / KStars" (Mount, a new
+  explicit Ekos-connected step, Connect) - instead of reading as a flat, ungrouped list where
+  "Profile: running" could look like it contradicted "Ekos isn't connected yet" even though
+  they're two independent systems. The Ekos-connected message also now names the profile directly
+  in both states instead of hedging on whether Ekos is using the same one.
+
 ### Fixed
 
 - Auto-correct (Goto & Track) repeatedly aborted the mount mid-slew: the Mount Bridge INDI driver
