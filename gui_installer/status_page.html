@@ -159,6 +159,24 @@
     vertical-align: middle;
   }
   .help-link:hover { color: #ccc; border-color: #999; }
+  .refresh-link {
+    display: inline-block;
+    margin-left: 0.4rem;
+    width: 1rem;
+    height: 1rem;
+    line-height: 0.9rem;
+    border-radius: 50%;
+    border: 1px solid #555;
+    color: #777;
+    font-size: 0.75rem;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+  }
+  .refresh-link:hover { color: #ccc; border-color: #999; }
   #choices p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #install-tile {
     background: #1a1a1a;
@@ -742,13 +760,14 @@ sudo systemctl start pifinder</pre>
 
     <div id="branch-picker-row">
       <span class="mb-row-label">Branch:</span>
-      <select id="branch-select" onchange="onBranchSelectChange()">
+      <select id="branch-select" onchange="onBranchSelectChange(true)">
         <option value="main">main (stable)</option>
         <option value="dev">dev (beta)</option>
         <option value="__other__">Other&hellip;</option>
       </select>
-      <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;">
+      <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
       <span id="branch-current-hint"></span>
+      <button type="button" class="refresh-link" onclick="refreshBranchInfo()" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
     </div>
 
     <div id="choices" style="display:none;"></div>
@@ -1148,7 +1167,18 @@ function showChoices(existingInstall) {
 // UI real estate for what's an advanced/rare path. Threaded through as the
 // same --branch= flag on whatever install/update run the user actually
 // starts below - no separate "switch now" action needed.
-function onBranchSelectChange() {
+// Set once the user actually interacts with the picker (either dropdown -
+// including the auto-population's own onBranchSelectChange() call for the
+// "Other" input's visibility, which is NOT a user action and must not set
+// this - see the explicit param below) - guards against sending a branch
+// that was only ever auto-populated from a page load that's since gone
+// stale (e.g. another tab/terminal merged a PR and deleted that branch in
+// the meantime - found live). Untouched means "don't ask for a switch at
+// all", not "resend whatever was on screen a while ago".
+let branchTouched = false;
+
+function onBranchSelectChange(isUserAction) {
+  if (isUserAction) branchTouched = true;
   const isOther = document.getElementById('branch-select').value === '__other__';
   document.getElementById('branch-other-input').style.display = isOther ? '' : 'none';
 }
@@ -1160,6 +1190,45 @@ function getSelectedBranch() {
   }
   return select.value;
 }
+
+// Called once at page load and then periodically (see refreshBranchInfo()
+// below) - only actually changes the dropdown/hint while the user hasn't
+// touched it themselves, so a deliberate in-progress choice never gets
+// silently overwritten by a later poll.
+function applyBranchInfo(data) {
+  if (!data.current_branch) return;
+  document.getElementById('branch-current-hint').textContent = `(currently on: ${data.current_branch})`;
+  if (branchTouched) return;
+  const branchSelect = document.getElementById('branch-select');
+  const defaultBranch = data.existing_install ? data.current_branch : 'main';
+  const knownValues = Array.from(branchSelect.options).map((o) => o.value);
+  if (knownValues.includes(defaultBranch)) {
+    branchSelect.value = defaultBranch;
+    onBranchSelectChange(false);
+  } else {
+    branchSelect.value = '__other__';
+    document.getElementById('branch-other-input').value = defaultBranch;
+    onBranchSelectChange(false);
+  }
+}
+
+// Keeps the branch picker's default/hint honest even if this tab has been
+// open across a branch switch elsewhere (another tab, a terminal, a PR
+// merge) - the picker only ever showed a snapshot from page-load time
+// otherwise. Skipped while a run is in progress (nothing to refresh, and
+// the branch is about to be whatever the run's own --branch= said anyway).
+async function refreshBranchInfo() {
+  if (polling) return;
+  try {
+    const resp = await fetch('/state', { cache: 'no-store' });
+    const data = await resp.json();
+    applyBranchInfo(data);
+  } catch (e) {
+    // leave whatever was already shown - a transient fetch failure here
+    // isn't worth surfacing on its own
+  }
+}
+setInterval(refreshBranchInfo, 30000);
 
 async function start(action) {
   if (action === 'reinstall' &&
@@ -1175,7 +1244,12 @@ async function start(action) {
   setStatus('Starting…', 'status-running');
   const branch = getSelectedBranch();
   let url = '/start?action=' + encodeURIComponent(action);
-  if (branch && branch !== 'main') url += '&branch=' + encodeURIComponent(branch);
+  // Only send a branch at all if the user actually picked one themselves -
+  // an untouched picker might be showing a stale snapshot from page-load
+  // time (see applyBranchInfo()'s own docstring), and sending that blindly
+  // could ask to switch to a branch that no longer even exists. Untouched
+  // just means "don't ask for a switch", not "resend the old default".
+  if (branchTouched && branch && branch !== 'main') url += '&branch=' + encodeURIComponent(branch);
   const resp = await fetch(url, { method: 'POST' });
   const data = await resp.json();
   if (!data.started) {
@@ -1364,11 +1438,17 @@ async function resetToChoices() {
   polling = false;
   // Re-check existing_install fresh rather than trusting the stale value
   // from before this run - a completed "fresh" install means ~/PiFinder now
-  // exists where it didn't when the page first loaded.
+  // exists where it didn't when the page first loaded. A completed run also
+  // means any branch switch it was asked to do has already happened, so the
+  // picker's own "touched" guard is cleared - the branch it just landed on
+  // is the new honest default for whatever comes next, same as a fresh page
+  // load would show.
   try {
     const resp = await fetch('/state', { cache: 'no-store' });
     const data = await resp.json();
     existingInstallKnown = data.existing_install;
+    branchTouched = false;
+    applyBranchInfo(data);
   } catch (e) {
     // fall back to whatever was already known
   }
@@ -1493,28 +1573,17 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
-  if (data.current_branch) {
-    // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
-    // regardless of which branch PiFinder_Stellarmate's own checkout happens
-    // to be on (e.g. left on "dev" from earlier testing) - switching to dev
-    // or a feature branch is meant to be a deliberate choice, not something
-    // a fresh install silently inherits. An existing install's Reinstall/
-    // Update actions, on the other hand, default to (and stick with)
-    // whatever branch is actually checked out, so a deliberate earlier
-    // switch to "dev" stays in effect on later runs instead of quietly
-    // reverting to main.
-    const branchSelect = document.getElementById('branch-select');
-    const defaultBranch = data.existing_install ? data.current_branch : 'main';
-    const knownValues = Array.from(branchSelect.options).map((o) => o.value);
-    if (knownValues.includes(defaultBranch)) {
-      branchSelect.value = defaultBranch;
-    } else {
-      branchSelect.value = '__other__';
-      document.getElementById('branch-other-input').value = defaultBranch;
-      onBranchSelectChange();
-    }
-    document.getElementById('branch-current-hint').textContent = `(currently on: ${data.current_branch})`;
-  }
+  // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
+  // regardless of which branch PiFinder_Stellarmate's own checkout happens
+  // to be on (e.g. left on "dev" from earlier testing) - switching to dev
+  // or a feature branch is meant to be a deliberate choice, not something a
+  // fresh install silently inherits. An existing install's Reinstall/Update
+  // actions, on the other hand, default to (and stick with) whatever branch
+  // is actually checked out, so a deliberate earlier switch to "dev" stays
+  // in effect on later runs instead of quietly reverting to main. See
+  // applyBranchInfo() for how this stays accurate even if the page has been
+  // open across a branch switch that happened elsewhere.
+  applyBranchInfo(data);
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
   setModeTileVisible(!data.running);
