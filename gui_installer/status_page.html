@@ -230,6 +230,18 @@
     cursor: pointer;
   }
   #close-button:hover { filter: brightness(1.3); }
+  #reset-wrap { display: none; }
+  #reset-button {
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+    margin-right: 0.6rem;
+  }
+  #reset-button:hover { filter: brightness(1.15); }
   #top-tiles-row {
     display: flex;
     align-items: flex-start;
@@ -757,6 +769,9 @@ sudo systemctl start pifinder</pre>
       <div id="status" class="status-idle">Checking current state&hellip;</div>
       <div id="reboot-wrap">
         <button id="reboot-button" onclick="reboot()">Reboot Now</button>
+      </div>
+      <div id="reset-wrap">
+        <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
       <div id="close-wrap">
         <button id="close-button" onclick="closeSetup()">Close Setup</button>
@@ -1375,6 +1390,37 @@ async function closeSetup() {
   btn.textContent = 'Closed — you can close this tab';
 }
 
+// "Close Setup" stops the whole local webserver - per live feedback, that's
+// not what's wanted right after a run finishes if there's another
+// install/update to do next. This just resets the page's own UI back to the
+// choice buttons, same as a fresh page load, without touching the server
+// process at all (the next /start call already resets all of its own state
+// anyway, see _start_run() in server.py).
+async function resetToChoices() {
+  document.getElementById('reset-wrap').style.display = 'none';
+  document.getElementById('close-wrap').style.display = 'none';
+  document.getElementById('reboot-wrap').style.display = 'none';
+  document.getElementById('progress-wrap').style.display = 'none';
+  document.getElementById('phase-checklist').style.display = 'none';
+  const logEl = document.getElementById('log');
+  logEl.textContent = 'Terminal output will appear here once you start an installation or update.';
+  logEl.classList.add('log-placeholder');
+  logEl.style.display = 'none';
+  polling = false;
+  // Re-check existing_install fresh rather than trusting the stale value
+  // from before this run - a completed "fresh" install means ~/PiFinder now
+  // exists where it didn't when the page first loaded.
+  try {
+    const resp = await fetch('/state', { cache: 'no-store' });
+    const data = await resp.json();
+    existingInstallKnown = data.existing_install;
+  } catch (e) {
+    // fall back to whatever was already known
+  }
+  setStatus('Idle', 'status-idle');
+  showChoices(existingInstallKnown);
+}
+
 async function pollLog() {
   let data;
   try {
@@ -1428,14 +1474,19 @@ async function pollLog() {
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
       } else {
-        // Only offer to close the setup GUI when a reboot isn't needed -
-        // if it is, the reboot will take the webserver down anyway.
+        // Only offer to close/reset when a reboot isn't needed - if it is,
+        // the reboot will take the webserver down anyway.
+        document.getElementById('reset-wrap').style.display = 'block';
         document.getElementById('close-wrap').style.display = 'block';
       }
     } else if (data.exit_code === null) {
       setStatus('Idle', 'status-idle');
     } else {
       setStatus('Failed (exit code ' + data.exit_code + ')', 'status-failed');
+      // Same choice as after a success - close the whole webserver, or just
+      // go back to the choices and try again without relaunching it.
+      document.getElementById('reset-wrap').style.display = 'block';
+      document.getElementById('close-wrap').style.display = 'block';
     }
     polling = false;
   }
