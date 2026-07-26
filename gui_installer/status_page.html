@@ -166,6 +166,9 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
   }
+  #branch-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
+  #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; }
+  #branch-other-input { margin-left: 0.4rem; }
   #choices button, #start-fresh {
     background: #2a6fdb;
     color: white;
@@ -737,6 +740,17 @@ sudo systemctl start pifinder</pre>
 
     <ul id="phase-checklist" style="display:none;"></ul>
 
+    <div id="branch-picker-row">
+      <span class="mb-row-label">Branch:</span>
+      <select id="branch-select" onchange="onBranchSelectChange()">
+        <option value="main">main (stable)</option>
+        <option value="dev">dev (beta)</option>
+        <option value="__other__">Other&hellip;</option>
+      </select>
+      <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;">
+      <span id="branch-current-hint"></span>
+    </div>
+
     <div id="choices" style="display:none;"></div>
 
     <div id="status-row">
@@ -858,7 +872,7 @@ function renderRemoteLinks(ips, port) {
 }
 
 // Reflects whether PiFinder itself is currently reachable (same probe that
-// drives the OLED-screen mirror) and links to its "INDI Drivers" nav page
+// drives the OLED-screen mirror) and links to its "PFSM" nav page
 // (the "INDI driver setup on PiFinder" quick-links row) once it is. Called
 // whenever that probe's result changes, not just once.
 // This is the only place PiFinder's own reachability/link is shown now (the
@@ -1119,6 +1133,25 @@ function showChoices(existingInstall) {
   }
 }
 
+// Branch picker (see bin/switch_branch.sh, pifinder_stellarmate_setup.sh's
+// --branch= flag): main/dev cover the common case as named options, "Other"
+// exposes the general case (any feature branch) without needing its own
+// UI real estate for what's an advanced/rare path. Threaded through as the
+// same --branch= flag on whatever install/update run the user actually
+// starts below - no separate "switch now" action needed.
+function onBranchSelectChange() {
+  const isOther = document.getElementById('branch-select').value === '__other__';
+  document.getElementById('branch-other-input').style.display = isOther ? '' : 'none';
+}
+
+function getSelectedBranch() {
+  const select = document.getElementById('branch-select');
+  if (select.value === '__other__') {
+    return document.getElementById('branch-other-input').value.trim();
+  }
+  return select.value;
+}
+
 async function start(action) {
   if (action === 'reinstall' &&
       !confirm('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.')) {
@@ -1132,7 +1165,10 @@ async function start(action) {
   document.getElementById('reboot-wrap').style.display = 'none';
   document.getElementById('close-wrap').style.display = 'none';
   setStatus('Starting…', 'status-running');
-  const resp = await fetch('/start?action=' + encodeURIComponent(action), { method: 'POST' });
+  const branch = getSelectedBranch();
+  let url = '/start?action=' + encodeURIComponent(action);
+  if (branch && branch !== 'main') url += '&branch=' + encodeURIComponent(branch);
+  const resp = await fetch(url, { method: 'POST' });
   const data = await resp.json();
   if (!data.started) {
     setStatus('Failed to start: ' + (data.error || 'unknown error'), 'status-failed');
@@ -1475,6 +1511,18 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
+  if (data.current_branch) {
+    const branchSelect = document.getElementById('branch-select');
+    const knownValues = Array.from(branchSelect.options).map((o) => o.value);
+    if (knownValues.includes(data.current_branch)) {
+      branchSelect.value = data.current_branch;
+    } else {
+      branchSelect.value = '__other__';
+      document.getElementById('branch-other-input').value = data.current_branch;
+      onBranchSelectChange();
+    }
+    document.getElementById('branch-current-hint').textContent = `(currently on: ${data.current_branch})`;
+  }
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
   setModeTileVisible(!data.running);
