@@ -202,14 +202,44 @@ def pifinder_driver_status(
     }
 
 
+def driver_families(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    """{label: family} for every driver in Web Manager's own catalog (GET
+    /api/drivers) - e.g. "Telescopes", "CCDs", "Auxiliary". This is the
+    *installed driver catalog*, a different thing from a running device's
+    own INDI properties (which don't self-declare a device class) - an
+    earlier version of this module's docstring said device-class detection
+    wasn't possible at all, which was wrong: it's not possible from a
+    running device's properties, but the catalog this project already
+    queries elsewhere (server.py's startup driver-registration check) has
+    had this all along. Verified live: 96 of 285 catalog entries are
+    family "Telescopes"."""
+    result = _request("GET", "/api/drivers", host, port, timeout) or []
+    return {d.get("label"): d.get("family") for d in result}
+
+
 def other_profile_drivers(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> list:
     """Phase 3 (UC5): every driver label in the profile except the two
     PiFinder ones - candidates for "which one is the mount", queried live
-    rather than hardcoded. Doesn't try to guess which one is actually a
-    telescope driver (INDI doesn't expose device class through simple
-    property introspection) - the user picks from this list themselves, per
-    the concept doc's §10 risk note."""
+    rather than hardcoded. Each entry also flags is_telescope (family ==
+    "Telescopes" per driver_families() above) so the caller can auto-select
+    an unambiguous single candidate instead of always asking the user.
+
+    Known exception: "PiFinder LX200" is *also* family "Telescopes" (it
+    implements INDI::Telescope to emulate an LX200 mount) - already
+    excluded above by label, same as PiFinder Mount Bridge, so this needs
+    no special case for it. Two residual cases this can't resolve on its
+    own: (a) more than one Telescope-family driver in the profile (e.g. a
+    leftover Telescope Simulator alongside the user's real mount) - can't
+    tell which is genuinely in use; (b) a driver mislabeled by its own
+    INDI skeleton file (family is whatever the driver author declared, not
+    independently verified). Both fall back to manual selection - see
+    is_telescope's only caller, status_page.html's mount-dropdown logic."""
     labels = get_profile_labels(profile, host, port, timeout)
-    return [label for label in labels if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL)]
+    families = driver_families(host, port, timeout)
+    return [
+        {"label": label, "is_telescope": families.get(label) == "Telescopes"}
+        for label in labels
+        if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL)
+    ]

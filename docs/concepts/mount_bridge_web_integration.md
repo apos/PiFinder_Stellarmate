@@ -366,10 +366,19 @@ same as today.
   loop stopped on a *silence* timeout, which hangs indefinitely against an already-connected device
   continuously broadcasting updates (reproduced live: 120+ second hang). Fixed with a hard
   wall-clock read deadline instead - see Phase 4's entry in §12 for the full writeup.
-- **Distinguishing "which driver is a mount"** in UC5's dropdown: INDI doesn't generically expose a
-  driver's device class through simple property introspection. Simplest, safest option for a first
-  version: list every non-PiFinder device in the profile and trust the user to pick correctly,
-  rather than trying to auto-detect "is this a telescope driver."
+- ~~Distinguishing "which driver is a mount"~~ — resolved 2026-07-26: while a *running device's own*
+  INDI properties don't self-declare a device class, Web Manager's own driver **catalog** (`GET
+  /api/drivers`) does - each entry has a `family` field ("Telescopes", "CCDs", "Auxiliary", etc.,
+  verified live: 96 of 285 catalog entries are "Telescopes"). `other_profile_drivers()` now flags
+  `is_telescope` per candidate; when exactly one profile driver is family "Telescopes", the mount
+  dropdown auto-selects and auto-links it instead of asking the user. Known exception: "PiFinder
+  LX200" is *also* family "Telescopes" (it implements `INDI::Telescope` to emulate an LX200 mount)
+  - already excluded by label alongside PiFinder Mount Bridge, so this needs no special case.
+  Residual cases that still fall back to manual selection: more than one Telescope-family driver in
+  the profile (can't tell which is genuinely in use), or a third-party driver whose own INDI
+  skeleton mislabels its family. The auto-link only fires while nothing is currently linked -
+  a user's own manual choice (or a later manual override) is never overwritten, since linking
+  anything (auto or manual) stops the auto-detect from running again until explicitly unlinked.
 - ~~Removing a single driver from a profile~~ — resolved in Phase 2 (see §4 and §12's Phase 2
   entry): the endpoint *is* a full replace, but a StellarMate-specific quirk meant removing
   `PiFinder LX200` specifically didn't work via in-place replace - worked around with a

@@ -1644,6 +1644,7 @@ function updateMbDiagram(data) {
 // completion always triggers an immediate, fresh refresh anyway.
 let mbActionInFlight = false;
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
+let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
 let wmKstarsLinked = null;
 let wmEkosConnected = null;  // null = unknown/KStars not running - see checkEkosStatus()
 let wmPifinderConnected = null;
@@ -1685,6 +1686,7 @@ async function refreshMountBridgeStatus() {
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate();
       updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
+      if (wmActiveMount) wmAutoLinkAttempted = false;  // was linked, now isn't - allow auto-detect to fire again later
       wmActiveMount = null;
       wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
       refreshWmActiveButton();
@@ -1694,6 +1696,7 @@ async function refreshMountBridgeStatus() {
     }
     updateWmCouplingGate();
     updateMbDiagram(data);
+    if (wmActiveMount && !data.active_mount) wmAutoLinkAttempted = false;  // freshly unlinked
     wmActiveMount = data.active_mount;
     wmPifinderConnected = data.pifinder_connected;
     wmBridgeConnected = data.bridge_connected;
@@ -2096,12 +2099,13 @@ async function refreshWmConnectRow() {
     const resp = await fetch(`/api/webmanager/other_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (data.error || !data.drivers) throw new Error(data.error || 'no drivers');
+    const labels = data.drivers.map((d) => d.label);
     const previousValue = mountSelect.value;
     mountSelect.innerHTML = '';
-    data.drivers.forEach((name) => {
+    data.drivers.forEach((d) => {
       const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
+      opt.value = d.label;
+      opt.textContent = d.label;
       mountSelect.appendChild(opt);
     });
     // Prefer the actually-linked mount (per Mount Bridge's own
@@ -2109,15 +2113,30 @@ async function refreshWmConnectRow() {
     // found live: after a profile restart, this stayed on a stale/default
     // selection even though a different mount was genuinely linked,
     // making the dropdown contradict the rest of the tile.
-    if (wmActiveMount && data.drivers.includes(wmActiveMount)) {
+    if (wmActiveMount && labels.includes(wmActiveMount)) {
       mountSelect.value = wmActiveMount;
-    } else if (data.drivers.includes(previousValue)) {
+    } else if (labels.includes(previousValue)) {
       mountSelect.value = previousValue;
     }
-    mountSelect.disabled = data.drivers.length === 0;
-    setBtn.disabled = data.drivers.length === 0 && !wmActiveMount;
-    mountBtn.disabled = data.drivers.length === 0;
-    noMountHint.style.display = data.drivers.length === 0 ? '' : 'none';
+    mountSelect.disabled = labels.length === 0;
+    setBtn.disabled = labels.length === 0 && !wmActiveMount;
+    mountBtn.disabled = labels.length === 0;
+    noMountHint.style.display = labels.length === 0 ? '' : 'none';
+
+    // Auto-detect: if nothing is linked yet and exactly one candidate is
+    // family "Telescopes" (see driver_families()/other_profile_drivers()
+    // in webmanager_client.py for the one real exception - PiFinder LX200
+    // is also this family but is already excluded from this list), select
+    // and link it automatically instead of making the user do it by hand.
+    // wmAutoLinkAttempted guards against re-clicking Link every poll while
+    // an attempt is still in flight or failed - it resets once something
+    // actually gets linked or unlinked again, see refreshMountBridgeStatus().
+    const telescopeCandidates = data.drivers.filter((d) => d.is_telescope);
+    if (!wmActiveMount && !wmAutoLinkAttempted && telescopeCandidates.length === 1 && !setBtn.disabled) {
+      wmAutoLinkAttempted = true;
+      mountSelect.value = telescopeCandidates[0].label;
+      setWmActiveDevices();  // its own server-side logging already records this as a normal link action
+    }
   } catch (e) {
     mountSelect.innerHTML = '<option>unavailable</option>';
     mountSelect.disabled = true;

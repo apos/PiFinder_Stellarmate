@@ -1286,7 +1286,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/webmanager/other_drivers":
             # Phase 3 (UC5): candidates for "which loaded driver is the
-            # mount" - every profile driver except the two PiFinder ones.
+            # mount" - every profile driver except the two PiFinder ones,
+            # each now flagged is_telescope so the frontend can auto-select
+            # an unambiguous single candidate (see other_profile_drivers()'s
+            # own docstring for the one real exception this needs to
+            # account for).
             qs = parse_qs(parsed.query)
             profile = qs.get("profile", [""])[0]
             if not profile:
