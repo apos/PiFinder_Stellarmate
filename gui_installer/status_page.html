@@ -2625,22 +2625,19 @@ async function checkEkosStatus() {
     row.style.display = '';
     if (data.connected) {
       el.className = 'mb-step-widget mb-hint mb-hint-ok';
-      // wmSelectedProfile is already known (step 1's own dropdown) rather
-      // than something new to query from Ekos - D-Bus has no "which
-      // profile is currently active" property to read (checked live:
-      // /KStars/Ekos only exposes getProfile(name)/setProfile(name) for a
-      // profile you already name, nothing for "what's active now"). That
-      // also means this can only ever say what THIS page is pointed at,
-      // not confirm Ekos is actually using the same one - if the user
-      // switched to a different profile directly in Ekos' own profile
-      // editor (or via the StellarMate App), this page has no way to know,
-      // so the wording deliberately doesn't claim more than it can verify.
+      // wmSelectedProfile is step 1's own dropdown value - if steps 1-4/6
+      // are actually connected (the specific PiFinder LX200/Mount
+      // Bridge/mount devices), Ekos reporting connected too can only mean
+      // it's using this same profile - those devices don't exist to connect
+      // to under a different one. No separate D-Bus verification needed.
       el.textContent = wmSelectedProfile
-        ? `✓ Ekos is connected in KStars (this page: "${wmSelectedProfile}" - can't verify Ekos is using the same profile).`
+        ? `✓ Ekos is connected in KStars (considered profile "${wmSelectedProfile}").`
         : '✓ Ekos is connected in KStars.';
     } else {
       el.className = 'mb-step-widget mb-hint';
-      el.textContent = '⚠ Ekos isn\'t connected yet - in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices.';
+      el.textContent = wmSelectedProfile
+        ? `⚠ Ekos isn't connected yet - in KStars' Ekos, start the profile "${wmSelectedProfile}" and click "Connect" under Connect & Disconnect Devices.`
+        : `⚠ Ekos isn't connected yet - in KStars' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices.`;
     }
   } catch (e) {
     row.style.display = 'none';
