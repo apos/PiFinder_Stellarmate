@@ -234,11 +234,29 @@ void PiFinderMountBridge::TimerHit()
         DriftStatusNP.s = IPS_OK;
         if (exceeded)
         {
-            const char *coordSet = (CorrectionActionS[ACTION_GOTO].s == ISS_ON) ? "TRACK" : "SYNC";
-            if (m_client->sendMountCoords(piRA, piDec, coordSet))
-                LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent %s to mount.", drift, coordSet);
+            const bool useGoto = CorrectionActionS[ACTION_GOTO].s == ISS_ON;
+
+            // A Goto correction takes far longer than one 2s tick to
+            // complete, and "drift still exceeds threshold" stays true for
+            // the whole time the mount is slewing toward it. Without this
+            // guard, every tick re-issued a fresh Goto to the (slightly
+            // updated) target, which most mount drivers handle by aborting
+            // the in-progress slew and starting over - visible as the mount
+            // repeatedly stopping/restarting, plus an "aborted" alert from
+            // the client on every abort. Sync is instantaneous (no physical
+            // motion to interrupt), so it doesn't need this guard.
+            if (useGoto && m_client->isMountSlewing())
+            {
+                // Already correcting from a previous tick - let it finish.
+            }
             else
-                LOG_ERROR("Failed to send correction to mount.");
+            {
+                const char *coordSet = useGoto ? "TRACK" : "SYNC";
+                if (m_client->sendMountCoords(piRA, piDec, coordSet))
+                    LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent %s to mount.", drift, coordSet);
+                else
+                    LOG_ERROR("Failed to send correction to mount.");
+            }
         }
     }
 
