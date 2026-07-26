@@ -98,7 +98,11 @@
      reappears on every later background refresh - each element already
      has its own "checking..." state for that, this is just for the one
      moment where the whole tile is still empty/misleading. */
-  #mb-initial-load-banner { margin-bottom: 0.6rem; }
+  #mb-initial-load-banner {
+    margin-bottom: 0.6rem;
+    opacity: 1;
+    transition: opacity 0.2s ease;
+  }
   #mb-initial-load-track {
     background: #262626;
     border-radius: 5px;
@@ -294,8 +298,34 @@
     padding: 0.5rem 0.9rem;
     font-size: 0.85rem;
     cursor: pointer;
-    margin-left: 0.6rem;
   }
+  /* Grouped by what they affect, not by when each button was added - per
+     live feedback, a horizontal row (mode/PiFinder actions) next to an
+     unrelated vertical stack (Pi power) bolted on below it looked
+     inconsistent and wasted space. Same label+divider vocabulary as
+     Coupling's Visual/GoTo split. Pi-power buttons stay a vertical pair
+     rather than joining the same row as everything else - deliberately
+     set apart, since their blast radius (the whole device) is genuinely
+     different from routine PiFinder mode/service actions. */
+  #mode-power-groups {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-top: 0.3rem;
+  }
+  .mode-power-group { flex: 0 1 auto; }
+  #mode-power-divider {
+    width: 1px;
+    align-self: stretch;
+    background: #444;
+    margin-top: 1.2rem;
+  }
+  .mode-power-group-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .mode-power-group-buttons-stacked { flex-direction: column; }
   #power-reboot-btn { background: #2a6fdb; }
   #power-poweroff-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
@@ -356,7 +386,11 @@
     align-items: stretch;
   }
   .mb-coupling-group { flex: 1; min-width: 0; }
-  .mb-coupling-group-label {
+  /* Generic small muted group-label, reused wherever controls split into
+     meaningfully different categories (Coupling's Visual/GoTo, Mode & Power's
+     PiFinder/This Pi, ...) - not Mount-Bridge-specific despite the name it
+     grew out of. */
+  .group-label {
     color: #888;
     font-size: 0.68rem;
     text-transform: uppercase;
@@ -419,12 +453,12 @@
   }
   .hw-detail:empty { display: none; }
   #hwtest-status-text { color: #888; margin-left: 0.5rem; }
+  /* Its own divider/spacing now comes from the .collapsible-toggle header
+     right above it, not from this rule directly. */
   #ext-hw-status {
-    margin-top: 0.7rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid #333;
     font-size: 0.78rem;
   }
+  #hw-status + .collapsible-toggle { margin-top: 0.7rem; }
   #mount-bridge-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -434,7 +468,36 @@
     margin-top: 1rem;
     position: relative;
   }
-  #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
+  /* The one-time loading banner used to sit in its own full-width row below
+     the heading, leaving the wide empty area to the right of "Mount Bridge"
+     unused - per live feedback, moved into that corner instead. The status
+     line + action-status hint stay in their OWN row below (per live
+     feedback correction: only the loading banner and the action-status hint
+     were meant to move - the status line/drift caption stays put, just
+     paired on its row with the action-status hint on the right). */
+  #mb-tile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+  #mb-tile-header .tile-heading { margin-bottom: 0; }
+  #mb-tile-header #mb-initial-load-banner {
+    flex-shrink: 0;
+    max-width: 55%;
+    text-align: right;
+  }
+  #mb-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  #mb-status-line {
+    font-weight: bold;
+    white-space: nowrap;
+  }
   /* Deliberately more prominent than the per-button "setting…"/"linking…"
      text it supplements - per live feedback, a label on the one button
      someone happened to click is easy to miss (and disappears the moment
@@ -442,14 +505,29 @@
      multi-step action is driving several buttons in sequence. This stays
      visible for the entire duration of ANY in-flight action on this tile,
      regardless of which button triggered it. */
+  /* Reserves its height always (rather than display:none <-> block) and
+     fades in/out instead of popping - per live feedback, an element
+     abruptly appearing/disappearing (even though the message itself is
+     wanted) reads as a jarring "kick" and shifts everything below it.
+     Reserving the space plus a short opacity transition fixes both: the
+     rest of the tile never jumps, and the message arrives/leaves smoothly. */
   #mb-action-status {
+    height: 1.9rem;
+    box-sizing: border-box;
     background: #1a3a5c;
     color: #7ec8ff;
     border-radius: 6px;
     padding: 0.4rem 0.7rem;
-    margin-bottom: 0.6rem;
     font-size: 0.8rem;
+    flex-shrink: 0;
+    max-width: 60%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.15s ease;
   }
+  #mb-action-status.mb-action-status-visible { opacity: 1; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
@@ -502,8 +580,8 @@
     color: #ccc;
   }
   .mb-icon {
-    width: 26px;
-    height: 26px;
+    width: 32.5px;
+    height: 32.5px;
     color: #666;
   }
   .mb-icon.mb-icon-connected { color: #4caf50; }
@@ -538,10 +616,23 @@
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
-  #mb-settings-divider {
+  /* Shared collapsible-section header, reused wherever a tile has a
+     "matters every time" part and a "one-time setup / rarely touched"
+     part - per live feedback/design principle, the latter defaults to
+     collapsed so it doesn't compete for attention with the former. See
+     toggleCollapsibleSection() in the script below. */
+  .collapsible-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #888;
+    font-size: 0.78rem;
+    cursor: pointer;
     border-top: 1px solid #333;
-    margin: 0.9rem 0 0.8rem 0;
+    padding-top: 0.6rem;
+    margin: 0.3rem 0 0.6rem 0;
   }
+  .collapsible-toggle:hover { color: #ccc; }
   .mb-hint {
     color: #e0a030;
     font-size: 0.74rem;
@@ -625,25 +716,38 @@
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Hardware status in the tile on the right)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-        <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
-        <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
-        <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
-        <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+        <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ql-links', 'ql-links-chevron')">
+          <span>Links</span>
+          <span id="ql-links-chevron">&#9660; show</span>
+        </div>
+        <div id="ql-links" style="display:none;">
+          <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
+          <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
+          <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
+          <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+        </div>
       </div>
       <div id="mode-tile">
-        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Mode &amp; Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div style="display:flex; gap:1.4rem; align-items:flex-start; flex-wrap:wrap;">
-          <div>
-            <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
-            <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-            <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')" title="Affects this whole Pi, not just PiFinder or this setup page.">Reboot Pi</button>
-            <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')" title="Affects this whole Pi, not just PiFinder or this setup page.">Shutdown Pi</button>
+        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
+        <div id="mode-power-groups">
+          <div class="mode-power-group" title="Mode switch and pifinder.service start/stop/restart - all software-level, all the same PiFinder instance.">
+            <div class="group-label">PiFinder</div>
+            <div class="mode-power-group-buttons">
+              <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+              <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
+              <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
+              <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
+            </div>
           </div>
-          <div style="display:flex; flex-direction:column; gap:0.4rem;" title="Directly starts/stops/restarts the pifinder.service systemd unit (Real Mode) - shouldn't normally be needed, but useful to recover a crashed/hung instance without a full mode toggle round-trip. Not meaningful while Fake Mode is running (that's a separate process, not this service).">
-            <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start PiFinder</button>
-            <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop PiFinder</button>
-            <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart PiFinder</button>
+          <div id="mode-power-divider"></div>
+          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
+            <div class="group-label">This Pi</div>
+            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
+              <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
+              <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
+            </div>
           </div>
         </div>
         <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
@@ -662,7 +766,11 @@
           <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
           <div class="hw-detail" id="hw-gps-detail"></div>
         </div>
-        <div id="ext-hw-status">
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
+          <span>Optional external hardware</span>
+          <span id="ext-hw-chevron">&#9660; show</span>
+        </div>
+        <div id="ext-hw-status" style="display:none;">
           <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
             <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
             <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
@@ -682,18 +790,22 @@ sudo systemctl start pifinder</pre>
       </div>
     </div>
     <div id="mount-bridge-tile">
-      <!-- Current status first: connection diagram, Connect buttons,
-           Coupling, Threshold - the "operate it" workflow, in this order,
-           per live user feedback. Visually separated (see #mb-settings-divider
-           below) from the one-time "set it up" rows (Profile/Drivers/Mount),
-           which now follow underneath rather than being interleaved. -->
-      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
-      <div id="mb-initial-load-banner">
-        <div id="mb-initial-load-track"><div id="mb-initial-load-fill"></div></div>
-        <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
+      <!-- Current status first: connection diagram, Coupling, Threshold -
+           the "operate it" workflow, always visible. The one-time "set it
+           up" rows (Profile/Drivers/Mount/Connect) plus Ekos status, bridge
+           settings, and the log collapse behind #mb-details-toggle - see
+           its own CSS comment. -->
+      <div id="mb-tile-header">
+        <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="mb-initial-load-banner">
+          <div id="mb-initial-load-track"><div id="mb-initial-load-fill"></div></div>
+          <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
+        </div>
       </div>
-      <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
-      <div id="mb-action-status" style="display:none;"></div>
+      <div id="mb-status-row">
+        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+        <div id="mb-action-status"></div>
+      </div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -707,8 +819,8 @@ sudo systemctl start pifinder</pre>
         <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
         <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
           <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="9" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
-            <circle cx="15" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
           </svg>
           <span>Bridge</span>
         </div>
@@ -716,20 +828,21 @@ sudo systemctl start pifinder</pre>
         <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
         <div class="mb-node" id="mb-node-mount" title="Mount">
           <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4.5" y="9.5" width="14" height="3.2" rx="1.4" transform="rotate(-28 4.5 9.5)" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M6.5 16.5 L12 19.5 L17.5 16.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <line x1="12" y1="19.5" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.2"/>
+            <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
+              <rect x="5" y="10" width="12" height="4" rx="1.6" fill="currentColor"/>
+              <circle cx="17.5" cy="12" r="2.6" fill="currentColor"/>
+              <circle cx="4" cy="12" r="1.3" fill="currentColor"/>
+            </g>
+            <path d="M11 14 L6.5 21.5 M11 14 L15.5 21.5 M11 14 L11 21.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <span id="mb-node-mount-name">Mount</span>
         </div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
-      <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
-      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see the note above if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
-        <div class="mb-coupling-label"><span>Coupling</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div id="mb-coupling-groups">
           <div class="mb-coupling-group">
-            <div class="mb-coupling-group-label">Visual</div>
+            <div class="group-label mb-coupling-label"><span>Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
               <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
@@ -737,7 +850,7 @@ sudo systemctl start pifinder</pre>
           </div>
           <div id="mb-coupling-divider"></div>
           <div class="mb-coupling-group">
-            <div class="mb-coupling-group-label">GoTo</div>
+            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
@@ -751,41 +864,47 @@ sudo systemctl start pifinder</pre>
         <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
       </div>
 
-      <div id="mb-settings-divider"></div>
+      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
+        <span>Setup checklist &amp; diagnostics</span>
+        <span id="mb-details-chevron">&#9660; show</span>
+      </div>
+      <div id="mb-details" style="display:none;">
+        <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
 
-      <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
-        <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
-        <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
-      </div>
-      <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
-      <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
-        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
-        <span id="wm-kstars-link-text" class="mb-step-widget"></span>
-        <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
-      </div>
+        <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+          <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+          <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+        </div>
+        <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
+        <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
+          <span id="wm-kstars-link-text" class="mb-step-widget"></span>
+          <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+        </div>
 
-      <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-        <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-        <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
-      </div>
-      <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-        <select id="wm-mount-select" class="mb-step-widget" disabled><option>&hellip;</option></select>
-        <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
-      </div>
-      <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
-      <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a></span>
-        <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
-        <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
-        <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-        <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-      </div>
-      <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+        <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
+          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+        </div>
+        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+          <select id="wm-mount-select" class="mb-step-widget" disabled><option>&hellip;</option></select>
+          <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+        </div>
+        <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+        <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a></span>
+          <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+          <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+          <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+          <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+        </div>
+        <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
 
-      <div id="mb-log" title="What this tile has been doing, in order."></div>
+        <div id="mb-log" title="What this tile has been doing, in order."></div>
+      </div>
     </div>
 
     <div id="footer-logos">
@@ -815,14 +934,14 @@ sudo systemctl start pifinder</pre>
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="branch-picker-row">
-      <span class="mb-row-label">Branch:</span>
+      <span class="mb-row-label">Install from:</span><a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a>
       <select id="branch-select" onchange="onBranchSelectChange(true)">
         <option value="main">main (stable)</option>
         <option value="dev">dev (beta)</option>
         <option value="__other__">Other&hellip;</option>
       </select>
       <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
-      <span id="branch-current-hint"></span>
+      <span id="branch-current-hint" style="display:none;"></span>
       <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
     </div>
 
@@ -972,7 +1091,7 @@ function updatePiFinderStatusAndWizardLink() {
       // (same known upstream issue the mode tile already accounts for).
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Hardware below)`;
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see PiFinder Mode, Test and Power)`;
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
@@ -1253,18 +1372,30 @@ function getSelectedBranch() {
 // silently overwritten by a later poll.
 function applyBranchInfo(data) {
   if (!data.current_branch) return;
-  document.getElementById('branch-current-hint').textContent = `(currently on: ${data.current_branch})`;
-  if (branchTouched) return;
-  const branchSelect = document.getElementById('branch-select');
-  const defaultBranch = data.existing_install ? data.current_branch : 'main';
-  const knownValues = Array.from(branchSelect.options).map((o) => o.value);
-  if (knownValues.includes(defaultBranch)) {
-    branchSelect.value = defaultBranch;
-    onBranchSelectChange(false);
+  if (!branchTouched) {
+    const branchSelect = document.getElementById('branch-select');
+    const defaultBranch = data.existing_install ? data.current_branch : 'main';
+    const knownValues = Array.from(branchSelect.options).map((o) => o.value);
+    if (knownValues.includes(defaultBranch)) {
+      branchSelect.value = defaultBranch;
+      onBranchSelectChange(false);
+    } else {
+      branchSelect.value = '__other__';
+      document.getElementById('branch-other-input').value = defaultBranch;
+      onBranchSelectChange(false);
+    }
+  }
+  // Only show a hint at all when the current pick would actually install
+  // from something other than what's on disk right now - per live
+  // feedback, always repeating the same value the dropdown already shows
+  // read as confusing duplication rather than useful information.
+  const hint = document.getElementById('branch-current-hint');
+  const selected = getSelectedBranch();
+  if (selected && selected !== data.current_branch) {
+    hint.textContent = `(disk is currently on ${data.current_branch})`;
+    hint.style.display = '';
   } else {
-    branchSelect.value = '__other__';
-    document.getElementById('branch-other-input').value = defaultBranch;
-    onBranchSelectChange(false);
+    hint.style.display = 'none';
   }
 }
 
@@ -1902,6 +2033,20 @@ function updateWmCouplingGate() {
   });
 }
 
+// Setup checklist/Ekos status/bridge settings/log - collapsed by default,
+// see #mb-details-toggle's own CSS comment for why.
+// Shared by every .collapsible-toggle on the page (Mount Bridge's setup
+// checklist/diagnostics, Mode & Power's optional external hardware, ...) -
+// see .collapsible-toggle's own CSS comment for the design principle this
+// follows.
+function toggleCollapsibleSection(contentId, chevronId) {
+  const content = document.getElementById(contentId);
+  const chevron = document.getElementById(chevronId);
+  const open = content.style.display === 'block';
+  content.style.display = open ? 'none' : 'block';
+  chevron.innerHTML = open ? '&#9660; show' : '&#9650; hide';
+}
+
 // Small connection diagram: PiFinder -> Bridge -> Mount, colored dots for
 // whether each device is actually connected, and the two arrows show what
 // the bridge is currently doing between them - a dotted "reading" arrow
@@ -2043,8 +2188,16 @@ function _markMbInitialLoadDone(key) {
   const fill = document.getElementById('mb-initial-load-fill');
   if (fill) fill.style.width = `${Math.round((done / total) * 100)}%`;
   if (done === total) {
+    // Fades out smoothly rather than vanishing outright (same "no sudden
+    // kick" reasoning as #mb-action-status), then collapses its reserved
+    // space only once the fade has actually finished - this one never
+    // reappears this session, so unlike the action status it doesn't need
+    // to keep holding its space open indefinitely afterward.
     const banner = document.getElementById('mb-initial-load-banner');
-    if (banner) banner.style.display = 'none';
+    if (banner) {
+      banner.style.opacity = '0';
+      setTimeout(() => { banner.style.display = 'none'; }, 200);
+    }
   }
 }
 
@@ -2053,10 +2206,10 @@ let mbActionInFlight = false;
 function setMbActionStatus(text) {
   const el = document.getElementById('mb-action-status');
   el.textContent = text;
-  el.style.display = '';
+  el.classList.add('mb-action-status-visible');
 }
 function clearMbActionStatus() {
-  document.getElementById('mb-action-status').style.display = 'none';
+  document.getElementById('mb-action-status').classList.remove('mb-action-status-visible');
 }
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
 let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
