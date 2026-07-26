@@ -1307,7 +1307,7 @@ async function powerAction(kind) {
   // an earlier, more prominent warning so it's not a surprise 409 error
   // after already committing to the action.
   const message = polling
-    ? `⚠ A setup/update run is currently in progress! ${verb}ing now would interrupt it and could leave the installation in a broken state. Wait for it to finish (or Cancel it) first. Really ${verb.toLowerCase()} anyway?`
+    ? `⚠ A setup/update run is currently in progress! ${verb}ing now would interrupt it and could leave the installation in a broken state - there's no way to stop it once started, only to wait it out. Really ${verb.toLowerCase()} anyway?`
     : `${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`;
   if (!confirm(message)) return;
   const rebootBtn = document.getElementById('power-reboot-btn');
