@@ -877,6 +877,10 @@ sudo systemctl start pifinder</pre>
         <span class="mb-row-label">Threshold:</span>
         <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
       </div>
+      <div class="mb-row" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
+        <span class="mb-row-label">Manual:</span>
+        <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount to PiFinder</button>
+      </div>
 
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics</span>
@@ -2361,6 +2365,29 @@ async function setWmCoupling(preset) {
     // buttons on this page.
   }
   btn.textContent = originalText;
+  pollMbLog();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+}
+
+async function triggerManualSync() {
+  mbActionInFlight = true;
+  setMbActionStatus('⏳ Syncing mount to PiFinder…');
+  const btn = document.getElementById('mb-manual-sync-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'syncing…';
+  try {
+    const resp = await fetch('/api/mount_bridge_manual_sync', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the Coupling preset buttons.
+  }
+  btn.textContent = originalText;
+  btn.disabled = false;
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;

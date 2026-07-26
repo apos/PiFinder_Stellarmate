@@ -1902,6 +1902,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_manual_sync":
+            # Manual, immediate one-shot: syncs the mount to PiFinder's
+            # current solved position right now, regardless of Coupling
+            # mode - the one case none of the presets react to on their own
+            # is the mount having been moved entirely by hand (no Goto at
+            # all involved).
+            _mb_log("syncing mount to PiFinder's current position...")
+            try:
+                indi_client.trigger_manual_sync()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 
