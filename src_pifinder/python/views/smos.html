@@ -14,6 +14,19 @@
   .first-steps-links { list-style: none; padding: 0; margin: 0.5rem 0; }
   .first-steps-links li { padding: 0.1rem 0; }
   .first-steps-links a { color: #7ec8ff; }
+  .first-steps-img { cursor: zoom-in; }
+  #img-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+  }
+  #img-lightbox.open { display: flex; }
+  #img-lightbox img { max-width: 95vw; max-height: 95vh; border-radius: 4px; }
 </style>
 
 <div class="row">
@@ -21,9 +34,11 @@
     <div class="card grey darken-2">
       <div class="card-content">
         <span class="card-title grey-text">1. {{ _('Set up the StellarMate Web Manager') }}</span>
-        <img src="/images/webmanager_profile.png"
+        <img src="/images/webmanager_profile_thumb.png"
              alt="{{ _('StellarMate Web Manager profile with the PiFinder LX200 and PiFinder Mount Bridge drivers running') }}"
-             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;">
+             class="first-steps-img"
+             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;"
+             onclick="openImgLightbox('/images/webmanager_profile.png', this.alt)">
         <p class="grey-text text-lighten-1">
           {{ _('Open the Web Manager (links below), create or select an Equipment Profile. Under Telescopes, add "PiFinder LX200" (and "PiFinder Mount Bridge" if you have a motorized mount), then click Start.') }}
         </p>
@@ -42,9 +57,11 @@
     <div class="card grey darken-2">
       <div class="card-content">
         <span class="card-title grey-text">2. {{ _('PiFinder Stellarmate Control Center') }}</span>
-        <img src="/images/control_center.png"
+        <img src="/images/control_center_thumb.png"
              alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
-             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;">
+             class="first-steps-img"
+             style="max-width:400px; width:100%; border-radius:4px; margin: 0.5rem 0;"
+             onclick="openImgLightbox('/images/control_center.png', this.alt)">
         <p class="grey-text text-lighten-1" id="setup-gui-status-text">{{ _('Checking status…') }}</p>
         <p class="grey-text text-lighten-1">
           {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
@@ -65,10 +82,28 @@
     </div>
   </div>
 </div>
+
+<div id="img-lightbox" onclick="closeImgLightbox()">
+  <img id="img-lightbox-img" src="" alt="">
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Thumbnails (src above) load fast; clicking one swaps in the full-
+  // resolution original here instead - only fetched on demand, not on
+  // every page load.
+  function openImgLightbox(fullSrc, alt) {
+    const img = document.getElementById('img-lightbox-img');
+    img.src = fullSrc;
+    img.alt = alt;
+    document.getElementById('img-lightbox').classList.add('open');
+  }
+  function closeImgLightbox() {
+    document.getElementById('img-lightbox').classList.remove('open');
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeImgLightbox(); });
+
   const SETUP_GUI_PORT = 8765;
 
   function setupGuiBaseUrl() {
