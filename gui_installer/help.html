@@ -112,10 +112,11 @@
 <p>Connects (or disconnects) each device's own <code>CONNECTION</code> property. <strong>Connect all (available)</strong> connects everything that's ready and not yet connected in one click - it turns green and becomes <strong>Disconnect all</strong> once everything is already connected. "PiFinder LX200" is a special case: it's automatically pointed at PiFinder's own internal position server (<code>127.0.0.1:4030</code>, fixed on every install) before connecting, since left on its default it would otherwise try to use a serial port - which is what your real mount's own driver usually needs instead.</p>
 
 <h3 id="coupling">Coupling &amp; Autoconnect</h3>
-<p>Three one-click presets, applied to the Mount Bridge driver:</p>
+<p>Four one-click presets, applied to the Mount Bridge driver:</p>
 <ul>
   <li><strong>Verify/Alert only</strong>: watches the drift between PiFinder's solved position and the mount's reported position. Never moves the mount - just a passive "is my mount still aligned?" check.</li>
-  <li><strong>Auto-correct on drift</strong>: same watching, but automatically corrects the mount (Sync or Goto/Track, your choice below) once drift exceeds the Threshold.</li>
+  <li><strong>Auto-correct (Sync)</strong>: same watching, but corrects the mount by syncing it to PiFinder's solved position once drift exceeds the Threshold - an instant position update, no slewing, works on any mount.</li>
+  <li><strong>Auto-correct (Goto &amp; Track)</strong>: same watching, but corrects by slewing the mount to PiFinder's solved position once drift exceeds the Threshold - actually moves the mount, needs a Goto-capable mount.</li>
   <li><strong>Goto-Forward</strong>: forwards every Goto command sent to PiFinder straight through to the real mount too, keeping them moving together. Threshold doesn't apply to this mode.</li>
 </ul>
 <p>The active mode is highlighted green.</p>

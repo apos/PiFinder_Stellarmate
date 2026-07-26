@@ -346,11 +346,13 @@
   }
   #mb-coupling-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 0.6rem;
   }
   .mb-coupling-btn {
     flex: 1;
+    min-width: 8rem;
     background: #2a6fdb;
     color: white;
     border: none;
@@ -704,19 +706,15 @@ sudo systemctl start pifinder</pre>
         <div class="mb-coupling-label"><span>Coupling</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a></div>
         <div id="mb-coupling-buttons">
           <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
-          <button id="wm-preset-auto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
+          <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
+          <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
           <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
         </div>
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
-      <div class="mb-row" title="Only used by Auto-correct: how far off before it corrects, and how.">
+      <div class="mb-row" title="Only used by the two Auto-correct presets: how far off before they correct.">
         <span class="mb-row-label">Threshold:</span>
         <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
-        <span class="mb-row-label" style="margin-left:0.8rem;">Correction:</span>
-        <select id="wm-action-select">
-          <option value="sync" selected>Sync</option>
-          <option value="goto">Goto/Track</option>
-        </select>
       </div>
 
       <div id="mb-settings-divider"></div>
@@ -1865,7 +1863,7 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile;
-  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }
@@ -1895,13 +1893,18 @@ function setMbArrow(id, kind) {
 // Green highlight on whichever Coupling preset is actually active right
 // now - per live feedback, matches the same "button reflects the current
 // state" idea used everywhere else on this tile.
-function updateCouplingButtons(mode) {
-  const active = {
-    MODE_VERIFY_ALERT: 'wm-preset-verify-btn',
-    MODE_AUTO_CORRECT: 'wm-preset-auto-btn',
-    MODE_GOTO_FORWARD: 'wm-preset-goto-btn',
-  }[mode];
-  ['wm-preset-verify-btn', 'wm-preset-auto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+// MODE_AUTO_CORRECT alone doesn't say which of the two Auto-correct
+// buttons (Sync vs Goto & Track) should show active - needs
+// correctionAction too (from mount_bridge_status()'s own CORRECTION_ACTION
+// reading) to tell them apart.
+function updateCouplingButtons(mode, correctionAction) {
+  let active = null;
+  if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
+  else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
+  else if (mode === 'MODE_AUTO_CORRECT') {
+    active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
+  }
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
 }
@@ -1950,7 +1953,7 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
-  updateCouplingButtons(data.coupling_mode);
+  updateCouplingButtons(data.coupling_mode, data.correction_action);
   updateBridgeSettingsInfo(data);
 
   const captionEl = document.getElementById('mb-mode-caption');
@@ -2104,21 +2107,33 @@ async function refreshMountBridgeStatus() {
 setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
 refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
 
-async function setWmCoupling(mode) {
+// The four Coupling preset buttons, mapped to the server's own (mode,
+// action) pair - "auto_correct_sync"/"auto_correct_goto" are two distinct
+// buttons client-side (per live feedback: a shared Correction dropdown
+// made no sense once you consider it's irrelevant for the other two
+// presets), but still just one underlying mode server-side, distinguished
+// by the action.
+const MB_PRESET_INFO = {
+  verify_alert: { btnId: 'wm-preset-verify-btn', mode: 'verify_alert' },
+  auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
+  auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
+  goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
+};
+
+async function setWmCoupling(preset) {
   mbActionInFlight = true;
   setMbActionStatus('⏳ Setting coupling mode…');
-  const btnId = { verify_alert: 'wm-preset-verify-btn', auto_correct: 'wm-preset-auto-btn', goto_forward: 'wm-preset-goto-btn' }[mode];
+  const { btnId, mode, action } = MB_PRESET_INFO[preset];
   const btn = document.getElementById(btnId);
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'setting…';
   const threshold = document.getElementById('wm-threshold-input').value;
-  const action = document.getElementById('wm-action-select').value;
   try {
     const params = new URLSearchParams({ mode });
     if (mode !== 'goto_forward') {
       params.set('threshold', threshold);
-      if (mode === 'auto_correct') params.set('action', action);
+      if (action) params.set('action', action);
     }
     const resp = await fetch(`/api/mount_bridge_coupling?${params}`, { method: 'POST' });
     const data = await resp.json();
