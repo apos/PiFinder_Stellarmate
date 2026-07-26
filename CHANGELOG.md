@@ -13,6 +13,16 @@ All notable changes to this project are documented in this file. Format loosely 
   "Profile: running" could look like it contradicted "Ekos isn't connected yet" even though
   they're two independent systems. The Ekos-connected message also now names the profile directly
   in both states instead of hedging on whether Ekos is using the same one.
+- Goto-Forward's post-arrival check now iteratively refines instead of a single Sync: if PiFinder's
+  solve after the mount finishes slewing is still outside Threshold, the mount is synced (correcting
+  its model) and sent the Goto again, repeating up to 3 times before giving up and logging a warning.
+
+### Added
+
+- Mount Bridge: a "Manual: Sync mount to PiFinder" button - a one-shot sync to PiFinder's current
+  solved position, works regardless of which Coupling preset (or none) is active. Covers the one
+  case none of the presets react to on their own: the mount being moved by hand with no Goto
+  involved at all.
 
 ### Fixed
 
