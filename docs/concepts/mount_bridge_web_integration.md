@@ -372,6 +372,31 @@ Two more live-feedback rounds on the same tile:
   below share the tile's full width equally at a larger size (new `.mb-coupling-btn` class,
   distinct from the generic `.ql-small-btn` used elsewhere in the tile).
 
+### 6.7 Checklist column alignment + Install/Update tile consolidation and column swap (2026-07-26)
+
+Two more layout requests, both about visual consistency rather than new capability:
+
+**1.-5. checklist column alignment**: the five step labels ("1. Profile:" vs "2. KStars Link:"
+vs "5. Connect:") differ in length, which pushed each row's dropdown/buttons to a different x
+position - looked ragged. Fixed by wrapping each row's label + help-icon in a new
+`.mb-row-lead` span given a fixed `flex: 0 0 8.6rem` width (rows themselves get a new
+`.mb-step-row` class, `display:flex; flex-wrap:wrap`), so every row's actual content (dropdown,
+status text, buttons) now starts at the same x regardless of label length.
+
+**Left/right column swap**: the page's left column (header image, path/subtitle, Install/Update
+choices, status badge, Terminal) was the most important thing at first use, but fades in
+importance once set up - while Quick Links/Mode & Power/Mount Bridge (the right column) are what
+gets checked day to day. Consolidated the whole left-column content into one proper card
+(`#install-tile`, same `background/border/border-radius` recipe as the other tiles, with
+"Install or Update" as its actual heading - the two `showChoices()` branches no longer render
+their own nested `<h3>`/card wrapper now that the outer tile provides it), then swapped which
+column holds what: `#install-tile` (+ Terminal) now lives in `.right-col` (60% width - more
+room for the terminal), while `#top-tiles-row` + `#mount-bridge-tile` now live in `.left-col`
+(40%). No changes needed to the responsive breakpoints themselves (§6.3) - since mobile stacking
+order follows DOM order and `.left-col`'s content now renders first, Quick Links/Mode/Mount
+Bridge stack above the Install routine on phones, matching the "install moves further down"
+expectation, for free.
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same

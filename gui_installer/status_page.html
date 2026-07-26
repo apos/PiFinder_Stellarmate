@@ -117,14 +117,7 @@
   .status-running { background: #1a3a5c; color: #7ec8ff; }
   .status-success { background: #1a4a2a; color: #7ee8a0; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
-  .choice-card {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.8rem;
-  }
-  .choice-card h3, .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
+  .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
   .help-link {
     display: inline-block;
     margin-left: 0.4rem;
@@ -141,7 +134,13 @@
     vertical-align: middle;
   }
   .help-link:hover { color: #ccc; border-color: #999; }
-  .choice-card p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
+  #choices p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
+  #install-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+  }
   #choices button, #start-fresh {
     background: #2a6fdb;
     color: white;
@@ -365,6 +364,23 @@
   #mb-status-line { font-weight: bold; margin-bottom: 0.6rem; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
+  /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
+     "Mount:"), which pushed each row's dropdown/buttons to a different
+     x position - per live feedback, give the leading label+help-icon a
+     fixed width so everything after it lines up in a column. */
+  .mb-step-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    column-gap: 0.5rem;
+    row-gap: 0.3rem;
+  }
+  .mb-row-lead {
+    flex: 0 0 8.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
      directly beside the Bridge icon rather than off in a corner - per live
@@ -511,34 +527,6 @@
 
 <div class="page">
   <div class="left-col">
-    <div id="top-images">
-      <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
-    </div>
-
-    <div class="subtitle" id="subtitle">live status</div>
-
-    <div id="progress-wrap" style="display:none;">
-      <div id="progress-track"><div id="progress-fill"></div></div>
-      <div id="progress-label"></div>
-    </div>
-
-    <ul id="phase-checklist" style="display:none;"></ul>
-
-    <div id="choices" style="display:none;"></div>
-
-    <div id="status-row">
-      <div id="status" class="status-idle">Checking current state&hellip;</div>
-      <div id="reboot-wrap">
-        <button id="reboot-button" onclick="reboot()">Reboot Now</button>
-      </div>
-      <div id="close-wrap">
-        <button id="close-button" onclick="closeSetup()">Close Setup</button>
-      </div>
-    </div>
-    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
-  </div>
-
-  <div class="right-col">
     <div id="top-tiles-row">
       <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
@@ -659,31 +647,31 @@ sudo systemctl start pifinder</pre>
 
       <div id="mb-settings-divider"></div>
 
-      <div class="mb-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-        <span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a>
+      <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
         <select id="wm-profile-select" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
         <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
       </div>
       <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
-      <div id="wm-kstars-link-row" class="mb-row" style="display:none;">
-        <span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a>
+      <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
         <span id="wm-kstars-link-text"></span>
         <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
       </div>
 
-      <div class="mb-row" title="Add or remove the PiFinder drivers for this profile.">
-        <span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a>
+      <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
         <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
         <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
       </div>
-      <div class="mb-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-        <span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a>
+      <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
         <select id="wm-mount-select" disabled><option>&hellip;</option></select>
         <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
       </div>
       <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
-      <div class="mb-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-        <span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a>
+      <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Connect:</span><a class="help-link" href="/help.html#step5-connect" target="_blank" rel="noopener" title="Help">i</a></span>
         <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
         <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
@@ -701,6 +689,37 @@ sudo systemctl start pifinder</pre>
       <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
         <img src="/avvp_logo.png" alt="AVVP">
       </a>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div id="install-tile">
+      <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+    <div id="top-images">
+      <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
+    </div>
+
+    <div class="subtitle" id="subtitle">live status</div>
+
+    <div id="progress-wrap" style="display:none;">
+      <div id="progress-track"><div id="progress-fill"></div></div>
+      <div id="progress-label"></div>
+    </div>
+
+    <ul id="phase-checklist" style="display:none;"></ul>
+
+    <div id="choices" style="display:none;"></div>
+
+    <div id="status-row">
+      <div id="status" class="status-idle">Checking current state&hellip;</div>
+      <div id="reboot-wrap">
+        <button id="reboot-button" onclick="reboot()">Reboot Now</button>
+      </div>
+      <div id="close-wrap">
+        <button id="close-button" onclick="closeSetup()">Close Setup</button>
+      </div>
+    </div>
+    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
   </div>
 </div>
@@ -1057,22 +1076,16 @@ function showChoices(existingInstall) {
   el.style.display = 'block';
   if (existingInstall) {
     el.innerHTML = `
-      <div class="choice-card">
-        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
-        <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
-        <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
-        <button class="choice-btn cancel" onclick="start('cancel')" title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</button>
-      </div>
+      <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
+      <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
+      <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
+      <button class="choice-btn cancel" onclick="start('cancel')" title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</button>
     `;
   } else {
     el.innerHTML = `
-      <div class="choice-card">
-        <h3>No existing installation found</h3>
-        <p>Clones PiFinder from the official <code>release</code> branch into ~/PiFinder and
-           applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
-        <button id="start-fresh" onclick="start('fresh')">Start Install</button>
-      </div>
+      <p>No existing installation found. Clones PiFinder from the official <code>release</code> branch into
+         ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
+      <button id="start-fresh" onclick="start('fresh')">Start Install</button>
     `;
   }
 }
