@@ -298,6 +298,7 @@ void PiFinderMountBridge::handleGotoForward()
                           targetRA, targetDec);
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
+                m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
                 m_forwardState = ForwardState::SLEWING;
             }
             else
@@ -339,25 +340,45 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift > threshold)
+            if (drift > threshold && m_settleRetriesRemaining > 0)
             {
-                // The mount already physically arrived via the Goto above;
-                // a residual here is a mount-model/PiFinder-alignment
-                // offset, not a missed slew - true it up with a Sync, not
-                // another full Goto.
-                if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
-                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin (threshold %.1f) - synced mount.",
-                              drift, threshold);
-                else
+                // The mount already physically arrived via the Goto above,
+                // but a residual this size usually means its own model was
+                // slightly off at this sky position - Sync corrects that
+                // model with PiFinder's more precise solve, then re-issuing
+                // the Goto (now benefiting from the corrected model) should
+                // land closer. Keep refining until within threshold or the
+                // retry budget (MAX_SETTLE_RETRIES) runs out - unbounded
+                // retries would chase solve noise forever if the residual
+                // never actually clears.
+                --m_settleRetriesRemaining;
+                if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                {
                     LOG_ERROR("Failed to send verification sync to mount.");
+                    m_forwardState = ForwardState::IDLE;
+                    break;
+                }
+                if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                {
+                    LOG_ERROR("Failed to re-issue Goto to mount after sync.");
+                    m_forwardState = ForwardState::IDLE;
+                    break;
+                }
+                LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin exceeds threshold %.1f -"
+                          " synced and re-issued Goto (%d attempt(s) left).",
+                          drift, threshold, m_settleRetriesRemaining);
+                m_forwardState = ForwardState::SLEWING;
             }
             else
             {
-                LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
-                          drift, threshold);
+                if (drift > threshold)
+                    LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
+                              MAX_SETTLE_RETRIES, drift, threshold);
+                else
+                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                              drift, threshold);
+                m_forwardState = ForwardState::IDLE;
             }
-
-            m_forwardState = ForwardState::IDLE;
             break;
         }
     }

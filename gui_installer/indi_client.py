@@ -547,3 +547,16 @@ def set_coupling_mode(
         set_switch("PiFinder Mount Bridge", "CORRECTION_ACTION", element, host, port, timeout)
 
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
+
+
+def trigger_manual_sync(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: syncs the mount to PiFinder's current solved position right
+    now (MANUAL_TRIGGER's TRIGGER_SYNC_NOW element) - works regardless of
+    which Coupling mode (or Off) is active. Useful after moving the mount by
+    hand (no Goto involved at all), where none of the Coupling presets would
+    otherwise react."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)

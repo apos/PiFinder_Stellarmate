@@ -436,16 +436,23 @@ stateDiagram-v2
     SLEWING --> SLEWING: Mount noch busy
     SLEWING --> SETTLING: Mount fertig geslewt
     SETTLING --> SETTLING: Settle-Ticks (3× Poll-Zyklus)\nwarten auf frischen PiFinder-Solve
-    SETTLING --> IDLE: Drift berechnet;\nbei Überschreitung Sync gesendet
+    SETTLING --> SLEWING: Drift über Threshold,\nRetries übrig: Sync + Goto erneut gesendet
+    SETTLING --> IDLE: innerhalb Threshold,\noder Retries aufgebraucht
 ```
 
 Warum ein Settle-Delay? PiFinder braucht nach einer physischen Bewegung der Montierung (auf der es
 befestigt ist) einen Moment, um neu zu solven — die Bridge wartet 3 Poll-Zyklen (Standard: 6
 Sekunden bei 2s-Polling), bevor sie die "Ist"-Position als verlässlich behandelt.
 
-Warum am Ende ein **Sync** statt eines erneuten Goto? Die Mount ist durch den vorherigen Goto bereits
-physisch angekommen — eine verbleibende Abweichung ist ein Kalibrierungs-/Modellfehler, kein
-verpasster Slew. Ein erneutes Goto würde unnötig hin- und herfahren ("hunting").
+Warum **Sync gefolgt von einem erneuten Goto**, nicht nur ein Sync? Die Mount ist durch den
+vorherigen Goto bereits physisch angekommen, eine verbleibende Abweichung ist meist ein leicht
+falsches Mount-Modell an dieser Himmelsposition, kein verpasster Slew - ein reiner Sync würde die
+Mount-Koordinaten nur umbenennen, ohne die Mount tatsächlich näher ans Ziel zu bringen. Der Sync
+korrigiert zuerst das Modell mit PiFinders präziserem Solve, der anschließende erneute Goto
+(profitiert jetzt vom korrigierten Modell) sollte näher landen. Das wiederholt sich - erneut
+prüfen, bei weiterer Überschreitung wieder Sync + Goto - bis zu `MAX_SETTLE_RETRIES` (3) Versuche,
+bevor aufgegeben und eine Warnung geloggt wird, damit ein wirklich verrauschter Solve nicht endlos
+gejagt wird.
 
 Warum snoopt die Bridge `TARGET_EOD_COORD` statt einer eigenen Property? `INDI::Telescope`
 (Basisklasse jedes LX200-artigen Treibers, inkl. `PiFinder LX200`) veröffentlicht diese Property
