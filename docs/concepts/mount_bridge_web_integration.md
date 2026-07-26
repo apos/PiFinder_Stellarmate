@@ -290,11 +290,33 @@ basic-memory `pifinder-stellarmate/00053`):
   entirely) - phones and tablet-portrait collapse to one column, tablet-landscape/large-tablet/PC
   keep the existing two-column split, which already scales with window width.
 
-**Open item, not yet implemented**: the EKOS profile in KStars needs to actually be
-*started/connected*, not just linked (Web-Manager checkbox set) - Coupling commands aren't
-meaningful otherwise, since the StellarMate App is understood to couple to the EKOS instance
-actually running on the device. Needs a way to check EKOS's own connection state, likely another
-read-only check similar to `_kstars_webmanager_link_status()`, not yet designed or built.
+### 6.4 Ekos-connected hard gate (2026-07-26)
+
+Resolved the open item from 6.3: Ekos itself (KStars' own INDI client, distinct from indiserver
+simply running with devices connected via this tile's own Web-Manager/INDI-client path) must be
+connected for a Coupling command to actually reach the session the user - or the StellarMate App,
+understood to piggyback on Ekos - is observing through. Confirmed live: Ekos's own D-Bus property
+`org.kde.kstars.Ekos.indiStatus` read `0` (Idle) while several devices were already connected
+through this tile.
+
+**Explicit decision** (asked, not assumed): hard gate, not a soft warning - Coupling presets and
+Autoconnect now also require Ekos to report connected, exactly like needing a mount linked.
+`_ekos_indi_status()` in `server.py` reads this via `qdbus6 org.kde.kstars /KStars/Ekos
+org.kde.kstars.Ekos.indiStatus` (Idle=0/Pending=1/Success=2/Error=3, KStars' own enum) - read-only,
+never calls Ekos's own `connectDevices()`/`disconnectDevices()` D-Bus methods even though they
+exist, since driving a GUI the user may be actively looking at without being asked crosses a line
+this project has held to elsewhere (see the KStars-DB-is-read-only note in 6.3). "KStars isn't
+running at all" is its own distinct state (D-Bus name unregistered), not an error.
+
+This also prompted a broader process note from the user, worth recording verbatim in spirit:
+Mount Bridge's UI has so far reported mostly at a *technical* level (property names, driver
+states) - correct and necessary, but the *use case* (what the user is actually trying to do -
+"Auto-correct on drift", "get my mount synced to what I'm pointing at") needs to be equally
+front-and-center, not just the technical substrate underneath it. Concretely, this shapes the
+bar for what "done" means going forward: features need to satisfy the use case itself, the GUI
+requirements (technically correct *and* visually clear/appropriate), and the internal
+process/edge-cases - verified deliberately, not just exercised once live and moved past. Slower,
+more rigorous, better-documented iteration is the explicit priority over speed from here.
 
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
