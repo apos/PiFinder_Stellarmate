@@ -180,7 +180,6 @@
     cursor: pointer;
   }
   #choices button.danger { background: #a33; }
-  #choices button.cancel { background: #444; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
   .choice-btn { margin: 0 0.6rem 0.6rem 0; }
   #log.log-placeholder {
@@ -815,9 +814,8 @@ function missingHardwareLabel() {
   if (lastHwImu === false) missing.push('IMU');
   return missing.join('/');
 }
-// Cancel is only ever offered on the existing-install choice screen, so this
-// is always true by the time a "Cancelled" status needs to re-show it - but
-// keep it in sync with what /state actually reports, not just assumed.
+// Kept in sync with what /state actually reports (see init()/resetToChoices()),
+// not just assumed - a completed "fresh" install flips this from false to true.
 let existingInstallKnown = true;
 
 function setStatus(text, cls) {
@@ -830,8 +828,8 @@ function setStatus(text, cls) {
 // switch/hardware checks/Solve Simulation/LCD/numpad controls are relevant
 // (or safe to touch) mid-run, and the tile just clutters the page while the
 // terminal is the only thing that matters. Shown again as soon as the run
-// finishes (success, failure, or cancel) or on page load if nothing is
-// running - see pollLog()'s data.running branch.
+// finishes (success or failure) or on page load if nothing is running -
+// see pollLog()'s data.running branch.
 function setModeTileVisible(visible) {
   document.getElementById('mode-tile').style.display = visible ? '' : 'none';
 }
@@ -1132,12 +1130,20 @@ async function toggleKeyboardBridge() {
 function showChoices(existingInstall) {
   const el = document.getElementById('choices');
   el.style.display = 'block';
+  // "Close Setup" (see closeSetup()) covers "I don't want to do anything,
+  // just shut this down" more directly than the old Cancel button did -
+  // that one spawned the whole setup script (including the branch-switch/
+  // self-update steps that now run first) just to print one line and exit
+  // 0, after which the JS shut the server down anyway. Cancel itself is
+  // still a real interactive-terminal menu option in
+  // pifinder_stellarmate_setup.sh for people running it directly without
+  // the GUI - only the GUI's own redundant round-trip through it is gone.
+  document.getElementById('close-wrap').style.display = 'block';
   if (existingInstall) {
     el.innerHTML = `
       <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
       <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
       <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
-      <button class="choice-btn cancel" onclick="start('cancel')" title="Does nothing to the existing installation and shuts down this setup webserver. Run launch_setup_gui.sh again (or the &quot;Start Setup Wizard&quot; button on PiFinder's own website) if you need it later.">Cancel</button>
     `;
   } else {
     el.innerHTML = `
@@ -1355,10 +1361,10 @@ async function pifinderServiceAction(action) {
   }, 2000);
 }
 
-// Shared by closeSetup() and the post-Cancel auto-shutdown below - there's
-// no more idle-timeout to fall back on (removed per user feedback: it once
-// cut off a still-in-progress session), so anything that means "I'm done
-// here" should actually stop the server rather than leave it dangling.
+// There's no idle-timeout to fall back on (removed per earlier user
+// feedback: it once cut off a still-in-progress session), so closeSetup()
+// below actually has to stop the server itself rather than leaving it
+// dangling once the user is done here.
 async function shutdownServer() {
   try {
     const resp = await fetch('/shutdown', { method: 'POST' });
@@ -1448,28 +1454,7 @@ async function pollLog() {
     setStatus('Running…', 'status-running');
     setTimeout(pollLog, 1000);
   } else {
-    if (data.exit_code === 0 && data.action === 'cancel') {
-      // Cancel exits 0 too (nothing went wrong) but nothing was installed -
-      // showing "Success" + PiFinder-ready links, or a checklist with green
-      // checkmarks for whatever phase it happened to reach, would both be
-      // misleading (updateChecklist() above just marked those phases
-      // "done"). Hide the progress UI entirely - cancelling means none of
-      // it counts. Cancel also means "I'm done here", and there's no
-      // idle-timeout anymore to close the server if the user just walks
-      // away - so shut it down rather than leave it sitting there
-      // re-showing the same choices.
-      document.getElementById('progress-wrap').style.display = 'none';
-      document.getElementById('phase-checklist').style.display = 'none';
-      setStatus('Cancelled — closing setup GUI…', 'status-idle');
-      shutdownServer().then((error) => {
-        if (error) {
-          setStatus('Cancelled (could not close: ' + error + ')', 'status-idle');
-          showChoices(existingInstallKnown);
-        } else {
-          setStatus('Cancelled — you can close this tab', 'status-idle');
-        }
-      });
-    } else if (data.exit_code === 0) {
+    if (data.exit_code === 0) {
       setStatus('Success', 'status-success');
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
