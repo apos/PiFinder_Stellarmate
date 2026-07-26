@@ -25,7 +25,8 @@
   #img-lightbox.open { display: flex; }
   #img-lightbox img { max-width: 95vw; max-height: 95vh; border-radius: 4px; }
   #pfsm-cc-row { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
-  #pfsm-cc-row img { width: 140px; border-radius: 4px; flex-shrink: 0; }
+  #pfsm-cc-thumb-col { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+  #pfsm-cc-thumb-col img { width: 140px; border-radius: 4px; }
   #wm-setup-toggle {
     display: flex;
     justify-content: space-between;
@@ -44,13 +45,15 @@
       <div class="card-content">
         <span class="card-title grey-text">{{ _('PFSM Control Center') }}</span>
         <div id="pfsm-cc-row">
-          <img src="/images/control_center_thumb.png"
-               alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
-               class="first-steps-img"
-               onclick="openImgLightbox('/images/control_center.png', this.alt)">
+          <div id="pfsm-cc-thumb-col">
+            <img src="/images/control_center_thumb.png"
+                 alt="{{ _('PiFinder Stellarmate Control Center page, showing install progress, the OLED mirror, mode/hardware status, and power controls') }}"
+                 class="first-steps-img"
+                 onclick="openImgLightbox('/images/control_center.png', this.alt)">
+            <button id="setup-gui-toggle-btn" class="btn grey darken-1" style="display:none;" onclick="setupGuiToggle()">{{ _('Start Setup Wizard') }}</button>
+          </div>
           <div style="flex: 1; min-width: 200px;">
             <p class="grey-text text-lighten-1" id="setup-gui-status-text" style="margin-top: 0;">{{ _('Checking status…') }}</p>
-            <button id="setup-gui-toggle-btn" class="btn grey darken-1" onclick="setupGuiToggle()">{{ _('Checking…') }}</button>
             <p class="grey-text text-lighten-1" style="margin-bottom: 0.2rem;">{{ _('Reachable at:') }}</p>
             <ul class="first-steps-links">
               {% for ip in ips %}
@@ -60,7 +63,7 @@
           </div>
         </div>
         <p class="grey-text text-lighten-1" style="margin-top: 0.8rem;">
-          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it below (or via Cancel in the wizard itself) once you\'re done with it.') }}
+          {{ _('Installs, updates, or reinstalls PiFinder_Stellarmate. It can also drive the PiFinder device\'s hardware (Fake/Real Mode, LCD, numpad) for development purposes. It can still trigger destructive actions (delete + reinstall) - stop it via Cancel in the wizard itself once you\'re done with it.') }}
         </p>
         <p class="grey-text text-lighten-1">
           {{ _('The site is protected by your StellarMate account password (see') }}
@@ -145,12 +148,13 @@
       const resp = await fetch(setupGuiBaseUrl() + '/state', { cache: 'no-store' });
       if (!resp.ok) throw new Error('not ok');
       statusText.textContent = '🟢 {{ _("Running.") }}';
-      btn.textContent = '{{ _("Stop Setup Wizard") }}';
-      btn.onclick = setupGuiStop;
+      // No Stop button here while it's running - per request, that's
+      // Cancel-in-the-wizard's job; this page only needs to offer starting
+      // it, not stopping it.
+      btn.style.display = 'none';
     } catch (e) {
       statusText.textContent = '⚪ {{ _("Not running.") }}';
-      btn.textContent = '{{ _("Start Setup Wizard") }}';
-      btn.onclick = setupGuiStart;
+      btn.style.display = '';
     }
   }
 
@@ -163,21 +167,8 @@
     setTimeout(refreshSetupGuiStatus, 1500);
   }
 
-  async function setupGuiStop() {
-    if (!confirm('{{ _("Stop the Setup Wizard webserver?") }}')) return;
-    try {
-      await fetch(setupGuiBaseUrl() + '/shutdown', { method: 'POST' });
-    } catch (e) {
-      // network error here can also mean it shut down successfully
-    }
-    setTimeout(refreshSetupGuiStatus, 1000);
-  }
-
   function setupGuiToggle() {
-    // onclick is reassigned by refreshSetupGuiStatus() to the right action
-    // once the real state is known - this initial handler only fires if
-    // clicked before the first check completes.
-    refreshSetupGuiStatus();
+    setupGuiStart();
   }
 
   refreshSetupGuiStatus();

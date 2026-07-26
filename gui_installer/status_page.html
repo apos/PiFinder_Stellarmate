@@ -285,6 +285,38 @@
   .ql-small-btn:disabled { background: #444; cursor: default; }
   .ql-small-btn:not(:disabled):hover { filter: brightness(1.15); }
   .ql-small-btn.mb-btn-active { background: #2e7d32; }
+  /* Coupling presets are the tile's central control (per live feedback) -
+     bigger and full-width, with their own label line above instead of
+     squeezed inline to the buttons' left. */
+  .mb-coupling-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #ddd;
+    font-size: 0.85rem;
+  }
+  #mb-coupling-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+  .mb-coupling-btn {
+    flex: 1;
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.65rem 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+  }
+  .mb-coupling-btn:disabled { background: #444; cursor: default; }
+  .mb-coupling-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .mb-coupling-btn.mb-btn-active { background: #2e7d32; }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -607,10 +639,12 @@ sudo systemctl start pifinder</pre>
       <div id="mb-mode-caption">Not coupled yet</div>
       <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see the note above if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
-        <span class="mb-row-label">Coupling:</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a>
-        <button id="wm-preset-verify-btn" class="ql-small-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
-        <button id="wm-preset-auto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
-        <button id="wm-preset-goto-btn" class="ql-small-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+        <div class="mb-coupling-label"><span>Coupling</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a></div>
+        <div id="mb-coupling-buttons">
+          <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+          <button id="wm-preset-auto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct')" disabled>Auto-correct on drift</button>
+          <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+        </div>
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" title="Only used by Auto-correct: how far off before it corrects, and how.">
@@ -1640,7 +1674,10 @@ function updateWmCouplingGate() {
 // mount, solid green when forwarding a goto straight through.
 function setMbNodeDot(id, connected) {
   const el = document.getElementById(id);
-  el.className = 'mb-icon' + (connected === true ? ' mb-icon-connected' : connected === false ? ' mb-icon-disconnected' : '');
+  // el is an <svg> - className is a read-only SVGAnimatedString there
+  // (unlike the <span> the old status-dot used), so plain assignment
+  // silently no-ops. setAttribute is what actually works for SVG elements.
+  el.setAttribute('class', 'mb-icon' + (connected === true ? ' mb-icon-connected' : connected === false ? ' mb-icon-disconnected' : ''));
 }
 
 function setMbArrow(id, kind) {

@@ -347,6 +347,31 @@ only the live checkout would have silently reverted on the next install/update. 
 patch still applies cleanly with a reverse-then-forward round-trip test against the live file
 rather than needing the pristine upstream original.
 
+### 6.6 Icon-color bug fix, PFSM Start-button visibility, Coupling control resize (2026-07-26)
+
+Live testing of 6.5's icon-first diagram surfaced a real bug, not just a style preference: the
+PiFinder/Bridge/Mount icons stayed grey regardless of actual connection state. Root cause -
+`setMbNodeDot()` sets `el.className = '...'` to toggle the connected/disconnected color class,
+which worked fine on the old `<span class="status-dot">` but silently no-ops on the new `<svg>`
+elements, since `SVGElement.className` is a read-only `SVGAnimatedString` (distinct from the
+plain-string `className` every HTML element has). Fixed by switching to
+`el.setAttribute('class', ...)`, which works uniformly for both element types. Worth remembering
+generally: any future icon/indicator work using inline `<svg>` must use `setAttribute`/`classList`,
+never plain `.className =`.
+
+Two more live-feedback rounds on the same tile:
+- **PFSM page's Start/Stop button**: per request, no longer shown at all while the wizard is
+  running (its Cancel button is the intended way to stop it from within the wizard itself, not
+  this page) - only appears, as "Start Setup Wizard", while it's not running. Moved from beside
+  the status text to directly under the thumbnail image.
+- **Coupling control**: the three preset buttons are the tile's actual central control (per the
+  user's own framing) and read as too small/cramped, with the "Coupling:" label squeezed inline
+  to their left. Iterated three mockup options with the user (segmented full-width row / choice
+  cards with descriptions / same layout just bigger) - picked the full-width segmented option:
+  "Coupling" now sits on its own label line (with the help icon beside it), the three buttons
+  below share the tile's full width equally at a larger size (new `.mb-coupling-btn` class,
+  distinct from the generic `.ql-small-btn` used elsewhere in the tile).
+
 ## 7. Portability Strategy (Control Center Now, PiFinder Web Interface Later)
 
 Per explicit instruction: **build this in the Control Center first, but architected so the same
