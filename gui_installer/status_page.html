@@ -344,11 +344,34 @@
     color: #ddd;
     font-size: 0.85rem;
   }
-  #mb-coupling-buttons {
+  /* Grouped into "Visual" (never/gently touches the mount) vs "GoTo"
+     (actually slews it) per live feedback - a divider plus small labels,
+     reusing the same muted-caption + hairline-divider vocabulary already
+     used elsewhere on this tile, rather than inventing new colors/icons
+     to encode the same distinction. */
+  #mb-coupling-groups {
+    display: flex;
+    gap: 0.7rem;
+    margin-bottom: 0.6rem;
+    align-items: stretch;
+  }
+  .mb-coupling-group { flex: 1; min-width: 0; }
+  .mb-coupling-group-label {
+    color: #888;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.4rem;
+  }
+  .mb-coupling-group-buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-bottom: 0.6rem;
+  }
+  #mb-coupling-divider {
+    width: 1px;
+    background: #444;
+    margin-top: 1.3rem;
   }
   .mb-coupling-btn {
     flex: 1;
@@ -704,11 +727,22 @@ sudo systemctl start pifinder</pre>
       <div id="mb-ekos-status" class="mb-hint" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through."></div>
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see the note above if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div class="mb-coupling-label"><span>Coupling</span><a class="help-link" href="/help.html#coupling" target="_blank" rel="noopener" title="Help">i</a></div>
-        <div id="mb-coupling-buttons">
-          <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
-          <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
-          <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
-          <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+        <div id="mb-coupling-groups">
+          <div class="mb-coupling-group">
+            <div class="mb-coupling-group-label">Visual</div>
+            <div class="mb-coupling-group-buttons">
+              <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+              <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
+            </div>
+          </div>
+          <div id="mb-coupling-divider"></div>
+          <div class="mb-coupling-group">
+            <div class="mb-coupling-group-label">GoTo</div>
+            <div class="mb-coupling-group-buttons">
+              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
+              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
