@@ -205,10 +205,21 @@ def mount_bridge_status(
         devices' own CONNECTION state (None if not set/queryable yet)
       - "coupling_mode": str or None - whichever BRIDGE_MODE element is "On"
       - "drift_arcmin": float or None - current DRIFT_STATUS reading
-    All fields besides "running" are None if the device isn't running/known.
-    `device_timeout` is shorter than `timeout` for the two extra per-device
-    lookups (kept modest since this function is polled regularly - see
-    status_page.html's refreshMountBridgeStatus()).
+      - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
+        own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
+        indiserver is - not necessarily this function's own host/port args
+      - "settings_correct": bool - settings_host/port actually match this
+        function's own host/port (treating "localhost"/"127.0.0.1" as the
+        same thing - the driver's own default is the string "localhost")
+        *and* active_pifinder is exactly "PiFinder LX200" (its own fixed
+        default) - a quick "is Mount Bridge pointed at the right things"
+        sanity check, surfaced in the tile per user request rather than
+        only being visible via the INDI Control Panel.
+    All fields besides "running" are None (or False for settings_correct)
+    if the device isn't running/known. `device_timeout` is shorter than
+    `timeout` for the two extra per-device lookups (kept modest since this
+    function is polled regularly - see status_page.html's
+    refreshMountBridgeStatus()).
     """
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
@@ -222,16 +233,30 @@ def mount_bridge_status(
             "mount_connected": None,
             "coupling_mode": None,
             "drift_arcmin": None,
+            "settings_host": None,
+            "settings_port": None,
+            "settings_correct": False,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
     drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
     active_pifinder = active_devices.get("ACTIVE_PIFINDER") or None
     active_mount = active_devices.get("ACTIVE_MOUNT") or None
+    settings_host = bridge_settings.get("INDISERVER_HOST") or None
+    settings_port = bridge_settings.get("INDISERVER_PORT") or None
+    # "localhost" and "127.0.0.1" are the same thing here (the driver's own
+    # default is the string "localhost") - comparing by string alone would
+    # flag a perfectly fine setup as wrong.
+    settings_correct = (
+        settings_host in ("localhost", "127.0.0.1")
+        and settings_port == str(port)
+        and active_pifinder == "PiFinder LX200"
+    )
 
     pifinder_connected = None
     if active_pifinder:
@@ -252,6 +277,9 @@ def mount_bridge_status(
         "mount_connected": mount_connected,
         "coupling_mode": coupling_mode,
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+        "settings_host": settings_host,
+        "settings_port": settings_port,
+        "settings_correct": settings_correct,
     }
 
 

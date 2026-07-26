@@ -508,24 +508,24 @@
           </div>
           <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
           <div class="hw-detail" id="hw-camera-detail"></div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-imu-detail"></div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-gps-detail"></div>
-          <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
           <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
             <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
+          <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-imu-detail"></div>
+          <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+          <div class="hw-detail" id="hw-gps-detail"></div>
         </div>
         <div id="ext-hw-status">
-          <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
-            <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
-            <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
-          </div>
           <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
             <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
             <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row hw-keyboard"><span class="status-dot dot-white"></span>Keyboard: not tested here - needs PiFinder stopped, see <code>test_tools/keypad_gpio_matrix_test.py</code></div>
+          <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
+            <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
+            <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
           </div>
         </div>
       </div>
@@ -597,6 +597,7 @@
         <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
         <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
       </div>
+      <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
 
       <div id="mb-log" title="What this tile has been doing, in order."></div>
     </div>
@@ -1596,12 +1597,36 @@ function updateDriftBadge(driftArcmin, threshold) {
   else badge.classList.add('mb-drift-green');
 }
 
+// Step 5's own "is this actually pointed at the right things" readout -
+// Mount Bridge's BRIDGE_SETTINGS (which indiserver it thinks it's using)
+// and ACTIVE_DEVICES (which two devices it's bridging), plus the server's
+// own settings_correct verdict - per request, so this is visible in the
+// tile itself rather than only via the INDI Control Panel.
+function updateBridgeSettingsInfo(data) {
+  const el = document.getElementById('mb-bridge-settings');
+  if (!data.running || !data.settings_host) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+  const pifinderName = data.active_pifinder || '(none)';
+  const mountName = data.active_mount || '(none)';
+  if (data.settings_correct) {
+    el.className = 'mb-hint mb-hint-ok';
+    el.textContent = `✓ Settings: ${data.settings_host}:${data.settings_port}, linked to ${pifinderName} / ${mountName}.`;
+  } else {
+    el.className = 'mb-hint';
+    el.textContent = `⚠ Unexpected: ${data.settings_host}:${data.settings_port}, ACTIVE_PIFINDER=${pifinderName} (expected localhost:7624, PiFinder LX200).`;
+  }
+}
+
 function updateMbDiagram(data) {
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-node-lx200-dot', data.pifinder_connected);
   setMbNodeDot('mb-node-bridge-dot', data.bridge_connected);
   setMbNodeDot('mb-node-mount-dot', data.mount_connected);
   updateCouplingButtons(data.coupling_mode);
+  updateBridgeSettingsInfo(data);
 
   const captionEl = document.getElementById('mb-mode-caption');
   const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
