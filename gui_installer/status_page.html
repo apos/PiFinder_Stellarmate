@@ -853,9 +853,6 @@ sudo systemctl start pifinder</pre>
         </div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
-      <div class="mb-row" title="Runs the same setup any Coupling preset below would trigger automatically if it isn't finished yet (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific mode at the end. Useful to get everything ready first, then pick a mode once and for all.">
-        <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
-      </div>
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div id="mb-coupling-groups">
           <div class="mb-coupling-group">
@@ -890,6 +887,9 @@ sudo systemctl start pifinder</pre>
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
+        <div class="mb-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+          <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
+        </div>
         <div class="group-label">INDI Web Manager</div>
 
         <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
