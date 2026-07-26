@@ -159,6 +159,24 @@
     vertical-align: middle;
   }
   .help-link:hover { color: #ccc; border-color: #999; }
+  .refresh-link {
+    display: inline-block;
+    margin-left: 0.4rem;
+    width: 1rem;
+    height: 1rem;
+    line-height: 0.9rem;
+    border-radius: 50%;
+    border: 1px solid #555;
+    color: #777;
+    font-size: 0.75rem;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+  }
+  .refresh-link:hover { color: #ccc; border-color: #999; }
   #choices p { margin: 0 0 0.8rem; color: #aaa; font-size: 0.9rem; line-height: 1.4; }
   #install-tile {
     background: #1a1a1a;
@@ -749,6 +767,7 @@ sudo systemctl start pifinder</pre>
       </select>
       <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
       <span id="branch-current-hint"></span>
+      <button type="button" class="refresh-link" onclick="refreshBranchInfo()" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
     </div>
 
     <div id="choices" style="display:none;"></div>
