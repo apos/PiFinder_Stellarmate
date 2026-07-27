@@ -19,11 +19,18 @@ Two things are being conflated at first glance, and need separating:
    (1). Even a from-scratch full StellarMate-style install on Astroberry would hit this same wall.
 
 `pifinder_stellarmate_setup.sh` is deeply StellarMate/Arch-specific today: `pacman` throughout,
-StellarMate-specific hardware/udev/GPIO group setup, SMOS version checks. None of that applies on
-Debian-family systems. The good news: the actual Python side of this project
+StellarMate-specific hardware/udev/GPIO group setup, SMOS version checks. **None of the hardware/
+udev/GPIO work is relevant to this mode on *any* platform - not because it would need porting, but
+because there is no PiFinder hardware attached at all in this scenario.** GPIO group membership,
+camera/IMU udev rules, boot-time config - all of it exists purely to make PiFinder's own physical
+sensors work, and none of that applies when this host's only job is running an INDI driver and a
+web page. So this isn't "StellarMate-specific work we need to reimplement per OS" - it's simply
+**skipped entirely**, on every OS, in this mode. The only things this mode actually needs, on any
+of Arch/Debian/Ubuntu/NixOS, are: a C++ toolchain + `libindi` dev headers to compile against, and a
+Python 3 interpreter to run the Control Center. The Python side of this project
 (`gui_installer/*.py`) is **already** portable - confirmed zero PiFinder-specific or third-party
-imports beyond stdlib, so the Control Center itself runs unmodified on any OS with Python 3. The
-work is entirely in the *installer*, not the web app it installs.
+imports beyond stdlib, so it runs unmodified anywhere Python 3 exists. The work is entirely in the
+*installer's package-install step*, nothing else.
 
 ## 2. Requirements
 
@@ -34,15 +41,69 @@ only"**, in both entry points (`--mode=indi_only` flag for the terminal script, 
 option in `gui_installer`'s Install/Update tile) - matching the existing `--action=`/`--branch=`
 flag pattern rather than introducing a different mechanism.
 
-### R2: OS/package-manager abstraction, scoped narrowly
+### R2: OS/package-manager abstraction, scoped narrowly - but planned for four managers from day one
 
 Only the actual package-installation calls need abstracting - not a full OS-abstraction framework.
-Concretely: a small `bin/os_detect.sh` (or similar) that identifies `pacman` vs `apt` (and maybe
-`dnf`, though no current use case calls for it) and exposes a couple of thin wrapper functions
-(`os_install_packages "pkg1" "pkg2" ...`) used everywhere a package needs installing. StellarMate's
-own full install keeps using `pacman` calls as today (no regression risk to the existing, tested
-path) - the abstraction is *additive*, used only by the new INDI-only mode's package list
-(`cmake`, `build-essential`/`base-devel`, `libindi-dev`/`libindi`, `git`).
+Concretely: a small `bin/os_detect.sh` (or similar) that identifies the package manager and exposes
+a couple of thin wrapper functions (`os_install_packages "pkg1" "pkg2" ...`) used everywhere a
+package needs installing. StellarMate's own full install keeps using `pacman` calls as today (no
+regression risk to the existing, tested path) - the abstraction is *additive*, used only by the new
+INDI-only mode's package list (`cmake`, `build-essential`/`base-devel`, `libindi-dev`/`libindi`,
+`git`).
+
+**Target set, decided up front rather than added ad hoc**: `pacman` (Arch/StellarMate - the one
+actually tested, since it's the only hardware available right now), `apt` (Debian/Ubuntu/
+Astroberry), and **Nix** (NixOS - added explicitly because PiFinder v4 itself is expected to be
+NixOS-based, per direct instruction, making this a real near-term target, not a speculative one).
+Arch is *not* treated as a special case bolted onto an apt-first design - the abstraction's
+dispatch table has all of pacman/apt/nix as first-class entries from the start, so the shape it
+takes doesn't quietly assume a Debian-centric world.
+
+**Nix needs its own subsection, not just another table row** - it works differently enough from
+apt/pacman to call out explicitly:
+- Nix has two usable modes: an **imperative** one that works on *any* Linux with the Nix package
+  manager installed, not just NixOS (`nix profile install nixpkgs#cmake`, or an ephemeral
+  `nix shell nixpkgs#cmake nixpkgs#libindi`), and NixOS's own **declarative** one (add packages to
+  `/etc/nixos/configuration.nix`'s `environment.systemPackages`, then `nixos-rebuild switch`).
+  Programmatically editing a user's existing `configuration.nix` safely (without clobbering
+  whatever's already there) is a materially harder problem than an apt/pacman one-liner - so the
+  imperative mode (treating Nix like "yet another package manager we shell out to", the same shape
+  as the pacman/apt wrappers) is the pragmatic choice for this installer, not the "proper" NixOS
+  declarative approach.
+- **Not yet verified**: whether `libindi`/`libindi-dev` actually exists in `nixpkgs`, and under what
+  package name/attribute path. Needs checking against the real nixpkgs package search before this
+  is more than a plausible plan.
+
+**Explicitly not planned for right now: Flatpak/Snap.** Worth naming why, since they came up in the
+original discussion: those are end-user *application* distribution/sandboxing formats, not sources
+of `-dev` headers to compile against - you can't straightforwardly link a CMake build against a
+library shipped inside a Flatpak sandbox. They'd only become relevant if this project ever needed
+to *distribute a pre-built driver binary* to end users without compiling locally, which is a
+different problem than the one R2 solves. Not ruled out forever, just not the same kind of "package
+manager" this abstraction is for.
+
+**Is there existing prior art for this kind of abstraction, instead of building it from scratch?**
+Yes, worth naming explicitly rather than assuming reinvention is the only option:
+- **Ansible's `package`/`ansible.builtin.package` module** is the most mature, widely-used answer to
+  exactly this problem - it auto-detects the underlying package manager (apt/dnf/pacman/zypper/...)
+  and dispatches accordingly. The tradeoff: adopting it means taking on Python+Ansible as a new
+  installer dependency and moving to a declarative-playbook model, a bigger shift than this
+  project's current minimal-dependency, plain-bash-plus-stdlib-Python philosophy justifies for what
+  is, in scope, a handful of packages.
+- **Nix itself as a *uniform* layer** is a more strategically interesting alternative worth flagging
+  seriously (not just for NixOS - Nix the package manager installs cleanly alongside pacman/apt on
+  any Linux distro, and `nixpkgs` package names/behavior are then *identical* regardless of the
+  underlying OS). That would let this project skip the whole "map a generic name to N different
+  per-distro package names" problem entirely, for every current and future target - genuinely
+  appealing given PiFinder v4's own direction. The cost: it adds a new bootstrap dependency (Nix
+  itself) on hosts that don't already have it (StellarMate/Astroberry today), which is exactly the
+  kind of new prerequisite this concept is trying to avoid imposing casually. Recorded here as a
+  serious option to revisit once NixOS support is a concrete, time-tested need - not adopted now.
+- **Recommendation for now**: build the small, purpose-built dispatch table (pacman/apt/nix, three
+  cases) rather than adopting Ansible or requiring Nix as a bootstrap dependency - designed so
+  adding a fourth manager later (`dnf`/`zypper`/`apk`) is "add one more case", the same shape
+  Ansible's own module list already proves works well as a pattern, without adopting Ansible
+  itself.
 
 ### R3: Skip everything PiFinder-application-specific
 
@@ -65,7 +126,8 @@ install-mode plumbing exists - not a blocker for R1-R3.
 flowchart TD
     Start["pifinder_stellarmate_setup.sh\n--mode=full|indi_only"] --> Mode{"mode?"}
     Mode -->|full, StellarMate/Arch| Full["existing flow, unchanged\n(pacman, clone+patch PiFinder,\nvenv, catalog, hardware, INDI build)"]
-    Mode -->|indi_only, any OS| Light["os_detect.sh picks pacman/apt\n-> install cmake/libindi-dev/git\n-> build_indi_driver.sh (+ bridge)\n-> Control Center install (Mount-Bridge-only view)"]
+    Mode -->|indi_only, any OS| Detect["os_detect.sh: pacman | apt | nix"]
+    Detect --> Light["install cmake/libindi-dev/git\nvia the detected manager's wrapper\n-> build_indi_driver.sh (+ bridge)\n-> Control Center install (Mount-Bridge-only view)"]
 ```
 
 - `build_indi_driver.sh`/`build_indi_bridge.sh` already don't call any package manager themselves
@@ -80,9 +142,13 @@ flowchart TD
 - **Additive, not a rewrite.** The existing StellarMate/Arch path must not change behavior or risk
   regressions - this is exactly the kind of high-value, high-traffic path this project has spent
   this whole session hardening (branch picker, git exit-code checks). New logic sits beside it.
-- **Narrow abstraction, not a framework.** Resist the urge to build a general "supports any Linux"
-  abstraction layer speculatively - only abstract the concrete packages the INDI-only path actually
-  needs, expand later if a real second OS-specific need appears.
+- **Narrow abstraction, not a framework - but plan the dispatch table for pacman/apt/nix from the
+  start, not just the one platform tested today.** Resist building a general "supports any Linux"
+  framework speculatively, but don't under-design either: Nix is included now, not deferred until
+  "a real need appears", because PiFinder v4's own NixOS direction makes it a known near-term need
+  rather than speculation. Only abstract the concrete packages this mode actually installs (four:
+  `cmake`, `build-essential`/`base-devel`, `libindi-dev`/`libindi`, `git`) - breadth of *managers*
+  is planned in, breadth of *packages* stays minimal.
 - **One script, one CHANGELOG, one release cadence** - matches the explicit "don't maintain two
   setup versions" preference, and keeps this session's established release-workflow discipline
   (see basic-memory `00027`/`00074`) applying to this new mode automatically, not as a fork to
@@ -96,9 +162,19 @@ from the day it's written, not retrofitted later.
 
 ## 6. Known Risks / Open Questions
 
-- **No real Astroberry/Ubuntu test hardware available yet** - the apt-side package names/repo setup
-  are researched (issue #37's draft) but not run end-to-end on real hardware. Treat as design-only
-  until physically verified.
+- **No real Astroberry/Ubuntu/NixOS test hardware available yet - deliberately deferred, not
+  ignored.** The abstraction's *shape* (pacman/apt/nix as three first-class cases) is designed in
+  now, per explicit instruction, so extending to those platforms later is "verify and fill in a
+  table row", not "redesign the abstraction" - but actually running any of the apt or nix paths
+  end-to-end on real hardware stays deferred until that hardware/environment exists. Arch is the
+  only path that can be verified today.
+- **`libindi`/`libindi-dev` presence and package name in `nixpkgs` is unverified** - plausible given
+  nixpkgs' size and the astronomy-software community's general Nix adoption, but not confirmed
+  against the actual package search. First concrete thing to check before the Nix case is anything
+  more than a plan.
+- **Nix's imperative-vs-declarative tension** (see R2) means the Nix case may end up feeling
+  different in practice from the pacman/apt ones even with the same wrapper interface - worth a
+  real trial run once Nix/NixOS is actually being tested, not assumed away on paper.
 - **Package name drift across distros/versions** - `libindi-dev` availability/version varies by
   Debian/Ubuntu release; Astroberry's own repo (not stock Debian) is the researched path for
   Raspberry Pi OS specifically, per issue #37 - a plain Ubuntu Intel box may need yet another repo
@@ -112,7 +188,9 @@ from the day it's written, not retrofitted later.
 ## 7. Effort & Priority
 
 R1-R3 (mode flag, OS abstraction, skip logic) are a well-scoped, moderate effort - most of the hard
-research (package names, build-script portability) is already done via issue #37's draft. R4 (which
+research (package names, build-script portability) is already done via issue #37's draft for the
+apt case. The Nix case adds real, currently-unverified research (nixpkgs package name/availability)
+but no additional *architectural* complexity beyond one more dispatch-table entry. R4 (which
 Control Center tiles apply) is a separate, smaller design pass that can follow once R1-R3 exist and
 someone can actually click through the result.
 
