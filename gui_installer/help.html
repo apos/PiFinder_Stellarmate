@@ -97,6 +97,10 @@
   <li><strong>Run Again</strong> (shown after a run finishes): resets this page back to the choice buttons above, without shutting anything down - use this if there's another install/update to do next. This webserver is meant to just keep running; restart it via PiFinder's own "Start Setup Wizard" button on the PFSM page if it's ever off, and stop it deliberately via <code>launch_setup_gui.sh --shutdown-webserver</code> from a terminal if you actually want to.</li>
 </ul>
 
+<h2 id="indi-only-mode">INDI-only</h2>
+<p>For running just the INDI drivers and Control Center on a host with no PiFinder hardware attached at all - e.g. a separate StellarMate/Astroberry "control host" coupled to a real PiFinder elsewhere over the network (see <code>docs/concepts/remote_indi_coupling_split_host.md</code>). Check the box, then click <strong>Install INDI-only</strong>.</p>
+<p>Installs the INDI build dependencies (<code>cmake</code>, build tools, <code>libindi-dev</code>, <code>git</code>) and builds/installs both INDI drivers - nothing else. Your existing <code>~/PiFinder</code> installation (if any) is never touched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup. On StellarMate, package installation briefly and automatically disables StellarMate's own Atomic Updates protection (voids the warranty while running) and restores it immediately afterward, success or failure - you'll see StellarMate's own warning text scroll past in the log; that's expected, not an error.</p>
+
 <h2 id="mount-bridge">Mount Bridge</h2>
 <p>Couples PiFinder's own solved sky position with a real telescope mount, via the <strong>PiFinder Mount Bridge</strong> INDI driver - so you don't need to open the separate INDI Control Panel for the common cases. The tile is organized as a numbered setup checklist (below the divider line) plus a live status/operate area (above it): connection diagram, Coupling presets, and the drift readout.</p>
 <p>Each numbered step shows a green checkmark once it's actually satisfied, and a yellow spinning symbol while its own action is running.</p>

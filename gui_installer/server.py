@@ -100,6 +100,19 @@ PHASES = [
     "Building INDI drivers",
     "Setup complete",
 ]
+# --mode=indi_only's own, much shorter phase() call sequence - a completely
+# separate list, not a subset of PHASES, since "Building INDI drivers" also
+# appears there: matching by name against the full list (see _reader_thread()
+# below) would otherwise land on that entry's position in PHASES (index 8 of
+# 10) and mark everything before it - hardware access, cloning, venv, star
+# catalog, none of which indi_only mode ever runs - as falsely "done". Found
+# live (2026-07-28) via the Control Center's own checklist showing exactly
+# that.
+PHASES_INDI_ONLY = [
+    "Installing INDI build dependencies",
+    "Building INDI drivers",
+    "Setup complete",
+]
 PHASE_MARKER = "###PHASE### "
 REBOOT_MARKER = "###REBOOT_NEEDED### "
 
@@ -140,6 +153,7 @@ _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 _last_action = None  # "fresh" | "reinstall" | "update"
+_last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
 
 _mode_action_running = False  # True while fake_mode.sh start/stop is in flight
 _mode_lines = []  # fake_mode.sh's own stdout/stderr, shown in the shared Terminal tile
@@ -960,6 +974,9 @@ def _get_all_ips():
 
 def _reader_thread(proc):
     global _running, _exit_code, _phase_index, _reboot_needed
+    # _last_mode is set by _start_run() before this thread starts and never
+    # changes for the lifetime of this run - safe to read once, unlocked.
+    phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
     with open(LOG_FILE, "w") as log_f:
         for line in iter(proc.stdout.readline, ""):
             log_f.write(line)
@@ -967,9 +984,9 @@ def _reader_thread(proc):
             stripped = line.rstrip("\n")
             if stripped.startswith(PHASE_MARKER):
                 label = stripped[len(PHASE_MARKER):]
-                if label in PHASES:
+                if label in phases:
                     with _lock:
-                        _phase_index = max(_phase_index, PHASES.index(label))
+                        _phase_index = max(_phase_index, phases.index(label))
                 continue  # phase markers are for the progress bar, not the log panel
             if stripped.startswith(REBOOT_MARKER):
                 with _lock:
@@ -997,8 +1014,8 @@ def _current_pifinder_stellarmate_branch():
         return None
 
 
-def _start_run(action, branch=None):
-    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action
+def _start_run(action, branch=None, mode=None):
+    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode
     with _lock:
         if _running:
             return False, "A run is already in progress."
@@ -1012,9 +1029,12 @@ def _start_run(action, branch=None):
         _phase_index = -1
         _reboot_needed = None
         _last_action = action
+        _last_mode = mode or "full"
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
         if branch:
             cmd.append(f"--branch={branch}")
+        if mode and mode != "full":
+            cmd.append(f"--mode={mode}")
         _process = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
@@ -1195,15 +1215,16 @@ class Handler(BaseHTTPRequestHandler):
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
                 last_action = _last_action
+                phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
                     "existing_install": PIFINDER_DIR.is_dir(),
                     "running": running,
                     "exit_code": exit_code,
                     "phase_index": phase_index,
-                    "phase_total": len(PHASES),
-                    "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
-                    "phases": PHASES,
+                    "phase_total": len(phases),
+                    "phase_label": phases[phase_index] if phase_index >= 0 else None,
+                    "phases": phases,
                     "setup_script_path": str(SETUP_SCRIPT),
                     "ips": _get_all_ips(),
                     "port": PORT,
@@ -1407,6 +1428,7 @@ class Handler(BaseHTTPRequestHandler):
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
                 last_action = _last_action
+                phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
                     "lines": new_lines,
@@ -1414,8 +1436,8 @@ class Handler(BaseHTTPRequestHandler):
                     "running": running,
                     "exit_code": exit_code,
                     "phase_index": phase_index,
-                    "phase_total": len(PHASES),
-                    "phase_label": PHASES[phase_index] if phase_index >= 0 else None,
+                    "phase_total": len(phases),
+                    "phase_label": phases[phase_index] if phase_index >= 0 else None,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                 }
@@ -1457,7 +1479,14 @@ class Handler(BaseHTTPRequestHandler):
             if branch and not re.fullmatch(r"[A-Za-z0-9._/-]+", branch):
                 self._send_json({"started": False, "error": f"invalid branch name '{branch}'"}, status=400)
                 return
-            started, error = _start_run(action, branch or None)
+            # --mode=indi_only (see docs/concepts/setup_indi_only_install_mode.md,
+            # R1) - installs just the INDI stack, no PiFinder hardware/
+            # application. Optional; omitted/"full" is today's unchanged behavior.
+            mode = qs.get("mode", ["full"])[0].strip()
+            if mode not in ("full", "indi_only"):
+                self._send_json({"started": False, "error": f"invalid mode '{mode}'"}, status=400)
+                return
+            started, error = _start_run(action, branch or None, mode)
             self._send_json({"started": started, "error": error})
             return
 
