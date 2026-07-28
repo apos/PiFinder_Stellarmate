@@ -191,6 +191,7 @@
     padding: 0.7rem 0.9rem;
   }
   #branch-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
+  #mode-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
   #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; }
   #branch-other-input { margin-left: 0.4rem; }
   #choices button, #start-fresh {
@@ -974,6 +975,14 @@ sudo systemctl start pifinder</pre>
       <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
     </div>
 
+    <div id="mode-picker-row">
+      <label>
+        <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
+        INDI-only (no PiFinder hardware - for control-host setups)
+      </label>
+      <a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
+    </div>
+
     <div id="choices" style="display:none;"></div>
 
     <div id="status-row">
@@ -1336,9 +1345,33 @@ async function toggleKeyboardBridge() {
   refreshKeyboardBridge();
 }
 
+// --mode=indi_only (see docs/concepts/setup_indi_only_install_mode.md, R1):
+// installs just the INDI drivers + build deps, no PiFinder hardware/
+// application - irrelevant whether an existing ~/PiFinder install exists, so
+// it gets its own single button instead of reusing the reinstall/update
+// choices (whose confirm text and "delete ~/PiFinder" semantics don't apply
+// here at all). lastExistingInstall is remembered so the checkbox's own
+// onchange can re-render the same choices it was last given, without
+// needing a fresh /state round-trip just to toggle a checkbox.
+let indiOnlyMode = false;
+let lastExistingInstall = false;
+
+function onIndiOnlyToggle(checked) {
+  indiOnlyMode = checked;
+  showChoices(lastExistingInstall);
+}
+
 function showChoices(existingInstall) {
+  lastExistingInstall = existingInstall;
   const el = document.getElementById('choices');
   el.style.display = 'block';
+  if (indiOnlyMode) {
+    el.innerHTML = `
+      <p>Installs the INDI build dependencies and drivers only - no PiFinder hardware, clone, or Python environment is touched.</p>
+      <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
+    `;
+    return;
+  }
   // No "Cancel"/"Close Setup" choice here - this webserver is meant to just
   // keep running (matching /smos's own "Start" without a "Stop"), and
   // restarting it when needed is already covered there. The old Cancel
@@ -1502,6 +1535,7 @@ async function start(action) {
   // just like any other choice, or the switch silently never happens and
   // whatever branch was already checked out stays checked out.
   if (branchTouched && branch) url += '&branch=' + encodeURIComponent(branch);
+  if (indiOnlyMode) url += '&mode=indi_only';
   const resp = await fetch(url, { method: 'POST' });
   const data = await resp.json();
   if (!data.started) {

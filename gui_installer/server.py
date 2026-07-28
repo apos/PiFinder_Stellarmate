@@ -997,7 +997,7 @@ def _current_pifinder_stellarmate_branch():
         return None
 
 
-def _start_run(action, branch=None):
+def _start_run(action, branch=None, mode=None):
     global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action
     with _lock:
         if _running:
@@ -1015,6 +1015,8 @@ def _start_run(action, branch=None):
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
         if branch:
             cmd.append(f"--branch={branch}")
+        if mode and mode != "full":
+            cmd.append(f"--mode={mode}")
         _process = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
@@ -1457,7 +1459,14 @@ class Handler(BaseHTTPRequestHandler):
             if branch and not re.fullmatch(r"[A-Za-z0-9._/-]+", branch):
                 self._send_json({"started": False, "error": f"invalid branch name '{branch}'"}, status=400)
                 return
-            started, error = _start_run(action, branch or None)
+            # --mode=indi_only (see docs/concepts/setup_indi_only_install_mode.md,
+            # R1) - installs just the INDI stack, no PiFinder hardware/
+            # application. Optional; omitted/"full" is today's unchanged behavior.
+            mode = qs.get("mode", ["full"])[0].strip()
+            if mode not in ("full", "indi_only"):
+                self._send_json({"started": False, "error": f"invalid mode '{mode}'"}, status=400)
+                return
+            started, error = _start_run(action, branch or None, mode)
             self._send_json({"started": started, "error": error})
             return
 
