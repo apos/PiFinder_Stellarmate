@@ -728,11 +728,31 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  #device-role-line {
+    background: #1a2433;
+    border: 1px solid #2c4a6e;
+    color: #bcd4ee;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+  }
+  #device-role-line strong { color: #e8f1fb; }
 </style>
 </head>
 <body>
 
 <h1>PiFinder on Stellarmate Control Center</h1>
+
+<!-- Which role this device plays in a (possibly split) setup - see
+     docs/concepts/remote_indi_coupling_split_host.md. Derived from whether
+     PiFinder itself is installed here (~/PiFinder exists): absent means the
+     role is unambiguous (control host, INDI-only). Present means BOTH roles
+     are possible (all-in-one, or PiFinder host for a separate control host)
+     - that ambiguity is real and the text says so honestly instead of
+     guessing; which one it is depends on where the user runs the mount
+     coupling, which no detection here can know. -->
+<div id="device-role-line" style="display:none;"></div>
 
 <div id="conn-lost-banner" style="display:none;"></div>
 
@@ -948,7 +968,10 @@ sudo systemctl start pifinder</pre>
       </div>
     </div>
 
-    <div id="pfhost-tile">
+    <!-- Hidden until init() knows this device's role (renderDeviceRole()) -
+         on a control host (no PiFinder installed) there is no local PiFinder
+         to share, so this tile never applies there. -->
+    <div id="pfhost-tile" style="display:none;">
       <h3 class="tile-heading" title="Expose this device's own PiFinder LX200 INDI driver to a separate control host elsewhere on your network - for a split setup where PiFinder hardware and Mount Bridge/mount coupling run on two different machines. See the help link for the full picture.">PiFinder Host Setup<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></h3>
       <div class="mb-row" title="Type this into the control host's Web Manager profile, in its 'Remote Drivers' field, as PiFinder LX200@&lt;this IP&gt;:7624 - see the help link.">
         <span class="mb-row-label">This device's IP:</span>
@@ -1126,6 +1149,30 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
 // Part of the consolidated quick-links tile.
+// Which role this device plays - see the #device-role-line HTML comment for
+// why "PiFinder installed" is the deciding fact and why the PiFinder case
+// deliberately names BOTH possible roles instead of picking one. Also hides
+// the PiFinder Host Setup tile on a control host: with no PiFinder installed
+// here, there is no local PiFinder LX200 to share, so every one of that
+// tile's steps would be meaningless.
+function renderDeviceRole(pifinderInstalled) {
+  const line = document.getElementById('device-role-line');
+  const pfhostTile = document.getElementById('pfhost-tile');
+  line.style.display = '';
+  if (pifinderInstalled) {
+    line.innerHTML = 'This device is a <strong>PiFinder</strong> (PiFinder software is installed here). '
+      + 'It can do the mount coupling itself (Mount Bridge tile), or act as the PiFinder host for a '
+      + 'separate control host (PiFinder Host Setup tile) - both are possible, depending on where you '
+      + 'run the mount. <a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a>';
+    pfhostTile.style.display = '';
+  } else {
+    line.innerHTML = 'This device is a <strong>control host</strong> (no PiFinder installed - INDI-only). '
+      + 'It couples to a PiFinder running on another device on your network, via the Mount Bridge tile. '
+      + '<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a>';
+    pfhostTile.style.display = 'none';
+  }
+}
+
 // This device's own LAN IP(s), for the PiFinder Host Setup tile - the one
 // piece of information a user setting up the split-host coupling actually
 // needs handed to them (see docs/concepts/remote_indi_coupling_split_host.md,
@@ -1784,6 +1831,9 @@ async function resetToChoices() {
     existingInstallKnown = data.existing_install;
     branchTouched = false;
     applyBranchInfo(data);
+    // A completed fresh install may have just changed this device's role
+    // (no ~/PiFinder before, one now) - reflect that without a page reload.
+    renderDeviceRole(existingInstallKnown);
   } catch (e) {
     // fall back to whatever was already known
   }
@@ -1909,6 +1959,7 @@ async function init() {
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
   renderPfhostIp(data.ips);
+  renderDeviceRole(data.existing_install);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
   // regardless of which branch PiFinder_Stellarmate's own checkout happens
   // to be on (e.g. left on "dev" from earlier testing) - switching to dev

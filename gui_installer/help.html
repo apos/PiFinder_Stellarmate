@@ -140,6 +140,7 @@
 
 <h3 id="pifinder-host-notes">Good to know</h3>
 <ul>
+  <li><strong>Which role does my device have?</strong> The blue banner at the very top of the Control Center tells you: if PiFinder software is installed on the device, it can act as a PiFinder host (this tile applies) <em>or</em> do everything itself - your choice. If no PiFinder is installed (INDI-only), the device is a control host, and this tile is hidden there - it has no local PiFinder to share.</li>
   <li>This tile shares steps 1-2 with the <a href="#mount-bridge">Mount Bridge</a> tile - same profile, same state, just a shorter view. Changes in one are immediately reflected in the other.</li>
   <li>Both devices must be on the same network, and port <code>7624</code> must be reachable between them (firewall).</li>
   <li>Full architecture: <code>docs/concepts/remote_indi_coupling_split_host.md</code> in the project repository.</li>
