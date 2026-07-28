@@ -1367,7 +1367,12 @@ function showChoices(existingInstall) {
   el.style.display = 'block';
   if (indiOnlyMode) {
     el.innerHTML = `
-      <p>Installs the INDI build dependencies and drivers only - no PiFinder hardware, clone, or Python environment is touched.</p>
+      <p>Use this if this machine has <strong>no PiFinder hardware attached at all</strong> - for example a separate StellarMate/Astroberry
+      "control host" on your network that couples to a real PiFinder running elsewhere, via its INDI driver over the network
+      (see the info icon above for details on that setup). Only the INDI build dependencies and the two PiFinder INDI drivers
+      get installed here. Your existing <code>~/PiFinder</code> installation, if any, is left completely untouched: no clone or patch,
+      no Python virtual environment, no star catalog download, no GPIO/udev hardware setup - none of that applies when there's
+      no PiFinder hardware for this machine to actually run.</p>
       <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
     `;
     return;
