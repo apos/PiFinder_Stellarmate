@@ -5,9 +5,10 @@
 # docs/concepts/setup_script_test_suite.md and
 # docs/concepts/setup_indi_only_install_mode.md.
 #
-# os_detect_package_manager() and os_install_packages() (the impure
-# fact-gathering/side-effecting halves) are deliberately NOT tested here -
-# see the concept doc for why that stays live-tested instead.
+# os_detect_package_manager(), os_pacman_check_atomic_updates() and
+# os_install_packages() (the impure fact-gathering/side-effecting halves) are
+# deliberately NOT tested here - see the concept doc for why that stays
+# live-tested instead.
 
 setup() {
     source "${BATS_TEST_DIRNAME}/../os_detect.sh"
@@ -70,4 +71,24 @@ setup() {
 
 @test "os_package_name: known generic name on an unknown manager returns empty" {
     [ -z "$(os_package_name cmake dnf)" ]
+}
+
+@test "os_pacman_atomic_updates_enabled: empty content (state file absent) means enabled" {
+    run os_pacman_atomic_updates_enabled ""
+    [ "$status" -eq 0 ]
+}
+
+@test "os_pacman_atomic_updates_enabled: 'enabled' content means enabled" {
+    run os_pacman_atomic_updates_enabled "enabled"
+    [ "$status" -eq 0 ]
+}
+
+@test "os_pacman_atomic_updates_enabled: 'disabled' content means not enabled" {
+    run os_pacman_atomic_updates_enabled "disabled"
+    [ "$status" -ne 0 ]
+}
+
+@test "os_pacman_atomic_updates_enabled: unrecognized content defaults to enabled" {
+    run os_pacman_atomic_updates_enabled "garbage"
+    [ "$status" -eq 0 ]
 }

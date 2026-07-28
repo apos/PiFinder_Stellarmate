@@ -4,12 +4,12 @@
 # why this isn't a full OS-abstraction framework).
 #
 # Split deliberately into pure decision functions (os_pick_package_manager,
-# os_package_name - no filesystem/command access, fully unit-testable
-# regardless of what's actually installed on the machine running the tests)
-# and impure ones that gather real facts or perform real installs
-# (os_detect_package_manager, os_install_packages) - see
-# bin/tests/test_os_detect.bats and docs/concepts/setup_script_test_suite.md
-# for why that split matters.
+# os_package_name, os_pacman_atomic_updates_enabled - no filesystem/command
+# access, fully unit-testable regardless of what's actually installed on the
+# machine running the tests) and impure ones that gather real facts or
+# perform real installs (os_detect_package_manager, os_install_packages,
+# os_pacman_check_atomic_updates) - see bin/tests/test_os_detect.bats and
+# docs/concepts/setup_script_test_suite.md for why that split matters.
 #
 # Only pacman is live-verified (the only hardware available so far). apt/nix
 # are implemented from the same research this project already has (issue
@@ -73,6 +73,29 @@ os_package_name() {
     esac
 }
 
+# Pure: StellarMate's own "Atomic Updates" root-access gate (see
+# /etc/stellarmate/atomic-updates.sh, StellarMate's own tool) tracks its state
+# in a one-line file that's either absent (never touched - defaults to
+# enabled, matching that script's own get_state()) or contains "enabled"/
+# "disabled" verbatim. Direct pacman access to core/extra/alarm - where
+# cmake/git/libindi-dev/build-tools actually live - is blocked while this is
+# enabled; only StellarMate's own [smos] repo stays reachable. Decouples the
+# parsing rule from actually reading the file so this is unit-testable
+# without a real StellarMate install.
+os_pacman_atomic_updates_enabled() {
+    local state_file_content="$1"
+    [ "${state_file_content}" != "disabled" ]
+}
+
+# Impure: reads the real state file (absent -> empty string, same as
+# StellarMate's own script treating a missing file as "enabled").
+os_pacman_check_atomic_updates() {
+    local state_file="/etc/stellarmate/.root-access-state"
+    local content=""
+    [ -f "${state_file}" ] && content="$(cat "${state_file}")"
+    os_pacman_atomic_updates_enabled "${content}"
+}
+
 # Impure: detects the manager, maps every requested generic name, then
 # dispatches to that manager's real install command. Not unit-tested itself
 # (real side effects) - every decision it makes is delegated to the two pure
@@ -97,6 +120,33 @@ os_install_packages() {
 
     case "${manager}" in
         pacman)
+            # On stock StellarMate, direct pacman access is blocked by design
+            # (StellarMate's own warranty/stability protection, not a bug) -
+            # walking the user through StellarMate's own official unlock
+            # script, rather than silently invoking it ourselves, since it
+            # voids the warranty and disables StellarMate's own auto-update
+            # mechanism. That is the user's decision to make, not this
+            # installer's.
+            if [ -f /etc/stellarmate/atomic-updates.sh ] && os_pacman_check_atomic_updates; then
+                echo "❌ This system has StellarMate's 'Atomic Updates' protection enabled, which blocks direct package installation." >&2
+                echo "   To install packages, first run StellarMate's own unlock script (it will explain the tradeoffs and ask you to confirm):" >&2
+                echo "" >&2
+                echo "       sudo /etc/stellarmate/atomic-updates.sh --disable" >&2
+                echo "" >&2
+                echo "   Then run this installer again." >&2
+                return 1
+            fi
+            # Restores pacman's own trust database to the distribution's
+            # default state - the same remedy StellarMate's own factory-reset
+            # tooling uses (reset_pacman_keys() in reset-factory-common.sh),
+            # not a workaround invented here. Safe to run unconditionally:
+            # a no-op if the keyring is already fine, and only ever restores
+            # the OS's own default trust anchors (never StellarMate's own
+            # [smos] signing key, which this mode never needs - cmake/git/
+            # libindi-dev/build-tools all live in core/extra/alarm).
+            sudo pacman-key --init
+            sudo pacman-key --populate
+            sudo pacman -Sy || true
             sudo pacman -S --noconfirm --needed "${pkgs[@]}"
             ;;
         apt)
