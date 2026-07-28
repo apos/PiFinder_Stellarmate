@@ -326,3 +326,4 @@ und warum, falls man auch diese von Hand entfernen möchte.
 *   **[Readme_design_decisions_de.md](Readme_design_decisions_de.md)** — Zusammenfassung der wichtigsten Design-Entscheidungen.
 *   **[CHANGELOG.md](CHANGELOG.md)** — Versionshistorie.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — kurze Build-Referenz für den PiFinder-LX200-Treiber.
+*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — Submodul-Einrichtung nach dem Klonen, Ausführen der Shell-Skript-Testsuite (Englisch).
