@@ -1674,14 +1674,47 @@ class Handler(BaseHTTPRequestHandler):
             profile = qs.get("profile", [""])[0]
             driver = qs.get("driver", [""])[0]
             action = qs.get("action", [""])[0]
-            if not profile or driver not in ("lx200", "bridge") or action not in ("add", "remove"):
+            # add_remote (lx200 only): use a PiFinder LX200 running on
+            # another device, via INDI's own remote-driver mechanism - see
+            # docs/concepts/remote_indi_coupling_split_host.md (R-CH1).
+            valid = (
+                profile
+                and (
+                    (driver in ("lx200", "bridge") and action in ("add", "remove"))
+                    or (driver == "lx200" and action == "add_remote")
+                )
+            )
+            if not valid:
                 self._send_json(
-                    {"success": False, "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"},
+                    {"success": False,
+                     "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"
+                              " (or driver=lx200&action=add_remote&remote=<host[:port]>)"},
                     status=400,
                 )
                 return
-            setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
+            remote_spec = None
+            if action == "add_remote":
+                remote_spec = qs.get("remote", [""])[0].strip()
+                # Hostname or IP, optional :port - becomes part of a Web
+                # Manager profile entry, so keep the shape strict.
+                if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
+                    self._send_json(
+                        {"success": False, "error": f"invalid remote host '{remote_spec}' (expected host or host:port)"},
+                        status=400,
+                    )
+                    return
+                if ":" not in remote_spec:
+                    remote_spec += ":7624"
+
+            if driver == "lx200":
+                lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
+                def setter(prof, _present):
+                    webmanager_client.set_pifinder_lx200_state(prof, lx200_state, remote=remote_spec)
+            else:
+                setter = webmanager_client.set_pifinder_bridge
             driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+            if action == "add_remote":
+                driver_label = f"PiFinder LX200 (remote {remote_spec})"
 
             # indiserver only reads a profile's driver list at startup - a
             # driver added/removed here never takes effect on an already-
@@ -1708,7 +1741,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 _mb_log(f"  done.")
 
-            _mb_log(f"{action} {driver_label} {'to' if action == 'add' else 'from'} profile '{profile}'...")
+            _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
             try:
                 setter(profile, action == "add")
             except webmanager_client.WebManagerError as e:

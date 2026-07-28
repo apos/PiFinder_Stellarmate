@@ -728,31 +728,21 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
-  #device-role-line {
-    background: #1a2433;
-    border: 1px solid #2c4a6e;
-    color: #bcd4ee;
-    padding: 0.5rem 0.9rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-    font-size: 0.82rem;
+  /* R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md): what the
+     SELECTED PROFILE makes this device do - deliberately attached to the
+     profile selection rather than a device-level banner, because a device
+     has no role of its own; the profile defines it. */
+  #mb-role-line {
+    margin: 0.1rem 0 0.6rem;
+    font-size: 0.78rem;
+    color: #8ab4dd;
   }
-  #device-role-line strong { color: #e8f1fb; }
+  #mb-role-line .role-warn { color: #e0a030; }
 </style>
 </head>
 <body>
 
 <h1>PiFinder on Stellarmate Control Center</h1>
-
-<!-- Which role this device plays in a (possibly split) setup - see
-     docs/concepts/remote_indi_coupling_split_host.md. Derived from whether
-     PiFinder itself is installed here (~/PiFinder exists): absent means the
-     role is unambiguous (control host, INDI-only). Present means BOTH roles
-     are possible (all-in-one, or PiFinder host for a separate control host)
-     - that ambiguity is real and the text says so honestly instead of
-     guessing; which one it is depends on where the user runs the mount
-     coupling, which no detection here can know. -->
-<div id="device-role-line" style="display:none;"></div>
 
 <div id="conn-lost-banner" style="display:none;"></div>
 
@@ -930,6 +920,7 @@ sudo systemctl start pifinder</pre>
           <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
+        <div id="mb-role-line" style="display:none;" title="What the selected profile makes this device do - derived live from which drivers the profile actually contains (see the Help for the role model)."></div>
         <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
           <span id="wm-kstars-link-text" class="mb-step-widget"></span>
@@ -938,8 +929,13 @@ sudo systemctl start pifinder</pre>
 
         <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
+        </div>
+        <div class="mb-row mb-step-row" title="Control-host setups only: use a PiFinder running on ANOTHER device instead of a local one. Enter that device's IP (shown on its own PiFinder Host Setup tile), port defaults to 7624. Replaces a local PiFinder LX200 entry if one is set.">
+          <span class="mb-row-lead"><span class="mb-row-label">&nbsp;&nbsp;&nbsp;remote:</span></span>
+          <input type="text" id="wm-lx200-remote-input" placeholder="PiFinder IP[:port]" size="16" disabled>
+          <button id="wm-lx200-remote-btn" class="ql-small-btn" onclick="setWmLx200Remote()" disabled>Use remote PiFinder</button>
         </div>
 
         <div class="mb-checklist-divider"></div>
@@ -968,9 +964,11 @@ sudo systemctl start pifinder</pre>
       </div>
     </div>
 
-    <!-- Hidden until init() knows this device's role (renderDeviceRole()) -
-         on a control host (no PiFinder installed) there is no local PiFinder
-         to share, so this tile never applies there. -->
+    <!-- Hidden until init() knows whether PiFinder is installed here
+         (updatePfhostTileVisibility()) - on a control host (no PiFinder
+         installed) there is no local PiFinder to share, so this tile never
+         applies there. Capability check, not a role check - see the role
+         model in docs/concepts/remote_indi_coupling_split_host.md. -->
     <div id="pfhost-tile" style="display:none;">
       <h3 class="tile-heading" title="Expose this device's own PiFinder LX200 INDI driver to a separate control host elsewhere on your network - for a split setup where PiFinder hardware and Mount Bridge/mount coupling run on two different machines. See the help link for the full picture.">PiFinder Host Setup<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></h3>
       <div class="mb-row" title="Type this into the control host's Web Manager profile, in its 'Remote Drivers' field, as PiFinder LX200@&lt;this IP&gt;:7624 - see the help link.">
@@ -989,7 +987,7 @@ sudo systemctl start pifinder</pre>
       </div>
       <div class="mb-row mb-step-row" title="Adds PiFinder LX200 to the selected profile - it needs to be present (and the profile started) before the control host can reach it as a remote driver.">
         <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="pfhost-step3-label">3. Driver:</span></span>
-        <button id="pfhost-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+        <button id="pfhost-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'pfhost-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
       </div>
     </div>
 
@@ -1149,28 +1147,14 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
 // Part of the consolidated quick-links tile.
-// Which role this device plays - see the #device-role-line HTML comment for
-// why "PiFinder installed" is the deciding fact and why the PiFinder case
-// deliberately names BOTH possible roles instead of picking one. Also hides
-// the PiFinder Host Setup tile on a control host: with no PiFinder installed
-// here, there is no local PiFinder LX200 to share, so every one of that
-// tile's steps would be meaningless.
-function renderDeviceRole(pifinderInstalled) {
-  const line = document.getElementById('device-role-line');
-  const pfhostTile = document.getElementById('pfhost-tile');
-  line.style.display = '';
-  if (pifinderInstalled) {
-    line.innerHTML = 'This device is a <strong>PiFinder</strong> (PiFinder software is installed here). '
-      + 'It can do the mount coupling itself (Mount Bridge tile), or act as the PiFinder host for a '
-      + 'separate control host (PiFinder Host Setup tile) - both are possible, depending on where you '
-      + 'run the mount. <a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a>';
-    pfhostTile.style.display = '';
-  } else {
-    line.innerHTML = 'This device is a <strong>control host</strong> (no PiFinder installed - INDI-only). '
-      + 'It couples to a PiFinder running on another device on your network, via the Mount Bridge tile. '
-      + '<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a>';
-    pfhostTile.style.display = 'none';
-  }
+// Capability, not role (see docs/concepts/remote_indi_coupling_split_host.md,
+// "Device role model"): a device without PiFinder installed cannot share a
+// local PiFinder, so the PiFinder Host Setup tile never applies there. The
+// actual ROLE is a property of the selected profile - see
+// updateProfileRoleLine() below, which replaced an earlier device-level
+// banner that wrongly treated the install state as the role.
+function updatePfhostTileVisibility(pifinderInstalled) {
+  document.getElementById('pfhost-tile').style.display = pifinderInstalled ? '' : 'none';
 }
 
 // This device's own LAN IP(s), for the PiFinder Host Setup tile - the one
@@ -1833,7 +1817,7 @@ async function resetToChoices() {
     applyBranchInfo(data);
     // A completed fresh install may have just changed this device's role
     // (no ~/PiFinder before, one now) - reflect that without a page reload.
-    renderDeviceRole(existingInstallKnown);
+    updatePfhostTileVisibility(existingInstallKnown);
   } catch (e) {
     // fall back to whatever was already known
   }
@@ -1959,7 +1943,7 @@ async function init() {
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
   renderPfhostIp(data.ips);
-  renderDeviceRole(data.existing_install);
+  updatePfhostTileVisibility(data.existing_install);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
   // regardless of which branch PiFinder_Stellarmate's own checkout happens
   // to be on (e.g. left on "dev" from earlier testing) - switching to dev
@@ -2599,8 +2583,8 @@ async function startAutoconnect(mode) {
   }
   setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
   if (!wmServerRunning) await toggleWmServer();
-  if (wmHasLx200 === false) await toggleWmDriver('lx200');
-  if (wmHasBridge === false) await toggleWmDriver('bridge');
+  if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
+  if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
 
   if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
 
@@ -2671,6 +2655,10 @@ async function finishAutoconnect(mode) {
 // drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
 let wmSelectedProfile = null;
 let wmHasLx200 = null;
+// "host:port" when PiFinder LX200 is in the profile as a REMOTE entry
+// (another device's PiFinder, R-CH1), null when local or absent -
+// wmHasLx200 alone can't tell the two apart.
+let wmLx200Remote = null;
 let wmHasBridge = null;
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
@@ -3122,22 +3110,78 @@ function setWmDriverButton(driver, present) {
   // PiFinder LX200 has a second, mirrored button in the PiFinder Host Setup
   // tile (see docs/concepts/remote_indi_coupling_split_host.md, R-PF1) -
   // Mount Bridge has no equivalent there, so only 'lx200' gets a second id.
-  const ids = driver === 'lx200' ? ['wm-lx200-btn', 'pfhost-lx200-btn'] : ['wm-bridge-btn'];
   const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   if (driver === 'lx200') wmHasLx200 = present; else wmHasBridge = present;
-  for (const id of ids) {
+
+  const setBtn = (id, isPresent, btnLabel) => {
     const btn = document.getElementById(id);
     if (present === null) {
       btn.textContent = `${label}: unknown`;
       btn.disabled = true;
       btn.classList.remove('mb-btn-active');
-      continue;
+      return;
     }
-    btn.textContent = present ? `${label}: remove` : `${label}: add`;
-    btn.classList.toggle('mb-btn-active', present);
+    btn.textContent = isPresent ? `${btnLabel}: remove` : `${btnLabel}: add`;
+    btn.classList.toggle('mb-btn-active', isPresent);
     btn.disabled = false;
+  };
+
+  if (driver === 'bridge') {
+    setBtn('wm-bridge-btn', present, label);
+  } else {
+    // Main tile: reflects the effective entry, naming the remote target
+    // when it's a remote one. PiFinder Host Setup tile: reflects the LOCAL
+    // entry only - that tile is about sharing THIS device's PiFinder, so a
+    // remote entry reads as "not added" there ("add" then replaces the
+    // remote entry with a local one, see set_pifinder_lx200_state()).
+    const isRemote = !!wmLx200Remote;
+    setBtn('wm-lx200-btn', present, isRemote ? `${label} (remote ${wmLx200Remote})` : label);
+    setBtn('pfhost-lx200-btn', present && !isRemote, label);
   }
   updateStepIndicators();
+}
+
+// R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md, "Device role
+// model"): a device has no role - the selected profile has one, derived
+// live from which drivers it actually contains. This line replaced an
+// earlier device-level banner that wrongly treated the install state as
+// the role; install state only marks what CANNOT work (the config-error
+// warning below).
+function updateProfileRoleLine() {
+  const el = document.getElementById('mb-role-line');
+  if (!wmSelectedProfile || wmHasLx200 === null || wmHasBridge === null) {
+    el.style.display = 'none';
+    return;
+  }
+  const remote = !!wmLx200Remote;
+  const local = wmHasLx200 === true && !remote;
+  const bridge = wmHasBridge === true;
+  const mountPart = wmActiveMount ? ` to ${wmActiveMount}` : ' to your mount';
+  let text = '';
+  let warn = '';
+  if (local && bridge) {
+    text = `All-in-one: this profile couples this device's own PiFinder${mountPart}.`;
+  } else if (local && !bridge) {
+    text = `PiFinder host: this profile shares this device's PiFinder position on the network, nothing else.`;
+  } else if (remote && bridge) {
+    text = `Control host: this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
+  } else if (remote && !bridge) {
+    text = `Control host (incomplete): remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - add it in step 3.`;
+  } else {
+    text = 'No PiFinder drivers in this profile yet - add them in step 3.';
+  }
+  if (local && existingInstallKnown === false) {
+    warn = " ⚠ This profile expects a local PiFinder, but PiFinder isn't installed on this device.";
+  }
+  el.textContent = '';
+  el.appendChild(document.createTextNode(`Role: ${text}`));
+  if (warn) {
+    const w = document.createElement('span');
+    w.className = 'role-warn';
+    w.textContent = warn;
+    el.appendChild(w);
+  }
+  el.style.display = '';
 }
 
 // Green checkmark on each step's label once its condition is actually met -
@@ -3156,10 +3200,12 @@ function updateStepIndicators() {
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
   // PiFinder Host Setup tile mirrors steps 1-3 (same underlying state, see
-  // R-PF1) - its own step 3 only ever cares about LX200, never Mount Bridge.
+  // R-PF1) - its own step 3 only ever cares about a LOCAL LX200 (sharing
+  // THIS device's PiFinder), so a remote entry doesn't count there.
   document.getElementById('pfhost-step1-label').classList.toggle('mb-step-done', step1Done);
   document.getElementById('pfhost-step2-label').classList.toggle('mb-step-done', step2Done);
-  document.getElementById('pfhost-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true);
+  document.getElementById('pfhost-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && !wmLx200Remote);
+  updateProfileRoleLine();
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
@@ -3190,20 +3236,77 @@ async function refreshWmDriverButtons() {
     const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
+    wmLx200Remote = data.lx200_remote || null;
     setWmDriverButton('lx200', data.has_lx200);
     setWmDriverButton('bridge', data.has_bridge);
   } catch (e) {
+    wmLx200Remote = null;
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
   }
+  refreshWmLx200RemoteRow();
 }
 
-async function toggleWmDriver(driver) {
+// The "remote:" input+button under step 3 (R-CH1) - enabled whenever a
+// profile is selected; prefilled with the current remote target when one is
+// set (unless the user is mid-typing in it).
+function refreshWmLx200RemoteRow() {
+  const input = document.getElementById('wm-lx200-remote-input');
+  const btn = document.getElementById('wm-lx200-remote-btn');
+  const enabled = !!wmSelectedProfile;
+  input.disabled = !enabled;
+  btn.disabled = !enabled;
+  if (wmLx200Remote && document.activeElement !== input) input.value = wmLx200Remote;
+  btn.textContent = wmLx200Remote ? 'Update remote' : 'Use remote PiFinder';
+  btn.classList.toggle('mb-btn-active', !!wmLx200Remote);
+}
+
+async function setWmLx200Remote() {
+  if (!wmSelectedProfile) return;
+  const input = document.getElementById('wm-lx200-remote-input');
+  const value = input.value.trim();
+  if (!value) {
+    alert("Enter the PiFinder host's IP address first - it's shown on that device's own PiFinder Host Setup tile.");
+    return;
+  }
+  if (!/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(value)) {
+    alert(`"${value}" is not a valid host or host:port.`);
+    return;
+  }
+  mbActionInFlight = true;
+  setStepBusy(3, true);
+  const btn = document.getElementById('wm-lx200-remote-btn');
+  btn.disabled = true;
+  btn.textContent = 'setting…';
+  setMbActionStatus(`⏳ Setting remote PiFinder ${value}…`);
+  try {
+    const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`
+      + `&driver=lx200&action=add_remote&remote=${encodeURIComponent(value)}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    alert('Could not set the remote PiFinder: ' + e.message);
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+  setStepBusy(3, false);
+}
+
+async function toggleWmDriver(driver, clickedBtnId) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(3, true);
   const ids = driver === 'lx200' ? ['wm-lx200-btn', 'pfhost-lx200-btn'] : ['wm-bridge-btn'];
-  const wantsAdd = document.getElementById(ids[0]).textContent.trim().endsWith('add');
+  // The two lx200 buttons can legitimately disagree when a REMOTE entry is
+  // set (main tile: "remove" the remote entry; PiFinder Host Setup tile:
+  // "add" a local one, replacing the remote) - so what the user wants is
+  // read from the button they actually clicked, not from a fixed one.
+  const wantsAdd = document.getElementById(clickedBtnId).textContent.trim().endsWith('add');
   const driverLabel = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   setMbActionStatus(wantsAdd ? `⏳ Adding ${driverLabel} driver…` : `⏳ Removing ${driverLabel} driver…`);
   for (const id of ids) {
