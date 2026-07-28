@@ -7,6 +7,10 @@ dedicated separate installer/GUI against extending the existing one. Decision le
 shared codebase, per explicit preference: "ich würde ungern zwei verschiedene Setup-Versionen
 pflegen" (would rather not maintain two different setup versions).
 
+**R2's pacman case is partially implemented** on `feature/os-detect-package-manager-abstraction`
+(`bin/os_detect.sh`) - the pure/apt/nix dispatch table plus the StellarMate-specific Atomic Updates
+precondition below (live-verified on real hardware, 2026-07-28). R1/R3/R4 are still unimplemented.
+
 ## 1. Overview
 
 Two things are being conflated at first glance, and need separating:
@@ -73,6 +77,31 @@ apt/pacman to call out explicitly:
 - **Not yet verified**: whether `libindi`/`libindi-dev` actually exists in `nixpkgs`, and under what
   package name/attribute path. Needs checking against the real nixpkgs package search before this
   is more than a plausible plan.
+
+**Newly discovered, load-bearing precondition for the pacman case (live-verified on real
+StellarMate hardware, 2026-07-28): StellarMate blocks direct pacman access by default.**
+`/etc/pacman.conf` ships with `[core]`/`[extra]`/`[alarm]` - where `cmake`/`git`/`libindi-dev`/
+`base-devel` actually live - commented out; only StellarMate's own `[smos]` repo is active. This is
+StellarMate's own **"Atomic Updates"** protection (`sudo /etc/stellarmate/atomic-updates.sh
+--status`), not a bug or a config drift on this particular Pi. Unlocking it
+(`atomic-updates.sh --disable`) is gated behind a manually-typed `YES` confirmation and an explicit
+warning: it voids the StellarMate warranty, may destabilize the system, and disables StellarMate's
+own delta-update mechanism - the user's own informed call, never something this installer may
+invoke silently on their behalf. `os_install_packages()`'s pacman branch therefore checks
+StellarMate's own state file (`/etc/stellarmate/.root-access-state`) first and, if the lock is
+still on, refuses cleanly with the exact official unlock command rather than surfacing pacman's raw
+"target not found" errors to someone with no Linux/pacman background.
+
+A second, separate wrinkle compounds this: even once unlocked, the pacman GPG keyring itself resets
+after every SMOS system update (StellarMate ships each OS version as its own btrfs subvolume/
+snapshot - `/etc/pacman.d/gnupg` isn't preserved across that switch), so "target not found" can
+recur on a system that was working fine before its last StellarMate update. StellarMate's own
+`reset-factory-common.sh` has a `reset_pacman_keys()` function for exactly this
+(`pacman-key --init && pacman-key --populate && pacman -Sy`) - `os_install_packages()` runs the
+same remedy unconditionally (safe no-op if already fine) once the Atomic Updates lock is confirmed
+off. This never needs to touch `[smos]`'s own signing key (unrelated to any package this mode
+installs) - see basic-memory `pifinder-stellarmate/00016` for the full incident history on the
+Pi5 dev machine.
 
 **Explicitly not planned for right now: Flatpak/Snap.** Worth naming why, since they came up in the
 original discussion: those are end-user *application* distribution/sandboxing formats, not sources
@@ -162,6 +191,12 @@ from the day it's written, not retrofitted later.
 
 ## 6. Known Risks / Open Questions
 
+- **StellarMate's Atomic Updates lock means this mode cannot install anything on a stock,
+  untouched StellarMate system without the user first running StellarMate's own unlock script -
+  a real, user-facing precondition, not just an installer detail.** R4's Control Center tile design
+  should probably surface this clearly (e.g. detect the lock and show the unlock instructions in
+  the UI itself, mirroring what `os_install_packages()` now prints on the terminal side) rather
+  than only failing inside a log a non-technical user won't read.
 - **No real Astroberry/Ubuntu/NixOS test hardware available yet - deliberately deferred, not
   ignored.** The abstraction's *shape* (pacman/apt/nix as three first-class cases) is designed in
   now, per explicit instruction, so extending to those platforms later is "verify and fill in a
