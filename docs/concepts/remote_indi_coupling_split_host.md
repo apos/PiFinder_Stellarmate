@@ -2,11 +2,14 @@
 
 ## Status
 
-**Concept - not implemented, but the control-host half's key open question is now resolved
-(2026-07-28, verified live against a real StellarMate Web Manager - see Requirements and Known
-Risks below).** Written up after a design discussion (2026-07-26) about supporting
-PiFinder hardware that never runs StellarMate at all - it just exposes its own solved position
-over the network, while a separate, more capable computer does the actual mount coupling.
+**Partially implemented.** The control-host half's key open question is resolved (2026-07-28,
+verified live against a real StellarMate Web Manager - see Requirements and Known Risks below).
+R-PF1's tile exists on branch `feature/pifinder-host-setup-tile` (unmerged); its first-attempt
+device-level role banner is to be replaced per the Device role model (R-ROLE1) below. R-CH1 and
+R-ROLE1 are not implemented yet. Originally written up after a design discussion (2026-07-26)
+about supporting PiFinder hardware that never runs StellarMate at all - it just exposes its own
+solved position over the network, while a separate, more capable computer does the actual mount
+coupling.
 
 ## 1. Overview
 
@@ -140,6 +143,54 @@ UI pieces (R-PF1, R-CH1) need an explicit pointer to it (an info-icon link, same
 other setup step already uses) - direct feedback (2026-07-28) that a feature like this is
 unusable without the user being told, in the UI itself, that a guide exists and where to find it,
 not just documented somewhere in the repo they'd have to already know to look for.
+
+### Device role model (R-ROLE1)
+
+Settled in a design discussion 2026-07-28, after a first attempt got it wrong. The trigger: with
+both tiles (Mount Bridge, PiFinder Host Setup) always visible, nothing told the user which role
+the current device actually plays - you could only guess, or infer it from seeing a physical OLED.
+The first fix was a device-level banner deriving the role from whether `~/PiFinder` exists.
+**Rejected, correctly**: the directory only proves what a device *cannot* do (no PiFinder installed
+= cannot be a PiFinder host); its presence proves nothing about how the device is being *used*.
+Two fully-installed PiFinders may pair up with one acting as the other's control host, and the same
+device may be used differently from one session to the next - nobody should have to reinstall
+anything to switch. (Also verified live, and worth stating because the question came up:
+`--mode=indi_only` never touches `~/PiFinder` - its code path exits before any of the full mode's
+delete/reinstall logic is even reached. Full install and INDI-only coexist on one device; INDI-only
+over an existing full install just refreshes the INDI drivers.)
+
+**The model: a device has no role - the running INDI profile has one.** The profile is already the
+mechanism users know and switch for exactly this purpose ("what runs on this device right now"),
+so the role is a *derived property of a profile*, never a stored device setting:
+
+| Profile contains | Role of that profile |
+|---|---|
+| PiFinder LX200 (local) + Mount Bridge + mount driver | **All-in-one**: couples this device's own PiFinder to its own mount |
+| PiFinder LX200 (local) only | **PiFinder host**: shares this device's position on the network, nothing else |
+| Mount Bridge + mount driver + PiFinder LX200 as *remote* entry | **Control host**: couples a PiFinder running on another device |
+| none of these | no PiFinder involvement / not configured yet |
+
+Consequences, each falling out of the model rather than needing separate design:
+
+- **Role switching = profile switching.** No new toggle, no persistent "device mode", no
+  reinstalling. A user needing both setups keeps two profiles (e.g. "Standalone" and "Host for
+  observatory") and starts whichever applies tonight - exactly what profiles are for.
+- **Installation state is only the capability boundary.** A profile with a local PiFinder LX200 on
+  a device without `~/PiFinder` is a *configuration error to flag*, not a role signal. Hiding the
+  PiFinder Host Setup tile when PiFinder isn't installed remains valid - that's capability, not
+  role.
+- **R-ROLE1 (UI requirement): the role is displayed next to the profile selection** the tiles
+  already share - e.g. `Profile "Simulation PFSM" → All-in-one: couples this device's PiFinder to
+  LX200 OnStep` - derived live from the selected profile's actual driver entries, updating whenever
+  the profile (or its contents) changes. This *replaces* the device-level banner from the first
+  attempt: no static claims about the device, only honest statements about the selected profile.
+- **Depends on R-CH1's three-state driver handling.** Distinguishing rows 1/2 from row 3 requires
+  knowing whether PiFinder LX200 is in the profile *locally* or as a *remote* entry - exactly the
+  absent/local/remote@host:port distinction R-CH1 introduces in the Drivers step, readable via the
+  Web Manager's `GET /api/profiles/{item}/remote` (verified to exist, 2026-07-28).
+
+Named and deliberately out of scope for now: a cross-device view ("show me all my devices and who
+is currently doing what") - its own chapter if it ever becomes a real need, not part of this.
 
 ## 5. Design Principles
 
