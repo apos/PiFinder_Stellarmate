@@ -5,6 +5,42 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- `--mode=indi_only` for `pifinder_stellarmate_setup.sh` and the Control Center's Install tile
+  ("INDI-only" checkbox): installs just the INDI build dependencies and the two PiFinder INDI
+  drivers - no PiFinder clone/patch, no Python venv, no star catalog, no GPIO/udev setup. The
+  existing `~/PiFinder` installation is never touched. For "control host" devices that couple to a
+  PiFinder running elsewhere (see below). Verified end-to-end on two physical Pis.
+- `bin/os_detect.sh`: package-manager abstraction (pacman/apt/nix dispatch table, pure/impure
+  split, bats-tested) used by the INDI-only mode. On StellarMate, its pacman path temporarily
+  disables StellarMate's own Atomic Updates protection via the official `atomic-updates.sh` toggle
+  (identical `SigLevel` either way - the official path just adds a clean backup/restore cycle),
+  self-heals the pacman keyring (resets after every SMOS update due to btrfs snapshot rotation),
+  installs, and always relocks immediately afterward.
+- Mount Bridge: **role cards** - the three setup variants (All-in-one: PiFinder hardware with
+  mount / PiFinder host: PiFinder only, no mount / Control host: no PiFinder hardware, couples to
+  remote PiFinder) as an explicit, prominent choice at the top of Setup checklist & diagnostics.
+  Clicking a card reconfigures the selected profile to that role (confirm dialog; Control host
+  asks for the PiFinder device's IP). A colored, always-visible "Role:" chip near the tile top
+  states what the selected profile currently makes this device do, derived live from its actual
+  driver entries. In the PiFinder-host role, everything mount-related is hidden and the device's
+  own LAN IP is shown instead - exactly what the other device's Control host card asks for.
+- Remote PiFinder support (INDI remote drivers): `PiFinder LX200` can now be in a profile as a
+  remote entry (`label@host:port`) pointing at another device's indiserver - the split-host
+  coupling from `docs/concepts/remote_indi_coupling_split_host.md`, verified live across two
+  physical Pis (PiFinder host on one, Mount Bridge + mount on the other).
+- `bin/build_and_install_indi_drivers.sh`: the INDI driver build/install sequence extracted out of
+  the setup script's full flow, shared between full and INDI-only modes.
+
+### Changed
+
+- The role model (a device has no role - the running profile has one) replaced two earlier,
+  rejected designs along the way: a device-level role banner derived from install state, and a
+  separate "PiFinder Host Setup" tile mirroring Mount Bridge state. One tile, three roles.
+- Phase checklist in the Install tile is mode-aware: INDI-only runs show only their own three
+  phases instead of falsely marking the full mode's ten as done.
+
 ## [1.2.0] - 2026-07-26
 
 ### Added
