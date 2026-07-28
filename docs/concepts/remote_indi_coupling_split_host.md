@@ -2,7 +2,9 @@
 
 ## Status
 
-**Concept - not implemented.** Written up after a design discussion (2026-07-26) about supporting
+**Concept - not implemented, but the control-host half's key open question is now resolved
+(2026-07-28, verified live against a real StellarMate Web Manager - see Requirements and Known
+Risks below).** Written up after a design discussion (2026-07-26) about supporting
 PiFinder hardware that never runs StellarMate at all - it just exposes its own solved position
 over the network, while a separate, more capable computer does the actual mount coupling.
 
