@@ -102,15 +102,10 @@ github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/re
 echo "ℹ️  Local PiFinder version: $pifinder_local_version"
 echo "ℹ️  GitHub PiFinder version: $github_version"
 
-# Function to compare versions (returns 1 if $1 > $2)
-version_gt() {
-    [ "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1" ]
-}
-
-# Function to compare versions (returns 0 if equal)
-version_eq() {
-    [ "$1" = "$2" ]
-}
+# version_gt()/version_eq() - see bin/version_compare.sh for why these live
+# in their own sourceable file (unit-testable in isolation, see
+# bin/tests/test_version_compare.bats).
+source "${SCRIPT_DIR}/bin/version_compare.sh"
 
 # Main check
 if version_eq "$github_version" "$pifinder_stellarmate_version_stable"; then
