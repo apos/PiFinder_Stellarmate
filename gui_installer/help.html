@@ -125,6 +125,7 @@
 <h3 id="pifinder-host-steps">Split setup, step by step - on the PiFinder device</h3>
 <ol>
   <li>Pick your Web Manager profile in step 1 and click the <strong>PiFinder host</strong> card. Confirm - PiFinder LX200 stays in the profile, Mount Bridge is removed.</li>
+  <li>Converting a profile that used to be All-in-one? Remove any leftover <em>mount driver</em> (e.g. LX200 OnStep) from it via Web Manager or the StellarMate App - the mount belongs to the control host now, and a mount driver here would just fail to find its hardware. The role cards deliberately never touch drivers other than the two PiFinder ones, so this one step stays manual.</li>
   <li>Start the profile (step 1's Start button) if it isn't running.</li>
   <li>Note the green <strong>"This device's IP"</strong> shown under the cards - the control host asks for exactly this address. If several IPs are shown, use the one in the same network as the control host.</li>
 </ol>
