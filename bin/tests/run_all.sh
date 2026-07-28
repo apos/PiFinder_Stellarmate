@@ -6,16 +6,20 @@ set -euo pipefail
 # docs/concepts/setup_script_test_suite.md for what's deliberately NOT
 # covered here (that stays live-tested, same as the rest of this project).
 #
-# Requires bats-core (https://github.com/bats-core/bats-core) on PATH.
-# Not vendored/installed by this project's own setup script - a contributor/
-# CI dependency, not an end-user one.
+# bats-core is vendored as a git submodule (bin/tests/vendor/bats-core) -
+# not a global/system install someone has to remember to set up on every
+# machine that clones this repo, same reasoning as PiFinder's own tetra3
+# submodule. Needs initializing once per fresh clone/worktree:
+#   git submodule update --init bin/tests/vendor/bats-core
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BATS_BIN="${SCRIPT_DIR}/vendor/bats-core/bin/bats"
 
-if ! command -v bats >/dev/null 2>&1; then
-    echo "❌ 'bats' not found on PATH - install bats-core first:" >&2
-    echo "   https://github.com/bats-core/bats-core#installation" >&2
+if [ ! -x "${BATS_BIN}" ]; then
+    echo "❌ Vendored bats-core not found at ${BATS_BIN}." >&2
+    echo "   Run this once per fresh clone/worktree:" >&2
+    echo "   git submodule update --init bin/tests/vendor/bats-core" >&2
     exit 1
 fi
 
-bats "${SCRIPT_DIR}"/*.bats
+"${BATS_BIN}" "${SCRIPT_DIR}"/*.bats

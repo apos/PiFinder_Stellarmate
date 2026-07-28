@@ -1,0 +1,3 @@
+[submodule "bin/tests/vendor/bats-core"]
+	path = bin/tests/vendor/bats-core
+	url = https://github.com/bats-core/bats-core.git
