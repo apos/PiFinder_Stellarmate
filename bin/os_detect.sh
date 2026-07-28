@@ -8,8 +8,9 @@
 # access, fully unit-testable regardless of what's actually installed on the
 # machine running the tests) and impure ones that gather real facts or
 # perform real installs (os_detect_package_manager, os_install_packages,
-# os_pacman_check_atomic_updates) - see bin/tests/test_os_detect.bats and
-# docs/concepts/setup_script_test_suite.md for why that split matters.
+# os_pacman_check_atomic_updates, os_pacman_has_atomic_updates_script,
+# os_pacman_atomic_updates_disable/enable) - see bin/tests/test_os_detect.bats
+# and docs/concepts/setup_script_test_suite.md for why that split matters.
 #
 # Only pacman is live-verified (the only hardware available so far). apt/nix
 # are implemented from the same research this project already has (issue
@@ -96,6 +97,35 @@ os_pacman_check_atomic_updates() {
     os_pacman_atomic_updates_enabled "${content}"
 }
 
+# Impure: does this system even have StellarMate's Atomic Updates tooling?
+# False on plain Arch or any non-StellarMate distro - the whole dance below
+# is then simply skipped, since core/extra/alarm are already reachable there.
+os_pacman_has_atomic_updates_script() {
+    [ -f /etc/stellarmate/atomic-updates.sh ]
+}
+
+# Impure: drives StellarMate's own official unlock/relock script
+# non-interactively. Deliberately uses StellarMate's own mechanism rather
+# than reimplementing it - see docs/concepts/setup_indi_only_install_mode.md
+# for why: its [core]/[extra]/[alarm] sections use the identical
+# `SigLevel = Optional TrustAll` our own pacman calls would otherwise need to
+# add themselves (StellarMate's own choice, not a downgrade we're
+# introducing), so there is no signature-verification difference either way -
+# the actual benefit is a clean, StellarMate-tracked backup/restore cycle
+# instead of a permanent, untracked pacman.conf edit. Piping the required
+# "YES" confirmation is intentional here (not a shortcut taken lightly): the
+# alternative - asking interactively on every install - would be exactly the
+# per-run nagging this mode is meant to avoid. Kept to the smallest possible
+# window: os_install_packages() always re-locks via --enable right after,
+# whether the install succeeded or not.
+os_pacman_atomic_updates_disable() {
+    echo "YES" | sudo /etc/stellarmate/atomic-updates.sh --disable
+}
+
+os_pacman_atomic_updates_enable() {
+    echo "YES" | sudo /etc/stellarmate/atomic-updates.sh --enable
+}
+
 # Impure: detects the manager, maps every requested generic name, then
 # dispatches to that manager's real install command. Not unit-tested itself
 # (real side effects) - every decision it makes is delegated to the two pure
@@ -120,22 +150,24 @@ os_install_packages() {
 
     case "${manager}" in
         pacman)
-            # On stock StellarMate, direct pacman access is blocked by design
-            # (StellarMate's own warranty/stability protection, not a bug) -
-            # walking the user through StellarMate's own official unlock
-            # script, rather than silently invoking it ourselves, since it
-            # voids the warranty and disables StellarMate's own auto-update
-            # mechanism. That is the user's decision to make, not this
-            # installer's.
-            if [ -f /etc/stellarmate/atomic-updates.sh ] && os_pacman_check_atomic_updates; then
-                echo "❌ This system has StellarMate's 'Atomic Updates' protection enabled, which blocks direct package installation." >&2
-                echo "   To install packages, first run StellarMate's own unlock script (it will explain the tradeoffs and ask you to confirm):" >&2
-                echo "" >&2
-                echo "       sudo /etc/stellarmate/atomic-updates.sh --disable" >&2
-                echo "" >&2
-                echo "   Then run this installer again." >&2
-                return 1
+            # On stock StellarMate, direct pacman access to core/extra/alarm
+            # is blocked by design (StellarMate's own Atomic Updates
+            # protection, not a bug). Rather than asking the user to run the
+            # unlock step by hand every time (exactly the nagging this mode
+            # is meant to avoid), temporarily disable it via StellarMate's own
+            # official mechanism, install, then always relock immediately
+            # afterward - see os_pacman_atomic_updates_disable() above for
+            # why this is the official script and not a homegrown edit.
+            local relock_atomic=0
+            if os_pacman_has_atomic_updates_script && os_pacman_check_atomic_updates; then
+                echo "ℹ️  Temporarily disabling StellarMate's Atomic Updates protection (official mechanism) to reach core/extra/alarm ..."
+                if ! os_pacman_atomic_updates_disable; then
+                    echo "❌ Could not disable StellarMate's Atomic Updates protection - aborting rather than installing against a still-locked system." >&2
+                    return 1
+                fi
+                relock_atomic=1
             fi
+
             # Restores pacman's own trust database to the distribution's
             # default state - the same remedy StellarMate's own factory-reset
             # tooling uses (reset_pacman_keys() in reset-factory-common.sh),
@@ -148,6 +180,13 @@ os_install_packages() {
             sudo pacman-key --populate
             sudo pacman -Sy || true
             sudo pacman -S --noconfirm --needed "${pkgs[@]}"
+            local install_status=$?
+
+            if [ "${relock_atomic}" = "1" ]; then
+                echo "ℹ️  Restoring StellarMate's Atomic Updates protection ..."
+                os_pacman_atomic_updates_enable
+            fi
+            return "${install_status}"
             ;;
         apt)
             echo "⚠️  apt path not yet live-verified on real hardware - see docs/concepts/setup_indi_only_install_mode.md" >&2
