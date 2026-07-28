@@ -469,6 +469,15 @@
     margin-top: 1rem;
     position: relative;
   }
+  #pfhost-tile {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    margin-top: 1rem;
+  }
+  #pfhost-ip { color: #4caf50; font-weight: bold; user-select: all; }
   /* The one-time loading banner used to sit in its own full-width row below
      the heading, leaving the wide empty area to the right of "Mount Bridge"
      unused - per live feedback, moved into that corner instead. The status
@@ -657,6 +666,8 @@
   #wm-kstars-link-row { color: #888; font-size: 0.78rem; }
   #wm-kstars-link-row.wm-link-warn #wm-kstars-link-text { color: #e0a030; }
   #wm-kstars-link-row.wm-link-ok #wm-kstars-link-text { color: #4caf50; }
+  #pfhost-kstars-link-row.wm-link-warn #pfhost-kstars-link-text { color: #e0a030; }
+  #pfhost-kstars-link-row.wm-link-ok #pfhost-kstars-link-text { color: #4caf50; }
   .mb-step-label.mb-step-done { color: #4caf50; }
   .mb-step-label.mb-step-done::before { content: "\2713 "; }
   .mb-step-label.mb-step-busy { color: #f5a623; }
@@ -937,6 +948,28 @@ sudo systemctl start pifinder</pre>
       </div>
     </div>
 
+    <div id="pfhost-tile">
+      <h3 class="tile-heading" title="Expose this device's own PiFinder LX200 INDI driver to a separate control host elsewhere on your network - for a split setup where PiFinder hardware and Mount Bridge/mount coupling run on two different machines. See the help link for the full picture.">PiFinder Host Setup<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div class="mb-row" title="Type this into the control host's Web Manager profile, in its 'Remote Drivers' field, as PiFinder LX200@&lt;this IP&gt;:7624 - see the help link.">
+        <span class="mb-row-label">This device's IP:</span>
+        <span id="pfhost-ip">checking&hellip;</span>
+      </div>
+      <div class="mb-row mb-step-row" title="Uses the same profile selected in the Mount Bridge tile above - only one Web Manager profile can actually run at a time on this device.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="pfhost-step1-label">1. Profile:</span></span>
+        <span id="pfhost-profile-name" class="mb-step-widget mb-hint">none selected - pick one in the Mount Bridge tile's step 1 above</span>
+        <button id="pfhost-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+      </div>
+      <div id="pfhost-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="pfhost-step2-label">2. KStars Link:</span></span>
+        <span id="pfhost-kstars-link-text" class="mb-step-widget"></span>
+        <button id="pfhost-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+      </div>
+      <div class="mb-row mb-step-row" title="Adds PiFinder LX200 to the selected profile - it needs to be present (and the profile started) before the control host can reach it as a remote driver.">
+        <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="pfhost-step3-label">3. Driver:</span></span>
+        <button id="pfhost-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
+      </div>
+    </div>
+
     <div id="footer-logos">
       <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
         <img src="/heyapos_logo.png" alt="HeyApos">
@@ -1093,6 +1126,17 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
 // Part of the consolidated quick-links tile.
+// This device's own LAN IP(s), for the PiFinder Host Setup tile - the one
+// piece of information a user setting up the split-host coupling actually
+// needs handed to them (see docs/concepts/remote_indi_coupling_split_host.md,
+// R-PF1). Same source as renderRemoteLinks() above/below - just a different
+// place to show it, plain text rather than clickable links, since it's meant
+// to be copied into another machine's Web Manager, not clicked here.
+function renderPfhostIp(ips) {
+  const el = document.getElementById('pfhost-ip');
+  el.textContent = (ips && ips.length > 0) ? ips.join(', ') : 'unknown - check your network settings';
+}
+
 function renderRemoteLinks(ips, port) {
   const el = document.getElementById('remote-links');
   if (!ips || ips.length === 0) {
@@ -1864,6 +1908,7 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
+  renderPfhostIp(data.ips);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
   // regardless of which branch PiFinder_Stellarmate's own checkout happens
   // to be on (e.g. left on "dev" from earlier testing) - switching to dev
@@ -2641,6 +2686,7 @@ async function loadWmProfiles() {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
       document.getElementById('wm-kstars-link-row').style.display = 'none';
+      document.getElementById('pfhost-kstars-link-row').style.display = 'none';
       _markMbInitialLoadDone('kstars');  // no profile selected - nothing to check
     }
   } catch (e) {
@@ -2654,39 +2700,45 @@ async function loadWmProfiles() {
   }
 }
 
+// Updates both the Mount Bridge tile's own KStars-link row AND the PiFinder
+// Host Setup tile's mirrored one (same underlying check - see R-PF1).
 async function checkKstarsLink() {
-  const row = document.getElementById('wm-kstars-link-row');
-  const textEl = document.getElementById('wm-kstars-link-text');
-  const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
-  if (!wmSelectedProfile) { row.style.display = 'none'; wmKstarsLinked = null; updateStepIndicators(); return; }
+  const rowIds = ['wm-kstars-link-row', 'pfhost-kstars-link-row'];
+  const textIds = ['wm-kstars-link-text', 'pfhost-kstars-link-text'];
+  const recheckIds = ['wm-kstars-recheck-btn', 'pfhost-kstars-recheck-btn'];
+  const setRowDisplay = (display) => rowIds.forEach((id) => { document.getElementById(id).style.display = display; });
+  if (!wmSelectedProfile) { setRowDisplay('none'); wmKstarsLinked = null; updateStepIndicators(); return; }
   try {
     const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (!data.checked) {  // no KStars DB found - nothing to report, not a real checkpoint here
-      row.style.display = 'none';
+      setRowDisplay('none');
       wmKstarsLinked = null;
       updateStepIndicators();
       return;
     }
-    row.style.display = '';
+    setRowDisplay('');
     wmKstarsLinked = !!data.linked;
     updateStepIndicators();
     // Recheck itself doesn't change anything - it's colored to reflect
     // whether the underlying check currently passes, same "green means
     // satisfied" idea used everywhere else on this tile.
-    recheckBtn.classList.toggle('mb-btn-active', !!data.linked);
+    recheckIds.forEach((id) => document.getElementById(id).classList.toggle('mb-btn-active', !!data.linked));
+    let rowClass, text;
     if (data.linked) {
-      row.className = 'mb-row wm-link-ok';
-      textEl.textContent = "✓ Linked to this Web Manager in KStars.";
+      rowClass = 'mb-row wm-link-ok';
+      text = "✓ Linked to this Web Manager in KStars.";
     } else if (data.kstars_profile_found) {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
     } else {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
     }
+    rowIds.forEach((id) => { document.getElementById(id).className = rowClass; });
+    textIds.forEach((id) => { document.getElementById(id).textContent = text; });
   } catch (e) {
-    row.style.display = 'none';
+    setRowDisplay('none');
     wmKstarsLinked = null;
     updateStepIndicators();
   }
@@ -2739,32 +2791,47 @@ async function checkEkosStatus() {
 setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
 checkEkosStatus().then(() => _markMbInitialLoadDone('ekos'));
 
+// Updates both the Mount Bridge tile's own server button AND the PiFinder
+// Host Setup tile's mirrored one - both reflect the exact same underlying
+// profile/running state (only one Web Manager profile can run at a time on
+// this device), so both stay in sync automatically by updating them here in
+// one place rather than duplicating this logic per tile.
 function refreshWmServerButton() {
-  const btn = document.getElementById('wm-server-btn');
+  const nameEl = document.getElementById('pfhost-profile-name');
   if (!wmSelectedProfile) {
-    btn.textContent = '…';
-    btn.disabled = true;
-    btn.classList.remove('mb-btn-active');
-    return;
+    nameEl.textContent = 'none selected - pick one in the Mount Bridge tile’s step 1 above';
+  } else {
+    nameEl.textContent = wmSelectedProfile;
   }
-  // Green when running - same "button reflects the state actually being
-  // satisfied" idea as everywhere else, even though the label itself is an
-  // action verb ("Stop"), not a state - per live feedback, "Stop" alone
-  // didn't make clear whether the profile currently *was* running or not.
-  btn.textContent = wmServerRunning ? 'Stop' : 'Start';
-  btn.classList.toggle('mb-btn-active', wmServerRunning);
-  btn.disabled = false;
+  for (const id of ['wm-server-btn', 'pfhost-server-btn']) {
+    const btn = document.getElementById(id);
+    if (!wmSelectedProfile) {
+      btn.textContent = '…';
+      btn.disabled = true;
+      btn.classList.remove('mb-btn-active');
+      continue;
+    }
+    // Green when running - same "button reflects the state actually being
+    // satisfied" idea as everywhere else, even though the label itself is an
+    // action verb ("Stop"), not a state - per live feedback, "Stop" alone
+    // didn't make clear whether the profile currently *was* running or not.
+    btn.textContent = wmServerRunning ? 'Stop' : 'Start';
+    btn.classList.toggle('mb-btn-active', wmServerRunning);
+    btn.disabled = false;
+  }
 }
 
 async function toggleWmServer() {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(1, true);
-  const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
   setMbActionStatus(wantsStart ? `⏳ Starting profile "${wmSelectedProfile}"…` : `⏳ Stopping profile "${wmSelectedProfile}"…`);
-  btn.disabled = true;
-  btn.textContent = wantsStart ? 'starting…' : 'stopping…';
+  for (const id of ['wm-server-btn', 'pfhost-server-btn']) {
+    const btn = document.getElementById(id);
+    btn.disabled = true;
+    btn.textContent = wantsStart ? 'starting…' : 'stopping…';
+  }
   try {
     const url = `/api/webmanager/server?action=${wantsStart ? 'start' : 'stop'}` +
       (wantsStart ? `&profile=${encodeURIComponent(wmSelectedProfile)}` : '');
@@ -3001,19 +3068,24 @@ function onWmProfileChange() {
 }
 
 function setWmDriverButton(driver, present) {
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  // PiFinder LX200 has a second, mirrored button in the PiFinder Host Setup
+  // tile (see docs/concepts/remote_indi_coupling_split_host.md, R-PF1) -
+  // Mount Bridge has no equivalent there, so only 'lx200' gets a second id.
+  const ids = driver === 'lx200' ? ['wm-lx200-btn', 'pfhost-lx200-btn'] : ['wm-bridge-btn'];
   const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   if (driver === 'lx200') wmHasLx200 = present; else wmHasBridge = present;
-  if (present === null) {
-    btn.textContent = `${label}: unknown`;
-    btn.disabled = true;
-    btn.classList.remove('mb-btn-active');
-    updateStepIndicators();
-    return;
+  for (const id of ids) {
+    const btn = document.getElementById(id);
+    if (present === null) {
+      btn.textContent = `${label}: unknown`;
+      btn.disabled = true;
+      btn.classList.remove('mb-btn-active');
+      continue;
+    }
+    btn.textContent = present ? `${label}: remove` : `${label}: add`;
+    btn.classList.toggle('mb-btn-active', present);
+    btn.disabled = false;
   }
-  btn.textContent = present ? `${label}: remove` : `${label}: add`;
-  btn.classList.toggle('mb-btn-active', present);
-  btn.disabled = false;
   updateStepIndicators();
 }
 
@@ -3021,8 +3093,10 @@ function setWmDriverButton(driver, present) {
 // per live feedback, plain grey labels gave no sense of "am I done here yet
 // or not" at a glance.
 function updateStepIndicators() {
-  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
-  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmKstarsLinked === true);
+  const step1Done = !!wmSelectedProfile && wmServerRunning;
+  const step2Done = wmKstarsLinked === true;
+  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
+  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
   document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
   document.getElementById('wm-step5-label').classList.toggle('mb-step-done', wmEkosConnected === true);
@@ -3030,6 +3104,11 @@ function updateStepIndicators() {
   document.getElementById('wm-step6-label').classList.toggle(
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
+  // PiFinder Host Setup tile mirrors steps 1-3 (same underlying state, see
+  // R-PF1) - its own step 3 only ever cares about LX200, never Mount Bridge.
+  document.getElementById('pfhost-step1-label').classList.toggle('mb-step-done', step1Done);
+  document.getElementById('pfhost-step2-label').classList.toggle('mb-step-done', step2Done);
+  document.getElementById('pfhost-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true);
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
@@ -3046,6 +3125,11 @@ function setStepBusy(stepNum, busy) {
     return;
   }
   el.classList.toggle('mb-step-busy', busy);
+  // Steps 1-3 have a mirrored label in the PiFinder Host Setup tile (R-PF1) -
+  // 4-6 don't, that tile stops at step 3.
+  if (stepNum <= 3) {
+    document.getElementById(`pfhost-step${stepNum}-label`).classList.toggle('mb-step-busy', busy);
+  }
   if (!busy) updateStepIndicators();
 }
 
@@ -3067,12 +3151,15 @@ async function toggleWmDriver(driver) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(3, true);
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
-  const wantsAdd = btn.textContent.trim().endsWith('add');
+  const ids = driver === 'lx200' ? ['wm-lx200-btn', 'pfhost-lx200-btn'] : ['wm-bridge-btn'];
+  const wantsAdd = document.getElementById(ids[0]).textContent.trim().endsWith('add');
   const driverLabel = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   setMbActionStatus(wantsAdd ? `⏳ Adding ${driverLabel} driver…` : `⏳ Removing ${driverLabel} driver…`);
-  btn.disabled = true;
-  btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  for (const id of ids) {
+    const btn = document.getElementById(id);
+    btn.disabled = true;
+    btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  }
   try {
     const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=${driver}&action=${wantsAdd ? 'add' : 'remove'}`;
     const resp = await fetch(url, { method: 'POST' });
