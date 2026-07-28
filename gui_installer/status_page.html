@@ -3153,6 +3153,7 @@ function deriveProfileRole() {
   if (local && !bridge) return 'host';
   if (remote && bridge) return 'ctrl';
   if (remote && !bridge) return 'ctrl-incomplete';
+  if (bridge) return 'bridge-only';
   return 'none';
 }
 
@@ -3189,6 +3190,8 @@ function updateProfileRoleLine() {
     text = `Control host: this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
   } else if (role === 'ctrl-incomplete') {
     text = `Control host (incomplete): remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - click the Control host card to fix this.`;
+  } else if (role === 'bridge-only') {
+    text = 'Incomplete: Mount Bridge is in the profile, but no PiFinder position source (local or remote) - choose a role in Setup checklist & diagnostics below.';
   } else {
     text = 'No PiFinder drivers in this profile yet - choose a role in Setup checklist & diagnostics below.';
   }
