@@ -7,9 +7,10 @@ dedicated separate installer/GUI against extending the existing one. Decision le
 shared codebase, per explicit preference: "ich würde ungern zwei verschiedene Setup-Versionen
 pflegen" (would rather not maintain two different setup versions).
 
-**R2's pacman case is partially implemented** on `feature/os-detect-package-manager-abstraction`
-(`bin/os_detect.sh`) - the pure/apt/nix dispatch table plus the StellarMate-specific Atomic Updates
-precondition below (live-verified on real hardware, 2026-07-28). R1/R3/R4 are still unimplemented.
+**R2's pacman case is implemented and merged to `dev`** (`bin/os_detect.sh`, PRs #66/#67) - the
+pure/apt/nix dispatch table plus the StellarMate Atomic Updates disable/relock cycle below, both
+live-verified end-to-end on real hardware (2026-07-28). R1 (mode flag)/R3 (skip logic)/R4 (Control
+Center tiles) are still unimplemented.
 
 ## 1. Overview
 
@@ -83,14 +84,28 @@ StellarMate hardware, 2026-07-28): StellarMate blocks direct pacman access by de
 `/etc/pacman.conf` ships with `[core]`/`[extra]`/`[alarm]` - where `cmake`/`git`/`libindi-dev`/
 `base-devel` actually live - commented out; only StellarMate's own `[smos]` repo is active. This is
 StellarMate's own **"Atomic Updates"** protection (`sudo /etc/stellarmate/atomic-updates.sh
---status`), not a bug or a config drift on this particular Pi. Unlocking it
-(`atomic-updates.sh --disable`) is gated behind a manually-typed `YES` confirmation and an explicit
-warning: it voids the StellarMate warranty, may destabilize the system, and disables StellarMate's
-own delta-update mechanism - the user's own informed call, never something this installer may
-invoke silently on their behalf. `os_install_packages()`'s pacman branch therefore checks
-StellarMate's own state file (`/etc/stellarmate/.root-access-state`) first and, if the lock is
-still on, refuses cleanly with the exact official unlock command rather than surfacing pacman's raw
-"target not found" errors to someone with no Linux/pacman background.
+--status`), not a bug or a config drift on this particular Pi.
+
+Design question worth recording since the answer isn't obvious: does unlocking this via
+StellarMate's own `atomic-updates.sh --disable` actually buy more *security* than just editing
+`pacman.conf` directly (as this project's existing full/PiFinder-hardware install path has quietly
+done for a while)? **No** - reading the full script shows `--disable` uncomments the exact same
+`SigLevel = Optional TrustAll` core/extra/alarm sections a manual edit would add; there is no
+signature-verification difference either way, that's StellarMate's own choice for those repos, not
+something either approach downgrades further. The real benefit of the official path is a clean,
+StellarMate-tracked backup/restore cycle (`--enable` restores the *exact* prior `pacman.conf` from
+its own backup) instead of a permanent, untracked edit - and it disables/re-enables StellarMate's
+`sm-integrity-check` boot-time service correctly, which a manual edit doesn't touch. Given that,
+`os_install_packages()`'s pacman branch drives the official script directly and non-interactively
+(piping its required `YES` confirmation) rather than asking the user to run it by hand on every
+install - the interactive-every-time alternative is exactly the nagging this mode is meant to avoid,
+and the disable/relock window is kept as short as the actual `pacman -S` call. It always relocks
+immediately afterward via `--enable`, success or failure, so the system is left in its original
+protected state and standard StellarMate updates keep working. (An earlier version of this design
+had `os_install_packages()` refuse and point the user at the manual command instead - abandoned
+after the signature-equivalence finding above removed the reason to treat this as a security
+decision that has to stay in the user's hands turn by turn, rather than a one-time design call made
+once, here, with the user, up front.)
 
 A second, separate wrinkle compounds this: even once unlocked, the pacman GPG keyring itself resets
 after every SMOS system update (StellarMate ships each OS version as its own btrfs subvolume/
@@ -98,10 +113,14 @@ snapshot - `/etc/pacman.d/gnupg` isn't preserved across that switch), so "target
 recur on a system that was working fine before its last StellarMate update. StellarMate's own
 `reset-factory-common.sh` has a `reset_pacman_keys()` function for exactly this
 (`pacman-key --init && pacman-key --populate && pacman -Sy`) - `os_install_packages()` runs the
-same remedy unconditionally (safe no-op if already fine) once the Atomic Updates lock is confirmed
-off. This never needs to touch `[smos]`'s own signing key (unrelated to any package this mode
+same remedy unconditionally (safe no-op if already fine) inside the temporarily-unlocked window.
+This never needs to touch `[smos]`'s own signing key (unrelated to any package this mode
 installs) - see basic-memory `pifinder-stellarmate/00016` for the full incident history on the
-Pi5 dev machine.
+Pi5 dev machine. Note that going through the official toggle does **not** appear to prevent this
+recurrence either (nothing found in StellarMate's own scripts suggests the enabled/disabled state
+is consulted during an OS update) - it's most likely just how a fresh per-version system snapshot
+works, independent of this flag. The post-SMOS-update re-run this mode will need regardless (see
+R1's mode flag) already assumes packages need reinstalling every time either way.
 
 **Explicitly not planned for right now: Flatpak/Snap.** Worth naming why, since they came up in the
 original discussion: those are end-user *application* distribution/sandboxing formats, not sources
@@ -191,12 +210,12 @@ from the day it's written, not retrofitted later.
 
 ## 6. Known Risks / Open Questions
 
-- **StellarMate's Atomic Updates lock means this mode cannot install anything on a stock,
-  untouched StellarMate system without the user first running StellarMate's own unlock script -
-  a real, user-facing precondition, not just an installer detail.** R4's Control Center tile design
-  should probably surface this clearly (e.g. detect the lock and show the unlock instructions in
-  the UI itself, mirroring what `os_install_packages()` now prints on the terminal side) rather
-  than only failing inside a log a non-technical user won't read.
+- **StellarMate's Atomic Updates lock is handled automatically now (temporarily disabled around
+  the install, always relocked afterward via the official script - see R2), so this is no longer a
+  user-facing blocker requiring manual action.** Still worth surfacing transparently in whatever UI
+  eventually shows install progress (R4) - a user watching the Control Center's install log should
+  see plainly that this happened and why (voids warranty while running, relocked immediately after),
+  not be surprised by warranty-related system messages scrolling past unexplained.
 - **No real Astroberry/Ubuntu/NixOS test hardware available yet - deliberately deferred, not
   ignored.** The abstraction's *shape* (pacman/apt/nix as three first-class cases) is designed in
   now, per explicit instruction, so extending to those platforms later is "verify and fill in a
