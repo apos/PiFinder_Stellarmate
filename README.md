@@ -324,3 +324,4 @@ the script prints what those are and why, in case you want to remove them by han
 *   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions.
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
+*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — submodule setup after cloning, running the shell-script test suite.
