@@ -77,32 +77,69 @@ flowchart LR
 ### PiFinder host
 - PiFinder itself already installed and running (any distribution) - out of scope for this
   project to install.
-- A working INDI stack with dev headers to compile against (`libindi-dev`, `cmake`,
-  `build-essential`/equivalent) - **not preinstalled on stock Raspberry Pi OS/Debian**, unlike
-  StellarMate where it ships as part of the base OS image. See the existing draft howto,
+- On StellarMate specifically (today's only real target - a Pi running the *full* install, real
+  PiFinder hardware attached), this can reuse the existing Web Manager + Mount Bridge tile's own
+  "INDI Web Manager" setup checklist (steps 1-3: Profile, KStars Link, Drivers) almost unchanged -
+  see R-PF1 below. On a non-StellarMate PiFinder host (stock Raspberry Pi OS/Debian, no Web
+  Manager), the original plan still applies: a minimal standalone `indiserver -v -p <port>
+  indi_pifinder_lx200` systemd service, no Web Manager needed - see the existing draft howto,
   [`docs/draft/stock_debian_pifinder_mount_howto.md`](../draft/stock_debian_pifinder_mount_howto.md)
-  (from issue #37), for the exact apt repo/package steps already researched for this.
-- Build and install `indi_pifinder_lx200` only (not Mount Bridge - that stays on the control host).
-- A systemd service running a minimal `indiserver -v -p <port> indi_pifinder_lx200` (not the full
-  Web Manager - a fixed single-driver `indiserver` is enough and simpler to reason about).
+  (from issue #37), for the apt repo/package steps already researched for that case.
 - The chosen port reachable from the control host's LAN (firewall/network consideration, not just
-  a config value).
+  a config value) - StellarMate's own `indiserver` already binds `0.0.0.0`, not just localhost
+  (live-verified 2026-07-28, `ss -tlnp` showed `LISTEN 0.0.0.0:7624`), so nothing extra needs
+  configuring there beyond the firewall itself.
+
+**R-PF1 (new, StellarMate PiFinder-host case only): a dedicated "PiFinder Host Setup" tile in the
+Control Center**, next to the existing Mount Bridge tile - the same "INDI Web Manager" checklist
+pattern (Profile / KStars Link / Drivers) but scoped to just steps 1-3, and only ever toggling
+`PiFinder LX200` (never Mount Bridge - that has no business running on this host in the split
+architecture). Must also **prominently display this device's own LAN IP address** - live-verified
+2026-07-28 that a user setting this up needs to *copy that IP to the other machine*, and hunting
+for it themselves (`ip addr`, router admin page, ...) is real friction this project can remove for
+free (`gui_installer/server.py` already has `_get_all_ips()`, used today for the remote-links
+tile - same source, new place to show it). The port practically never needs to be user-facing here
+(defaults to 7624, StellarMate's own Web Manager profile already shows/lets you change it) - the IP
+is the one piece of information the user actually needs handed to them.
 
 ### Control host
-- Whatever INDI Web Manager it already has (StellarMate's own, Astroberry's, or a plain
-  `indiwebmanager` install per issue #37's draft) needs a way to add PiFinder LX200 as a *remote*
-  driver, not a local one. Needs verifying per Web Manager UI - some Web Manager profile editors
-  expose "Remote" driver entries directly; if a given one doesn't, this project may need to
-  document (or script) the underlying `drivers.xml`/profile-JSON edit directly instead.
-  **Open question, not yet verified against a real Web Manager UI.**
-  - Fallback for when it's not available cleanly: KStars' own Ekos Profile Editor lets you add a
-    remote driver by host:port directly, in every version researched so far.
+- Resolved, live-verified 2026-07-28 against a real StellarMate Web Manager (was an open question
+  before): **StellarMate's own Web Manager profile editor has a first-class "Remote Drivers" text
+  field** (`driver_label@host:port`, comma-separated for multiple), and the underlying REST API
+  models it explicitly too - `POST /api/profiles/{profile}/drivers` accepts entries shaped like
+  `{"label": "PiFinder LX200", "remote": "@<host>:<port>"}` (`ProfileDriver` schema, confirmed via
+  the Web Manager's own `/openapi.json`) alongside plain local `{"label": ...}` entries for Mount
+  Bridge and the real mount driver in the same profile. No manual `drivers.xml`/profile-JSON
+  surgery needed, and the KStars Ekos Profile Editor fallback mentioned below is no longer the only
+  path - StellarMate's own Web Manager UI/API already covers it directly.
+  - Manual path (works today, no new code needed): type `PiFinder LX200@<pifinder-host-ip>:7624`
+    into the Mount Bridge profile's own "Remote Drivers" field in Web Manager.
+  - Fallback if a non-StellarMate control host's Web Manager doesn't expose this: KStars' own Ekos
+    Profile Editor lets you add a remote driver by host:port directly, in every version researched
+    so far.
+
+**R-CH1 (new): a Control Center workflow on the control host to add/update the remote PiFinder
+entry without leaving this project's own UI** - an IP (+ optional port, default 7624) input, wired
+through `webmanager_client.py`'s existing `set_profile_drivers()`/`_set_driver_membership()`
+machinery (already used for local PiFinder LX200/Mount Bridge membership toggling today - just
+needs the `remote` field threaded through as an optional argument) rather than sending the user to
+Web Manager's own page to hand-type the `label@host:port` string themselves. Natural home: extend
+the Mount Bridge tile's existing step 3 "Drivers" row, since this is the same underlying
+"is PiFinder LX200 in this profile" toggle, just choosing *how* (local vs. a given remote address)
+instead of only on/off.
 - Build and install `indi_pifinder_mount_bridge` (same build script as today, already portable to
   any distro with `libindi-dev` present - see concept doc 2 for the apt/pacman abstraction this
   still needs).
 - Optionally, this project's Control Center (Mount Bridge tile only) for the same one-click
   Coupling UX - see concept doc 2 for how a lighter, non-StellarMate install of just that piece
   would work.
+
+### Both roles
+**R-HELP1 (new): `help.html` needs its own section for this whole split-host setup**, and both new
+UI pieces (R-PF1, R-CH1) need an explicit pointer to it (an info-icon link, same pattern as every
+other setup step already uses) - direct feedback (2026-07-28) that a feature like this is
+unusable without the user being told, in the UI itself, that a guide exists and where to find it,
+not just documented somewhere in the repo they'd have to already know to look for.
 
 ## 5. Design Principles
 
@@ -127,12 +164,15 @@ flowchart LR
 
 ## 7. Known Risks / Open Questions
 
-- **Remote-driver UX varies by Web Manager.** Not yet confirmed whether StellarMate's own Web
-  Manager UI supports adding a remote driver as easily as a local one - if not, this project may
-  need its own small helper (script or Control Center feature) to do that edit for the user.
-- **No physical test hardware for the split scenario yet** (two separate machines on a LAN) - this
-  entire concept is currently unverified beyond the INDI protocol's own documented remote-driver
-  support.
+- ~~Remote-driver UX varies by Web Manager.~~ **Resolved 2026-07-28** - StellarMate's own Web
+  Manager supports it natively (see Requirements, Control host). Still genuinely open for
+  non-StellarMate Web Managers (Astroberry, plain `indiwebmanager`) - not yet checked against those.
+- **Physical test hardware for the split scenario now exists** (2026-07-28: two real Pis on the
+  same LAN, one full PiFinder install, one running this session's new `--mode=indi_only` path) -
+  no longer a hypothetical. The actual cross-machine remote-driver hop itself is still unverified
+  end-to-end pending R-PF1/R-CH1 (the two-sided UI hasn't been built yet); the manual path (typing
+  `label@host:port` directly into Web Manager's Remote Drivers field) is what would need to be
+  tried first to verify the mechanism itself, ahead of building UI around it.
 - **PiFinder version/protocol drift**: `pos_server.py`'s LX200 subset and its fixed port (4030) are
   assumed stable across "any PiFinder install" - true for the current upstream, but not guarded
   against future changes the way this project already guards its own installer against.
