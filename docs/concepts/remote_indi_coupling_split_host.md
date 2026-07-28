@@ -2,14 +2,18 @@
 
 ## Status
 
-**Partially implemented.** The control-host half's key open question is resolved (2026-07-28,
-verified live against a real StellarMate Web Manager - see Requirements and Known Risks below).
-R-PF1's tile exists on branch `feature/pifinder-host-setup-tile` (unmerged); its first-attempt
-device-level role banner is to be replaced per the Device role model (R-ROLE1) below. R-CH1 and
-R-ROLE1 are not implemented yet. Originally written up after a design discussion (2026-07-26)
-about supporting PiFinder hardware that never runs StellarMate at all - it just exposes its own
-solved position over the network, while a separate, more capable computer does the actual mount
-coupling.
+**Implemented and verified end-to-end across two physical devices (2026-07-29).** R-CH1 and
+R-ROLE1 are implemented on branch `feature/pifinder-host-setup-tile` as "role cards" in the Mount
+Bridge tile (the standalone R-PF1 tile and the first-attempt device-level role banner were both
+built and then deliberately replaced - see the Device role model below for why). Live cross-device
+verification: one Pi as PiFinder host (role card -> profile with local PiFinder LX200 only, own
+LAN IP displayed), a second Pi as control host (role card -> remote `PiFinder LX200@<ip>:7624` +
+Mount Bridge + mount driver) - the bridge on the control host coupled the remote PiFinder to
+LX200 OnStep, drift readout live, goto-forward active. The INDI-only install mode
+(`setup_indi_only_install_mode.md`) was used on both devices along the way. Originally written up
+after a design discussion (2026-07-26) about supporting PiFinder hardware that never runs
+StellarMate at all - it just exposes its own solved position over the network, while a separate,
+more capable computer does the actual mount coupling.
 
 ## 1. Overview
 
@@ -218,12 +222,10 @@ is currently doing what") - its own chapter if it ever becomes a real need, not 
 - ~~Remote-driver UX varies by Web Manager.~~ **Resolved 2026-07-28** - StellarMate's own Web
   Manager supports it natively (see Requirements, Control host). Still genuinely open for
   non-StellarMate Web Managers (Astroberry, plain `indiwebmanager`) - not yet checked against those.
-- **Physical test hardware for the split scenario now exists** (2026-07-28: two real Pis on the
-  same LAN, one full PiFinder install, one running this session's new `--mode=indi_only` path) -
-  no longer a hypothetical. The actual cross-machine remote-driver hop itself is still unverified
-  end-to-end pending R-PF1/R-CH1 (the two-sided UI hasn't been built yet); the manual path (typing
-  `label@host:port` directly into Web Manager's Remote Drivers field) is what would need to be
-  tried first to verify the mechanism itself, ahead of building UI around it.
+- ~~Physical cross-machine verification pending.~~ **Resolved 2026-07-29**: verified live across
+  two real Pis on the same LAN - PiFinder host role on one, control host role on the other, bridge
+  coupling the remote PiFinder to the mount with live position data. Note the remaining related
+  risk below (reconnect behavior) is now *more* relevant, not less, since the hop is real.
 - **PiFinder version/protocol drift**: `pos_server.py`'s LX200 subset and its fixed port (4030) are
   assumed stable across "any PiFinder install" - true for the current upstream, but not guarded
   against future changes the way this project already guards its own installer against.
