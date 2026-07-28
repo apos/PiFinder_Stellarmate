@@ -25,8 +25,14 @@ smos_version_testing="2.2.1"
 # PiFinder checkout) to a different branch (e.g. "dev") before anything else
 # runs - see bin/switch_branch.sh. Optional; a no-op when omitted, same as
 # --action.
+# --mode=full|indi_only: full (default) is this script's existing, unchanged
+# behavior. indi_only skips everything PiFinder-hardware/application-specific
+# (clone/patch, venv, star catalog, GPIO/udev) and only installs the INDI
+# build dependencies + drivers + Control Center - see
+# docs/concepts/setup_indi_only_install_mode.md (R1-R3).
 ACTION=""
 BRANCH=""
+MODE="full"
 for arg in "$@"; do
     case "$arg" in
         --action=*)
@@ -35,8 +41,19 @@ for arg in "$@"; do
         --branch=*)
             BRANCH="${arg#--branch=}"
             ;;
+        --mode=*)
+            MODE="${arg#--mode=}"
+            ;;
     esac
 done
+
+case "$MODE" in
+    full|indi_only) ;;
+    *)
+        echo "❌ Unknown --mode='$MODE' (expected full|indi_only)." >&2
+        exit 1
+        ;;
+esac
 
 # Captured once, up front: the script itself does `cd "${pifinder_home}"` etc.
 # further down, which permanently changes this process's cwd. The automated
@@ -64,6 +81,8 @@ SETUP_START=$SECONDS
 ############################################################
 # Get some important vars and functinons
 source $(pwd)/bin/functions.sh
+source "${SCRIPT_DIR}/bin/os_detect.sh"
+source "${SCRIPT_DIR}/bin/build_and_install_indi_drivers.sh"
 
 # Define a lock file for resuming the script after venv activation
 lock_file="${pifinder_stellarmate_dir}/.resume_from_venv"
@@ -82,6 +101,50 @@ lock_file="${pifinder_stellarmate_dir}/.resume_from_venv"
 phase() {
     echo "###PHASE### $1"
 }
+
+# --mode=indi_only: a self-contained, additive path that never touches any
+# of the PiFinder-hardware/application-specific code below (clone/patch,
+# venv, star catalog, GPIO/udev, PiFinder's own systemd services) - see
+# docs/concepts/setup_indi_only_install_mode.md's Overview for why none of
+# that applies when there's no PiFinder hardware attached at all. Exits
+# before any "full" mode code runs, so this can never change "full" mode's
+# behavior.
+if [ "$MODE" = "indi_only" ]; then
+    phase "Installing INDI build dependencies"
+    if ! os_install_packages cmake build-tools libindi-dev git; then
+        echo "❌ Failed to install required packages for --mode=indi_only. See messages above." >&2
+        exit 1
+    fi
+
+    phase "Building INDI drivers"
+    build_and_install_indi_drivers
+
+    echo ""
+    echo "##############################################"
+    echo "  PiFinder Setup — INDI-Only Installation Summary"
+    echo "##############################################"
+    echo "  Mode:                 indi_only (no PiFinder hardware/application installed)"
+    echo "  SM Scripts branch:    $(git -C "$SCRIPT_DIR" symbolic-ref --short -q HEAD || echo unknown)"
+    _elapsed=$(( SECONDS - SETUP_START ))
+    echo "  Setup time:           $(( _elapsed / 60 ))m $(( _elapsed % 60 ))s"
+    echo "##############################################"
+
+    if [ -f "$warnings_file" ] && [ -s "$warnings_file" ]; then
+        echo ""
+        echo "  ⚠️  CRITICAL WARNINGS — ACTION REQUIRED:"
+        echo "##############################################"
+        while IFS= read -r line; do
+            echo "  ❌ $line"
+        done < "$warnings_file"
+        echo "##############################################"
+    else
+        echo "  ✅ No critical warnings — setup completed cleanly."
+    fi
+    echo "##############################################"
+    echo "###REBOOT_NEEDED### false"
+    rm -f "$warnings_file"
+    exit 0
+fi
 
 # Source python venv if it exists
 if [ -f "${python_venv}/bin/activate" ]; then
@@ -834,36 +897,10 @@ sudo systemctl start pifinder_splash
 
 phase "Building INDI drivers"
 
-# Build and install the PiFinder INDI drivers (PiFinder LX200 + Mount Bridge).
-# See Readme_PiFinder_LX200.md for what these do and how to use them.
-echo "🔧 Building and installing PiFinder INDI drivers ..."
-
-# Stop any already-running instance first, or installing the new binary fails
-# with "Text file busy". Try a graceful Web Manager stop, then make sure via pkill
-# regardless of whether the server was started through the Web Manager or manually.
-if curl -s -o /dev/null http://localhost:8624/api/server/status 2>/dev/null; then
-    curl -s -X POST http://localhost:8624/api/server/stop >/dev/null 2>&1 || true
-fi
-pkill -f indi_pifinder_lx200 2>/dev/null || true
-pkill -f indi_pifinder_mount_bridge 2>/dev/null || true
-sleep 1
-
-bash "${pifinder_stellarmate_bin}/build_indi_driver.sh" \
-    && echo "✅ PiFinder LX200 driver installed." \
-    || add_warning "PiFinder LX200 INDI driver build/install FAILED — run bin/build_indi_driver.sh manually to see why."
-
-bash "${pifinder_stellarmate_bin}/build_indi_bridge.sh" \
-    && echo "✅ PiFinder Mount Bridge driver installed." \
-    || add_warning "PiFinder Mount Bridge INDI driver build/install FAILED — run bin/build_indi_bridge.sh manually to see why."
-
-# The StellarMate Web Manager caches its driver catalog at its own process
-# startup - restart it so newly built/updated drivers show up. Requires a
-# GUI/VNC user session; skip quietly if unavailable (e.g. run over plain SSH).
-if systemctl --user restart stellarmatewebmanager.service 2>/dev/null; then
-    echo "✅ StellarMate Web Manager restarted — INDI driver catalog is up to date."
-else
-    add_warning "Could not restart stellarmatewebmanager.service (no GUI/VNC session?). Restart it manually so the PiFinder INDI drivers show up in its catalog: systemctl --user restart stellarmatewebmanager.service"
-fi
+# See Readme_PiFinder_LX200.md for what these drivers do and how to use them.
+# build_and_install_indi_drivers() is shared with the --mode=indi_only path
+# below - see bin/build_and_install_indi_drivers.sh.
+build_and_install_indi_drivers
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(tr -d '\0' < /proc/device-tree/model)
