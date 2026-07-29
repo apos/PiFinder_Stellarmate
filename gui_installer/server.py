@@ -1307,6 +1307,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(status)
             return
 
+        if parsed.path == "/api/mount_bridge_drift":
+            # Fast, best-effort companion to /api/mount_bridge_status above -
+            # added because tying the drift readout to that endpoint's 20s
+            # cadence (deliberately slow, see the comment above) made it feel
+            # "sluggish" and out of sync with the mount's actual movement
+            # (live feedback, 2026-07-29). Polled every few seconds from the
+            # frontend (see refreshMbDrift() in status_page.html); a miss
+            # here just skips one number update - it never touches the
+            # connection-status miss-streak/unconfirmed gate, so a short
+            # timeout is fine and doesn't risk reintroducing the flapping
+            # that the longer timeout above was chosen to avoid.
+            try:
+                drift = indi_client.mount_bridge_drift()
+            except indi_client.INDIClientError as e:
+                drift = {"running": False, "error": str(e)}
+            self._send_json(drift)
+            return
+
         if parsed.path == "/api/webmanager/profiles":
             # Phase 2 of the Mount Bridge web integration (see
             # docs/concepts/mount_bridge_web_integration.md) - UC3 (profile
@@ -1991,6 +2009,34 @@ class Handler(BaseHTTPRequestHandler):
                     drift_threshold=threshold,
                     correction_action=action_arg or None,
                 )
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_threshold":
+            # Standalone threshold push, separate from /api/mount_bridge_coupling
+            # above - added because the threshold input field previously only
+            # ever reached the driver via a coupling-preset button click, so
+            # editing it while Verify/Alert or Auto-correct was already active
+            # silently had no effect even though the tile's own drift caption
+            # (client-side, from the same input field) made it look like it
+            # had (found live, 2026-07-29). The frontend only calls this while
+            # one of those two modes is already active - see status_page.html's
+            # applyThresholdChange().
+            qs = parse_qs(parsed.query)
+            threshold_arg = qs.get("threshold", [""])[0]
+            try:
+                threshold = float(threshold_arg)
+            except ValueError:
+                self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
+                return
+            _mb_log(f"setting drift threshold to {threshold}...")
+            try:
+                indi_client.set_drift_threshold(threshold)
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
