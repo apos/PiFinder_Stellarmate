@@ -3496,6 +3496,17 @@ function updateProfileRoleLine() {
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
+  // The status line/diagram/caption are entirely derived from Mount
+  // Bridge's own reported state (PiFinder/Bridge/Mount connection, drift,
+  // coupling mode) - none of that is obtainable in the PiFinder-host role,
+  // since there's no Mount Bridge driver in the profile to ask. Found live
+  // (2026-07-29): leaving them visible showed a permanently red, "not
+  // coupled" diagram even while PiFinder itself was confirmed running -
+  // technically accurate (nothing to report) but read as broken. The role
+  // banner above already says everything this role needs to say.
+  document.getElementById('mb-status-row').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-diagram').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-mode-caption').style.display = hostMode ? 'none' : '';
   if (role === null) {
     el.style.display = 'none';
     return;
