@@ -13,7 +13,11 @@ LX200 OnStep, drift readout live, goto-forward active. The INDI-only install mod
 (`setup_indi_only_install_mode.md`) was used on both devices along the way. Extended live testing
 the same day also surfaced and resolved a real reliability concern (Mount Bridge tile periodically
 flashing "not coupled") - see Known Risks below; short version: it was a client-side status-poll
-timeout, not an actual interruption to the coupling or correction logic. Originally written up
+timeout, not an actual interruption to the coupling or correction logic, and the fix that actually
+stuck was a UI-side redesign (last-known-state-plus-unconfirmed-marker) rather than a bigger
+timeout. The "Control host" role has since been exercised thoroughly end-to-end (role switching,
+coupling presets, drift-driven auto-correct against a real slew, the unconfirmed-state UI, the
+fast drift readout) and is considered fully verified as of 2026-07-29. Originally written up
 after a design discussion (2026-07-26) about supporting PiFinder hardware that never runs
 StellarMate at all - it just exposes its own solved position over the network, while a separate,
 more capable computer does the actual mount coupling.
@@ -249,12 +253,32 @@ is currently doing what") - its own chapter if it ever becomes a real need, not 
   client-side poll timeout occasionally elapsing while `indiserver` was mid-relay of an unrelated
   burst of mount-driver property updates - a purely local, project-specific bug in this project's
   own minimal INDI client (not stock INDI/libindi, not `indiserver`, not the drivers themselves).
-  Fixed by scoping a longer timeout to just the passive background status poll (`server.py`'s
-  `/api/mount_bridge_status`), leaving every interactive action's own fail-fast timeout untouched.
   Full diagnostic trail (including the hypotheses ruled out along the way - StellarMate's Web
   Manager driver-restart mechanism, a suspected TCP connection leak, `indiserver` itself hanging,
-  the Mount Bridge driver process itself hanging - each disproven with live evidence before finding
-  the real cause): basic-memory `pifinder-stellarmate/00079`.
+  the Mount Bridge driver process itself hanging, and (later, see below) stale `indi_pifinder_
+  mount_bridge` crash dumps under `~/.cache/drkonqi/crashes/` that turned out to be 5 days old and
+  unrelated - each disproven with live evidence before finding the real cause): basic-memory
+  `pifinder-stellarmate/00079`.
+
+  First fix attempt (scoping a longer 7s timeout to just the passive background status poll,
+  `server.py`'s `/api/mount_bridge_status`) reduced but did **not** eliminate the flashing on
+  further live testing the same day - the underlying quiet periods sometimes still exceeded the
+  new tolerance. **Actually resolved** by a second, UI-side round on branch
+  `fix/mount-bridge-unconfirmed-state-display` that changed what the tile *claims* rather than
+  chasing the timeout further: on a confirmed miss, stop synthetically blanking the diagram/
+  coupling-mode/status text to "off" (that was itself the misleading part, given the evidence
+  above that the real coupling keeps working) - instead keep showing the last confirmed state,
+  mark it `(unconfirmed)` with a forced-yellow pulsing dot, dim the diagram, and gate only the
+  interactive buttons (Link/Unlink, Connect/Disconnect, the four coupling presets) since those
+  genuinely can't be confirmed safe to act on. Separately, the drift *number* specifically was
+  found to feel "sluggish" tied to the same slow, gated 20s poll - split into its own lightweight,
+  ungated fast poll (`/api/mount_bridge_drift`, no per-device CONNECTION lookups) on a 2000ms
+  cadence matched exactly to `indi_pifinder_mount_bridge`'s own `setDefaultPollingPeriod(2000)`
+  (polling faster reads the same unchanged value, so 2s is the real ceiling, not just a tuning
+  choice) - deliberately not gated on the unconfirmed state, since a read-only number carries none
+  of the safety risk button-gating exists for. Live-verified cross-device the same day: the dim/
+  pulse/last-known-state transition, the forced-yellow unconfirmed dot, and the fast drift readout
+  tracking an active correction in near-real-time all confirmed working as intended.
 
 ## 8. Effort & Priority
 
