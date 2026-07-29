@@ -91,35 +91,6 @@
     font-size: 0.85rem;
     margin-top: 0.4rem;
   }
-  /* Mount Bridge's own status is assembled from four independent async
-     checks (bridge/status, profile+drivers, KStars link, Ekos status) -
-     shown only once, during the tile's first load, until all four have
-     reported at least once. Deliberately NOT a persistent bar that
-     reappears on every later background refresh - each element already
-     has its own "checking..." state for that, this is just for the one
-     moment where the whole tile is still empty/misleading. */
-  #mb-initial-load-banner {
-    margin-bottom: 0.6rem;
-    opacity: 1;
-    transition: opacity 0.2s ease;
-  }
-  #mb-initial-load-track {
-    background: #262626;
-    border-radius: 5px;
-    height: 6px;
-    overflow: hidden;
-  }
-  #mb-initial-load-fill {
-    background: #2a6fdb;
-    height: 100%;
-    width: 0%;
-    transition: width 0.4s ease;
-  }
-  #mb-initial-load-label {
-    color: #999;
-    font-size: 0.74rem;
-    margin: 0.3rem 0 0.6rem 0;
-  }
   #phase-checklist {
     list-style: none;
     margin: 0 0 1.2rem;
@@ -495,6 +466,10 @@
     height: 18px;
     color: #666;
   }
+  /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
+     color itself is set inline (currentColor is already #f5a623 by then),
+     this only adds the animation. */
+  .mode-ampel-icon.mode-ampel-icon-unconfirmed { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   /* Its own divider/spacing now comes from the .collapsible-toggle header
      right above it, not from this rule directly. */
   #ext-hw-status {
@@ -535,25 +510,6 @@
   .mb-role-card-title { font-weight: bold; color: #ddd; font-size: 0.8rem; }
   .mb-role-card.mb-role-active .mb-role-card-title { color: #4caf50; }
   .mb-role-card-sub { color: #999; font-size: 0.72rem; margin-top: 2px; line-height: 1.35; }
-  /* The one-time loading banner used to sit in its own full-width row below
-     the heading, leaving the wide empty area to the right of "Mount Bridge"
-     unused - per live feedback, moved into that corner instead. The status
-     line + action-status hint stay in their OWN row below (per live
-     feedback correction: only the loading banner and the action-status hint
-     were meant to move - the status line/drift caption stays put, just
-     paired on its row with the action-status hint on the right). */
-  #mb-tile-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.6rem;
-  }
-  #mb-tile-header .tile-heading { margin-bottom: 0; }
-  #mb-tile-header #mb-initial-load-banner {
-    flex-shrink: 0;
-    max-width: 55%;
-    text-align: right;
-  }
   #mb-status-row {
     display: flex;
     justify-content: space-between;
@@ -839,7 +795,7 @@
       </div>
       <div id="mode-tile">
         <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="mode-status-line"><span class="status-dot dot-white" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
+        <div id="mode-status-line"><span class="status-dot dot-unconfirmed" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <div id="mode-power-groups">
           <div class="mode-power-group" title="Mode switch and pifinder.service start/stop/restart - all software-level, all the same PiFinder instance.">
             <div class="group-label">PiFinder</div>
@@ -869,21 +825,21 @@
              doesn't compete with the mode/power controls above it. -->
         <div id="mode-ampel-row" title="Quick hardware status - see Hardware test and details below for the full picture">
           <div class="mode-ampel-badge" title="Camera">
-            <svg class="mode-ampel-icon" id="mode-ampel-camera-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-camera-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 8.5h3l1.3-2h7.4l1.3 2h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
               <circle cx="12" cy="14" r="3.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
             </svg>
             <span>Cam</span>
           </div>
           <div class="mode-ampel-badge" title="Solve Simulation">
-            <svg class="mode-ampel-icon" id="mode-ampel-solve-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-solve-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
               <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
             </svg>
             <span>Solve</span>
           </div>
           <div class="mode-ampel-badge" title="IMU">
-            <svg class="mode-ampel-icon" id="mode-ampel-imu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-imu-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
               <path d="M12 5.5a6.5 6.5 0 0 1 6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
               <path d="M18.5 12 L16 10 M18.5 12 L16.3 14.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -891,7 +847,7 @@
             <span>IMU</span>
           </div>
           <div class="mode-ampel-badge" title="GPS">
-            <svg class="mode-ampel-icon" id="mode-ampel-gps-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-gps-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 21.5S5 14.6 5 9.8a7 7 0 0 1 14 0c0 4.8-7 11.7-7 11.7z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
               <circle cx="12" cy="9.6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
             </svg>
@@ -908,15 +864,15 @@
               <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
               <span id="hwtest-status-text"></span>
             </div>
-            <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-camera-detail"></div>
             <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-              <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
+              <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
               <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
             </div>
-            <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-imu-detail"></div>
-            <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-gps-detail"></div>
           </div>
           <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
@@ -925,7 +881,7 @@
           </div>
           <div id="ext-hw-status" style="display:none;">
             <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
-              <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
+              <span class="status-dot dot-unconfirmed" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
               <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
             </div>
             <div class="hw-row hw-keyboard">
@@ -936,7 +892,7 @@
 /home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
 sudo systemctl start pifinder</pre>
             <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
-              <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
+              <span class="status-dot dot-unconfirmed" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
               <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
             </div>
           </div>
@@ -949,13 +905,7 @@ sudo systemctl start pifinder</pre>
            up" rows (Profile/Drivers/Mount/Connect) plus Ekos status, bridge
            settings, and the log collapse behind #mb-details-toggle - see
            its own CSS comment. -->
-      <div id="mb-tile-header">
-        <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="mb-initial-load-banner">
-          <div id="mb-initial-load-track"><div id="mb-initial-load-fill"></div></div>
-          <div id="mb-initial-load-label">Loading Mount Bridge status&hellip;</div>
-        </div>
-      </div>
+      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
       <div id="mb-status-row">
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span></div>
         <div id="mb-action-status"></div>
@@ -1370,11 +1320,18 @@ function setHwDot(dotEl, className) {
   dotEl.className = className;
   const ampelId = HW_AMPEL_ICON_IDS[dotEl.id];
   if (!ampelId) return;
-  const color = className.includes('dot-green') ? '#4caf50'
+  const unconfirmed = className.includes('dot-unconfirmed');
+  const color = unconfirmed ? '#f5a623'
+    : className.includes('dot-green') ? '#4caf50'
     : className.includes('dot-red') ? '#e53935'
     : className.includes('dot-yellow') ? '#f5a623'
     : '#666';
-  document.getElementById(ampelId).style.color = color;
+  const ampelEl = document.getElementById(ampelId);
+  ampelEl.style.color = color;
+  // Same forced-yellow-pulse language as the detail-row dot itself (see
+  // .dot-unconfirmed) - without this the badge just went a static grey
+  // while its own detail-row dot pulsed yellow right next to it.
+  ampelEl.classList.toggle('mode-ampel-icon-unconfirmed', unconfirmed);
 }
 
 async function refreshDebugSolve() {
@@ -1432,9 +1389,16 @@ async function toggleDebugSolve() {
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('debug-solve-btn');
   const textEl = document.getElementById('debug-solve-text');
+  const dotEl = document.getElementById('debug-solve-dot');
   const before = lastDebugSolve;
   btn.disabled = true;
   textEl.textContent = 'Toggling…';
+  // Pulsing yellow on both the detail-row dot and its ampel badge (see
+  // setHwDot()) - per direct feedback (2026-07-29), the text-only change
+  // above was easy to miss ("the toggle doesn't react"), especially with
+  // the detail row tucked inside the collapsed "Hardware test and
+  // details" section while the ampel row above it stayed static.
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   try {
     await fetch(`/api/debug_solve?port=${port}`, { method: 'POST' });
   } catch (e) {
@@ -1496,8 +1460,10 @@ async function toggleDisplayBridge() {
   const action = wantEnable ? 'start' : 'stop';
   const btn = document.getElementById('display-toggle-btn');
   const stateEl = document.getElementById('display-status-state');
+  const dotEl = document.getElementById('display-status-dot');
   btn.disabled = true;
   stateEl.textContent = 'rebooting…';
+  dotEl.className = 'status-dot dot-unconfirmed';
   try {
     const resp = await fetch('/api/display_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();
@@ -1556,9 +1522,11 @@ async function refreshKeyboardBridge() {
 async function toggleKeyboardBridge() {
   const btn = document.getElementById('keyboard-toggle-btn');
   const stateEl = document.getElementById('keyboard-status-state');
+  const dotEl = document.getElementById('keyboard-status-dot');
   const action = lastKeyboardBridgeRunning ? 'stop' : 'start';
   btn.disabled = true;
   stateEl.textContent = action === 'start' ? 'starting…' : 'stopping…';
+  dotEl.className = 'status-dot dot-unconfirmed';
   try {
     const resp = await fetch('/api/keyboard_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();
@@ -2142,7 +2110,7 @@ async function refreshMode() {
     const resp = await fetch('/api/pifinder_mode', { cache: 'no-store' });
     const data = await resp.json();
     if (data.transitioning) {
-      dotEl.className = 'status-dot dot-yellow';
+      dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
       textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Fake Mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
@@ -2204,7 +2172,7 @@ async function toggleMode() {
   if (!confirm(`Really ${verb}?`)) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
-  dotEl.className = 'status-dot dot-yellow';
+  dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
   textEl.textContent = wantFake ? 'Starting Fake Mode…' : 'Starting Real Mode…';
   // Fresh terminal for this attempt - but only if no install/update run
   // currently owns it (the backend already refuses to run both at once, so
@@ -2504,33 +2472,6 @@ function updateMbDiagram(data) {
 // mid-restart) could read genuinely transient/incomplete state and flash it
 // on screen before the next successful poll corrected it. The action's own
 // completion always triggers an immediate, fresh refresh anyway.
-// Mount Bridge's status is assembled from four independent async checks
-// that only run once (unawaited) on initial page load - this just tracks
-// when each has reported at least once, to hide #mb-initial-load-banner.
-// "kstars" is marked from within loadWmProfiles() itself (see there) since
-// checkKstarsLink() is only called conditionally, nested inside it, not
-// as its own top-level call.
-const _mbInitialLoad = { mb: false, profiles: false, kstars: false, ekos: false };
-function _markMbInitialLoadDone(key) {
-  _mbInitialLoad[key] = true;
-  const done = Object.values(_mbInitialLoad).filter(Boolean).length;
-  const total = Object.keys(_mbInitialLoad).length;
-  const fill = document.getElementById('mb-initial-load-fill');
-  if (fill) fill.style.width = `${Math.round((done / total) * 100)}%`;
-  if (done === total) {
-    // Fades out smoothly rather than vanishing outright (same "no sudden
-    // kick" reasoning as #mb-action-status), then collapses its reserved
-    // space only once the fade has actually finished - this one never
-    // reappears this session, so unlike the action status it doesn't need
-    // to keep holding its space open indefinitely afterward.
-    const banner = document.getElementById('mb-initial-load-banner');
-    if (banner) {
-      banner.style.opacity = '0';
-      setTimeout(() => { banner.style.display = 'none'; }, 200);
-    }
-  }
-}
-
 let mbActionInFlight = false;
 
 function setMbActionStatus(text) {
@@ -2616,8 +2557,47 @@ function setMbStatusUnconfirmed(unconfirmed) {
   }
 }
 
+// Roles that actually involve a Mount Bridge driver - only for these does
+// polling/pulsing "checking... (unconfirmed)" mean anything. Found live
+// (2026-07-29): a PiFinder-host device (no Mount Bridge, by design) still
+// showed an endlessly pulsing "checking..." - there's nothing to check,
+// the status poll was just repeatedly hitting "connection refused" against
+// an indiserver nobody ever asked to load Mount Bridge. Same idea applies
+// to a fresh/no-role-yet profile.
+const MB_BRIDGE_RELEVANT_ROLES = ['aio', 'ctrl', 'ctrl-incomplete', 'bridge-only'];
+
+// Clears the tile to a calm, static, non-pulsing state with a reason -
+// shared by both "this role doesn't use Mount Bridge" and "the profile
+// isn't even running yet" below, since both are cases where polling
+// wouldn't tell the user anything they don't already know.
+function setMbStatusInapplicable(text) {
+  mbStatusMissStreak = 0;
+  setMbStatusUnconfirmed(false);
+  document.getElementById('mount-bridge-dot').className = 'status-dot dot-white';
+  document.getElementById('mount-bridge-text').textContent = text;
+  updateWmCouplingGate();
+  refreshWmActiveButton();
+  refreshConnectButtons();
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
+  const role = deriveProfileRole();
+  if (!MB_BRIDGE_RELEVANT_ROLES.includes(role)) {
+    setMbStatusInapplicable(
+      role === 'host' ? 'not used in this role' : 'no Mount Bridge in this profile yet'
+    );
+    return;
+  }
+  if (!wmServerRunning) {
+    // Mount Bridge SHOULD be here once the profile starts, but polling for
+    // it while the profile itself isn't even running yet would just pulse
+    // "checking..." indefinitely for a reason the user can already see
+    // for themselves in the checklist above (Step 1: Profile, not started) -
+    // point at the actual next step instead of making them guess.
+    setMbStatusInapplicable('not running - start the profile below');
+    return;
+  }
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
@@ -2674,7 +2654,7 @@ async function refreshMountBridgeStatus() {
   }
 }
 setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
-refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
+refreshMountBridgeStatus();
 
 // Fast, best-effort drift refresh - kept deliberately separate from the 20s
 // connection-status poll above. That poll's cadence is intentionally slow
@@ -2767,6 +2747,11 @@ async function setWmCoupling(preset) {
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'setting…';
+  // Result genuinely uncertain until the refreshMountBridgeStatus() call at
+  // the end confirms it either way - same pulsing-yellow-while-unsure
+  // language as everywhere else on this page, not just a text change on the
+  // one button someone happened to click.
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
   const threshold = document.getElementById('wm-threshold-input').value;
   try {
     const params = new URLSearchParams({ mode });
@@ -2796,6 +2781,7 @@ async function triggerManualSync() {
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'syncing…';
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
   try {
     const resp = await fetch('/api/mount_bridge_manual_sync', { method: 'POST' });
     const data = await resp.json();
@@ -3012,19 +2998,13 @@ async function loadWmProfiles() {
     if (wmSelectedProfile) {
       refreshWmDriverButtons();
       refreshWmConnectRow();
-      if (changedProfile) {
-        checkKstarsLink().then(() => _markMbInitialLoadDone('kstars'));
-      } else {
-        _markMbInitialLoadDone('kstars');  // already checked before - nothing new to await
-      }
+      if (changedProfile) checkKstarsLink();
     } else {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
       document.getElementById('wm-kstars-link-row').style.display = 'none';
-      _markMbInitialLoadDone('kstars');  // no profile selected - nothing to check
     }
   } catch (e) {
-    _markMbInitialLoadDone('kstars');  // profile load itself failed - nothing to check either
     selectEl.innerHTML = '<option>unavailable</option>';
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
@@ -3121,7 +3101,7 @@ async function checkEkosStatus() {
   updateStepIndicators();
 }
 setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
-checkEkosStatus().then(() => _markMbInitialLoadDone('ekos'));
+checkEkosStatus();
 
 function refreshWmServerButton() {
   const btn = document.getElementById('wm-server-btn');
@@ -3299,6 +3279,7 @@ async function setWmActiveDevices() {
   btn.disabled = true;
   const originalText = btn.textContent;
   btn.textContent = unlinking ? 'unlinking…' : 'linking…';
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
   try {
     const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
     const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
@@ -3342,6 +3323,7 @@ async function _setDeviceConnection(deviceName, btnId, disconnecting) {
   const btn = document.getElementById(btnId);
   btn.disabled = true;
   btn.textContent = disconnecting ? 'disconnecting…' : 'connecting…';
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
   try {
     const params = new URLSearchParams({ device: deviceName });
     if (disconnecting) params.set('action', 'disconnect');
@@ -3450,6 +3432,17 @@ function updateProfileRoleLine() {
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
+  // The status line/diagram/caption are entirely derived from Mount
+  // Bridge's own reported state (PiFinder/Bridge/Mount connection, drift,
+  // coupling mode) - none of that is obtainable in the PiFinder-host role,
+  // since there's no Mount Bridge driver in the profile to ask. Found live
+  // (2026-07-29): leaving them visible showed a permanently red, "not
+  // coupled" diagram even while PiFinder itself was confirmed running -
+  // technically accurate (nothing to report) but read as broken. The role
+  // banner above already says everything this role needs to say.
+  document.getElementById('mb-status-row').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-diagram').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-mode-caption').style.display = hostMode ? 'none' : '';
   if (role === null) {
     el.style.display = 'none';
     return;
@@ -3654,7 +3647,7 @@ async function toggleWmDriver(driver, clickedBtnId) {
   setStepBusy(3, false);
 }
 
-loadWmProfiles().then(() => _markMbInitialLoadDone('profiles'));
+loadWmProfiles();
 setInterval(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU
@@ -3738,6 +3731,13 @@ async function runHardwareTest() {
   const statusText = document.getElementById('hwtest-status-text');
   btn.disabled = true;
   statusText.textContent = 'Running…';
+  // A re-run would otherwise keep showing the PREVIOUS run's colors while
+  // the new one is in progress - pulse all four (their ampel badges follow
+  // via setHwDot()) so a fresh run reads as "results pending", not as
+  // already-known.
+  ['hw-camera-dot', 'hw-imu-dot', 'hw-gps-dot'].forEach((id) => {
+    setHwDot(document.getElementById(id), 'status-dot dot-unconfirmed');
+  });
   let data;
   try {
     const resp = await fetch('/api/hardware_test', { method: 'POST' });
