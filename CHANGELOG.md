@@ -3,6 +3,45 @@
 All notable changes to this project are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.1] - 2026-07-29
+
+### Added
+
+- Control Center: after a successful Install/Update run, the Control Center now restarts itself
+  automatically so it serves whatever code the run just landed on. Previously only the setup
+  script's own logic picked up a branch switch/self-update live (via `self_update.sh`'s existing
+  re-exec) - the long-lived Control Center web server process itself (`gui_installer/server.py`)
+  stayed on stale code until manually restarted or the Pi rebooted, even though the files on disk
+  were already updated. The frontend shows a lock overlay ("Restarting the Control Center to load
+  the new version...") for the duration, then reconnects and reloads automatically once the new
+  process answers - no more silent staleness, and no confusing a deliberate restart with a crash.
+  Note: a device's *first* update through this feature won't show it yet (the still-running old
+  server doesn't know to restart itself) - it applies from the following update onward.
+- Mount Bridge: a compact hardware status strip and the PiFinder Mode tile now distinguish "still
+  starting" (pulsing yellow, within a 45s grace window) from a genuine "not detected" - PiFinder's
+  multi-process design can show its live OLED UI before its own web server process is actually
+  reachable yet, and a flat white "not detected" during that window read as broken.
+- The static OLED-mirror placeholder (shown before the live `/image` probe succeeds) is now a
+  pre-converted red version of PiFinder's own splash image, matching the warm red glow real
+  hardware is always seen in, instead of the full-color/blue original.
+
+### Changed
+
+- **Consolidated every "still checking / result pending" indicator in the Control Center onto one
+  pattern**: a forced-yellow pulsing dot (`.dot-unconfirmed`), extended to every place that
+  previously used a different, uncoupled visual - a static white "checking…" dot (Mode status,
+  Hardware Test rows, external Numpad/LCD rows), a dedicated one-time loading progress bar
+  (`#mb-initial-load-banner`, now removed entirely), and button-text-only feedback with no dot/icon
+  change (Coupling presets, Manual Sync, Link/Unlink Mount, Connect/Disconnect, external hardware
+  toggles). The compact hardware ampel badges pulse in sync with their detail-row dot via the same
+  mechanism. One implementation, one design rule, instead of several independently-grown ones for
+  the same underlying situation.
+- Mount Bridge status polling is now gated on the device's actual role (`deriveProfileRole()`) -
+  only roles that use Mount Bridge poll and show "checking... (unconfirmed)"; a PiFinder-host
+  device shows a calm "not used in this role" instead, and the whole diagram/caption (entirely
+  derived from Mount Bridge's own state, unobtainable in this role) is hidden rather than showing a
+  permanently red, misleading "not coupled" diagram.
+
 ## [1.3.0] - 2026-07-29
 
 ### Added
