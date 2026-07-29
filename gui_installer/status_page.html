@@ -939,30 +939,36 @@ sudo systemctl start pifinder</pre>
       </div>
       </div>
 
+      <!-- Deliberately OUTSIDE #mb-operate-rows and the collapsible
+           #mb-details below - per direct feedback, the role choice is an
+           everyday control, not a setup-time diagnostic, and stays visible
+           (and usable to switch OUT of "PiFinder host" mode) even when
+           #mb-operate-rows itself is hidden in that mode. -->
+      <div class="mb-row" id="mb-role-intro">Three setup variants for integrating your PiFinder with INDI. Choose the appropriate role:<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div id="mb-role-cards">
+        <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
+          <div class="mb-role-card-title">All-in-one</div>
+          <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
+          <div class="mb-role-card-title">PiFinder host</div>
+          <div class="mb-role-card-sub">PiFinder only, no mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
+          <div class="mb-role-card-title">Control host</div>
+          <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
+        </div>
+      </div>
+      <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
+        <span class="mb-row-label">This device's IP:</span>
+        <span id="pfhost-ip">checking&hellip;</span>
+      </div>
+
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics</span>
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
-        <div class="mb-row" id="mb-role-intro">Three setup variants for integrating your PiFinder with INDI. Choose the appropriate role:<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
-        <div id="mb-role-cards">
-          <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
-            <div class="mb-role-card-title">All-in-one</div>
-            <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
-          </div>
-          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
-            <div class="mb-role-card-title">PiFinder host</div>
-            <div class="mb-role-card-sub">PiFinder only, no mount.</div>
-          </div>
-          <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
-            <div class="mb-role-card-title">Control host</div>
-            <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
-          </div>
-        </div>
-        <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
-          <span class="mb-row-label">This device's IP:</span>
-          <span id="pfhost-ip">checking&hellip;</span>
-        </div>
         <div class="mb-row" id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
           <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
         </div>
