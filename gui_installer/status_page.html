@@ -1432,9 +1432,16 @@ async function toggleDebugSolve() {
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('debug-solve-btn');
   const textEl = document.getElementById('debug-solve-text');
+  const dotEl = document.getElementById('debug-solve-dot');
   const before = lastDebugSolve;
   btn.disabled = true;
   textEl.textContent = 'Toggling…';
+  // Pulsing yellow on both the detail-row dot and its ampel badge (see
+  // setHwDot()) - per direct feedback (2026-07-29), the text-only change
+  // above was easy to miss ("the toggle doesn't react"), especially with
+  // the detail row tucked inside the collapsed "Hardware test and
+  // details" section while the ampel row above it stayed static.
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   try {
     await fetch(`/api/debug_solve?port=${port}`, { method: 'POST' });
   } catch (e) {
@@ -2616,8 +2623,47 @@ function setMbStatusUnconfirmed(unconfirmed) {
   }
 }
 
+// Roles that actually involve a Mount Bridge driver - only for these does
+// polling/pulsing "checking... (unconfirmed)" mean anything. Found live
+// (2026-07-29): a PiFinder-host device (no Mount Bridge, by design) still
+// showed an endlessly pulsing "checking..." - there's nothing to check,
+// the status poll was just repeatedly hitting "connection refused" against
+// an indiserver nobody ever asked to load Mount Bridge. Same idea applies
+// to a fresh/no-role-yet profile.
+const MB_BRIDGE_RELEVANT_ROLES = ['aio', 'ctrl', 'ctrl-incomplete', 'bridge-only'];
+
+// Clears the tile to a calm, static, non-pulsing state with a reason -
+// shared by both "this role doesn't use Mount Bridge" and "the profile
+// isn't even running yet" below, since both are cases where polling
+// wouldn't tell the user anything they don't already know.
+function setMbStatusInapplicable(text) {
+  mbStatusMissStreak = 0;
+  setMbStatusUnconfirmed(false);
+  document.getElementById('mount-bridge-dot').className = 'status-dot dot-white';
+  document.getElementById('mount-bridge-text').textContent = text;
+  updateWmCouplingGate();
+  refreshWmActiveButton();
+  refreshConnectButtons();
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
+  const role = deriveProfileRole();
+  if (!MB_BRIDGE_RELEVANT_ROLES.includes(role)) {
+    setMbStatusInapplicable(
+      role === 'host' ? 'not used in this role' : 'no Mount Bridge in this profile yet'
+    );
+    return;
+  }
+  if (!wmServerRunning) {
+    // Mount Bridge SHOULD be here once the profile starts, but polling for
+    // it while the profile itself isn't even running yet would just pulse
+    // "checking..." indefinitely for a reason the user can already see
+    // for themselves in the checklist above (Step 1: Profile, not started) -
+    // point at the actual next step instead of making them guess.
+    setMbStatusInapplicable('not running - start the profile below');
+    return;
+  }
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
