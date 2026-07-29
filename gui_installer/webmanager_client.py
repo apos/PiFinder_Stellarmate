@@ -170,16 +170,26 @@ def _set_driver_membership(profile: str, label: str, present: bool, host: str, p
     is_present = label in current
     if present == is_present:
         return  # already in the desired state, no-op
+    # get_profile_labels() includes remote entries as plain labels too (see
+    # its own docstring) - re-posting them bare, without remote_specs, loses
+    # the remote spec entirely (silently downgrades a remote PiFinder LX200
+    # to a broken local entry). Found live (2026-07-29): adding Mount Bridge
+    # via this function after a remote PiFinder LX200 was already configured
+    # wiped the Remote Drivers field. Fetch and always carry remote_specs
+    # through, on both the add and remove paths.
+    remote_specs = get_remote_drivers(profile, host, port, timeout)
+    remote_labels = {s.split("@", 1)[0] for s in remote_specs}
+    local_labels = [l for l in current if l not in remote_labels]
     if present:
         # Adding is reliable via the plain replace endpoint - verified live.
-        set_profile_drivers(profile, current + [label], host, port, timeout)
+        set_profile_drivers(profile, local_labels + [label], host, port, timeout, remote_specs=remote_specs)
     else:
         # Removing is not reliable via the plain replace endpoint for this
         # specific driver - see module docstring. Delete-and-recreate
         # instead.
         meta = _get_profile_meta(profile, host, port, timeout)
-        new_labels = [d for d in current if d != label]
-        _recreate_profile_with_drivers(profile, new_labels, meta, host, port, timeout)
+        new_labels = [d for d in local_labels if d != label]
+        _recreate_profile_with_drivers(profile, new_labels, meta, host, port, timeout, remote_specs=remote_specs)
 
 
 def set_pifinder_lx200(
