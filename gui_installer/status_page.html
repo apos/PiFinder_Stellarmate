@@ -283,6 +283,13 @@
   .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
+  /* First missed status poll (see mbStatusMissStreak): keeps whatever color
+     the dot already had (last confirmed state) but pulses it, so a single
+     slow poll reads as "still confirming", not silently nothing and not a
+     jarring flip to red/white - a second miss still applies the real
+     "not coupled" state, this is purely the one-poll-long waiting cue. */
+  @keyframes mb-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .status-dot.dot-unconfirmed { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
   #quick-links-tile a {
@@ -469,6 +476,31 @@
     margin-top: 1rem;
     position: relative;
   }
+  #pfhost-ip { color: #4caf50; font-weight: bold; user-select: all; }
+  /* Role cards (R-ROLE1 + R-CH1, see docs/concepts/remote_indi_coupling_
+     split_host.md): the three setup variants as an explicit, prominent
+     choice - per direct feedback, the role must be the main navigation,
+     not a derived side note the user has to hunt for. */
+  #mb-role-intro { color: #bbb; }
+  #mb-role-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+  }
+  .mb-role-card {
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    background: #222;
+  }
+  .mb-role-card:hover { border-color: #777; }
+  .mb-role-card.mb-role-active { border-color: #4caf50; background: #1c2a1c; }
+  .mb-role-card.mb-role-disabled { opacity: 0.45; cursor: not-allowed; }
+  .mb-role-card-title { font-weight: bold; color: #ddd; font-size: 0.8rem; }
+  .mb-role-card.mb-role-active .mb-role-card-title { color: #4caf50; }
+  .mb-role-card-sub { color: #999; font-size: 0.72rem; margin-top: 2px; line-height: 1.35; }
   /* The one-time loading banner used to sit in its own full-width row below
      the heading, leaving the wide empty area to the right of "Mount Bridge"
      unused - per live feedback, moved into that corner instead. The status
@@ -717,6 +749,23 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  /* R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md): what the
+     SELECTED PROFILE makes this device do - a colored, always-visible chip
+     near the tile top (per direct feedback: a plain grey text line under
+     the profile picker went unnoticed for minutes). A device has no role
+     of its own; the profile defines it. */
+  #mb-role-line {
+    background: #1a2433;
+    border: 1px solid #2c4a6e;
+    color: #bcd4ee;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    margin: 0.3rem 0 0.5rem;
+    font-size: 0.8rem;
+  }
+  #mb-role-line .role-name { font-weight: bold; color: #e2edfa; }
+  #mb-role-line .role-detail { color: #8fa8c4; }
+  #mb-role-line .role-warn { color: #e0a030; }
 </style>
 </head>
 <body>
@@ -821,6 +870,7 @@ sudo systemctl start pifinder</pre>
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
         <div id="mb-action-status"></div>
       </div>
+      <div id="mb-role-line" style="display:none;" title="What the selected profile makes this device do - derived live from which drivers the profile actually contains. Change it via the role cards inside Setup checklist &amp; diagnostics below."></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -854,6 +904,11 @@ sudo systemctl start pifinder</pre>
         </div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
+      <!-- Everything from coupling presets to manual sync is meaningless in
+           the "PiFinder host" role (no Mount Bridge in the profile) - this
+           wrapper lets updateProfileRoleLine() hide the whole block at once
+           without fighting the inner rows' own show/hide logic. -->
+      <div id="mb-operate-rows">
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div id="mb-coupling-groups">
           <div class="mb-coupling-group">
@@ -882,13 +937,39 @@ sudo systemctl start pifinder</pre>
         <span class="mb-row-label">Manual:</span>
         <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
       </div>
+      </div>
+
+      <!-- Deliberately OUTSIDE #mb-operate-rows and the collapsible
+           #mb-details below - per direct feedback, the role choice is an
+           everyday control, not a setup-time diagnostic, and stays visible
+           (and usable to switch OUT of "PiFinder host" mode) even when
+           #mb-operate-rows itself is hidden in that mode. -->
+      <div class="mb-row" id="mb-role-intro">Three setup variants for integrating your PiFinder with INDI. Choose the appropriate role:<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div id="mb-role-cards">
+        <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
+          <div class="mb-role-card-title">All-in-one</div>
+          <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
+          <div class="mb-role-card-title">PiFinder host</div>
+          <div class="mb-role-card-sub">PiFinder only, no mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
+          <div class="mb-role-card-title">Control host</div>
+          <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
+        </div>
+      </div>
+      <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
+        <span class="mb-row-label">This device's IP:</span>
+        <span id="pfhost-ip">checking&hellip;</span>
+      </div>
 
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics</span>
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
-        <div class="mb-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+        <div class="mb-row" id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
           <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
         </div>
         <div class="group-label">INDI Web Manager</div>
@@ -907,10 +988,13 @@ sudo systemctl start pifinder</pre>
 
         <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
         </div>
-
+        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
+             Bridge, no mount here) - wrapper for the same reason as
+             #mb-operate-rows above. -->
+        <div id="mb-steps-4-6">
         <div class="mb-checklist-divider"></div>
         <div class="group-label">Ekos / KStars</div>
 
@@ -931,6 +1015,7 @@ sudo systemctl start pifinder</pre>
           <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
           <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
           <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+        </div>
         </div>
 
         <div id="mb-log" title="What this tile has been doing, in order."></div>
@@ -1093,6 +1178,33 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
 // Part of the consolidated quick-links tile.
+// Capability, not role (see docs/concepts/remote_indi_coupling_split_host.md,
+// "Device role model"): a device without PiFinder installed cannot share a
+// local PiFinder, so the two roles that need one (All-in-one, PiFinder
+// host) are disabled there - the ROLE itself stays a property of the
+// selected profile (updateProfileRoleLine()).
+function updateRoleCardCapability(pifinderInstalled) {
+  for (const k of ['aio', 'host']) {
+    const card = document.getElementById(`mb-role-card-${k}`);
+    card.classList.toggle('mb-role-disabled', !pifinderInstalled);
+    if (!pifinderInstalled) {
+      card.title = "Not available: PiFinder isn't installed on this device (INDI-only) - there is no local PiFinder to use.";
+    }
+  }
+}
+
+// This device's own LAN IP(s), shown in the Mount Bridge tile whenever the
+// profile's role is "PiFinder host" - the one piece of information a user
+// setting up the split-host coupling actually needs handed to them (see
+// docs/concepts/remote_indi_coupling_split_host.md, R-PF1): the control
+// host's own "Control host" role card asks for exactly this address. Same
+// source as renderRemoteLinks() below - plain text rather than clickable
+// links, since it's meant to be typed into another machine, not clicked.
+function renderPfhostIp(ips) {
+  const el = document.getElementById('pfhost-ip');
+  el.textContent = (ips && ips.length > 0) ? ips.join(', ') : 'unknown - check your network settings';
+}
+
 function renderRemoteLinks(ips, port) {
   const el = document.getElementById('remote-links');
   if (!ips || ips.length === 0) {
@@ -1740,6 +1852,9 @@ async function resetToChoices() {
     existingInstallKnown = data.existing_install;
     branchTouched = false;
     applyBranchInfo(data);
+    // A completed fresh install may have just changed this device's role
+    // (no ~/PiFinder before, one now) - reflect that without a page reload.
+    updateRoleCardCapability(existingInstallKnown);
   } catch (e) {
     // fall back to whatever was already known
   }
@@ -1864,6 +1979,8 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
+  renderPfhostIp(data.ips);
+  updateRoleCardCapability(data.existing_install);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
   // regardless of which branch PiFinder_Stellarmate's own checkout happens
   // to be on (e.g. left on "dev" from earlier testing) - switching to dev
@@ -2319,6 +2436,12 @@ function refreshWmActiveButton() {
   btn.classList.toggle('mb-btn-active', !!wmActiveMount);
 }
 
+// Consecutive missed polls before actually showing "not coupled" - see
+// mbStatusMissStreak's use below for why. Two misses = ~40s (this poll's
+// own 20s interval) before the UI reacts.
+const MB_STATUS_MISS_THRESHOLD = 2;
+let mbStatusMissStreak = 0;
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -2326,6 +2449,23 @@ async function refreshMountBridgeStatus() {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
     if (!data.running) {
+      mbStatusMissStreak++;
+      // A single missed poll is treated as noise, not a real disconnect -
+      // found live (2026-07-29) on the split-host coupling: the connection
+      // can go quiet for anywhere from a few seconds to ~2 minutes without
+      // indiserver or the Mount Bridge driver process itself ever actually
+      // hanging (confirmed live via strace - neither one blocks during
+      // these windows), yet a single 20s poll landing in one still came back
+      // empty. Root cause not fully understood yet (see basic-memory) - this
+      // absorbs the visible flapping in the meantime without hiding a
+      // genuinely lasting disconnect for long. Per direct feedback: silently
+      // doing nothing on that first miss isn't great either - pulse the
+      // dot (keeping its current color) so "still confirming" is visible
+      // without a jarring flip and without a new banner element.
+      if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) {
+        dotEl.classList.add('dot-unconfirmed');
+        return;
+      }
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate();
@@ -2338,6 +2478,7 @@ async function refreshMountBridgeStatus() {
       updateStepIndicators();
       return;
     }
+    mbStatusMissStreak = 0;
     updateWmCouplingGate();
     updateMbDiagram(data);
     if (wmActiveMount && !data.active_mount) wmAutoLinkAttempted = false;  // freshly unlinked
@@ -2359,6 +2500,11 @@ async function refreshMountBridgeStatus() {
         : 'loaded, not connected (see INDI Control Panel)';
     }
   } catch (e) {
+    mbStatusMissStreak++;
+    if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) {
+      dotEl.classList.add('dot-unconfirmed');
+      return;
+    }
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
     updateWmCouplingGate();
@@ -2503,8 +2649,8 @@ async function startAutoconnect(mode) {
   }
   setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
   if (!wmServerRunning) await toggleWmServer();
-  if (wmHasLx200 === false) await toggleWmDriver('lx200');
-  if (wmHasBridge === false) await toggleWmDriver('bridge');
+  if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
+  if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
 
   if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
 
@@ -2575,6 +2721,10 @@ async function finishAutoconnect(mode) {
 // drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
 let wmSelectedProfile = null;
 let wmHasLx200 = null;
+// "host:port" when PiFinder LX200 is in the profile as a REMOTE entry
+// (another device's PiFinder, R-CH1), null when local or absent -
+// wmHasLx200 alone can't tell the two apart.
+let wmLx200Remote = null;
 let wmHasBridge = null;
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
@@ -2655,38 +2805,42 @@ async function loadWmProfiles() {
 }
 
 async function checkKstarsLink() {
-  const row = document.getElementById('wm-kstars-link-row');
-  const textEl = document.getElementById('wm-kstars-link-text');
-  const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
-  if (!wmSelectedProfile) { row.style.display = 'none'; wmKstarsLinked = null; updateStepIndicators(); return; }
+  const rowIds = ['wm-kstars-link-row'];
+  const textIds = ['wm-kstars-link-text'];
+  const recheckIds = ['wm-kstars-recheck-btn'];
+  const setRowDisplay = (display) => rowIds.forEach((id) => { document.getElementById(id).style.display = display; });
+  if (!wmSelectedProfile) { setRowDisplay('none'); wmKstarsLinked = null; updateStepIndicators(); return; }
   try {
     const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (!data.checked) {  // no KStars DB found - nothing to report, not a real checkpoint here
-      row.style.display = 'none';
+      setRowDisplay('none');
       wmKstarsLinked = null;
       updateStepIndicators();
       return;
     }
-    row.style.display = '';
+    setRowDisplay('');
     wmKstarsLinked = !!data.linked;
     updateStepIndicators();
     // Recheck itself doesn't change anything - it's colored to reflect
     // whether the underlying check currently passes, same "green means
     // satisfied" idea used everywhere else on this tile.
-    recheckBtn.classList.toggle('mb-btn-active', !!data.linked);
+    recheckIds.forEach((id) => document.getElementById(id).classList.toggle('mb-btn-active', !!data.linked));
+    let rowClass, text;
     if (data.linked) {
-      row.className = 'mb-row wm-link-ok';
-      textEl.textContent = "✓ Linked to this Web Manager in KStars.";
+      rowClass = 'mb-row wm-link-ok';
+      text = "✓ Linked to this Web Manager in KStars.";
     } else if (data.kstars_profile_found) {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
     } else {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
     }
+    rowIds.forEach((id) => { document.getElementById(id).className = rowClass; });
+    textIds.forEach((id) => { document.getElementById(id).textContent = text; });
   } catch (e) {
-    row.style.display = 'none';
+    setRowDisplay('none');
     wmKstarsLinked = null;
     updateStepIndicators();
   }
@@ -2760,9 +2914,9 @@ async function toggleWmServer() {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(1, true);
-  const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
   setMbActionStatus(wantsStart ? `⏳ Starting profile "${wmSelectedProfile}"…` : `⏳ Stopping profile "${wmSelectedProfile}"…`);
+  const btn = document.getElementById('wm-server-btn');
   btn.disabled = true;
   btn.textContent = wantsStart ? 'starting…' : 'stopping…';
   try {
@@ -3001,28 +3155,200 @@ function onWmProfileChange() {
 }
 
 function setWmDriverButton(driver, present) {
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  // PiFinder LX200 has a second, mirrored button in the PiFinder Host Setup
+  // tile (see docs/concepts/remote_indi_coupling_split_host.md, R-PF1) -
+  // Mount Bridge has no equivalent there, so only 'lx200' gets a second id.
   const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   if (driver === 'lx200') wmHasLx200 = present; else wmHasBridge = present;
-  if (present === null) {
-    btn.textContent = `${label}: unknown`;
-    btn.disabled = true;
-    btn.classList.remove('mb-btn-active');
-    updateStepIndicators();
+
+  const setBtn = (id, isPresent, btnLabel) => {
+    const btn = document.getElementById(id);
+    if (present === null) {
+      btn.textContent = `${label}: unknown`;
+      btn.disabled = true;
+      btn.classList.remove('mb-btn-active');
+      return;
+    }
+    btn.textContent = isPresent ? `${btnLabel}: remove` : `${btnLabel}: add`;
+    btn.classList.toggle('mb-btn-active', isPresent);
+    btn.disabled = false;
+  };
+
+  if (driver === 'bridge') {
+    setBtn('wm-bridge-btn', present, label);
+  } else {
+    // Names the remote target when the profile's entry is a remote one.
+    const isRemote = !!wmLx200Remote;
+    setBtn('wm-lx200-btn', present, isRemote ? `${label} (remote ${wmLx200Remote})` : label);
+  }
+  updateStepIndicators();
+}
+
+// R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md, "Device role
+// model"): a device has no role - the selected profile has one, derived
+// live from which drivers it actually contains. Install state only marks
+// what CANNOT work (the config-error warning + card capability gating).
+function deriveProfileRole() {
+  if (!wmSelectedProfile || wmHasLx200 === null || wmHasBridge === null) return null;
+  const remote = !!wmLx200Remote;
+  const local = wmHasLx200 === true && !remote;
+  const bridge = wmHasBridge === true;
+  if (local && bridge) return 'aio';
+  if (local && !bridge) return 'host';
+  if (remote && bridge) return 'ctrl';
+  if (remote && !bridge) return 'ctrl-incomplete';
+  if (bridge) return 'bridge-only';
+  return 'none';
+}
+
+// Renders every role-dependent piece in one place: the colored role chip
+// near the tile top, which role card is marked active, and which parts of
+// the tile even apply (the "PiFinder host" role has no mount here - the
+// whole operate area and steps 4-6 disappear, and this device's own IP is
+// shown instead, since that's what the control host's card asks for).
+function updateProfileRoleLine() {
+  const el = document.getElementById('mb-role-line');
+  const role = deriveProfileRole();
+  for (const k of ['aio', 'host', 'ctrl']) {
+    document.getElementById(`mb-role-card-${k}`).classList.toggle(
+      'mb-role-active', role === k || (k === 'ctrl' && role === 'ctrl-incomplete')
+    );
+  }
+  const hostMode = role === 'host';
+  document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
+  if (role === null) {
+    el.style.display = 'none';
     return;
   }
-  btn.textContent = present ? `${label}: remove` : `${label}: add`;
-  btn.classList.toggle('mb-btn-active', present);
-  btn.disabled = false;
-  updateStepIndicators();
+  // Two-tier text (role name bold/prominent, the rest a smaller detail
+  // clause) - per direct feedback, the original single-run sentence gave
+  // the identifying part ("Control host") the same visual weight as the
+  // supporting detail (IP, mount name), same idea as the Coupling status
+  // line's "auto correct" vs. "(drift X')".
+  const mountPart = wmActiveMount ? ` to ${wmActiveMount}` : ' to your mount';
+  let roleName = '';
+  let detail = '';
+  let warn = '';
+  if (role === 'aio') {
+    roleName = 'All-in-one';
+    detail = `this profile couples this device's own PiFinder${mountPart}.`;
+  } else if (role === 'host') {
+    roleName = 'PiFinder host';
+    detail = 'this profile shares this device’s PiFinder position on the network, nothing else.';
+  } else if (role === 'ctrl') {
+    roleName = 'Control host';
+    detail = `this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
+  } else if (role === 'ctrl-incomplete') {
+    roleName = 'Control host (incomplete)';
+    detail = `remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - click the Control host card to fix this.`;
+  } else if (role === 'bridge-only') {
+    roleName = 'Incomplete';
+    detail = 'Mount Bridge is in the profile, but no PiFinder position source (local or remote) - choose a role in Setup checklist & diagnostics below.';
+  } else {
+    roleName = 'No role yet';
+    detail = 'no PiFinder drivers in this profile yet - choose a role in Setup checklist & diagnostics below.';
+  }
+  if ((role === 'aio' || role === 'host') && existingInstallKnown === false) {
+    warn = "⚠ This profile expects a local PiFinder, but PiFinder isn't installed on this device.";
+  }
+  el.textContent = '';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'role-name';
+  nameEl.textContent = `Role: ${roleName}`;
+  el.appendChild(nameEl);
+  const detailEl = document.createElement('span');
+  detailEl.className = 'role-detail';
+  detailEl.textContent = ` – ${detail}`;
+  el.appendChild(detailEl);
+  if (warn) {
+    const w = document.createElement('span');
+    w.className = 'role-warn';
+    w.textContent = ' ' + warn;
+    el.appendChild(w);
+  }
+  el.style.display = '';
+}
+
+// Clicking a role card reconfigures the selected profile to that role -
+// with an explicit confirm first (a click here restarts the running
+// profile via the driver-change endpoint, not something to do by
+// accident). Uses the same per-driver endpoint the step-3 buttons use, so
+// every change shows up in the log identically.
+async function onRoleCardClick(kind) {
+  if (mbActionInFlight) return;
+  const card = document.getElementById(`mb-role-card-${kind}`);
+  if (card.classList.contains('mb-role-disabled')) {
+    alert(card.title);
+    return;
+  }
+  if (!wmSelectedProfile) {
+    alert('Pick a profile in step 1 first.');
+    return;
+  }
+  const profile = wmSelectedProfile;
+  const actions = [];
+  if (kind === 'aio') {
+    if (!confirm(`Configure profile "${profile}" as All-in-one?\n\nPiFinder LX200 (this device's own PiFinder) + Mount Bridge. The running profile is restarted to apply changes.`)) return;
+    if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
+    if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
+  } else if (kind === 'host') {
+    if (!confirm(`Configure profile "${profile}" as PiFinder host?\n\nOnly PiFinder LX200 (this device's own PiFinder) stays in the profile - Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`)) return;
+    if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
+    if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
+  } else {
+    const entered = prompt(
+      "IP address of the PiFinder host device (shown in its own Mount Bridge tile when its role is 'PiFinder host'). Port defaults to 7624:",
+      wmLx200Remote || ''
+    );
+    if (entered === null) return;
+    const value = entered.trim();
+    if (!value) return;
+    if (!/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(value)) {
+      alert(`"${value}" is not a valid host or host:port.`);
+      return;
+    }
+    actions.push(['lx200', 'add_remote', value]);
+    if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
+  }
+  if (actions.length === 0) {
+    setMbActionStatus('Profile already matches this role - nothing to change.');
+    setTimeout(clearMbActionStatus, 4000);
+    return;
+  }
+  mbActionInFlight = true;
+  setStepBusy(3, true);
+  setMbActionStatus('⏳ Configuring role…');
+  try {
+    for (const [driver, action, remote] of actions) {
+      let url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(profile)}&driver=${driver}&action=${action}`;
+      if (remote) url += `&remote=${encodeURIComponent(remote)}`;
+      const resp = await fetch(url, { method: 'POST' });
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error || 'failed');
+    }
+  } catch (e) {
+    alert('Could not configure the role: ' + e.message);
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+  setStepBusy(3, false);
 }
 
 // Green checkmark on each step's label once its condition is actually met -
 // per live feedback, plain grey labels gave no sense of "am I done here yet
 // or not" at a glance.
 function updateStepIndicators() {
-  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
-  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmKstarsLinked === true);
+  const step1Done = !!wmSelectedProfile && wmServerRunning;
+  const step2Done = wmKstarsLinked === true;
+  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
+  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
   document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
   document.getElementById('wm-step5-label').classList.toggle('mb-step-done', wmEkosConnected === true);
@@ -3030,6 +3356,7 @@ function updateStepIndicators() {
   document.getElementById('wm-step6-label').classList.toggle(
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
+  updateProfileRoleLine();
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
@@ -3055,24 +3382,29 @@ async function refreshWmDriverButtons() {
     const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
+    wmLx200Remote = data.lx200_remote || null;
     setWmDriverButton('lx200', data.has_lx200);
     setWmDriverButton('bridge', data.has_bridge);
   } catch (e) {
+    wmLx200Remote = null;
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
   }
 }
 
-async function toggleWmDriver(driver) {
+async function toggleWmDriver(driver, clickedBtnId) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(3, true);
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
-  const wantsAdd = btn.textContent.trim().endsWith('add');
+  const ids = driver === 'lx200' ? ['wm-lx200-btn'] : ['wm-bridge-btn'];
+  const wantsAdd = document.getElementById(clickedBtnId).textContent.trim().endsWith('add');
   const driverLabel = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   setMbActionStatus(wantsAdd ? `⏳ Adding ${driverLabel} driver…` : `⏳ Removing ${driverLabel} driver…`);
-  btn.disabled = true;
-  btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  for (const id of ids) {
+    const btn = document.getElementById(id);
+    btn.disabled = true;
+    btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  }
   try {
     const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=${driver}&action=${wantsAdd ? 'add' : 'remove'}`;
     const resp = await fetch(url, { method: 'POST' });

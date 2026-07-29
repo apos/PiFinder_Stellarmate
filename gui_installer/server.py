@@ -1274,7 +1274,25 @@ class Handler(BaseHTTPRequestHandler):
             # shape for "loaded but not yet connected", not a bug.
             global _mb_last_running
             try:
-                status = indi_client.mount_bridge_status()
+                # Longer timeout than indi_client's own default (3.0s/1.5s) -
+                # deliberately scoped to ONLY this passive, periodic
+                # background poll (called every 20s from the frontend, see
+                # setInterval in status_page.html), not the module-wide
+                # DEFAULT_TIMEOUT every interactive action (Connect/
+                # Disconnect, driver toggles, coupling changes) also relies
+                # on - those stay snappy on a genuine failure. Found live
+                # (2026-07-29): indiserver occasionally takes longer than 3s
+                # to answer a getProperties request for "PiFinder Mount
+                # Bridge" specifically while it's busy relaying a burst of
+                # unrelated property updates from the mount driver - proven
+                # harmless via direct polling of the same properties during
+                # several live occurrences (Mount Bridge's own drift
+                # computation, and the underlying PiFinder/mount position
+                # data, kept updating throughout; Ekos was seen actively
+                # correcting the mount at the same moment this poll came back
+                # empty). Not a real disconnect, just this poll's own
+                # patience being too short for an otherwise-healthy system.
+                status = indi_client.mount_bridge_status(timeout=7.0, device_timeout=3.0)
             except indi_client.INDIClientError as e:
                 status = {"running": False, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
@@ -1674,14 +1692,47 @@ class Handler(BaseHTTPRequestHandler):
             profile = qs.get("profile", [""])[0]
             driver = qs.get("driver", [""])[0]
             action = qs.get("action", [""])[0]
-            if not profile or driver not in ("lx200", "bridge") or action not in ("add", "remove"):
+            # add_remote (lx200 only): use a PiFinder LX200 running on
+            # another device, via INDI's own remote-driver mechanism - see
+            # docs/concepts/remote_indi_coupling_split_host.md (R-CH1).
+            valid = (
+                profile
+                and (
+                    (driver in ("lx200", "bridge") and action in ("add", "remove"))
+                    or (driver == "lx200" and action == "add_remote")
+                )
+            )
+            if not valid:
                 self._send_json(
-                    {"success": False, "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"},
+                    {"success": False,
+                     "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"
+                              " (or driver=lx200&action=add_remote&remote=<host[:port]>)"},
                     status=400,
                 )
                 return
-            setter = webmanager_client.set_pifinder_lx200 if driver == "lx200" else webmanager_client.set_pifinder_bridge
+            remote_spec = None
+            if action == "add_remote":
+                remote_spec = qs.get("remote", [""])[0].strip()
+                # Hostname or IP, optional :port - becomes part of a Web
+                # Manager profile entry, so keep the shape strict.
+                if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
+                    self._send_json(
+                        {"success": False, "error": f"invalid remote host '{remote_spec}' (expected host or host:port)"},
+                        status=400,
+                    )
+                    return
+                if ":" not in remote_spec:
+                    remote_spec += ":7624"
+
+            if driver == "lx200":
+                lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
+                def setter(prof, _present):
+                    webmanager_client.set_pifinder_lx200_state(prof, lx200_state, remote=remote_spec)
+            else:
+                setter = webmanager_client.set_pifinder_bridge
             driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+            if action == "add_remote":
+                driver_label = f"PiFinder LX200 (remote {remote_spec})"
 
             # indiserver only reads a profile's driver list at startup - a
             # driver added/removed here never takes effect on an already-
@@ -1708,7 +1759,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 _mb_log(f"  done.")
 
-            _mb_log(f"{action} {driver_label} {'to' if action == 'add' else 'from'} profile '{profile}'...")
+            _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
             try:
                 setter(profile, action == "add")
             except webmanager_client.WebManagerError as e:
@@ -1805,13 +1856,86 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": True})
                 return
 
+            # Most common cause of "not currently defined" here, seen live:
+            # the device was added to the profile (by this UI or directly in
+            # Web Manager) after indiserver was last started, so it was
+            # never actually spawned/proxied as a process - INDI's way of
+            # saying "I've never heard of this device". Rather than surface
+            # that cryptic message, restart the profile once and retry
+            # automatically - the user shouldn't have to know/remember that
+            # indiserver needs a restart to pick up driver-list changes.
+            # Applies equally to PiFinder LX200's own TCP-connection-settings
+            # check below (ensure_pifinder_lx200_tcp() raises the identical
+            # error, and hit this exact gap live on a REMOTE PiFinder LX200
+            # entry, 2026-07-29: the local indiserver needs a moment longer
+            # to finish proxying a remote device's properties than a local
+            # one, and this check used to fail hard before ever reaching the
+            # retry logic below - restart_and_retry()'s own poll (not a flat
+            # sleep) already tolerates that extra beat, no separate timeout
+            # needed for the remote case specifically.
+            def restart_and_retry(retry_fn):
+                # This restart doesn't just affect `device` - it kills and
+                # respawns every driver process in the profile, so Mount
+                # Bridge's own ACTIVE_DEVICES link (if it had one) is wiped
+                # along with everything else. Found live: this left the tile
+                # showing "not coupled" for up to 30s afterward (until the
+                # unrelated periodic poll noticed and re-linked it), which
+                # looked like step 4 "hanging" even though nothing was
+                # actually stuck - just waiting on a poll that had no idea a
+                # restart had just happened. Capture the link now, while
+                # it's still there, so it can be restored immediately after
+                # rather than left to that poll's own schedule.
+                mb_before = indi_client.mount_bridge_status()
+                previous_mount = mb_before.get("active_mount") if mb_before.get("running") else None
+                previous_pifinder = mb_before.get("active_pifinder") if mb_before.get("running") else None
+
+                _mb_log(f"'{device}' not loaded yet - restarting profile '{profile}' to pick it up...")
+                try:
+                    webmanager_client.stop_server()
+                    webmanager_client.start_server(profile)
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  restart failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return False
+                # indiserver needs a moment to actually fork/proxy the
+                # driver and complete its own startup handshake before
+                # it'll answer getProperties for it - poll briefly instead
+                # of a flat sleep.
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                        break
+                    time.sleep(0.3)
+                _mb_log(f"  restarted. retrying...")
+                try:
+                    retry_fn()
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"  still failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return False
+                _mb_log(f"  done.")
+                if previous_mount:
+                    _mb_log(f"  restoring Mount Bridge's link to '{previous_mount}' (lost in the restart above)...")
+                    try:
+                        indi_client.set_mount_bridge_active_devices(previous_pifinder or "PiFinder LX200", previous_mount)
+                        _mb_log(f"  done.")
+                    except indi_client.INDIClientError as e:
+                        # Not fatal to this connect call - the retry itself
+                        # already succeeded above. The periodic poll's own
+                        # auto-link will still catch this as a fallback.
+                        _mb_log(f"  failed: {e} (will retry via the periodic auto-link check instead)")
+                return True
+
             if device == "PiFinder LX200":
                 try:
                     indi_client.ensure_pifinder_lx200_tcp()
                 except indi_client.INDIClientError as e:
-                    _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
-                    self._send_json({"success": False, "error": str(e)}, status=502)
-                    return
+                    if "not currently defined" not in str(e) or not profile:
+                        _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    if not restart_and_retry(indi_client.ensure_pifinder_lx200_tcp):
+                        return  # restart_and_retry() already sent the error response
 
             _mb_log(f"connecting '{device}'...")
             try:
@@ -1821,68 +1945,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
-                # Most common cause, seen live: the device was added to the
-                # profile (by this UI or directly in Web Manager) after
-                # indiserver was last started, so it was never actually
-                # spawned as a process - "not currently defined" is INDI's
-                # way of saying "I've never heard of this device". Rather
-                # than surface that cryptic message, restart the profile
-                # once and retry automatically - the user shouldn't have to
-                # know/remember that indiserver needs a restart to pick up
-                # driver-list changes.
                 if "not currently defined" not in str(e) or not profile:
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
 
-            # This restart doesn't just affect `device` - it kills and
-            # respawns every driver process in the profile, so Mount
-            # Bridge's own ACTIVE_DEVICES link (if it had one) is wiped
-            # along with everything else. Found live: this left the tile
-            # showing "not coupled" for up to 30s afterward (until the
-            # unrelated periodic poll noticed and re-linked it), which
-            # looked like step 4 "hanging" even though nothing was actually
-            # stuck - just waiting on a poll that had no idea a restart had
-            # just happened. Capture the link now, while it's still there,
-            # so it can be restored immediately after rather than left to
-            # that poll's own schedule.
-            mb_before = indi_client.mount_bridge_status()
-            previous_mount = mb_before.get("active_mount") if mb_before.get("running") else None
-            previous_pifinder = mb_before.get("active_pifinder") if mb_before.get("running") else None
-
-            _mb_log(f"'{device}' not loaded yet - restarting profile '{profile}' to pick it up...")
-            try:
-                webmanager_client.stop_server()
-                webmanager_client.start_server(profile)
-            except webmanager_client.WebManagerError as e:
-                _mb_log(f"  restart failed: {e}")
-                self._send_json({"success": False, "error": str(e)}, status=502)
-                return
-            # indiserver needs a moment to actually fork the driver and
-            # complete its own startup handshake before it'll answer
-            # getProperties for it - poll briefly instead of a flat sleep.
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
-                if indi_client.get_properties(device=device, timeout=1.0).get(device):
-                    break
-                time.sleep(0.3)
-            _mb_log(f"  restarted. retrying connect...")
-            try:
-                indi_client.connect_device(device)
-            except indi_client.INDIClientError as e:
-                _mb_log(f"  still failed: {e}")
-                self._send_json({"success": False, "error": str(e)}, status=502)
-                return
-            _mb_log(f"  done.")
-            if previous_mount:
-                _mb_log(f"  restoring Mount Bridge's link to '{previous_mount}' (lost in the restart above)...")
-                try:
-                    indi_client.set_mount_bridge_active_devices(previous_pifinder or "PiFinder LX200", previous_mount)
-                    _mb_log(f"  done.")
-                except indi_client.INDIClientError as e:
-                    # Not fatal to this connect call - the connect itself
-                    # already succeeded above. The periodic poll's own
-                    # auto-link will still catch this as a fallback.
-                    _mb_log(f"  failed: {e} (will retry via the periodic auto-link check instead)")
+            if not restart_and_retry(lambda: indi_client.connect_device(device)):
+                return  # restart_and_retry() already sent the error response
             self._send_json({"success": True})
             return
 
