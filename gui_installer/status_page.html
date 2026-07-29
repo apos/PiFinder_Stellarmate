@@ -763,6 +763,8 @@
     margin: 0.3rem 0 0.5rem;
     font-size: 0.8rem;
   }
+  #mb-role-line .role-name { font-weight: bold; color: #e2edfa; }
+  #mb-role-line .role-detail { color: #8fa8c4; }
   #mb-role-line .role-warn { color: #e0a030; }
 </style>
 </head>
@@ -3215,31 +3217,50 @@ function updateProfileRoleLine() {
     el.style.display = 'none';
     return;
   }
+  // Two-tier text (role name bold/prominent, the rest a smaller detail
+  // clause) - per direct feedback, the original single-run sentence gave
+  // the identifying part ("Control host") the same visual weight as the
+  // supporting detail (IP, mount name), same idea as the Coupling status
+  // line's "auto correct" vs. "(drift X')".
   const mountPart = wmActiveMount ? ` to ${wmActiveMount}` : ' to your mount';
-  let text = '';
+  let roleName = '';
+  let detail = '';
   let warn = '';
   if (role === 'aio') {
-    text = `All-in-one: this profile couples this device's own PiFinder${mountPart}.`;
+    roleName = 'All-in-one';
+    detail = `this profile couples this device's own PiFinder${mountPart}.`;
   } else if (role === 'host') {
-    text = `PiFinder host: this profile shares this device's PiFinder position on the network, nothing else.`;
+    roleName = 'PiFinder host';
+    detail = 'this profile shares this device’s PiFinder position on the network, nothing else.';
   } else if (role === 'ctrl') {
-    text = `Control host: this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
+    roleName = 'Control host';
+    detail = `this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
   } else if (role === 'ctrl-incomplete') {
-    text = `Control host (incomplete): remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - click the Control host card to fix this.`;
+    roleName = 'Control host (incomplete)';
+    detail = `remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - click the Control host card to fix this.`;
   } else if (role === 'bridge-only') {
-    text = 'Incomplete: Mount Bridge is in the profile, but no PiFinder position source (local or remote) - choose a role in Setup checklist & diagnostics below.';
+    roleName = 'Incomplete';
+    detail = 'Mount Bridge is in the profile, but no PiFinder position source (local or remote) - choose a role in Setup checklist & diagnostics below.';
   } else {
-    text = 'No PiFinder drivers in this profile yet - choose a role in Setup checklist & diagnostics below.';
+    roleName = 'No role yet';
+    detail = 'no PiFinder drivers in this profile yet - choose a role in Setup checklist & diagnostics below.';
   }
   if ((role === 'aio' || role === 'host') && existingInstallKnown === false) {
-    warn = " ⚠ This profile expects a local PiFinder, but PiFinder isn't installed on this device.";
+    warn = "⚠ This profile expects a local PiFinder, but PiFinder isn't installed on this device.";
   }
   el.textContent = '';
-  el.appendChild(document.createTextNode(`Role: ${text}`));
+  const nameEl = document.createElement('span');
+  nameEl.className = 'role-name';
+  nameEl.textContent = `Role: ${roleName}`;
+  el.appendChild(nameEl);
+  const detailEl = document.createElement('span');
+  detailEl.className = 'role-detail';
+  detailEl.textContent = ` – ${detail}`;
+  el.appendChild(detailEl);
   if (warn) {
     const w = document.createElement('span');
     w.className = 'role-warn';
-    w.textContent = warn;
+    w.textContent = ' ' + warn;
     el.appendChild(w);
   }
   el.style.display = '';
