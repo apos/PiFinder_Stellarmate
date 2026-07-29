@@ -154,6 +154,17 @@ _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 _last_action = None  # "fresh" | "reinstall" | "update"
 _last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
+# True from the moment a successful setup-script run finishes until this
+# process itself gets killed by _restart_control_center() below - exposed via
+# /state and /log so the frontend can show a "restarting..." lock overlay
+# instead of the normal success screen. A successful run may have landed on
+# different PiFinder_Stellarmate code (branch switch/self-update always run
+# first, any action/mode) - this process is a long-lived import of that code,
+# so it stays stale until the systemd service itself restarts, unlike the
+# setup script subprocess, which already gets fresh code via self_update.sh's
+# own re-exec. Found live (2026-07-29): editing the code on disk did nothing
+# for the still-running Control Center until it was manually restarted.
+_cc_restart_pending = False
 
 _mode_action_running = False  # True while fake_mode.sh start/stop is in flight
 _mode_lines = []  # fake_mode.sh's own stdout/stderr, shown in the shared Terminal tile
@@ -972,8 +983,21 @@ def _get_all_ips():
     return ips
 
 
+def _restart_control_center():
+    """Kills and relaunches this process via systemd, so it picks up
+    whatever PiFinder_Stellarmate code a just-finished run landed on - see
+    _cc_restart_pending's own comment for why this process doesn't already
+    pick that up on its own. The sleep gives the frontend one more /log or
+    /state poll to observe _cc_restart_pending before this process dies -
+    without it, a fast enough restart could kill the process before the
+    browser ever learns a restart was coming, and it'd just look like a
+    crash instead of the deliberate, communicated restart it actually is."""
+    time.sleep(2)
+    subprocess.run(["sudo", "systemctl", "restart", "pifinder-control-center.service"])
+
+
 def _reader_thread(proc):
-    global _running, _exit_code, _phase_index, _reboot_needed
+    global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending
     # _last_mode is set by _start_run() before this thread starts and never
     # changes for the lifetime of this run - safe to read once, unlocked.
     phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
@@ -998,6 +1022,15 @@ def _reader_thread(proc):
     with _lock:
         _running = False
         _exit_code = proc.returncode
+        # Any successful run (fresh/reinstall/update, any mode) already ran
+        # switch_branch.sh + self_update.sh at its very start, so it may have
+        # landed on different PiFinder_Stellarmate code regardless of which
+        # action was picked - always restart on success, not just for
+        # specific actions.
+        if _exit_code == 0:
+            _cc_restart_pending = True
+    if _exit_code == 0:
+        threading.Thread(target=_restart_control_center, daemon=True).start()
 
 
 def _current_pifinder_stellarmate_branch():
@@ -1215,6 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
                 last_action = _last_action
+                restarting = _cc_restart_pending
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
@@ -1231,6 +1265,7 @@ class Handler(BaseHTTPRequestHandler):
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
+                    "restarting": restarting,
                 }
             )
             return
@@ -1464,6 +1499,7 @@ class Handler(BaseHTTPRequestHandler):
                 phase_index = _phase_index
                 reboot_needed = _reboot_needed
                 last_action = _last_action
+                restarting = _cc_restart_pending
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
@@ -1476,6 +1512,7 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_label": phases[phase_index] if phase_index >= 0 else None,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
+                    "restarting": restarting,
                 }
             )
             return

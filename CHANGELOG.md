@@ -7,10 +7,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
-- Control Center: after a successful Install/Update run, the Control Center now restarts itself
-  automatically so it serves whatever code the run just landed on, instead of staying on stale
-  code until manually restarted or the Pi rebooted. The frontend shows a lock overlay for the
-  duration, then reconnects and reloads automatically once the new process answers.
+  automatically so it serves whatever code the run just landed on. Previously only the setup
+  script's own logic picked up a branch switch/self-update live (via `self_update.sh`'s existing
+  re-exec) - the long-lived Control Center web server process itself (`gui_installer/server.py`)
+  stayed on stale code until manually restarted or the Pi rebooted, even though the files on disk
+  were already updated. The frontend shows a lock overlay ("Restarting the Control Center to load
+  the new version...") for the duration, then reconnects and reloads automatically once the new
+  process answers - no more silent staleness, and no confusing a deliberate restart with a crash.
+  Note: a device's *first* update through this feature won't show it yet (the still-running old
+  server doesn't know to restart itself) - it applies from the following update onward.
 - Mount Bridge: a compact hardware status strip and the PiFinder Mode tile now distinguish "still
   starting" (pulsing yellow, within a 45s grace window) from a genuine "not detected" - PiFinder's
   multi-process design can show its live OLED UI before its own web server process is actually

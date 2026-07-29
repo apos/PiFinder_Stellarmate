@@ -750,6 +750,38 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  /* Full-page lock shown while the Control Center restarts itself after a
+     successful setup run (see enterCcRestartingState() below) - covers and
+     visually disables the whole page rather than individually disabling
+     every scattered button, since the server itself is about to die and
+     come back, not just one action being mid-flight. */
+  #cc-restart-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(10, 10, 10, 0.88);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+  }
+  #cc-restart-overlay-box {
+    max-width: 26rem;
+    color: #ddd;
+  }
+  #cc-restart-overlay-box .spinner {
+    width: 2rem;
+    height: 2rem;
+    margin: 0 auto 1rem;
+    border: 3px solid #444;
+    border-top-color: #2a6fdb;
+    border-radius: 50%;
+    animation: cc-restart-spin 0.9s linear infinite;
+  }
+  @keyframes cc-restart-spin { to { transform: rotate(360deg); } }
+  #cc-restart-overlay-box p { margin: 0.3rem 0; }
+  #cc-restart-overlay-box .cc-restart-detail { color: #888; font-size: 0.85rem; }
   /* R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md): what the
      SELECTED PROFILE makes this device do - a colored, always-visible chip
      near the tile top (per direct feedback: a plain grey text line under
@@ -774,6 +806,15 @@
 <h1>PiFinder on Stellarmate Control Center</h1>
 
 <div id="conn-lost-banner" style="display:none;"></div>
+
+<div id="cc-restart-overlay">
+  <div id="cc-restart-overlay-box">
+    <div class="spinner"></div>
+    <p><strong>Update complete.</strong></p>
+    <p>Restarting the Control Center to load the new version&hellip;</p>
+    <p class="cc-restart-detail">This page will reload automatically once it's back.</p>
+  </div>
+</div>
 
 <div class="page">
   <div class="left-col">
@@ -1783,6 +1824,35 @@ async function watchForServerLoss() {
   }
 }
 
+// Server-triggered self-restart after a successful setup run (see
+// _cc_restart_pending in server.py) - unlike watchForServerLoss() above,
+// this is a KNOWN, deliberate restart the server told us is coming, so
+// instead of just freezing with a "reload it yourself" banner, this locks
+// the page, waits it out, and reloads automatically once the new process
+// actually answers.
+let ccRestarting = false;
+
+function enterCcRestartingState() {
+  if (ccRestarting) return;
+  ccRestarting = true;
+  document.getElementById('cc-restart-overlay').style.display = 'flex';
+  waitForControlCenterRestart();
+}
+
+async function waitForControlCenterRestart() {
+  const maxAttempts = 30;  // 30 * 500ms = 15s ceiling before giving up and reloading anyway
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      await fetch('/', { cache: 'no-store' });
+      break;  // new process answered - reload below, whether this was the loop that found it or the ceiling
+    } catch (e) {
+      // still restarting (or mid-kill from the old process) - keep waiting
+    }
+  }
+  location.reload();
+}
+
 // Runs continuously whenever this tab isn't actively polling a run (i.e.
 // whenever pollLog()'s loop has stopped - idle, cancelled, succeeded, or
 // failed). Catches the case where a run gets started some other way (a
@@ -1793,11 +1863,20 @@ async function watchForServerLoss() {
 // elsewhere. Harmless either way (the server refuses to shut down mid-run),
 // but confusing, so resume live tracking instead of leaving it stale.
 async function watchForNewRun() {
-  if (serverConnectionLost) return;
+  if (serverConnectionLost || ccRestarting) return;
   if (!polling) {
     try {
       const resp = await fetch('/state', { cache: 'no-store' });
       const data = await resp.json();
+      if (data.restarting) {
+        // Same run-just-finished handoff as pollLog() - this tab wasn't
+        // the one actively polling the run (started elsewhere, or this
+        // tab was idle when it finished), but the restart is happening
+        // regardless, so hand off here too instead of leaving the idle
+        // watcher to just keep silently failing against a dead process.
+        enterCcRestartingState();
+        return;
+      }
       if (data.running) {
         document.getElementById('reboot-wrap').style.display = 'none';
         document.getElementById('reset-wrap').style.display = 'none';
@@ -1954,6 +2033,16 @@ async function pollLog() {
     // stop polling and tell the user this view is now frozen.
     polling = false;
     showServerLostBanner();
+    return;
+  }
+  if (data.restarting) {
+    // The run just finished successfully and the server already committed
+    // to restarting itself (see _cc_restart_pending) - stop polling and
+    // hand off to the lock-overlay/reconnect flow instead of the normal
+    // success screen, which would be showing stale-by-the-time-you-read-it
+    // buttons for a process that's about to die anyway.
+    polling = false;
+    enterCcRestartingState();
     return;
   }
   if (data.lines.length > 0) {
