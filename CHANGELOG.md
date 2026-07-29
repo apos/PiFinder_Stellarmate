@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center: after a successful Install/Update run, the Control Center now restarts itself
   automatically so it serves whatever code the run just landed on. Previously only the setup
   script's own logic picked up a branch switch/self-update live (via `self_update.sh`'s existing
   re-exec) - the long-lived Control Center web server process itself (`gui_installer/server.py`)
