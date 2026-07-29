@@ -1338,7 +1338,24 @@ function updatePiFinderStatusAndWizardLink() {
     }
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
+  } else if (Date.now() - pifinderProbingSince < PIFINDER_STARTING_GRACE_MS) {
+    // Within the grace window since probing (re)started - very likely just
+    // normal boot lag, not a real problem: PiFinder's multi-process design
+    // (see CLAUDE.md) can show its live OLED UI before its own separate web
+    // server process (what this probe actually reaches) is up yet. Found
+    // live (2026-07-29): a static white "not detected yet" during this
+    // window read as "something's wrong" when the device was visibly
+    // already running - pulsing yellow + "starting" says "still loading",
+    // not "broken", matching the same idea as Mount Bridge's own
+    // dot-unconfirmed treatment.
+    dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
+    textEl.textContent = 'PiFinder starting…';
+    remoteEl.textContent = 'not available yet';
+    wizardEl.textContent = 'not available yet';
   } else {
+    // Grace window elapsed with still nothing - now genuinely worth calling
+    // out as "not detected" rather than "still starting", since real PiFinder
+    // boots don't normally take this long.
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'PiFinder not detected yet';
     remoteEl.textContent = 'not available yet';
@@ -2031,6 +2048,12 @@ async function pollLog() {
 // same probe also doubles as the "is PiFinder actually reachable yet" signal
 // for the post-success access-links box below.
 let pifinderScreenUrl = null;
+// When the current probing attempt began - reset whenever probing (re)starts
+// (initial load, or losing a previously-working connection) so
+// updatePiFinderStatusAndWizardLink() can tell "just started, still booting"
+// from "been trying for a while, genuinely not there".
+let pifinderProbingSince = Date.now();
+const PIFINDER_STARTING_GRACE_MS = 45000;
 
 function piFinderProbeUrls() {
   const host = location.hostname;
@@ -2069,8 +2092,11 @@ function refreshPiFinderScreen() {
   probe.onerror = () => {
     // PiFinder stopped responding - drop back to the static splash image
     // and resume the discovery loop so it recovers automatically if
-    // PiFinder comes back.
+    // PiFinder comes back. Resets pifinderProbingSince too - a fresh grace
+    // window for "still starting" wording is just as appropriate for a
+    // reconnect (e.g. PiFinder restarting) as it was for the original boot.
     pifinderScreenUrl = null;
+    pifinderProbingSince = Date.now();
     document.getElementById('pifinder-screen').src = '/pifinder_welcome.png';
     updatePiFinderStatusAndWizardLink();
     tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
