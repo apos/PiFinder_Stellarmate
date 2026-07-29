@@ -73,7 +73,12 @@
     background: #000;
     flex-shrink: 0;
   }
-  #pifinder-screen.pf-screen-placeholder { filter: url(#pf-red-channel); }
+  /* Reuses the same pulse already used for "still checking, not broken"
+     elsewhere on this page (mb-status-pulse, Mount Bridge's dot-unconfirmed)
+     rather than a separate animated GIF asset - per direct feedback
+     (2026-07-29), simpler than shipping/maintaining another file for the
+     same "this is loading" signal a CSS animation already covers. */
+  #pifinder-screen.pf-screen-placeholder { animation: mb-status-pulse 1.6s ease-in-out infinite; }
   #progress-wrap { margin-bottom: 0.8rem; }
   #progress-track {
     background: #262626;
@@ -820,33 +825,10 @@
 
 <div id="conn-lost-banner" style="display:none;"></div>
 
-<!-- Recolors the static placeholder image (images/welcome.png, PiFinder's
-     own actual splash asset) into PiFinder's own red night-vision look, so
-     it reads as "starting" rather than "off" (found live, 2026-07-29 - the
-     placeholder is authored in full color/blue, real PiFinder is always
-     seen in red once actually running, so blue had become associated with
-     "off"). NOT the same transform PiFinder's own pipeline uses for its own
-     UI elements (displays.py's RED_RGB mask just keeps the R channel,
-     zeroing G/B) - that only works because those elements are already
-     authored as red-brightness values with near-zero G/B to begin with.
-     Applied to this full-color, blue-dominant source image, a literal
-     "keep R channel" produces near-black (verified: there's almost no red
-     information in a blue image) - what actually reads as "PiFinder, but
-     red" is a luminance -> red mapping instead (grayscale first, then
-     colorize as red), which is what this matrix does. Applied only while
-     showing the placeholder (see .pf-screen-placeholder's own JS toggling)
-     - live mirrored frames already come pre-rendered in red from the
-     device itself. -->
-<svg width="0" height="0" style="position:absolute;">
-  <filter id="pf-red-channel">
-    <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-</svg>
-
 <div class="page">
   <div class="left-col">
     <div id="top-tiles-row">
-      <img id="pifinder-screen" class="pf-screen-placeholder" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+      <img id="pifinder-screen" class="pf-screen-placeholder" src="/pifinder_starting.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
       <div id="quick-links-tile">
         <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
@@ -2100,8 +2082,8 @@ function tryPiFinderScreenUrls(urls, index) {
   probe.onload = () => {
     pifinderScreenUrl = urls[index];
     // Live frames come pre-rendered in red from the device itself - the
-    // red-channel filter is only for the full-color static placeholder
-    // (see .pf-screen-placeholder's own comment).
+    // pulse is only for the static placeholder (see #pifinder-screen's own
+    // CSS comment).
     document.getElementById('pifinder-screen').classList.remove('pf-screen-placeholder');
     refreshPiFinderScreen();
     updatePiFinderStatusAndWizardLink();
@@ -2127,7 +2109,7 @@ function refreshPiFinderScreen() {
     pifinderProbingSince = Date.now();
     const screenEl = document.getElementById('pifinder-screen');
     screenEl.classList.add('pf-screen-placeholder');
-    screenEl.src = '/pifinder_welcome.png';
+    screenEl.src = '/pifinder_starting.png';
     updatePiFinderStatusAndWizardLink();
     tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
   };

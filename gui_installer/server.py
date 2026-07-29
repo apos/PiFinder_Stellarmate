@@ -50,9 +50,19 @@ GPSD_PORT = 2947
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder_thumb.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg_thumb.png"
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
-# PiFinder's own splash bitmap (shown by pifinder_splash.service before the
-# main app is up) - only exists once PiFinder has actually been installed.
-PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
+# Static placeholder for the OLED mirror (<img id="pifinder-screen"> in
+# status_page.html) shown until the live /image probe succeeds - a
+# pre-converted red version of PiFinder's own splash bitmap
+# (~/PiFinder/images/welcome.png, authored in full color/blue). Found live
+# (2026-07-29): real PiFinder is always seen in red once actually running
+# (its own night-vision display pipeline), so a full-color blue placeholder
+# read as "off" rather than "starting". A plain "keep only the R channel"
+# transform doesn't work on this specific blue-dominant source (near-zero
+# red information -> near black) - this file is a luminance -> red mapping
+# instead, generated once and shipped as a static asset in this repo rather
+# than computed live (a live SVG filter was more machinery than this simple,
+# essentially-never-changing splash image warranted).
+PIFINDER_STARTING_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "pifinder_starting.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
@@ -1206,6 +1216,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/pifinder_welcome.png":
             self._send_file(PIFINDER_WELCOME_IMAGE, "image/png")
+            return
+
+        if parsed.path == "/pifinder_starting.png":
+            self._send_file(PIFINDER_STARTING_IMAGE, "image/png")
             return
 
         if parsed.path == "/state":
