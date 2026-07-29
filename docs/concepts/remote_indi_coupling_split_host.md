@@ -10,7 +10,10 @@ verification: one Pi as PiFinder host (role card -> profile with local PiFinder 
 LAN IP displayed), a second Pi as control host (role card -> remote `PiFinder LX200@<ip>:7624` +
 Mount Bridge + mount driver) - the bridge on the control host coupled the remote PiFinder to
 LX200 OnStep, drift readout live, goto-forward active. The INDI-only install mode
-(`setup_indi_only_install_mode.md`) was used on both devices along the way. Originally written up
+(`setup_indi_only_install_mode.md`) was used on both devices along the way. Extended live testing
+the same day also surfaced and resolved a real reliability concern (Mount Bridge tile periodically
+flashing "not coupled") - see Known Risks below; short version: it was a client-side status-poll
+timeout, not an actual interruption to the coupling or correction logic. Originally written up
 after a design discussion (2026-07-26) about supporting PiFinder hardware that never runs
 StellarMate at all - it just exposes its own solved position over the network, while a separate,
 more capable computer does the actual mount coupling.
@@ -232,7 +235,26 @@ is currently doing what") - its own chapter if it ever becomes a real need, not 
 - **Network reliability**: this project already found (2026-07-26 live testing) that
   `indi_pifinder_lx200` has no reconnect logic if its connection to `pos_server.py` drops (see
   basic-memory `pifinder-stellarmate/00075`) - a real network hop (not just localhost) makes that
-  kind of drop *more* likely, not less, so that gap matters more here than it did before.
+  kind of drop *more* likely, not less, so that gap matters more here than it did before. **Still
+  open** - not the same issue as the one resolved just below, which looked identical from the
+  Control Center's UI but had a different, unrelated cause.
+- ~~Mount Bridge tile periodically flashes "not coupled" during cross-device coupling.~~
+  **Resolved 2026-07-29**, and the underlying worry it raised - does the split-host coupling
+  actually keep correcting during these flashes, or is real data lost - **answered live: no data
+  loss, ever**. Root-caused via three simultaneous independent property polls during actual
+  occurrences (PiFinder LX200, the mount, and Mount Bridge's own `DRIFT_STATUS`) plus a direct
+  visual confirmation in Ekos (the mount was seen actively correcting *while* the tile showed "not
+  coupled") - the entire INDI data path (PiFinder position, mount position, Mount Bridge's own
+  correction computation) never stops. The only real fault was `indi_client.py`'s own 3-second
+  client-side poll timeout occasionally elapsing while `indiserver` was mid-relay of an unrelated
+  burst of mount-driver property updates - a purely local, project-specific bug in this project's
+  own minimal INDI client (not stock INDI/libindi, not `indiserver`, not the drivers themselves).
+  Fixed by scoping a longer timeout to just the passive background status poll (`server.py`'s
+  `/api/mount_bridge_status`), leaving every interactive action's own fail-fast timeout untouched.
+  Full diagnostic trail (including the hypotheses ruled out along the way - StellarMate's Web
+  Manager driver-restart mechanism, a suspected TCP connection leak, `indiserver` itself hanging,
+  the Mount Bridge driver process itself hanging - each disproven with live evidence before finding
+  the real cause): basic-memory `pifinder-stellarmate/00079`.
 
 ## 8. Effort & Priority
 
