@@ -58,6 +58,15 @@
     <li><a href="#quick-links">Quick Links</a></li>
     <li><a href="#mode-power">Mode &amp; Power</a></li>
     <li><a href="#install-update">Install or Update</a></li>
+    <li><a href="#indi-only-mode">INDI-only</a></li>
+    <li><a href="#pifinder-host-setup">Device roles (All-in-one / PiFinder host / Control host)</a>
+      <ul>
+        <li><a href="#pifinder-host-what">What is this about?</a></li>
+        <li><a href="#pifinder-host-steps">Split setup: PiFinder device</a></li>
+        <li><a href="#pifinder-host-controlhost">Split setup: control host</a></li>
+        <li><a href="#pifinder-host-notes">Good to know</a></li>
+      </ul>
+    </li>
     <li><a href="#mount-bridge">Mount Bridge</a>
       <ul>
         <li><a href="#step1-profile">1. Profile</a></li>
@@ -97,6 +106,47 @@
   <li><strong>Run Again</strong> (shown after a run finishes): resets this page back to the choice buttons above, without shutting anything down - use this if there's another install/update to do next. This webserver is meant to just keep running; restart it via PiFinder's own "Start Setup Wizard" button on the PFSM page if it's ever off, and stop it deliberately via <code>launch_setup_gui.sh --shutdown-webserver</code> from a terminal if you actually want to.</li>
 </ul>
 
+<h2 id="indi-only-mode">INDI-only</h2>
+<p>For running just the INDI drivers and Control Center on a host with no PiFinder hardware attached at all - e.g. a separate StellarMate/Astroberry "control host" coupled to a real PiFinder elsewhere over the network (see <code>docs/concepts/remote_indi_coupling_split_host.md</code>). Check the box, then click <strong>Install INDI-only</strong>.</p>
+<p>Installs the INDI build dependencies (<code>cmake</code>, build tools, <code>libindi-dev</code>, <code>git</code>) and builds/installs both INDI drivers - nothing else. Your existing <code>~/PiFinder</code> installation (if any) is never touched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup. On StellarMate, package installation briefly and automatically disables StellarMate's own Atomic Updates protection (voids the warranty while running) and restores it immediately afterward, success or failure - you'll see StellarMate's own warning text scroll past in the log; that's expected, not an error.</p>
+
+<h2 id="pifinder-host-setup">Device roles: All-in-one, PiFinder host, Control host</h2>
+
+<h3 id="pifinder-host-what">What is this about?</h3>
+<p>The Mount Bridge tile's <strong>role cards</strong> (inside "Setup checklist &amp; diagnostics") cover three setup variants for integrating your PiFinder with INDI:</p>
+<ul>
+  <li><strong>All-in-one</strong>: PiFinder hardware with mount - this one device does everything. The classic setup; if you only have one device, this is yours.</li>
+  <li><strong>PiFinder host</strong>: PiFinder only, no mount - this device just shares its solved sky position on the network. The mount coupling happens on a separate control host.</li>
+  <li><strong>Control host</strong>: no PiFinder hardware - this device runs the Mount Bridge and your mount, and couples to a PiFinder on <em>another</em> device. See the <a href="#indi-only-mode">INDI-only</a> section above for installing just what a control host needs.</li>
+</ul>
+<p>A device by itself has no fixed role - the <em>profile</em> defines it. Clicking a card configures the selected profile for that role (which drivers it contains); the colored <strong>"Role:"</strong> line near the top of the tile always shows what the selected profile currently makes this device do. Switching roles is just a click - nothing needs reinstalling, and two full PiFinders can swap roles freely between sessions.</p>
+<p>The split roles use INDI's native "remote driver" mechanism: the PiFinder host exposes its <strong>PiFinder LX200</strong> driver on the network, the control host connects to it. No extra software on either side.</p>
+
+<h3 id="pifinder-host-steps">Split setup, step by step - on the PiFinder device</h3>
+<ol>
+  <li>Pick your Web Manager profile in step 1 and click the <strong>PiFinder host</strong> card. Confirm - PiFinder LX200 stays in the profile, Mount Bridge is removed.</li>
+  <li>Converting a profile that used to be All-in-one? Remove any leftover <em>mount driver</em> (e.g. LX200 OnStep) from it via Web Manager or the StellarMate App - the mount belongs to the control host now, and a mount driver here would just fail to find its hardware. The role cards deliberately never touch drivers other than the two PiFinder ones, so this one step stays manual. The same applies to KStars' <em>own</em> Equipment Profile on this device, if you use Ekos here: it may still expect the mount and log "Failed to connect to LX200 OnStep" - either remove the mount there too, or simply don't start Ekos on this device at all (the PiFinder host role doesn't need it; KStars/Ekos belongs on the control host).</li>
+  <li>Start the profile (step 1's Start button) if it isn't running.</li>
+  <li>Note the green <strong>"This device's IP"</strong> shown under the cards - the control host asks for exactly this address. If several IPs are shown, use the one in the same network as the control host.</li>
+</ol>
+<p>Mount, Ekos, Connect, and the Coupling presets disappear in this role - there is no mount here, so none of that applies.</p>
+
+<h3 id="pifinder-host-controlhost">Split setup, step by step - on the control host</h3>
+<ol>
+  <li>Pick (or create) the profile that contains your mount driver, then click the <strong>Control host</strong> card.</li>
+  <li>Enter the PiFinder device's IP address when asked (the one from the other device's "This device's IP" line; port defaults to 7624).</li>
+  <li>That's it - PiFinder LX200 (remote) + Mount Bridge are now in the profile. Continue with steps 4-6 (Mount, Ekos, Connect) and the Coupling presets exactly as in any local setup.</li>
+</ol>
+
+<h3 id="pifinder-host-notes">Good to know</h3>
+<ul>
+  <li>The role cards and the step-3 driver buttons change the same profile - the cards are just the "do the right combination in one click" shortcut. Every change is visible in the tile's log, and a running profile is restarted automatically to apply it.</li>
+  <li>A device without PiFinder software installed (INDI-only) can never be All-in-one or PiFinder host - those two cards are disabled there, with the reason shown on hover.</li>
+  <li>Both devices must be on the same network, and port <code>7624</code> must be reachable between them (firewall).</li>
+  <li>Manual alternative to the Control host card: enter <code>PiFinder LX200@&lt;ip&gt;:7624</code> in the profile's "Remote Drivers" field in Web Manager's own editor - same result.</li>
+  <li>Full architecture: <code>docs/concepts/remote_indi_coupling_split_host.md</code> in the project repository.</li>
+</ul>
+
 <h2 id="mount-bridge">Mount Bridge</h2>
 <p>Couples PiFinder's own solved sky position with a real telescope mount, via the <strong>PiFinder Mount Bridge</strong> INDI driver - so you don't need to open the separate INDI Control Panel for the common cases. The tile is organized as a numbered setup checklist (below the divider line) plus a live status/operate area (above it): connection diagram, Coupling presets, and the drift readout.</p>
 <p>Each numbered step shows a green checkmark once it's actually satisfied, and a yellow spinning symbol while its own action is running.</p>
@@ -109,6 +159,7 @@
 
 <h3 id="step3-drivers">3. Drivers</h3>
 <p>Adds or removes exactly two drivers in the profile: <strong>PiFinder LX200</strong> (reports PiFinder's solved position as a telescope) and <strong>PiFinder Mount Bridge</strong> (does the actual coupling). Nothing else in the profile is touched. If the profile is currently running, adding or removing a driver here automatically stops and restarts it for you - <code>indiserver</code> only reads a profile's driver list once, at startup, so a restart is unavoidable for the change to actually take effect.</p>
+<p>These buttons give fine-grained control over the individual drivers; the <a href="#pifinder-host-setup">role cards</a> above them do the same changes as one-click combinations - for most users, the cards are the easier way. Note that "PiFinder LX200: add" always adds the <em>local</em> driver (this device's own PiFinder); a <em>remote</em> PiFinder is set via the Control host card. When a remote entry is set, this button shows "PiFinder LX200 (remote &lt;ip&gt;): remove". Whatever you change, the <strong>"Role:"</strong> line near the top of the tile reflects the effect immediately.</p>
 
 <h3 id="step4-mount">4. Mount</h3>
 <p>Pick which other driver already in the profile is your actual mount, then click <strong>Link Mount</strong> - this is the one step that needs your judgment, since there's no reliable way to auto-detect "which driver is a telescope." Once linked, the button turns green and becomes <strong>Unlink Mount</strong>.</p>

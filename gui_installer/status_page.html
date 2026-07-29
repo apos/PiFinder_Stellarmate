@@ -191,6 +191,7 @@
     padding: 0.7rem 0.9rem;
   }
   #branch-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
+  #mode-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
   #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; }
   #branch-other-input { margin-left: 0.4rem; }
   #choices button, #start-fresh {
@@ -282,6 +283,20 @@
   .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
+  /* Missed status poll(s) (see mbStatusMissStreak/mbStatusUnconfirmed):
+     forced yellow (same hex as dot-yellow) rather than keeping whatever
+     color the dot already had - per live feedback (2026-07-29), pulsing the
+     PREVIOUS color (which can be white/dot-white before any poll has ever
+     succeeded) read as barely-there noise, not a caution state. Yellow +
+     pulse unambiguously means "can't currently confirm this" regardless of
+     what was last known; the diagram/text below it is what still shows the
+     actual last-known state. Same rule for both the single-miss ("still
+     confirming") and threshold-reached ("now marked unconfirmed") cases -
+     only the pulse itself, not the color, distinguished them before. Must
+     come after the dot-xxx color rules below in source order to win the
+     cascade (equal specificity, last declared wins) without !important. */
+  @keyframes mb-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .status-dot.dot-unconfirmed { background: #f5a623; border-color: #f5a623; animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
   #quick-links-tile a {
@@ -453,6 +468,33 @@
   }
   .hw-detail:empty { display: none; }
   #hwtest-status-text { color: #888; margin-left: 0.5rem; }
+  /* Quick hardware summary strip - same visual language as the Mount
+     Bridge diagram's icon nodes (.mb-node/.mb-icon) but tighter/row-only,
+     no arrows (these four are independent, not a data flow) - see
+     setHwDot()'s own comment for how these stay in sync with the full
+     text rows in "Hardware test and details" below. */
+  #mode-ampel-row {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.7rem 0 0.9rem;
+  }
+  .mode-ampel-badge {
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    background: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.6rem;
+    color: #999;
+  }
+  .mode-ampel-icon {
+    width: 18px;
+    height: 18px;
+    color: #666;
+  }
   /* Its own divider/spacing now comes from the .collapsible-toggle header
      right above it, not from this rule directly. */
   #ext-hw-status {
@@ -468,6 +510,31 @@
     margin-top: 1rem;
     position: relative;
   }
+  #pfhost-ip { color: #4caf50; font-weight: bold; user-select: all; }
+  /* Role cards (R-ROLE1 + R-CH1, see docs/concepts/remote_indi_coupling_
+     split_host.md): the three setup variants as an explicit, prominent
+     choice - per direct feedback, the role must be the main navigation,
+     not a derived side note the user has to hunt for. */
+  #mb-role-intro { color: #bbb; }
+  #mb-role-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+  }
+  .mb-role-card {
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    background: #222;
+  }
+  .mb-role-card:hover { border-color: #777; }
+  .mb-role-card.mb-role-active { border-color: #4caf50; background: #1c2a1c; }
+  .mb-role-card.mb-role-disabled { opacity: 0.45; cursor: not-allowed; }
+  .mb-role-card-title { font-weight: bold; color: #ddd; font-size: 0.8rem; }
+  .mb-role-card.mb-role-active .mb-role-card-title { color: #4caf50; }
+  .mb-role-card-sub { color: #999; font-size: 0.72rem; margin-top: 2px; line-height: 1.35; }
   /* The one-time loading banner used to sit in its own full-width row below
      the heading, leaving the wide empty area to the right of "Mount Bridge"
      unused - per live feedback, moved into that corner instead. The status
@@ -497,6 +564,11 @@
   #mb-status-line {
     font-weight: bold;
     white-space: nowrap;
+  }
+  #mount-bridge-unconfirmed {
+    font-weight: normal;
+    color: #8fa8c4;
+    cursor: help;
   }
   /* Deliberately more prominent than the per-button "setting…"/"linking…"
      text it supplements - per live feedback, a label on the one button
@@ -565,6 +637,12 @@
     flex-wrap: wrap;
     gap: 0.3rem;
     margin: 0.6rem 0 0.3rem 0;
+  }
+  /* Dims the diagram (still fully showing the last CONFIRMED state, see
+     setMbStatusUnconfirmed()) rather than blanking it - signals "can't
+     verify this is still current" without claiming it's now wrong. */
+  #mb-diagram.mb-diagram-unconfirmed {
+    opacity: 0.5;
   }
   .mb-node {
     border: 1px solid #444;
@@ -716,6 +794,23 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  /* R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md): what the
+     SELECTED PROFILE makes this device do - a colored, always-visible chip
+     near the tile top (per direct feedback: a plain grey text line under
+     the profile picker went unnoticed for minutes). A device has no role
+     of its own; the profile defines it. */
+  #mb-role-line {
+    background: #1a2433;
+    border: 1px solid #2c4a6e;
+    color: #bcd4ee;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    margin: 0.3rem 0 0.5rem;
+    font-size: 0.8rem;
+  }
+  #mb-role-line .role-name { font-weight: bold; color: #e2edfa; }
+  #mb-role-line .role-detail { color: #8fa8c4; }
+  #mb-role-line .role-warn { color: #e0a030; }
 </style>
 </head>
 <body>
@@ -764,41 +859,86 @@
             </div>
           </div>
         </div>
-        <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
-          <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
-            <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
-            <span id="hwtest-status-text"></span>
+        <!-- Compact, always-visible hardware summary - same visual language
+             as the Mount Bridge diagram's icon nodes (bordered box, currentColor
+             line-icon, small caption), arranged as a tight single-row strip
+             per direct feedback (2026-07-29): a quick at-a-glance read
+             without needing to expand "Hardware test and details" below,
+             which now holds the same 4 rows in full text/detail form plus
+             "Optional external hardware" - collapsed by default so it
+             doesn't compete with the mode/power controls above it. -->
+        <div id="mode-ampel-row" title="Quick hardware status - see Hardware test and details below for the full picture">
+          <div class="mode-ampel-badge" title="Camera">
+            <svg class="mode-ampel-icon" id="mode-ampel-camera-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 8.5h3l1.3-2h7.4l1.3 2h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+              <circle cx="12" cy="14" r="3.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg>
+            <span>Cam</span>
           </div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-camera-detail"></div>
-          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-            <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
-            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+          <div class="mode-ampel-badge" title="Solve Simulation">
+            <svg class="mode-ampel-icon" id="mode-ampel-solve-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <span>Solve</span>
           </div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-imu-detail"></div>
-          <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
-          <div class="hw-detail" id="hw-gps-detail"></div>
+          <div class="mode-ampel-badge" title="IMU">
+            <svg class="mode-ampel-icon" id="mode-ampel-imu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M12 5.5a6.5 6.5 0 0 1 6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <path d="M18.5 12 L16 10 M18.5 12 L16.3 14.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>IMU</span>
+          </div>
+          <div class="mode-ampel-badge" title="GPS">
+            <svg class="mode-ampel-icon" id="mode-ampel-gps-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21.5S5 14.6 5 9.8a7 7 0 0 1 14 0c0 4.8-7 11.7-7 11.7z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+              <circle cx="12" cy="9.6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg>
+            <span>GPS</span>
+          </div>
         </div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
-          <span>Optional external hardware</span>
-          <span id="ext-hw-chevron">&#9660; show</span>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
+          <span>Hardware test and details</span>
+          <span id="hw-details-chevron">&#9660; show</span>
         </div>
-        <div id="ext-hw-status" style="display:none;">
-          <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
-            <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
-            <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
+        <div id="hw-details" style="display:none;">
+          <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
+            <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
+              <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
+              <span id="hwtest-status-text"></span>
+            </div>
+            <div class="hw-row"><span class="status-dot dot-white" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-camera-detail"></div>
+            <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
+              <span class="status-dot dot-white" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
+              <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+            </div>
+            <div class="hw-row"><span class="status-dot dot-white" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-imu-detail"></div>
+            <div class="hw-row"><span class="status-dot dot-white" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-gps-detail"></div>
           </div>
-          <div class="hw-row hw-keyboard">
-            <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
-            <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
+          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
+            <span>Optional external hardware</span>
+            <span id="ext-hw-chevron">&#9660; show</span>
           </div>
-          <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
+          <div id="ext-hw-status" style="display:none;">
+            <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
+              <span class="status-dot dot-white" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
+              <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
+            </div>
+            <div class="hw-row hw-keyboard">
+              <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
+              <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
+            </div>
+            <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
 /home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
 sudo systemctl start pifinder</pre>
-          <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
-            <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
-            <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+            <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
+              <span class="status-dot dot-white" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
+              <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+            </div>
           </div>
         </div>
       </div>
@@ -817,9 +957,10 @@ sudo systemctl start pifinder</pre>
         </div>
       </div>
       <div id="mb-status-row">
-        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span></div>
+        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span></div>
         <div id="mb-action-status"></div>
       </div>
+      <div id="mb-role-line" style="display:none;" title="What the selected profile makes this device do - derived live from which drivers the profile actually contains. Change it via the role cards inside Setup checklist &amp; diagnostics below."></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -853,6 +994,11 @@ sudo systemctl start pifinder</pre>
         </div>
       </div>
       <div id="mb-mode-caption">Not coupled yet</div>
+      <!-- Everything from coupling presets to manual sync is meaningless in
+           the "PiFinder host" role (no Mount Bridge in the profile) - this
+           wrapper lets updateProfileRoleLine() hide the whole block at once
+           without fighting the inner rows' own show/hide logic. -->
+      <div id="mb-operate-rows">
       <div class="mb-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div id="mb-coupling-groups">
           <div class="mb-coupling-group">
@@ -875,11 +1021,37 @@ sudo systemctl start pifinder</pre>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" title="Only used by the two Auto-correct presets: how far off before they correct.">
         <span class="mb-row-label">Threshold:</span>
-        <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;"> arcmin
+        <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
       </div>
       <div class="mb-row" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
         <span class="mb-row-label">Manual:</span>
         <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
+      </div>
+      </div>
+
+      <!-- Deliberately OUTSIDE #mb-operate-rows and the collapsible
+           #mb-details below - per direct feedback, the role choice is an
+           everyday control, not a setup-time diagnostic, and stays visible
+           (and usable to switch OUT of "PiFinder host" mode) even when
+           #mb-operate-rows itself is hidden in that mode. -->
+      <div class="mb-row" id="mb-role-intro">Three setup variants for integrating your PiFinder with INDI. Choose the appropriate role:<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div id="mb-role-cards">
+        <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
+          <div class="mb-role-card-title">All-in-one</div>
+          <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
+          <div class="mb-role-card-title">PiFinder host</div>
+          <div class="mb-role-card-sub">PiFinder only, no mount.</div>
+        </div>
+        <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
+          <div class="mb-role-card-title">Control host</div>
+          <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
+        </div>
+      </div>
+      <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
+        <span class="mb-row-label">This device's IP:</span>
+        <span id="pfhost-ip">checking&hellip;</span>
       </div>
 
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
@@ -887,7 +1059,7 @@ sudo systemctl start pifinder</pre>
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
-        <div class="mb-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+        <div class="mb-row" id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
           <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
         </div>
         <div class="group-label">INDI Web Manager</div>
@@ -906,10 +1078,13 @@ sudo systemctl start pifinder</pre>
 
         <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge')" disabled>Mount Bridge: &hellip;</button>
+          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
         </div>
-
+        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
+             Bridge, no mount here) - wrapper for the same reason as
+             #mb-operate-rows above. -->
+        <div id="mb-steps-4-6">
         <div class="mb-checklist-divider"></div>
         <div class="group-label">Ekos / KStars</div>
 
@@ -930,6 +1105,7 @@ sudo systemctl start pifinder</pre>
           <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
           <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
           <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+        </div>
         </div>
 
         <div id="mb-log" title="What this tile has been doing, in order."></div>
@@ -972,6 +1148,14 @@ sudo systemctl start pifinder</pre>
       <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
       <span id="branch-current-hint" style="display:none;"></span>
       <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
+    </div>
+
+    <div id="mode-picker-row">
+      <label>
+        <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
+        INDI-only (no PiFinder hardware - for control-host setups)
+      </label>
+      <a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
     </div>
 
     <div id="choices" style="display:none;"></div>
@@ -1084,6 +1268,33 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Every non-loopback IP the server found on this machine, as clickable
 // links, so this page can be reopened from another device on the network.
 // Part of the consolidated quick-links tile.
+// Capability, not role (see docs/concepts/remote_indi_coupling_split_host.md,
+// "Device role model"): a device without PiFinder installed cannot share a
+// local PiFinder, so the two roles that need one (All-in-one, PiFinder
+// host) are disabled there - the ROLE itself stays a property of the
+// selected profile (updateProfileRoleLine()).
+function updateRoleCardCapability(pifinderInstalled) {
+  for (const k of ['aio', 'host']) {
+    const card = document.getElementById(`mb-role-card-${k}`);
+    card.classList.toggle('mb-role-disabled', !pifinderInstalled);
+    if (!pifinderInstalled) {
+      card.title = "Not available: PiFinder isn't installed on this device (INDI-only) - there is no local PiFinder to use.";
+    }
+  }
+}
+
+// This device's own LAN IP(s), shown in the Mount Bridge tile whenever the
+// profile's role is "PiFinder host" - the one piece of information a user
+// setting up the split-host coupling actually needs handed to them (see
+// docs/concepts/remote_indi_coupling_split_host.md, R-PF1): the control
+// host's own "Control host" role card asks for exactly this address. Same
+// source as renderRemoteLinks() below - plain text rather than clickable
+// links, since it's meant to be typed into another machine, not clicked.
+function renderPfhostIp(ips) {
+  const el = document.getElementById('pfhost-ip');
+  el.textContent = (ips && ips.length > 0) ? ips.join(', ') : 'unknown - check your network settings';
+}
+
 function renderRemoteLinks(ips, port) {
   const el = document.getElementById('remote-links');
   if (!ips || ips.length === 0) {
@@ -1142,12 +1353,36 @@ function updatePiFinderStatusAndWizardLink() {
 // /api/debug_solve?port=N, always dialing 127.0.0.1 on that port) rather
 // than fetching PiFinder's API directly from the browser, since PiFinder
 // sets no CORS headers and this page is served from a different port.
+// Maps each of the 4 "Hardware test and details" status dots to its
+// counterpart badge icon in the always-visible #mode-ampel-row strip above
+// it (see that row's own CSS comment) - setHwDot() is a drop-in replacement
+// for a plain `dotEl.className = '...'` assignment that also keeps the
+// badge icon's color in sync, so both places always agree without having
+// to duplicate the color logic at each of the ~12 call sites across
+// refreshDebugSolve()/applyHwTestRow()/applyHwTestResult().
+const HW_AMPEL_ICON_IDS = {
+  'hw-camera-dot': 'mode-ampel-camera-icon',
+  'debug-solve-dot': 'mode-ampel-solve-icon',
+  'hw-imu-dot': 'mode-ampel-imu-icon',
+  'hw-gps-dot': 'mode-ampel-gps-icon',
+};
+function setHwDot(dotEl, className) {
+  dotEl.className = className;
+  const ampelId = HW_AMPEL_ICON_IDS[dotEl.id];
+  if (!ampelId) return;
+  const color = className.includes('dot-green') ? '#4caf50'
+    : className.includes('dot-red') ? '#e53935'
+    : className.includes('dot-yellow') ? '#f5a623'
+    : '#666';
+  document.getElementById(ampelId).style.color = color;
+}
+
 async function refreshDebugSolve() {
   const dotEl = document.getElementById('debug-solve-dot');
   const textEl = document.getElementById('debug-solve-text');
   const btn = document.getElementById('debug-solve-btn');
   if (!pifinderScreenUrl) {
-    dotEl.className = 'status-dot dot-white';
+    setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'unknown (PiFinder not reachable)';
     btn.disabled = true;
     lastDebugSolve = null;
@@ -1163,21 +1398,21 @@ async function refreshDebugSolve() {
     const data = await resp.json();
     lastDebugSolve = data.debug_solve;
     if (data.debug_solve === true) {
-      dotEl.className = 'status-dot dot-green';
+      setHwDot(dotEl, 'status-dot dot-green');
       textEl.textContent = 'ON (using simulated test images)';
     } else if (data.debug_solve === false) {
-      dotEl.className = 'status-dot dot-white';
+      setHwDot(dotEl, 'status-dot dot-white');
       textEl.textContent = isFakeModePort
         ? 'off (Fake Mode is already simulating its own images)'
         : 'off (real camera)';
     } else {
-      dotEl.className = 'status-dot dot-white';
+      setHwDot(dotEl, 'status-dot dot-white');
       textEl.textContent = 'unknown';
     }
     btn.disabled = false;
     return data.debug_solve;
   } catch (e) {
-    dotEl.className = 'status-dot dot-white';
+    setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'unknown';
     btn.disabled = true;
     lastDebugSolve = null;
@@ -1336,9 +1571,38 @@ async function toggleKeyboardBridge() {
   refreshKeyboardBridge();
 }
 
+// --mode=indi_only (see docs/concepts/setup_indi_only_install_mode.md, R1):
+// installs just the INDI drivers + build deps, no PiFinder hardware/
+// application - irrelevant whether an existing ~/PiFinder install exists, so
+// it gets its own single button instead of reusing the reinstall/update
+// choices (whose confirm text and "delete ~/PiFinder" semantics don't apply
+// here at all). lastExistingInstall is remembered so the checkbox's own
+// onchange can re-render the same choices it was last given, without
+// needing a fresh /state round-trip just to toggle a checkbox.
+let indiOnlyMode = false;
+let lastExistingInstall = false;
+
+function onIndiOnlyToggle(checked) {
+  indiOnlyMode = checked;
+  showChoices(lastExistingInstall);
+}
+
 function showChoices(existingInstall) {
+  lastExistingInstall = existingInstall;
   const el = document.getElementById('choices');
   el.style.display = 'block';
+  if (indiOnlyMode) {
+    el.innerHTML = `
+      <p>Use this if this machine has <strong>no PiFinder hardware attached at all</strong> - for example a separate StellarMate/Astroberry
+      "control host" on your network that couples to a real PiFinder running elsewhere, via its INDI driver over the network
+      (see the info icon above for details on that setup). Only the INDI build dependencies and the two PiFinder INDI drivers
+      get installed here. Your existing <code>~/PiFinder</code> installation, if any, is left completely untouched: no clone or patch,
+      no Python virtual environment, no star catalog download, no GPIO/udev hardware setup - none of that applies when there's
+      no PiFinder hardware for this machine to actually run.</p>
+      <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
+    `;
+    return;
+  }
   // No "Cancel"/"Close Setup" choice here - this webserver is meant to just
   // keep running (matching /smos's own "Start" without a "Stop"), and
   // restarting it when needed is already covered there. The old Cancel
@@ -1502,6 +1766,7 @@ async function start(action) {
   // just like any other choice, or the switch silently never happens and
   // whatever branch was already checked out stays checked out.
   if (branchTouched && branch) url += '&branch=' + encodeURIComponent(branch);
+  if (indiOnlyMode) url += '&mode=indi_only';
   const resp = await fetch(url, { method: 'POST' });
   const data = await resp.json();
   if (!data.started) {
@@ -1701,6 +1966,9 @@ async function resetToChoices() {
     existingInstallKnown = data.existing_install;
     branchTouched = false;
     applyBranchInfo(data);
+    // A completed fresh install may have just changed this device's role
+    // (no ~/PiFinder before, one now) - reflect that without a page reload.
+    updateRoleCardCapability(existingInstallKnown);
   } catch (e) {
     // fall back to whatever was already known
   }
@@ -1825,6 +2093,8 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
+  renderPfhostIp(data.ips);
+  updateRoleCardCapability(data.existing_install);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
   // regardless of which branch PiFinder_Stellarmate's own checkout happens
   // to be on (e.g. left on "dev" from earlier testing) - switching to dev
@@ -2064,7 +2334,7 @@ async function refreshHardwareStatus() {
 // triggered, so these can't stay hard-disabled until everything else is
 // already done.
 function updateWmCouplingGate() {
-  const enabled = !!wmSelectedProfile;
+  const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
   ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
@@ -2164,38 +2434,61 @@ function updateBridgeSettingsInfo(data) {
   }
 }
 
+// Everything driven by coupling_mode/correction_action/drift_arcmin alone
+// (diagram arrows, caption, drift badge, preset-button highlight, and - for
+// an active (non-off) mode - the status-line text's embedded drift number).
+// Factored out of updateMbDiagram() so refreshMbDrift()'s fast, drift-only
+// poll (see below) can refresh exactly this and nothing else - it doesn't
+// have (and shouldn't touch) connection-dot or active-mount-name state,
+// which stay owned by the slower, gated refreshMountBridgeStatus() poll.
+// Returns true if coupling is active (non-off) - callers use that to decide
+// status-dot color/the "coupling off" text, which need active_mount too.
+// Tracks the last-known mode in wmLastCouplingMode (see applyThresholdChange
+// below) - this is the only place that reliably sees every fresh
+// coupling_mode reading, from both the slow and fast polls.
+let wmLastCouplingMode = null;
+function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin) {
+  wmLastCouplingMode = couplingMode;
+  const captionEl = document.getElementById('mb-mode-caption');
+  const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
+  updateDriftBadge(driftArcmin, threshold);
+  updateCouplingButtons(couplingMode, correctionAction);
+
+  if (!couplingMode || couplingMode === 'MODE_OFF') {
+    setMbArrow('mb-arrow-left', 'off');
+    setMbArrow('mb-arrow-right', 'off');
+    captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
+    return false;
+  }
+  if (couplingMode === 'MODE_VERIFY_ALERT') {
+    setMbArrow('mb-arrow-left', 'read');
+    setMbArrow('mb-arrow-right', 'read');
+    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
+  } else if (couplingMode === 'MODE_AUTO_CORRECT') {
+    setMbArrow('mb-arrow-left', 'read');
+    const exceeded = driftArcmin !== null && driftArcmin > threshold;
+    setMbArrow('mb-arrow-right', exceeded ? 'write' : 'read');
+    captionEl.textContent = exceeded
+      ? `Correcting the mount now - drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}'`
+      : `Watching for drift - will correct the mount past ${threshold}'`;
+  } else if (couplingMode === 'MODE_GOTO_FORWARD') {
+    setMbArrow('mb-arrow-left', 'goto');
+    setMbArrow('mb-arrow-right', 'goto');
+    captionEl.textContent = 'Forwarding goto commands straight to the mount';
+  }
+  const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
+  document.getElementById('mount-bridge-text').textContent =
+    `${couplingMode.replace('MODE_', '').replace('_', ' ').toLowerCase()}${drift}`;
+  return true;
+}
+
 function updateMbDiagram(data) {
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
-  updateCouplingButtons(data.coupling_mode, data.correction_action);
   updateBridgeSettingsInfo(data);
-
-  const captionEl = document.getElementById('mb-mode-caption');
-  const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
-  updateDriftBadge(data.drift_arcmin, threshold);
-
-  if (!data.coupling_mode || data.coupling_mode === 'MODE_OFF') {
-    setMbArrow('mb-arrow-left', 'off');
-    setMbArrow('mb-arrow-right', 'off');
-    captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
-  } else if (data.coupling_mode === 'MODE_VERIFY_ALERT') {
-    setMbArrow('mb-arrow-left', 'read');
-    setMbArrow('mb-arrow-right', 'read');
-    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
-  } else if (data.coupling_mode === 'MODE_AUTO_CORRECT') {
-    setMbArrow('mb-arrow-left', 'read');
-    const exceeded = data.drift_arcmin !== null && data.drift_arcmin > threshold;
-    setMbArrow('mb-arrow-right', exceeded ? 'write' : 'read');
-    captionEl.textContent = exceeded
-      ? `Correcting the mount now - drift ${data.drift_arcmin.toFixed(1)}' exceeds ${threshold}'`
-      : `Watching for drift - will correct the mount past ${threshold}'`;
-  } else if (data.coupling_mode === 'MODE_GOTO_FORWARD') {
-    setMbArrow('mb-arrow-left', 'goto');
-    setMbArrow('mb-arrow-right', 'goto');
-    captionEl.textContent = 'Forwarding goto commands straight to the mount';
-  }
+  applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin);
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered
@@ -2275,30 +2568,80 @@ pollMbLog();
 
 function refreshWmActiveButton() {
   const btn = document.getElementById('wm-set-active-btn');
+  if (mbStatusUnconfirmed) { btn.disabled = true; return; }  // can't confirm it's safe to act right now
   if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
   btn.textContent = wmActiveMount ? 'Unlink telescope mount' : 'Link telescope mount';
   btn.classList.toggle('mb-btn-active', !!wmActiveMount);
 }
 
+// Consecutive missed polls before treating the status as genuinely
+// unconfirmed (not just one unlucky poll) - see mbStatusUnconfirmed's use
+// below. Two misses = ~40s (this poll's own 20s interval).
+const MB_STATUS_MISS_THRESHOLD = 2;
+let mbStatusMissStreak = 0;
+
+// True once MB_STATUS_MISS_THRESHOLD consecutive polls have come back
+// empty. Read by refreshWmActiveButton()/setConnectButtonState()/
+// updateWmCouplingGate() to force their buttons disabled - the ONLY thing
+// an unconfirmed status actually changes. Everything else (the diagram,
+// drift readout, coupling-mode text) deliberately keeps showing the last
+// CONFIRMED values instead of resetting to a synthetic "off"/blank state.
+//
+// Changed 2026-07-29 after live testing showed the previous behavior
+// (blank everything to "not coupled" on a miss) was actively misleading:
+// three independent live property polls during real occurrences, plus a
+// direct Ekos visual confirmation, proved the underlying coupling/
+// correction never actually stops - only OUR OWN status check occasionally
+// fails to get an answer in time (see basic-memory pifinder-stellarmate/
+// 00079). Presenting that as "coupling is now off" overclaimed something
+// we don't actually know - showing the last confirmed state (marked
+// unconfirmed) while pausing interactive buttons says only what's true:
+// "we can't currently verify, so we're not letting you act on stale
+// information, but here's what we last knew for certain."
+let mbStatusUnconfirmed = false;
+
+function setMbStatusUnconfirmed(unconfirmed) {
+  mbStatusUnconfirmed = unconfirmed;
+  document.getElementById('mount-bridge-unconfirmed').style.display = unconfirmed ? '' : 'none';
+  document.getElementById('mb-diagram').classList.toggle('mb-diagram-unconfirmed', unconfirmed);
+  if (!unconfirmed) {
+    // refreshWmActiveButton()/setConnectButtonState() otherwise treat an
+    // already-disabled button as "mid own action, not mine to touch" - since
+    // WE were the one who disabled these for the unconfirmed period (never
+    // a real in-flight action, status polling is skipped while one runs -
+    // see mbActionInFlight), recompute their actual baseline (profile
+    // running? mount picked?) via the same function that already owns that
+    // logic, rather than blindly re-enabling regardless of profile state.
+    refreshWmConnectRow();
+  }
+}
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
-  const textEl = document.getElementById('mount-bridge-text');
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
     if (!data.running) {
-      dotEl.className = 'status-dot dot-white';
-      textEl.textContent = 'not loaded in the current profile';
+      mbStatusMissStreak++;
+      // A single missed poll is treated as pure noise - pulse the dot
+      // (keeping its current color) so "still confirming" is visible
+      // without a jarring flip and without a new banner element.
+      dotEl.classList.add('dot-unconfirmed');
+      if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
+      // Sustained miss - mark unconfirmed and re-run the three button-state
+      // functions so they pick up the gate themselves (see their own code
+      // for how). Deliberately does NOT touch wmActiveMount/wmXConnected,
+      // does NOT call updateMbDiagram(), and does NOT reset the status
+      // text - all of that keeps showing whatever the last confirmed poll
+      // actually found, per the reasoning above.
+      setMbStatusUnconfirmed(true);
       updateWmCouplingGate();
-      updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
-      if (wmActiveMount) wmAutoLinkAttempted = false;  // was linked, now isn't - allow auto-detect to fire again later
-      wmActiveMount = null;
-      wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
       refreshWmActiveButton();
       refreshConnectButtons();
-      updateStepIndicators();
       return;
     }
+    mbStatusMissStreak = 0;
+    setMbStatusUnconfirmed(false);
     updateWmCouplingGate();
     updateMbDiagram(data);
     if (wmActiveMount && !data.active_mount) wmAutoLinkAttempted = false;  // freshly unlinked
@@ -2309,27 +2652,73 @@ async function refreshMountBridgeStatus() {
     refreshWmActiveButton();
     refreshConnectButtons();
     updateStepIndicators();
-    if (data.coupling_mode && data.coupling_mode !== 'MODE_OFF') {
-      dotEl.className = 'status-dot dot-green';
-      const drift = data.drift_arcmin !== null ? ` (drift ${data.drift_arcmin.toFixed(1)}')` : '';
-      textEl.textContent = `${data.coupling_mode.replace('MODE_', '').replace('_', ' ').toLowerCase()}${drift}`;
-    } else {
-      dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = data.active_mount
+    // applyMbDriftAndMode() (called via updateMbDiagram() above) already
+    // set the status text for an active coupling mode, including its drift
+    // number - only the dot color and the off-case text (which needs
+    // active_mount, not available to the shared function) are left to do
+    // here.
+    const isActiveCoupling = !!(data.coupling_mode && data.coupling_mode !== 'MODE_OFF');
+    dotEl.className = isActiveCoupling ? 'status-dot dot-green' : 'status-dot dot-yellow';
+    if (!isActiveCoupling) {
+      document.getElementById('mount-bridge-text').textContent = data.active_mount
         ? 'connected, coupling off'
         : 'loaded, not connected (see INDI Control Panel)';
     }
   } catch (e) {
-    dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'unknown (check unavailable)';
+    mbStatusMissStreak++;
+    dotEl.classList.add('dot-unconfirmed');
+    if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
+    setMbStatusUnconfirmed(true);
     updateWmCouplingGate();
-    updateMbDiagram({ coupling_mode: null, pifinder_connected: null, bridge_connected: null, mount_connected: null, active_mount: null, drift_arcmin: null });
-    wmPifinderConnected = wmBridgeConnected = wmMountConnected = null;
     refreshConnectButtons();
   }
 }
 setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
 refreshMountBridgeStatus().then(() => _markMbInitialLoadDone('mb'));
+
+// Fast, best-effort drift refresh - kept deliberately separate from the 20s
+// connection-status poll above. That poll's cadence is intentionally slow
+// (see its own comments/basic-memory pifinder-stellarmate/00079) to stay
+// clear of its 7s per-request timeout; tying the drift number to it made it
+// feel "sluggish" and out of step with the mount's actual movement (live
+// feedback, 2026-07-29). This hits its own lightweight endpoint
+// (indi_client.mount_bridge_drift() - no per-device CONNECTION lookups) on
+// a tight cadence with a short timeout; a miss just skips one number
+// update, never touches mbStatusMissStreak/mbStatusUnconfirmed.
+//
+// Deliberately NOT gated on mbStatusUnconfirmed (unlike every button-state
+// function) - found live (2026-07-29) that gating it froze the drift number
+// for the entire unconfirmed window during a real, active correction (Mount
+// Bridge busy retrying a stuck slew), which is exactly when seeing whether
+// the number is actually moving matters most. A successful read here is
+// read-only and low-stakes - nothing gets acted on off the back of it -
+// unlike the button-gated actions, which stay blocked until the slower poll
+// itself reconfirms things are safe to touch.
+let mbDriftPollInFlight = false;
+async function refreshMbDrift() {
+  if (mbDriftPollInFlight || mbActionInFlight) return;
+  mbDriftPollInFlight = true;
+  try {
+    const resp = await fetch('/api/mount_bridge_drift', { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.running) {
+      applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin);
+    }
+  } catch (e) {
+    // best-effort - a miss here just means the number doesn't tick this cycle
+  } finally {
+    mbDriftPollInFlight = false;
+  }
+}
+// 2000ms, not faster - matches indi_pifinder_mount_bridge's own
+// setDefaultPollingPeriod(2000) (see pifinder_mount_bridge.cpp): the driver
+// only recomputes DRIFT_STATUS on that cadence, so polling faster just
+// re-reads the same unchanged value. Confirmed live (2026-07-29) the user
+// asked about 0.5s specifically - not worth it for that reason, and doubling
+// request rate further would add load to indiserver during exactly the busy
+// stretches (active corrections/slews) where the root-cause timeout issue
+// already lives.
+setInterval(refreshMbDrift, 2000);
 
 // The four Coupling preset buttons, mapped to the server's own (mode,
 // action) pair - "auto_correct_sync"/"auto_correct_goto" are two distinct
@@ -2343,6 +2732,32 @@ const MB_PRESET_INFO = {
   auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
 };
+
+// Pushes a changed threshold to the driver immediately, without requiring
+// a coupling-preset button click - fixes a real bug found live (2026-07-29):
+// this field previously only ever reached the driver via setWmCoupling()
+// below, so editing it while Verify/Alert or Auto-correct was already
+// active silently did nothing server-side, even though the drift caption
+// (client-side, reading this same field) immediately looked like it had
+// taken effect. Only actually sends anything when one of those two modes
+// is currently active (via wmLastCouplingMode, set by applyMbDriftAndMode())
+// - otherwise there's nothing running that uses the threshold yet, and the
+// next preset-button click already picks up whatever's in the field.
+async function applyThresholdChange() {
+  if (wmLastCouplingMode !== 'MODE_VERIFY_ALERT' && wmLastCouplingMode !== 'MODE_AUTO_CORRECT') return;
+  const input = document.getElementById('wm-threshold-input');
+  const threshold = parseFloat(input.value);
+  if (!Number.isFinite(threshold) || threshold <= 0) return;
+  setMbActionStatus('⏳ Updating threshold…');
+  try {
+    await fetch(`/api/mount_bridge_threshold?threshold=${threshold}`, { method: 'POST' });
+  } catch (e) {
+    // fall through - refreshMbDrift() below reflects whatever actually took effect
+  }
+  pollMbLog();
+  await refreshMbDrift();
+  clearMbActionStatus();
+}
 
 async function setWmCoupling(preset) {
   mbActionInFlight = true;
@@ -2464,8 +2879,8 @@ async function startAutoconnect(mode) {
   }
   setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
   if (!wmServerRunning) await toggleWmServer();
-  if (wmHasLx200 === false) await toggleWmDriver('lx200');
-  if (wmHasBridge === false) await toggleWmDriver('bridge');
+  if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
+  if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
 
   if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
 
@@ -2536,6 +2951,10 @@ async function finishAutoconnect(mode) {
 // drivers (UC4). See docs/concepts/mount_bridge_web_integration.md.
 let wmSelectedProfile = null;
 let wmHasLx200 = null;
+// "host:port" when PiFinder LX200 is in the profile as a REMOTE entry
+// (another device's PiFinder, R-CH1), null when local or absent -
+// wmHasLx200 alone can't tell the two apart.
+let wmLx200Remote = null;
 let wmHasBridge = null;
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
@@ -2616,38 +3035,42 @@ async function loadWmProfiles() {
 }
 
 async function checkKstarsLink() {
-  const row = document.getElementById('wm-kstars-link-row');
-  const textEl = document.getElementById('wm-kstars-link-text');
-  const recheckBtn = document.getElementById('wm-kstars-recheck-btn');
-  if (!wmSelectedProfile) { row.style.display = 'none'; wmKstarsLinked = null; updateStepIndicators(); return; }
+  const rowIds = ['wm-kstars-link-row'];
+  const textIds = ['wm-kstars-link-text'];
+  const recheckIds = ['wm-kstars-recheck-btn'];
+  const setRowDisplay = (display) => rowIds.forEach((id) => { document.getElementById(id).style.display = display; });
+  if (!wmSelectedProfile) { setRowDisplay('none'); wmKstarsLinked = null; updateStepIndicators(); return; }
   try {
     const resp = await fetch(`/api/kstars_webmanager_link?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (!data.checked) {  // no KStars DB found - nothing to report, not a real checkpoint here
-      row.style.display = 'none';
+      setRowDisplay('none');
       wmKstarsLinked = null;
       updateStepIndicators();
       return;
     }
-    row.style.display = '';
+    setRowDisplay('');
     wmKstarsLinked = !!data.linked;
     updateStepIndicators();
     // Recheck itself doesn't change anything - it's colored to reflect
     // whether the underlying check currently passes, same "green means
     // satisfied" idea used everywhere else on this tile.
-    recheckBtn.classList.toggle('mb-btn-active', !!data.linked);
+    recheckIds.forEach((id) => document.getElementById(id).classList.toggle('mb-btn-active', !!data.linked));
+    let rowClass, text;
     if (data.linked) {
-      row.className = 'mb-row wm-link-ok';
-      textEl.textContent = "✓ Linked to this Web Manager in KStars.";
+      rowClass = 'mb-row wm-link-ok';
+      text = "✓ Linked to this Web Manager in KStars.";
     } else if (data.kstars_profile_found) {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
     } else {
-      row.className = 'mb-row wm-link-warn';
-      textEl.textContent = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+      rowClass = 'mb-row wm-link-warn';
+      text = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
     }
+    rowIds.forEach((id) => { document.getElementById(id).className = rowClass; });
+    textIds.forEach((id) => { document.getElementById(id).textContent = text; });
   } catch (e) {
-    row.style.display = 'none';
+    setRowDisplay('none');
     wmKstarsLinked = null;
     updateStepIndicators();
   }
@@ -2721,9 +3144,9 @@ async function toggleWmServer() {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(1, true);
-  const btn = document.getElementById('wm-server-btn');
   const wantsStart = !wmServerRunning;
   setMbActionStatus(wantsStart ? `⏳ Starting profile "${wmSelectedProfile}"…` : `⏳ Stopping profile "${wmSelectedProfile}"…`);
+  const btn = document.getElementById('wm-server-btn');
   btn.disabled = true;
   btn.textContent = wantsStart ? 'starting…' : 'stopping…';
   try {
@@ -2900,6 +3323,7 @@ async function setWmActiveDevices() {
 // refreshWmActiveButton().
 function setConnectButtonState(btnId, label, connected) {
   const btn = document.getElementById(btnId);
+  if (mbStatusUnconfirmed) { btn.disabled = true; return; }  // can't confirm it's safe to act right now
   if (btn.disabled) return;
   btn.textContent = connected ? `Disconnect ${label}` : `Connect ${label}`;
   btn.classList.toggle('mb-btn-active', !!connected);
@@ -2962,28 +3386,200 @@ function onWmProfileChange() {
 }
 
 function setWmDriverButton(driver, present) {
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
+  // PiFinder LX200 has a second, mirrored button in the PiFinder Host Setup
+  // tile (see docs/concepts/remote_indi_coupling_split_host.md, R-PF1) -
+  // Mount Bridge has no equivalent there, so only 'lx200' gets a second id.
   const label = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   if (driver === 'lx200') wmHasLx200 = present; else wmHasBridge = present;
-  if (present === null) {
-    btn.textContent = `${label}: unknown`;
-    btn.disabled = true;
-    btn.classList.remove('mb-btn-active');
-    updateStepIndicators();
+
+  const setBtn = (id, isPresent, btnLabel) => {
+    const btn = document.getElementById(id);
+    if (present === null) {
+      btn.textContent = `${label}: unknown`;
+      btn.disabled = true;
+      btn.classList.remove('mb-btn-active');
+      return;
+    }
+    btn.textContent = isPresent ? `${btnLabel}: remove` : `${btnLabel}: add`;
+    btn.classList.toggle('mb-btn-active', isPresent);
+    btn.disabled = false;
+  };
+
+  if (driver === 'bridge') {
+    setBtn('wm-bridge-btn', present, label);
+  } else {
+    // Names the remote target when the profile's entry is a remote one.
+    const isRemote = !!wmLx200Remote;
+    setBtn('wm-lx200-btn', present, isRemote ? `${label} (remote ${wmLx200Remote})` : label);
+  }
+  updateStepIndicators();
+}
+
+// R-ROLE1 (docs/concepts/remote_indi_coupling_split_host.md, "Device role
+// model"): a device has no role - the selected profile has one, derived
+// live from which drivers it actually contains. Install state only marks
+// what CANNOT work (the config-error warning + card capability gating).
+function deriveProfileRole() {
+  if (!wmSelectedProfile || wmHasLx200 === null || wmHasBridge === null) return null;
+  const remote = !!wmLx200Remote;
+  const local = wmHasLx200 === true && !remote;
+  const bridge = wmHasBridge === true;
+  if (local && bridge) return 'aio';
+  if (local && !bridge) return 'host';
+  if (remote && bridge) return 'ctrl';
+  if (remote && !bridge) return 'ctrl-incomplete';
+  if (bridge) return 'bridge-only';
+  return 'none';
+}
+
+// Renders every role-dependent piece in one place: the colored role chip
+// near the tile top, which role card is marked active, and which parts of
+// the tile even apply (the "PiFinder host" role has no mount here - the
+// whole operate area and steps 4-6 disappear, and this device's own IP is
+// shown instead, since that's what the control host's card asks for).
+function updateProfileRoleLine() {
+  const el = document.getElementById('mb-role-line');
+  const role = deriveProfileRole();
+  for (const k of ['aio', 'host', 'ctrl']) {
+    document.getElementById(`mb-role-card-${k}`).classList.toggle(
+      'mb-role-active', role === k || (k === 'ctrl' && role === 'ctrl-incomplete')
+    );
+  }
+  const hostMode = role === 'host';
+  document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
+  if (role === null) {
+    el.style.display = 'none';
     return;
   }
-  btn.textContent = present ? `${label}: remove` : `${label}: add`;
-  btn.classList.toggle('mb-btn-active', present);
-  btn.disabled = false;
-  updateStepIndicators();
+  // Two-tier text (role name bold/prominent, the rest a smaller detail
+  // clause) - per direct feedback, the original single-run sentence gave
+  // the identifying part ("Control host") the same visual weight as the
+  // supporting detail (IP, mount name), same idea as the Coupling status
+  // line's "auto correct" vs. "(drift X')".
+  const mountPart = wmActiveMount ? ` to ${wmActiveMount}` : ' to your mount';
+  let roleName = '';
+  let detail = '';
+  let warn = '';
+  if (role === 'aio') {
+    roleName = 'All-in-one';
+    detail = `this profile couples this device's own PiFinder${mountPart}.`;
+  } else if (role === 'host') {
+    roleName = 'PiFinder host';
+    detail = 'this profile shares this device’s PiFinder position on the network, nothing else.';
+  } else if (role === 'ctrl') {
+    roleName = 'Control host';
+    detail = `this profile couples the PiFinder at ${wmLx200Remote}${mountPart}.`;
+  } else if (role === 'ctrl-incomplete') {
+    roleName = 'Control host (incomplete)';
+    detail = `remote PiFinder at ${wmLx200Remote}, but Mount Bridge is missing - click the Control host card to fix this.`;
+  } else if (role === 'bridge-only') {
+    roleName = 'Incomplete';
+    detail = 'Mount Bridge is in the profile, but no PiFinder position source (local or remote) - choose a role in Setup checklist & diagnostics below.';
+  } else {
+    roleName = 'No role yet';
+    detail = 'no PiFinder drivers in this profile yet - choose a role in Setup checklist & diagnostics below.';
+  }
+  if ((role === 'aio' || role === 'host') && existingInstallKnown === false) {
+    warn = "⚠ This profile expects a local PiFinder, but PiFinder isn't installed on this device.";
+  }
+  el.textContent = '';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'role-name';
+  nameEl.textContent = `Role: ${roleName}`;
+  el.appendChild(nameEl);
+  const detailEl = document.createElement('span');
+  detailEl.className = 'role-detail';
+  detailEl.textContent = ` – ${detail}`;
+  el.appendChild(detailEl);
+  if (warn) {
+    const w = document.createElement('span');
+    w.className = 'role-warn';
+    w.textContent = ' ' + warn;
+    el.appendChild(w);
+  }
+  el.style.display = '';
+}
+
+// Clicking a role card reconfigures the selected profile to that role -
+// with an explicit confirm first (a click here restarts the running
+// profile via the driver-change endpoint, not something to do by
+// accident). Uses the same per-driver endpoint the step-3 buttons use, so
+// every change shows up in the log identically.
+async function onRoleCardClick(kind) {
+  if (mbActionInFlight) return;
+  const card = document.getElementById(`mb-role-card-${kind}`);
+  if (card.classList.contains('mb-role-disabled')) {
+    alert(card.title);
+    return;
+  }
+  if (!wmSelectedProfile) {
+    alert('Pick a profile in step 1 first.');
+    return;
+  }
+  const profile = wmSelectedProfile;
+  const actions = [];
+  if (kind === 'aio') {
+    if (!confirm(`Configure profile "${profile}" as All-in-one?\n\nPiFinder LX200 (this device's own PiFinder) + Mount Bridge. The running profile is restarted to apply changes.`)) return;
+    if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
+    if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
+  } else if (kind === 'host') {
+    if (!confirm(`Configure profile "${profile}" as PiFinder host?\n\nOnly PiFinder LX200 (this device's own PiFinder) stays in the profile - Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`)) return;
+    if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
+    if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
+  } else {
+    const entered = prompt(
+      "IP address of the PiFinder host device (shown in its own Mount Bridge tile when its role is 'PiFinder host'). Port defaults to 7624:",
+      wmLx200Remote || ''
+    );
+    if (entered === null) return;
+    const value = entered.trim();
+    if (!value) return;
+    if (!/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(value)) {
+      alert(`"${value}" is not a valid host or host:port.`);
+      return;
+    }
+    actions.push(['lx200', 'add_remote', value]);
+    if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
+  }
+  if (actions.length === 0) {
+    setMbActionStatus('Profile already matches this role - nothing to change.');
+    setTimeout(clearMbActionStatus, 4000);
+    return;
+  }
+  mbActionInFlight = true;
+  setStepBusy(3, true);
+  setMbActionStatus('⏳ Configuring role…');
+  try {
+    for (const [driver, action, remote] of actions) {
+      let url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(profile)}&driver=${driver}&action=${action}`;
+      if (remote) url += `&remote=${encodeURIComponent(remote)}`;
+      const resp = await fetch(url, { method: 'POST' });
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error || 'failed');
+    }
+  } catch (e) {
+    alert('Could not configure the role: ' + e.message);
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+  setStepBusy(3, false);
 }
 
 // Green checkmark on each step's label once its condition is actually met -
 // per live feedback, plain grey labels gave no sense of "am I done here yet
 // or not" at a glance.
 function updateStepIndicators() {
-  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', !!wmSelectedProfile && wmServerRunning);
-  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', wmKstarsLinked === true);
+  const step1Done = !!wmSelectedProfile && wmServerRunning;
+  const step2Done = wmKstarsLinked === true;
+  document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
+  document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
   document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
   document.getElementById('wm-step5-label').classList.toggle('mb-step-done', wmEkosConnected === true);
@@ -2991,6 +3587,7 @@ function updateStepIndicators() {
   document.getElementById('wm-step6-label').classList.toggle(
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
+  updateProfileRoleLine();
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
@@ -3016,24 +3613,29 @@ async function refreshWmDriverButtons() {
     const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}`, { cache: 'no-store' });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
+    wmLx200Remote = data.lx200_remote || null;
     setWmDriverButton('lx200', data.has_lx200);
     setWmDriverButton('bridge', data.has_bridge);
   } catch (e) {
+    wmLx200Remote = null;
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
   }
 }
 
-async function toggleWmDriver(driver) {
+async function toggleWmDriver(driver, clickedBtnId) {
   if (!wmSelectedProfile) return;
   mbActionInFlight = true;
   setStepBusy(3, true);
-  const btn = document.getElementById(driver === 'lx200' ? 'wm-lx200-btn' : 'wm-bridge-btn');
-  const wantsAdd = btn.textContent.trim().endsWith('add');
+  const ids = driver === 'lx200' ? ['wm-lx200-btn'] : ['wm-bridge-btn'];
+  const wantsAdd = document.getElementById(clickedBtnId).textContent.trim().endsWith('add');
   const driverLabel = driver === 'lx200' ? 'PiFinder LX200' : 'Mount Bridge';
   setMbActionStatus(wantsAdd ? `⏳ Adding ${driverLabel} driver…` : `⏳ Removing ${driverLabel} driver…`);
-  btn.disabled = true;
-  btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  for (const id of ids) {
+    const btn = document.getElementById(id);
+    btn.disabled = true;
+    btn.textContent = wantsAdd ? 'adding…' : 'removing…';
+  }
   try {
     const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=${driver}&action=${wantsAdd ? 'add' : 'remove'}`;
     const resp = await fetch(url, { method: 'POST' });
@@ -3075,19 +3677,19 @@ function applyHwTestRow(key, result) {
   const detailEl = document.getElementById('hw-' + key + '-detail');
   if (!result) return;
   if (result.status === 'functional') {
-    dotEl.className = 'status-dot dot-green';
+    setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'functional';
     detailEl.textContent = '';
   } else if (result.status === 'absent') {
-    dotEl.className = 'status-dot dot-red';
+    setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'not detected';
     detailEl.textContent = result.detail || '';
   } else if (result.status === 'error') {
-    dotEl.className = 'status-dot dot-red';
+    setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'error (' + errorTypeLabel(result.error_type) + ')';
     detailEl.textContent = result.detail || '';
   } else {
-    dotEl.className = 'status-dot dot-white';
+    setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'unknown' + (result.detail ? ' (' + result.detail + ')' : '');
     detailEl.textContent = '';
   }
@@ -3119,13 +3721,13 @@ function applyHwTestResult(result) {
   const gpsText = document.getElementById('hw-gps-text');
   const gpsDetail = document.getElementById('hw-gps-detail');
   if (result.gps && result.gps.lock) {
-    gpsDot.className = 'status-dot dot-green';
+    setHwDot(gpsDot, 'status-dot dot-green');
     gpsText.textContent = 'locked';
   } else if (result.gps) {
-    gpsDot.className = 'status-dot dot-yellow';
+    setHwDot(gpsDot, 'status-dot dot-yellow');
     gpsText.textContent = 'no fix yet';
   } else {
-    gpsDot.className = 'status-dot dot-white';
+    setHwDot(gpsDot, 'status-dot dot-white');
     gpsText.textContent = 'not reachable';
   }
   gpsDetail.textContent = formatGpsDetail(result.gps);

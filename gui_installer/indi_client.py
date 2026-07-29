@@ -291,6 +291,47 @@ def mount_bridge_status(
     }
 
 
+def mount_bridge_drift(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = 2.0,
+) -> dict:
+    """
+    Lightweight companion to mount_bridge_status(): only "PiFinder Mount
+    Bridge"'s own properties (coupling_mode/correction_action/drift_arcmin),
+    no per-device CONNECTION lookups for the linked PiFinder/mount - those
+    don't change fast enough to be worth polling on a tight cadence, and
+    skipping them keeps this call cheap enough to run every few seconds.
+    Added because the drift readout felt "sluggish" tied to the 20s
+    connection-status poll (see status_page.html's refreshMbDrift(), kept
+    entirely separate from refreshMountBridgeStatus()'s miss-streak/
+    unconfirmed-gate logic - a low default timeout here is fine precisely
+    because a miss just skips one number update, unlike a miss on the
+    connection-status poll which affects button-gating).
+    Returns {"running": bool, "coupling_mode": str or None,
+    "correction_action": "sync"/"goto"/None, "drift_arcmin": float or None}.
+    """
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder Mount Bridge")
+    if not device_props:
+        return {"running": False, "coupling_mode": None, "correction_action": None, "drift_arcmin": None}
+
+    bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
+    drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
+    correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
+    correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
+    correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
+    drift_raw = drift_status.get("DRIFT_ARCMIN")
+
+    return {
+        "running": True,
+        "coupling_mode": coupling_mode,
+        "correction_action": correction_action,
+        "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+    }
+
+
 def _send(message: str, host: str, port: int, timeout: float) -> None:
     """Fire-and-forget: opens a fresh connection, sends one message, closes.
     indiserver doesn't reply to a new*Vector with a synchronous ack - the
@@ -515,6 +556,26 @@ DRIFT_THRESHOLD_DEFAULT = 5.0  # matches the driver's own IUFillNumber default
 CORRECTION_ACTION_DEFAULT = "sync"  # matches the driver's own default (ACTION_SYNC is ISS_ON)
 
 
+def set_drift_threshold(
+    drift_threshold: float,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Standalone DRIFT_THRESHOLD write, split out of set_coupling_mode()
+    below so the Control Center can push a changed threshold live while
+    Verify/Alert or Auto-correct is already active, without re-asserting
+    BRIDGE_MODE (which set_coupling_mode() would also do) - added because
+    the threshold input field previously only ever reached the driver via
+    a coupling-preset button click, so editing it while a mode was already
+    running silently had no effect (found live, 2026-07-29)."""
+    set_number(
+        "PiFinder Mount Bridge", "DRIFT_THRESHOLD",
+        {"THRESHOLD_ARCMIN": drift_threshold},
+        host, port, timeout,
+    )
+
+
 def set_coupling_mode(
     mode: str,
     drift_threshold: Optional[float] = None,
@@ -536,9 +597,8 @@ def set_coupling_mode(
         raise INDIClientError(f"Unknown coupling mode {mode!r} (expected one of {COUPLING_MODES})")
 
     if mode in ("MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT"):
-        set_number(
-            "PiFinder Mount Bridge", "DRIFT_THRESHOLD",
-            {"THRESHOLD_ARCMIN": drift_threshold if drift_threshold is not None else DRIFT_THRESHOLD_DEFAULT},
+        set_drift_threshold(
+            drift_threshold if drift_threshold is not None else DRIFT_THRESHOLD_DEFAULT,
             host, port, timeout,
         )
     if mode == "MODE_AUTO_CORRECT":
