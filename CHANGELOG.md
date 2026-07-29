@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Control Center: after a successful Install/Update run, the Control Center now restarts itself
+  automatically so it serves whatever code the run just landed on. Previously only the setup
+  script's own logic picked up a branch switch/self-update live (via `self_update.sh`'s existing
+  re-exec) - the long-lived Control Center web server process itself (`gui_installer/server.py`)
+  stayed on stale code until manually restarted or the Pi rebooted, even though the files on disk
+  were already updated. The frontend shows a lock overlay ("Restarting the Control Center to load
+  the new version...") for the duration, then reconnects and reloads automatically once the new
+  process answers - no more silent staleness, and no confusing a deliberate restart with a crash.
+  Note: a device's *first* update through this feature won't show it yet (the still-running old
+  server doesn't know to restart itself) - it applies from the following update onward.
+
 ## [1.3.0] - 2026-07-29
 
 ### Added
