@@ -2421,6 +2421,12 @@ function refreshWmActiveButton() {
   btn.classList.toggle('mb-btn-active', !!wmActiveMount);
 }
 
+// Consecutive missed polls before actually showing "not coupled" - see
+// mbStatusMissStreak's use below for why. Two misses = ~40s (this poll's
+// own 20s interval) before the UI reacts.
+const MB_STATUS_MISS_THRESHOLD = 2;
+let mbStatusMissStreak = 0;
+
 async function refreshMountBridgeStatus() {
   const dotEl = document.getElementById('mount-bridge-dot');
   const textEl = document.getElementById('mount-bridge-text');
@@ -2428,6 +2434,17 @@ async function refreshMountBridgeStatus() {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
     if (!data.running) {
+      mbStatusMissStreak++;
+      // A single missed poll is treated as noise, not a real disconnect -
+      // found live (2026-07-29) on the split-host coupling: the connection
+      // can go quiet for anywhere from a few seconds to ~2 minutes without
+      // indiserver or the Mount Bridge driver process itself ever actually
+      // hanging (confirmed live via strace - neither one blocks during
+      // these windows), yet a single 20s poll landing in one still came back
+      // empty. Root cause not fully understood yet (see basic-memory) - this
+      // absorbs the visible flapping in the meantime without hiding a
+      // genuinely lasting disconnect for long.
+      if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate();
@@ -2440,6 +2457,7 @@ async function refreshMountBridgeStatus() {
       updateStepIndicators();
       return;
     }
+    mbStatusMissStreak = 0;
     updateWmCouplingGate();
     updateMbDiagram(data);
     if (wmActiveMount && !data.active_mount) wmAutoLinkAttempted = false;  // freshly unlinked
@@ -2461,6 +2479,8 @@ async function refreshMountBridgeStatus() {
         : 'loaded, not connected (see INDI Control Panel)';
     }
   } catch (e) {
+    mbStatusMissStreak++;
+    if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
     updateWmCouplingGate();
