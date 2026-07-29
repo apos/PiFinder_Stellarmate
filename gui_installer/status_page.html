@@ -283,6 +283,13 @@
   .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
+  /* First missed status poll (see mbStatusMissStreak): keeps whatever color
+     the dot already had (last confirmed state) but pulses it, so a single
+     slow poll reads as "still confirming", not silently nothing and not a
+     jarring flip to red/white - a second miss still applies the real
+     "not coupled" state, this is purely the one-poll-long waiting cue. */
+  @keyframes mb-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .status-dot.dot-unconfirmed { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
   #quick-links-tile a {
@@ -2443,8 +2450,14 @@ async function refreshMountBridgeStatus() {
       // these windows), yet a single 20s poll landing in one still came back
       // empty. Root cause not fully understood yet (see basic-memory) - this
       // absorbs the visible flapping in the meantime without hiding a
-      // genuinely lasting disconnect for long.
-      if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
+      // genuinely lasting disconnect for long. Per direct feedback: silently
+      // doing nothing on that first miss isn't great either - pulse the
+      // dot (keeping its current color) so "still confirming" is visible
+      // without a jarring flip and without a new banner element.
+      if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) {
+        dotEl.classList.add('dot-unconfirmed');
+        return;
+      }
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'not loaded in the current profile';
       updateWmCouplingGate();
@@ -2480,7 +2493,10 @@ async function refreshMountBridgeStatus() {
     }
   } catch (e) {
     mbStatusMissStreak++;
-    if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) return;
+    if (mbStatusMissStreak < MB_STATUS_MISS_THRESHOLD) {
+      dotEl.classList.add('dot-unconfirmed');
+      return;
+    }
     dotEl.className = 'status-dot dot-white';
     textEl.textContent = 'unknown (check unavailable)';
     updateWmCouplingGate();

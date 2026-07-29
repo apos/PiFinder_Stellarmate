@@ -1274,7 +1274,25 @@ class Handler(BaseHTTPRequestHandler):
             # shape for "loaded but not yet connected", not a bug.
             global _mb_last_running
             try:
-                status = indi_client.mount_bridge_status()
+                # Longer timeout than indi_client's own default (3.0s/1.5s) -
+                # deliberately scoped to ONLY this passive, periodic
+                # background poll (called every 20s from the frontend, see
+                # setInterval in status_page.html), not the module-wide
+                # DEFAULT_TIMEOUT every interactive action (Connect/
+                # Disconnect, driver toggles, coupling changes) also relies
+                # on - those stay snappy on a genuine failure. Found live
+                # (2026-07-29): indiserver occasionally takes longer than 3s
+                # to answer a getProperties request for "PiFinder Mount
+                # Bridge" specifically while it's busy relaying a burst of
+                # unrelated property updates from the mount driver - proven
+                # harmless via direct polling of the same properties during
+                # several live occurrences (Mount Bridge's own drift
+                # computation, and the underlying PiFinder/mount position
+                # data, kept updating throughout; Ekos was seen actively
+                # correcting the mount at the same moment this poll came back
+                # empty). Not a real disconnect, just this poll's own
+                # patience being too short for an otherwise-healthy system.
+                status = indi_client.mount_bridge_status(timeout=7.0, device_timeout=3.0)
             except indi_client.INDIClientError as e:
                 status = {"running": False, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
