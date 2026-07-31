@@ -2010,22 +2010,25 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/mount_bridge_coupling":
-            # Phase 4: the three one-click Coupling presets. mode is
-            # "verify_alert"|"auto_correct"|"goto_forward" (short form here,
-            # translated to the driver's own MODE_* constants in
-            # indi_client.set_coupling_mode()). threshold/action are only
-            # meaningful for verify_alert/auto_correct - harmless if sent
-            # for goto_forward, indi_client.py ignores them there.
+            # Phase 4: the three one-click Coupling presets, plus "off" (the
+            # Decouple button - no dedicated preset button of its own, see
+            # onDecoupleClick()). mode is "verify_alert"|"auto_correct"|
+            # "goto_forward"|"off" (short form here, translated to the
+            # driver's own MODE_* constants in indi_client.set_coupling_
+            # mode()). threshold/action are only meaningful for
+            # verify_alert/auto_correct - harmless if sent for goto_forward
+            # or off, indi_client.py ignores them there.
             qs = parse_qs(parsed.query)
             mode_arg = qs.get("mode", [""])[0]
             mode_map = {
                 "verify_alert": "MODE_VERIFY_ALERT",
                 "auto_correct": "MODE_AUTO_CORRECT",
                 "goto_forward": "MODE_GOTO_FORWARD",
+                "off": "MODE_OFF",
             }
             if mode_arg not in mode_map:
                 self._send_json(
-                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward"},
+                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward|off"},
                     status=400,
                 )
                 return

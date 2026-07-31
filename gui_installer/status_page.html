@@ -649,7 +649,9 @@
   .mb-arrow.mb-arrow-read { color: #5b9bd5; }
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
-  #mb-mode-caption { color: #888; font-size: 0.76rem; margin-bottom: 0.6rem; }
+  #mb-mode-caption-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+  #mb-mode-caption { color: #888; font-size: 0.76rem; }
+  #mb-decouple-btn { margin-left: 0; }
   /* Shared collapsible-section header, reused wherever a tile has a
      "matters every time" part and a "one-time setup / rarely touched"
      part - per live feedback/design principle, the latter defaults to
@@ -984,7 +986,10 @@ sudo systemctl start pifinder</pre>
           <span id="mb-node-mount-name">Mount</span>
         </div>
       </div>
-      <div id="mb-mode-caption">Not coupled yet</div>
+      <div id="mb-mode-caption-row">
+        <span id="mb-mode-caption">Not coupled yet</span>
+        <button id="mb-decouple-btn" class="ql-small-btn" onclick="onDecoupleClick()" style="display:none;" title="Sets Coupling back to Off - PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state).">Decouple</button>
+      </div>
       <!-- Everything from coupling presets to manual sync is meaningless in
            the "PiFinder host" role (no Mount Bridge in the profile) - this
            wrapper lets updateProfileRoleLine() hide the whole block at once
@@ -2511,12 +2516,15 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin) {
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
 
+  const decoupleBtn = document.getElementById('mb-decouple-btn');
   if (!couplingMode || couplingMode === 'MODE_OFF') {
     setMbArrow('mb-arrow-left', 'off');
     setMbArrow('mb-arrow-right', 'off');
     captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
+    decoupleBtn.style.display = 'none';
     return false;
   }
+  decoupleBtn.style.display = '';
   if (couplingMode === 'MODE_VERIFY_ALERT') {
     setMbArrow('mb-arrow-left', 'read');
     setMbArrow('mb-arrow-right', 'read');
@@ -2857,6 +2865,34 @@ async function setWmCoupling(preset) {
     // buttons on this page.
   }
   btn.textContent = originalText;
+  pollMbLog();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+}
+
+// Sets Coupling back to Off. No dedicated preset button for this (unlike
+// verify_alert/auto_correct/goto_forward) - Off is the driver's own default/
+// neutral state, previously only reachable via the raw INDI Control Panel in
+// KStars/Ekos, not from this simplified tile at all (found live, 2026-07-31).
+async function onDecoupleClick() {
+  mbActionInFlight = true;
+  setMbActionStatus('⏳ Decoupling…');
+  const btn = document.getElementById('mb-decouple-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'decoupling…';
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
+  try {
+    const resp = await fetch('/api/mount_bridge_coupling?mode=off', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the Coupling preset buttons.
+  }
+  btn.textContent = originalText;
+  btn.disabled = false;
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;

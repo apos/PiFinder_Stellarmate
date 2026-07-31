@@ -551,7 +551,7 @@ def set_number(
 # maps to - which mode needs DRIFT_THRESHOLD/CORRECTION_ACTION and which
 # doesn't (MODE_GOTO_FORWARD needs neither, confirmed against
 # pifinder_mount_bridge.cpp's TimerHit()).
-COUPLING_MODES = {"MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD"}
+COUPLING_MODES = {"MODE_OFF", "MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD"}
 DRIFT_THRESHOLD_DEFAULT = 5.0  # matches the driver's own IUFillNumber default
 CORRECTION_ACTION_DEFAULT = "sync"  # matches the driver's own default (ACTION_SYNC is ISS_ON)
 
