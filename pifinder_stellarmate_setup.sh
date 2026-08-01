@@ -925,9 +925,17 @@ sudo systemctl start pifinder_splash
 # not reboot, so honor that same already-expressed choice here too -
 # otherwise "enabled but stopped" silently persists and the user has no
 # way to see the result of this very run.
-if systemctl is-enabled --quiet pifinder-control-center; then
-    echo "🔧 Restarting PiFinder Control Center (was enabled) ..."
-    sudo systemctl restart pifinder-control-center
+#
+# Only if it's currently INACTIVE - if it's already active, this run was
+# most likely started BY that very instance (the GUI's own Update button),
+# which already restarts itself after a successful run on its own. A
+# restart from here would kill that instance mid-run instead: found live
+# 2026-08-01, the setup script survives (KillMode=process), but writes to
+# the now-orphaned server.py's stdout pipe hit SIGPIPE and die silently,
+# well before this script would otherwise reach the INDI driver build.
+if systemctl is-enabled --quiet pifinder-control-center && ! systemctl is-active --quiet pifinder-control-center; then
+    echo "🔧 Starting PiFinder Control Center (was enabled but stopped) ..."
+    sudo systemctl start pifinder-control-center
 fi
 
 phase "Building INDI drivers"
