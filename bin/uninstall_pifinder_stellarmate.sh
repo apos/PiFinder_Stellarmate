@@ -166,12 +166,24 @@ _print_manual_cleanup_notes() {
     echo "    - Hardware group memberships added to your user (spi, gpio, i2c, kmem, input, video)."
 }
 
-# The --reset path further below is meant to be non-destructive (keep
-# services/drivers/data, only wipe venv/build) - it must never fall through
-# this full-uninstall body first. Everything else (plain invocation,
-# --selfmove, --run) is supposed to do a real uninstall, so they still run
-# this normally.
-if [[ "${1:-}" != "--reset" ]]; then
+# This top-level body is for the PLAIN terminal invocation only (no
+# argument) - --reset, --selfmove, and --run each have their own complete,
+# dedicated block further below and must never additionally fall through
+# this one (that would run everything twice, and for --selfmove specifically
+# it's actively dangerous, not just redundant - see below).
+#
+# --selfmove must skip this entirely: its whole job is to hand off to a
+# detached /tmp copy (see the --selfmove block below) before anything
+# destructive happens, specifically because _stop_disable_remove_units()
+# below stops this very process's own pifinder-control-center.service -
+# running that in the foreground here kills this script before it ever
+# reaches the --selfmove handoff, silently skipping everything after (INDI
+# drivers, ~/PiFinder, and - only reachable via the --run continuation -
+# ~/PiFinder_Stellarmate itself). Found live 2026-08-01 via a real Control
+# Center Uninstall click: log stopped dead after the systemd stop loop, no
+# /tmp copy was ever created. See basic-memory/pifinder-stellarmate/00001
+# backlog #102.
+if [[ -z "${1:-}" ]]; then
     echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
 
     _stop_disable_remove_units
