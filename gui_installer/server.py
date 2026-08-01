@@ -1351,7 +1351,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        if parsed.path not in ("/state", "/log", "/page_version") and not self._require_auth():
+        # /api/uninstall_log exempted like /state and /log: the PAM check
+        # inside _require_auth() adds real latency per request, and every
+        # millisecond matters here specifically - this server stops its own
+        # systemd unit partway through an uninstall run, so a slower/
+        # authenticated poll has a worse chance of completing at all before
+        # the connection drops (found live 2026-08-01).
+        if parsed.path not in ("/state", "/log", "/page_version", "/api/uninstall_log") and not self._require_auth():
             return
 
         if parsed.path == "/page_version":

@@ -16,13 +16,21 @@ source "${SCRIPT_DIR}/os_detect.sh"
 # once already (pifinder-setup.service, pifinder-fake-mode-autostart.service,
 # pifinder-control-center.service and pifinder-numpad-bridge.service all
 # postdate the original version of this script and were missing here).
+# pifinder-control-center.service deliberately LAST: when this runs via the
+# Control Center's own Uninstall button, that service IS this process's own
+# systemd unit - stopping it here kills the server mid-uninstall. Ordering
+# it last (not e.g. 5th of 6, its original position) buys the frontend the
+# most possible time to poll and render the other units' stop/disable/
+# remove output before that happens (found live 2026-08-01: with the
+# original ordering, the connection dropped before even the first poll
+# completed - "Jetzt kam sofort die Meldung, nix im Terminal").
 SYSTEM_UNITS=(
     pifinder.service
     pifinder_splash.service
     pifinder-setup.service
     pifinder-fake-mode-autostart.service
-    pifinder-control-center.service
     pifinder-numpad-bridge.service
+    pifinder-control-center.service
 )
 
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
