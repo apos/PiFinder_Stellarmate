@@ -1989,7 +1989,7 @@ async function powerAction(kind) {
 async function installAction(kind) {
   const isUninstall = kind === 'uninstall';
   const message = isUninstall
-    ? '⚠ Uninstall PiFinder completely? This stops and removes all PiFinder services, INDI drivers, and ~/PiFinder itself. This page (and this whole Control Center) will stop working once it starts. This cannot be undone from here.'
+    ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
     : 'Reset PiFinder? This wipes the Python venv/build state only - your data, config, and installed services/drivers are kept. Ready for a fresh setup run afterward.';
   if (!confirm(message)) return;
   const resetBtn = document.getElementById('install-reset-btn');
