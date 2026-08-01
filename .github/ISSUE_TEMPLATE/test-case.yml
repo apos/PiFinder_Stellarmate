@@ -1,0 +1,60 @@
+name: Test Case
+description: New test case for the reusable test case catalog
+title: "[Test Case] "
+labels: ["test-case"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A test case is a **reusable definition** — not an execution result and not a Pass/Fail.
+        See [CONVENTIONS.md](../../CONVENTIONS.md) for how to use it.
+
+  - type: textarea
+    id: precondition
+    attributes:
+      label: Precondition
+      description: State that must be true before testing starts.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: >
+        Numbered, exact steps — no paraphrasing. Give an expected result only for steps where
+        something checkable happens; pure navigation/setup steps stay without their own result.
+      placeholder: |
+        1. ...
+           Expected: ...
+        2. ...
+        3. ...
+           Expected: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: postcondition
+    attributes:
+      label: Postcondition
+      description: State after a successful test run.
+    validations:
+      required: false
+
+  - type: input
+    id: test-type
+    attributes:
+      label: Test Type / Category
+      description: >
+        e.g. functional, regression, smoke, installation — determines which set:* label(s)
+        should be added to the issue.
+    validations:
+      required: false
+
+  - type: input
+    id: reference
+    attributes:
+      label: Reference (Requirement / Issue / Feature)
+      description: Traceability — what does this test case relate to?
+    validations:
+      required: false
