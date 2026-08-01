@@ -36,19 +36,30 @@ SYSTEM_UNITS=(
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
 
 _stop_disable_remove_units() {
+    # Per-unit echo, not just one header line for the whole loop - the
+    # Control Center's own live-log streaming (see gui_installer/server.py's
+    # _do_uninstall()) only has whatever this script actually prints to show
+    # while it's running, and pifinder-control-center.service being one of
+    # SYSTEM_UNITS means the server kills itself partway through this exact
+    # function. Found live 2026-08-01, user: "Ist noch ein bisschen wenig an
+    # Meldung" - the old silent per-unit loop meant only the "Stopping..."
+    # header and nothing else ever made it out before the connection dropped.
     echo "🔧 Stopping PiFinder systemd units ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl stop "$unit" 2>/dev/null
+        echo "   - $unit stopped"
     done
 
     echo "🧹 Disabling PiFinder systemd units ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl disable "$unit" 2>/dev/null
+        echo "   - $unit disabled"
     done
 
     echo "🗑️  Removing systemd unit files ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo rm -f "/etc/systemd/system/${unit}"
+        echo "   - $unit file removed"
     done
 
     echo "🔄 Reloading systemd ..."
