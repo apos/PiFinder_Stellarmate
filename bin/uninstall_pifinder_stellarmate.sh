@@ -211,6 +211,15 @@ if [[ "${1:-}" == "--selfmove" ]]; then
     echo "🧪 Copying script to /tmp and executing in background ..."
     tmp_script="/tmp/uninstall_pifinder_stellarmate.sh"
     cp "$0" "$tmp_script"
+    # This script sources functions.sh/os_detect.sh relative to its own
+    # directory (SCRIPT_DIR) - the /tmp copy needs its own copies of both
+    # alongside it, or every pifinder_home/pifinder_dir/etc. reference below
+    # (e.g. in _unmask_wireplumber()) is unbound (set -u) and kills the
+    # background run before it ever reaches the final rm -rf of ~/PiFinder
+    # and ~/PiFinder_Stellarmate - found live 2026-08-01, see basic-memory/
+    # pifinder-stellarmate/00001 backlog #102.
+    cp "${SCRIPT_DIR}/functions.sh" /tmp/functions.sh
+    cp "${SCRIPT_DIR}/os_detect.sh" /tmp/os_detect.sh
     chmod +x "$tmp_script"
     echo "cd / && nohup \"$tmp_script\" --run > /tmp/uninstall_pifinder.log 2>&1 < /dev/null & disown" | bash
     echo "ℹ️  Script is now running in background from /tmp. Monitor with:"
