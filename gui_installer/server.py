@@ -1096,6 +1096,30 @@ def _do_poweroff():
 _server = None  # set in main(); used by /shutdown to stop serve_forever()
 
 
+UNINSTALL_SCRIPT = REPO_ROOT / "bin" / "uninstall_pifinder_stellarmate.sh"
+
+
+def _do_uninstall():
+    # This server process runs from inside the very directory tree being
+    # deleted (~/PiFinder_Stellarmate) - --selfmove copies the uninstall
+    # script to /tmp first and continues from there, so the removal of this
+    # repo (and this server's own pifinder-control-center.service) survives
+    # this process's own directory disappearing out from under it. See the
+    # script's own --selfmove header comment for the full rationale.
+    time.sleep(1)  # give the HTTP response a moment to reach the browser
+    subprocess.run(["bash", str(UNINSTALL_SCRIPT), "--selfmove"])
+
+
+def _do_reset():
+    # --reset only touches ~/PiFinder's own venv/build state, never this
+    # repo's own directory - unlike _do_uninstall() above, safe to run
+    # directly and report the result, no --selfmove/self-deletion concern.
+    result = subprocess.run(
+        ["bash", str(UNINSTALL_SCRIPT), "--reset"], capture_output=True, text=True,
+    )
+    return result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+
+
 def _do_shutdown():
     time.sleep(1)  # give the HTTP response a moment to reach the browser
     # Persist "should NOT run after a reboot" the same way starting it (via
@@ -1520,7 +1544,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global _hwtest_running
+        global _hwtest_running, _mode_action_running
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -1590,8 +1614,31 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_do_poweroff, daemon=True).start()
             return
 
+        if parsed.path == "/uninstall":
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running:
+                    self._send_json(
+                        {"uninstalling": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+            self._send_json({"uninstalling": True})
+            threading.Thread(target=_do_uninstall, daemon=True).start()
+            return
+
+        if parsed.path == "/reset":
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running:
+                    self._send_json(
+                        {"success": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+            ok, output = _do_reset()
+            self._send_json({"success": ok, "output": output})
+            return
+
         if parsed.path == "/api/pifinder_mode":
-            global _mode_action_running
             qs = parse_qs(parsed.query)
             action = qs.get("action", [""])[0]
             if action not in ("enable_fake", "disable_fake"):

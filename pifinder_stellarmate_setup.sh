@@ -268,17 +268,21 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         echo "   1. Delete the existing installation and reinstall from scratch."
         echo "   2. Update the existing installation with 'git reset --hard origin/release'."
         echo "   3. Cancel the installation."
+        echo "   4. Uninstall PiFinder completely (removes services, INDI drivers, ~/PiFinder)."
+        echo "   5. Reset (keep data/config, wipe venv/build only, ready to re-run setup)."
 
         case "$ACTION" in
             reinstall) choice="1" ;;
             update)    choice="2" ;;
             cancel)    choice="3" ;;
+            uninstall) choice="4" ;;
+            reset)     choice="5" ;;
             "")
-                read -p "Enter your choice (1, 2, or 3): " choice
+                read -p "Enter your choice (1-5): " choice
                 choice="${choice//[$'\r\n']}"
                 ;;
             *)
-                echo "❌ Unknown --action='$ACTION' (expected reinstall|update|cancel)."
+                echo "❌ Unknown --action='$ACTION' (expected reinstall|update|cancel|uninstall|reset)."
                 exit 1
                 ;;
         esac
@@ -378,9 +382,24 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 echo "ℹ️  Installation cancelled by user."
                 exit 0
                 ;;
+            4)
+                echo "➡️  Selected: 4. Uninstall PiFinder completely."
+                # Plain (non-selfmove) invocation: safe to run directly here,
+                # this is a bash-level call, not the Control Center's own
+                # long-running Python server serving out of this directory -
+                # see bin/uninstall_pifinder_stellarmate.sh's own --selfmove
+                # comment for why that distinction matters.
+                bash "${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh"
+                exit 0
+                ;;
+            5)
+                echo "➡️  Selected: 5. Reset (keep data/config, wipe venv/build only)."
+                bash "${pifinder_stellarmate_bin}/uninstall_pifinder_stellarmate.sh" --reset
+                exit 0
+                ;;
             *)
                 echo "➡️  Selected: $choice (invalid)"
-                echo "❌ Invalid choice. Please run the script again and select 1, 2, or 3."
+                echo "❌ Invalid choice. Please run the script again and select 1-5."
                 exit 1
                 ;;
         esac
