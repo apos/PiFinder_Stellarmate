@@ -827,18 +827,32 @@ def _run_hardware_test():
     test's PiFinder-is-running branch and the GPS snapshot both hit the same
     /api/status endpoint, and running I2C/camera probes concurrently would
     only make failures harder to attribute to one subsystem."""
+    # try/finally is load-bearing, not defensive style: found live 2026-08-01
+    # that without it, an uncaught exception from any of the three checks
+    # below (plausible whenever the device is between installs - ~/PiFinder
+    # missing, no venv, etc.) leaves _hwtest_running stuck True forever, in a
+    # daemon thread that just dies silently - permanently locking out every
+    # other mutex-guarded action (Reset/Uninstall/Reinstall/mode switch/...)
+    # until the whole service is restarted, and the startup auto-run (see
+    # _startup_hardware_test() below) can then hit the exact same failure
+    # again on the very next start.
     global _hwtest_running, _hwtest_result
     with _lock:
         _hwtest_lines.clear()
         _hwtest_result = {"camera": None, "imu": None, "gps": None}
-    _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
-    camera_result = _camera_functional_test(_hwtest_log)
-    imu_result = _imu_functional_test(_hwtest_log)
-    gps_location = _gps_status_snapshot(_hwtest_log)
-    _hwtest_log("=== Test Hardware: done ===")
-    with _lock:
-        _hwtest_result = {"camera": camera_result, "imu": imu_result, "gps": gps_location}
-        _hwtest_running = False
+    try:
+        _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
+        camera_result = _camera_functional_test(_hwtest_log)
+        imu_result = _imu_functional_test(_hwtest_log)
+        gps_location = _gps_status_snapshot(_hwtest_log)
+        _hwtest_log("=== Test Hardware: done ===")
+        with _lock:
+            _hwtest_result = {"camera": camera_result, "imu": imu_result, "gps": gps_location}
+    except Exception as e:
+        _hwtest_log(f"=== Test Hardware: internal error - {e} ===")
+    finally:
+        with _lock:
+            _hwtest_running = False
 
 
 def _startup_hardware_test(timeout=120, interval=2):
@@ -894,7 +908,25 @@ def _pifinder_toggle_debug_solve(port: str) -> bool:
 
 
 def _run_fake_mode_action(action):
-    global _mode_action_running, _mode_lines, _mode_exit_code, _mode_error, _mode_target
+    # try/finally wrapper is load-bearing, not defensive style - see
+    # _run_hardware_test()'s comment for the general shape of this bug
+    # (found live there first, 2026-08-01). _run_fake_mode_action_inner()'s
+    # tail (settle-check loop, _camera_hardware_present()/
+    # _imu_hardware_present() probes, a journalctl subprocess.run() call) has
+    # no exception handling of its own - an uncaught exception anywhere in
+    # there would leave _mode_action_running stuck True forever, same
+    # lock-everything-out consequence. Wrapped here instead of re-indenting
+    # the whole (long, already-branchy) inner function.
+    global _mode_action_running
+    try:
+        _run_fake_mode_action_inner(action)
+    finally:
+        with _lock:
+            _mode_action_running = False
+
+
+def _run_fake_mode_action_inner(action):
+    global _mode_lines, _mode_exit_code, _mode_error, _mode_target
     target = "fake" if action == "start" else "real"
     with _lock:
         _mode_lines = []
@@ -975,7 +1007,8 @@ def _run_fake_mode_action(action):
                 _mode_lines.extend(journal.splitlines())
             else:
                 _mode_error = "Fake Mode failed to start - see Terminal below."
-        _mode_action_running = False
+    # _mode_action_running is cleared by the _run_fake_mode_action() wrapper's
+    # finally block, not here - see its comment.
 
 
 def _get_all_ips():
@@ -1012,38 +1045,52 @@ def _restart_control_center():
 
 
 def _reader_thread(proc):
+    # try/finally is load-bearing, not defensive style - see
+    # _run_hardware_test()'s comment for the general shape of this bug
+    # (found live there first, 2026-08-01). This is the MAIN install/update/
+    # reinstall run's own reader - previously had no exception handling at
+    # all, so a failure here (LOG_FILE unwritable, a readline() error, ...)
+    # would've left _running stuck True forever, locking out every other
+    # mutex-guarded action AND blocking any retry of the run itself.
     global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending
     # _last_mode is set by _start_run() before this thread starts and never
     # changes for the lifetime of this run - safe to read once, unlocked.
     phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
-    with open(LOG_FILE, "w") as log_f:
-        for line in iter(proc.stdout.readline, ""):
-            log_f.write(line)
-            log_f.flush()
-            stripped = line.rstrip("\n")
-            if stripped.startswith(PHASE_MARKER):
-                label = stripped[len(PHASE_MARKER):]
-                if label in phases:
+    try:
+        with open(LOG_FILE, "w") as log_f:
+            for line in iter(proc.stdout.readline, ""):
+                log_f.write(line)
+                log_f.flush()
+                stripped = line.rstrip("\n")
+                if stripped.startswith(PHASE_MARKER):
+                    label = stripped[len(PHASE_MARKER):]
+                    if label in phases:
+                        with _lock:
+                            _phase_index = max(_phase_index, phases.index(label))
+                    continue  # phase markers are for the progress bar, not the log panel
+                if stripped.startswith(REBOOT_MARKER):
                     with _lock:
-                        _phase_index = max(_phase_index, phases.index(label))
-                continue  # phase markers are for the progress bar, not the log panel
-            if stripped.startswith(REBOOT_MARKER):
+                        _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
+                    continue  # marker is for the Reboot button, not the log panel
                 with _lock:
-                    _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
-                continue  # marker is for the Reboot button, not the log panel
-            with _lock:
-                _lines.append(stripped)
-    proc.wait()
-    with _lock:
-        _running = False
-        _exit_code = proc.returncode
-        # Any successful run (fresh/reinstall/update, any mode) already ran
-        # switch_branch.sh + self_update.sh at its very start, so it may have
-        # landed on different PiFinder_Stellarmate code regardless of which
-        # action was picked - always restart on success, not just for
-        # specific actions.
-        if _exit_code == 0:
-            _cc_restart_pending = True
+                    _lines.append(stripped)
+        proc.wait()
+        with _lock:
+            _exit_code = proc.returncode
+    except Exception as e:
+        with _lock:
+            _lines.append(f"[setup GUI] internal error: {e}")
+            _exit_code = -1
+    finally:
+        with _lock:
+            _running = False
+            # Any successful run (fresh/reinstall/update, any mode) already ran
+            # switch_branch.sh + self_update.sh at its very start, so it may have
+            # landed on different PiFinder_Stellarmate code regardless of which
+            # action was picked - always restart on success, not just for
+            # specific actions.
+            if _exit_code == 0:
+                _cc_restart_pending = True
     if _exit_code == 0:
         threading.Thread(target=_restart_control_center, daemon=True).start()
 
@@ -1171,18 +1218,30 @@ def _run_reset():
     ~/PiFinder's own venv/build state, never this repo's own directory -
     unlike _do_uninstall(), safe to run directly, no --selfmove/self-deletion
     concern."""
+    # try/finally is load-bearing - see _run_hardware_test()'s comment for
+    # why (found live 2026-08-01: the same missing-try/finally bug, there in
+    # _run_hardware_test(), permanently locked out every other mutex-guarded
+    # action). Popen()/readline() throwing here is less likely than a real
+    # hardware check throwing, but "less likely" isn't "impossible."
     global _reset_running, _reset_exit_code
-    proc = subprocess.Popen(
-        ["bash", str(UNINSTALL_SCRIPT), "--reset"],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-    )
-    for line in iter(proc.stdout.readline, ""):
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(UNINSTALL_SCRIPT), "--reset"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            with _lock:
+                _reset_lines.append(line.rstrip("\n"))
+        proc.wait()
         with _lock:
-            _reset_lines.append(line.rstrip("\n"))
-    proc.wait()
-    with _lock:
-        _reset_running = False
-        _reset_exit_code = proc.returncode
+            _reset_exit_code = proc.returncode
+    except Exception as e:
+        with _lock:
+            _reset_lines.append(f"[setup GUI] internal error: {e}")
+            _reset_exit_code = -1
+    finally:
+        with _lock:
+            _reset_running = False
 
 
 def _do_shutdown():
