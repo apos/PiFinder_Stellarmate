@@ -141,6 +141,34 @@ erwartet, dass ein Mensch davorsitzt und durchklickt). Ein 10-Schritt-Fortschrit
 Checkliste tracken Phasen-Marker aus dem Skript; ein Reboot-Button erscheint nur, wenn tatsächlich
 nötig.
 
+### Reset / Uninstall
+
+Zwei destruktive Aktionen, bewusst nach tatsächlichem Wirkungsbereich gruppiert statt danach, wann
+sie gebaut wurden — jede sitzt neben der/den anderen Aktion(en), die dasselbe Ziel betreffen:
+
+- **Reset** (in der **PiFinder**-Gruppe, neben Reinstall/Update — alle drei rühren ausschließlich
+  `~/PiFinder` an): stoppt kurz `pifinder.service`/`pifinder_splash.service`/`pifinder-setup.service`,
+  damit sie nicht gegen eine halb gelöschte venv laufen, und löscht dann `~/PiFinder`s eigene
+  Python-virtuelle-Umgebung und den Build-Zustand (`POST /reset`, gestreamt über
+  `GET /api/reset_log`). Deaktiviert/entfernt diese Dienste **nicht** und rührt INDI-Treiber/
+  udev-Regeln nie an — sie bleiben installiert, nur gestoppt, bis der nächste Setup-Lauf oder
+  Reboot sie wieder startet.
+- **Uninstall** (in einer eigenen **PiFinder Stellarmate**-Gruppe): stoppt, deaktiviert und entfernt
+  jeden systemd-Unit, den dieses Projekt installiert, entfernt die INDI-Treiber und löscht sowohl
+  `~/PiFinder` **als auch** diesen `~/PiFinder_Stellarmate`-Checkout selbst (`POST /uninstall`,
+  gestreamt über `GET /api/uninstall_log`) — die einzige Aktion hier, die auch das eigene
+  Verzeichnis und den eigenen Unit des Control Centers entfernt. Läuft über
+  `bin/uninstall_pifinder_stellarmate.sh --selfmove`, das sich zuerst selbst nach `/tmp` kopiert,
+  damit das Löschen des eigenen Quellbaums den laufenden Prozess nicht mitten im Uninstall killt;
+  eine bewusste kleine Pause zwischen jedem systemd-Unit-Stop gibt der Poll-Schleife des Frontends
+  (`GET /api/uninstall_log`, 200ms) eine echte Chance, jeden Schritt zu zeigen, bevor die
+  Verbindung abreißt (live bei einer Testausführung gefunden: 6 Unit-Stops laufen sonst in unter
+  einer Sekunde komplett durch).
+
+Beide Bestätigungsdialoge nennen den genauen Wirkungsbereich, bevor gehandelt wird — siehe
+[help.html#install-update](gui_installer/help.html) (Reset) und
+[help.html#uninstall](gui_installer/help.html) (Uninstall) für dieselben Erklärungen direkt in der App.
+
 ### Fake/Real-Mode-Wechsel
 
 Eine eigene Kachel zeigt, ob PiFinder aktuell real läuft (`pifinder.service`) oder als
@@ -265,6 +293,11 @@ Alle von `gui_installer/server.py` bedienten Routen. `Auth` = braucht HTTP-Basic
 | GET | `/state` | — | Install-/Update-Lauf-Status (vom Frontend gepollt) |
 | GET | `/log` | — | Gestreamte Install-/Update-Terminal-Ausgabe |
 | POST | `/start?action=fresh\|reinstall\|update\|cancel` | ✅ | Setup-Skript-Lauf starten |
+| POST | `/reset` | ✅ | Reset-Lauf starten (nur `~/PiFinder`s venv/Build-Zustand) |
+| GET | `/api/reset_log?position=N` | ✅ | Inkrementelle Reset-Ausgabe |
+| POST | `/uninstall` | ✅ | Uninstall-Lauf starten (entfernt alles, inkl. dieses Checkouts) |
+| GET | `/api/uninstall_log?position=N` | — | Inkrementelle Uninstall-Ausgabe (ausgenommen wie `/state`/`/log` — s. u.) |
+| GET | `/page_version` | — | Content-Hash von `status_page.html`, für das "Jetzt neu laden"-Banner bei veralteten Tabs |
 | POST | `/reboot` | ✅ | Pi rebooten |
 | POST | `/shutdown` | — | Nur diesen Webserver stoppen (nicht den Pi) |
 | POST | `/poweroff` | ✅ | Pi ausschalten |
@@ -280,11 +313,15 @@ Alle von `gui_installer/server.py` bedienten Routen. `Auth` = braucht HTTP-Basic
 | POST | `/api/keyboard_bridge?action=start\|stop` | ✅ | Numpad-Bridge umschalten |
 | GET | `/pifinder.jpg`, `/avvp_logo.png`, `/heyapos_logo.png`, `/pifinder_welcome.png` | ✅ | Statische Assets |
 
-`/state`, `/log` und `/shutdown` sind bewusst auth-frei: PiFinders eigene, nicht-authentifizierte
-"PFSM"-Seite pollt `/state`/`/log` per Cross-Origin, um "Setup läuft" ohne Login-Prompt zu
-zeigen, und Cross-Origin-Requests tragen ohnehin nie die gecachten Basic-Auth-Credentials dieser
-Seite — deshalb muss auch `/shutdown` (für den Pi selbst nicht destruktiv — stoppt nur diesen
-GUI-Server) offen bleiben, damit derselbe Cross-Origin-Button funktioniert.
+`/state`, `/log`, `/shutdown`, `/page_version` und `/api/uninstall_log` sind bewusst auth-frei.
+PiFinders eigene, nicht-authentifizierte "PFSM"-Seite pollt `/state`/`/log` per Cross-Origin, um
+"Setup läuft" ohne Login-Prompt zu zeigen, und Cross-Origin-Requests tragen ohnehin nie die
+gecachten Basic-Auth-Credentials dieser Seite — deshalb muss auch `/shutdown` (für den Pi selbst
+nicht destruktiv — stoppt nur diesen GUI-Server) offen bleiben, damit derselbe Cross-Origin-Button
+funktioniert. `/api/uninstall_log` überspringt den PAM-Check in `_require_auth()` gezielt aus
+Latenzgründen: dieser Server stoppt seinen eigenen systemd-Unit mitten in einem Uninstall-Lauf,
+weshalb ein langsameres, authentifiziertes Polling eine schlechtere Chance hat, überhaupt
+durchzukommen, bevor die Verbindung abreißt (live gefunden am 2026-08-01).
 
 ---
 
