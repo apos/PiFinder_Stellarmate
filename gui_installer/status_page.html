@@ -2144,7 +2144,7 @@ async function pollResetLog() {
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
   if (data.running) {
-    setTimeout(pollResetLog, 500);
+    setTimeout(pollResetLog, 200);
   } else {
     resetPolling = false;
     document.getElementById('install-reset-btn').disabled = false;
