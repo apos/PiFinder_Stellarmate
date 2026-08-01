@@ -161,9 +161,9 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
   }
-  #branch-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
-  #mode-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
-  #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; }
+  #branch-picker-row { margin-bottom: 0.4rem; font-size: 0.82rem; }
+  #indi-only-label { font-size: 0.78rem; color: #999; cursor: pointer; }
+  #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; display: block; }
   #branch-other-input { margin-left: 0.4rem; }
   #choices button, #start-fresh {
     background: #2a6fdb;
@@ -300,7 +300,7 @@
     margin-top: 0.3rem;
   }
   .mode-power-group { flex: 0 1 auto; }
-  #mode-power-divider {
+  .vgroup-divider {
     width: 1px;
     align-self: stretch;
     background: #444;
@@ -317,7 +317,9 @@
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
-  #install-danger-zone { margin-top: 0.8rem; }
+  #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
+  #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+  #install-heading-row .tile-heading { margin: 0; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -851,7 +853,7 @@
               <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
             </div>
           </div>
-          <div id="mode-power-divider"></div>
+          <div class="vgroup-divider"></div>
           <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
             <div class="group-label">This Pi</div>
             <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
@@ -1122,7 +1124,10 @@ sudo systemctl start pifinder</pre>
 
   <div class="right-col">
     <div id="install-tile">
-      <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="install-heading-row">
+        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="status" class="status-idle">Checking current state&hellip;</div>
+      </div>
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
     </div>
@@ -1136,31 +1141,32 @@ sudo systemctl start pifinder</pre>
 
     <ul id="phase-checklist" style="display:none;"></ul>
 
-    <div id="branch-picker-row">
-      <span class="mb-row-label">Install from:</span><a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a>
-      <select id="branch-select" onchange="onBranchSelectChange(true)">
-        <option value="main">main (stable)</option>
-        <option value="dev">dev (beta)</option>
-        <option value="__other__">Other&hellip;</option>
-      </select>
-      <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
-      <span id="branch-current-hint" style="display:none;"></span>
-      <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
-    </div>
-
-    <div id="mode-picker-row">
-      <label>
-        <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
-        INDI-only (no PiFinder hardware - for control-host setups)
-      </label>
-      <a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
-    </div>
-
-    <div id="choices" style="display:none;"></div>
-
-    <div id="install-danger-zone">
+    <div id="install-groups">
+      <div class="mode-power-group">
+        <div class="group-label">Source</div>
+        <div id="branch-picker-row">
+          <select id="branch-select" onchange="onBranchSelectChange(true)">
+            <option value="main">main (stable)</option>
+            <option value="dev">dev (beta)</option>
+            <option value="__other__">Other&hellip;</option>
+          </select>
+          <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
+          <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
+          <span id="branch-current-hint" style="display:none;"></span>
+        </div>
+        <label id="indi-only-label">
+          <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
+          INDI-only (no PiFinder hardware - for control-host setups)
+        </label><a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
+      </div>
+      <div class="vgroup-divider"></div>
+      <div class="mode-power-group">
+        <div class="group-label">Install</div>
+        <div id="choices" style="display:none;"></div>
+      </div>
+      <div class="vgroup-divider"></div>
       <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
-        <div class="group-label">Reset / Uninstall</div>
+        <div class="group-label">Reset / Uninstall<a class="help-link" href="/help.html#reset-uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
         <div class="mode-power-group-buttons">
           <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
           <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
@@ -1169,7 +1175,6 @@ sudo systemctl start pifinder</pre>
     </div>
 
     <div id="status-row">
-      <div id="status" class="status-idle">Checking current state&hellip;</div>
       <div id="reboot-wrap">
         <button id="reboot-button" onclick="reboot()">Reboot Now</button>
       </div>

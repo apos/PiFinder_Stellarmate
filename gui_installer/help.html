@@ -110,6 +110,13 @@
 <p>For running just the INDI drivers and Control Center on a host with no PiFinder hardware attached at all - e.g. a separate StellarMate/Astroberry "control host" coupled to a real PiFinder elsewhere over the network (see <code>docs/concepts/remote_indi_coupling_split_host.md</code>). Check the box, then click <strong>Install INDI-only</strong>.</p>
 <p>Installs the INDI build dependencies (<code>cmake</code>, build tools, <code>libindi-dev</code>, <code>git</code>) and builds/installs both INDI drivers - nothing else. Your existing <code>~/PiFinder</code> installation (if any) is never touched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup. On StellarMate, package installation briefly and automatically disables StellarMate's own Atomic Updates protection (voids the warranty while running) and restores it immediately afterward, success or failure - you'll see StellarMate's own warning text scroll past in the log; that's expected, not an error.</p>
 
+<h2 id="reset-uninstall">Reset / Uninstall</h2>
+<p>Both use <code>bin/uninstall_pifinder_stellarmate.sh</code> and act on the whole PiFinder_Stellarmate installation - services, INDI drivers, and <code>~/PiFinder</code> - separately from the Reinstall/Update actions above (those only touch <code>~/PiFinder</code>'s code).</p>
+<ul>
+  <li><strong>Reset</strong>: wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers are kept. Use this to get a clean slate for a fresh setup run without losing anything else.</li>
+  <li><strong>Uninstall</strong>: stops and removes everything this project installed - systemd services, INDI drivers, and the <code>~/PiFinder</code> directory itself. This page (and this whole Control Center) stops working once it starts, since the Control Center's own service is one of the things removed. Cannot be undone from here.</li>
+</ul>
+
 <h2 id="pifinder-host-setup">Device roles: All-in-one, PiFinder host, Control host</h2>
 
 <h3 id="pifinder-host-what">What is this about?</h3>
