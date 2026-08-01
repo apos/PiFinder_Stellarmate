@@ -874,13 +874,6 @@
   <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
   <button onclick="location.reload()">Reload now</button>
 </div>
-<div id="last-run-banner" style="display:none;">
-  <div id="last-run-banner-header">
-    <span>&#9989; The run you were watching before this restart finished successfully. <a href="#" onclick="document.getElementById('last-run-banner-log').style.display = document.getElementById('last-run-banner-log').style.display === 'none' ? 'block' : 'none'; return false;">Show log</a></span>
-    <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
-  </div>
-  <pre id="last-run-banner-log" style="display:none;"></pre>
-</div>
 
 <div id="cc-restart-overlay">
   <div id="cc-restart-overlay-box">
@@ -1252,6 +1245,13 @@ sudo systemctl start pifinder</pre>
       <div id="reset-wrap">
         <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
+    </div>
+    <div id="last-run-banner" style="display:none;">
+      <div id="last-run-banner-header">
+        <span>&#9989; The run you were watching before this restart finished successfully.</span>
+        <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
+      </div>
+      <pre id="last-run-banner-log"></pre>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
