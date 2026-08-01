@@ -2185,7 +2185,7 @@ async function pollUninstallLog() {
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
   if (data.running) {
-    setTimeout(pollUninstallLog, 500);
+    setTimeout(pollUninstallLog, 200);
   } else {
     // The visible part of the run finished on its own (rare - usually the
     // connection just drops first, handled in the catch above) - either

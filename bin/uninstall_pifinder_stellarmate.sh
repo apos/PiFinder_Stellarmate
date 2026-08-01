@@ -48,6 +48,17 @@ _stop_disable_remove_units() {
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl stop "$unit" 2>/dev/null
         echo "   - $unit stopped"
+        # Deliberate small pause - found live 2026-08-01 via journalctl that
+        # all 6 systemctl stop calls complete within about a second total,
+        # far faster than the Control Center frontend's 500ms poll interval
+        # (see gui_installer/status_page.html's pollUninstallLog()) can keep
+        # up with - especially since pifinder-control-center.service is the
+        # LAST of the six and its own stop is what kills this whole process.
+        # User: "Immer noch nur 3 Zeilen Meldungen." Trades a couple of
+        # seconds of Uninstall runtime for the frontend actually being able
+        # to show what's happening, which matters more for a destructive,
+        # rarely-run action than shaving that time off.
+        sleep 0.4
     done
 
     echo "🧹 Disabling PiFinder systemd units ..."
