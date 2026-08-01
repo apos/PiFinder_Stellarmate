@@ -919,6 +919,17 @@ sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
+# pifinder-control-center.service is deliberately not enabled by default
+# (see comment above) - but once the user has chosen "on" (enabled), a
+# reboot would auto-start it via systemd's own persistence. This run may
+# not reboot, so honor that same already-expressed choice here too -
+# otherwise "enabled but stopped" silently persists and the user has no
+# way to see the result of this very run.
+if systemctl is-enabled --quiet pifinder-control-center; then
+    echo "🔧 Restarting PiFinder Control Center (was enabled) ..."
+    sudo systemctl restart pifinder-control-center
+fi
+
 phase "Building INDI drivers"
 
 # See Readme_PiFinder_LX200.md for what these drivers do and how to use them.
