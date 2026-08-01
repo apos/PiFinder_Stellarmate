@@ -2064,7 +2064,23 @@ async function installAction(kind) {
         alert('Could not start uninstall: ' + (data.error || 'unknown error'));
         return;
       }
-      watchForServerLoss();
+      // Streams live into the shared Terminal like Reset, for as long as
+      // this server process is still around to answer - see
+      // pollUninstallLog(). Found live, user: "der User muss sehen, was
+      // passiert." Most of the actual work (stopping/removing services incl.
+      // this server's own, removing INDI drivers, deleting ~/PiFinder) runs
+      // before this process's own unit gets stopped partway through -
+      // pollUninstallLog() hands off to watchForServerLoss() once the
+      // connection actually drops, same end state as before.
+      if (!polling && !hwTestPolling && !modeLogPolling) {
+        const logEl = document.getElementById('log');
+        logEl.textContent = '';
+        logEl.classList.add('log-placeholder');
+      }
+      document.getElementById('log').style.display = 'block';
+      uninstallLogPosition = 0;
+      uninstallPolling = true;
+      pollUninstallLog();
       return;
     }
     // Reset now runs in the background, streaming output into the shared
@@ -2139,6 +2155,44 @@ async function pollResetLog() {
     } else {
       alert('Reset failed - see the terminal output above for details.');
     }
+  }
+}
+
+let uninstallLogPosition = 0;
+let uninstallPolling = false;
+
+async function pollUninstallLog() {
+  if (!uninstallPolling) return;
+  let data;
+  try {
+    const resp = await fetch('/api/uninstall_log?position=' + uninstallLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    // Expected eventually, not an error - this server process stops itself
+    // partway through (its own systemd unit is one of the things Uninstall
+    // removes). Hand off to the existing "server is gone" handling instead
+    // of alerting.
+    uninstallPolling = false;
+    watchForServerLoss();
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    uninstallLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollUninstallLog, 500);
+  } else {
+    // The visible part of the run finished on its own (rare - usually the
+    // connection just drops first, handled in the catch above) - either
+    // way, from here it's the same "wait for the server to actually go
+    // away" as before.
+    uninstallPolling = false;
+    watchForServerLoss();
   }
 }
 

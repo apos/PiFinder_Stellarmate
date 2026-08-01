@@ -1073,6 +1073,8 @@ def _start_run(action, branch=None, mode=None):
             return False, "A hardware test is still in progress - wait for it to finish first."
         if _reset_running:
             return False, "A reset is still in progress - wait for it to finish first."
+        if _uninstall_running:
+            return False, "An uninstall is still in progress - wait for it to finish first."
         _lines = []
         _running = True
         _exit_code = None
@@ -1116,6 +1118,10 @@ _server = None  # set in main(); used by /shutdown to stop serve_forever()
 UNINSTALL_SCRIPT = REPO_ROOT / "bin" / "uninstall_pifinder_stellarmate.sh"
 
 
+_uninstall_running = False  # True while an Uninstall run is in flight
+_uninstall_lines = []  # progress log, shown in the shared Terminal tile
+
+
 def _do_uninstall():
     # This server process runs from inside the very directory tree being
     # deleted (~/PiFinder_Stellarmate) - --selfmove copies the uninstall
@@ -1123,8 +1129,35 @@ def _do_uninstall():
     # repo (and this server's own pifinder-control-center.service) survives
     # this process's own directory disappearing out from under it. See the
     # script's own --selfmove header comment for the full rationale.
+    #
+    # Streams into _uninstall_lines exactly like _run_reset() (found live,
+    # 2026-08-01, user: "der User muss sehen, was passiert") - the bulk of
+    # the real work (stopping/disabling/removing units incl. this server's
+    # own pifinder-control-center.service, removing INDI drivers, deleting
+    # ~/PiFinder) runs in *this* subprocess, before --selfmove hands off to
+    # the detached /tmp copy that deletes ~/PiFinder_Stellarmate itself -
+    # that final step is no longer observable here once this process's own
+    # unit gets stopped partway through, same as it always was; this only
+    # changes how the part that IS still running gets surfaced (Popen +
+    # incremental read instead of blocking subprocess.run(), same child
+    # process either way - no change to what actually runs or how/when it
+    # can get signaled).
+    global _uninstall_running
     time.sleep(1)  # give the HTTP response a moment to reach the browser
-    subprocess.run(["bash", str(UNINSTALL_SCRIPT), "--selfmove"])
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(UNINSTALL_SCRIPT), "--selfmove"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            with _lock:
+                _uninstall_lines.append(line.rstrip("\n"))
+        proc.wait()
+    except Exception:
+        pass
+    finally:
+        with _lock:
+            _uninstall_running = False
 
 
 def _run_reset():
@@ -1539,6 +1572,16 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/uninstall_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _uninstall_lines[position:]
+                new_position = len(_uninstall_lines)
+                running = _uninstall_running
+            self._send_json({"lines": new_lines, "position": new_position, "running": running})
+            return
+
         if parsed.path == "/api/mount_bridge_log":
             qs = parse_qs(parsed.query)
             position = int(qs.get("position", ["0"])[0])
@@ -1593,7 +1636,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global _hwtest_running, _mode_action_running, _reset_running, _reset_exit_code
+        global _hwtest_running, _mode_action_running, _reset_running, _reset_exit_code, _uninstall_running
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -1665,21 +1708,23 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/uninstall":
             with _lock:
-                if _running or _mode_action_running or _hwtest_running or _reset_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"uninstalling": False, "error": "An install/update run, mode switch, hardware test, or reset is in progress - wait for it to finish first."},
+                        {"uninstalling": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
+                _uninstall_lines.clear()
+                _uninstall_running = True
             self._send_json({"uninstalling": True})
             threading.Thread(target=_do_uninstall, daemon=True).start()
             return
 
         if parsed.path == "/reset":
             with _lock:
-                if _running or _mode_action_running or _hwtest_running or _reset_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"started": False, "error": "An install/update run, mode switch, hardware test, or reset is in progress - wait for it to finish first."},
+                        {"started": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
@@ -1709,6 +1754,9 @@ class Handler(BaseHTTPRequestHandler):
                 if _reset_running:
                     self._send_json({"started": False, "error": "A reset is in progress - wait for it to finish first."}, status=409)
                     return
+                if _uninstall_running:
+                    self._send_json({"started": False, "error": "An uninstall is in progress - wait for it to finish first."}, status=409)
+                    return
                 _mode_action_running = True
             script_arg = "start" if action == "enable_fake" else "stop"
             threading.Thread(target=_run_fake_mode_action, args=(script_arg,), daemon=True).start()
@@ -1729,9 +1777,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             with _lock:
-                if _running or _mode_action_running or _hwtest_running or _reset_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"success": False, "error": "An install/update run, mode switch, hardware test, or reset is in progress - wait for it to finish first."},
+                        {"success": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
@@ -1769,6 +1817,9 @@ class Handler(BaseHTTPRequestHandler):
                 if _reset_running:
                     self._send_json({"started": False, "error": "A reset is in progress - wait for it to finish first."}, status=409)
                     return
+                if _uninstall_running:
+                    self._send_json({"started": False, "error": "An uninstall is in progress - wait for it to finish first."}, status=409)
+                    return
                 _hwtest_running = True
             threading.Thread(target=_run_hardware_test, daemon=True).start()
             self._send_json({"started": True})
@@ -1781,8 +1832,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             with _lock:
-                if _mode_action_running or _running or _hwtest_running or _reset_running:
-                    self._send_json({"success": False, "error": "An install/update, mode switch, hardware test, or reset is in progress - wait for it to finish first."}, status=409)
+                if _mode_action_running or _running or _hwtest_running or _reset_running or _uninstall_running:
+                    self._send_json({"success": False, "error": "An install/update, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."}, status=409)
                     return
             want_enabled = action == "start"
             if _lcd_overlay_active() == want_enabled:
