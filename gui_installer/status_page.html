@@ -317,11 +317,7 @@
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
-  #install-danger-zone {
-    margin-top: 0.9rem;
-    padding-top: 0.7rem;
-    border-top: 1px solid #444;
-  }
+  #install-danger-zone { margin-top: 0.8rem; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -1164,7 +1160,7 @@ sudo systemctl start pifinder</pre>
 
     <div id="install-danger-zone">
       <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
-        <div class="group-label">Reset / Uninstall this installation</div>
+        <div class="group-label">Reset / Uninstall</div>
         <div class="mode-power-group-buttons">
           <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
           <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
