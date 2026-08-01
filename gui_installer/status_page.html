@@ -2012,16 +2012,27 @@ async function installAction(kind) {
       watchForServerLoss();
       return;
     }
-    // Reset runs synchronously server-side and returns its own result -
-    // no server-loss handling needed, this repo's own directory is untouched.
-    resetBtn.disabled = false;
-    uninstallBtn.disabled = false;
-    btn.textContent = 'Reset';
-    if (data.success) {
-      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
-    } else {
-      alert('Reset failed:\n\n' + (data.output || data.error || 'unknown error'));
+    // Reset now runs in the background, streaming output into the shared
+    // Terminal tile like Install/Update/Test Hardware - see pollResetLog().
+    // Previously ran synchronously with nothing shown until a final alert()
+    // (found live during TC-PFSM-84-01, user: "There is no Terminal output
+    // at all").
+    if (!data.started) {
+      resetBtn.disabled = false;
+      uninstallBtn.disabled = false;
+      btn.textContent = 'Reset';
+      alert('Could not start reset: ' + (data.error || 'unknown error'));
+      return;
     }
+    if (!polling && !hwTestPolling && !modeLogPolling) {
+      const logEl = document.getElementById('log');
+      logEl.textContent = '';
+      logEl.classList.add('log-placeholder');
+    }
+    document.getElementById('log').style.display = 'block';
+    resetLogPosition = 0;
+    resetPolling = true;
+    pollResetLog();
   } catch (e) {
     if (isUninstall) {
       // Network error here can also mean the server went down right as it
@@ -2032,6 +2043,46 @@ async function installAction(kind) {
       uninstallBtn.disabled = false;
       btn.textContent = 'Reset';
       alert('Reset request failed.');
+    }
+  }
+}
+
+let resetLogPosition = 0;
+let resetPolling = false;
+
+async function pollResetLog() {
+  if (!resetPolling) return;
+  let data;
+  try {
+    const resp = await fetch('/api/reset_log?position=' + resetLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    resetPolling = false;
+    document.getElementById('install-reset-btn').disabled = false;
+    document.getElementById('install-uninstall-btn').disabled = false;
+    document.getElementById('install-reset-btn').textContent = 'Reset';
+    alert('Lost connection while resetting.');
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    resetLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollResetLog, 500);
+  } else {
+    resetPolling = false;
+    document.getElementById('install-reset-btn').disabled = false;
+    document.getElementById('install-uninstall-btn').disabled = false;
+    document.getElementById('install-reset-btn').textContent = 'Reset';
+    if (data.exit_code === 0) {
+      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
+    } else {
+      alert('Reset failed - see the terminal output above for details.');
     }
   }
 }
