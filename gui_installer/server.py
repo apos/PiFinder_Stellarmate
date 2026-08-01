@@ -876,16 +876,28 @@ def _startup_hardware_test(timeout=120, interval=2):
     _run_hardware_test()
 
 
-def _pifinder_debug_solve_status(port: str):
+def _pifinder_solve_status(port: str):
     """GET the currently-reachable PiFinder instance's own /api/status and
-    pull out debug_solve (Tools -> Test Mode's on/off state - PiFinder's own
-    feature, unrelated to this tile's Fake/Real Mode). None if unreachable."""
+    pull out debug_solve (Tools -> Test Mode's on/off state) plus the real
+    solve-freshness fields (solve_source/last_solve_attempt/last_solve_success)
+    - all from the same request, since /api/status already returns both.
+    None if unreachable.
+
+    solve_source is "CAM" (fresh plate-solve), "CAM_FAILED" (attempted, no
+    star match - normal indoors/no sky view, not itself a hardware problem),
+    or "IMU" (currently dead-reckoning between solves). See
+    PiFinder/types/positioning.py's SolveSource enum."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return None
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
             data = json.loads(resp.read())
-        return data.get("debug_solve")
+        return {
+            "debug_solve": data.get("debug_solve"),
+            "solve_source": data.get("solve_source"),
+            "last_solve_attempt": data.get("last_solve_attempt"),
+            "last_solve_success": data.get("last_solve_success"),
+        }
     except Exception:
         return None
 
@@ -1621,7 +1633,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json({"debug_solve": _pifinder_debug_solve_status(port)})
+            self._send_json(_pifinder_solve_status(port) or {"debug_solve": None})
             return
 
         if parsed.path == "/api/hardware_test_log":

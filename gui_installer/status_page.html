@@ -904,7 +904,7 @@
             </svg>
             <span>Cam</span>
           </div>
-          <div class="mode-ampel-badge" title="Solve Simulation">
+          <div class="mode-ampel-badge" title="Solve">
             <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-solve-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
               <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
@@ -939,6 +939,9 @@
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-camera-detail"></div>
+            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation below, which only says whether test images are being used.">
+              <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
+            </div>
             <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
               <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
               <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
@@ -1388,10 +1391,16 @@ function updatePiFinderStatusAndWizardLink() {
 
 // PiFinder's own "Tools -> Test Mode" (callbacks.activate_debug() ->
 // shared_state.debug_solve()) - entirely separate from this page's Fake Mode
-// tile. Triggered via gui_installer/server.py's own proxy (POST/GET
+// tile. Triggered via gui_installer/server.py's own proxy (GET/POST
 // /api/debug_solve?port=N, always dialing 127.0.0.1 on that port) rather
 // than fetching PiFinder's API directly from the browser, since PiFinder
-// sets no CORS headers and this page is served from a different port.
+// sets no CORS headers and this page is served from a different port. The
+// GET side now also returns solve_source/last_solve_attempt/last_solve_success
+// from the same /api/status call - refreshDebugSolve() below updates both the
+// Solve Simulation row (debug_solve on/off) and the separate, real "Solve"
+// row/badge (solve_source-based - see #85: the ampel badge used to just
+// mirror Solve Simulation, which said nothing about whether a real plate-solve
+// was actually succeeding).
 // Maps each of the 4 "Hardware test and details" status dots to its
 // counterpart badge icon in the always-visible #mode-ampel-row strip above
 // it (see that row's own CSS comment) - setHwDot() is a drop-in replacement
@@ -1401,7 +1410,7 @@ function updatePiFinderStatusAndWizardLink() {
 // refreshDebugSolve()/applyHwTestRow()/applyHwTestResult().
 const HW_AMPEL_ICON_IDS = {
   'hw-camera-dot': 'mode-ampel-camera-icon',
-  'debug-solve-dot': 'mode-ampel-solve-icon',
+  'solve-status-dot': 'mode-ampel-solve-icon',
   'hw-imu-dot': 'mode-ampel-imu-icon',
   'hw-gps-dot': 'mode-ampel-gps-icon',
 };
@@ -1423,6 +1432,31 @@ function setHwDot(dotEl, className) {
   ampelEl.classList.toggle('mode-ampel-icon-unconfirmed', unconfirmed);
 }
 
+// solve_source ("CAM"/"CAM_FAILED"/"IMU", see PiFinder/types/positioning.py's
+// SolveSource enum) is the real "is a plate-solve currently succeeding"
+// signal - independent of Solve Simulation, which only says whether test
+// images are being fed in. CAM_FAILED just means the last attempt found no
+// star match (normal indoors/no sky view, not a hardware problem) - not
+// worded as an alarming "FAILED" here for that reason.
+function applySolveStatus(data) {
+  const dotEl = document.getElementById('solve-status-dot');
+  const textEl = document.getElementById('solve-status-text');
+  const suffix = data.debug_solve === true ? ' (simulated image)' : '';
+  if (data.solve_source === 'CAM') {
+    setHwDot(dotEl, 'status-dot dot-green');
+    textEl.textContent = 'solving' + suffix;
+  } else if (data.solve_source === 'CAM_FAILED') {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = 'no star match' + suffix + ' - normal indoors/no sky view';
+  } else if (data.solve_source === 'IMU') {
+    setHwDot(dotEl, 'status-dot dot-unconfirmed');
+    textEl.textContent = 'no fresh solve yet - estimating from IMU' + suffix;
+  } else {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'unknown';
+  }
+}
+
 async function refreshDebugSolve() {
   const dotEl = document.getElementById('debug-solve-dot');
   const textEl = document.getElementById('debug-solve-text');
@@ -1432,6 +1466,7 @@ async function refreshDebugSolve() {
     textEl.textContent = 'unknown (PiFinder not reachable)';
     btn.disabled = true;
     lastDebugSolve = null;
+    applySolveStatus({});
     return null;
   }
   const port = new URL(pifinderScreenUrl).port || '80';
@@ -1455,6 +1490,7 @@ async function refreshDebugSolve() {
       setHwDot(dotEl, 'status-dot dot-white');
       textEl.textContent = 'unknown';
     }
+    applySolveStatus(data);
     btn.disabled = false;
     return data.debug_solve;
   } catch (e) {
@@ -1462,6 +1498,7 @@ async function refreshDebugSolve() {
     textEl.textContent = 'unknown';
     btn.disabled = true;
     lastDebugSolve = null;
+    applySolveStatus({});
     return null;
   }
 }
