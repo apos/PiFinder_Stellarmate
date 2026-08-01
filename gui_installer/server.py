@@ -1343,6 +1343,10 @@ class Handler(BaseHTTPRequestHandler):
                 last_action = _last_action
                 restarting = _cc_restart_pending
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
+                mode_action_running = _mode_action_running
+                hwtest_running = _hwtest_running
+                reset_running = _reset_running
+                uninstall_running = _uninstall_running
             self._send_json(
                 {
                     "existing_install": PIFINDER_DIR.is_dir(),
@@ -1359,6 +1363,15 @@ class Handler(BaseHTTPRequestHandler):
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
                     "restarting": restarting,
+                    # Diagnostic - lets a stuck mutex guard (any action
+                    # rejected with "X is in progress" when nothing visibly
+                    # is) be root-caused from the outside instead of guessed
+                    # at (found live, 2026-08-01: a rejected Uninstall click
+                    # with no way to tell which flag was actually stuck).
+                    "mode_action_running": mode_action_running,
+                    "hwtest_running": hwtest_running,
+                    "reset_running": reset_running,
+                    "uninstall_running": uninstall_running,
                 }
             )
             return
