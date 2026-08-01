@@ -919,6 +919,25 @@ sudo systemctl start pifinder-setup
 sudo systemctl start pifinder
 sudo systemctl start pifinder_splash
 
+# pifinder-control-center.service is deliberately not enabled by default
+# (see comment above) - but once the user has chosen "on" (enabled), a
+# reboot would auto-start it via systemd's own persistence. This run may
+# not reboot, so honor that same already-expressed choice here too -
+# otherwise "enabled but stopped" silently persists and the user has no
+# way to see the result of this very run.
+#
+# Only if it's currently INACTIVE - if it's already active, this run was
+# most likely started BY that very instance (the GUI's own Update button),
+# which already restarts itself after a successful run on its own. A
+# restart from here would kill that instance mid-run instead: found live
+# 2026-08-01, the setup script survives (KillMode=process), but writes to
+# the now-orphaned server.py's stdout pipe hit SIGPIPE and die silently,
+# well before this script would otherwise reach the INDI driver build.
+if systemctl is-enabled --quiet pifinder-control-center && ! systemctl is-active --quiet pifinder-control-center; then
+    echo "🔧 Starting PiFinder Control Center (was enabled but stopped) ..."
+    sudo systemctl start pifinder-control-center
+fi
+
 phase "Building INDI drivers"
 
 # See Readme_PiFinder_LX200.md for what these drivers do and how to use them.

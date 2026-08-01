@@ -778,6 +778,42 @@
     cursor: pointer;
   }
   #stale-page-banner button:hover { filter: brightness(1.15); }
+  /* Shown once after this page reloads following the Control Center's own
+     post-success self-restart (see /last_run_summary) - the fresh server
+     process has no other way to tell this reload apart from a plain visit,
+     so without this the user has no confirmation the run they were
+     watching actually finished. */
+  #last-run-banner {
+    background: #16301c;
+    color: #bfe6c8;
+    border: 1px solid #2f6e3d;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  #last-run-banner-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  #last-run-banner button {
+    background: #2e7d32;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #last-run-banner button:hover { filter: brightness(1.15); }
+  #last-run-banner pre {
+    margin: 0.6rem 0 0;
+    max-height: 12rem;
+    overflow-y: auto;
+    font-size: 0.78rem;
+    color: #9fcaa8;
+  }
   /* Full-page lock shown while the Control Center restarts itself after a
      successful setup run (see enterCcRestartingState() below) - covers and
      visually disables the whole page rather than individually disabling
@@ -1190,14 +1226,16 @@ sudo systemctl start pifinder</pre>
       </div>
       <div class="vgroup-divider"></div>
       <div class="mode-power-group">
-        <div class="group-label">Install PiFinder Software</div>
+        <div class="group-label">PiFinder<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></div>
         <div id="choices" style="display:none;"></div>
+        <div class="mode-power-group-buttons">
+          <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;" title="Briefly stops PiFinder's core services, then wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Use this to get a clean slate for a fresh setup run without losing anything else.">Reset</button>
+        </div>
       </div>
       <div class="vgroup-divider"></div>
-      <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
-        <div class="group-label">Reset / Uninstall PFSM<a class="help-link" href="/help.html#reset-uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - stops and removes everything this project installed: systemd services, INDI drivers, ~/PiFinder, and this ~/PiFinder_Stellarmate checkout itself. Cannot be undone from here.">
+        <div class="group-label">PiFinder Stellarmate<a class="help-link" href="/help.html#uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
         <div class="mode-power-group-buttons">
-          <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
           <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
         </div>
       </div>
@@ -1210,6 +1248,13 @@ sudo systemctl start pifinder</pre>
       <div id="reset-wrap">
         <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
+    </div>
+    <div id="last-run-banner" style="display:none;">
+      <div id="last-run-banner-header">
+        <span>&#9989; The run you were watching before this restart finished successfully.</span>
+        <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
+      </div>
+      <pre id="last-run-banner-log"></pre>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
@@ -2082,7 +2127,7 @@ async function installAction(kind) {
   const isUninstall = kind === 'uninstall';
   const message = isUninstall
     ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
-    : 'Reset PiFinder? This wipes the Python venv/build state only - your data, config, and installed services/drivers are kept. Ready for a fresh setup run afterward.';
+    : 'Reset PiFinder? This briefly stops PiFinder\'s core services, then wipes the Python venv/build state. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Ready for a fresh setup run afterward.';
   if (!confirm(message)) return;
   const resetBtn = document.getElementById('install-reset-btn');
   const uninstallBtn = document.getElementById('install-uninstall-btn');
@@ -2181,7 +2226,7 @@ async function pollResetLog() {
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
   if (data.running) {
-    setTimeout(pollResetLog, 500);
+    setTimeout(pollResetLog, 200);
   } else {
     resetPolling = false;
     document.getElementById('install-reset-btn').disabled = false;
@@ -2222,7 +2267,7 @@ async function pollUninstallLog() {
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
   if (data.running) {
-    setTimeout(pollUninstallLog, 500);
+    setTimeout(pollUninstallLog, 200);
   } else {
     // The visible part of the run finished on its own (rare - usually the
     // connection just drops first, handled in the catch above) - either
@@ -2416,6 +2461,19 @@ function initPiFinderScreen() {
 
 async function init() {
   initPiFinderScreen();
+  // Read-once, server-side (see /last_run_summary) - only ever shows
+  // something right after the Control Center's own post-success restart,
+  // never on a plain reload/reboot with nothing to report.
+  try {
+    const summaryResp = await fetch('/last_run_summary');
+    const summary = await summaryResp.json();
+    if (summary.available) {
+      document.getElementById('last-run-banner-log').textContent = (summary.log_tail || []).join('\n');
+      document.getElementById('last-run-banner').style.display = 'block';
+    }
+  } catch (e) {
+    // Non-essential - never block page init on this.
+  }
   const resp = await fetch('/state');
   const data = await resp.json();
   phaseLabels = data.phases || [];

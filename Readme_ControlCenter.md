@@ -134,6 +134,31 @@ prompts (including the venv-bootstrap two-pass self-restart, which the script ot
 human to sit through). A 10-step progress bar and checklist track phase markers from the script; a
 Reboot button appears only when actually needed.
 
+### Reset / Uninstall
+
+Two destructive actions, deliberately grouped by actual scope rather than by when they were built —
+each sits next to the other action(s) that touch the same thing:
+
+- **Reset** (in the **PiFinder** group, next to Reinstall/Update - all three only ever touch
+  `~/PiFinder`): briefly stops `pifinder.service`/`pifinder_splash.service`/`pifinder-setup.service`
+  so they're not running against a half-deleted venv, then wipes `~/PiFinder`'s own Python virtual
+  environment and build state (`POST /reset`, streamed via `GET /api/reset_log`). Does **not**
+  disable/remove those services or touch INDI drivers/udev rules - they stay installed, just
+  stopped until the next setup run or reboot.
+- **Uninstall** (in its own **PiFinder Stellarmate** group): stops, disables, and removes every
+  systemd unit this project installs, removes the INDI drivers, and deletes both `~/PiFinder` **and**
+  this `~/PiFinder_Stellarmate` checkout itself (`POST /uninstall`, streamed via
+  `GET /api/uninstall_log`) - the only action here that also removes the Control Center's own
+  directory and unit. Runs via `bin/uninstall_pifinder_stellarmate.sh --selfmove`, which copies
+  itself to `/tmp` first so the deletion of its own source tree doesn't kill the running process
+  mid-uninstall; a deliberate small pause between each systemd unit stop gives the frontend's poll
+  loop (`GET /api/uninstall_log`, 200ms) a real chance to show each step before the connection drops
+  (found live during test execution: 6 unit stops otherwise complete in under a second).
+
+Both confirm dialogs spell out the exact scope before acting - see
+[help.html#install-update](gui_installer/help.html) (Reset) and
+[help.html#uninstall](gui_installer/help.html) (Uninstall) for the same explanations surfaced in-app.
+
 ### Fake/Real Mode Switch
 
 A dedicated tile shows whether PiFinder is currently running for real (`pifinder.service`) or as a
@@ -256,6 +281,11 @@ All routes served by `gui_installer/server.py`. `Auth` = requires HTTP Basic Aut
 | GET | `/state` | — | Install/update run status (polled by the frontend) |
 | GET | `/log` | — | Streamed install/update terminal output |
 | POST | `/start?action=fresh\|reinstall\|update\|cancel` | ✅ | Start a setup-script run |
+| POST | `/reset` | ✅ | Start a Reset run (`~/PiFinder` venv/build only) |
+| GET | `/api/reset_log?position=N` | ✅ | Incremental Reset output |
+| POST | `/uninstall` | ✅ | Start an Uninstall run (removes everything, incl. this checkout) |
+| GET | `/api/uninstall_log?position=N` | — | Incremental Uninstall output (exempt like `/state`/`/log` - see below) |
+| GET | `/page_version` | — | Content hash of `status_page.html`, used for the "reload now" stale-tab banner |
 | POST | `/reboot` | ✅ | Reboot the Pi |
 | POST | `/shutdown` | — | Stop *this web server* (not the Pi) |
 | POST | `/poweroff` | ✅ | Power off the Pi |
@@ -271,11 +301,14 @@ All routes served by `gui_installer/server.py`. `Auth` = requires HTTP Basic Aut
 | POST | `/api/keyboard_bridge?action=start\|stop` | ✅ | Toggle the numpad bridge |
 | GET | `/pifinder.jpg`, `/avvp_logo.png`, `/heyapos_logo.png`, `/pifinder_welcome.png` | ✅ | Static assets |
 
-`/state`, `/log`, and `/shutdown` are deliberately auth-exempt: PiFinder's own unauthenticated "INDI
-Drivers" page cross-origin-polls `/state`/`/log` to show "Setup is running" without a login prompt,
-and cross-origin requests never carry this page's cached Basic Auth credentials anyway, so
-`/shutdown` (non-destructive to the Pi itself — it only stops this GUI's server) has to stay open
-for that same cross-origin button to work.
+`/state`, `/log`, `/shutdown`, `/page_version`, and `/api/uninstall_log` are deliberately auth-exempt.
+PiFinder's own unauthenticated "INDI Drivers" page cross-origin-polls `/state`/`/log` to show "Setup
+is running" without a login prompt, and cross-origin requests never carry this page's cached Basic
+Auth credentials anyway, so `/shutdown` (non-destructive to the Pi itself — it only stops this GUI's
+server) has to stay open for that same cross-origin button to work. `/api/uninstall_log` specifically
+skips the PAM check inside `_require_auth()` for latency reasons: this server stops its own systemd
+unit partway through an Uninstall run, so a slower, authenticated poll has a worse chance of
+completing at all before the connection drops (found live 2026-08-01).
 
 ---
 

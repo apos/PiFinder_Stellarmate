@@ -144,7 +144,11 @@ Wer nicht die rohe Terminal-Ausgabe beobachten möchte: `gui_installer/` bietet 
 Webseite — das "PiFinder on Stellarmate Control Center" —, die dasselbe Setup-Skript mit einer live
 mitscrollenden Statusanzeige im Browser ausführt, inklusive automatischer Behandlung des "venv
 aktivieren und neu starten"-Schritts sowie der Reinstall/Update-Auswahl per Button (jeweils mit
-Bestätigungsabfrage), sodass nichts mehr an einem Prompt eingetippt werden muss. Über die
+Bestätigungsabfrage), sodass nichts mehr an einem Prompt eingetippt werden muss. Separate **Reset**-
+(löscht nur `~/PiFinder`s Python-venv/Build-Zustand) und **Uninstall**-Buttons (entfernt alles, was
+dieses Projekt installiert hat, inklusive dieses Repo-Checkouts selbst) stehen ebenfalls zur
+Verfügung — den genauen Umfangsunterschied erklärt
+[Readme_ControlCenter_de.md](Readme_ControlCenter_de.md#reset--uninstall). Über die
 Installation/Aktualisierung hinaus dient sie auch als laufendes Dashboard: eine Modus-Kachel zeigt,
 ob PiFinder gerade real läuft oder in einer entkoppelten Fake-Hardware-Instanz für Entwicklung/Tests
 (mit Umschalt-Button und einer Hardware-Checkliste — Kamera/IMU/GPS, direkt gegen die Hardware
@@ -317,6 +321,12 @@ bleiben außerdem ein paar echt geteilte Systemkonfigurationsteile (die SPI/I2C/
 `/boot/config.txt`, der `python-libcamera`-Pacman-Versions-Pin sowie die dem eigenen User
 hinzugefügten Hardware-Gruppenmitgliedschaften) — das Skript zeigt am Ende, welche das genau sind
 und warum, falls man auch diese von Hand entfernen möchte.
+
+Der **Uninstall**-Button des Control Centers (siehe
+[Setup GUI / Control Center](#setup-gui--control-center-empfohlen) oben) führt dasselbe Skript
+stattdessen mit einem `--selfmove`-Flag aus, das zusätzlich diesen `~/PiFinder_Stellarmate`-Checkout
+selbst löscht — der obige Terminal-Aufruf tut das bewusst nicht, damit er gefahrlos aus dem Repo
+heraus ausgeführt werden kann, das er gerade deinstalliert.
 
 ## Siehe auch
 

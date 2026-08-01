@@ -36,19 +36,41 @@ SYSTEM_UNITS=(
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
 
 _stop_disable_remove_units() {
+    # Per-unit echo, not just one header line for the whole loop - the
+    # Control Center's own live-log streaming (see gui_installer/server.py's
+    # _do_uninstall()) only has whatever this script actually prints to show
+    # while it's running, and pifinder-control-center.service being one of
+    # SYSTEM_UNITS means the server kills itself partway through this exact
+    # function. Found live 2026-08-01, user: "Ist noch ein bisschen wenig an
+    # Meldung" - the old silent per-unit loop meant only the "Stopping..."
+    # header and nothing else ever made it out before the connection dropped.
     echo "🔧 Stopping PiFinder systemd units ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl stop "$unit" 2>/dev/null
+        echo "   - $unit stopped"
+        # Deliberate small pause - found live 2026-08-01 via journalctl that
+        # all 6 systemctl stop calls complete within about a second total,
+        # far faster than the Control Center frontend's 500ms poll interval
+        # (see gui_installer/status_page.html's pollUninstallLog()) can keep
+        # up with - especially since pifinder-control-center.service is the
+        # LAST of the six and its own stop is what kills this whole process.
+        # User: "Immer noch nur 3 Zeilen Meldungen." Trades a couple of
+        # seconds of Uninstall runtime for the frontend actually being able
+        # to show what's happening, which matters more for a destructive,
+        # rarely-run action than shaving that time off.
+        sleep 0.4
     done
 
     echo "🧹 Disabling PiFinder systemd units ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl disable "$unit" 2>/dev/null
+        echo "   - $unit disabled"
     done
 
     echo "🗑️  Removing systemd unit files ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo rm -f "/etc/systemd/system/${unit}"
+        echo "   - $unit file removed"
     done
 
     echo "🔄 Reloading systemd ..."
@@ -144,12 +166,24 @@ _print_manual_cleanup_notes() {
     echo "    - Hardware group memberships added to your user (spi, gpio, i2c, kmem, input, video)."
 }
 
-# The --reset path further below is meant to be non-destructive (keep
-# services/drivers/data, only wipe venv/build) - it must never fall through
-# this full-uninstall body first. Everything else (plain invocation,
-# --selfmove, --run) is supposed to do a real uninstall, so they still run
-# this normally.
-if [[ "${1:-}" != "--reset" ]]; then
+# This top-level body is for the PLAIN terminal invocation only (no
+# argument) - --reset, --selfmove, and --run each have their own complete,
+# dedicated block further below and must never additionally fall through
+# this one (that would run everything twice, and for --selfmove specifically
+# it's actively dangerous, not just redundant - see below).
+#
+# --selfmove must skip this entirely: its whole job is to hand off to a
+# detached /tmp copy (see the --selfmove block below) before anything
+# destructive happens, specifically because _stop_disable_remove_units()
+# below stops this very process's own pifinder-control-center.service -
+# running that in the foreground here kills this script before it ever
+# reaches the --selfmove handoff, silently skipping everything after (INDI
+# drivers, ~/PiFinder, and - only reachable via the --run continuation -
+# ~/PiFinder_Stellarmate itself). Found live 2026-08-01 via a real Control
+# Center Uninstall click: log stopped dead after the systemd stop loop, no
+# /tmp copy was ever created. See basic-memory/pifinder-stellarmate/00001
+# backlog #102.
+if [[ -z "${1:-}" ]]; then
     echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
 
     _stop_disable_remove_units
@@ -177,6 +211,15 @@ if [[ "${1:-}" == "--selfmove" ]]; then
     echo "🧪 Copying script to /tmp and executing in background ..."
     tmp_script="/tmp/uninstall_pifinder_stellarmate.sh"
     cp "$0" "$tmp_script"
+    # This script sources functions.sh/os_detect.sh relative to its own
+    # directory (SCRIPT_DIR) - the /tmp copy needs its own copies of both
+    # alongside it, or every pifinder_home/pifinder_dir/etc. reference below
+    # (e.g. in _unmask_wireplumber()) is unbound (set -u) and kills the
+    # background run before it ever reaches the final rm -rf of ~/PiFinder
+    # and ~/PiFinder_Stellarmate - found live 2026-08-01, see basic-memory/
+    # pifinder-stellarmate/00001 backlog #102.
+    cp "${SCRIPT_DIR}/functions.sh" /tmp/functions.sh
+    cp "${SCRIPT_DIR}/os_detect.sh" /tmp/os_detect.sh
     chmod +x "$tmp_script"
     echo "cd / && nohup \"$tmp_script\" --run > /tmp/uninstall_pifinder.log 2>&1 < /dev/null & disown" | bash
     echo "ℹ️  Script is now running in background from /tmp. Monitor with:"
