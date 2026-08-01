@@ -1143,7 +1143,7 @@ sudo systemctl start pifinder</pre>
 
     <div id="install-groups">
       <div class="mode-power-group">
-        <div class="group-label">Source</div>
+        <div class="group-label">PFSM Source Branch</div>
         <div id="branch-picker-row">
           <select id="branch-select" onchange="onBranchSelectChange(true)">
             <option value="main">main (stable)</option>
@@ -1161,12 +1161,12 @@ sudo systemctl start pifinder</pre>
       </div>
       <div class="vgroup-divider"></div>
       <div class="mode-power-group">
-        <div class="group-label">Install</div>
+        <div class="group-label">Install PiFinder Software</div>
         <div id="choices" style="display:none;"></div>
       </div>
       <div class="vgroup-divider"></div>
       <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
-        <div class="group-label">Reset / Uninstall<a class="help-link" href="/help.html#reset-uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
+        <div class="group-label">Reset / Uninstall PFSM<a class="help-link" href="/help.html#reset-uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
         <div class="mode-power-group-buttons">
           <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
           <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
