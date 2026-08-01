@@ -317,11 +317,10 @@
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
-  #install-power-divider {
-    width: 1px;
-    align-self: stretch;
-    background: #444;
-    margin-top: 1.2rem;
+  #install-danger-zone {
+    margin-top: 0.9rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid #444;
   }
   #mode-tile {
     background: #1a1a1a;
@@ -864,14 +863,6 @@
               <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
             </div>
           </div>
-          <div id="install-power-divider"></div>
-          <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed (services, INDI drivers, ~/PiFinder).">
-            <div class="group-label">Installation</div>
-            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
-              <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
-              <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
-            </div>
-          </div>
         </div>
         <!-- Compact, always-visible hardware summary - same visual language
              as the Mount Bridge diagram's icon nodes (bordered box, currentColor
@@ -1170,6 +1161,16 @@ sudo systemctl start pifinder</pre>
     </div>
 
     <div id="choices" style="display:none;"></div>
+
+    <div id="install-danger-zone">
+      <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
+        <div class="group-label">Reset / Uninstall this installation</div>
+        <div class="mode-power-group-buttons">
+          <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
+          <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
+        </div>
+      </div>
+    </div>
 
     <div id="status-row">
       <div id="status" class="status-idle">Checking current state&hellip;</div>
