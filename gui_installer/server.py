@@ -12,6 +12,7 @@ but the bare system python3.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -56,6 +57,16 @@ PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
+
+
+def _page_version() -> str:
+    """Short content hash of status_page.html - lets an already-open browser
+    tab notice its HTML/JS has changed on disk (e.g. this file was edited, or
+    the whole service was restarted with newer code) even though it has no
+    other way to find out short of the user manually reloading. Cheap enough
+    to read+hash on every /page_version request - this file is a few hundred
+    KB at most, polled at most every few seconds by any one client."""
+    return hashlib.sha256(STATUS_PAGE.read_bytes()).hexdigest()[:12]
 # Deliberately decoupled from PiFinder's own web server/codebase: this just
 # shells out to test_tools/fake_mode.sh (see its own header comment for the
 # full rationale), which itself toggles between the real systemd service and
@@ -1248,7 +1259,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        if parsed.path not in ("/state", "/log") and not self._require_auth():
+        if parsed.path not in ("/state", "/log", "/page_version") and not self._require_auth():
+            return
+
+        if parsed.path == "/page_version":
+            self._send_json({"version": _page_version()})
             return
 
         if parsed.path == "/":
