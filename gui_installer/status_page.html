@@ -778,6 +778,42 @@
     cursor: pointer;
   }
   #stale-page-banner button:hover { filter: brightness(1.15); }
+  /* Shown once after this page reloads following the Control Center's own
+     post-success self-restart (see /last_run_summary) - the fresh server
+     process has no other way to tell this reload apart from a plain visit,
+     so without this the user has no confirmation the run they were
+     watching actually finished. */
+  #last-run-banner {
+    background: #16301c;
+    color: #bfe6c8;
+    border: 1px solid #2f6e3d;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  #last-run-banner-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  #last-run-banner button {
+    background: #2e7d32;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #last-run-banner button:hover { filter: brightness(1.15); }
+  #last-run-banner pre {
+    margin: 0.6rem 0 0;
+    max-height: 12rem;
+    overflow-y: auto;
+    font-size: 0.78rem;
+    color: #9fcaa8;
+  }
   /* Full-page lock shown while the Control Center restarts itself after a
      successful setup run (see enterCcRestartingState() below) - covers and
      visually disables the whole page rather than individually disabling
@@ -837,6 +873,13 @@
 <div id="stale-page-banner" style="display:none;">
   <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
   <button onclick="location.reload()">Reload now</button>
+</div>
+<div id="last-run-banner" style="display:none;">
+  <div id="last-run-banner-header">
+    <span>&#9989; The run you were watching before this restart finished successfully. <a href="#" onclick="document.getElementById('last-run-banner-log').style.display = document.getElementById('last-run-banner-log').style.display === 'none' ? 'block' : 'none'; return false;">Show log</a></span>
+    <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
+  </div>
+  <pre id="last-run-banner-log" style="display:none;"></pre>
 </div>
 
 <div id="cc-restart-overlay">
@@ -2381,6 +2424,19 @@ function initPiFinderScreen() {
 
 async function init() {
   initPiFinderScreen();
+  // Read-once, server-side (see /last_run_summary) - only ever shows
+  // something right after the Control Center's own post-success restart,
+  // never on a plain reload/reboot with nothing to report.
+  try {
+    const summaryResp = await fetch('/last_run_summary');
+    const summary = await summaryResp.json();
+    if (summary.available) {
+      document.getElementById('last-run-banner-log').textContent = (summary.log_tail || []).join('\n');
+      document.getElementById('last-run-banner').style.display = 'block';
+    }
+  } catch (e) {
+    // Non-essential - never block page init on this.
+  }
   const resp = await fetch('/state');
   const data = await resp.json();
   phaseLabels = data.phases || [];

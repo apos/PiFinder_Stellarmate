@@ -55,6 +55,16 @@ HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_log
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
+# Written just before a successful run's self-restart (see
+# _restart_control_center()) so the fresh process can tell the reloaded page
+# "the run you were watching actually finished OK" - otherwise that whole
+# result (and the log content, even though LOG_FILE itself survives) is
+# invisible to a brand-new process with empty in-memory state. Deliberately
+# consumed (read once, then deleted - see /last_run_summary below) rather
+# than relying only on an age check, so a write that's somehow interrupted
+# or never cleaned up can't linger and get misattributed to some later,
+# unrelated restart - found live 2026-08-01.
+RESULT_FILE = REPO_ROOT / ".gui_setup.result"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
 
@@ -1031,6 +1041,40 @@ def _get_all_ips():
     return ips
 
 
+def _consume_result_file():
+    """Read-once: called by GET /last_run_summary, right after this process
+    restarted following a successful run - tells the reloaded page what the
+    run it was watching actually did, since a brand-new process otherwise
+    has no memory of it (see RESULT_FILE's own comment). Always deletes the
+    file, whether or not it's fresh enough to report - a stale/interrupted
+    leftover must never linger for some later, unrelated restart to pick up
+    (found live 2026-08-01, see basic-memory pifinder-stellarmate/00001)."""
+    if not RESULT_FILE.exists():
+        return {"available": False}
+    try:
+        written_at = json.loads(RESULT_FILE.read_text())["written_at"]
+    except Exception:
+        written_at = 0
+    finally:
+        RESULT_FILE.unlink(missing_ok=True)
+    if time.time() - written_at > 300:
+        return {"available": False}
+    try:
+        log_tail = LOG_FILE.read_text().splitlines()[-50:]
+    except Exception:
+        log_tail = []
+    return {"available": True, "log_tail": log_tail}
+
+
+def _write_result_file():
+    """Atomic write (temp file + os.replace) - a torn/partial write here
+    would otherwise be readable by /last_run_summary as valid JSON garbage
+    before the fresh process even starts."""
+    tmp = RESULT_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"written_at": time.time()}))
+    os.replace(tmp, RESULT_FILE)
+
+
 def _restart_control_center():
     """Kills and relaunches this process via systemd, so it picks up
     whatever PiFinder_Stellarmate code a just-finished run landed on - see
@@ -1091,6 +1135,7 @@ def _reader_thread(proc):
             # specific actions.
             if _exit_code == 0:
                 _cc_restart_pending = True
+                _write_result_file()
     if _exit_code == 0:
         threading.Thread(target=_restart_control_center, daemon=True).start()
 
@@ -1362,6 +1407,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/page_version":
             self._send_json({"version": _page_version()})
+            return
+
+        if parsed.path == "/last_run_summary":
+            self._send_json(_consume_result_file())
             return
 
         if parsed.path == "/":
