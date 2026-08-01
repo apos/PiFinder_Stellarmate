@@ -161,9 +161,9 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
   }
-  #branch-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
-  #mode-picker-row { margin-bottom: 0.8rem; font-size: 0.82rem; }
-  #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; }
+  #branch-picker-row { margin-bottom: 0.4rem; font-size: 0.82rem; }
+  #indi-only-label { font-size: 0.78rem; color: #999; cursor: pointer; }
+  #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; display: block; }
   #branch-other-input { margin-left: 0.4rem; }
   #choices button, #start-fresh {
     background: #2a6fdb;
@@ -300,7 +300,7 @@
     margin-top: 0.3rem;
   }
   .mode-power-group { flex: 0 1 auto; }
-  #mode-power-divider {
+  .vgroup-divider {
     width: 1px;
     align-self: stretch;
     background: #444;
@@ -317,12 +317,9 @@
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
-  #install-power-divider {
-    width: 1px;
-    align-self: stretch;
-    background: #444;
-    margin-top: 1.2rem;
-  }
+  #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
+  #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+  #install-heading-row .tile-heading { margin: 0; }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -759,6 +756,28 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  #stale-page-banner {
+    background: #1a2433;
+    color: #bcd4ee;
+    border: 1px solid #2c4a6e;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  #stale-page-banner button {
+    background: #2a6fdb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #stale-page-banner button:hover { filter: brightness(1.15); }
   /* Full-page lock shown while the Control Center restarts itself after a
      successful setup run (see enterCcRestartingState() below) - covers and
      visually disables the whole page rather than individually disabling
@@ -815,6 +834,10 @@
 <h1>PiFinder on Stellarmate Control Center</h1>
 
 <div id="conn-lost-banner" style="display:none;"></div>
+<div id="stale-page-banner" style="display:none;">
+  <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
+  <button onclick="location.reload()">Reload now</button>
+</div>
 
 <div id="cc-restart-overlay">
   <div id="cc-restart-overlay-box">
@@ -856,20 +879,12 @@
               <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
             </div>
           </div>
-          <div id="mode-power-divider"></div>
+          <div class="vgroup-divider"></div>
           <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
             <div class="group-label">This Pi</div>
             <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
               <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
               <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
-            </div>
-          </div>
-          <div id="install-power-divider"></div>
-          <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed (services, INDI drivers, ~/PiFinder).">
-            <div class="group-label">Installation</div>
-            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
-              <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
-              <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
             </div>
           </div>
         </div>
@@ -1135,7 +1150,10 @@ sudo systemctl start pifinder</pre>
 
   <div class="right-col">
     <div id="install-tile">
-      <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="install-heading-row">
+        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="status" class="status-idle">Checking current state&hellip;</div>
+      </div>
     <div id="top-images">
       <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
     </div>
@@ -1149,30 +1167,40 @@ sudo systemctl start pifinder</pre>
 
     <ul id="phase-checklist" style="display:none;"></ul>
 
-    <div id="branch-picker-row">
-      <span class="mb-row-label">Install from:</span><a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a>
-      <select id="branch-select" onchange="onBranchSelectChange(true)">
-        <option value="main">main (stable)</option>
-        <option value="dev">dev (beta)</option>
-        <option value="__other__">Other&hellip;</option>
-      </select>
-      <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
-      <span id="branch-current-hint" style="display:none;"></span>
-      <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
+    <div id="install-groups">
+      <div class="mode-power-group">
+        <div class="group-label">PFSM Source Branch</div>
+        <div id="branch-picker-row">
+          <select id="branch-select" onchange="onBranchSelectChange(true)">
+            <option value="main">main (stable)</option>
+            <option value="dev">dev (beta)</option>
+            <option value="__other__">Other&hellip;</option>
+          </select>
+          <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
+          <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
+          <span id="branch-current-hint" style="display:none;"></span>
+        </div>
+        <label id="indi-only-label">
+          <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
+          INDI-only (no PiFinder hardware - for control-host setups)
+        </label><a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
+      </div>
+      <div class="vgroup-divider"></div>
+      <div class="mode-power-group">
+        <div class="group-label">Install PiFinder Software</div>
+        <div id="choices" style="display:none;"></div>
+      </div>
+      <div class="vgroup-divider"></div>
+      <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - acts on the whole PiFinder_Stellarmate installation (services, INDI drivers, ~/PiFinder), separately from the Reinstall/Update actions above. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed.">
+        <div class="group-label">Reset / Uninstall PFSM<a class="help-link" href="/help.html#reset-uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
+        <div class="mode-power-group-buttons">
+          <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
+          <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
+        </div>
+      </div>
     </div>
-
-    <div id="mode-picker-row">
-      <label>
-        <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
-        INDI-only (no PiFinder hardware - for control-host setups)
-      </label>
-      <a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
-    </div>
-
-    <div id="choices" style="display:none;"></div>
 
     <div id="status-row">
-      <div id="status" class="status-idle">Checking current state&hellip;</div>
       <div id="reboot-wrap">
         <button id="reboot-button" onclick="reboot()">Reboot Now</button>
       </div>
@@ -1739,6 +1767,35 @@ async function refreshBranchInfo() {
 }
 setInterval(refreshBranchInfo, 30000);
 
+// Notices when this already-open tab's HTML/JS has fallen behind what the
+// server is now actually serving - e.g. the service was restarted from a
+// terminal (systemctl restart), or status_page.html was edited on disk,
+// completely outside anything this page itself triggered/watched (unlike
+// enterCcRestartingState()'s auto-reload, which only covers a restart THIS
+// page's own Install/Update run caused). Found live (2026-08-01): a stale
+// tab kept showing an old confirm() dialog and outdated behavior across
+// several server-side fixes, with no indication anything had changed.
+let pageVersionAtLoad = null;
+
+async function checkPageVersion() {
+  let data;
+  try {
+    const resp = await fetch('/page_version', { cache: 'no-store' });
+    data = await resp.json();
+  } catch (e) {
+    return; // transient network hiccup - not worth alarming over
+  }
+  if (pageVersionAtLoad === null) {
+    pageVersionAtLoad = data.version;
+    return;
+  }
+  if (data.version !== pageVersionAtLoad) {
+    document.getElementById('stale-page-banner').style.display = 'flex';
+  }
+}
+checkPageVersion();
+setInterval(checkPageVersion, 20000);
+
 // A click needs its own visible acknowledgment, distinct from
 // refreshBranchInfo()'s silent periodic use - the result (the hint text)
 // often won't visibly change at all (nothing switched elsewhere, the common
@@ -1987,7 +2044,7 @@ async function powerAction(kind) {
 async function installAction(kind) {
   const isUninstall = kind === 'uninstall';
   const message = isUninstall
-    ? '⚠ Uninstall PiFinder completely? This stops and removes all PiFinder services, INDI drivers, and ~/PiFinder itself. This page (and this whole Control Center) will stop working once it starts. This cannot be undone from here.'
+    ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
     : 'Reset PiFinder? This wipes the Python venv/build state only - your data, config, and installed services/drivers are kept. Ready for a fresh setup run afterward.';
   if (!confirm(message)) return;
   const resetBtn = document.getElementById('install-reset-btn');
@@ -2007,19 +2064,46 @@ async function installAction(kind) {
         alert('Could not start uninstall: ' + (data.error || 'unknown error'));
         return;
       }
-      watchForServerLoss();
+      // Streams live into the shared Terminal like Reset, for as long as
+      // this server process is still around to answer - see
+      // pollUninstallLog(). Found live, user: "der User muss sehen, was
+      // passiert." Most of the actual work (stopping/removing services incl.
+      // this server's own, removing INDI drivers, deleting ~/PiFinder) runs
+      // before this process's own unit gets stopped partway through -
+      // pollUninstallLog() hands off to watchForServerLoss() once the
+      // connection actually drops, same end state as before.
+      if (!polling && !hwTestPolling && !modeLogPolling) {
+        const logEl = document.getElementById('log');
+        logEl.textContent = '';
+        logEl.classList.add('log-placeholder');
+      }
+      document.getElementById('log').style.display = 'block';
+      uninstallLogPosition = 0;
+      uninstallPolling = true;
+      pollUninstallLog();
       return;
     }
-    // Reset runs synchronously server-side and returns its own result -
-    // no server-loss handling needed, this repo's own directory is untouched.
-    resetBtn.disabled = false;
-    uninstallBtn.disabled = false;
-    btn.textContent = 'Reset';
-    if (data.success) {
-      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
-    } else {
-      alert('Reset failed:\n\n' + (data.output || data.error || 'unknown error'));
+    // Reset now runs in the background, streaming output into the shared
+    // Terminal tile like Install/Update/Test Hardware - see pollResetLog().
+    // Previously ran synchronously with nothing shown until a final alert()
+    // (found live during TC-PFSM-84-01, user: "There is no Terminal output
+    // at all").
+    if (!data.started) {
+      resetBtn.disabled = false;
+      uninstallBtn.disabled = false;
+      btn.textContent = 'Reset';
+      alert('Could not start reset: ' + (data.error || 'unknown error'));
+      return;
     }
+    if (!polling && !hwTestPolling && !modeLogPolling) {
+      const logEl = document.getElementById('log');
+      logEl.textContent = '';
+      logEl.classList.add('log-placeholder');
+    }
+    document.getElementById('log').style.display = 'block';
+    resetLogPosition = 0;
+    resetPolling = true;
+    pollResetLog();
   } catch (e) {
     if (isUninstall) {
       // Network error here can also mean the server went down right as it
@@ -2031,6 +2115,84 @@ async function installAction(kind) {
       btn.textContent = 'Reset';
       alert('Reset request failed.');
     }
+  }
+}
+
+let resetLogPosition = 0;
+let resetPolling = false;
+
+async function pollResetLog() {
+  if (!resetPolling) return;
+  let data;
+  try {
+    const resp = await fetch('/api/reset_log?position=' + resetLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    resetPolling = false;
+    document.getElementById('install-reset-btn').disabled = false;
+    document.getElementById('install-uninstall-btn').disabled = false;
+    document.getElementById('install-reset-btn').textContent = 'Reset';
+    alert('Lost connection while resetting.');
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    resetLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollResetLog, 500);
+  } else {
+    resetPolling = false;
+    document.getElementById('install-reset-btn').disabled = false;
+    document.getElementById('install-uninstall-btn').disabled = false;
+    document.getElementById('install-reset-btn').textContent = 'Reset';
+    if (data.exit_code === 0) {
+      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
+    } else {
+      alert('Reset failed - see the terminal output above for details.');
+    }
+  }
+}
+
+let uninstallLogPosition = 0;
+let uninstallPolling = false;
+
+async function pollUninstallLog() {
+  if (!uninstallPolling) return;
+  let data;
+  try {
+    const resp = await fetch('/api/uninstall_log?position=' + uninstallLogPosition);
+    data = await resp.json();
+  } catch (e) {
+    // Expected eventually, not an error - this server process stops itself
+    // partway through (its own systemd unit is one of the things Uninstall
+    // removes). Hand off to the existing "server is gone" handling instead
+    // of alerting.
+    uninstallPolling = false;
+    watchForServerLoss();
+    return;
+  }
+  if (data.lines.length > 0) {
+    const logEl = document.getElementById('log');
+    logEl.classList.remove('log-placeholder');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.textContent += data.lines.join('\n') + '\n';
+    uninstallLogPosition = data.position;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (data.running) {
+    setTimeout(pollUninstallLog, 500);
+  } else {
+    // The visible part of the run finished on its own (rare - usually the
+    // connection just drops first, handled in the catch above) - either
+    // way, from here it's the same "wait for the server to actually go
+    // away" as before.
+    uninstallPolling = false;
+    watchForServerLoss();
   }
 }
 

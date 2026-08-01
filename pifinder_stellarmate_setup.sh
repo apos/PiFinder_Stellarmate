@@ -60,6 +60,11 @@ esac
 # re-execs below rely on `$(pwd)` (via `source $(pwd)/bin/functions.sh`) being
 # the repo root again, so they must `cd` back here first.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Absolute path to this script itself, for the venv re-exec calls below -
+# using bare $0 there breaks when invoked as "bash pifinder_stellarmate_setup.sh"
+# (no "/" in the name, so bash's `exec` does a $PATH lookup and fails to
+# find it) instead of "./pifinder_stellarmate_setup.sh" or an absolute path.
+SCRIPT_PATH="${SCRIPT_DIR}/$(basename "$0")"
 
 # Branch switch (if requested) runs before self-update, which only ever
 # fast-forwards whichever branch is already checked out - it has no notion
@@ -535,7 +540,7 @@ if ! is_venv_active "${python_venv}"; then
       if [ -n "$ACTION" ]; then
         echo "🔁 Virtual environment created — re-executing inside it automatically ..."
         cd "$SCRIPT_DIR"
-        exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
+        exec bash -c "source '${python_venv}/bin/activate' && exec '${SCRIPT_PATH}' \"\$@\"" -- "$@"
       fi
       echo " "
       echo "##### STOP ##########################################################"
@@ -558,7 +563,7 @@ if ! is_venv_active "${python_venv}"; then
     if [ -n "$ACTION" ]; then
       echo "🔁 Virtual environment directory exists but isn't active — re-executing inside it automatically ..."
       cd "$SCRIPT_DIR"
-      exec bash -c "source '${python_venv}/bin/activate' && exec '$0' \"\$@\"" -- "$@"
+      exec bash -c "source '${python_venv}/bin/activate' && exec '${SCRIPT_PATH}' \"\$@\"" -- "$@"
     fi
     echo -e "STOP: Python venv directory exists. Please activate the venv manually with:\n vvvvvvvv"
     echo "source ${python_venv}/bin/activate"
@@ -575,7 +580,7 @@ else
       # re-detects the (missing) venv and goes through the normal create path.
       echo "🔁 Stale venv reference (directory was removed) — re-executing cleanly ..."
       cd "$SCRIPT_DIR"
-      exec env -u VIRTUAL_ENV bash "$0" "$@"
+      exec env -u VIRTUAL_ENV bash "${SCRIPT_PATH}" "$@"
     fi
     echo "###################################################################"
     echo "WARNING: Your shell thinks a virtual environment is active,"

@@ -16,13 +16,21 @@ source "${SCRIPT_DIR}/os_detect.sh"
 # once already (pifinder-setup.service, pifinder-fake-mode-autostart.service,
 # pifinder-control-center.service and pifinder-numpad-bridge.service all
 # postdate the original version of this script and were missing here).
+# pifinder-control-center.service deliberately LAST: when this runs via the
+# Control Center's own Uninstall button, that service IS this process's own
+# systemd unit - stopping it here kills the server mid-uninstall. Ordering
+# it last (not e.g. 5th of 6, its original position) buys the frontend the
+# most possible time to poll and render the other units' stop/disable/
+# remove output before that happens (found live 2026-08-01: with the
+# original ordering, the connection dropped before even the first poll
+# completed - "Jetzt kam sofort die Meldung, nix im Terminal").
 SYSTEM_UNITS=(
     pifinder.service
     pifinder_splash.service
     pifinder-setup.service
     pifinder-fake-mode-autostart.service
-    pifinder-control-center.service
     pifinder-numpad-bridge.service
+    pifinder-control-center.service
 )
 
 SYSTEM_DRIVERS_XML="/usr/share/indi/drivers.xml"
@@ -136,26 +144,33 @@ _print_manual_cleanup_notes() {
     echo "    - Hardware group memberships added to your user (spi, gpio, i2c, kmem, input, video)."
 }
 
-echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
+# The --reset path further below is meant to be non-destructive (keep
+# services/drivers/data, only wipe venv/build) - it must never fall through
+# this full-uninstall body first. Everything else (plain invocation,
+# --selfmove, --run) is supposed to do a real uninstall, so they still run
+# this normally.
+if [[ "${1:-}" != "--reset" ]]; then
+    echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
 
-_stop_disable_remove_units
-_remove_indi_drivers
-_remove_gpiomem_udev_rule
-_unmask_wireplumber
-_remove_lgpio_build
+    _stop_disable_remove_units
+    _remove_indi_drivers
+    _remove_gpiomem_udev_rule
+    _unmask_wireplumber
+    _remove_lgpio_build
 
-echo "🗂️ Deleting PiFinder installation directory ..."
-sudo rm -rf "${pifinder_dir}"
+    echo "🗂️ Deleting PiFinder installation directory ..."
+    sudo rm -rf "${pifinder_dir}"
 
-echo "⚠️  NOTE: The folder ${pifinder_data_dir} was NOT removed."
-echo "    You can delete it manually if needed."
+    echo "⚠️  NOTE: The folder ${pifinder_data_dir} was NOT removed."
+    echo "    You can delete it manually if needed."
 
-echo "📦 Optional: You may now remove the repository clone with:"
-echo "    rm -rf ${pifinder_stellarmate_dir}"
+    echo "📦 Optional: You may now remove the repository clone with:"
+    echo "    rm -rf ${pifinder_stellarmate_dir}"
 
-_print_manual_cleanup_notes
+    _print_manual_cleanup_notes
 
-echo "✅ Uninstall complete."
+    echo "✅ Uninstall complete."
+fi
 
 
 if [[ "${1:-}" == "--selfmove" ]]; then

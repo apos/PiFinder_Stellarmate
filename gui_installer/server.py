@@ -12,6 +12,7 @@ but the bare system python3.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -56,6 +57,16 @@ PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
+
+
+def _page_version() -> str:
+    """Short content hash of status_page.html - lets an already-open browser
+    tab notice its HTML/JS has changed on disk (e.g. this file was edited, or
+    the whole service was restarted with newer code) even though it has no
+    other way to find out short of the user manually reloading. Cheap enough
+    to read+hash on every /page_version request - this file is a few hundred
+    KB at most, polled at most every few seconds by any one client."""
+    return hashlib.sha256(STATUS_PAGE.read_bytes()).hexdigest()[:12]
 # Deliberately decoupled from PiFinder's own web server/codebase: this just
 # shells out to test_tools/fake_mode.sh (see its own header comment for the
 # full rationale), which itself toggles between the real systemd service and
@@ -706,6 +717,10 @@ _hwtest_running = False  # True while a Test Hardware run is in flight
 _hwtest_lines = []  # progress log, shown in the shared Terminal tile
 _hwtest_result = {"camera": None, "imu": None, "gps": None}
 
+_reset_running = False  # True while a Reset run is in flight
+_reset_lines = []  # progress log, shown in the shared Terminal tile
+_reset_exit_code = None
+
 
 def _hwtest_log(line: str):
     with _lock:
@@ -812,18 +827,32 @@ def _run_hardware_test():
     test's PiFinder-is-running branch and the GPS snapshot both hit the same
     /api/status endpoint, and running I2C/camera probes concurrently would
     only make failures harder to attribute to one subsystem."""
+    # try/finally is load-bearing, not defensive style: found live 2026-08-01
+    # that without it, an uncaught exception from any of the three checks
+    # below (plausible whenever the device is between installs - ~/PiFinder
+    # missing, no venv, etc.) leaves _hwtest_running stuck True forever, in a
+    # daemon thread that just dies silently - permanently locking out every
+    # other mutex-guarded action (Reset/Uninstall/Reinstall/mode switch/...)
+    # until the whole service is restarted, and the startup auto-run (see
+    # _startup_hardware_test() below) can then hit the exact same failure
+    # again on the very next start.
     global _hwtest_running, _hwtest_result
     with _lock:
         _hwtest_lines.clear()
         _hwtest_result = {"camera": None, "imu": None, "gps": None}
-    _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
-    camera_result = _camera_functional_test(_hwtest_log)
-    imu_result = _imu_functional_test(_hwtest_log)
-    gps_location = _gps_status_snapshot(_hwtest_log)
-    _hwtest_log("=== Test Hardware: done ===")
-    with _lock:
-        _hwtest_result = {"camera": camera_result, "imu": imu_result, "gps": gps_location}
-        _hwtest_running = False
+    try:
+        _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
+        camera_result = _camera_functional_test(_hwtest_log)
+        imu_result = _imu_functional_test(_hwtest_log)
+        gps_location = _gps_status_snapshot(_hwtest_log)
+        _hwtest_log("=== Test Hardware: done ===")
+        with _lock:
+            _hwtest_result = {"camera": camera_result, "imu": imu_result, "gps": gps_location}
+    except Exception as e:
+        _hwtest_log(f"=== Test Hardware: internal error - {e} ===")
+    finally:
+        with _lock:
+            _hwtest_running = False
 
 
 def _startup_hardware_test(timeout=120, interval=2):
@@ -879,7 +908,25 @@ def _pifinder_toggle_debug_solve(port: str) -> bool:
 
 
 def _run_fake_mode_action(action):
-    global _mode_action_running, _mode_lines, _mode_exit_code, _mode_error, _mode_target
+    # try/finally wrapper is load-bearing, not defensive style - see
+    # _run_hardware_test()'s comment for the general shape of this bug
+    # (found live there first, 2026-08-01). _run_fake_mode_action_inner()'s
+    # tail (settle-check loop, _camera_hardware_present()/
+    # _imu_hardware_present() probes, a journalctl subprocess.run() call) has
+    # no exception handling of its own - an uncaught exception anywhere in
+    # there would leave _mode_action_running stuck True forever, same
+    # lock-everything-out consequence. Wrapped here instead of re-indenting
+    # the whole (long, already-branchy) inner function.
+    global _mode_action_running
+    try:
+        _run_fake_mode_action_inner(action)
+    finally:
+        with _lock:
+            _mode_action_running = False
+
+
+def _run_fake_mode_action_inner(action):
+    global _mode_lines, _mode_exit_code, _mode_error, _mode_target
     target = "fake" if action == "start" else "real"
     with _lock:
         _mode_lines = []
@@ -960,7 +1007,8 @@ def _run_fake_mode_action(action):
                 _mode_lines.extend(journal.splitlines())
             else:
                 _mode_error = "Fake Mode failed to start - see Terminal below."
-        _mode_action_running = False
+    # _mode_action_running is cleared by the _run_fake_mode_action() wrapper's
+    # finally block, not here - see its comment.
 
 
 def _get_all_ips():
@@ -997,38 +1045,52 @@ def _restart_control_center():
 
 
 def _reader_thread(proc):
+    # try/finally is load-bearing, not defensive style - see
+    # _run_hardware_test()'s comment for the general shape of this bug
+    # (found live there first, 2026-08-01). This is the MAIN install/update/
+    # reinstall run's own reader - previously had no exception handling at
+    # all, so a failure here (LOG_FILE unwritable, a readline() error, ...)
+    # would've left _running stuck True forever, locking out every other
+    # mutex-guarded action AND blocking any retry of the run itself.
     global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending
     # _last_mode is set by _start_run() before this thread starts and never
     # changes for the lifetime of this run - safe to read once, unlocked.
     phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
-    with open(LOG_FILE, "w") as log_f:
-        for line in iter(proc.stdout.readline, ""):
-            log_f.write(line)
-            log_f.flush()
-            stripped = line.rstrip("\n")
-            if stripped.startswith(PHASE_MARKER):
-                label = stripped[len(PHASE_MARKER):]
-                if label in phases:
+    try:
+        with open(LOG_FILE, "w") as log_f:
+            for line in iter(proc.stdout.readline, ""):
+                log_f.write(line)
+                log_f.flush()
+                stripped = line.rstrip("\n")
+                if stripped.startswith(PHASE_MARKER):
+                    label = stripped[len(PHASE_MARKER):]
+                    if label in phases:
+                        with _lock:
+                            _phase_index = max(_phase_index, phases.index(label))
+                    continue  # phase markers are for the progress bar, not the log panel
+                if stripped.startswith(REBOOT_MARKER):
                     with _lock:
-                        _phase_index = max(_phase_index, phases.index(label))
-                continue  # phase markers are for the progress bar, not the log panel
-            if stripped.startswith(REBOOT_MARKER):
+                        _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
+                    continue  # marker is for the Reboot button, not the log panel
                 with _lock:
-                    _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
-                continue  # marker is for the Reboot button, not the log panel
-            with _lock:
-                _lines.append(stripped)
-    proc.wait()
-    with _lock:
-        _running = False
-        _exit_code = proc.returncode
-        # Any successful run (fresh/reinstall/update, any mode) already ran
-        # switch_branch.sh + self_update.sh at its very start, so it may have
-        # landed on different PiFinder_Stellarmate code regardless of which
-        # action was picked - always restart on success, not just for
-        # specific actions.
-        if _exit_code == 0:
-            _cc_restart_pending = True
+                    _lines.append(stripped)
+        proc.wait()
+        with _lock:
+            _exit_code = proc.returncode
+    except Exception as e:
+        with _lock:
+            _lines.append(f"[setup GUI] internal error: {e}")
+            _exit_code = -1
+    finally:
+        with _lock:
+            _running = False
+            # Any successful run (fresh/reinstall/update, any mode) already ran
+            # switch_branch.sh + self_update.sh at its very start, so it may have
+            # landed on different PiFinder_Stellarmate code regardless of which
+            # action was picked - always restart on success, not just for
+            # specific actions.
+            if _exit_code == 0:
+                _cc_restart_pending = True
     if _exit_code == 0:
         threading.Thread(target=_restart_control_center, daemon=True).start()
 
@@ -1056,6 +1118,10 @@ def _start_run(action, branch=None, mode=None):
             return False, "A PiFinder mode switch is still in progress - wait for it to finish first."
         if _hwtest_running:
             return False, "A hardware test is still in progress - wait for it to finish first."
+        if _reset_running:
+            return False, "A reset is still in progress - wait for it to finish first."
+        if _uninstall_running:
+            return False, "An uninstall is still in progress - wait for it to finish first."
         _lines = []
         _running = True
         _exit_code = None
@@ -1099,6 +1165,10 @@ _server = None  # set in main(); used by /shutdown to stop serve_forever()
 UNINSTALL_SCRIPT = REPO_ROOT / "bin" / "uninstall_pifinder_stellarmate.sh"
 
 
+_uninstall_running = False  # True while an Uninstall run is in flight
+_uninstall_lines = []  # progress log, shown in the shared Terminal tile
+
+
 def _do_uninstall():
     # This server process runs from inside the very directory tree being
     # deleted (~/PiFinder_Stellarmate) - --selfmove copies the uninstall
@@ -1106,18 +1176,72 @@ def _do_uninstall():
     # repo (and this server's own pifinder-control-center.service) survives
     # this process's own directory disappearing out from under it. See the
     # script's own --selfmove header comment for the full rationale.
+    #
+    # Streams into _uninstall_lines exactly like _run_reset() (found live,
+    # 2026-08-01, user: "der User muss sehen, was passiert") - the bulk of
+    # the real work (stopping/disabling/removing units incl. this server's
+    # own pifinder-control-center.service, removing INDI drivers, deleting
+    # ~/PiFinder) runs in *this* subprocess, before --selfmove hands off to
+    # the detached /tmp copy that deletes ~/PiFinder_Stellarmate itself -
+    # that final step is no longer observable here once this process's own
+    # unit gets stopped partway through, same as it always was; this only
+    # changes how the part that IS still running gets surfaced (Popen +
+    # incremental read instead of blocking subprocess.run(), same child
+    # process either way - no change to what actually runs or how/when it
+    # can get signaled).
+    global _uninstall_running
     time.sleep(1)  # give the HTTP response a moment to reach the browser
-    subprocess.run(["bash", str(UNINSTALL_SCRIPT), "--selfmove"])
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(UNINSTALL_SCRIPT), "--selfmove"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            with _lock:
+                _uninstall_lines.append(line.rstrip("\n"))
+        proc.wait()
+    except Exception:
+        pass
+    finally:
+        with _lock:
+            _uninstall_running = False
 
 
-def _do_reset():
-    # --reset only touches ~/PiFinder's own venv/build state, never this
-    # repo's own directory - unlike _do_uninstall() above, safe to run
-    # directly and report the result, no --selfmove/self-deletion concern.
-    result = subprocess.run(
-        ["bash", str(UNINSTALL_SCRIPT), "--reset"], capture_output=True, text=True,
-    )
-    return result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+def _run_reset():
+    """Runs bin/uninstall_pifinder_stellarmate.sh --reset via Popen, streaming
+    output into _reset_lines line-by-line so it shows live in the shared
+    Terminal tile (like Install/Update/Test Hardware) - unlike the previous
+    _do_reset(), which blocked on subprocess.run(capture_output=True) and
+    only reported the result via a browser alert() at the end, with nothing
+    visible in the terminal while it ran (found live during TC-PFSM-84-01,
+    user: "There is no Terminal output at all"). --reset only touches
+    ~/PiFinder's own venv/build state, never this repo's own directory -
+    unlike _do_uninstall(), safe to run directly, no --selfmove/self-deletion
+    concern."""
+    # try/finally is load-bearing - see _run_hardware_test()'s comment for
+    # why (found live 2026-08-01: the same missing-try/finally bug, there in
+    # _run_hardware_test(), permanently locked out every other mutex-guarded
+    # action). Popen()/readline() throwing here is less likely than a real
+    # hardware check throwing, but "less likely" isn't "impossible."
+    global _reset_running, _reset_exit_code
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(UNINSTALL_SCRIPT), "--reset"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            with _lock:
+                _reset_lines.append(line.rstrip("\n"))
+        proc.wait()
+        with _lock:
+            _reset_exit_code = proc.returncode
+    except Exception as e:
+        with _lock:
+            _reset_lines.append(f"[setup GUI] internal error: {e}")
+            _reset_exit_code = -1
+    finally:
+        with _lock:
+            _reset_running = False
 
 
 def _do_shutdown():
@@ -1227,7 +1351,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        if parsed.path not in ("/state", "/log") and not self._require_auth():
+        # /api/uninstall_log exempted like /state and /log: the PAM check
+        # inside _require_auth() adds real latency per request, and every
+        # millisecond matters here specifically - this server stops its own
+        # systemd unit partway through an uninstall run, so a slower/
+        # authenticated poll has a worse chance of completing at all before
+        # the connection drops (found live 2026-08-01).
+        if parsed.path not in ("/state", "/log", "/page_version", "/api/uninstall_log") and not self._require_auth():
+            return
+
+        if parsed.path == "/page_version":
+            self._send_json({"version": _page_version()})
             return
 
         if parsed.path == "/":
@@ -1274,6 +1408,10 @@ class Handler(BaseHTTPRequestHandler):
                 last_action = _last_action
                 restarting = _cc_restart_pending
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
+                mode_action_running = _mode_action_running
+                hwtest_running = _hwtest_running
+                reset_running = _reset_running
+                uninstall_running = _uninstall_running
             self._send_json(
                 {
                     "existing_install": PIFINDER_DIR.is_dir(),
@@ -1290,6 +1428,15 @@ class Handler(BaseHTTPRequestHandler):
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
                     "restarting": restarting,
+                    # Diagnostic - lets a stuck mutex guard (any action
+                    # rejected with "X is in progress" when nothing visibly
+                    # is) be root-caused from the outside instead of guessed
+                    # at (found live, 2026-08-01: a rejected Uninstall click
+                    # with no way to tell which flag was actually stuck).
+                    "mode_action_running": mode_action_running,
+                    "hwtest_running": hwtest_running,
+                    "reset_running": reset_running,
+                    "uninstall_running": uninstall_running,
                 }
             )
             return
@@ -1490,6 +1637,29 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/reset_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _reset_lines[position:]
+                new_position = len(_reset_lines)
+                running = _reset_running
+                exit_code = _reset_exit_code
+            self._send_json(
+                {"lines": new_lines, "position": new_position, "running": running, "exit_code": exit_code}
+            )
+            return
+
+        if parsed.path == "/api/uninstall_log":
+            qs = parse_qs(parsed.query)
+            position = int(qs.get("position", ["0"])[0])
+            with _lock:
+                new_lines = _uninstall_lines[position:]
+                new_position = len(_uninstall_lines)
+                running = _uninstall_running
+            self._send_json({"lines": new_lines, "position": new_position, "running": running})
+            return
+
         if parsed.path == "/api/mount_bridge_log":
             qs = parse_qs(parsed.query)
             position = int(qs.get("position", ["0"])[0])
@@ -1544,7 +1714,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global _hwtest_running, _mode_action_running
+        global _hwtest_running, _mode_action_running, _reset_running, _reset_exit_code, _uninstall_running
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -1616,26 +1786,31 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/uninstall":
             with _lock:
-                if _running or _mode_action_running or _hwtest_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"uninstalling": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        {"uninstalling": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
+                _uninstall_lines.clear()
+                _uninstall_running = True
             self._send_json({"uninstalling": True})
             threading.Thread(target=_do_uninstall, daemon=True).start()
             return
 
         if parsed.path == "/reset":
             with _lock:
-                if _running or _mode_action_running or _hwtest_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"success": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        {"started": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
-            ok, output = _do_reset()
-            self._send_json({"success": ok, "output": output})
+                _reset_lines.clear()
+                _reset_running = True
+                _reset_exit_code = None
+            self._send_json({"started": True})
+            threading.Thread(target=_run_reset, daemon=True).start()
             return
 
         if parsed.path == "/api/pifinder_mode":
@@ -1653,6 +1828,12 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if _hwtest_running:
                     self._send_json({"started": False, "error": "A hardware test is in progress - wait for it to finish first."}, status=409)
+                    return
+                if _reset_running:
+                    self._send_json({"started": False, "error": "A reset is in progress - wait for it to finish first."}, status=409)
+                    return
+                if _uninstall_running:
+                    self._send_json({"started": False, "error": "An uninstall is in progress - wait for it to finish first."}, status=409)
                     return
                 _mode_action_running = True
             script_arg = "start" if action == "enable_fake" else "stop"
@@ -1674,9 +1855,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             with _lock:
-                if _running or _mode_action_running or _hwtest_running:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
                     self._send_json(
-                        {"success": False, "error": "An install/update run, mode switch, or hardware test is in progress - wait for it to finish first."},
+                        {"success": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
                         status=409,
                     )
                     return
@@ -1711,6 +1892,12 @@ class Handler(BaseHTTPRequestHandler):
                         status=409,
                     )
                     return
+                if _reset_running:
+                    self._send_json({"started": False, "error": "A reset is in progress - wait for it to finish first."}, status=409)
+                    return
+                if _uninstall_running:
+                    self._send_json({"started": False, "error": "An uninstall is in progress - wait for it to finish first."}, status=409)
+                    return
                 _hwtest_running = True
             threading.Thread(target=_run_hardware_test, daemon=True).start()
             self._send_json({"started": True})
@@ -1723,8 +1910,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid action '{action}'"}, status=400)
                 return
             with _lock:
-                if _mode_action_running or _running or _hwtest_running:
-                    self._send_json({"success": False, "error": "An install/update, mode switch, or hardware test is in progress - wait for it to finish first."}, status=409)
+                if _mode_action_running or _running or _hwtest_running or _reset_running or _uninstall_running:
+                    self._send_json({"success": False, "error": "An install/update, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."}, status=409)
                     return
             want_enabled = action == "start"
             if _lcd_overlay_active() == want_enabled:
