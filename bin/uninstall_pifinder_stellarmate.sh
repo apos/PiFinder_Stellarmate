@@ -7,6 +7,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./functions.sh
 source "${SCRIPT_DIR}/functions.sh"
+# shellcheck source=./os_detect.sh
+source "${SCRIPT_DIR}/os_detect.sh"
 
 # Every systemd unit this project installs into /etc/systemd/system. Keep in
 # sync with the "cp ... /etc/systemd/system/" lines in
@@ -87,7 +89,18 @@ _unmask_wireplumber() {
         fi
     done
     echo "   ℹ️  pipewire-libcamera was removed from the system during install (it conflicted with"
-    echo "      PiFinder's camera access) - reinstall manually if you want it back: sudo pacman -S pipewire-libcamera"
+    local manager
+    if manager="$(os_detect_package_manager 2>/dev/null)" && [ "${manager}" = "pacman" ]; then
+        echo "      PiFinder's camera access) - reinstall manually if you want it back: sudo pacman -S pipewire-libcamera"
+    else
+        # This removal only happens on the pacman/Arch (StellarMate) full
+        # install path this script otherwise targets - on any other package
+        # manager, say so honestly instead of printing an untested apt/nix
+        # command (see os_detect.sh's own header: apt/nix are design- not
+        # field-verified, and pipewire-libcamera isn't in its package table
+        # at all yet).
+        echo "      PiFinder's camera access) - reinstall manually via your system's package manager if you want it back."
+    fi
 }
 
 _remove_lgpio_build() {
@@ -111,8 +124,15 @@ _print_manual_cleanup_notes() {
     echo "      dtoverlay=pwm,pin=13,func=4, dtoverlay=imx296, and (Pi4) dtoverlay=uart3 /"
     echo "      (Pi5) dtoverlay=pwm-2chan. Other hardware/StellarMate features may also depend on"
     echo "      SPI/I2C being enabled - review and remove by hand if you're sure nothing else needs them."
-    echo "    - /etc/pacman.conf: 'IgnorePkg = python-libcamera' pin (prevents an incompatible"
-    echo "      libcamera-vs-python-libcamera version mismatch) - remove by hand if desired."
+    # The python-libcamera pin only exists on the pacman/Arch (StellarMate)
+    # full install path - pacman.conf's IgnorePkg mechanism has no apt/nix
+    # equivalent, so this note would be actively wrong (references a file
+    # that doesn't exist) on those systems. Only print it where it applies.
+    local manager
+    if manager="$(os_detect_package_manager 2>/dev/null)" && [ "${manager}" = "pacman" ]; then
+        echo "    - /etc/pacman.conf: 'IgnorePkg = python-libcamera' pin (prevents an incompatible"
+        echo "      libcamera-vs-python-libcamera version mismatch) - remove by hand if desired."
+    fi
     echo "    - Hardware group memberships added to your user (spi, gpio, i2c, kmem, input, video)."
 }
 

@@ -314,8 +314,15 @@
   .mode-power-group-buttons-stacked { flex-direction: column; }
   #power-reboot-btn { background: #2a6fdb; }
   #power-poweroff-btn { background: #a33; }
+  #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
+  #install-power-divider {
+    width: 1px;
+    align-self: stretch;
+    background: #444;
+    margin-top: 1.2rem;
+  }
   #mode-tile {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -855,6 +862,14 @@
             <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
               <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
               <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
+            </div>
+          </div>
+          <div id="install-power-divider"></div>
+          <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh. Reset keeps your data/config and only wipes the Python venv/build state, ready for a fresh setup run. Uninstall removes everything this project installed (services, INDI drivers, ~/PiFinder).">
+            <div class="group-label">Installation</div>
+            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
+              <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;">Reset</button>
+              <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
             </div>
           </div>
         </div>
@@ -1961,6 +1976,62 @@ async function powerAction(kind) {
     // accepted the request - treat it the same as a confirmed action.
   }
   watchForServerLoss();
+}
+
+// Uninstall/Reset - both drive bin/uninstall_pifinder_stellarmate.sh (see
+// its own header comments for --selfmove/--reset). Reset is comparatively
+// low-risk (venv/build state only, keeps data/config); Uninstall is final
+// and removes everything this project installed, including this very
+// server's own directory - handled the same way as reboot/poweroff
+// (watchForServerLoss(), since there's no coming back from this one).
+async function installAction(kind) {
+  const isUninstall = kind === 'uninstall';
+  const message = isUninstall
+    ? '⚠ Uninstall PiFinder completely? This stops and removes all PiFinder services, INDI drivers, and ~/PiFinder itself. This page (and this whole Control Center) will stop working once it starts. This cannot be undone from here.'
+    : 'Reset PiFinder? This wipes the Python venv/build state only - your data, config, and installed services/drivers are kept. Ready for a fresh setup run afterward.';
+  if (!confirm(message)) return;
+  const resetBtn = document.getElementById('install-reset-btn');
+  const uninstallBtn = document.getElementById('install-uninstall-btn');
+  const btn = isUninstall ? uninstallBtn : resetBtn;
+  resetBtn.disabled = true;
+  uninstallBtn.disabled = true;
+  btn.textContent = isUninstall ? 'Uninstalling…' : 'Resetting…';
+  try {
+    const resp = await fetch(`/${kind}`, { method: 'POST' });
+    const data = await resp.json();
+    if (isUninstall) {
+      if (!data.uninstalling) {
+        resetBtn.disabled = false;
+        uninstallBtn.disabled = false;
+        btn.textContent = 'Uninstall';
+        alert('Could not start uninstall: ' + (data.error || 'unknown error'));
+        return;
+      }
+      watchForServerLoss();
+      return;
+    }
+    // Reset runs synchronously server-side and returns its own result -
+    // no server-loss handling needed, this repo's own directory is untouched.
+    resetBtn.disabled = false;
+    uninstallBtn.disabled = false;
+    btn.textContent = 'Reset';
+    if (data.success) {
+      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
+    } else {
+      alert('Reset failed:\n\n' + (data.output || data.error || 'unknown error'));
+    }
+  } catch (e) {
+    if (isUninstall) {
+      // Network error here can also mean the server went down right as it
+      // accepted the request - treat it the same as a confirmed action.
+      watchForServerLoss();
+    } else {
+      resetBtn.disabled = false;
+      uninstallBtn.disabled = false;
+      btn.textContent = 'Reset';
+      alert('Reset request failed.');
+    }
+  }
 }
 
 // Direct pifinder.service control (start/stop/restart) - shouldn't normally
