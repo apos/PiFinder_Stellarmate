@@ -136,26 +136,33 @@ _print_manual_cleanup_notes() {
     echo "    - Hardware group memberships added to your user (spi, gpio, i2c, kmem, input, video)."
 }
 
-echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
+# The --reset path further below is meant to be non-destructive (keep
+# services/drivers/data, only wipe venv/build) - it must never fall through
+# this full-uninstall body first. Everything else (plain invocation,
+# --selfmove, --run) is supposed to do a real uninstall, so they still run
+# this normally.
+if [[ "${1:-}" != "--reset" ]]; then
+    echo "🚫 Uninstalling PiFinder (Stellarmate version) ..."
 
-_stop_disable_remove_units
-_remove_indi_drivers
-_remove_gpiomem_udev_rule
-_unmask_wireplumber
-_remove_lgpio_build
+    _stop_disable_remove_units
+    _remove_indi_drivers
+    _remove_gpiomem_udev_rule
+    _unmask_wireplumber
+    _remove_lgpio_build
 
-echo "🗂️ Deleting PiFinder installation directory ..."
-sudo rm -rf "${pifinder_dir}"
+    echo "🗂️ Deleting PiFinder installation directory ..."
+    sudo rm -rf "${pifinder_dir}"
 
-echo "⚠️  NOTE: The folder ${pifinder_data_dir} was NOT removed."
-echo "    You can delete it manually if needed."
+    echo "⚠️  NOTE: The folder ${pifinder_data_dir} was NOT removed."
+    echo "    You can delete it manually if needed."
 
-echo "📦 Optional: You may now remove the repository clone with:"
-echo "    rm -rf ${pifinder_stellarmate_dir}"
+    echo "📦 Optional: You may now remove the repository clone with:"
+    echo "    rm -rf ${pifinder_stellarmate_dir}"
 
-_print_manual_cleanup_notes
+    _print_manual_cleanup_notes
 
-echo "✅ Uninstall complete."
+    echo "✅ Uninstall complete."
+fi
 
 
 if [[ "${1:-}" == "--selfmove" ]]; then
