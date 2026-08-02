@@ -96,23 +96,26 @@ diverge from real behavior; it feeds the *one* real pipeline a synthetic input.
 | `ImuDeadReckoning` (`PiFinder/pointing_model/imu_dead_reckoning.py`) | `solve(camera, aligned, q_x2imu)` captures the reference frame at each successful solve; `predict(q_x2imu)` dead-reckons forward from the latest IMU sample. This is the exact machinery UC2/UC3 rely on, unmodified. |
 | `IMU_MOVED_ANG_THRESHOLD` | 0.06° deadband — below this, no dead-reckoning update publishes at all. Relevant to UC3's design: simulated nudges need to exceed this to actually move the published estimate. |
 
-**Not yet verified — needs investigation before implementation** (flagged explicitly, not guessed,
-per this project's own standard of distinguishing checked facts from assumptions):
+**Verified against `solver.py`/`integrator.py` directly** (resolved via
+[#109](https://github.com/apos/PiFinder_Stellarmate/issues/109), 2026-08-02, read against
+`apos/PiFinder`'s `release` branch in an isolated clone, not the live production checkout):
 
-- The exact code in `integrator.py` that consumes `solver_queue` and dispatches on
-  `isinstance(msg, SuccessfulSolve)` has not been read in this session — only referenced via
-  `positioning.py`'s docstrings and `docs/ax/positioning/CONTEXT.md`. Needs a real read before any
-  patch is written.
-- Whether `solver_queue` (a `multiprocessing.Queue`) is reachable from outside the solver process in
-  a way a new trigger (e.g. a menu action, or a web API handler) could safely enqueue onto — or
-  whether the cleanest injection point is instead a new, small command queue mirroring
-  `align_command_queue`/`AlignOnRaDec`'s existing shape (a dataclass command, dispatched via
-  `isinstance()`, consumed by the solver process which then pushes a real `SuccessfulSolve` onto
-  `solver_queue` itself — keeping the solver process as sole owner of that queue, matching its
-  existing `Avoid: solved dict` ownership convention).
-- How the IMU anchor should be populated for the very first fake solve if `shared_state.imu()`
-  has never had a real sample yet (a plausible desk-testing state) — needs a decision (e.g. an
-  identity quaternion fallback) once the design is finalized.
+- **Injection mechanism**: `solver.py`'s `solver()` already contains the exact precedent needed —
+  it drains `align_command_queue` inside its own loop via `isinstance()` dispatch
+  (`AlignOnRaDec`/`AlignCancel`/`ReloadSqmCalibration`), and is the sole process that ever calls
+  `solver_queue.put(...)` (confirmed: no other code calls `.put()` on it). Design: add a new
+  `FakeSolve(ra, dec)` command dataclass alongside `AlignOnRaDec` in `types/positioning.py`, and a
+  new `elif isinstance(command, FakeSolve):` branch in the same dispatch loop (`solver.py`, the
+  `while True: command = align_command_queue.get(...)` loop) that builds a `SuccessfulSolve`
+  directly — skipping centroid extraction/tetra3 entirely — using `shared_state.imu()` for the
+  anchor and `time.time()` for `last_solve_attempt`/`last_solve_success`, then calls
+  `solver_queue.put(solve_result)`, identical in shape to the real success path (`solver.py:631`).
+- **IMU anchor with no real sample yet**: already fully handled by existing code, no new logic
+  needed. `integrator.py`'s `_apply_successful_solve()` explicitly handles `imu_anchor=None`
+  (falls back to a NaN quaternion for the dead-reckoner's `idr.solve()` call). The only
+  consequence: `_advance_with_imu()` won't activate until a real IMU sample exists (an explicit
+  `estimate.imu_anchor is not None` gate in `integrator.py`) — a minor, unlikely-in-practice edge
+  case since the IMU process samples continuously and independently of solve state.
 
 ## 5. Design Principles
 
@@ -222,8 +225,8 @@ precedent exactly) and a ready-to-file template in `docs/upstream_pr_templates.m
 
 ## 10. Known Risks / Open Questions
 
-- **Injection mechanism unverified** (see §4) — the single biggest open item before implementation
-  can start.
+- ~~Injection mechanism unverified~~ — **resolved**, see §4 and
+  [#109](https://github.com/apos/PiFinder_Stellarmate/issues/109).
 - **Consistent "this is simulated" signal**: if any one consumer (Mount Bridge, the PiFinder LX200
   driver, `pos_server.py`, the Solve badge) fails to check the simulated-position flag, this
   concept re-creates exactly the class of bug it exists to help fix (#107: a value that looks real
@@ -249,8 +252,8 @@ this concept exists specifically to unblock safe, repeatable iteration on both.
 
 ## 12. Strategic Sequencing
 
-1. **Read `integrator.py`/`solver.py` properly** (currently unverified, §4) — must happen before
-   any code is written, not deferred until mid-implementation.
+1. ~~Read `integrator.py`/`solver.py` properly~~ — **done**, see §4 and
+   [#109](https://github.com/apos/PiFinder_Stellarmate/issues/109).
 2. **Isolated worktree off `apos/PiFinder`'s `release` branch** (2.6.0), baseline-verify current
    `solver_queue`/integrator behavior matches this document's assumptions.
 3. **Implement** the fake-solve injection + trigger, as `diffs/*.diff` file(s), following the
