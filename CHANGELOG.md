@@ -3,6 +3,79 @@
 All notable changes to this project are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [1.4.0] - 2026-08-02
+
+### Added
+
+- Reset and Uninstall are now first-class actions: menu options 4/5 in `pifinder_stellarmate_setup.sh`,
+  plus matching buttons in the Control Center (`_do_reset()`/`_do_uninstall()`,
+  `/reset`/`/uninstall` routes in `gui_installer/server.py`). Both stream their output live into the
+  shared Terminal (Popen-based, like Install/Update/Test Hardware) instead of a single blocking
+  call with a final alert box.
+- The Control Center's "Solve" status now reflects a genuine, real plate-solve success/failure
+  signal (`solve_source`/`last_solve_attempt`/`last_solve_success` from PiFinder's own
+  `/api/status`), not just whether Solve Simulation is toggled on - a new "Solve" detail row plus
+  ampel badge, separate from the existing "Solve Simulation" row/toggle.
+- New "Decouple" button next to the Coupling status text - "Off" was previously only reachable via
+  the raw INDI Control Panel, not from the Control Center's Mount Bridge tile.
+- Stale-page detection: a new `GET /page_version` (content hash) plus a "Reload now" banner shown
+  when an already-open browser tab's version no longer matches the server's - `Cache-Control:
+  no-store` only protects a *new* page load, not a tab that was already open when the server
+  changed underneath it.
+- After a successful Install/Update/Reinstall (and the Control Center's own post-success restart),
+  a one-time banner now shows that run's outcome (exit code, log) once, right after the reload -
+  previously the self-restart silently discarded the visible result.
+- New `GET /state` diagnostic fields exposing every mutex-guard flag
+  (`mode_action_running`/`hwtest_running`/`reset_running`/`uninstall_running`) for troubleshooting
+  "X is already in progress" conflicts.
+- New Test Case GitHub issue template (testmanagement setup).
+
+### Changed
+
+- Reset/Uninstall's placement and grouping were reworked multiple times to match their actual
+  scope, not their original build order: "PiFinder" (Reinstall/Update/Reset) is now separate from
+  its own "PiFinder Stellarmate" group (Uninstall only, since it removes the whole checkout, not
+  just the PiFinder installation).
+- The Uninstall confirmation dialog now explicitly names `~/PiFinder_Stellarmate` and says
+  "permanently offline, not just paused" - the previous generic wording didn't make clear that the
+  repo checkout itself (not just PiFinder) gets removed.
+- `bin/uninstall_pifinder_stellarmate.sh`'s stop/disable/remove loops now emit a progress line per
+  unit (instead of one header per loop) and pause briefly between `systemctl stop` calls, so the
+  Control Center's live output has a real chance to show more than 1-2 lines before the connection
+  drops - all six units previously stopped within about a second, faster than the frontend's poll
+  interval could keep up with (now tightened from 500ms to 200ms for the same reason).
+- README.md/README_de.md/Readme_ControlCenter(.de).md now document the Reset/Uninstall feature,
+  which had been entirely missing from all four.
+
+### Fixed
+
+- Adding or removing a Mount Bridge device silently wiped a remote PiFinder LX200 driver's
+  configuration.
+- `--reset` was silently running the full uninstall block first (missing gate on `$1`), making
+  Reset functionally equivalent to Uninstall+Reset instead of just wiping the venv/build.
+- The venv two-pass re-exec used a bare `$0`, breaking when the script was invoked as `bash
+  pifinder_stellarmate_setup.sh` instead of `./pifinder_stellarmate_setup.sh`.
+- A missing `try`/`finally` around four background-thread "is running" flags
+  (`_run_hardware_test`, `_run_reset`, `_run_fake_mode_action`, the main install/update reader
+  thread) meant an uncaught exception left the flag stuck `True` forever, permanently blocking
+  every other mutex-guarded action with a misleading "already in progress" error.
+- Uninstall's live-output connection dropped before the first poll ever landed, and separately
+  before enough distinct log lines had a chance to render (see the stop-loop timing fix above).
+- Uninstall triggered from the Control Center could kill its own systemd unit before ever reaching
+  the code that removes `~/PiFinder_Stellarmate` itself, via two independent bugs in the
+  `--selfmove` handoff path: a guard that didn't exclude `--selfmove`, and the `/tmp` copy step
+  missing `functions.sh`/`os_detect.sh`, crashing under `set -u` on the unbound `pifinder_home`
+  before the critical `rm -rf` calls.
+- The setup script could leave the Control Center "enabled but stopped" after a non-rebooting run;
+  the fix for that then over-corrected and could kill a Control-Center-driven run mid-flight via
+  SIGPIPE - corrected to only auto-start when the service is both enabled *and* inactive.
+- The Solve badge fix above initially read `solve_source`/`last_solve_attempt`/`last_solve_success`
+  from the wrong (top-level, not nested under `solution`) JSON path, so it never actually left
+  "unknown" regardless of real solve state - found live under a real night sky, re-verified after
+  the fix.
+
 ## [1.3.1] - 2026-07-29
 
 ### Added
