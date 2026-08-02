@@ -902,11 +902,21 @@ def _pifinder_solve_status(port: str):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
             data = json.loads(resp.read())
+        # solve_source/last_solve_attempt/last_solve_success live under
+        # data["solution"], not top-level (only debug_solve is top-level) -
+        # found live during TC-PFSM-85-01 step 4 (2026-08-02): the badge
+        # stayed grey/"unknown" through a real, confirmed plate-solve because
+        # this always read None from the wrong path.
+        solution = data.get("solution") or {}
         return {
             "debug_solve": data.get("debug_solve"),
-            "solve_source": data.get("solve_source"),
-            "last_solve_attempt": data.get("last_solve_attempt"),
-            "last_solve_success": data.get("last_solve_success"),
+            "solve_source": data.get("solve_source", solution.get("solve_source")),
+            "last_solve_attempt": data.get(
+                "last_solve_attempt", solution.get("last_solve_attempt")
+            ),
+            "last_solve_success": data.get(
+                "last_solve_success", solution.get("last_solve_success")
+            ),
         }
     except Exception:
         return None
