@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
 - Control Center: automatic recovery from #118's "PiFinder LX200" stale-connection bug. When
   `pifinder.service` restarts (deploy, crash-recovery, manual restart), the already-open TCP
   connection between the `LX200_PIFINDER` INDI driver and `pos_server.py` used to die silently -
@@ -19,8 +21,26 @@ All notable changes to this project are documented in this file. Format loosely 
   approach is tracked separately for future investigation (#139).
 - Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
   now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
+- Control Center: a new system load indicator (green "Normal"/red "High", next to the existing
+  PiFinder-reachability row in Quick Links) - found live investigating #139 that a contended Pi
+  (PiFinder's own solver worker pool, KStars, ...) can make `pos_server.py`'s LX200 socket genuinely
+  unresponsive for several seconds without anything being actually broken; this at least makes that
+  a visible, explained condition instead of unexplained slowness elsewhere on the page.
+- `pifinder.service` now runs with `Nice=5`/`CPUWeight=50` - a coarse, PFSM-side mitigation for the
+  same finding (favors the Control Center/`indiserver`/the OS itself under CPU contention, without
+  capping PiFinder below full-core use whenever the CPU isn't actually contended). The more precise
+  fix (capping/renicing PiFinder's own solver worker pool) is tracked upstream in #148.
+- `indi_pifinder`: the LX200 driver now enables TCP keepalive on its connection to `pos_server.py`
+  (a truly-dead peer is now detected within ~11s instead of relying only on read()/write() to
+  eventually notice) and retries a slow (not dead) `:GR#`/`:GD#` read up to 3 times at a shorter
+  2s timeout each, instead of blocking the whole polling cycle for one 5s attempt.
 
 ### Changed
+
+- Timeout values used for the various background INDI polls (`gui_installer/indi_client.py`) are
+  now named tiers (`TIMEOUT_BACKGROUND_POLL`, `TIMEOUT_FAST_POLL`, `TIMEOUT_QUICK_RETRY`, ...)
+  instead of bare literals scattered across `server.py`/`indi_client.py` - no behavior change, just
+  one shared place to see why a given call is timed the way it is.
 
 - README.md/README_de.md's hero photo (`docs/images/readme/PiFinder.jpg`/`PiFinder_thumb.jpg`) replaced with a new
   real-world photo (with the project's wordmark composited in), converted from the uploaded PNG at
