@@ -1674,10 +1674,12 @@ async function toggleFakeSolve() {
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-btn');
   const textEl = document.getElementById('fake-solve-text');
+  const dotEl = document.getElementById('fake-solve-dot');
   const turningOn = lastFakeSolveActive !== true;
   const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
   btn.disabled = true;
   textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   try {
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
