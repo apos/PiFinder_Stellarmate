@@ -7,9 +7,12 @@ pifinder_stellarmate_bin="${pifinder_stellarmate_dir}/bin"
 pifinder_dir="${pifinder_home}/PiFinder"
 pifinder_data_dir="${pifinder_home}/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
-pifinder_config_dir="${pifinder_home}/.config"
-kstarsrc_source="${pifinder_config_dir}/kstarsrc"
-kstarsrc_target="${pifinder_config_dir}/kstarsrc"
+# KStars ships as a Flatpak on StellarMate OS (org.kde.kstars) - its config
+# lives in the Flatpak app-data sandbox, not ~/.config. Verified live
+# 2026-08-03: no native kstars package/binary on SMOS, kstarsrc only exists
+# under this path after running KStars once.
+kstarsrc_source="${pifinder_home}/.var/app/org.kde.kstars/config/kstarsrc"
+kstarsrc_target="${pifinder_home}/.var/app/org.kde.kstars/config/kstarsrc"
 indi_pifinder_dir="${pifinder_stellarmate_dir}/indi_pifinder"
 
 #####################################

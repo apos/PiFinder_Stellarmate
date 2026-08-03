@@ -90,8 +90,7 @@ cp "${pifinder_stellarmate_dir}/pifinder_post_update.sh" "${pifinder_dir}/."
 
 ############################################################
 # Check if kstarsrc exists (no symlink needed)
-echo "🔍 Checking for ~/.config/kstarsrc ..."
-mkdir -p "$pifinder_config_dir"
+echo "🔍 Checking for $kstarsrc_target ..."
 
 if [ -f "$kstarsrc_target" ]; then
     echo "✅ Found $kstarsrc_target"

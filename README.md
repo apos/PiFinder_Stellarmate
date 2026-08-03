@@ -345,3 +345,9 @@ repo it's uninstalling.
   © github.com/apos 2026<br>
   <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
 </p>
+
+<p align="center">
+  <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener"><img src="docs/images/readme/HeyApos_Wortmarke_logo_thumb.png" alt="HeyApos" height="60"></a>
+  &nbsp;&nbsp;
+  <a href="https://avvp.de" target="_blank" rel="noopener"><img src="docs/images/readme/avvp_2019_logo_wortmarke_pos_Transparent.png" alt="AVVP" height="60"></a>
+</p>

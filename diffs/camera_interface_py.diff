@@ -1,8 +1,8 @@
 diff --git a/python/PiFinder/camera_interface.py b/python/PiFinder/camera_interface.py
-index ac80cdc3..46251218 100644
+index 52a94ef3..e8a37eba 100644
 --- a/python/PiFinder/camera_interface.py
 +++ b/python/PiFinder/camera_interface.py
-@@ -294,7 +294,8 @@ class CameraInterface:
+@@ -155,7 +155,8 @@ class CameraInterface:
          pass
  
      def get_image_loop(
@@ -12,33 +12,26 @@ index ac80cdc3..46251218 100644
      ):
          try:
              # Store shared_state for access by capture() methods
-@@ -342,7 +343,20 @@ class CameraInterface:
-             # 60 half-second cycles (30 seconds between captures in sleep mode)
-             sleep_delay = 60
-             was_sleeping = False
--            test_mode_on = False
+@@ -169,7 +170,13 @@ class CameraInterface:
+                 shared_state.set_camera_type(camera_type)
+                 logger.info(f"Camera type set to: {camera_type}")
+ 
+-            debug = False
 +            # initial_debug lets a caller start this loop with the "debug"
 +            # toggle already engaged (camera_pi.py's fallback to CameraDebug
-+            # does this) - without it, shared_state.debug_solve() and this
-+            # local `test_mode_on` (which actually gates loading a canned
-+            # test image, see the capture branch below) could disagree:
-+            # setting only shared_state's flag directly, without also
-+            # seeding this local variable, left them out of sync - the very
-+            # next "debug" toggle command then flipped from the *real*,
-+            # unseen local state instead of the state the UI was showing.
-+            # Found live: clicking "off" while already on the fallback
-+            # camera left Test Mode still effectively on. See
-+            # basic-memory/pifinder-stellarmate/00038.
-+            test_mode_on = initial_debug
-+            shared_state.set_debug_solve(test_mode_on)
-             while True:
-                 sleeping = state_utils.sleep_for_framerate(
-                     shared_state, limit_framerate=False
-@@ -514,6 +528,7 @@ class CameraInterface:
-                     try:
-                         if command == "debug":
-                             test_mode_on = not test_mode_on
-+                            shared_state.set_debug_solve(test_mode_on)
++            # does this) - without also seeding shared_state here, the UI's
++            # debug_solve() readback would disagree with this loop's actual
++            # local `debug` state until the next toggle command.
++            debug = initial_debug
++            shared_state.set_debug_solve(debug)
+ 
+             # Check if auto-exposure was previously enabled in config
+             config_exp = cfg.get_option("camera_exp")
+@@ -388,6 +395,7 @@ class CameraInterface:
+                                 debug = False
+                             else:
+                                 debug = True
++                            shared_state.set_debug_solve(debug)
  
                          if command.startswith("set_exp"):
-                             transient_exposure = command.startswith(
+                             exp_value = command.split(":")[1]

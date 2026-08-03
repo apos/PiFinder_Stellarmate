@@ -52,18 +52,25 @@
   }
   h1 { font-size: 1.3rem; margin: 0 0 1rem; }
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
-  #top-images {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
+  #bottom-image-wrap {
+    margin-top: 2rem;
   }
   #header-image {
     display: block;
-    height: 192px;
-    width: auto;
+    width: 100%;
+    height: auto;
     border-radius: 8px;
   }
+  #bottom-logos {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.2rem;
+    opacity: 0.8;
+  }
+  #bottom-logos:hover { opacity: 1; }
+  #bottom-logos img { height: 78px; width: auto; display: block; }
   #pifinder-screen {
     display: block;
     width: 128px;
@@ -118,6 +125,24 @@
   .status-success { background: #1a4a2a; color: #7ee8a0; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
   .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
+  /* Whole-tile collapse (Mount Bridge, PiFinder Mode/Test/Power, Install or
+     Update - not the PiFinder tile, which stays always-visible) - the
+     heading row itself is the click target, chevron mirrors
+     .collapsible-toggle's sub-section pattern but sits inline with the
+     heading instead of as its own row. Same toggleTileBody()/localStorage
+     persistence as .collapsible-toggle, just a separate id namespace since
+     these default to OPEN instead of collapsed. */
+  .tile-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    cursor: pointer;
+    margin: 0 0 0.5rem;
+  }
+  .tile-heading-row .tile-heading { margin: 0; }
+  .tile-chevron { color: #888; font-size: 0.8rem; flex-shrink: 0; user-select: none; }
+  .tile-heading-row:hover .tile-chevron { color: #ccc; }
   .help-link {
     display: inline-block;
     margin-left: 0.4rem;
@@ -322,7 +347,7 @@
   .power-btn:hover { filter: brightness(1.15); }
   .power-btn:disabled { background: #444; cursor: default; filter: none; }
   #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
-  #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+  #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; cursor: pointer; }
   #install-heading-row .tile-heading { margin: 0; }
   #mode-tile {
     background: #1a1a1a;
@@ -966,7 +991,11 @@
            up" rows (Profile/Drivers/Mount/Connect) plus Ekos status, bridge
            settings, and the log collapse behind #mb-details-toggle - see
            its own CSS comment. -->
-      <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div class="tile-heading-row" onclick="toggleTileBody('mount-bridge-body', 'mount-bridge-tile-chevron')">
+        <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
+        <span class="tile-chevron" id="mount-bridge-tile-chevron">&#9650;</span>
+      </div>
+      <div id="mount-bridge-body">
       <div id="mb-status-row">
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span></div>
         <div id="mb-action-status"></div>
@@ -1131,9 +1160,14 @@
 
         <div id="mb-log" title="What this tile has been doing, in order."></div>
       </div>
+      </div>
     </div>
     <div id="mode-tile">
-        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div class="tile-heading-row" onclick="toggleTileBody('mode-tile-body', 'mode-tile-chevron')">
+          <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
+          <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
+        </div>
+        <div id="mode-tile-body">
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
           <span>Simulation and testing</span>
           <span id="sim-testing-chevron">&#9660; show</span>
@@ -1227,19 +1261,19 @@ sudo systemctl start pifinder</pre>
           <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
         </div>
       </div>
+      </div>
 
   </div>
 
   <div class="right-col">
     <div id="install-tile">
-      <div id="install-heading-row">
-        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="install-heading-row" onclick="toggleTileBody('install-tile-body', 'install-tile-chevron')">
+        <h3 class="tile-heading">Install or Update<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
         <div id="status" class="status-idle">Checking current state&hellip;</div>
+        <span class="tile-chevron" id="install-tile-chevron">&#9650;</span>
       </div>
-    <div id="top-images">
-      <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
-    </div>
 
+    <div id="install-tile-body">
     <div class="subtitle" id="subtitle">live status</div>
 
     <div id="progress-wrap" style="display:none;">
@@ -1301,6 +1335,7 @@ sudo systemctl start pifinder</pre>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
+    </div>
   </div>
 </div>
 
@@ -1309,17 +1344,24 @@ sudo systemctl start pifinder</pre>
     <a href="https://github.com/apos/PiFinder_Stellarmate" target="_blank" rel="noopener" title="PiFinder_Stellarmate on GitHub">
       <img src="/project_logo.png" alt="PiFinder StellarMate">
     </a>
-    <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
-      <img src="/heyapos_logo.png" alt="HeyApos">
-    </a>
-    <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
-      <img src="/avvp_logo.png" alt="AVVP">
-    </a>
   </div>
   <div id="footer-text">
     &copy; github.com/apos 2026<br>
     <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
   </div>
+</div>
+
+<div id="bottom-image-wrap">
+  <img id="header-image" src="/pifinder.jpg" alt="PiFinder">
+</div>
+
+<div id="bottom-logos">
+  <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
+    <img src="/heyapos_logo.png" alt="HeyApos">
+  </a>
+  <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
+    <img src="/avvp_logo.png" alt="AVVP">
+  </a>
 </div>
 
 <script>
@@ -1463,6 +1505,13 @@ function updatePiFinderStatusAndWizardLink() {
   const textEl = document.getElementById('pifinder-status-text');
   const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
+  // The 4 hardware badges (Cam/Solve/IMU/GPS) below reflect PiFinder's own
+  // live API state - with PiFinder unreachable (not installed yet, mid
+  // reinstall/update, service down, ...) that state doesn't exist, so the
+  // row would otherwise sit there pulsing "unconfirmed" amber indefinitely,
+  // implying a check is in progress when there is nothing to check yet.
+  // Found live 2026-08-03 testing PR #154's reinstall on real hardware.
+  document.getElementById('mode-ampel-row').style.display = pifinderScreenUrl ? 'flex' : 'none';
   if (pifinderScreenUrl) {
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
@@ -3022,6 +3071,49 @@ function restoreCollapsibleSections() {
   }
 }
 restoreCollapsibleSections();
+
+// Whole-tile collapse for Mount Bridge / PiFinder Mode, Test and Power /
+// Install or Update (not the PiFinder tile - that one stays always-visible).
+// Mirror image of toggleCollapsibleSection() above: these default OPEN (the
+// HTML ships fully expanded), so only an explicit saved "closed" needs to
+// change anything on load - the inverse of that function's "only 'open'
+// matters" default. Kept as a separate pair of functions rather than adding
+// a defaultOpen flag to the existing ones since the id namespace
+// ('collapsible-' + id) is shared and both need to coexist without
+// colliding.
+function toggleTileBody(bodyId, chevronId) {
+  const body = document.getElementById(bodyId);
+  const chevron = document.getElementById(chevronId);
+  const opening = body.style.display === 'none';
+  body.style.display = opening ? '' : 'none';
+  chevron.innerHTML = opening ? '&#9650;' : '&#9660;';
+  try {
+    localStorage.setItem('collapsible-' + bodyId, opening ? 'open' : 'closed');
+  } catch (e) {
+    // localStorage unavailable (private browsing etc.) - just don't persist
+  }
+}
+
+function restoreTileBodies() {
+  const tiles = [
+    ['mount-bridge-body', 'mount-bridge-tile-chevron'],
+    ['mode-tile-body', 'mode-tile-chevron'],
+    ['install-tile-body', 'install-tile-chevron'],
+  ];
+  for (const [bodyId, chevronId] of tiles) {
+    let saved = null;
+    try {
+      saved = localStorage.getItem('collapsible-' + bodyId);
+    } catch (e) {
+      // localStorage unavailable - leave the HTML default (open) in place
+    }
+    if (saved === 'closed') {
+      document.getElementById(bodyId).style.display = 'none';
+      document.getElementById(chevronId).innerHTML = '&#9660;';
+    }
+  }
+}
+restoreTileBodies();
 
 // Small connection diagram: PiFinder -> Bridge -> Mount, colored dots for
 // whether each device is actually connected, and the two arrows show what
