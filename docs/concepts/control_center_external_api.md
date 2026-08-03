@@ -85,9 +85,15 @@ the implementation.
 
 ## 6. Open questions
 
-- Is external automation actually a goal here, or was tonight's direct-INDI approach a one-off that
-  doesn't need a "real" API to be built for it? (I.e., is this worth the effort at all right now,
-  versus staying opportunistic?)
+- ~~Is external automation actually a goal here~~ **Answered (User, 2026-08-03)**: the direct
+  INDI/curl approach used tonight is legitimate and justified for one-off live testing. The real
+  question is narrower: exactly *what* can the API reliably be used for (e.g. "solve happened",
+  "camera is running", "IMU works", "GPS has a fix"), and how much that can be trusted. Before this
+  API can be used *consistently* as part of the PiFinder_Stellarmate development/testing workflow
+  (not just ad-hoc), its correctness needs to be continuously verified - i.e. **a test suite for the
+  Control Center API is a prerequisite**, not an optional nice-to-have alongside §5's other items.
+  Only once that exists does "use the API as a standard dev/test tool" become something that can be
+  stated with confidence. See #124.
 - If a token mechanism is wanted: PAM-backed like today, a separate secrets file, or something else
   entirely?
 - Scope: does this cover *all* 35+ routes, or just the Mount Bridge / PiFinder Mode subset that's
