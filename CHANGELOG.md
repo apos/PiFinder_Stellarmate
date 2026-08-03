@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- The Control Center's static OLED-mirror placeholder (shown before the live `/image` probe
+  succeeds) showed PiFinder's original full-color/blue splash image instead of the documented
+  red-converted version matching real hardware's actual red-channel-only rendering (see
+  `CHANGELOG.md`'s own `[1.3.1]` entry, which had never actually been implemented).
+  `_pifinder_welcome_image_red()` (`gui_installer/server.py`) now generates and caches a red-tinted
+  version (R=luminance, G=0, B=0 - the same mapping PiFinder's own `displays.py` uses for its real
+  OLED) via PiFinder's own venv (has Pillow; the Control Center's system python3 doesn't),
+  regenerating whenever the source is newer than the cache.
+
 ## [1.4.0] - 2026-08-02
 
 ### Added

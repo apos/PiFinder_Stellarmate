@@ -10,4 +10,5 @@
 /.gui_setup.log
 /.setup_warnings
 /.resume_from_venv
+/gui_installer/.welcome_red_cache.png
 __pycache__/
