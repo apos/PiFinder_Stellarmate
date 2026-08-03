@@ -1,6 +1,8 @@
---- python/PiFinder/main.py.orig
-+++ python/PiFinder/main.py
-@@ -77,7 +77,21 @@
+diff --git a/python/PiFinder/main.py b/python/PiFinder/main.py
+index 6f6e2eb6..7d006111 100644
+--- a/python/PiFinder/main.py
++++ b/python/PiFinder/main.py
+@@ -84,7 +84,21 @@ def init_keypad_pwm():
      global hardware_platform
      if hardware_platform == "Pi":
          keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
@@ -23,7 +25,7 @@
  
  
  def set_keypad_brightness(percentage: float):
-@@ -141,11 +155,19 @@
+@@ -148,11 +162,19 @@ StateManager.register("NewImage", Image.new)
  
  
  class PowerManager:
@@ -43,7 +45,7 @@
  
      def register_activity(self):
          """
-@@ -179,28 +201,76 @@
+@@ -186,28 +208,76 @@ class PowerManager:
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
@@ -80,12 +82,13 @@
 -            # We are awake, should we sleep?
 -            if time.time() - self.last_activity > self.get_sleep_timeout():
 -                self.go_to_sleep()
-+        has_solve = self._has_solve()
- 
+-
 -        else:  # We are asleepd, should we wake up?
 -            _imu = self.shared_state.imu()
 -            if _imu:
 -                if _imu.moving:
++        has_solve = self._has_solve()
++
 +        if self._solve_state == self._SOLVED:
 +            if not has_solve:
 +                # Lost solve (clouds etc.) — restart warmup
@@ -132,7 +135,35 @@
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -666,13 +736,6 @@
+@@ -367,6 +437,11 @@ def main(
+     alignment_command_queue: Queue = Queue()
+     alignment_response_queue: Queue = Queue()
+     ui_queue: Queue = Queue()
++    # Separate from alignment_command_queue on purpose - FakeSolve isn't a
++    # SolverCommand and this queue's only reader/writer pair is the web API
++    # and the solver process, so existing align_command_queue consumers are
++    # never affected.
++    fake_solve_command_queue: Queue = Queue()
+ 
+     # init queues for logging
+     keyboard_logqueue: Queue = log_helper.get_queue()
+@@ -503,6 +578,7 @@ def main(
+                 server_logqueue,
+                 verbose,
+             ),
++            kwargs={"fake_solve_command_queue": fake_solve_command_queue},
+         )
+         server_process.start()
+ 
+@@ -607,6 +683,7 @@ def main(
+             kwargs={
+                 "command_queue": integrator_command_queue,
+                 "camera_command_queue": camera_command_queue,
++                "fake_solve_command_queue": fake_solve_command_queue,
+             },
+         )
+         integrator_process.start()
+@@ -725,13 +802,6 @@ def main(
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -146,9 +177,9 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -744,6 +807,12 @@
-                         "All catalogs loaded - WDS and extended catalogs available"
-                     )
+@@ -808,6 +878,12 @@ def main(
+                     if catalogs.catalog_filter is not None:
+                         catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
 +                elif ui_command == "toggle_debug_solve":
 +                    # Same effect as picking "Tools -> Test Mode" from the
@@ -157,9 +188,9 @@
 +                    # keypresses through keyboard_queue.
 +                    command_queues["camera"].put("debug")
                  elif ui_command == "test_mode":
-                     dt = datetime.datetime(2025, 6, 28, 11, 0, 0)
+                     dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1126,6 +1195,8 @@
+@@ -1304,6 +1380,8 @@ if __name__ == "__main__":
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")

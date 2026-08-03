@@ -1,14 +1,25 @@
---- python/PiFinder/api_extensions.py.orig	2026-07-19 12:48:07.710375719 +0200
-+++ python/PiFinder/api_extensions.py	2026-07-19 12:45:40.050888561 +0200
-@@ -160,6 +160,7 @@
+diff --git a/python/PiFinder/api_extensions.py b/python/PiFinder/api_extensions.py
+index 0bad6cf9..ccebb0a2 100644
+--- a/python/PiFinder/api_extensions.py
++++ b/python/PiFinder/api_extensions.py
+@@ -21,6 +21,7 @@ import logging
+ 
+ from flask import request, session, Response
+ from PIL import Image
++from PiFinder.types.positioning import FakeSolve
+ 
+ logger = logging.getLogger("PiFinderAPI")
+ 
+@@ -160,6 +161,8 @@ def register_api_routes(app, server_instance, require_auth=False):
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
 +                "debug_solve": ss.debug_solve(),
++                "fake_solve_active": ss.fake_solve_active(),
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -750,6 +751,22 @@
+@@ -750,6 +753,66 @@ def register_api_routes(app, server_instance, require_auth=False):
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -26,6 +37,50 @@
 +            return _json_response({"success": True})
 +        except Exception as e:
 +            logger.error("api/debug_solve error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_solve", methods=["POST"])
++    def api_fake_solve():
++        """Inject a one-time, synthetic solve at a given RA/Dec, bypassing
++        image capture/plate-solving entirely - lets PiFinder's own IMU
++        dead-reckoning take over from that fixed point, for testing
++        anything downstream of a solve (e.g. an external mount bridge)
++        without a real sky. JSON body: {"ra": <deg>, "dec": <deg>}.
++        Distinct from /api/debug_solve, which substitutes a canned image
++        for the real solver to actually plate-solve.
++        """
++        try:
++            if server_instance.fake_solve_command_queue is None:
++                return _json_response(
++                    {"error": "fake_solve_command_queue not available (standalone/test mode)"},
++                    503,
++                )
++            body = request.get_json(silent=True)
++            if not body or "ra" not in body or "dec" not in body:
++                return _json_response({"error": "Missing 'ra'/'dec' field"}, 400)
++            ra = float(body["ra"])
++            dec = float(body["dec"])
++            server_instance.fake_solve_command_queue.put(FakeSolve(ra=ra, dec=dec))
++            return _json_response({"success": True, "ra": ra, "dec": dec})
++        except Exception as e:
++            logger.error("api/fake_solve error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_solve", methods=["DELETE"])
++    def api_fake_solve_disable():
++        """Turn Fake-Solve back off, resuming normal real-camera solving.
++
++        Only clears the flag the integrator's exclusivity guard checks
++        (see integrator.py) - the last fake-anchored estimate is left as-is
++        and simply gets overwritten by the next real solve/failed-solve
++        result, same as any other "waiting for fresh data" gap. Read the
++        resulting state back via "fake_solve_active" in GET /api/status.
++        """
++        try:
++            server_instance.shared_state.set_fake_solve_active(False)
++            return _json_response({"success": True})
++        except Exception as e:
++            logger.error("api/fake_solve DELETE error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
 +
      @app.route("/api/key", methods=["POST"])

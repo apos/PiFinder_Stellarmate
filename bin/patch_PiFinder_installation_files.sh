@@ -510,8 +510,9 @@ echo "------------------------------------"
 
 ##################################################
 # PiFinder api_extensions.py - POST /api/debug_solve to toggle Test Mode
-# directly (reliable, bypasses menu navigation/keyboard_queue), plus
-# debug_solve in GET /api/status to read the resulting state back
+# directly (reliable, bypasses menu navigation/keyboard_queue), debug_solve
+# in GET /api/status to read the resulting state back, plus POST /api/fake_solve
+# and DELETE /api/fake_solve for the Fake-Solve simulation feature below
 
 echo "🔧 Updating api_extensions.py ..."
 cp "$api_extensions_py" "$api_extensions_py.bak"
@@ -519,6 +520,47 @@ cp "$api_extensions_py" "$api_extensions_py.bak"
     apply_patch_or_warn "$api_extensions_py" "${pifinder_stellarmate_dir}/diffs/api_extensions_py.diff"
 show_diff_if_changed "$api_extensions_py"
 python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder types/positioning.py - new FakeSolve dataclass, the message
+# type used to inject a one-time synthetic solve (see integrator.py below)
+
+echo "🔧 Updating types/positioning.py ..."
+cp "$positioning_py" "$positioning_py.bak"
+
+    apply_patch_or_warn "$positioning_py" "${pifinder_stellarmate_dir}/diffs/positioning_py.diff"
+show_diff_if_changed "$positioning_py"
+python3 -m py_compile "$positioning_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder integrator.py - Fake-Solve simulation: injects a one-time,
+# synthetic solve (FakeSolve on fake_solve_command_queue) at a chosen
+# RA/Dec, bypassing image capture/plate-solving, so PiFinder's own IMU
+# dead-reckoning can be exercised (e.g. by an external mount bridge) without
+# a real sky. See docs/concepts/pifinder_fake_solve_simulation.md.
+
+echo "🔧 Updating integrator.py ..."
+cp "$integrator_py" "$integrator_py.bak"
+
+    apply_patch_or_warn "$integrator_py" "${pifinder_stellarmate_dir}/diffs/integrator_py.diff"
+show_diff_if_changed "$integrator_py"
+python3 -m py_compile "$integrator_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder pos_server.py - Fix #107: get_telescope_ra/dec return None
+# instead of a fake "+00*00'01" placeholder when there's no valid pointing,
+# so LX200 consumers (Mount Bridge, the PiFinder LX200 driver) see a
+# connection/read error instead of mistaking it for a real RA=0/Dec=0 fix.
+
+echo "🔧 Updating pos_server.py ..."
+cp "$pos_server_py" "$pos_server_py.bak"
+
+    apply_patch_or_warn "$pos_server_py" "${pifinder_stellarmate_dir}/diffs/pos_server_py.diff"
+show_diff_if_changed "$pos_server_py"
+python3 -m py_compile "$pos_server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
 ##################################################
