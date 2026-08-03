@@ -880,6 +880,48 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+class _BackgroundRetrier:
+    """Fire-and-forget 'run this in a background thread, but never run two
+    attempts at once' helper - extracted from #118's original hand-rolled
+    in-flight-flag + threading.Thread pattern so a future feature needing
+    the same shape ("keep retrying an action from a polling loop without
+    stacking concurrent attempts") can reuse it instead of reimplementing
+    the guard by hand. Deliberately minimal: it does not schedule its own
+    retries - the caller's own polling loop (e.g. a watchdog's `while True:
+    time.sleep(interval)`) is what re-triggers a fresh attempt each tick;
+    this only guards against overlapping ones."""
+
+    def __init__(self):
+        self._in_flight = False
+        self._lock = threading.Lock()
+
+    @property
+    def in_flight(self) -> bool:
+        return self._in_flight
+
+    def trigger(self, action_fn) -> bool:
+        """Starts action_fn() in a background daemon thread unless an
+        earlier call's thread is still running. Returns True if a new
+        attempt was started, False if one was already in flight (the
+        caller's own next polling tick will just call trigger() again).
+        action_fn takes no arguments; any exception it raises is swallowed
+        (log inside action_fn if you want to know about failures)."""
+        with self._lock:
+            if self._in_flight:
+                return False
+            self._in_flight = True
+
+        def _run():
+            try:
+                action_fn()
+            finally:
+                with self._lock:
+                    self._in_flight = False
+
+        threading.Thread(target=_run, daemon=True).start()
+        return True
+
+
 # #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
 # redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
 # CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
@@ -890,7 +932,7 @@ def _mb_log(line: str):
 # the same disconnect/connect cycle already confirmed live by hand via
 # indi_setprop (#118's documented workaround).
 _pifinder_lx200_healed_for_start = None  # pifinder.service start time we last confirmed LX200 connected against
-_pifinder_lx200_reconnect_in_flight = False
+_pifinder_lx200_reconnect_retrier = _BackgroundRetrier()
 
 
 def _pifinder_service_start_monotonic():
@@ -924,10 +966,11 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
     would then never retry again. Once _pifinder_lx200_healed_for_start
     catches up to the current start time, this goes quiet again; only a
     genuinely new restart (a further-advanced start time) reawakens it.
-    Runs the actual attempt in a background thread so a detected restart
-    never blocks the watchdog loop; the in-flight guard means a still-
-    pending attempt is left alone rather than stacking a second one."""
-    global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+    Runs the actual attempt in a background thread (via _BackgroundRetrier)
+    so a detected restart never blocks the watchdog loop; its in-flight
+    guard means a still-pending attempt is left alone rather than stacking
+    a second one."""
+    global _pifinder_lx200_healed_for_start
     if status.get("active_pifinder") != "PiFinder LX200":
         return
     current_start = _pifinder_service_start_monotonic()
@@ -942,18 +985,10 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
         return
     if current_start == _pifinder_lx200_healed_for_start:
         return
-    if _pifinder_lx200_reconnect_in_flight:
-        return
-    _pifinder_lx200_reconnect_in_flight = True
     was_connected = status.get("pifinder_connected") is True
-    _mb_log(
-        f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
-        f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
-        "attempting reconnect (#118)"
-    )
 
-    def _do_reconnect(start_seen, was_connected):
-        global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+    def _do_reconnect():
+        global _pifinder_lx200_healed_for_start
         try:
             if was_connected:
                 # Frozen-stale case: CONNECTION was already On, so DISCONNECT
@@ -965,7 +1000,7 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
             fresh = indi_client.get_properties(device="PiFinder LX200").get("PiFinder LX200", {})
             now_connected = fresh.get("CONNECTION", {}).get("elements", {}).get("CONNECT") == "On"
             if now_connected:
-                _pifinder_lx200_healed_for_start = start_seen
+                _pifinder_lx200_healed_for_start = current_start
                 _mb_log("PiFinder LX200 auto-reconnect after pifinder.service restart succeeded")
             else:
                 _mb_log(
@@ -974,10 +1009,14 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
                 )
         except indi_client.INDIClientError as e:
             _mb_log(f"PiFinder LX200 auto-reconnect after pifinder.service restart failed: {e}")
-        finally:
-            _pifinder_lx200_reconnect_in_flight = False
 
-    threading.Thread(target=_do_reconnect, args=(current_start, was_connected), daemon=True).start()
+    started = _pifinder_lx200_reconnect_retrier.trigger(_do_reconnect)
+    if started:
+        _mb_log(
+            f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
+            f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
+            "attempting reconnect (#118)"
+        )
 
 
 def _pifinder_lx200_reconnect_watchdog(interval=20):
