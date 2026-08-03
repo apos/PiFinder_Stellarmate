@@ -73,7 +73,45 @@ All notable changes to this project are documented in this file. Format loosely 
   (a truly-dead peer is now detected within ~11s instead of relying only on read()/write() to
   eventually notice) and retries a slow (not dead) `:GR#`/`:GD#` read up to 3 times at a shorter
   2s timeout each, instead of blocking the whole polling cycle for one 5s attempt.
->>>>>>> origin/dev
+- PiFinder is now pinned to a fixed release tag (`v${pifinder_stellarmate_version_stable}`, currently
+  `v2.6.0`) for every clone/checkout path (Reinstall, fresh install, and Update alike) instead of
+  tracking the upstream `release` branch's moving HEAD - this project never intended to install
+  whatever the upstream branch happens to point at, but that's what it was actually doing since its
+  very first commit. The version-check block is now purely informational (reports the pinned
+  version, the locally-installed version, and the latest upstream version, never blocks) instead of
+  hard-aborting when upstream had moved past `pifinder_stellarmate_version_stable`/`_testing` - found
+  live 2026-08-04 when upstream cut v2.6.1: the old check refused to install/update at all, even
+  though the actual clone/checkout was never going to touch that newer version anyway.
+- PiFinder tile: a new "Quick keys" compact keypad (arrows, Long, Enter) next to the OLED mirror,
+  driving PiFinder's OLED menu without switching to its separate Remote page. Two selectable layouts
+  (a D-pad cross, or a 2x4 grid), toggled top-right in the tile header and remembered in
+  `localStorage`. Sends the same `LEFT`/`UP`/`DOWN`/`RIGHT`/`SQUARE` (+ `LNG_` Long-combo) codes
+  PiFinder's own `remote.html` uses, via a new `/api/pifinder_key` proxy in `gui_installer/server.py`
+  (`_pifinder_send_key()`) - PiFinder's `/key_callback` route requires its own login session
+  (`@auth_required`), which a bare proxy POST doesn't have; the proxy logs in once (PAM alone
+  measured ~5s) and caches the session per port so only the first press pays that cost. The keypad
+  dims and ignores further clicks while a press is in flight (PiFinder's dev server only handles one
+  request at a time - a burst of rapid clicks previously piled up and made everything feel
+  unresponsive), and the OLED mirror's own 1s poll now yields while a press is in flight so the
+  press gets priority instead of competing with it. Root cause of the remaining occasional
+  multi-second delay (PiFinder's web server isn't multi-threaded) tracked upstream in #155.
+- Mount Bridge, "PiFinder Mode, Test and Power", and "Install or Update" tiles are now collapsible as
+  a whole (heading stays visible) - state persisted per-tile in `localStorage`, survives
+  reload/Control-Center-restart/Pi-reboot. The PiFinder tile itself stays always-expanded.
+- Quick Links gained INDI Web Manager (`:8624`) and StellarMate Dashboard (`:80`) entries, using the
+  same per-interface IP list already shown for "This page".
+- A Night mode toggle (top of the page) renders all page text - and every `currentColor` icon -
+  in glowing red, for dark-adapted eyes at the eyepiece. Persisted in `localStorage`.
+- The install hero photo moved out of the "Install or Update" tile to the very bottom of the page,
+  full width, below the footer; the HeyApos/AVVP logos now also appear there (the PFSM logo and
+  copyright stay in the existing footer). README.md's footer gained the same two logos (white-
+  background-safe versions), linked, opening in a new tab.
+- Every action button's color changed from blue to the same dark red as the Quick keys' Enter
+  button, for one consistent accent color across the page (progress bars/spinners and semantic
+  status colors - e.g. the "running" badge, Mount Bridge diagram arrows - were deliberately left
+  alone; they encode meaning, not just an accent).
+- The Threshold number input (Mount Bridge tile) restyled to match the dark theme - it was rendering
+  with the browser's default white input chrome, visibly out of place next to everything else.
 
 ### Changed
 
@@ -97,6 +135,41 @@ All notable changes to this project are documented in this file. Format loosely 
   version (R=luminance, G=0, B=0 - the same mapping PiFinder's own `displays.py` uses for its real
   OLED) via PiFinder's own venv (has Pillow; the Control Center's system python3 doesn't),
   regenerating whenever the source is newer than the cache.
+- #102: the Control Center's Uninstall button never actually removed `~/PiFinder_Stellarmate`.
+  Several compounding causes in `bin/uninstall_pifinder_stellarmate.sh`/
+  `pi_config_files/pifinder-control-center.service`: the top-level destructive guard checked the
+  wrong condition, the `--selfmove` self-deleting relaunch didn't copy its `functions.sh`/
+  `os_detect.sh` dependencies alongside the relocated script (so the continuation crashed before
+  deleting anything), and the systemd unit's default `KillMode` killed the detached continuation
+  process along with the unit it was launched from. Fixed and live-verified via a real reboot (both
+  `~/PiFinder` and `~/PiFinder_Stellarmate` confirmed gone, then reinstalled from scratch and
+  reboot-verified again).
+- `bin/functions.sh`: `kstarsrc_source`/`kstarsrc_target` pointed at `~/.config/kstarsrc`, which never
+  exists on StellarMate OS - KStars ships there as a Flatpak (`org.kde.kstars`), whose config lives
+  under `~/.var/app/org.kde.kstars/config/kstarsrc` instead. The patch step's "please launch KStars
+  once" warning fired even after KStars had genuinely been launched.
+- `diffs/state_py.diff` and `diffs/camera_interface_py.diff` had silently drifted out of sync with
+  actual upstream v2.6.0 content and were failing to apply (state.py: `AttributeError` risk from a
+  missing `__init__` field declaration for `debug_solve`/`fake_solve_active`; camera_interface.py:
+  the whole diff was a no-op, its anchor variable had been renamed upstream) - regenerated against
+  the real pinned-tag source and verified with a clean dry-run patch.
+- The venv-bootstrap re-exec's resume guard (skip the menu prompt and redo the git checkout/patch
+  work on the post-activation pass) only ever got armed on the "venv didn't exist yet, just created
+  it" path. The far more common case for Update/Reinstall on an already-installed device - the venv
+  directory already exists from a previous run, just isn't active in this fresh shell invocation -
+  re-executed without ever arming that guard, so the resumed pass silently re-ran the entire script
+  from the top: the menu prompt, the git checkout, and the patch step all duplicated in the log.
+- The Installation Summary's "PiFinder:" line showed the live upstream release version instead of
+  what was actually installed - a mismatch introduced by the tag-pinning fix above decoupling
+  "installed" from "latest upstream". Now shows the pinned/installed version, with the live upstream
+  version alongside for reference.
+- `_camera_hardware_present()`'s `rpicam-hello --list-cameras` probe used a 10s timeout, too short
+  under a heavily loaded Pi (e.g. compiling INDI drivers during Install/Update) - a genuinely
+  present, working camera could show as "unconfirmed" (grey) instead of green. Raised to 25s; this
+  runs as a background poll, so a slower worst case doesn't block the UI.
+- Mount Bridge's "Mount is source" preset button (#130/#131) was missing from
+  `updateWmCouplingGate()`'s enable list, so it stayed permanently disabled regardless of setup
+  state while its four sibling preset buttons enabled normally.
 
 ## [1.4.0] - 2026-08-02
 

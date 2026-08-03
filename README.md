@@ -14,13 +14,13 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Use these scripts at your own risk. The author is not responsible for any damage to your hardware or software.
 > * This process has been tested with the PiFinder version specified in `version.txt`.
 
-> ### ✅ **Current Version — v1.3.1**
+> ### ✅ **Current Version — v2.0.0**
 >
-> * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
+> * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux) — PiFinder is now pinned to this exact release tag (see `version.txt`), not the upstream `release` branch's moving HEAD, for reproducible installs.
 > * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
 > * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
-> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount, all four Coupling presets — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
-> * **New in this release**: the Control Center now restarts itself automatically after a successful Install/Update run, so it always serves the code that run just landed on. Every "still checking" indicator across the Control Center (Mode status, hardware tests, Mount Bridge, external hardware toggles) now shares one consistent pulsing-yellow-dot pattern instead of several different ad-hoc ones, and the Mount Bridge tile is now role-aware — a PiFinder-host device no longer shows a misleading "not coupled" diagram for a driver it was never meant to have. See [CHANGELOG.md](CHANGELOG.md) for the full list.
+> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount, all five Coupling presets (including the new "Mount is source" simulation mode) — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
+> * **New in this release**: the PiFinder tile gained "Quick keys" — a compact on-page keypad (arrows, Long, Enter, two selectable layouts) to drive PiFinder's OLED menu without switching to its separate Remote page. Mount Bridge, PiFinder Mode/Test/Power, and Install or Update are now collapsible, with your choice remembered across reloads. A Night mode toggle renders all page text in glowing red. PiFinder installs/updates now target a pinned release tag instead of the upstream `release` branch's moving HEAD, fixing an installer that could refuse to run the moment upstream cut a new release. See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ---
 
@@ -125,7 +125,7 @@ The setup process is designed to be straightforward. It will guide you through a
     *   **If no PiFinder is found:** The script will clone the official PiFinder repository and apply all the necessary patches.
     *   **If PiFinder is found:** You will be prompted to either:
         *   **1. Reinstall from scratch:** This will completely delete the existing PiFinder directory and perform a fresh installation.
-        *   **2. Update:** This will reset your local PiFinder to the official `release` branch version and re-apply all patches.
+        *   **2. Update:** This will reset your local PiFinder to this project's pinned release tag (see `version.txt`) and re-apply all patches.
 
 4.  **Python Virtual Environment (First Run Only):**
     The first time you run the script on a fresh system, it will stop after creating a Python virtual environment (`.venv`). You must activate it manually and re-run the script to complete the installation of dependencies. The script will provide the exact commands to run, which will look like this:

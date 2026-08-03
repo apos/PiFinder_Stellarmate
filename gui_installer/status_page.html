@@ -50,7 +50,37 @@
     .page { flex-direction: column; gap: 1rem; }
     .left-col, .right-col { width: 100%; min-width: 0; }
   }
-  h1 { font-size: 1.3rem; margin: 0 0 1rem; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  #page-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  #night-mode-toggle {
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #ccc;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #night-mode-toggle.active { background: #4a0d0d; border-color: #ff2b2b; color: #ff6b6b; }
+  /* Minimal first pass, per direct feedback (2026-08-04): every bit of text
+     on the page becomes glowing red, nothing else (layout/colors of
+     non-text elements untouched for now). Covers icon SVGs too since
+     they're all currentColor-based. */
+  body.night-mode, body.night-mode * {
+    color: #ff2b2b !important;
+    text-shadow: 0 0 6px rgba(255, 40, 40, 0.65);
+  }
+  body.night-mode .pf-arrow, body.night-mode .mode-ampel-icon {
+    fill: #ff2b2b !important;
+    filter: drop-shadow(0 0 3px rgba(255, 40, 40, 0.65));
+  }
   .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; word-break: break-all; }
   #bottom-image-wrap {
     margin-top: 2rem;
@@ -73,8 +103,8 @@
   #bottom-logos img { height: 78px; width: auto; display: block; }
   #pifinder-screen {
     display: block;
-    width: 128px;
-    height: 128px;
+    width: 154px;
+    height: 154px;
     image-rendering: pixelated;
     border-radius: 4px;
     background: #000;
@@ -167,7 +197,7 @@
     line-height: 1.2rem;
     border-radius: 50%;
     border: none;
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     font-size: 0.85rem;
     text-align: center;
@@ -190,8 +220,25 @@
   #indi-only-label { font-size: 0.78rem; color: #999; cursor: pointer; }
   #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; display: block; }
   #branch-other-input { margin-left: 0.4rem; }
+  .pf-num-input {
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #ddd;
+    padding: 0.15rem 0.4rem;
+  }
+  .pf-num-input:focus { border-color: #666; outline: none; }
+  /* Chrome/Safari default spinner arrows render as light-on-light
+     against this dark background - not just "a stray one", the whole
+     control looked out of place next to everything else (found live
+     2026-08-04). Keep them (still useful for a numeric field), just
+     recolor via the same dark scheme as the field itself. */
+  .pf-num-input::-webkit-inner-spin-button,
+  .pf-num-input::-webkit-outer-spin-button {
+    filter: invert(0.7);
+  }
   #choices button, #start-fresh {
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 6px;
@@ -241,7 +288,7 @@
   #reboot-button:hover { filter: brightness(1.15); }
   #reset-wrap { display: none; }
   #reset-button {
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 6px;
@@ -268,8 +315,79 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+    flex: 1;
+    min-width: 180px;
+    justify-content: center;
   }
   #pifinder-status-line { font-weight: bold; }
+  #pf-keypad-style-switch { display: flex; flex-shrink: 0; }
+  .pf-keypad-style-btn {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #999;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.55rem;
+    cursor: pointer;
+  }
+  .pf-keypad-style-btn:first-child { border-radius: 10px 0 0 10px; border-right: none; }
+  .pf-keypad-style-btn:last-child { border-radius: 0 10px 10px 0; }
+  .pf-keypad-style-btn.active { background: #8a2e24; border-color: #c0392b; color: #fff; }
+  .pf-keypad { flex: 1; }
+  .pf-keypad-busy { opacity: 0.5; pointer-events: none; }
+  #pf-keypad-a {
+    display: flex;
+    align-items: center;
+    gap: 2.6rem;
+  }
+  .pf-key {
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #ccc;
+    height: 56px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.08s ease, filter 0.08s ease;
+  }
+  .pf-key:active, .pf-key.pf-key-pressed,
+  .pf-key-long-square:active, .pf-key-long-square.pf-key-pressed {
+    transform: scale(0.92);
+    filter: brightness(1.4);
+  }
+  #pf-keypad-a .pf-key { height: 46px; }
+  .pf-arrow { width: 28px; height: 28px; fill: currentColor; }
+  #pf-keypad-a .pf-arrow { width: 23px; height: 23px; }
+  .pf-key-enter { background: #8a2e24; border-color: #c0392b; color: #fff; }
+  .pf-key-long.pf-armed { background: #8a2e24; border-color: #c0392b; color: #fff; }
+  .pf-keypad-a-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    width: 172px;
+    flex-shrink: 0;
+  }
+  .pf-key-long-square {
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #ccc;
+    width: 95px;
+    height: 95px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.08s ease, filter 0.08s ease;
+  }
+  .pf-key-long-square.pf-armed { background: #8a2e24; border-color: #c0392b; color: #fff; }
+  .pf-keypad-b-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+  }
+  #pf-keypad-b .pf-key-long, #pf-keypad-b .pf-key-enter { font-size: 0.8rem; height: 42px; }
   .status-dot {
     display: inline-block;
     width: 0.6rem;
@@ -341,7 +459,7 @@
     gap: 0.5rem;
   }
   .mode-power-group-buttons-stacked { flex-direction: column; }
-  #power-reboot-btn { background: #2a6fdb; }
+  #power-reboot-btn { background: #8a2e24; }
   #power-poweroff-btn { background: #a33; }
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
@@ -359,7 +477,7 @@
   }
   #mode-status-line { font-weight: bold; margin-bottom: 0.6rem; }
   #mode-toggle-btn {
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 5px;
@@ -371,7 +489,7 @@
   #mode-toggle-btn:disabled { background: #444; cursor: default; }
   #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
   .ql-small-btn {
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 5px;
@@ -431,7 +549,7 @@
   .mb-coupling-btn {
     flex: 1;
     min-width: 8rem;
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 6px;
@@ -481,6 +599,8 @@
      text rows in "Hardware test and details" below. */
   #mode-ampel-row {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 0.5rem;
     margin: 0.7rem 0 0.9rem;
   }
@@ -811,7 +931,7 @@
     gap: 0.8rem;
   }
   #stale-page-banner button {
-    background: #2a6fdb;
+    background: #8a2e24;
     color: white;
     border: none;
     border-radius: 6px;
@@ -909,7 +1029,10 @@
 </head>
 <body>
 
-<h1>PiFinder on Stellarmate Control Center</h1>
+<div id="page-title-row">
+  <h1>PiFinder on Stellarmate Control Center</h1>
+  <button id="night-mode-toggle" onclick="toggleNightMode()" title="Night mode - all text glowing red, easier on dark-adapted eyes">&#9789; Night mode</button>
+</div>
 
 <div id="conn-lost-banner" style="display:none;"></div>
 <div id="stale-page-banner" style="display:none;">
@@ -929,23 +1052,54 @@
 <div class="page">
   <div class="left-col">
     <div id="pifinder-glance-tile">
-      <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div class="tile-heading-row" style="cursor:default;">
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div id="pf-keypad-style-switch" title="Quick keys layout">
+          <button id="pf-keypad-style-a-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('a')">A</button>
+          <button id="pf-keypad-style-b-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('b')">B</button>
+        </div>
+      </div>
       <div id="pifinder-glance-row">
         <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
-        <div id="pifinder-glance-status-stack">
-          <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-          <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
+        <!-- Quick keys: same LEFT/UP/DOWN/RIGHT/SQUARE(+LNG_ Long-combo) codes
+             PiFinder's own remote.html sends to /key_callback, proxied
+             through this server's /api/pifinder_key (browser can't reach
+             PiFinder's port directly - no CORS headers there, same reason
+             /api/debug_solve is proxied). Two layouts, user's pick
+             persisted in localStorage - see setKeypadStyle(). -->
+        <div id="pf-keypad-a" class="pf-keypad">
+          <div class="pf-keypad-a-grid">
+            <button class="pf-key" style="grid-column:2;" onclick="pfSendKey('UP', this)"><svg class="pf-arrow" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" style="grid-column:1; grid-row:2;" onclick="pfSendKey('LEFT', this)"><svg class="pf-arrow" style="transform:rotate(-90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key pf-key-enter" style="grid-column:2; grid-row:2;" onclick="pfSendKey('SQUARE', this)">&#9632;</button>
+            <button class="pf-key" style="grid-column:3; grid-row:2;" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" style="grid-column:2; grid-row:3;" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+          </div>
+          <button id="pf-key-long-a" class="pf-key-long-square" onclick="pfToggleLong(this)">LONG</button>
+        </div>
+        <div id="pf-keypad-b" class="pf-keypad" style="display:none;">
+          <div class="pf-keypad-b-grid">
+            <button class="pf-key" onclick="pfSendKey('LEFT', this)"><svg class="pf-arrow" style="transform:rotate(-90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" onclick="pfSendKey('UP', this)"><svg class="pf-arrow" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button id="pf-key-long-b" class="pf-key pf-key-long" style="grid-column:span 2;" onclick="pfToggleLong(this)">LONG</button>
+            <button class="pf-key pf-key-enter" style="grid-column:span 2;" onclick="pfSendKey('SQUARE', this)">&#9632; ENTER</button>
+          </div>
         </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
            as the Mount Bridge diagram's icon nodes (bordered box, currentColor
-           line-icon, small caption), arranged as a tight single-row strip
-           per direct feedback (2026-07-29): a quick at-a-glance read
-           without needing to expand "Hardware test and details" below (now
-           in the "PiFinder Mode, Test and Power" tile), which holds the
-           same 4 rows in full text/detail form plus "Optional external
-           hardware" - collapsed by default so it doesn't compete with the
-           mode/power controls there. -->
+           line-icon, small caption), arranged as a wrapping strip (status
+           text moves below once the row runs out of width - see
+           #pifinder-glance-status-stack's own min-width) per direct
+           feedback (2026-07-29, revised 2026-08-04 to make room for the
+           Quick keys above): a quick at-a-glance read without needing to
+           expand "Hardware test and details" below (now in the "PiFinder
+           Mode, Test and Power" tile), which holds the same 4 rows in full
+           text/detail form plus "Optional external hardware" - collapsed
+           by default so it doesn't compete with the mode/power controls
+           there. -->
       <div id="mode-ampel-row" title="Quick hardware status - see Hardware test and details below for the full picture">
           <div class="mode-ampel-badge" title="Camera">
             <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-camera-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
@@ -982,6 +1136,10 @@
               <circle cx="12" cy="9.6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
             </svg>
             <span>GPS</span>
+          </div>
+          <div id="pifinder-glance-status-stack">
+            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+            <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
       </div>
@@ -1071,7 +1229,7 @@
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" title="Only used by the two Auto-correct presets: how far off before they correct.">
         <span class="mb-row-label">Threshold:</span>
-        <input type="number" id="wm-threshold-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
+        <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
       </div>
       <div class="mb-row" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
         <span class="mb-row-label">Manual:</span>
@@ -1836,6 +1994,104 @@ async function toggleDebugSolve() {
   // showed rather than spinning forever; the regular 20s hardware-status
   // interval isn't wired to this, so nothing else will pick it up later.
 }
+
+// PiFinder tile "Quick keys" - drives PiFinder's own OLED menu without
+// switching to its separate Remote page. Same LEFT/UP/DOWN/RIGHT/SQUARE
+// codes (and the LNG_ Long-combo) as remote.html's buttonClicked(), sent
+// through this server's /api/pifinder_key proxy (see that endpoint's own
+// comment in server.py for why a proxy is needed at all - no CORS headers
+// on PiFinder's side).
+let pfLongArmed = false;
+
+// :active alone (CSS) only shows while the mouse button is physically down -
+// too brief to register on a fast click/tap. This flash keeps the pressed
+// look for a fixed short moment instead, so every press gets visible
+// feedback regardless of how quickly the click completes.
+function pfFlashKey(el) {
+  if (!el) return;
+  el.classList.add('pf-key-pressed');
+  setTimeout(() => el.classList.remove('pf-key-pressed'), 150);
+}
+
+function pfToggleLong(btn) {
+  pfFlashKey(btn);
+  pfLongArmed = !pfLongArmed;
+  document.getElementById('pf-key-long-a').classList.toggle('pf-armed', pfLongArmed);
+  document.getElementById('pf-key-long-b').classList.toggle('pf-armed', pfLongArmed);
+}
+
+// PiFinder's own web server only handles one request at a time (found live
+// 2026-08-04 investigating "unreliable, needs several clicks") - a burst of
+// rapid clicks queued several overlapping /key_callback calls, each making
+// the next one wait longer, which read as "nothing happened" and invited
+// even more clicking, compounding the pile-up. This guard drops extra
+// clicks while one press is still in flight instead of queueing them, and
+// dims the keypad so it's visibly busy rather than looking unresponsive.
+let pfKeyBusy = false;
+
+async function pfSendKey(code, btn) {
+  if (pfKeyBusy) return;
+  pfKeyBusy = true;
+  document.getElementById('pf-keypad-a').classList.add('pf-keypad-busy');
+  document.getElementById('pf-keypad-b').classList.add('pf-keypad-busy');
+  pfFlashKey(btn);
+  if (!pifinderScreenUrl) {
+    pfKeyBusy = false;
+    document.getElementById('pf-keypad-a').classList.remove('pf-keypad-busy');
+    document.getElementById('pf-keypad-b').classList.remove('pf-keypad-busy');
+    return;
+  }
+  const port = new URL(pifinderScreenUrl).port || '80';
+  if (pfLongArmed) {
+    code = `LNG_${code}`;
+    pfLongArmed = false;
+    document.getElementById('pf-key-long-a').classList.remove('pf-armed');
+    document.getElementById('pf-key-long-b').classList.remove('pf-armed');
+  }
+  try {
+    await fetch(`/api/pifinder_key?port=${port}&key=${code}`, { method: 'POST' });
+    // The normal OLED mirror only ticks once a second (refreshPiFinderScreen's
+    // own setTimeout chain) - after a press, force one extra fetch right now
+    // instead of waiting up to a second for that chain's next tick, so the
+    // screen visibly reacts to the press instead of looking like it needs a
+    // manual page reload to catch up. A plain one-off src update, not a call
+    // to refreshPiFinderScreen() itself - that function reschedules its own
+    // next tick via onload/onerror, so calling it again here would spawn a
+    // second parallel polling chain instead of just refreshing once.
+    if (pifinderScreenUrl) {
+      document.getElementById('pifinder-screen').src = pifinderScreenUrl + '?t=' + Date.now();
+    }
+  } catch (e) {
+    // best-effort - the OLED mirror image below will just not have moved
+  } finally {
+    pfKeyBusy = false;
+    document.getElementById('pf-keypad-a').classList.remove('pf-keypad-busy');
+    document.getElementById('pf-keypad-b').classList.remove('pf-keypad-busy');
+  }
+}
+
+// Persisted like the tile-collapse state above - same localStorage
+// convention, own key since this isn't a show/hide toggle.
+function setKeypadStyle(style) {
+  document.getElementById('pf-keypad-a').style.display = style === 'a' ? 'flex' : 'none';
+  document.getElementById('pf-keypad-b').style.display = style === 'b' ? 'flex' : 'none';
+  document.getElementById('pf-keypad-style-a-btn').classList.toggle('active', style === 'a');
+  document.getElementById('pf-keypad-style-b-btn').classList.toggle('active', style === 'b');
+  try {
+    localStorage.setItem('pf-keypad-style', style);
+  } catch (e) {
+    // localStorage unavailable - just don't persist
+  }
+}
+(function restoreKeypadStyle() {
+  let style = 'a';
+  try {
+    style = localStorage.getItem('pf-keypad-style') || 'a';
+  } catch (e) {
+    // localStorage unavailable - default to 'a'
+  }
+  setKeypadStyle(style);
+})();
 
 // Same poll-until-changed approach as toggleDebugSolve() above, reusing
 // refreshDebugSolve() (which already applies fake-solve status via
@@ -2764,6 +3020,16 @@ function tryPiFinderScreenUrls(urls, index) {
 
 function refreshPiFinderScreen() {
   if (!pifinderScreenUrl) return;
+  // PiFinder's own web server handles one request at a time - if this
+  // routine's own 1s poll fires an /image fetch right as a Quick-keys press
+  // is going out, the two queue behind each other and the press can take
+  // several extra seconds to actually land (found live 2026-08-04). Yield
+  // this tick until the press is done instead of competing with it, so the
+  // press gets PiFinder's one request slot first.
+  if (pfKeyBusy) {
+    setTimeout(refreshPiFinderScreen, 150);
+    return;
+  }
   const probe = new Image();
   probe.onload = () => {
     document.getElementById('pifinder-screen').src = probe.src;
@@ -2784,6 +3050,28 @@ function refreshPiFinderScreen() {
 function initPiFinderScreen() {
   tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
 }
+
+function toggleNightMode() {
+  const on = document.body.classList.toggle('night-mode');
+  document.getElementById('night-mode-toggle').classList.toggle('active', on);
+  try {
+    localStorage.setItem('night-mode', on ? 'on' : 'off');
+  } catch (e) {
+    // localStorage unavailable - just don't persist
+  }
+}
+(function restoreNightMode() {
+  let on = false;
+  try {
+    on = localStorage.getItem('night-mode') === 'on';
+  } catch (e) {
+    // localStorage unavailable - default off
+  }
+  if (on) {
+    document.body.classList.add('night-mode');
+    document.getElementById('night-mode-toggle').classList.add('active');
+  }
+})();
 
 async function init() {
   initPiFinderScreen();
@@ -3053,7 +3341,12 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  // wm-preset-mount-source-btn ("Mount is source", added by #130/PR #131)
+  // was missing from this list - found live 2026-08-04. It stayed
+  // permanently disabled regardless of setup state since nothing ever
+  // cleared its HTML "disabled" attribute, unlike its four sibling preset
+  // buttons here.
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn', 'wm-preset-mount-source-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }

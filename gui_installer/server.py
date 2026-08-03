@@ -22,9 +22,10 @@ import subprocess
 import threading
 import time
 import urllib.request
+import http.cookiejar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
 import indi_client
@@ -325,9 +326,19 @@ def _camera_hardware_present():
     PiFinder's own software layer, is the only way to catch that case.
     """
     try:
+        # 25s, not the original 10s: found live 2026-08-03 with a genuinely
+        # present, working camera still showing "unconfirmed" (grey, not
+        # red) right after an install/update run - rpicam-hello enumerating
+        # under a heavily loaded Pi (compiling INDI drivers etc., load >8 on
+        # 4 cores) took longer than 10s, so this call's own timeout fired
+        # and got caught below, returning None ("inconclusive") instead of
+        # True. This is a background poll (every 20s, see
+        # refreshHardwareStatusAndDependents() in status_page.html), so a
+        # slower worst case here doesn't block the UI - it just delays that
+        # one badge's next update.
         result = subprocess.run(
             ["rpicam-hello", "--list-cameras"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=25,
         )
     except Exception:
         return None
@@ -1279,6 +1290,104 @@ def _pifinder_toggle_debug_solve(port: str) -> bool:
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status == 200
+    except Exception:
+        return False
+
+
+# The exact key codes PiFinder's own remote.html sends to /key_callback -
+# LNG_* is that page's "arm Long, then press a key" combo, reproduced here
+# so the Control Center's compact keypad (PiFinder tile "Quick keys") drives
+# PiFinder through the identical, already-battle-tested code path instead of
+# inventing a second key-mapping convention.
+_ALLOWED_PIFINDER_KEY_CODES = {
+    "LEFT", "UP", "DOWN", "RIGHT", "SQUARE",
+    "LNG_LEFT", "LNG_UP", "LNG_DOWN", "LNG_RIGHT", "LNG_SQUARE",
+}
+
+
+# /key_callback is a browser-facing route on PiFinder's side, gated by its
+# own @auth_required (Flask session cookie) - unlike /api/debug_solve, which
+# is explicitly exempted there as a machine-to-machine call (see that
+# route's own comment in PiFinder/server.py). A plain proxy POST here with
+# no cookie gets silently 302-redirected to /login and urlopen happily
+# reports 200 for the login PAGE it followed to - found live 2026-08-04:
+# the Quick keys looked like they worked (no error anywhere) but never
+# actually pressed anything. Fix: log in first (same account + password
+# this Control Center's own auth already uses - see AUTH_USER/the comment
+# above it), keep the resulting session cookie only for the one key press.
+# "smate" is this project's documented default Remote-page password (shown
+# in the Quick Links row) - if a user changed their stellarmate account
+# password from that default, this login attempt fails and _pifinder_send_key
+# returns False (Quick keys quietly stop working, same as PiFinder being
+# unreachable for any other reason - no crash).
+_PIFINDER_REMOTE_PASSWORD = "smate"
+
+# Logging in is expensive - PAM's own password verification alone measured
+# ~5s live on this hardware (crypt() cost, not a bug) - paying that on every
+# single key press made the Quick keys feel completely unresponsive (found
+# live 2026-08-04 right after adding the login step above: presses "worked"
+# but took ~5s each, several seconds behind a burst of clicks). Cache one
+# opener (with its session cookie) per port and reuse it; only pay the
+# login cost again if a cached session turns out to be gone/expired.
+_pifinder_key_openers: dict[str, urllib.request.OpenerDirector] = {}
+_pifinder_key_openers_lock = threading.Lock()
+
+
+def _pifinder_login(port: str) -> urllib.request.OpenerDirector | None:
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+    login_req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/login",
+        method="POST",
+        data=urlencode({"password": _PIFINDER_REMOTE_PASSWORD}).encode(),
+    )
+    opener.open(login_req, timeout=10)
+    if not any(c.name == "session" for c in cookie_jar):
+        return None  # wrong password (account password changed from the default)
+    return opener
+
+
+def _pifinder_send_key(port: str, code: str) -> bool:
+    """POST to PiFinder's own /key_callback - same endpoint remote.html's
+    buttonClicked() uses, so a press from this Control Center's compact
+    keypad behaves identically to one from PiFinder's own remote page."""
+    if port not in _ALLOWED_PIFINDER_PORTS or code not in _ALLOWED_PIFINDER_KEY_CODES:
+        return False
+    key_req_data = json.dumps({"button": code}).encode()
+    try:
+        with _pifinder_key_openers_lock:
+            opener = _pifinder_key_openers.get(port)
+            if opener is None:
+                opener = _pifinder_login(port)
+                if opener is None:
+                    return False
+                _pifinder_key_openers[port] = opener
+        key_req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/key_callback",
+            method="POST",
+            data=key_req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with opener.open(key_req, timeout=8) as resp:
+            if resp.status == 200 and "/login" not in resp.url:
+                return True
+        # Cached session no longer valid (PiFinder restarted, cookie
+        # expired, ...) - drop it and try exactly once more with a fresh
+        # login rather than silently failing from here on.
+        with _pifinder_key_openers_lock:
+            _pifinder_key_openers.pop(port, None)
+            opener = _pifinder_login(port)
+            if opener is None:
+                return False
+            _pifinder_key_openers[port] = opener
+        key_req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/key_callback",
+            method="POST",
+            data=key_req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with opener.open(key_req, timeout=8) as resp:
+            return resp.status == 200 and "/login" not in resp.url
     except Exception:
         return False
 
@@ -2315,6 +2424,13 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             self._send_json({"success": _pifinder_toggle_debug_solve(port)})
+            return
+
+        if parsed.path == "/api/pifinder_key":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            key = qs.get("key", [""])[0]
+            self._send_json({"success": _pifinder_send_key(port, key)})
             return
 
         if parsed.path == "/api/fake_solve_disable":
