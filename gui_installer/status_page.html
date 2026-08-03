@@ -466,8 +466,8 @@
     color: #999;
   }
   .mode-ampel-icon {
-    width: 18px;
-    height: 18px;
+    width: 32.5px;
+    height: 32.5px;
     color: #666;
   }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
@@ -1719,6 +1719,11 @@ async function toggleFakeSolve() {
   btn.disabled = true;
   textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
   setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
+  // Badge follows the row's dot immediately, not just once confirmed -
+  // otherwise it stayed invisible for the whole in-flight window (several
+  // seconds, given the mount-read+inject round trip) and only popped in
+  // right at the very end (User feedback).
+  document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
   try {
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
