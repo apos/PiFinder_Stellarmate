@@ -1498,6 +1498,18 @@ function applySolveStatus(data) {
   const dotEl = document.getElementById('solve-status-dot');
   const textEl = document.getElementById('solve-status-text');
   const suffix = data.debug_solve === true ? ' (simulated image)' : '';
+  // While Injected Solve is active, solve_source still reports "CAM" (the
+  // injection is applied as a solve internally) or drifts to "IMU" as real
+  // dead-reckoning advances it - neither is a real plate-solve, and the
+  // normal messaging here (especially the pulsing amber "no fresh solve
+  // yet") reads as a problem when this is actually expected/intentional.
+  // Takes priority over the normal solve_source branches below (User
+  // feedback, #128).
+  if (data.fake_solve_active === true) {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = 'not real - see Injected Solve below';
+    return;
+  }
   if (data.solve_source === 'CAM') {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'solving' + suffix;
@@ -1532,6 +1544,23 @@ function applySolveStatus(data) {
 // row - see setMbStatusUnconfirmed()'s own comment for why).
 let lastFakeSolveActive = null;
 
+// True for the duration of toggleFakeSolve()'s own fetch + poll loop.
+// While true, applyFakeSolveStatus() still updates lastFakeSolveActive/the
+// badge (so the badge appears immediately once the backend confirms the
+// change, and so the toggle loop's own "did it land yet" check keeps
+// working) but leaves the dot/text/button alone - those are
+// toggleFakeSolve()'s to own during the operation.
+//
+// Found live: an independent setInterval(refreshDebugSolve, 20000) (see
+// bottom of file) runs regardless of any in-progress toggle. Without this
+// guard, if that interval's own applyFakeSolveStatus() call landed
+// mid-operation (a real risk since our mount-read+inject round trip can
+// take several seconds - much longer than debug_solve's near-instant
+// flag flip, which is presumably why this was never an issue there), it
+// stomped the pulsing "in progress" dot back to a stale white/red before
+// the operation had actually finished.
+let fakeSolveToggleInFlight = false;
+
 function applyFakeSolveStatus(data) {
   const dotEl = document.getElementById('fake-solve-dot');
   const textEl = document.getElementById('fake-solve-text');
@@ -1542,13 +1571,16 @@ function applyFakeSolveStatus(data) {
     // Unconfirmed (unreachable/failed poll) - leave the badge and button
     // as they were last confirmed, only the text says we can't currently
     // tell.
-    textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
-    btn.disabled = true;
+    if (!fakeSolveToggleInFlight) {
+      textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
+      btn.disabled = true;
+    }
     return;
   }
 
   lastFakeSolveActive = data.fake_solve_active;
   badge.style.display = lastFakeSolveActive ? '' : 'none';
+  if (fakeSolveToggleInFlight) return;
   btn.disabled = false;
 
   if (!lastFakeSolveActive) {
