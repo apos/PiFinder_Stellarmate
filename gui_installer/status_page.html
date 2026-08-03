@@ -989,9 +989,9 @@
               <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
               <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
             </div>
-            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Only enabled via the API used for testing; this row only ever appears to let you turn it back off." style="display:none;">
-              <span class="status-dot dot-red" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">active</span>
-              <button id="fake-solve-btn" class="ql-small-btn" onclick="disableFakeSolve()">Turn off</button>
+            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
+              <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
+              <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-imu-detail"></div>
@@ -1513,22 +1513,53 @@ function applySolveStatus(data) {
   }
 }
 
-// Fake-Solve (#106/#128) - a synthetic RA/Dec injected via PiFinder's
-// /api/fake_solve, with real IMU dead-reckoning taking over from there.
-// Kept visually and semantically separate from debug_solve/solve_source
-// above - the reported position must never look like a real "CAM" solve
-// while this is active. Badge + detail row only ever appear while active;
-// there's no "enable" control here since enabling needs a target RA/Dec
-// this tile has no source for - only the API endpoint used for testing
-// can turn it on. Called from refreshDebugSolve(), which already fetches
-// this flag alongside debug_solve/solve_source in the same request.
+// Injected Solve / Dead Reckoning (#106/#128) - a synthetic RA/Dec
+// injected via PiFinder's /api/fake_solve, with real IMU dead-reckoning
+// taking over from there. Kept visually and semantically separate from
+// debug_solve/solve_source above - the reported position must never look
+// like a real "CAM" solve while this is active. The top ampel badge only
+// ever appears while active (deliberately, per user decision - unlike the
+// detail row below, which stays visible like every other row so the
+// toggle is always reachable). Called from refreshDebugSolve(), which
+// already fetches this flag alongside debug_solve/solve_source in the
+// same request.
+//
+// data.fake_solve_active is strictly true/false when the request
+// succeeded, undefined when it didn't (the {} passed on an unreachable/
+// failed poll) - only a *confirmed* true/false ever changes the badge, so
+// a single transient miss doesn't flip it off and back on again (same
+// "don't act on an unconfirmed miss" principle as the Mount Bridge status
+// row - see setMbStatusUnconfirmed()'s own comment for why).
+let lastFakeSolveActive = null;
+
 function applyFakeSolveStatus(data) {
-  const active = data.fake_solve_active === true;
-  document.getElementById('mode-ampel-fake-solve-badge').style.display = active ? '' : 'none';
-  const row = document.getElementById('fake-solve-row');
-  row.style.display = active ? '' : 'none';
-  if (!active) return;
+  const dotEl = document.getElementById('fake-solve-dot');
   const textEl = document.getElementById('fake-solve-text');
+  const btn = document.getElementById('fake-solve-btn');
+  const badge = document.getElementById('mode-ampel-fake-solve-badge');
+
+  if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
+    // Unconfirmed (unreachable/failed poll) - leave the badge and button
+    // as they were last confirmed, only the text says we can't currently
+    // tell.
+    textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
+    btn.disabled = true;
+    return;
+  }
+
+  lastFakeSolveActive = data.fake_solve_active;
+  badge.style.display = lastFakeSolveActive ? '' : 'none';
+  btn.disabled = false;
+
+  if (!lastFakeSolveActive) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'off';
+    btn.textContent = 'Toggle';
+    return;
+  }
+
+  setHwDot(dotEl, 'status-dot dot-red');
+  btn.textContent = 'Turn off';
   const ra = data.fake_solve_ra;
   const dec = data.fake_solve_dec;
   const since = data.last_solve_success;
@@ -1635,15 +1666,26 @@ async function toggleDebugSolve() {
 // Same poll-until-changed approach as toggleDebugSolve() above, reusing
 // refreshDebugSolve() (which already applies fake-solve status via
 // applyFakeSolveStatus()) rather than duplicating the fetch/parse logic.
-async function disableFakeSolve() {
+// Turning on seeds a one-time position from the currently coupled mount
+// (see _pifinder_enable_fake_solve_from_mount() - not a continuous follow,
+// that's the larger #130 concept). Turning off just clears the flag.
+async function toggleFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-btn');
   const textEl = document.getElementById('fake-solve-text');
+  const turningOn = lastFakeSolveActive !== true;
+  const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
   btn.disabled = true;
-  textEl.textContent = 'Turning off…';
+  textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
   try {
-    await fetch(`/api/fake_solve_disable?port=${port}`, { method: 'POST' });
+    const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
+    const result = await resp.json();
+    if (turningOn && result.success !== true) {
+      textEl.textContent = `could not enable (${result.error || 'unknown error'})`;
+      btn.disabled = false;
+      return;
+    }
   } catch (e) {
     // fall through to the poll loop below either way
   }
@@ -1651,10 +1693,10 @@ async function disableFakeSolve() {
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 1000));
     await refreshDebugSolve();
-    if (document.getElementById('fake-solve-row').style.display === 'none') return;
+    if (lastFakeSolveActive === turningOn) return;
   }
-  // Didn't change within 16s - leave the row visible with the button
-  // re-enabled so the user can retry, rather than spinning forever.
+  // Didn't change within 16s - leave the button re-enabled so the user
+  // can retry, rather than spinning forever.
   btn.disabled = false;
 }
 

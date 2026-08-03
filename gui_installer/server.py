@@ -935,6 +935,42 @@ def _pifinder_solve_status(port: str):
         return None
 
 
+def _pifinder_enable_fake_solve_from_mount(port: str):
+    """Turn Injected Solve on, seeded with the currently coupled mount's
+    live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
+    active_mount) - a one-time "start here", not a continuous mount-follow
+    (that's the larger #130 concept, not yet built). Returns
+    (success: bool, error: str or None)."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False, "invalid port"
+    try:
+        status = indi_client.mount_bridge_status()
+    except Exception as e:
+        return False, f"could not reach Mount Bridge: {e}"
+    active_mount = status.get("active_mount")
+    if not active_mount:
+        return False, "no mount configured in Mount Bridge"
+    try:
+        props = indi_client.get_properties(device=active_mount)
+        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
+        dec_deg = float(eq["DEC"])
+    except Exception as e:
+        return False, f"could not read {active_mount}'s position: {e}"
+    try:
+        body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/fake_solve",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200, None
+    except Exception as e:
+        return False, str(e)
+
+
 def _pifinder_disable_fake_solve(port: str) -> bool:
     """DELETE to PiFinder's own /api/fake_solve - turns Fake-Solve back off,
     resuming normal real-camera solving. There's deliberately no matching
@@ -1989,6 +2025,13 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             self._send_json({"success": _pifinder_disable_fake_solve(port)})
+            return
+
+        if parsed.path == "/api/fake_solve_enable_from_mount":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            ok, err = _pifinder_enable_fake_solve_from_mount(port)
+            self._send_json({"success": ok, "error": err})
             return
 
         if parsed.path == "/api/hardware_test":
