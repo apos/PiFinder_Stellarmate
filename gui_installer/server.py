@@ -917,6 +917,12 @@ def _pifinder_solve_status(port: str):
             # from solve_source below (real solve health) - must never be
             # displayed as if it were a real "CAM" solve, see #128.
             "fake_solve_active": data.get("fake_solve_active"),
+            # RA/Dec of the currently-tracked (injected + dead-reckoned)
+            # position, shown alongside the active/off state - "active" alone
+            # doesn't say much for what's meant to be a real, usable
+            # simulator (User feedback, #128).
+            "fake_solve_ra": solution.get("RA"),
+            "fake_solve_dec": solution.get("Dec"),
             "solve_source": data.get("solve_source", solution.get("solve_source")),
             "last_solve_attempt": data.get(
                 "last_solve_attempt", solution.get("last_solve_attempt")
