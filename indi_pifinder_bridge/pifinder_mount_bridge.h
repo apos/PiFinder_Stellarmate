@@ -91,6 +91,14 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty DriftThresholdNP;
         INumber DriftThresholdN[1];
 
+        // Auto-correct only fires off a position PiFinder itself reports as
+        // a real, recent camera solve (via /api/status - see #79/#107 in
+        // basic-memory pifinder-stellarmate: LX200 has no room to carry this,
+        // so it's fetched separately over HTTP). This is the max age of that
+        // solve for a correction to still be considered trustworthy.
+        INumberVectorProperty SolveFreshnessMaxAgeNP;
+        INumber SolveFreshnessMaxAgeN[1];
+
         // Read-only: last computed drift between PiFinder and the mount, for
         // the VERIFY_ALERT mode and general visibility.
         INumberVectorProperty DriftStatusNP;
