@@ -568,6 +568,18 @@ if ! is_venv_active "${python_venv}"; then
     fi
   else
     if [ -n "$ACTION" ]; then
+      # touch lock_file here too (not just the create_venv success path
+      # above) - this branch is actually the common case for Update/
+      # Reinstall on an install that already has a venv from a previous
+      # run: it's just not active in *this* fresh shell invocation. Without
+      # this, the resume guard at the top of the script (`[ -f "$lock_file"
+      # ] && is_venv_active ...`) never sees the lock file after the
+      # re-exec below, so it re-runs the ENTIRE script from the top again -
+      # including the menu prompt/choice and the actual git checkout +
+      # patch application a second time. Found live 2026-08-03 testing
+      # PR #154's Update path: the whole log (checkout, file list, patch
+      # diffs) appeared twice.
+      touch "${lock_file}"
       echo "🔁 Virtual environment directory exists but isn't active — re-executing inside it automatically ..."
       cd "$SCRIPT_DIR"
       exec bash -c "source '${python_venv}/bin/activate' && exec '${SCRIPT_PATH}' \"\$@\"" -- "$@"

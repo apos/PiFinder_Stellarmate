@@ -1258,6 +1258,8 @@ sudo systemctl start pifinder</pre>
           <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
           <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
           <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
+          <div class="ql-section"><span class="ql-label">INDI Web Manager:</span><span id="indi-webmanager-links"></span></div>
+          <div class="ql-section"><span class="ql-label">StellarMate Dashboard:</span><span id="sm-dashboard-links"></span></div>
           <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
         </div>
       </div>
@@ -1483,6 +1485,19 @@ function updateRoleCardCapability(pifinderInstalled) {
 function renderPfhostIp(ips) {
   const el = document.getElementById('pfhost-ip');
   el.textContent = (ips && ips.length > 0) ? ips.join(', ') : 'unknown - check your network settings';
+}
+
+// INDI Web Manager (:8624) and the StellarMate Dashboard (:80) both run
+// locally on this same device, same as this Control Center itself - same
+// ips source as renderRemoteLinks() above, just fixed well-known ports
+// instead of this page's own (data.port).
+function renderServiceLinks(elId, ips, port) {
+  const el = document.getElementById(elId);
+  if (!ips || ips.length === 0) {
+    el.innerHTML = 'n/a';
+    return;
+  }
+  el.innerHTML = ips.map(ip => `<a href="http://${ip}:${port}/" target="_blank" rel="noopener">${ip}:${port}</a>`).join('');
 }
 
 function renderRemoteLinks(ips, port) {
@@ -2632,14 +2647,36 @@ async function resetToChoices() {
   showChoices(existingInstallKnown);
 }
 
+// Retries a handful of times with a short delay before giving up - closes a
+// race with the server's own self-restart after a successful run
+// (_restart_control_center() in server.py: ~2s sleep, then the process
+// actually dies and the port briefly goes away while systemd relaunches
+// it). Without this, a poll landing in that exact gap threw immediately,
+// and pollLog() showed the harsh "connection lost" banner even though this
+// was the expected, already-communicated restart - not a real crash/
+// reboot. A real crash/reboot still ends up here too, just after this
+// short grace period instead of on the very first failed attempt.
+async function fetchWithRetry(url, attempts = 5, delayMs = 400) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const resp = await fetch(url);
+      return await resp.json();
+    } catch (e) {
+      if (i === attempts - 1) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 async function pollLog() {
   let data;
   try {
-    const resp = await fetch('/log?position=' + logPosition);
-    data = await resp.json();
+    data = await fetchWithRetry('/log?position=' + logPosition);
   } catch (e) {
-    // Server went away mid-run (e.g. the Pi rebooted unexpectedly) -
-    // stop polling and tell the user this view is now frozen.
+    // Still unreachable after the retries above - either a genuinely
+    // unexpected loss (real reboot, server crash/stopped) or the self-
+    // restart really did take longer than the retry budget. Either way,
+    // this view is now frozen.
     polling = false;
     showServerLostBanner();
     return;
@@ -2772,6 +2809,8 @@ async function init() {
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
+  renderServiceLinks('indi-webmanager-links', data.ips, 8624);
+  renderServiceLinks('sm-dashboard-links', data.ips, 80);
   renderPfhostIp(data.ips);
   updateRoleCardCapability(data.existing_install);
   // A brand new install (no ~/PiFinder yet) always defaults to main/stable,
