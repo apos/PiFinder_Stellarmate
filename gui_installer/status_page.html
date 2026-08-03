@@ -398,7 +398,7 @@
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  #mb-coupling-divider {
+  #mb-coupling-divider, .mb-coupling-divider {
     width: 1px;
     background: #444;
     margin-top: 1.3rem;
@@ -1028,6 +1028,13 @@
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+            </div>
+          </div>
+          <div id="mb-coupling-divider-2" class="mb-coupling-divider"></div>
+          <div class="mb-coupling-group">
+            <div class="group-label mb-coupling-label"><span>Simulation</span><a class="help-link" href="/help.html#coupling-mount-source" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="mb-coupling-group-buttons">
+              <button id="wm-preset-mount-source-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('mount_source')" disabled title="Reverses the usual direction: the mount's position (real, or the stock INDI Telescope Simulator) is injected into PiFinder as an Injected Solve instead of PiFinder driving the mount. Enables full simulation with zero real PiFinder hardware (see #130).">Mount is source</button>
             </div>
           </div>
         </div>
@@ -3049,10 +3056,11 @@ function updateCouplingButtons(mode, correctionAction) {
   let active = null;
   if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
   else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
+  else if (mode === 'MODE_MOUNT_SOURCE') active = 'wm-preset-mount-source-btn';
   else if (mode === 'MODE_AUTO_CORRECT') {
     active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
   }
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn', 'wm-preset-mount-source-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
 }
@@ -3140,6 +3148,13 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin) {
     setMbArrow('mb-arrow-left', 'goto');
     setMbArrow('mb-arrow-right', 'goto');
     captionEl.textContent = 'Forwarding goto commands straight to the mount';
+  } else if (couplingMode === 'MODE_MOUNT_SOURCE') {
+    // Reversed direction from every other mode - the mount drives PiFinder,
+    // not the other way round (see #130), so the arrows point the opposite
+    // way too: reading from the mount (right), writing to PiFinder (left).
+    setMbArrow('mb-arrow-left', 'write');
+    setMbArrow('mb-arrow-right', 'read');
+    captionEl.textContent = "Mount is the source - pushing its position to PiFinder as an Injected Solve";
   }
   const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
   document.getElementById('mount-bridge-text').textContent =
@@ -3408,6 +3423,7 @@ const MB_PRESET_INFO = {
   auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
   auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
+  mount_source: { btnId: 'wm-preset-mount-source-btn', mode: 'mount_source' },
 };
 
 // Pushes a changed threshold to the driver immediately, without requiring
@@ -3452,7 +3468,7 @@ async function setWmCoupling(preset) {
   const threshold = document.getElementById('wm-threshold-input').value;
   try {
     const params = new URLSearchParams({ mode });
-    if (mode !== 'goto_forward') {
+    if (mode !== 'goto_forward' && mode !== 'mount_source') {
       params.set('threshold', threshold);
       if (action) params.set('action', action);
     }

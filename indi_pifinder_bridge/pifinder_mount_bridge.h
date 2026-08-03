@@ -72,10 +72,16 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         IText ActiveDeviceT[2] {};
         enum { ACTIVE_PIFINDER, ACTIVE_MOUNT };
 
-        // Coupling degree - see 00009 for the rationale of each stage
+        // Coupling degree - see 00009 for the rationale of each stage.
+        // MODE_MOUNT_SOURCE (see #130) reverses the usual direction: instead
+        // of PiFinder's solve driving the mount, the mount's own position
+        // (real or the stock INDI Telescope Simulator) is injected into
+        // PiFinder as a Fake-Solve - for testing/demoing without any real
+        // PiFinder hardware at all. One-time seeds only (see
+        // pushMountPositionToPiFinder()), not literally every tick.
         ISwitchVectorProperty BridgeModeSP;
-        ISwitch BridgeModeS[4];
-        enum { MODE_OFF, MODE_VERIFY_ALERT, MODE_AUTO_CORRECT, MODE_GOTO_FORWARD };
+        ISwitch BridgeModeS[5];
+        enum { MODE_OFF, MODE_VERIFY_ALERT, MODE_AUTO_CORRECT, MODE_GOTO_FORWARD, MODE_MOUNT_SOURCE };
 
         // AUTO_CORRECT sends Sync or Goto/Track - separate from the above so
         // the one-shot manual actions below can also pick either.
@@ -126,4 +132,16 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         static constexpr int MAX_SETTLE_RETRIES = 3;
 
         void handleGotoForward();
+
+        // MODE_MOUNT_SOURCE: pushes the mount's current position to PiFinder
+        // as a Fake-Solve whenever it has moved meaningfully since the last
+        // push (not on every tick - that would just be needlessly noisy
+        // re-injection of an unchanged position). See #130.
+        void handleMountSource();
+        double m_lastPushedMountRA = std::nan("");
+        double m_lastPushedMountDec = std::nan("");
+
+        // Below this, a mount position change is considered noise/tracking
+        // jitter, not a deliberate slew worth re-seeding PiFinder over.
+        static constexpr double MOUNT_SOURCE_MIN_CHANGE_ARCMIN = 2.0;
 };

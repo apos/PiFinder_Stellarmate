@@ -79,6 +79,7 @@
           <ul>
             <li><a href="#coupling-visual">Visual group</a></li>
             <li><a href="#coupling-goto">GoTo group</a></li>
+            <li><a href="#coupling-mount-source">Simulation group</a></li>
           </ul>
         </li>
         <li><a href="#drift-badge">Drift readout</a></li>
@@ -198,6 +199,9 @@
 <p><strong>Setup</strong>: runs steps 1-4/6 above in one click (start profile, add drivers, connect - pausing for you to link your mount, the one step it can't decide for you) without applying any Coupling preset at the end. Use this to get everything ready first, then pick a mode deliberately once it's all connected.</p>
 <p><strong>Autoconnect</strong>: clicking any preset before steps 1-6 are actually finished doesn't just fail - it runs the exact same setup as the Setup button above automatically, then applies the coupling mode you originally clicked once it's done. The Setup button exists so you're not only discovering this by clicking a preset and seeing setup start unexpectedly.</p>
 <p><strong>Manual: Sync mount from PiFinder</strong>: a one-shot action, works regardless of which Coupling preset (or none) is active. Syncs the mount to PiFinder's current solved position right now - no Goto, no drift comparison, just an instant correction. Useful specifically after moving the mount by hand: none of the Coupling presets react to that on their own (Auto-correct only reacts on its next poll if drift already exceeds Threshold, Goto-Forward only reacts to a new PiFinder target, not a mount move).</p>
+
+<h4 id="coupling-mount-source">Simulation group</h4>
+<p><strong>Mount is source</strong> reverses every other mode's direction: instead of PiFinder's solve driving the mount, the mount's own position (a real mount, or the stock INDI Telescope Simulator) is pushed to PiFinder as an Injected Solve (Dead Reckoning) - see the "PiFinder Mode, Test and Power" tile's Simulation and testing section. Mirrors physical reality (a real mount and a real PiFinder are rigidly coupled, so wherever the mount points, PiFinder points too), and enables testing/demoing the whole setup with zero real PiFinder hardware: point or slew the mount from any INDI client (its own hand controller, SkySafari, KStars, OnStep's own apps - the source doesn't matter, INDI doesn't care who issued the command) and a Fake-Mode PiFinder instance follows. Only pushes on a meaningful mount move, not continuously, so it doesn't flood PiFinder with redundant re-injections of an essentially unchanged position.</p>
 
 <h3 id="drift-badge">Drift readout</h3>
 <p>The large number top-right of the tile is the current angular drift between PiFinder's solved position and the mount's reported position, in arcminutes:</p>
