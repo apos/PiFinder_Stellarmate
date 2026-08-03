@@ -22,6 +22,8 @@
 
 #include "lx200telescope.h"
 
+#define LX200_TIMEOUT 5 /* FD timeout in seconds - moved here (was in the .cpp) so it's visible as a default parameter value below */
+
 class LX200_PIFINDER : public LX200Telescope
 {
     public:
@@ -48,5 +50,15 @@ class LX200_PIFINDER : public LX200Telescope
 
         int setStandardProcedureWithoutRead(int fd, const char *data);
         int setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect);
-        int setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length);
+        int setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length,
+                                                   int timeoutSec = LX200_TIMEOUT);
+
+        // Found live investigating #139: pos_server.py can occasionally take
+        // several seconds to answer under CPU load without the connection
+        // actually being dead (see that issue's own writeup). Retrying a few
+        // times with a shorter per-attempt timeout - instead of one long
+        // LX200_TIMEOUT-second block - keeps ReadScopeStatus() from stalling
+        // the whole polling cycle on a merely-slow (not dead) reply, while
+        // tolerating roughly the same total worst-case wait as before.
+        int readWithRetry(const char *data, char *response, int max_response_length);
 };
