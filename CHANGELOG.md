@@ -25,6 +25,24 @@ All notable changes to this project are documented in this file. Format loosely 
   case without that false-positive risk.
 - Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
   now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
+- Control Center GUI restructure:
+  - The Install/Update tile's hero photo is now ~50% larger (128px -> 192px tall).
+  - The page footer (project logo/HeyApos/AVVP logos, copyright, "unofficial community project"
+    disclaimer matching the README's own footer text) now sits below the entire page instead of
+    stacked under the left column - it now reads as a page footer, not a tile. The project logo
+    links out to the GitHub repo (new tab).
+  - The former "Quick Links" tile was dissolved into a new "PiFinder" glance tile: OLED mirror and
+    PiFinder-reachability status side by side, followed by the existing Cam/Solve/Injected-Solve/
+    IMU/GPS badge row - a single place for "is PiFinder alive and what's it seeing" instead of two
+    separate tiles.
+  - The former Quick Links' list of links moved into a new "Links" collapsible section at the
+    bottom of the "PiFinder Mode, Test and Power" tile, alongside the existing Simulation/Hardware
+    test/Service-and-power sections.
+  - The "PiFinder Mode, Test and Power" tile now sits below the Mount Bridge tile instead of above
+    it, matching the more common workflow order (check Mount Bridge status before reaching for
+    mode/test/power actions).
+  - No change to any icon's, LED-button's, text's, or underlying action's actual behavior - this
+    was a pure layout/grouping pass.
 - Control Center: a new system load indicator (green "Normal"/red "High", next to the existing
   PiFinder-reachability row in Quick Links) - found live investigating #139 that a contended Pi
   (PiFinder's own solver worker pool, KStars, ...) can make `pos_server.py`'s LX200 socket genuinely
@@ -43,6 +61,7 @@ All notable changes to this project are documented in this file. Format loosely 
   (a truly-dead peer is now detected within ~11s instead of relying only on read()/write() to
   eventually notice) and retries a slow (not dead) `:GR#`/`:GD#` read up to 3 times at a shorter
   2s timeout each, instead of blocking the whole polling cycle for one 5s attempt.
+>>>>>>> origin/dev
 
 ### Changed
 
