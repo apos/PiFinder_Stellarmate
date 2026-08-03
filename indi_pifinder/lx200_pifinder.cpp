@@ -45,8 +45,16 @@
 #include <memory>
 #include <termios.h>
 #include <libnova/libnova.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
-#define LX200_TIMEOUT 5 /* FD timeout in seconds */
+// See #139's investigation: pos_server.py can take several seconds to
+// answer under CPU load without the connection actually being dead. Retry
+// a handful of times with this much shorter per-attempt timeout instead of
+// one long LX200_TIMEOUT-second block per read (see readWithRetry()).
+static constexpr int LX200_READ_ATTEMPT_TIMEOUT = 2;
+static constexpr int LX200_READ_MAX_ATTEMPTS = 3;
 
 // Standalone driver executable: no multi-driver Loader/fat-binary needed.
 // Links directly against the system's libindilx200/libindidriver.
@@ -84,6 +92,21 @@ bool LX200_PIFINDER::Handshake()
         LOG_INFO("Simulate Connect.");
         return true;
     }
+
+    // #139-adjacent: enable TCP keepalive so a truly-dead connection (peer
+    // process gone without a clean close - the original #118 symptom) gets
+    // detected by the OS itself within ~11s, instead of relying purely on
+    // read()/write() to eventually notice. Tuned short deliberately - this
+    // is always a loopback connection to pos_server.py on the same Pi, not
+    // a real network link, so aggressive probing costs nothing.
+    int keepalive = 1;
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+    int keepidle = 5;   // start probing after 5s idle
+    int keepintvl = 3;  // probe every 3s
+    int keepcnt = 3;    // give up (fail reads/writes) after 3 missed probes
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
 
     // The base classes perform an ACK check that PiFinder does not support.
     // Since PiFinder always answers plain reads like :GR#/:GD# below, we
@@ -184,7 +207,7 @@ bool LX200_PIFINDER::ReadScopeStatus()
     double ra_val, dec_val;
 
     // Get RA
-    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response)) != 0)
+    if (readWithRetry("#:GR#", ra_response, sizeof(ra_response)) != 0)
     {
         LOG_ERROR("Failed to get RA from PiFinder.");
         return false;
@@ -197,7 +220,7 @@ bool LX200_PIFINDER::ReadScopeStatus()
     }
 
     // Get Dec
-    if (setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response)) != 0)
+    if (readWithRetry("#:GD#", dec_response, sizeof(dec_response)) != 0)
     {
         LOG_ERROR("Failed to get Dec from PiFinder.");
         return false;
@@ -218,6 +241,21 @@ bool LX200_PIFINDER::ReadScopeStatus()
     setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
 
     return true;
+}
+
+// See the header's own comment and this file's LX200_READ_ATTEMPT_TIMEOUT/
+// LX200_READ_MAX_ATTEMPTS for why this retries instead of using one long
+// LX200_TIMEOUT-second block per read.
+int LX200_PIFINDER::readWithRetry(const char *data, char *response, int max_response_length)
+{
+    int rc = -1;
+    for (int attempt = 0; attempt < LX200_READ_MAX_ATTEMPTS; ++attempt)
+    {
+        rc = setStandardProcedureAndReturnResponse(fd, data, response, max_response_length, LX200_READ_ATTEMPT_TIMEOUT);
+        if (rc == 0)
+            return 0;
+    }
+    return rc;
 }
 
 // PiFinder has no motor: "Goto" reuses PiFinder's existing SkySafari push-to
@@ -306,7 +344,8 @@ int LX200_PIFINDER::setStandardProcedureAndExpectChar(int fd, const char *data, 
     return 0;
 }
 
-int LX200_PIFINDER::setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length)
+int LX200_PIFINDER::setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length,
+                                                            int timeoutSec)
 {
     int error_type;
     int nbytes_write = 0, nbytes_read = 0;
@@ -320,9 +359,9 @@ int LX200_PIFINDER::setStandardProcedureAndReturnResponse(int fd, const char *da
     }
     // PiFinder terminates every response with '#' and then sends nothing
     // more - tty_read() would block until max_response_length bytes arrive
-    // (i.e. until LX200_TIMEOUT expires) instead of returning as soon as the
+    // (i.e. until timeoutSec expires) instead of returning as soon as the
     // short reply is complete. Read up to the terminator instead.
-    error_type = tty_nread_section(fd, response, max_response_length, '#', LX200_TIMEOUT, &nbytes_read);
+    error_type = tty_nread_section(fd, response, max_response_length, '#', timeoutSec, &nbytes_read);
     tcflush(fd, TCIFLUSH);
 
     if (nbytes_read < 1)

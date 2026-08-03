@@ -916,7 +916,16 @@ sudo systemctl enable pifinder-fake-mode-autostart
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder-setup
-sudo systemctl start pifinder
+# restart, not start: on an Update run (as opposed to a fresh install),
+# pifinder.service is very likely already active from before this run - a
+# plain `start` on an already-active unit is a no-op, silently leaving the
+# OLD process running under whatever config was loaded before this run's
+# daemon-reload above, even though the just-copied pi_config_files/
+# pifinder.service (e.g. its Nice=/CPUWeight=, or any future change) is
+# already on disk and loaded into systemd. `restart` makes an update
+# actually take effect on an already-running instance too, same as a fresh
+# start does for a first install.
+sudo systemctl restart pifinder
 sudo systemctl start pifinder_splash
 
 # pifinder-control-center.service is deliberately not enabled by default
