@@ -184,10 +184,11 @@ bool LX200_PIFINDER::ReadScopeStatus()
     double ra_val, dec_val;
 
     // Get RA
-    if (setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response)) != 0)
+    int ra_rc = setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response));
+    if (ra_rc != 0)
     {
         LOG_ERROR("Failed to get RA from PiFinder.");
-        return handleReadFailure();
+        return handleReadFailure(ra_rc);
     }
     // Parse RA (HH:MM:SS)
     if (f_scansexa(ra_response, &ra_val) == -1)
@@ -197,10 +198,11 @@ bool LX200_PIFINDER::ReadScopeStatus()
     }
 
     // Get Dec
-    if (setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response)) != 0)
+    int dec_rc = setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response));
+    if (dec_rc != 0)
     {
         LOG_ERROR("Failed to get Dec from PiFinder.");
-        return handleReadFailure();
+        return handleReadFailure(dec_rc);
     }
     // Parse Dec (+/-DD*MM'SS)
     if (f_scansexa(dec_response, &dec_val) == -1)
@@ -217,24 +219,35 @@ bool LX200_PIFINDER::ReadScopeStatus()
     // For now, assume a default pier side or infer from RA/Dec if possible.
     setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
 
-    m_consecutiveReadFailures = 0;
+    m_consecutiveHardErrors = 0;
+    m_consecutiveTimeouts = 0;
     return true;
 }
 
-// #118/#139: see the header's own comment for the full root-cause writeup.
+// #118/#139: see the header's own comment for the full root-cause writeup,
+// including why hard errors and plain timeouts are tracked - and
+// thresholded - separately.
 // Calling the raw Connect()/Disconnect() virtuals alone does NOT work -
 // Connect() early-returns true if isConnected() is still (wrongly) true,
 // and only setConnected() (normally only called by the CONNECTION property
 // handler) ever flips that flag. This replicates that handler's exact
 // sequence instead.
-bool LX200_PIFINDER::handleReadFailure()
+bool LX200_PIFINDER::handleReadFailure(int ttyErrorCode)
 {
-    ++m_consecutiveReadFailures;
-    if (m_consecutiveReadFailures < MAX_CONSECUTIVE_READ_FAILURES)
+    bool isHardError = (ttyErrorCode != TTY_TIME_OUT);
+    if (isHardError)
+        ++m_consecutiveHardErrors;
+    else
+        ++m_consecutiveTimeouts;
+
+    if (m_consecutiveHardErrors < MAX_CONSECUTIVE_HARD_ERRORS &&
+        m_consecutiveTimeouts < MAX_CONSECUTIVE_TIMEOUTS)
         return false;
 
-    LOGF_WARN("%d consecutive read failures - forcing a reconnect.", m_consecutiveReadFailures);
-    m_consecutiveReadFailures = 0;
+    LOGF_WARN("%d consecutive hard error(s), %d consecutive timeout(s) - forcing a reconnect.",
+               m_consecutiveHardErrors, m_consecutiveTimeouts);
+    m_consecutiveHardErrors = 0;
+    m_consecutiveTimeouts = 0;
 
     Disconnect();
     setConnected(false, IPS_IDLE);

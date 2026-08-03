@@ -55,17 +55,30 @@ class LX200_PIFINDER : public LX200Telescope
         // under us) previously went undetected forever - ReadScopeStatus()
         // kept returning false every tick with no visible consequence, while
         // CONNECTION stayed On and the last successfully-read RA/Dec sat
-        // frozen, silently lying about being live. After this many
-        // consecutive read failures, force a full reconnect through the same
-        // setConnected()/updateProperties() sequence the CONNECTION property
-        // handler itself uses (see #139's analysis: calling the raw
-        // Connect()/Disconnect() virtuals alone does NOT work - Connect()
-        // early-returns true if isConnected() is still (wrongly) true, and
-        // only setConnected() - which only the property handler normally
-        // calls - ever flips that flag).
-        int m_consecutiveReadFailures = 0;
-        static constexpr int MAX_CONSECUTIVE_READ_FAILURES = 3;
-        bool handleReadFailure();
+        // frozen, silently lying about being live. Force a full reconnect
+        // through the same setConnected()/updateProperties() sequence the
+        // CONNECTION property handler itself uses (see #139's analysis:
+        // calling the raw Connect()/Disconnect() virtuals alone does NOT
+        // work - Connect() early-returns true if isConnected() is still
+        // (wrongly) true, and only setConnected() - which only the property
+        // handler normally calls - ever flips that flag).
+        //
+        // Live-tested finding (#139): a single threshold for every failure
+        // reason was too trigger-happy. tty_nread_section()'s TTY_TIME_OUT
+        // just means "no reply within LX200_TIMEOUT" - pos_server.py can be
+        // briefly slow (e.g. busy with a solve) without the connection
+        // actually being dead, and reconnecting over that churns a perfectly
+        // healthy connection (observed live: oscillating roughly every 23s).
+        // TTY_READ_ERROR/TTY_WRITE_ERROR/TTY_PORT_FAILURE, by contrast, mean
+        // the OS itself reported the socket broken (e.g. ECONNRESET) - an
+        // unambiguous signal that doesn't need patience. So: few consecutive
+        // hard errors trigger a reconnect almost immediately, but plain
+        // timeouts need many more in a row first.
+        int m_consecutiveHardErrors = 0;
+        int m_consecutiveTimeouts = 0;
+        static constexpr int MAX_CONSECUTIVE_HARD_ERRORS = 2;
+        static constexpr int MAX_CONSECUTIVE_TIMEOUTS = 10;
+        bool handleReadFailure(int ttyErrorCode);
 
         // Live-tested finding: Telescope::TimerHit() only re-arms its own
         // SetTimer() while isConnected() is true, checked once at entry -
