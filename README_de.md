@@ -152,8 +152,11 @@ Verfügung — den genauen Umfangsunterschied erklärt
 Installation/Aktualisierung hinaus dient sie auch als laufendes Dashboard: eine Modus-Kachel zeigt,
 ob PiFinder gerade real läuft oder in einer entkoppelten Fake-Hardware-Instanz für Entwicklung/Tests
 (mit Umschalt-Button und einer Hardware-Checkliste — Kamera/IMU/GPS, direkt gegen die Hardware
-geprüft statt PiFinders eigenem Software-Status vertrauend), ein "Solve Simulation"-Umschalter für
-PiFinders eigenen Test-Modus, ein "Toggle Display"-Button für ein optionales kleines SPI-Zweitdisplay
+geprüft statt PiFinders eigenem Software-Status vertrauend), eine "Simulation and testing"-Gruppe
+(ein "Solve Simulation"-Umschalter für PiFinders eigenen Test-Modus, sowie "Injected Solve (Dead
+Reckoning)" — setzt PiFinders Position manuell von der gekoppelten Montierung, echtes IMU-Dead-
+Reckoning verfolgt sie danach weiter, zum Testen ohne Himmelszugang), ein "Toggle Display"-Button
+für ein optionales kleines SPI-Zweitdisplay
 (siehe `test_tools/`) sowie immer verfügbare Reboot-/Shutdown-Buttons für den ganzen Pi. Eine
 **Mount-Bridge**-Kachel fasst die Einrichtung des Coupling Dial (Web-Manager-Profil, Treiber,
 Mount-Verknüpfung, Verbinden sowie vier Ein-Klick-Coupling-Presets — Verify/Alert only,

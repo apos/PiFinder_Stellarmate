@@ -152,7 +152,10 @@ Beyond installing/updating, it also doubles as an ongoing
 dashboard: a mode-status tile shows whether PiFinder is running for real or in a decoupled
 fake-hardware instance for dev/testing (with a one-click switch and a per-component hardware
 checklist — camera/IMU/GPS, checked directly against the hardware rather than trusting PiFinder's own
-software state), a "Solve Simulation" toggle for PiFinder's own Test Mode, a "Toggle Display" button
+software state), a "Simulation and testing" group (a "Solve Simulation" toggle for PiFinder's own
+Test Mode, and "Injected Solve (Dead Reckoning)" - manually seed PiFinder's position from the
+coupled mount and let real IMU dead-reckoning track from there, for testing without sky access), a
+"Toggle Display" button
 for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
 buttons for the whole Pi. A **Mount Bridge** tile folds the Coupling Dial setup (Web Manager profile,
 drivers, mount link, connect, and four one-click Coupling presets — Verify/Alert only,
