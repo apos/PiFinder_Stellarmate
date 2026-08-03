@@ -922,6 +922,32 @@ class _BackgroundRetrier:
         return True
 
 
+# Found live investigating #139: a 4-core Pi 4 at or above this 1-minute-
+# load-average-per-core ratio was observed making PiFinder's own position
+# server (pos_server.py) genuinely unresponsive to LX200 queries for several
+# seconds at a time - not a bug anywhere, just a busy CPU. Deliberately
+# coarse: a signal for a human to notice, not a claim that anything is
+# actually broken (see /api/system_load and #139's own writeup).
+_SYSTEM_LOAD_HIGH_RATIO = 1.5
+
+
+def _system_load_status() -> dict:
+    """CPU load average (1/5/15 min, from os.getloadavg()) relative to core
+    count. "high" only means "worth a human glancing at" - see
+    _SYSTEM_LOAD_HIGH_RATIO's own comment."""
+    load1, load5, load15 = os.getloadavg()
+    cpu_count = os.cpu_count() or 1
+    ratio1 = load1 / cpu_count
+    return {
+        "load1": round(load1, 2),
+        "load5": round(load5, 2),
+        "load15": round(load15, 2),
+        "cpu_count": cpu_count,
+        "ratio1": round(ratio1, 2),
+        "high": ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
+    }
+
+
 # #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
 # redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
 # CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
@@ -1792,6 +1818,10 @@ class Handler(BaseHTTPRequestHandler):
                     "uninstall_running": uninstall_running,
                 }
             )
+            return
+
+        if parsed.path == "/api/system_load":
+            self._send_json(_system_load_status())
             return
 
         if parsed.path == "/api/pifinder_mode":
