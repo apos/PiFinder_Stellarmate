@@ -4,9 +4,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <memory>
 
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>
 
 static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBridge());
 
@@ -39,6 +41,76 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
     curl_easy_cleanup(curl);
 
     return res == CURLE_OK && httpCode == 200;
+}
+
+size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+// Fetches PiFinder's own /api/status and extracts solve_source +
+// last_solve_success - the position/status distinction from #107's
+// root-cause writeup applies here too: LX200 (:GR#/:GD# - what
+// getPiFinderRADE() reads) carries position only, no freshness/validity
+// info at all, so this is fetched separately over HTTP instead of
+// extending the LX200 wire protocol with a bespoke status command.
+// Returns false on any request/parse failure - callers must treat that as
+// "unknown", never as "fresh".
+bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource, double &lastSolveSuccess)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &solution = parsed.at("solution");
+        solveSource = solution.value("solve_source", std::string());
+        const auto &lastSolveField = solution.at("last_solve_success");
+        lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// True only if PiFinder's currently-reported position came from a real
+// camera solve (not IMU dead-reckoning, not a failed attempt) within
+// maxAgeSeconds. Fails closed (false) on any HTTP/parse error - an
+// automatic mount correction must never fire off data that couldn't be
+// verified. See #79: Auto-correct previously corrected off a continuously
+// IMU-interpolated position with no freshness check at all, chasing a
+// target that kept moving between real solves.
+bool isPiFinderSolveFresh(double maxAgeSeconds)
+{
+    std::string solveSource;
+    double lastSolveSuccess = 0.0;
+    const bool ok = httpGetPiFinderSolveStatus("http://127.0.0.1/api/status", solveSource, lastSolveSuccess) ||
+                    httpGetPiFinderSolveStatus("http://127.0.0.1:8080/api/status", solveSource, lastSolveSuccess);
+    if (!ok || solveSource != "CAM" || lastSolveSuccess <= 0.0)
+        return false;
+
+    const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
+    return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
 }
 } // namespace
 
@@ -90,6 +162,10 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillNumber(&SolveFreshnessMaxAgeN[0], "MAX_AGE_SEC", "Max solve age (s)", "%.1f", 0.5, 60, 0.5, 5);
+    IUFillNumberVector(&SolveFreshnessMaxAgeNP, SolveFreshnessMaxAgeN, 1, getDeviceName(), "SOLVE_FRESHNESS",
+                       "Auto-correct solve freshness", "Main Control", IP_RW, 60, IPS_IDLE);
+
     IUFillNumber(&DriftStatusN[0], "DRIFT_ARCMIN", "Current drift (arcmin)", "%.2f", 0, 10000, 0, 0);
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
@@ -124,6 +200,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
         defineProperty(&DriftThresholdNP);
+        defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
     }
     else
@@ -132,6 +209,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
         deleteProperty(DriftThresholdNP.name);
+        deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
     }
 
@@ -232,7 +310,21 @@ void PiFinderMountBridge::TimerHit()
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
         DriftStatusNP.s = IPS_OK;
-        if (exceeded)
+        if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+        {
+            // Found live (#79): correcting off a continuously
+            // IMU-interpolated position (no real solve backing it, or one
+            // older than SolveFreshnessMaxAgeN) chases a target that keeps
+            // moving between real solves - the mount "oscillates" toward
+            // wherever dead-reckoning currently thinks PiFinder points,
+            // instead of a verified position. Skip the correction and wait
+            // for the next tick's fresh-solve check instead.
+            LOGF_DEBUG(
+                "Drift %.1f arcmin exceeded threshold, but PiFinder's position isn't backed by a solve "
+                "within the last %.1fs - skipping correction.",
+                drift, SolveFreshnessMaxAgeN[0].value);
+        }
+        else if (exceeded)
         {
             const bool useGoto = CorrectionActionS[ACTION_GOTO].s == ISS_ON;
 
@@ -485,6 +577,14 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IDSetNumber(&DriftThresholdNP, nullptr);
             return true;
         }
+
+        if (strcmp(name, SolveFreshnessMaxAgeNP.name) == 0)
+        {
+            IUUpdateNumber(&SolveFreshnessMaxAgeNP, values, names, n);
+            SolveFreshnessMaxAgeNP.s = IPS_OK;
+            IDSetNumber(&SolveFreshnessMaxAgeNP, nullptr);
+            return true;
+        }
     }
 
     return DefaultDevice::ISNewNumber(dev, name, values, names, n);
@@ -497,6 +597,7 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     IUSaveConfigSwitch(fp, &BridgeModeSP);
     IUSaveConfigSwitch(fp, &CorrectionActionSP);
     IUSaveConfigNumber(fp, &DriftThresholdNP);
+    IUSaveConfigNumber(fp, &SolveFreshnessMaxAgeNP);
     return true;
 }
 
