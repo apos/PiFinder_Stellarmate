@@ -51,6 +51,8 @@ GPSD_PORT = 2947
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder_thumb.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg_thumb.png"
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
+# Negative/for-dark-background variant - matches this page's own #111 body background.
+PROJECT_LOGO = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png"
 # PiFinder's own splash bitmap (shown by pifinder_splash.service before the
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
@@ -1701,6 +1703,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/heyapos_logo.png":
             self._send_file(HEYAPOS_LOGO, "image/png")
+            return
+
+        if parsed.path == "/project_logo.png":
+            self._send_file(PROJECT_LOGO, "image/png")
             return
 
         if parsed.path == "/pifinder_welcome.png":

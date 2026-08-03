@@ -5,8 +5,6 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
-### Added
-
 - Control Center: automatic recovery from #118's "PiFinder LX200" stale-connection bug. When
   `pifinder.service` restarts (deploy, crash-recovery, manual restart), the already-open TCP
   connection between the `LX200_PIFINDER` INDI driver and `pos_server.py` used to die silently -
@@ -19,6 +17,15 @@ All notable changes to this project are documented in this file. Format loosely 
   every ~20s until PiFinder itself has finished restarting. An in-driver alternative (fixing this at
   the `LX200_PIFINDER` driver level directly) was attempted and found not to self-heal live; that
   approach is tracked separately for future investigation (#139).
+- Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
+  now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
+
+### Changed
+
+- README.md/README_de.md's hero photo (`docs/images/readme/PiFinder.jpg`/`PiFinder_thumb.jpg`) replaced with a new
+  real-world photo (with the project's wordmark composited in), converted from the uploaded PNG at
+  `docs/images/logo/PiFinder-Stellarmate_final.png` - same file paths, so every existing reference picks it up
+  automatically.
 
 ### Fixed
 
