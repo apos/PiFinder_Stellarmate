@@ -34,7 +34,22 @@ from xml.sax.saxutils import escape as _xml_escape
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7624
-DEFAULT_TIMEOUT = 3.0
+
+# Named timeout tiers, consolidated here instead of scattered ad hoc literals
+# across server.py/indi_client.py (each value already existed somewhere before
+# this - this only gives them one shared name and place, not new numbers).
+# Pick the tier that matches *why* a call is timed the way it is, not just
+# "whatever number happened to work":
+DEFAULT_TIMEOUT = 3.0        # interactive: a user just clicked something and is watching for a result
+TIMEOUT_BACKGROUND_POLL = 7.0        # passive, periodic UI polling - indiserver occasionally answers slowly
+                                      # under load, and flapping the UI over that is worse than a slow number
+                                      # (see /api/mount_bridge_status's own long-standing comment)
+DEVICE_TIMEOUT_BACKGROUND_POLL = 3.0  # the extra per-device lookups nested inside that same background poll
+TIMEOUT_FAST_POLL = 2.0        # tight-cadence, best-effort readouts where a single miss just skips one
+                                # update (e.g. mount_bridge_drift()) - never gates a button's enabled state
+TIMEOUT_QUICK_RETRY = 1.0      # short-lived polling loop with its own retry/backoff already built around it
+                                # (e.g. waiting for a just-restarted driver to answer) - a slow individual
+                                # attempt should fail fast so the loop can just try again
 
 _VECTOR_TAGS = {
     "defTextVector": "text",
@@ -294,7 +309,7 @@ def mount_bridge_status(
 def mount_bridge_drift(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
-    timeout: float = 2.0,
+    timeout: float = TIMEOUT_FAST_POLL,
 ) -> dict:
     """
     Lightweight companion to mount_bridge_status(): only "PiFinder Mount

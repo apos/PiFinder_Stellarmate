@@ -880,6 +880,114 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+class _BackgroundRetrier:
+    """Fire-and-forget 'run this in a background thread, but never run two
+    attempts at once' helper - extracted from #118's original hand-rolled
+    in-flight-flag + threading.Thread pattern so a future feature needing
+    the same shape ("keep retrying an action from a polling loop without
+    stacking concurrent attempts") can reuse it instead of reimplementing
+    the guard by hand. Deliberately minimal: it does not schedule its own
+    retries - the caller's own polling loop (e.g. a watchdog's `while True:
+    time.sleep(interval)`) is what re-triggers a fresh attempt each tick;
+    this only guards against overlapping ones."""
+
+    def __init__(self):
+        self._in_flight = False
+        self._lock = threading.Lock()
+
+    @property
+    def in_flight(self) -> bool:
+        return self._in_flight
+
+    def trigger(self, action_fn) -> bool:
+        """Starts action_fn() in a background daemon thread unless an
+        earlier call's thread is still running. Returns True if a new
+        attempt was started, False if one was already in flight (the
+        caller's own next polling tick will just call trigger() again).
+        action_fn takes no arguments; any exception it raises is swallowed
+        (log inside action_fn if you want to know about failures)."""
+        with self._lock:
+            if self._in_flight:
+                return False
+            self._in_flight = True
+
+        def _run():
+            try:
+                action_fn()
+            finally:
+                with self._lock:
+                    self._in_flight = False
+
+        threading.Thread(target=_run, daemon=True).start()
+        return True
+
+
+# Found live investigating #139: a 4-core Pi 4 at or above this 1-minute-
+# load-average-per-core ratio was observed making PiFinder's own position
+# server (pos_server.py) genuinely unresponsive to LX200 queries for several
+# seconds at a time - not a bug anywhere, just a busy CPU. Deliberately
+# coarse: a signal for a human to notice, not a claim that anything is
+# actually broken (see /api/system_load and #139's own writeup).
+_SYSTEM_LOAD_HIGH_RATIO = 1.5
+
+
+def _system_load_status() -> dict:
+    """CPU load average (1/5/15 min, from os.getloadavg()) relative to core
+    count. "high" only means "worth a human glancing at" - see
+    _SYSTEM_LOAD_HIGH_RATIO's own comment."""
+    load1, load5, load15 = os.getloadavg()
+    cpu_count = os.cpu_count() or 1
+    ratio1 = load1 / cpu_count
+    return {
+        "load1": round(load1, 2),
+        "load5": round(load5, 2),
+        "load15": round(load15, 2),
+        "cpu_count": cpu_count,
+        "ratio1": round(ratio1, 2),
+        "high": ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
+    }
+
+
+def _pifinder_service_settings_stale():
+    """True if pifinder.service's actually-running process's scheduling
+    priority doesn't match what's currently configured for the unit -
+    meaning it was started before the config last changed (e.g. an Update
+    run that left an already-running instance untouched before
+    pifinder_stellarmate_setup.sh's own start->restart fix - see that
+    change's own comment) and needs a restart to pick up the current
+    settings. Compares against the unit's OWN currently-loaded value
+    rather than a hardcoded expected number, so this keeps working no
+    matter what Nice= (or any future scheduling directive) is actually set
+    to - nothing here needs to know the number itself.
+    Returns None if pifinder.service isn't running or the check itself
+    failed (nothing to report, not a mismatch)."""
+    try:
+        shown = subprocess.run(
+            ["systemctl", "show", "pifinder.service", "--property=Nice,MainPID"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        # Deliberately NOT --value with a comma-separated property list -
+        # found live: systemctl does not guarantee returning --value output
+        # in the order the properties were requested in, so a positional
+        # unpack silently paired the wrong values together. Self-labeled
+        # "Key=Value" lines (systemctl's default format) sidestep that
+        # entirely regardless of what order they come back in.
+        values = dict(line.split("=", 1) for line in shown.strip().splitlines() if "=" in line)
+        configured_nice = values.get("Nice")
+        main_pid = values.get("MainPID")
+        if configured_nice is None or main_pid is None or int(main_pid) <= 0:
+            return None
+        actual_nice = subprocess.run(
+            ["ps", "-o", "ni=", "-p", main_pid],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if not actual_nice:
+            return None
+        return int(actual_nice) != int(configured_nice)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
 # #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
 # redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
 # CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
@@ -890,7 +998,7 @@ def _mb_log(line: str):
 # the same disconnect/connect cycle already confirmed live by hand via
 # indi_setprop (#118's documented workaround).
 _pifinder_lx200_healed_for_start = None  # pifinder.service start time we last confirmed LX200 connected against
-_pifinder_lx200_reconnect_in_flight = False
+_pifinder_lx200_reconnect_retrier = _BackgroundRetrier()
 
 
 def _pifinder_service_start_monotonic():
@@ -924,10 +1032,11 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
     would then never retry again. Once _pifinder_lx200_healed_for_start
     catches up to the current start time, this goes quiet again; only a
     genuinely new restart (a further-advanced start time) reawakens it.
-    Runs the actual attempt in a background thread so a detected restart
-    never blocks the watchdog loop; the in-flight guard means a still-
-    pending attempt is left alone rather than stacking a second one."""
-    global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+    Runs the actual attempt in a background thread (via _BackgroundRetrier)
+    so a detected restart never blocks the watchdog loop; its in-flight
+    guard means a still-pending attempt is left alone rather than stacking
+    a second one."""
+    global _pifinder_lx200_healed_for_start
     if status.get("active_pifinder") != "PiFinder LX200":
         return
     current_start = _pifinder_service_start_monotonic()
@@ -942,18 +1051,10 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
         return
     if current_start == _pifinder_lx200_healed_for_start:
         return
-    if _pifinder_lx200_reconnect_in_flight:
-        return
-    _pifinder_lx200_reconnect_in_flight = True
     was_connected = status.get("pifinder_connected") is True
-    _mb_log(
-        f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
-        f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
-        "attempting reconnect (#118)"
-    )
 
-    def _do_reconnect(start_seen, was_connected):
-        global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+    def _do_reconnect():
+        global _pifinder_lx200_healed_for_start
         try:
             if was_connected:
                 # Frozen-stale case: CONNECTION was already On, so DISCONNECT
@@ -965,7 +1066,7 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
             fresh = indi_client.get_properties(device="PiFinder LX200").get("PiFinder LX200", {})
             now_connected = fresh.get("CONNECTION", {}).get("elements", {}).get("CONNECT") == "On"
             if now_connected:
-                _pifinder_lx200_healed_for_start = start_seen
+                _pifinder_lx200_healed_for_start = current_start
                 _mb_log("PiFinder LX200 auto-reconnect after pifinder.service restart succeeded")
             else:
                 _mb_log(
@@ -974,10 +1075,14 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
                 )
         except indi_client.INDIClientError as e:
             _mb_log(f"PiFinder LX200 auto-reconnect after pifinder.service restart failed: {e}")
-        finally:
-            _pifinder_lx200_reconnect_in_flight = False
 
-    threading.Thread(target=_do_reconnect, args=(current_start, was_connected), daemon=True).start()
+    started = _pifinder_lx200_reconnect_retrier.trigger(_do_reconnect)
+    if started:
+        _mb_log(
+            f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
+            f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
+            "attempting reconnect (#118)"
+        )
 
 
 def _pifinder_lx200_reconnect_watchdog(interval=20):
@@ -1755,6 +1860,10 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/system_load":
+            self._send_json(_system_load_status())
+            return
+
         if parsed.path == "/api/pifinder_mode":
             with _lock:
                 transitioning = _mode_action_running
@@ -1812,7 +1921,10 @@ class Handler(BaseHTTPRequestHandler):
                 # correcting the mount at the same moment this poll came back
                 # empty). Not a real disconnect, just this poll's own
                 # patience being too short for an otherwise-healthy system.
-                status = indi_client.mount_bridge_status(timeout=7.0, device_timeout=3.0)
+                status = indi_client.mount_bridge_status(
+                    timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                    device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
+                )
             except indi_client.INDIClientError as e:
                 status = {"running": False, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
@@ -2176,6 +2288,16 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
             try:
+                # daemon-reload first: systemd caches a unit's parsed config
+                # in memory and does NOT re-read a changed file on disk on
+                # its own before start/restart (only warns "Unit file
+                # changed on disk" in its log) - without this, a button
+                # click right after an update could restart the OLD,
+                # already-loaded config instead of whatever's actually in
+                # /etc/systemd/system/pifinder.service right now (found live
+                # investigating #139's Nice=/CPUWeight= rollout - see that
+                # change's own commit for the underlying finding).
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True, text=True, timeout=10)
                 result = subprocess.run(
                     ["sudo", "systemctl", action, "pifinder.service"],
                     capture_output=True, text=True, timeout=30,
@@ -2519,7 +2641,7 @@ class Handler(BaseHTTPRequestHandler):
                 # of a flat sleep.
                 deadline = time.monotonic() + 5.0
                 while time.monotonic() < deadline:
-                    if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                    if indi_client.get_properties(device=device, timeout=indi_client.TIMEOUT_QUICK_RETRY).get(device):
                         break
                     time.sleep(0.3)
                 _mb_log(f"  restarted. retrying...")
@@ -2688,6 +2810,19 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # One-time check, not a watchdog: an already-running pifinder.service
+    # left over from before this Control Center's own start (e.g. surviving
+    # an Update run from before the setup script's start->restart fix, or a
+    # manual `systemctl start` from outside this GUI) won't self-correct on
+    # its own - just log it once so it's visible instead of silently stale.
+    # Deliberately not auto-restarted: this only reports, it never
+    # interrupts a possibly-active observing session on its own initiative.
+    if _pifinder_service_settings_stale():
+        _mb_log(
+            "pifinder.service is running with a stale scheduling priority (doesn't match the "
+            "currently configured Nice=/CPUWeight=) - restart it (Mode tile or the Control Center "
+            "itself) to apply the current settings."
+        )
     _server.serve_forever()
 
 

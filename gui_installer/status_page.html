@@ -903,6 +903,7 @@
       <div id="pifinder-glance-row">
         <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+        <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
            as the Mount Bridge diagram's icon nodes (bordered box, currentColor
@@ -1478,6 +1479,28 @@ function updatePiFinderStatusAndWizardLink() {
     wizardEl.textContent = 'not available yet';
   }
   refreshDebugSolve();
+}
+
+// Found live investigating #139: a contended Pi (PiFinder's own solver
+// worker pool, KStars, ...) can make pos_server.py's LX200 socket genuinely
+// unresponsive for several seconds at a time - not a bug, just a busy CPU.
+// This row exists so that shows up as a visible, explained state instead of
+// unexplained slowness elsewhere on the page. "High" mirrors _system_load_
+// status()'s own deliberately coarse threshold in server.py - a nudge to
+// look, not a claim that anything is actually broken.
+function refreshSystemLoad() {
+  fetch('/api/system_load').then(r => r.json()).then(data => {
+    const dotEl = document.getElementById('system-load-dot');
+    const textEl = document.getElementById('system-load-text');
+    const cores = data.cpu_count;
+    if (data.high) {
+      dotEl.className = 'status-dot dot-red';
+      textEl.textContent = `High (load ${data.load1}, ${cores} core${cores === 1 ? '' : 's'}) - PiFinder/INDI may respond slowly`;
+    } else {
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = `Normal (load ${data.load1}, ${cores} core${cores === 1 ? '' : 's'})`;
+    }
+  }).catch(() => {});
 }
 
 // PiFinder's own "Tools -> Test Mode" (callbacks.activate_debug() ->
@@ -4531,6 +4554,9 @@ setTimeout(watchForNewRun, 3000);
 
 refreshMode();
 setInterval(refreshMode, 5000);
+
+refreshSystemLoad();
+setInterval(refreshSystemLoad, 30000);
 
 refreshDisplayBridge();
 setInterval(refreshDisplayBridge, 5000);
