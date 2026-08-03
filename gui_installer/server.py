@@ -1812,7 +1812,10 @@ class Handler(BaseHTTPRequestHandler):
                 # correcting the mount at the same moment this poll came back
                 # empty). Not a real disconnect, just this poll's own
                 # patience being too short for an otherwise-healthy system.
-                status = indi_client.mount_bridge_status(timeout=7.0, device_timeout=3.0)
+                status = indi_client.mount_bridge_status(
+                    timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                    device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
+                )
             except indi_client.INDIClientError as e:
                 status = {"running": False, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
@@ -2519,7 +2522,7 @@ class Handler(BaseHTTPRequestHandler):
                 # of a flat sleep.
                 deadline = time.monotonic() + 5.0
                 while time.monotonic() < deadline:
-                    if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                    if indi_client.get_properties(device=device, timeout=indi_client.TIMEOUT_QUICK_RETRY).get(device):
                         break
                     time.sleep(0.3)
                 _mb_log(f"  restarted. retrying...")
