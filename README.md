@@ -212,7 +212,7 @@ bash gui_installer/launch_setup_gui.sh --shutdown-webserver
 <tr>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
-<sub>Mode & Power: Real/Fake Mode switch, hardware checklist, PiFinder service and Pi power controls</sub>
+<sub>Mode & Power: hardware checklist, Simulation and testing (Fake Mode, Solve Simulation, Injected Solve), collapsible service/power controls</sub>
 </td>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
