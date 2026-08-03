@@ -2411,11 +2411,12 @@ class Handler(BaseHTTPRequestHandler):
                 "verify_alert": "MODE_VERIFY_ALERT",
                 "auto_correct": "MODE_AUTO_CORRECT",
                 "goto_forward": "MODE_GOTO_FORWARD",
+                "mount_source": "MODE_MOUNT_SOURCE",
                 "off": "MODE_OFF",
             }
             if mode_arg not in mode_map:
                 self._send_json(
-                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward|off"},
+                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward|mount_source|off"},
                     status=400,
                 )
                 return
