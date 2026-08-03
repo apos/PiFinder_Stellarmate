@@ -49,4 +49,16 @@ class LX200_PIFINDER : public LX200Telescope
         int setStandardProcedureWithoutRead(int fd, const char *data);
         int setStandardProcedureAndExpectChar(int fd, const char *data, const char *expect);
         int setStandardProcedureAndReturnResponse(int fd, const char *data, char *response, int max_response_length);
+
+        // #118: a dead TCP connection (e.g. pos_server.py restarting under
+        // us) previously went undetected forever - ReadScopeStatus() would
+        // keep returning false every tick with no visible consequence,
+        // while CONNECTION stayed On and the last successfully-read
+        // RA/Dec sat frozen, silently lying about being live. After this
+        // many consecutive read failures, force a full reconnect
+        // (Disconnect() + Connect(), which redoes the TCP handshake via
+        // Handshake()) instead of failing silently forever.
+        int m_consecutiveReadFailures = 0;
+        static constexpr int MAX_CONSECUTIVE_READ_FAILURES = 3;
+        bool handleReadFailure();
 };

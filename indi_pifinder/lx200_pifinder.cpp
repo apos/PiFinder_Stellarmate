@@ -187,7 +187,7 @@ bool LX200_PIFINDER::ReadScopeStatus()
     if (setStandardProcedureAndReturnResponse(fd, "#:GR#", ra_response, sizeof(ra_response)) != 0)
     {
         LOG_ERROR("Failed to get RA from PiFinder.");
-        return false;
+        return handleReadFailure();
     }
     // Parse RA (HH:MM:SS)
     if (f_scansexa(ra_response, &ra_val) == -1)
@@ -200,7 +200,7 @@ bool LX200_PIFINDER::ReadScopeStatus()
     if (setStandardProcedureAndReturnResponse(fd, "#:GD#", dec_response, sizeof(dec_response)) != 0)
     {
         LOG_ERROR("Failed to get Dec from PiFinder.");
-        return false;
+        return handleReadFailure();
     }
     // Parse Dec (+/-DD*MM'SS)
     if (f_scansexa(dec_response, &dec_val) == -1)
@@ -208,6 +208,11 @@ bool LX200_PIFINDER::ReadScopeStatus()
         LOGF_ERROR("Failed to parse Dec response: %s", dec_response);
         return false;
     }
+
+    // A full round succeeded - the link is genuinely alive, so any earlier
+    // failure streak (including one that just triggered a reconnect below)
+    // is over.
+    m_consecutiveReadFailures = 0;
 
     // Update INDI with new coordinates
     NewRaDec(ra_val, dec_val);
@@ -218,6 +223,26 @@ bool LX200_PIFINDER::ReadScopeStatus()
     setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
 
     return true;
+}
+
+// #118: called on every GR/GD read/write failure (not on a parse failure -
+// a malformed-but-present response isn't a dead-connection symptom, and
+// reconnecting wouldn't fix a protocol mismatch anyway). Once
+// MAX_CONSECUTIVE_READ_FAILURES is reached, forces a full reconnect
+// (tears down and re-establishes the TCP connection via Handshake())
+// instead of continuing to silently report false forever while
+// CONNECTION stays On and RA/Dec sits frozen at its last good value.
+bool LX200_PIFINDER::handleReadFailure()
+{
+    ++m_consecutiveReadFailures;
+    if (m_consecutiveReadFailures < MAX_CONSECUTIVE_READ_FAILURES)
+        return false;
+
+    LOGF_WARN("%d consecutive read failures - forcing a reconnect.", m_consecutiveReadFailures);
+    m_consecutiveReadFailures = 0;
+    Disconnect();
+    Connect();
+    return false;
 }
 
 // PiFinder has no motor: "Goto" reuses PiFinder's existing SkySafari push-to
