@@ -112,6 +112,37 @@ bool isPiFinderSolveFresh(double maxAgeSeconds)
     const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
     return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
 }
+
+// MODE_MOUNT_SOURCE (#130): pushes a one-time Fake-Solve seed to PiFinder's
+// /api/fake_solve, RA in degrees (PiFinder's API expects degrees, INDI
+// reports RA in hours - the caller is responsible for that conversion).
+// Returns false on any request failure.
+bool httpPostFakeSolve(const std::string &url, double raDeg, double decDeg)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    const std::string body = "{\"ra\":" + std::to_string(raDeg) + ",\"dec\":" + std::to_string(decDeg) + "}";
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && httpCode == 200;
+}
 } // namespace
 
 PiFinderMountBridge::PiFinderMountBridge()
@@ -145,7 +176,8 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
-    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
+    IUFillSwitch(&BridgeModeS[MODE_MOUNT_SOURCE], "MODE_MOUNT_SOURCE", "Mount is source", ISS_OFF);
+    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 5, getDeviceName(), "BRIDGE_MODE", "Coupling",
                        "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
 
     IUFillSwitch(&CorrectionActionS[ACTION_SYNC], "ACTION_SYNC", "Sync", ISS_ON);
@@ -268,6 +300,48 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     }
 }
 
+// MODE_MOUNT_SOURCE (#130): the reverse of every other coupling mode - the
+// mount (real, or the stock INDI Telescope Simulator) is the position
+// source, PiFinder mirrors it via a Fake-Solve injection. Mirrors physical
+// reality: a real mount and a real PiFinder are rigidly coupled, so
+// wherever the mount points, PiFinder points too. Enables full simulation
+// with zero real PiFinder hardware - point/slew the mount (from its own
+// hand controller, SkySafari, KStars, any INDI client - the source doesn't
+// matter, INDI doesn't care who issued the GoTo) and a Fake-Mode PiFinder
+// instance follows.
+//
+// Only pushes on a meaningful change (MOUNT_SOURCE_MIN_CHANGE_ARCMIN), not
+// every tick - the mount's own tracking-rate jitter would otherwise
+// re-inject an essentially-unchanged position constantly, which is both
+// pointless HTTP traffic and would keep resetting PiFinder's
+// last_solve_success to "just now" forever.
+void PiFinderMountBridge::handleMountSource()
+{
+    double mountRA, mountDec;
+    if (!m_client->getMountRADE(mountRA, mountDec))
+        return;
+
+    if (!std::isnan(m_lastPushedMountRA))
+    {
+        const double changeArcmin = angularSeparationArcmin(mountRA, mountDec, m_lastPushedMountRA, m_lastPushedMountDec);
+        if (changeArcmin < MOUNT_SOURCE_MIN_CHANGE_ARCMIN)
+            return;
+    }
+
+    const double raDeg = mountRA * 15.0; // INDI reports RA in hours
+    if (httpPostFakeSolve("http://127.0.0.1/api/fake_solve", raDeg, mountDec) ||
+        httpPostFakeSolve("http://127.0.0.1:8080/api/fake_solve", raDeg, mountDec))
+    {
+        LOGF_INFO("Mount moved to RA %.4fh/DEC %.4f - pushed to PiFinder as Fake-Solve.", mountRA, mountDec);
+        m_lastPushedMountRA = mountRA;
+        m_lastPushedMountDec = mountDec;
+    }
+    else
+    {
+        LOG_ERROR("Failed to push mount position to PiFinder.");
+    }
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
@@ -284,6 +358,13 @@ void PiFinderMountBridge::TimerHit()
     if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
         handleGotoForward();
+        SetTimer(getCurrentPollingPeriod());
+        return;
+    }
+
+    if (BridgeModeS[MODE_MOUNT_SOURCE].s == ISS_ON)
+    {
+        handleMountSource();
         SetTimer(getCurrentPollingPeriod());
         return;
     }
@@ -492,6 +573,14 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             m_forwardState = ForwardState::IDLE;
             m_lastForwardedRA = std::nan("");
             m_lastForwardedDec = std::nan("");
+
+            // Same idea for Mount-Source (#130): re-entering it should
+            // always push a fresh baseline seed immediately, not wait for
+            // the mount to move by MOUNT_SOURCE_MIN_CHANGE_ARCMIN from
+            // whatever position happened to be recorded during a previous
+            // stint in this mode.
+            m_lastPushedMountRA = std::nan("");
+            m_lastPushedMountDec = std::nan("");
             return true;
         }
 
