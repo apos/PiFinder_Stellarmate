@@ -18,7 +18,11 @@ All notable changes to this project are documented in this file. Format loosely 
   Control Center's web page is even open. Runs for the Control Center's whole lifetime, retrying
   every ~20s until PiFinder itself has finished restarting. An in-driver alternative (fixing this at
   the `LX200_PIFINDER` driver level directly) was attempted and found not to self-heal live; that
-  approach is tracked separately for future investigation (#139).
+  approach was closed as wontfix (#139) - from inside the driver there's no reliable way to tell
+  "connection genuinely dead" apart from "Pi is just CPU-busy" (routine on this project's actual
+  target hardware, not an edge case), so an in-driver reconnect would risk disrupting healthy
+  connections during normal use. This Control-Center-side watchdog already covers the real-world
+  case without that false-positive risk.
 - Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
   now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
 - Control Center: a new system load indicator (green "Normal"/red "High", next to the existing
