@@ -947,6 +947,13 @@
             </svg>
             <span>Solve</span>
           </div>
+          <div class="mode-ampel-badge" id="mode-ampel-fake-solve-badge" title="Fake-Solve is active - the reported position is a simulated injection with IMU dead-reckoning, not a real camera solve. Never shown at the same time as a claim of a real solve." style="display:none;">
+            <svg class="mode-ampel-icon" id="mode-ampel-fake-solve-icon" style="color:#e53935;" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3,2.5"/>
+              <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Fake-Solve</span>
+          </div>
           <div class="mode-ampel-badge" title="IMU">
             <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-imu-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
@@ -981,6 +988,10 @@
             <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
               <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
               <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+            </div>
+            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Only enabled via the API used for testing; this row only ever appears to let you turn it back off." style="display:none;">
+              <span class="status-dot dot-red" id="fake-solve-dot"></span>Fake-Solve: <span id="fake-solve-text">active</span>
+              <button id="fake-solve-btn" class="ql-small-btn" onclick="disableFakeSolve()">Turn off</button>
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-imu-detail"></div>
@@ -1502,6 +1513,21 @@ function applySolveStatus(data) {
   }
 }
 
+// Fake-Solve (#106/#128) - a synthetic RA/Dec injected via PiFinder's
+// /api/fake_solve, with real IMU dead-reckoning taking over from there.
+// Kept visually and semantically separate from debug_solve/solve_source
+// above - the reported position must never look like a real "CAM" solve
+// while this is active. Badge + detail row only ever appear while active;
+// there's no "enable" control here since enabling needs a target RA/Dec
+// this tile has no source for - only the API endpoint used for testing
+// can turn it on. Called from refreshDebugSolve(), which already fetches
+// this flag alongside debug_solve/solve_source in the same request.
+function applyFakeSolveStatus(data) {
+  const active = data.fake_solve_active === true;
+  document.getElementById('mode-ampel-fake-solve-badge').style.display = active ? '' : 'none';
+  document.getElementById('fake-solve-row').style.display = active ? '' : 'none';
+}
+
 async function refreshDebugSolve() {
   const dotEl = document.getElementById('debug-solve-dot');
   const textEl = document.getElementById('debug-solve-text');
@@ -1512,6 +1538,7 @@ async function refreshDebugSolve() {
     btn.disabled = true;
     lastDebugSolve = null;
     applySolveStatus({});
+    applyFakeSolveStatus({});
     return null;
   }
   const port = new URL(pifinderScreenUrl).port || '80';
@@ -1536,6 +1563,7 @@ async function refreshDebugSolve() {
       textEl.textContent = 'unknown';
     }
     applySolveStatus(data);
+    applyFakeSolveStatus(data);
     btn.disabled = false;
     return data.debug_solve;
   } catch (e) {
@@ -1544,6 +1572,7 @@ async function refreshDebugSolve() {
     btn.disabled = true;
     lastDebugSolve = null;
     applySolveStatus({});
+    applyFakeSolveStatus({});
     return null;
   }
 }
@@ -1584,6 +1613,32 @@ async function toggleDebugSolve() {
   // Didn't change within 16s - leave whatever refreshDebugSolve() last
   // showed rather than spinning forever; the regular 20s hardware-status
   // interval isn't wired to this, so nothing else will pick it up later.
+}
+
+// Same poll-until-changed approach as toggleDebugSolve() above, reusing
+// refreshDebugSolve() (which already applies fake-solve status via
+// applyFakeSolveStatus()) rather than duplicating the fetch/parse logic.
+async function disableFakeSolve() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const btn = document.getElementById('fake-solve-btn');
+  const textEl = document.getElementById('fake-solve-text');
+  btn.disabled = true;
+  textEl.textContent = 'Turning off…';
+  try {
+    await fetch(`/api/fake_solve_disable?port=${port}`, { method: 'POST' });
+  } catch (e) {
+    // fall through to the poll loop below either way
+  }
+  const deadline = Date.now() + 16000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1000));
+    await refreshDebugSolve();
+    if (document.getElementById('fake-solve-row').style.display === 'none') return;
+  }
+  // Didn't change within 16s - leave the row visible with the button
+  // re-enabled so the user can retry, rather than spinning forever.
+  btn.disabled = false;
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the

@@ -910,6 +910,13 @@ def _pifinder_solve_status(port: str):
         solution = data.get("solution") or {}
         return {
             "debug_solve": data.get("debug_solve"),
+            # Fake-Solve (see #106/#128) - a synthetic RA/Dec injected via
+            # PiFinder's /api/fake_solve, with real IMU dead-reckoning taking
+            # over from there. Deliberately separate from debug_solve above
+            # (which only swaps in a canned test image for the camera) and
+            # from solve_source below (real solve health) - must never be
+            # displayed as if it were a real "CAM" solve, see #128.
+            "fake_solve_active": data.get("fake_solve_active"),
             "solve_source": data.get("solve_source", solution.get("solve_source")),
             "last_solve_attempt": data.get(
                 "last_solve_attempt", solution.get("last_solve_attempt")
@@ -920,6 +927,26 @@ def _pifinder_solve_status(port: str):
         }
     except Exception:
         return None
+
+
+def _pifinder_disable_fake_solve(port: str) -> bool:
+    """DELETE to PiFinder's own /api/fake_solve - turns Fake-Solve back off,
+    resuming normal real-camera solving. There's deliberately no matching
+    "enable" call here: enabling needs a target RA/Dec, which this tile has
+    no source for (see #128) - only the API endpoint used during testing
+    can turn it on. The icon/status/toggle only ever appear while already
+    active (see status_page.html), so the only action this tile needs to
+    offer is turning it off."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/fake_solve", method="DELETE"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _pifinder_toggle_debug_solve(port: str) -> bool:
@@ -1950,6 +1977,12 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             self._send_json({"success": _pifinder_toggle_debug_solve(port)})
+            return
+
+        if parsed.path == "/api/fake_solve_disable":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            self._send_json({"success": _pifinder_disable_fake_solve(port)})
             return
 
         if parsed.path == "/api/hardware_test":
