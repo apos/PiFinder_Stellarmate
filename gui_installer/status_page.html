@@ -1715,6 +1715,7 @@ async function toggleFakeSolve() {
   const dotEl = document.getElementById('fake-solve-dot');
   const turningOn = lastFakeSolveActive !== true;
   const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
+  fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
   setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
@@ -1722,6 +1723,7 @@ async function toggleFakeSolve() {
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (turningOn && result.success !== true) {
+      fakeSolveToggleInFlight = false;
       textEl.textContent = `could not enable (${result.error || 'unknown error'})`;
       btn.disabled = false;
       return;
@@ -1730,14 +1732,21 @@ async function toggleFakeSolve() {
     // fall through to the poll loop below either way
   }
   const deadline = Date.now() + 16000;
+  let landed = false;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 1000));
     await refreshDebugSolve();
-    if (lastFakeSolveActive === turningOn) return;
+    if (lastFakeSolveActive === turningOn) {
+      landed = true;
+      break;
+    }
   }
-  // Didn't change within 16s - leave the button re-enabled so the user
-  // can retry, rather than spinning forever.
-  btn.disabled = false;
+  // Release the flag before the final refresh so it actually repaints the
+  // dot/text/button with the real outcome - every refreshDebugSolve() call
+  // above was a no-op for this row while in flight, by design.
+  fakeSolveToggleInFlight = false;
+  await refreshDebugSolve();
+  if (!landed) btn.disabled = false;
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the
