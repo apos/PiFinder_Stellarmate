@@ -280,9 +280,9 @@
   .power-btn {
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 0.5rem 0.9rem;
-    font-size: 0.85rem;
+    border-radius: 5px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
     cursor: pointer;
   }
   /* Grouped by what they affect, not by when each button was added - per
@@ -332,10 +332,11 @@
     background: #2a6fdb;
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 0.5rem 0.9rem;
-    font-size: 0.85rem;
+    border-radius: 5px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
     cursor: pointer;
+    margin-left: 0.5rem;
   }
   #mode-toggle-btn:disabled { background: #444; cursor: default; }
   #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
@@ -466,8 +467,8 @@
     color: #999;
   }
   .mode-ampel-icon {
-    width: 18px;
-    height: 18px;
+    width: 32.5px;
+    height: 32.5px;
     color: #666;
   }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
@@ -904,26 +905,6 @@
       </div>
       <div id="mode-tile">
         <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="mode-status-line"><span class="status-dot dot-unconfirmed" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
-        <div id="mode-power-groups">
-          <div class="mode-power-group" title="Mode switch and pifinder.service start/stop/restart - all software-level, all the same PiFinder instance.">
-            <div class="group-label">PiFinder</div>
-            <div class="mode-power-group-buttons">
-              <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-              <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
-              <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
-              <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
-            </div>
-          </div>
-          <div class="vgroup-divider"></div>
-          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
-            <div class="group-label">This Pi</div>
-            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
-              <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
-              <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
-            </div>
-          </div>
-        </div>
         <!-- Compact, always-visible hardware summary - same visual language
              as the Mount Bridge diagram's icon nodes (bordered box, currentColor
              line-icon, small caption), arranged as a tight single-row strip
@@ -947,6 +928,13 @@
             </svg>
             <span>Solve</span>
           </div>
+          <div class="mode-ampel-badge" id="mode-ampel-fake-solve-badge" title="Injected Solve (Dead Reckoning) is active - the reported position is a manually injected RA/Dec that real IMU dead-reckoning then tracks from, not a real camera solve. Never shown at the same time as a claim of a real solve." style="display:none;">
+            <svg class="mode-ampel-icon" id="mode-ampel-fake-solve-icon" style="color:#e53935;" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3,2.5"/>
+              <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Injected Solve</span>
+          </div>
           <div class="mode-ampel-badge" title="IMU">
             <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-imu-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.3"/>
@@ -963,6 +951,24 @@
             <span>GPS</span>
           </div>
         </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
+          <span>Simulation and testing</span>
+          <span id="sim-testing-chevron">&#9660; show</span>
+        </div>
+        <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
+          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
+            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
+            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
+            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+          </div>
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
+            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
+            <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+          </div>
+        </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
           <span>Hardware test and details</span>
           <span id="hw-details-chevron">&#9660; show</span>
@@ -975,12 +981,8 @@
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-camera-detail"></div>
-            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation below, which only says whether test images are being used.">
+            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation/Injected Solve above, which only say whether test images/positions are being substituted.">
               <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
-            </div>
-            <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-              <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
-              <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-imu-detail"></div>
@@ -1006,6 +1008,28 @@ sudo systemctl start pifinder</pre>
             <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
               <span class="status-dot dot-unconfirmed" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
               <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+            </div>
+          </div>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mode-power-groups', 'mode-power-chevron', 'flex')">
+          <span>Service and power actions</span>
+          <span id="mode-power-chevron">&#9660; show</span>
+        </div>
+        <div id="mode-power-groups" style="display:none;">
+          <div class="mode-power-group" title="pifinder.service start/stop/restart - software-level, whichever instance (Real/Fake Mode) is currently selected below.">
+            <div class="group-label">PiFinder</div>
+            <div class="mode-power-group-buttons">
+              <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
+              <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
+              <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
+            </div>
+          </div>
+          <div class="vgroup-divider"></div>
+          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
+            <div class="group-label">This Pi</div>
+            <div class="mode-power-group-buttons mode-power-group-buttons-stacked">
+              <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
+              <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
             </div>
           </div>
         </div>
@@ -1456,6 +1480,7 @@ function updatePiFinderStatusAndWizardLink() {
 const HW_AMPEL_ICON_IDS = {
   'hw-camera-dot': 'mode-ampel-camera-icon',
   'solve-status-dot': 'mode-ampel-solve-icon',
+  'fake-solve-dot': 'mode-ampel-fake-solve-icon',
   'hw-imu-dot': 'mode-ampel-imu-icon',
   'hw-gps-dot': 'mode-ampel-gps-icon',
 };
@@ -1487,6 +1512,18 @@ function applySolveStatus(data) {
   const dotEl = document.getElementById('solve-status-dot');
   const textEl = document.getElementById('solve-status-text');
   const suffix = data.debug_solve === true ? ' (simulated image)' : '';
+  // While Injected Solve is active, solve_source still reports "CAM" (the
+  // injection is applied as a solve internally) or drifts to "IMU" as real
+  // dead-reckoning advances it - neither is a real plate-solve, and the
+  // normal messaging here (especially the pulsing amber "no fresh solve
+  // yet") reads as a problem when this is actually expected/intentional.
+  // Takes priority over the normal solve_source branches below (User
+  // feedback, #128).
+  if (data.fake_solve_active === true) {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = 'not real - see Injected Solve below';
+    return;
+  }
   if (data.solve_source === 'CAM') {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'solving' + suffix;
@@ -1502,6 +1539,94 @@ function applySolveStatus(data) {
   }
 }
 
+// Injected Solve / Dead Reckoning (#106/#128) - a synthetic RA/Dec
+// injected via PiFinder's /api/fake_solve, with real IMU dead-reckoning
+// taking over from there. Kept visually and semantically separate from
+// debug_solve/solve_source above - the reported position must never look
+// like a real "CAM" solve while this is active. The top ampel badge only
+// ever appears while active (deliberately, per user decision - unlike the
+// detail row below, which stays visible like every other row so the
+// toggle is always reachable). Called from refreshDebugSolve(), which
+// already fetches this flag alongside debug_solve/solve_source in the
+// same request.
+//
+// data.fake_solve_active is strictly true/false when the request
+// succeeded, undefined when it didn't (the {} passed on an unreachable/
+// failed poll) - only a *confirmed* true/false ever changes the badge, so
+// a single transient miss doesn't flip it off and back on again (same
+// "don't act on an unconfirmed miss" principle as the Mount Bridge status
+// row - see setMbStatusUnconfirmed()'s own comment for why).
+let lastFakeSolveActive = null;
+
+// True for the duration of toggleFakeSolve()'s own fetch + poll loop.
+// While true, applyFakeSolveStatus() still updates lastFakeSolveActive/the
+// badge (so the badge appears immediately once the backend confirms the
+// change, and so the toggle loop's own "did it land yet" check keeps
+// working) but leaves the dot/text/button alone - those are
+// toggleFakeSolve()'s to own during the operation.
+//
+// Found live: an independent setInterval(refreshDebugSolve, 20000) (see
+// bottom of file) runs regardless of any in-progress toggle. Without this
+// guard, if that interval's own applyFakeSolveStatus() call landed
+// mid-operation (a real risk since our mount-read+inject round trip can
+// take several seconds - much longer than debug_solve's near-instant
+// flag flip, which is presumably why this was never an issue there), it
+// stomped the pulsing "in progress" dot back to a stale white/red before
+// the operation had actually finished.
+let fakeSolveToggleInFlight = false;
+
+function applyFakeSolveStatus(data) {
+  const dotEl = document.getElementById('fake-solve-dot');
+  const textEl = document.getElementById('fake-solve-text');
+  const btn = document.getElementById('fake-solve-btn');
+  const badge = document.getElementById('mode-ampel-fake-solve-badge');
+
+  if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
+    // Unconfirmed (unreachable/failed poll, or no confirmation yet at all
+    // on initial page load). Leave the badge and button as they were last
+    // confirmed, only the text/dot say we can't currently tell - but the
+    // dot must be set explicitly here, not left alone: its HTML default is
+    // the pulsing dot-unconfirmed class, and unlike every other row this
+    // one never otherwise clears that on a plain "nothing confirmed yet"
+    // state, so it pulsed forever until the first real answer arrived.
+    if (!fakeSolveToggleInFlight) {
+      textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
+      btn.disabled = true;
+      setHwDot(dotEl, lastFakeSolveActive === true ? 'status-dot dot-green dot-unconfirmed' : 'status-dot dot-white');
+    }
+    return;
+  }
+
+  lastFakeSolveActive = data.fake_solve_active;
+  badge.style.display = lastFakeSolveActive ? '' : 'none';
+  if (fakeSolveToggleInFlight) return;
+  btn.disabled = false;
+
+  if (!lastFakeSolveActive) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'off';
+    btn.textContent = 'Toggle';
+    return;
+  }
+
+  setHwDot(dotEl, 'status-dot dot-green');
+  btn.textContent = 'Turn off';
+  const ra = data.fake_solve_ra;
+  const dec = data.fake_solve_dec;
+  const since = data.last_solve_success;
+  let text = 'active';
+  if (typeof ra === 'number' && typeof dec === 'number') {
+    text = `active (RA ${ra.toFixed(1)}°/Dec ${dec.toFixed(1)}°`;
+    if (typeof since === 'number') {
+      const minutes = Math.max(0, Math.round((Date.now() / 1000 - since) / 60));
+      text += minutes === 0 ? ', just now)' : `, ${minutes} min ago)`;
+    } else {
+      text += ')';
+    }
+  }
+  textEl.textContent = text;
+}
+
 async function refreshDebugSolve() {
   const dotEl = document.getElementById('debug-solve-dot');
   const textEl = document.getElementById('debug-solve-text');
@@ -1512,6 +1637,7 @@ async function refreshDebugSolve() {
     btn.disabled = true;
     lastDebugSolve = null;
     applySolveStatus({});
+    applyFakeSolveStatus({});
     return null;
   }
   const port = new URL(pifinderScreenUrl).port || '80';
@@ -1536,6 +1662,7 @@ async function refreshDebugSolve() {
       textEl.textContent = 'unknown';
     }
     applySolveStatus(data);
+    applyFakeSolveStatus(data);
     btn.disabled = false;
     return data.debug_solve;
   } catch (e) {
@@ -1544,6 +1671,7 @@ async function refreshDebugSolve() {
     btn.disabled = true;
     lastDebugSolve = null;
     applySolveStatus({});
+    applyFakeSolveStatus({});
     return null;
   }
 }
@@ -1584,6 +1712,59 @@ async function toggleDebugSolve() {
   // Didn't change within 16s - leave whatever refreshDebugSolve() last
   // showed rather than spinning forever; the regular 20s hardware-status
   // interval isn't wired to this, so nothing else will pick it up later.
+}
+
+// Same poll-until-changed approach as toggleDebugSolve() above, reusing
+// refreshDebugSolve() (which already applies fake-solve status via
+// applyFakeSolveStatus()) rather than duplicating the fetch/parse logic.
+// Turning on seeds a one-time position from the currently coupled mount
+// (see _pifinder_enable_fake_solve_from_mount() - not a continuous follow,
+// that's the larger #130 concept). Turning off just clears the flag.
+async function toggleFakeSolve() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const btn = document.getElementById('fake-solve-btn');
+  const textEl = document.getElementById('fake-solve-text');
+  const dotEl = document.getElementById('fake-solve-dot');
+  const turningOn = lastFakeSolveActive !== true;
+  const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
+  fakeSolveToggleInFlight = true;
+  btn.disabled = true;
+  textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
+  // Badge follows the row's dot immediately, not just once confirmed -
+  // otherwise it stayed invisible for the whole in-flight window (several
+  // seconds, given the mount-read+inject round trip) and only popped in
+  // right at the very end (User feedback).
+  document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
+  try {
+    const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
+    const result = await resp.json();
+    if (turningOn && result.success !== true) {
+      fakeSolveToggleInFlight = false;
+      textEl.textContent = `could not enable (${result.error || 'unknown error'})`;
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    // fall through to the poll loop below either way
+  }
+  const deadline = Date.now() + 16000;
+  let landed = false;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1000));
+    await refreshDebugSolve();
+    if (lastFakeSolveActive === turningOn) {
+      landed = true;
+      break;
+    }
+  }
+  // Release the flag before the final refresh so it actually repaints the
+  // dot/text/button with the real outcome - every refreshDebugSolve() call
+  // above was a no-op for this row while in flight, by design.
+  fakeSolveToggleInFlight = false;
+  await refreshDebugSolve();
+  if (!landed) btn.disabled = false;
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the
@@ -2736,13 +2917,52 @@ function updateWmCouplingGate() {
 // checklist/diagnostics, Mode & Power's optional external hardware, ...) -
 // see .collapsible-toggle's own CSS comment for the design principle this
 // follows.
-function toggleCollapsibleSection(contentId, chevronId) {
+// Persisted in localStorage (survives page reloads/service restarts, unlike
+// the plain in-memory toggle this started as) - User feedback: the show/hide
+// state of every collapsible section should stick around, not reset to
+// collapsed on every reload.
+// openDisplay defaults to 'block' (every section except #mode-power-groups,
+// which needs its own 'display:flex' layout preserved when open).
+function toggleCollapsibleSection(contentId, chevronId, openDisplay) {
+  openDisplay = openDisplay || 'block';
   const content = document.getElementById(contentId);
   const chevron = document.getElementById(chevronId);
-  const open = content.style.display === 'block';
-  content.style.display = open ? 'none' : 'block';
-  chevron.innerHTML = open ? '&#9660; show' : '&#9650; hide';
+  const opening = content.style.display !== openDisplay;
+  content.style.display = opening ? openDisplay : 'none';
+  chevron.innerHTML = opening ? '&#9650; hide' : '&#9660; show';
+  try {
+    localStorage.setItem('collapsible-' + contentId, opening ? 'open' : 'closed');
+  } catch (e) {
+    // localStorage unavailable (private browsing etc.) - just don't persist
+  }
 }
+
+// Every collapsible section on this page, applied once on load. Defaults
+// (collapsed, "show") are already correct in the HTML, so only an explicit
+// saved "open" needs to change anything here.
+function restoreCollapsibleSections() {
+  const sections = [
+    ['ql-links', 'ql-links-chevron', 'block'],
+    ['sim-testing-details', 'sim-testing-chevron', 'block'],
+    ['hw-details', 'hw-details-chevron', 'block'],
+    ['ext-hw-status', 'ext-hw-chevron', 'block'],
+    ['mode-power-groups', 'mode-power-chevron', 'flex'],
+    ['mb-details', 'mb-details-chevron', 'block'],
+  ];
+  for (const [contentId, chevronId, openDisplay] of sections) {
+    let saved = null;
+    try {
+      saved = localStorage.getItem('collapsible-' + contentId);
+    } catch (e) {
+      // localStorage unavailable - leave the HTML default in place
+    }
+    if (saved === 'open') {
+      document.getElementById(contentId).style.display = openDisplay;
+      document.getElementById(chevronId).innerHTML = '&#9650; hide';
+    }
+  }
+}
+restoreCollapsibleSections();
 
 // Small connection diagram: PiFinder -> Bridge -> Mount, colored dots for
 // whether each device is actually connected, and the two arrows show what
