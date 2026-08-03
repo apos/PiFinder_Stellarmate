@@ -904,12 +904,10 @@
       </div>
       <div id="mode-tile">
         <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <div id="mode-status-line"><span class="status-dot dot-unconfirmed" id="mode-status-dot"></span><span id="mode-status-text">Checking mode&hellip;</span></div>
         <div id="mode-power-groups">
-          <div class="mode-power-group" title="Mode switch and pifinder.service start/stop/restart - all software-level, all the same PiFinder instance.">
+          <div class="mode-power-group" title="pifinder.service start/stop/restart - software-level, whichever instance (Real/Fake Mode) is currently selected below.">
             <div class="group-label">PiFinder</div>
             <div class="mode-power-group-buttons">
-              <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
               <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
               <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
               <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
@@ -970,6 +968,21 @@
             <span>GPS</span>
           </div>
         </div>
+        <div id="sim-testing-group" style="margin-top:0.8rem;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
+          <div class="group-label">Simulation &amp; testing</div>
+          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
+            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
+            <button id="mode-toggle-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
+            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+          </div>
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
+            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
+            <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+          </div>
+        </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
           <span>Hardware test and details</span>
           <span id="hw-details-chevron">&#9660; show</span>
@@ -982,16 +995,8 @@
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-camera-detail"></div>
-            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation below, which only says whether test images are being used.">
+            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation/Injected Solve above, which only say whether test images/positions are being substituted.">
               <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
-            </div>
-            <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-              <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
-              <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
-            </div>
-            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
-              <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
-              <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
             </div>
             <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
             <div class="hw-detail" id="hw-imu-detail"></div>
