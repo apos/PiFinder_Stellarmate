@@ -561,3 +561,11 @@ For traceability, and as a warning for similar future changes:
 
 See also the "Version Compatibility" table in the [main README](README.md) for the base PiFinder
 installation.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

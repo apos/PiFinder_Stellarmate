@@ -336,3 +336,11 @@ Bridge selbst.
 - [README.md](README.md) — Basis-PiFinder-auf-StellarMate-Installation.
 - `basic-memory/pifinder-stellarmate/00031`, `00035` — die zwei Design-Iterationen, die zur
   aktuellen Architektur führten (Entkopplung vom LCD-Toggle, dann systemd-Persistenz).
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>
