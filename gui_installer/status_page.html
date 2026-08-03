@@ -60,7 +60,7 @@
   }
   #header-image {
     display: block;
-    height: 128px;
+    height: 192px;
     width: auto;
     border-radius: 8px;
   }
@@ -226,20 +226,20 @@
     margin-right: 0.6rem;
   }
   #reset-button:hover { filter: brightness(1.15); }
-  #top-tiles-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  #quick-links-tile {
+  #pifinder-glance-tile {
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
   }
-  #pifinder-status-line { font-weight: bold; margin-bottom: 0.5rem; }
+  #pifinder-glance-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.7rem;
+  }
+  #pifinder-status-line { font-weight: bold; }
   .status-dot {
     display: inline-block;
     width: 0.6rem;
@@ -270,13 +270,12 @@
   .status-dot.dot-unconfirmed { background: #f5a623; border-color: #f5a623; animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
-  #quick-links-tile a {
+  #ql-links a {
     color: #7ec8ff;
     text-decoration: none;
     margin-right: 0.7rem;
   }
-  #quick-links-tile a:hover { text-decoration: underline; }
-  #top-tiles-row { flex-wrap: wrap; }
+  #ql-links a:hover { text-decoration: underline; }
   .power-btn {
     color: white;
     border: none;
@@ -326,6 +325,7 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
+    margin-top: 1rem;
   }
   #mode-status-line { font-weight: bold; margin-bottom: 0.6rem; }
   #mode-toggle-btn {
@@ -739,16 +739,27 @@
     0% { left: -30%; }
     100% { left: 100%; }
   }
+  #page-footer {
+    margin-top: 2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid #262626;
+    text-align: center;
+  }
   #footer-logos {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 1rem;
-    margin-top: 1.5rem;
     opacity: 0.8;
   }
   #footer-logos:hover { opacity: 1; }
   #footer-logos img { height: 78px; width: auto; display: block; }
+  #footer-text {
+    margin-top: 0.8rem;
+    color: #777;
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
   #conn-lost-banner {
     background: #5c1a1a;
     color: #ff8f8f;
@@ -887,33 +898,22 @@
 
 <div class="page">
   <div class="left-col">
-    <div id="top-tiles-row">
-      <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
-      <div id="quick-links-tile">
-        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation.">Quick Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+    <div id="pifinder-glance-tile">
+      <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+      <div id="pifinder-glance-row">
+        <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
         <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ql-links', 'ql-links-chevron')">
-          <span>Links</span>
-          <span id="ql-links-chevron">&#9660; show</span>
-        </div>
-        <div id="ql-links" style="display:none;">
-          <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
-          <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
-          <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
-          <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
-        </div>
       </div>
-      <div id="mode-tile">
-        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
-        <!-- Compact, always-visible hardware summary - same visual language
-             as the Mount Bridge diagram's icon nodes (bordered box, currentColor
-             line-icon, small caption), arranged as a tight single-row strip
-             per direct feedback (2026-07-29): a quick at-a-glance read
-             without needing to expand "Hardware test and details" below,
-             which now holds the same 4 rows in full text/detail form plus
-             "Optional external hardware" - collapsed by default so it
-             doesn't compete with the mode/power controls above it. -->
-        <div id="mode-ampel-row" title="Quick hardware status - see Hardware test and details below for the full picture">
+      <!-- Compact, always-visible hardware summary - same visual language
+           as the Mount Bridge diagram's icon nodes (bordered box, currentColor
+           line-icon, small caption), arranged as a tight single-row strip
+           per direct feedback (2026-07-29): a quick at-a-glance read
+           without needing to expand "Hardware test and details" below (now
+           in the "PiFinder Mode, Test and Power" tile), which holds the
+           same 4 rows in full text/detail form plus "Optional external
+           hardware" - collapsed by default so it doesn't compete with the
+           mode/power controls there. -->
+      <div id="mode-ampel-row" title="Quick hardware status - see Hardware test and details below for the full picture">
           <div class="mode-ampel-badge" title="Camera">
             <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-camera-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 8.5h3l1.3-2h7.4l1.3 2h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
@@ -951,90 +951,7 @@
             <span>GPS</span>
           </div>
         </div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
-          <span>Simulation and testing</span>
-          <span id="sim-testing-chevron">&#9660; show</span>
-        </div>
-        <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
-          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
-            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
-            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-          </div>
-          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
-            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
-            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
-          </div>
-          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
-            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
-            <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
-          </div>
-        </div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
-          <span>Hardware test and details</span>
-          <span id="hw-details-chevron">&#9660; show</span>
-        </div>
-        <div id="hw-details" style="display:none;">
-          <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
-            <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
-              <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
-              <span id="hwtest-status-text"></span>
-            </div>
-            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
-            <div class="hw-detail" id="hw-camera-detail"></div>
-            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation/Injected Solve above, which only say whether test images/positions are being substituted.">
-              <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
-            </div>
-            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
-            <div class="hw-detail" id="hw-imu-detail"></div>
-            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
-            <div class="hw-detail" id="hw-gps-detail"></div>
-          </div>
-          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
-            <span>Optional external hardware</span>
-            <span id="ext-hw-chevron">&#9660; show</span>
-          </div>
-          <div id="ext-hw-status" style="display:none;">
-            <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
-              <span class="status-dot dot-unconfirmed" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
-              <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
-            </div>
-            <div class="hw-row hw-keyboard">
-              <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
-              <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
-            </div>
-            <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
-/home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
-sudo systemctl start pifinder</pre>
-            <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
-              <span class="status-dot dot-unconfirmed" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
-              <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
-            </div>
-          </div>
-        </div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mode-power-groups', 'mode-power-chevron', 'flex')">
-          <span>Service and power actions</span>
-          <span id="mode-power-chevron">&#9660; show</span>
-        </div>
-        <div id="mode-power-groups" style="display:none;">
-          <div class="mode-power-group" title="pifinder.service start/stop/restart - software-level, whichever instance (Real/Fake Mode) is currently selected below.">
-            <div class="group-label">PiFinder</div>
-            <div class="mode-power-group-buttons">
-              <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
-              <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
-              <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
-            </div>
-          </div>
-          <div class="vgroup-divider"></div>
-          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
-            <div class="group-label">This Pi</div>
-            <div class="mode-power-group-buttons">
-              <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
-              <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
-            </div>
-          </div>
-        </div>
       </div>
-    </div>
     <div id="mount-bridge-tile">
       <!-- Current status first: connection diagram, Coupling, Threshold -
            the "operate it" workflow, always visible. The one-time "set it
@@ -1200,16 +1117,102 @@ sudo systemctl start pifinder</pre>
         <div id="mb-log" title="What this tile has been doing, in order."></div>
       </div>
     </div>
+    <div id="mode-tile">
+        <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
+          <span>Simulation and testing</span>
+          <span id="sim-testing-chevron">&#9660; show</span>
+        </div>
+        <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
+          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
+            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
+            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
+            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
+          </div>
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge) - not a continuous follow.">
+            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
+            <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+          </div>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
+          <span>Hardware test and details</span>
+          <span id="hw-details-chevron">&#9660; show</span>
+        </div>
+        <div id="hw-details" style="display:none;">
+          <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
+            <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
+              <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
+              <span id="hwtest-status-text"></span>
+            </div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-camera-dot"></span>Camera: <span id="hw-camera-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-camera-detail"></div>
+            <div class="hw-row" title="Whether the current pointing estimate comes from a fresh plate-solve (CAM), no star match on the last attempt (CAM_FAILED - normal indoors/no sky view, not itself a hardware problem), or IMU dead-reckoning between solves (IMU). Distinct from Solve Simulation/Injected Solve above, which only say whether test images/positions are being substituted.">
+              <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
+            </div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-imu-dot"></span>IMU: <span id="hw-imu-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-imu-detail"></div>
+            <div class="hw-row"><span class="status-dot dot-unconfirmed" id="hw-gps-dot"></span>GPS: <span id="hw-gps-text">checking&hellip;</span></div>
+            <div class="hw-detail" id="hw-gps-detail"></div>
+          </div>
+          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ext-hw-status', 'ext-hw-chevron')">
+            <span>Optional external hardware</span>
+            <span id="ext-hw-chevron">&#9660; show</span>
+          </div>
+          <div id="ext-hw-status" style="display:none;">
+            <div class="hw-row" title="Only relevant if you've attached a plain USB or 2.4GHz-dongle numpad (e.g. a LogiLink ID0120) as a stand-in for the PiFinder keypad. Bridges its key events to PiFinder's /api/key (test_tools/fb_keyboard_bridge.py) - works against either Real or Fake Mode, no GPIO/overlay involved, no reboot needed. Runs as its own systemd unit (pifinder-numpad-bridge.service); once turned on it stays on across reboots too, and re-probes on its own after a Fake/Real Mode switch.">
+              <span class="status-dot dot-unconfirmed" id="keyboard-status-dot"></span>External numpad bridge (optional, needs extra hardware): <span id="keyboard-status-state">checking&hellip;</span>
+              <button id="keyboard-toggle-btn" class="ql-small-btn" onclick="toggleKeyboardBridge()" disabled>Checking&hellip;</button>
+            </div>
+            <div class="hw-row hw-keyboard">
+              <span class="status-dot dot-white"></span>Keyboard: not tested here - needs physical key presses while PiFinder is stopped
+              <button class="ql-small-btn" onclick="document.getElementById('keyboard-test-cmd').style.display = document.getElementById('keyboard-test-cmd').style.display === 'none' ? '' : 'none';">Show command</button>
+            </div>
+            <pre id="keyboard-test-cmd" class="hw-keyboard-cmd" style="display:none;">sudo systemctl stop pifinder
+/home/stellarmate/PiFinder/python/.venv/bin/python3 /home/stellarmate/PiFinder_Stellarmate/test_tools/keypad_gpio_matrix_test.py 20
+sudo systemctl start pifinder</pre>
+            <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
+              <span class="status-dot dot-unconfirmed" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
+              <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+            </div>
+          </div>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mode-power-groups', 'mode-power-chevron', 'flex')">
+          <span>Service and power actions</span>
+          <span id="mode-power-chevron">&#9660; show</span>
+        </div>
+        <div id="mode-power-groups" style="display:none;">
+          <div class="mode-power-group" title="pifinder.service start/stop/restart - software-level, whichever instance (Real/Fake Mode) is currently selected below.">
+            <div class="group-label">PiFinder</div>
+            <div class="mode-power-group-buttons">
+              <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
+              <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
+              <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
+            </div>
+          </div>
+          <div class="vgroup-divider"></div>
+          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
+            <div class="group-label">This Pi</div>
+            <div class="mode-power-group-buttons">
+              <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
+              <button id="power-poweroff-btn" class="power-btn" onclick="powerAction('poweroff')">Shutdown Pi</button>
+            </div>
+          </div>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ql-links', 'ql-links-chevron')">
+          <span>Links</span><a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a>
+          <span id="ql-links-chevron">&#9660; show</span>
+        </div>
+        <div id="ql-links" style="display:none;">
+          <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
+          <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
+          <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
+          <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+        </div>
+      </div>
 
-    <div id="footer-logos">
-      <img src="/project_logo.png" alt="PiFinder StellarMate">
-      <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
-        <img src="/heyapos_logo.png" alt="HeyApos">
-      </a>
-      <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
-        <img src="/avvp_logo.png" alt="AVVP">
-      </a>
-    </div>
   </div>
 
   <div class="right-col">
@@ -1283,6 +1286,24 @@ sudo systemctl start pifinder</pre>
     </div>
     <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
     </div>
+  </div>
+</div>
+
+<div id="page-footer">
+  <div id="footer-logos">
+    <a href="https://github.com/apos/PiFinder_Stellarmate" target="_blank" rel="noopener" title="PiFinder_Stellarmate on GitHub">
+      <img src="/project_logo.png" alt="PiFinder StellarMate">
+    </a>
+    <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener" title="HeyApos on YouTube">
+      <img src="/heyapos_logo.png" alt="HeyApos">
+    </a>
+    <a href="https://avvp.de" target="_blank" rel="noopener" title="avvp.de">
+      <img src="/avvp_logo.png" alt="AVVP">
+    </a>
+  </div>
+  <div id="footer-text">
+    &copy; github.com/apos 2026<br>
+    <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
   </div>
 </div>
 
