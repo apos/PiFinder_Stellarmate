@@ -568,3 +568,11 @@ Für Nachvollziehbarkeit und als Warnung für ähnliche zukünftige Änderungen:
 
 Siehe auch die "Version Compatibility"-Tabelle im [Haupt-README](README.md) für die Basis-PiFinder-
 Installation.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

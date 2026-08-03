@@ -66,3 +66,11 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   Risiko schrittweise erhöht, nie ungetestet auf echter Hardware.
 - **Dokumentation zweisprachig, Englisch als Primärsprache** (die Projektseite ist Englisch),
   Deutsch als Zweitversion mit Sprach-Switcher.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

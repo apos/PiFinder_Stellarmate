@@ -62,3 +62,11 @@ Everything below follows from a small set of principles:
   risk increased step by step, never tested on real hardware untested.
 - **Documentation bilingual, English as the primary language** (the project page is in English),
   German as a secondary version with a language switcher.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

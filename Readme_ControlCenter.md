@@ -422,3 +422,11 @@ probes, both independent of the installed PiFinder version.
 - [README.md](README.md) — base PiFinder-on-StellarMate installation.
 - `basic-memory/pifinder-stellarmate/00017` (global UI design principle), `00021` (mode-switch
   state-machine design), `00030`/`00033`/`00035` (persistence-model iterations).
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>
