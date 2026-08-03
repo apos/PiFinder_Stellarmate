@@ -1568,12 +1568,17 @@ function applyFakeSolveStatus(data) {
   const badge = document.getElementById('mode-ampel-fake-solve-badge');
 
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
-    // Unconfirmed (unreachable/failed poll) - leave the badge and button
-    // as they were last confirmed, only the text says we can't currently
-    // tell.
+    // Unconfirmed (unreachable/failed poll, or no confirmation yet at all
+    // on initial page load). Leave the badge and button as they were last
+    // confirmed, only the text/dot say we can't currently tell - but the
+    // dot must be set explicitly here, not left alone: its HTML default is
+    // the pulsing dot-unconfirmed class, and unlike every other row this
+    // one never otherwise clears that on a plain "nothing confirmed yet"
+    // state, so it pulsed forever until the first real answer arrived.
     if (!fakeSolveToggleInFlight) {
       textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
       btn.disabled = true;
+      setHwDot(dotEl, lastFakeSolveActive === true ? 'status-dot dot-green dot-unconfirmed' : 'status-dot dot-white');
     }
     return;
   }
@@ -1590,7 +1595,7 @@ function applyFakeSolveStatus(data) {
     return;
   }
 
-  setHwDot(dotEl, 'status-dot dot-red');
+  setHwDot(dotEl, 'status-dot dot-green');
   btn.textContent = 'Turn off';
   const ra = data.fake_solve_ra;
   const dec = data.fake_solve_dec;
