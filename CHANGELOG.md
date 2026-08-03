@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
+  now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
+
+### Changed
+
+- README.md/README_de.md's hero photo (`docs/images/readme/PiFinder.jpg`/`PiFinder_thumb.jpg`) replaced with a new
+  real-world photo (with the project's wordmark composited in), converted from the uploaded PNG at
+  `docs/images/logo/PiFinder-Stellarmate_final.png` - same file paths, so every existing reference picks it up
+  automatically.
+
 ## [1.4.0] - 2026-08-02
 
 ### Added
