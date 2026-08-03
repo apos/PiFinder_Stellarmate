@@ -1,0 +1,31 @@
+diff --git a/python/PiFinder/pos_server.py b/python/PiFinder/pos_server.py
+index 07f84d52..f4180f2b 100644
+--- a/python/PiFinder/pos_server.py
++++ b/python/PiFinder/pos_server.py
+@@ -41,7 +41,15 @@ def get_telescope_ra(shared_state, _):
+     solution = shared_state.solution()
+     dt = shared_state.datetime()
+     if not solution or not dt or not solution.has_pointing():
+-        return "+00*00'01"
++        # No response at all (not a fake coordinate) - handle_client() sends
++        # nothing back for a falsy return, so callers see this exactly like
++        # a communication failure (LX200_PIFINDER::ReadScopeStatus() times
++        # out on the missing '#' terminator and returns false) instead of a
++        # syntactically valid but meaningless RA=0h/Dec=0 position. Found
++        # live (#107): a fixed "+00*00'01" placeholder was parsed as a real
++        # position downstream (Mount Bridge / LX200 OnStep), causing huge
++        # false "drift" and slews toward RA=0/Dec=0.
++        return None
+ 
+     aligned = solution.pointing.aligned.estimate
+     # Convert from J2000 to now epoch
+@@ -75,7 +83,8 @@ def get_telescope_dec(shared_state, _):
+     solution = shared_state.solution()
+     dt = shared_state.datetime()
+     if not solution or not dt or not solution.has_pointing():
+-        return "+00*00'01"
++        # See get_telescope_ra() - no response, not a fake coordinate.
++        return None
+ 
+     aligned = solution.pointing.aligned.estimate
+     # Convert from J2000 to now epoch

@@ -7,6 +7,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- The Fake-Solve simulation feature (safe, sky-independent Mount Bridge testing: inject a one-time
+  synthetic solve at a chosen RA/Dec, then let PiFinder's own IMU dead-reckoning take over) plus the
+  #107 fix (`pos_server.py` no longer fakes a `+00*00'01` RA=0/Dec=0 placeholder when unsolved) are
+  now installed/updated by `bin/patch_PiFinder_installation_files.sh` instead of only existing as
+  manual, unpatched live edits in a development checkout. New `diffs/integrator_py.diff`,
+  `diffs/pos_server_py.diff`, `diffs/positioning_py.diff`; `diffs/api_extensions_py.diff`,
+  `diffs/camera_interface_py.diff`, `diffs/main_py.diff`, `diffs/server_py.diff`,
+  `diffs/state_py.diff` regenerated to also cover it (each one's own prior, unrelated patch content
+  is preserved - these were superseding regenerations, not new unrelated changes). All 8 diffs were
+  rebased onto the current upstream `release` branch first (the development checkout's fake-solve
+  work had drifted 62 commits behind) and individually verified to apply cleanly and reproduce the
+  live file exactly against a pristine `release` checkout before being wired in.
 - Control Center: automatic recovery from #118's "PiFinder LX200" stale-connection bug. When
   `pifinder.service` restarts (deploy, crash-recovery, manual restart), the already-open TCP
   connection between the `LX200_PIFINDER` INDI driver and `pos_server.py` used to die silently -

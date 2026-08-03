@@ -159,46 +159,40 @@ fi
 phase "Checking versions"
 
 ############################################################
-# VERSION CHECK (Live check from GitHub)
+# VERSION CHECK (informational only)
+#
+# PiFinder is pinned to a fixed release tag (v${pifinder_stellarmate_version_stable},
+# see the git clone/checkout calls below) - this project never installs
+# whatever the upstream release branch's HEAD happens to be at the moment,
+# on purpose, for stability. This check used to compare against the live
+# release-branch HEAD and hard-abort if it had moved past
+# pifinder_stellarmate_version_stable/_testing - found live 2026-08-04 that
+# this made the script permanently refuse to install/update the moment
+# upstream cut a new release, even though the actual clone/checkout below
+# was never going to touch that newer version anyway (it always targeted
+# the pinned tag). Kept as a pure heads-up now, never blocks.
 
 # Read local PiFinder version
 pifinder_local_version=$(cat "$(pwd)/version.txt" 2>/dev/null)
 
-# Fetch online version from GitHub (release branch)
+# Fetch the upstream release branch's current version - informational only,
+# does not influence which version actually gets installed below.
 github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt | tr -d '\r')
 
 echo "ℹ️  Local PiFinder version: $pifinder_local_version"
-echo "ℹ️  GitHub PiFinder version: $github_version"
+echo "ℹ️  Pinned PiFinder version (this run installs/updates to this): v${pifinder_stellarmate_version_stable}"
+echo "ℹ️  Latest PiFinder version on GitHub's release branch: $github_version"
 
 # version_gt()/version_eq() - see bin/version_compare.sh for why these live
 # in their own sourceable file (unit-testable in isolation, see
 # bin/tests/test_version_compare.bats).
 source "${SCRIPT_DIR}/bin/version_compare.sh"
 
-# Main check
-if version_eq "$github_version" "$pifinder_stellarmate_version_stable"; then
-    echo "✅ PiFinder version $github_version matches STABLE version. Proceeding..."
-elif version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
-    echo "⚠️  Actual PiFinder version in Git-main ($github_version) is NEWER than tested version ($pifinder_stellarmate_version_stable)."
-    echo "⚠️  Proceed only if you are testing new features."
-    read -p "⚠️⚠️⚠️  Continue with installation? (yes/no): " confirm
-    confirm="${confirm//[$'\r\n']}"
-    if [[ "$confirm" != "yes" ]]; then
-        echo "ℹ️  Installation cancelled by user."
-        exit 0
-    fi
-
-    # Optional: Warn again if version is even newer than "testing"
-    if version_gt "$github_version" "$pifinder_stellarmate_version_testing"; then
-        echo "❌ GitHub version $github_version is NEWER than the last defined TESTING version $pifinder_stellarmate_version_testing."
-        echo "❌ This might break your current test configuration."
-        echo "❌❌❌ Exiting to prevent unintended test mismatches."
-        exit 1
-    fi
-else
-    echo "❌ PiFinder version $github_version is not supported by this Stellarmate patch script."
-    echo "❌ Expected STABLE: $pifinder_stellarmate_version_stable or TESTING: $pifinder_stellarmate_version_testing"
-    exit 1
+if version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
+    echo "ℹ️  A newer PiFinder release ($github_version) exists upstream - this run still installs"
+    echo "ℹ️  the pinned v${pifinder_stellarmate_version_stable} for stability. Bump"
+    echo "ℹ️  pifinder_stellarmate_version_stable in this script (after verifying the newer version)"
+    echo "ℹ️  to move the pin forward."
 fi
 
 echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
@@ -271,7 +265,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
         echo "❓ Please choose an action:"
         echo "   1. Delete the existing installation and reinstall from scratch."
-        echo "   2. Update the existing installation with 'git reset --hard origin/release'."
+        echo "   2. Update the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}."
         echo "   3. Cancel the installation."
         echo "   4. Uninstall PiFinder completely (removes services, INDI drivers, ~/PiFinder)."
         echo "   5. Reset (keep data/config, wipe venv/build only, ready to re-run setup)."
@@ -319,7 +313,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 fi
                 echo "Installation from scratch ..."
                 cd "${pifinder_home}"
-                if ! git clone --recursive --branch release https://github.com/brickbots/PiFinder.git; then
+                if ! git clone --recursive --branch "v${pifinder_stellarmate_version_stable}" https://github.com/brickbots/PiFinder.git; then
                     echo "❌ ERROR: 'git clone' of PiFinder failed (network issue or GitHub unreachable?)."
                     echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
                     exit 1
@@ -353,19 +347,32 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/scripts/pf_remote.py" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts/"
                 ;;
             2)
-                echo "➡️  Selected: 2. Update the existing installation with 'git reset --hard origin/release'."
+                echo "➡️  Selected: 2. Update the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}."
                 stop_fake_mode_if_running
                 sudo systemctl stop pifinder
-                echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
+                echo "🔄 Updating the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}..."
                 cd "${pifinder_home}/PiFinder"
-                if ! git reset --hard origin/release; then
-                    echo "❌ ERROR: 'git reset --hard origin/release' failed - aborting rather than"
+                # Tags aren't guaranteed to be present after a --branch=<tag>
+                # clone (implies --single-branch, restricting the default
+                # fetch refspec to that one ref) - --tags explicitly
+                # overrides that restriction and fetches every tag
+                # regardless, so this also picks up a NEWER pin (a future
+                # bump of pifinder_stellarmate_version_stable itself), not
+                # just re-fetching the one already checked out.
+                if ! git fetch origin --tags; then
+                    echo "❌ ERROR: 'git fetch origin --tags' failed - aborting rather than"
                     echo "❌ patching/building against a checkout left in an unknown state."
                     exit 1
                 fi
-                if ! git pull; then
-                    echo "❌ ERROR: 'git pull' failed - aborting rather than patching/building against"
-                    echo "❌ a possibly-stale checkout."
+                if ! git checkout "v${pifinder_stellarmate_version_stable}"; then
+                    echo "❌ ERROR: 'git checkout v${pifinder_stellarmate_version_stable}' failed - tag not"
+                    echo "❌ found after fetch. Aborting rather than patching/building against a"
+                    echo "❌ checkout left in an unknown state."
+                    exit 1
+                fi
+                if ! git reset --hard "v${pifinder_stellarmate_version_stable}"; then
+                    echo "❌ ERROR: 'git reset --hard' failed - aborting rather than patching/building"
+                    echo "❌ against a possibly-stale checkout."
                     exit 1
                 fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
@@ -412,7 +419,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
 else
     echo "🚀 No existing installation found. Starting fresh..."
     cd "${pifinder_home}"
-    git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+    git clone --recursive --branch "v${pifinder_stellarmate_version_stable}" https://github.com/brickbots/PiFinder.git
     sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
     echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
     bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh

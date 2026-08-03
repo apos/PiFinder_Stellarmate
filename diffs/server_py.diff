@@ -1,14 +1,34 @@
---- python/PiFinder/server.py.orig
-+++ python/PiFinder/server.py
-@@ -6,6 +6,7 @@
+diff --git a/python/PiFinder/server.py b/python/PiFinder/server.py
+index 431af27f..39b17b28 100644
+--- a/python/PiFinder/server.py
++++ b/python/PiFinder/server.py
+@@ -6,6 +6,7 @@ import uuid
  import os
  import argparse
  import sys
 +import subprocess
  import multiprocessing
- from datetime import datetime, timezone
+ from datetime import timezone
  
-@@ -241,7 +242,9 @@
+@@ -109,12 +110,17 @@ class Server:
+         gps_queue=None,
+         shared_state=None,
+         is_debug=False,
++        fake_solve_command_queue=None,
+     ):
+         self.version_txt = f"{utils.pifinder_dir}/version.txt"
+         self.keyboard_queue = keyboard_queue or multiprocessing.Queue()
+         self.ui_queue = ui_queue or multiprocessing.Queue()
+         self.gps_queue = gps_queue or multiprocessing.Queue()
+         self.shared_state = shared_state or MockSharedState()
++        # None in standalone/test mode (no solver process to receive it) -
++        # the /api/fake_solve endpoint checks for this and errors clearly
++        # instead of silently doing nothing.
++        self.fake_solve_command_queue = fake_solve_command_queue
+         self.ki = KeyboardInterface()
+         # gps info
+         self.lat = None
+@@ -253,7 +259,9 @@ class Server:
                  title=gettext("Home"),
                  software_version=software_version,
                  wifi_mode=self.network.wifi_mode(),
@@ -19,7 +39,7 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -252,6 +255,28 @@
+@@ -264,6 +272,28 @@ class Server:
                  dec_text=dec_text,
              )
  
@@ -48,7 +68,7 @@
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -260,7 +285,7 @@
+@@ -272,7 +302,7 @@ class Server:
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -57,7 +77,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -522,6 +547,27 @@
+@@ -538,6 +568,27 @@ class Server:
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -85,7 +105,7 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -537,7 +583,7 @@
+@@ -553,7 +604,7 @@ class Server:
  
              if new_passworda == new_passwordb:
                  if sys_utils.change_password(
@@ -94,7 +114,7 @@
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
-@@ -1215,6 +1261,15 @@
+@@ -1230,6 +1281,15 @@ class Server:
          self.app = app
  
      def run(self):
@@ -110,3 +130,29 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
+@@ -1265,10 +1325,23 @@ class Server:
+ 
+ 
+ def run_server(
+-    keyboard_queue, ui_queue, gps_queue, shared_state, log_queue, verbose=False
++    keyboard_queue,
++    ui_queue,
++    gps_queue,
++    shared_state,
++    log_queue,
++    verbose=False,
++    fake_solve_command_queue=None,
+ ):
+     MultiprocLogging.configurer(log_queue)
+-    server = Server(keyboard_queue, ui_queue, gps_queue, shared_state, verbose)
++    server = Server(
++        keyboard_queue,
++        ui_queue,
++        gps_queue,
++        shared_state,
++        verbose,
++        fake_solve_command_queue=fake_solve_command_queue,
++    )
+     server.run()
+ 
+ 
