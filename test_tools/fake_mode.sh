@@ -72,6 +72,13 @@ case "${1:-}" in
             echo "Fake-hardware mode isn't running."
         fi
         echo "Starting the real pifinder.service ..."
+        # systemd caches a unit's parsed config in memory and does not
+        # re-read a changed file on disk on its own before start/restart -
+        # without this, switching back to Real Mode right after an update
+        # could start pifinder.service with whatever config was loaded
+        # BEFORE the update instead of what's actually on disk now (found
+        # live investigating #139's Nice=/CPUWeight= rollout).
+        sudo systemctl daemon-reload
         if ! sudo systemctl start pifinder.service; then
             echo "ERROR: could not start pifinder.service - aborting." >&2
             exit 1

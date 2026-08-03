@@ -948,6 +948,46 @@ def _system_load_status() -> dict:
     }
 
 
+def _pifinder_service_settings_stale():
+    """True if pifinder.service's actually-running process's scheduling
+    priority doesn't match what's currently configured for the unit -
+    meaning it was started before the config last changed (e.g. an Update
+    run that left an already-running instance untouched before
+    pifinder_stellarmate_setup.sh's own start->restart fix - see that
+    change's own comment) and needs a restart to pick up the current
+    settings. Compares against the unit's OWN currently-loaded value
+    rather than a hardcoded expected number, so this keeps working no
+    matter what Nice= (or any future scheduling directive) is actually set
+    to - nothing here needs to know the number itself.
+    Returns None if pifinder.service isn't running or the check itself
+    failed (nothing to report, not a mismatch)."""
+    try:
+        shown = subprocess.run(
+            ["systemctl", "show", "pifinder.service", "--property=Nice,MainPID"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        # Deliberately NOT --value with a comma-separated property list -
+        # found live: systemctl does not guarantee returning --value output
+        # in the order the properties were requested in, so a positional
+        # unpack silently paired the wrong values together. Self-labeled
+        # "Key=Value" lines (systemctl's default format) sidestep that
+        # entirely regardless of what order they come back in.
+        values = dict(line.split("=", 1) for line in shown.strip().splitlines() if "=" in line)
+        configured_nice = values.get("Nice")
+        main_pid = values.get("MainPID")
+        if configured_nice is None or main_pid is None or int(main_pid) <= 0:
+            return None
+        actual_nice = subprocess.run(
+            ["ps", "-o", "ni=", "-p", main_pid],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if not actual_nice:
+            return None
+        return int(actual_nice) != int(configured_nice)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
 # #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
 # redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
 # CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
@@ -2248,6 +2288,16 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
             try:
+                # daemon-reload first: systemd caches a unit's parsed config
+                # in memory and does NOT re-read a changed file on disk on
+                # its own before start/restart (only warns "Unit file
+                # changed on disk" in its log) - without this, a button
+                # click right after an update could restart the OLD,
+                # already-loaded config instead of whatever's actually in
+                # /etc/systemd/system/pifinder.service right now (found live
+                # investigating #139's Nice=/CPUWeight= rollout - see that
+                # change's own commit for the underlying finding).
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True, text=True, timeout=10)
                 result = subprocess.run(
                     ["sudo", "systemctl", action, "pifinder.service"],
                     capture_output=True, text=True, timeout=30,
@@ -2760,6 +2810,19 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # One-time check, not a watchdog: an already-running pifinder.service
+    # left over from before this Control Center's own start (e.g. surviving
+    # an Update run from before the setup script's start->restart fix, or a
+    # manual `systemctl start` from outside this GUI) won't self-correct on
+    # its own - just log it once so it's visible instead of silently stale.
+    # Deliberately not auto-restarted: this only reports, it never
+    # interrupts a possibly-active observing session on its own initiative.
+    if _pifinder_service_settings_stale():
+        _mb_log(
+            "pifinder.service is running with a stale scheduling priority (doesn't match the "
+            "currently configured Nice=/CPUWeight=) - restart it (Mode tile or the Control Center "
+            "itself) to apply the current settings."
+        )
     _server.serve_forever()
 
 

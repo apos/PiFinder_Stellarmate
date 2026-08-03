@@ -32,7 +32,9 @@ RestartSec=2
 # #148 for the more precise upstream fix this doesn't replace). Nice=5 and a
 # below-default CPUWeight ask the scheduler to favor everything else (Control
 # Center, indiserver, the OS itself) when the CPU is actually contended,
-# without capping PiFinder below full-core use whenever it isn't.
+# without capping PiFinder below full-core use whenever it isn't. Tune the
+# numbers here directly if needed - see bin/functions.sh's own comment on
+# why they're not duplicated as a shell variable there.
 Nice=5
 CPUWeight=50
 

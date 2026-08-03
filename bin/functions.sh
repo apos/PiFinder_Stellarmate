@@ -12,6 +12,20 @@ kstarsrc_source="${pifinder_config_dir}/kstarsrc"
 kstarsrc_target="${pifinder_config_dir}/kstarsrc"
 indi_pifinder_dir="${pifinder_stellarmate_dir}/indi_pifinder"
 
+#####################################
+# pifinder.service scheduling priority
+#####################################
+# Nice=/CPUWeight= live directly in pi_config_files/pifinder.service - not
+# duplicated as a variable here. Deliberately: nothing else needs to KNOW
+# the actual number - the Control Center's own staleness check
+# (_pifinder_service_settings_stale() in gui_installer/server.py) compares
+# the unit's currently-*configured* value against the *actually-running*
+# process's real priority, so it keeps working correctly no matter what
+# that number is changed to in the future, without a second copy to keep
+# in sync. Change the number in pi_config_files/pifinder.service itself if
+# it ever needs tuning (found live 2026-08-03 investigating #139 - see that
+# file's own comment for the underlying finding).
+
 
 
 # The files need to be patched for Pi4
