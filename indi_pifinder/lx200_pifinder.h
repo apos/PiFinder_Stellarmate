@@ -34,6 +34,7 @@ class LX200_PIFINDER : public LX200Telescope
         bool initProperties() override;
         bool ReadScopeStatus() override;
         bool Goto(double ra, double dec) override;
+        void TimerHit() override;
 
         bool sendScopeLocation() override;
         bool sendScopeTime() override;
@@ -65,4 +66,15 @@ class LX200_PIFINDER : public LX200Telescope
         int m_consecutiveReadFailures = 0;
         static constexpr int MAX_CONSECUTIVE_READ_FAILURES = 3;
         bool handleReadFailure();
+
+        // Live-tested finding: Telescope::TimerHit() only re-arms its own
+        // SetTimer() while isConnected() is true, checked once at entry -
+        // if handleReadFailure() marks us disconnected (setConnected(false,
+        // ...)) and the very next Connect() attempt fails (e.g. pos_server.py
+        // still restarting), Telescope::TimerHit() stops calling
+        // ReadScopeStatus() forever, so nothing ever retries again. This
+        // override keeps retrying Connect() itself every polling period
+        // while m_autoReconnectPending is set, independently of the base
+        // class's isConnected()-gated loop.
+        bool m_autoReconnectPending = false;
 };

@@ -236,25 +236,46 @@ bool LX200_PIFINDER::handleReadFailure()
     LOGF_WARN("%d consecutive read failures - forcing a reconnect.", m_consecutiveReadFailures);
     m_consecutiveReadFailures = 0;
 
-    if (Disconnect())
-    {
-        setConnected(false, IPS_IDLE);
-        updateProperties();
-    }
-
-    if (Connect())
-    {
-        setConnected(true);
-        updateProperties();
-        LOG_INFO("Reconnect succeeded.");
-    }
-    else
-    {
-        setConnected(false, IPS_ALERT);
-        LOG_WARN("Reconnect attempt failed - will retry after the next read failure streak.");
-    }
+    Disconnect();
+    setConnected(false, IPS_IDLE);
+    updateProperties();
+    // isConnected() is now false, so Telescope::TimerHit() will stop calling
+    // ReadScopeStatus() (and thus us) on every future tick - see this
+    // class's own TimerHit() override below, which takes over the retry
+    // loop from here instead of relying on the base class's isConnected()
+    // gated re-arm.
+    m_autoReconnectPending = true;
+    SetTimer(getCurrentPollingPeriod());
 
     return false;
+}
+
+// Live-tested finding (#139): a single failed Connect() attempt inside
+// handleReadFailure() would otherwise silence the driver forever, because
+// Telescope::TimerHit() only calls ReadScopeStatus() (and re-arms its own
+// timer) while isConnected() is true - checked once per tick, before this
+// class's own logic runs. This override keeps the retry loop alive on its
+// own account whenever handleReadFailure() started one, independently of
+// that gate.
+void LX200_PIFINDER::TimerHit()
+{
+    if (m_autoReconnectPending && !isConnected())
+    {
+        if (Connect())
+        {
+            setConnected(true);
+            updateProperties();
+            m_autoReconnectPending = false;
+            LOG_INFO("Reconnect succeeded.");
+        }
+        else
+        {
+            SetTimer(getCurrentPollingPeriod());
+        }
+        return;
+    }
+
+    LX200Telescope::TimerHit();
 }
 
 // PiFinder has no motor: "Goto" reuses PiFinder's existing SkySafari push-to
