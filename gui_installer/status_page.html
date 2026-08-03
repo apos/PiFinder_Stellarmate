@@ -986,7 +986,7 @@
               <span class="status-dot dot-unconfirmed" id="solve-status-dot"></span>Solve: <span id="solve-status-text">checking&hellip;</span>
             </div>
             <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as this tile's Fake Mode switch above (which runs a whole separate headless instance with no hardware at all).">
-              <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation: <span id="debug-solve-text">unknown</span>
+              <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
               <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
             </div>
             <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Only enabled via the API used for testing; this row only ever appears to let you turn it back off." style="display:none;">
