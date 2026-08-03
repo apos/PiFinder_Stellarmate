@@ -56,6 +56,10 @@ PROJECT_LOGO = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_Wo
 # PiFinder's own splash bitmap (shown by pifinder_splash.service before the
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
+# #117: cached red-tinted version of the above, matching the real OLED's
+# actual red rendering (see displays.py's RED_RGB color mask) instead of the
+# full-color/blue original - see _pifinder_welcome_image_red() below.
+PIFINDER_WELCOME_IMAGE_RED = GUI_DIR / ".welcome_red_cache.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 # Written just before a successful run's self-restart (see
 # _restart_control_center()) so the fresh process can tell the reloaded page
@@ -539,6 +543,49 @@ _IMU_READ_SCRIPT = (
     "    sys.exit(1)\n"
 )
 
+# #117: tints a grayscale-derived version of the source image pure red
+# (R=luminance, G=0, B=0) - the same mapping PiFinder's own displays.py uses
+# for its real OLED (RED_RGB = ColorMask([1, 0, 0], "RGB")) - so the static
+# placeholder matches the warm red glow the live hardware is always seen in,
+# instead of the full-color/blue splash image as cloned from upstream.
+_RED_CONVERT_SCRIPT = (
+    "import sys\n"
+    "from PIL import Image\n"
+    "src, dst = sys.argv[1], sys.argv[2]\n"
+    "grey = Image.open(src).convert('L')\n"
+    "zero = Image.new('L', grey.size, 0)\n"
+    "Image.merge('RGB', (grey, zero, zero)).save(dst)\n"
+)
+
+
+def _pifinder_welcome_image_red():
+    """Returns the path to a red-tinted cache of PIFINDER_WELCOME_IMAGE,
+    (re)generating it via PiFinder's own venv (has Pillow, unlike the system
+    python3 this server itself runs under) whenever missing or older than
+    the source. Returns None if the source doesn't exist yet (PiFinder not
+    installed) or generation fails - callers should fall back to serving
+    the plain original in that case rather than 404ing a placeholder image."""
+    if not PIFINDER_WELCOME_IMAGE.is_file():
+        return None
+    if (
+        PIFINDER_WELCOME_IMAGE_RED.is_file()
+        and PIFINDER_WELCOME_IMAGE_RED.stat().st_mtime >= PIFINDER_WELCOME_IMAGE.stat().st_mtime
+    ):
+        return PIFINDER_WELCOME_IMAGE_RED
+    if not PIFINDER_VENV_PY.exists():
+        return None
+    try:
+        result = subprocess.run(
+            [str(PIFINDER_VENV_PY), "-c", _RED_CONVERT_SCRIPT,
+             str(PIFINDER_WELCOME_IMAGE), str(PIFINDER_WELCOME_IMAGE_RED)],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0 or not PIFINDER_WELCOME_IMAGE_RED.is_file():
+        return None
+    return PIFINDER_WELCOME_IMAGE_RED
+
 
 def _classify_capture_failure(stdout, stderr, timed_out):
     """Turns a capture/read subprocess's raw result into (error_type,
@@ -831,6 +878,127 @@ _mb_last_running = None  # last known /api/mount_bridge_status "running" value, 
 def _mb_log(line: str):
     with _lock:
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
+
+
+# #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
+# redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
+# CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
+# pre-restart RA/Dec forever, with nothing surfacing the failure. An
+# in-driver fix was attempted and confirmed NOT to self-heal live (see
+# #139, which tracks that alternative separately); this is the approved
+# Control-Center-side fix instead: detect the restart from here and redo
+# the same disconnect/connect cycle already confirmed live by hand via
+# indi_setprop (#118's documented workaround).
+_pifinder_lx200_healed_for_start = None  # pifinder.service start time we last confirmed LX200 connected against
+_pifinder_lx200_reconnect_in_flight = False
+
+
+def _pifinder_service_start_monotonic():
+    """pifinder.service's ActiveEnterTimestampMonotonic (microseconds since
+    boot), or None if the service isn't running / systemctl can't answer.
+    Monotonic rather than the wall-clock timestamp - a plain integer,
+    always comparable, and immune to wall-clock/timezone parsing edge
+    cases; changes exactly once per service (re)start, which is all that's
+    needed here."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "show", "pifinder.service", "--property=ActiveEnterTimestampMonotonic", "--value"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return int(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        return None
+
+
+def _pifinder_lx200_auto_reconnect(status: dict) -> None:
+    """Called every _pifinder_lx200_reconnect_watchdog() tick: whenever
+    pifinder.service's own start time has moved on since we last confirmed
+    "PiFinder LX200" freshly connected, force a reconnect to redo the TCP
+    handshake. Deliberately keeps retrying every tick - not just once -
+    until a fresh connect is actually confirmed: found live (2026-08-03)
+    that pos_server.py isn't necessarily listening again the moment
+    pifinder.service's own start time changes (PiFinder itself can still be
+    mid-startup for camera/IMU init), so a single disconnect+connect attempt
+    right after detecting the restart can itself fail and leave the driver
+    *honestly* disconnected - gating retries on "still looks connected"
+    would then never retry again. Once _pifinder_lx200_healed_for_start
+    catches up to the current start time, this goes quiet again; only a
+    genuinely new restart (a further-advanced start time) reawakens it.
+    Runs the actual attempt in a background thread so a detected restart
+    never blocks the watchdog loop; the in-flight guard means a still-
+    pending attempt is left alone rather than stacking a second one."""
+    global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+    if status.get("active_pifinder") != "PiFinder LX200":
+        return
+    current_start = _pifinder_service_start_monotonic()
+    if current_start is None:
+        return
+    if _pifinder_lx200_healed_for_start is None:
+        # First observation since this Control Center process started -
+        # assume whatever's currently connected is already healthy rather
+        # than forcing a reconnect for no reason on every restart of the
+        # Control Center itself.
+        _pifinder_lx200_healed_for_start = current_start
+        return
+    if current_start == _pifinder_lx200_healed_for_start:
+        return
+    if _pifinder_lx200_reconnect_in_flight:
+        return
+    _pifinder_lx200_reconnect_in_flight = True
+    was_connected = status.get("pifinder_connected") is True
+    _mb_log(
+        f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
+        f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
+        "attempting reconnect (#118)"
+    )
+
+    def _do_reconnect(start_seen, was_connected):
+        global _pifinder_lx200_healed_for_start, _pifinder_lx200_reconnect_in_flight
+        try:
+            if was_connected:
+                # Frozen-stale case: CONNECTION was already On, so DISCONNECT
+                # first (mirrors the manual indi_setprop workaround from #118).
+                indi_client.disconnect_device("PiFinder LX200")
+                time.sleep(1.0)
+            indi_client.connect_device("PiFinder LX200")
+            time.sleep(1.0)
+            fresh = indi_client.get_properties(device="PiFinder LX200").get("PiFinder LX200", {})
+            now_connected = fresh.get("CONNECTION", {}).get("elements", {}).get("CONNECT") == "On"
+            if now_connected:
+                _pifinder_lx200_healed_for_start = start_seen
+                _mb_log("PiFinder LX200 auto-reconnect after pifinder.service restart succeeded")
+            else:
+                _mb_log(
+                    "PiFinder LX200 auto-reconnect attempt did not take yet "
+                    "(pos_server.py likely still starting) - will retry"
+                )
+        except indi_client.INDIClientError as e:
+            _mb_log(f"PiFinder LX200 auto-reconnect after pifinder.service restart failed: {e}")
+        finally:
+            _pifinder_lx200_reconnect_in_flight = False
+
+    threading.Thread(target=_do_reconnect, args=(current_start, was_connected), daemon=True).start()
+
+
+def _pifinder_lx200_reconnect_watchdog(interval=20):
+    """Runs for the Control Center's whole lifetime, independent of whether
+    anyone has this web page open - #118's staleness bites just as easily
+    during a KStars/Ekos-only session that never touches this GUI. Started
+    once from main() as a daemon thread. Same 20s cadence as the frontend's
+    own /api/mount_bridge_status poll (not tied to it - see that handler's
+    own comment for why device_timeout is kept short by default here)."""
+    while True:
+        time.sleep(interval)
+        try:
+            status = indi_client.mount_bridge_status()
+        except indi_client.INDIClientError:
+            continue
+        if not status.get("running"):
+            continue
+        try:
+            _pifinder_lx200_auto_reconnect(status)
+        except Exception as e:  # a watchdog thread must never die silently
+            _mb_log(f"auto-reconnect watchdog raised unexpectedly: {e}")
 
 
 def _run_hardware_test():
@@ -1542,7 +1710,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/pifinder_welcome.png":
-            self._send_file(PIFINDER_WELCOME_IMAGE, "image/png")
+            self._send_file(_pifinder_welcome_image_red() or PIFINDER_WELCOME_IMAGE, "image/png")
             return
 
         if parsed.path == "/state":
@@ -2516,6 +2684,10 @@ def main():
     # needed here: nothing else can possibly be running yet this early.
     _hwtest_running = True
     threading.Thread(target=_startup_hardware_test, daemon=True).start()
+    # #118: auto-heal "PiFinder LX200"'s silent stale-connection bug after a
+    # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
+    # own docstring.
+    threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
     _server.serve_forever()
 
 

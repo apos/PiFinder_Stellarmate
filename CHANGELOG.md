@@ -5,8 +5,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
-### Added
-
+- Control Center: automatic recovery from #118's "PiFinder LX200" stale-connection bug. When
+  `pifinder.service` restarts (deploy, crash-recovery, manual restart), the already-open TCP
+  connection between the `LX200_PIFINDER` INDI driver and `pos_server.py` used to die silently -
+  `CONNECTION` stayed `On` and the driver kept serving its last-known RA/Dec forever, with nothing
+  surfacing the failure. A new background watchdog in `gui_installer/server.py`
+  (`_pifinder_lx200_reconnect_watchdog()`) now detects the service restart (via
+  `pifinder.service`'s own `ActiveEnterTimestampMonotonic`) and forces a fresh reconnect - the same
+  fix already confirmed by hand via `indi_setprop`, now automatic and independent of whether the
+  Control Center's web page is even open. Runs for the Control Center's whole lifetime, retrying
+  every ~20s until PiFinder itself has finished restarting. An in-driver alternative (fixing this at
+  the `LX200_PIFINDER` driver level directly) was attempted and found not to self-heal live; that
+  approach is tracked separately for future investigation (#139).
 - Control Center: the project's own logo (`docs/images/logo/PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png`)
   now appears in the page footer alongside the existing HeyApos/AVVP logos, at the same height.
 
@@ -16,6 +26,17 @@ All notable changes to this project are documented in this file. Format loosely 
   real-world photo (with the project's wordmark composited in), converted from the uploaded PNG at
   `docs/images/logo/PiFinder-Stellarmate_final.png` - same file paths, so every existing reference picks it up
   automatically.
+
+### Fixed
+
+- The Control Center's static OLED-mirror placeholder (shown before the live `/image` probe
+  succeeds) showed PiFinder's original full-color/blue splash image instead of the documented
+  red-converted version matching real hardware's actual red-channel-only rendering (see
+  `CHANGELOG.md`'s own `[1.3.1]` entry, which had never actually been implemented).
+  `_pifinder_welcome_image_red()` (`gui_installer/server.py`) now generates and caches a red-tinted
+  version (R=luminance, G=0, B=0 - the same mapping PiFinder's own `displays.py` uses for its real
+  OLED) via PiFinder's own venv (has Pillow; the Control Center's system python3 doesn't),
+  regenerating whenever the source is newer than the cache.
 
 ## [1.4.0] - 2026-08-02
 
