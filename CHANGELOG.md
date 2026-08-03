@@ -29,7 +29,12 @@ All notable changes to this project are documented in this file. Format loosely 
 - `pifinder.service` now runs with `Nice=5`/`CPUWeight=50` - a coarse, PFSM-side mitigation for the
   same finding (favors the Control Center/`indiserver`/the OS itself under CPU contention, without
   capping PiFinder below full-core use whenever the CPU isn't actually contended). The more precise
-  fix (capping/renicing PiFinder's own solver worker pool) is tracked upstream in #148.
+  fix (capping/renicing PiFinder's own solver worker pool) is tracked upstream in #148. Applied
+  everywhere `pifinder.service` gets (re)started - the setup script's own Update flow now
+  `restart`s rather than `start`s an already-running instance, the Control Center's direct service
+  button and the Real/Fake Mode toggle both `daemon-reload` first, and the Control Center logs a
+  one-time note at its own startup if the currently-running process's priority doesn't match what's
+  actually configured (never auto-restarts on its own).
 - `indi_pifinder`: the LX200 driver now enables TCP keepalive on its connection to `pos_server.py`
   (a truly-dead peer is now detected within ~11s instead of relying only on read()/write() to
   eventually notice) and retries a slow (not dead) `:GR#`/`:GD#` read up to 3 times at a shorter
