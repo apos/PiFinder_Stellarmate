@@ -7,6 +7,40 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Injected Solve (Dead Reckoning)**: a real, visible simulation mode - injects a one-time RA/Dec
+  into PiFinder (seeded from the currently coupled mount, or the API directly) and lets PiFinder's
+  own IMU dead-reckoning carry it forward from there, the same mechanism a real solve uses. Renamed
+  from an earlier internal "Fake-Solve" name (#106/#128), which collided with the tile's two other
+  simulation concepts (Fake Mode, Solve Simulation) and undersold that this is a real, usable
+  simulator - the Solve Simulation label was also reworded to avoid the same confusion. Gained a
+  dedicated always-visible status row plus an ampel badge (badge only shown while active), a real
+  bidirectional toggle (enabling seeds from the coupled mount's live position via a new
+  `/api/fake_solve_enable_from_mount`), and the project's traffic-light convention (green while
+  active, not red - it's working as intended) after several live-tested flicker/color/timing fixes.
+- **#130: "Mount is source" coupling mode** - a 5th Coupling mode that reverses the usual direction:
+  instead of PiFinder's solve driving the mount, the mount's own position (a real mount, or the
+  stock INDI Telescope Simulator) is read and injected into PiFinder as an Injected Solve. Mirrors
+  physical reality (a rigidly mounted PiFinder tracks whatever the mount is pointed at) and enables
+  full end-to-end simulation with zero PiFinder hardware - point/slew the mount from any INDI client
+  (hand controller, SkySafari, KStars, OnStep's own apps, ...) and a Fake-Mode PiFinder instance
+  follows. Only pushes on a >= 2 arcmin change from the last pushed position, not every tick, to
+  avoid both needless HTTP traffic and continuously resetting PiFinder's own solve-freshness clock.
+- **#79: gate Auto-correct on a fresh PiFinder camera solve** - Auto-correct previously corrected the
+  mount off whatever position PiFinder's LX200 interface currently reported, including continuously
+  IMU-interpolated positions between real solves; since that target kept moving on its own, the
+  mount chased it every tick (the field-reported "oscillation"). Now requires a solve that's both
+  camera-sourced and less than a configurable `SolveFreshnessMaxAgeNP` (default 5s) old before
+  correcting, fetched via PiFinder's own `/api/status` - fails closed (no correction) on any error.
+- The three simulation/testing concepts (Fake Mode, Solve Simulation, Injected Solve), previously
+  scattered across the "PiFinder Mode, Test and Power" tile, now live together in one always-visible
+  "Simulation and testing" section instead of the whole-device switch sitting apart from the other
+  two, which stayed buried in a collapsed section. Every collapsible section on the page now persists
+  its own open/closed state in `localStorage` too, not just whole tiles - no longer resets to
+  collapsed on every reload/service restart.
+- Autoconnect's step 5 (start the Ekos profile) can now be done from the Control Center itself via
+  KStars/Ekos's own D-Bus interface (`org.kde.kstars.Ekos`), instead of always requiring a manual
+  switch over to KStars - only acts while Ekos is genuinely idle, falls back to the manual
+  instructions otherwise.
 - The Fake-Solve simulation feature (safe, sky-independent Mount Bridge testing: inject a one-time
   synthetic solve at a chosen RA/Dec, then let PiFinder's own IMU dead-reckoning take over) plus the
   #107 fix (`pos_server.py` no longer fakes a `+00*00'01` RA=0/Dec=0 placeholder when unsolved) are
@@ -59,7 +93,10 @@ All notable changes to this project are documented in this file. Format loosely 
   PiFinder-reachability row in Quick Links) - found live investigating #139 that a contended Pi
   (PiFinder's own solver worker pool, KStars, ...) can make `pos_server.py`'s LX200 socket genuinely
   unresponsive for several seconds without anything being actually broken; this at least makes that
-  a visible, explained condition instead of unexplained slowness elsewhere on the page.
+  a visible, explained condition instead of unexplained slowness elsewhere on the page. Now also
+  shows the load as a percentage (0-100%, easier to read at a glance than a bare load-average number)
+  and the Pi's CPU temperature alongside it. The PiFinder-running and system-load lines now stack
+  instead of sitting side by side, so neither wraps awkwardly at typical tile widths.
 - `pifinder.service` now runs with `Nice=5`/`CPUWeight=50` - a coarse, PFSM-side mitigation for the
   same finding (favors the Control Center/`indiserver`/the OS itself under CPU contention, without
   capping PiFinder below full-core use whenever the CPU isn't actually contended). The more precise
@@ -83,23 +120,26 @@ All notable changes to this project are documented in this file. Format loosely 
   live 2026-08-04 when upstream cut v2.6.1: the old check refused to install/update at all, even
   though the actual clone/checkout was never going to touch that newer version anyway.
 - PiFinder tile: a new "Quick keys" compact keypad (arrows, Long, Enter) next to the OLED mirror,
-  driving PiFinder's OLED menu without switching to its separate Remote page. Two selectable layouts
-  (a D-pad cross, or a 2x4 grid), toggled top-right in the tile header and remembered in
-  `localStorage`. Sends the same `LEFT`/`UP`/`DOWN`/`RIGHT`/`SQUARE` (+ `LNG_` Long-combo) codes
-  PiFinder's own `remote.html` uses, via a new `/api/pifinder_key` proxy in `gui_installer/server.py`
-  (`_pifinder_send_key()`) - PiFinder's `/key_callback` route requires its own login session
-  (`@auth_required`), which a bare proxy POST doesn't have; the proxy logs in once (PAM alone
-  measured ~5s) and caches the session per port so only the first press pays that cost. The keypad
-  dims and ignores further clicks while a press is in flight (PiFinder's dev server only handles one
-  request at a time - a burst of rapid clicks previously piled up and made everything feel
-  unresponsive), and the OLED mirror's own 1s poll now yields while a press is in flight so the
-  press gets priority instead of competing with it. Root cause of the remaining occasional
-  multi-second delay (PiFinder's web server isn't multi-threaded) tracked upstream in #155.
+  driving PiFinder's OLED menu without switching to its separate Remote page. Three selectable
+  layouts, toggled top-right in the tile header and remembered in `localStorage`: **A** (a D-pad
+  cross), **B** (a 2x4 grid), and **C** - not a keypad at all, one button per PiFinder found on the
+  network (labeled by its last two IP octets) linking straight to that PiFinder's own full Remote
+  page, for whenever the compact keypad isn't enough. A/B send the same `LEFT`/`UP`/`DOWN`/`RIGHT`/
+  `SQUARE` (+ `LNG_` Long-combo) codes PiFinder's own `remote.html` uses, via a new
+  `/api/pifinder_key` proxy in `gui_installer/server.py` (`_pifinder_send_key()`) - PiFinder's
+  `/key_callback` route requires its own login session (`@auth_required`), which a bare proxy POST
+  doesn't have; the proxy logs in once (PAM alone measured ~5s) and caches the session per port so
+  only the first press pays that cost. The keypad dims and ignores further clicks while a press is in
+  flight (PiFinder's dev server only handles one request at a time - a burst of rapid clicks
+  previously piled up and made everything feel unresponsive), and the OLED mirror's own 1s poll now
+  yields while a press is in flight so the press gets priority instead of competing with it. Root
+  cause of the remaining occasional multi-second delay (PiFinder's web server isn't multi-threaded)
+  tracked upstream in #155, along with three follow-up reaction-time proposals.
 - Mount Bridge, "PiFinder Mode, Test and Power", and "Install or Update" tiles are now collapsible as
   a whole (heading stays visible) - state persisted per-tile in `localStorage`, survives
   reload/Control-Center-restart/Pi-reboot. The PiFinder tile itself stays always-expanded.
-- Quick Links gained INDI Web Manager (`:8624`) and StellarMate Dashboard (`:80`) entries, using the
-  same per-interface IP list already shown for "This page".
+- Quick Links gained INDI Web Manager (`:8624`), StellarMate Dashboard (`:80`), and StellarMate Web
+  VNC (`:6080`) entries, using the same per-interface IP list already shown for "This page".
 - A Night mode toggle (top of the page) renders all page text - and every `currentColor` icon -
   in glowing red, for dark-adapted eyes at the eyepiece. Persisted in `localStorage`.
 - The install hero photo moved out of the "Install or Update" tile to the very bottom of the page,
@@ -112,6 +152,25 @@ All notable changes to this project are documented in this file. Format loosely 
   alone; they encode meaning, not just an accent).
 - The Threshold number input (Mount Bridge tile) restyled to match the dark theme - it was rendering
   with the browser's default white input chrome, visibly out of place next to everything else.
+- Mount Bridge tile renamed "INDI Mount Bridge"; a GUI consistency pass across it and the PiFinder
+  tile, all per live layout-convention feedback:
+  - Action-status messages (previously a `⏳`/`✓`/`⚠` emoji prefix) now render as the same colored
+    status-dot used everywhere else on the page, not an emoji.
+  - Coupling presets (Verify/Alert, Auto-correct, ...) restyled to match the role-card pattern
+    (border-based active state, not a solid fill), Auto-correct (Sync) reordered before Verify/Alert
+    only as the more commonly used mode, and the whole row (both groups plus Decouple) now stretches
+    to a uniform height instead of guessing at a fixed one.
+  - The Role line moved directly under the role cards it describes and restyled to the page's
+    dot-first status-line convention instead of a boxed chip, dropping the redundant "Role:" prefix.
+  - Setup checklist's Decouple control moved to sit directly under the Coupling presets at matching
+    height; Threshold and Manual sync merged onto one row; the drift status line moved directly under
+    "Watching for drift...". `.ql-small-btn`s (Toggle/Sync/Start-Stop-Restart/Recheck, ...) recolored
+    to a muted neutral instead of the same bright red as genuinely destructive/accent actions.
+  - help.html's Injected Solve/Mount is source sections corrected (Injected Solve re-anchors on every
+    real motion-settle transition, it doesn't just drift unbounded; Mount is source is the version
+    anchored to independent ground truth instead of PiFinder's own estimate) and split into dedicated
+    per-section headings matching the page's per-section help icons, instead of one flat `Mode &
+    Power` section.
 
 ### Changed
 
@@ -135,15 +194,6 @@ All notable changes to this project are documented in this file. Format loosely 
   version (R=luminance, G=0, B=0 - the same mapping PiFinder's own `displays.py` uses for its real
   OLED) via PiFinder's own venv (has Pillow; the Control Center's system python3 doesn't),
   regenerating whenever the source is newer than the cache.
-- #102: the Control Center's Uninstall button never actually removed `~/PiFinder_Stellarmate`.
-  Several compounding causes in `bin/uninstall_pifinder_stellarmate.sh`/
-  `pi_config_files/pifinder-control-center.service`: the top-level destructive guard checked the
-  wrong condition, the `--selfmove` self-deleting relaunch didn't copy its `functions.sh`/
-  `os_detect.sh` dependencies alongside the relocated script (so the continuation crashed before
-  deleting anything), and the systemd unit's default `KillMode` killed the detached continuation
-  process along with the unit it was launched from. Fixed and live-verified via a real reboot (both
-  `~/PiFinder` and `~/PiFinder_Stellarmate` confirmed gone, then reinstalled from scratch and
-  reboot-verified again).
 - `bin/functions.sh`: `kstarsrc_source`/`kstarsrc_target` pointed at `~/.config/kstarsrc`, which never
   exists on StellarMate OS - KStars ships there as a Flatpak (`org.kde.kstars`), whose config lives
   under `~/.var/app/org.kde.kstars/config/kstarsrc` instead. The patch step's "please launch KStars
@@ -170,6 +220,11 @@ All notable changes to this project are documented in this file. Format loosely 
 - Mount Bridge's "Mount is source" preset button (#130/#131) was missing from
   `updateWmCouplingGate()`'s enable list, so it stayed permanently disabled regardless of setup
   state while its four sibling preset buttons enabled normally.
+- `_imu_hardware_present()`'s I2C scan could report a genuinely present, working IMU as "not
+  detected" (red) - it only serializes within its own process, not bus-wide against PiFinder's own
+  IMU reader polling the same device at ~30Hz, so a single scan attempt could occasionally race a
+  concurrent transaction and come back empty. Now retries up to 3 times, 0.3s apart, before
+  concluding the IMU is actually missing.
 
 ## [1.4.0] - 2026-08-02
 
