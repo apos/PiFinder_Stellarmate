@@ -388,6 +388,20 @@
     gap: 0.5rem;
   }
   #pf-keypad-b .pf-key-long, #pf-keypad-b .pf-key-enter { font-size: 0.8rem; height: 42px; }
+  #pf-keypad-c-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .pf-keypad-c-btn {
+    display: block;
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.8rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .pf-keypad-c-btn:hover { border-color: #777; color: #fff; }
+  .pf-keypad-c-empty { color: #888; font-size: 0.8rem; }
   .status-dot {
     display: inline-block;
     width: 0.6rem;
@@ -551,9 +565,10 @@
   }
   .mb-coupling-group-buttons {
     display: flex;
+    flex: 1;
     flex-wrap: wrap;
     gap: 0.5rem;
-    flex: 1;
+    align-items: stretch;
   }
   #mb-coupling-divider, .mb-coupling-divider {
     width: 1px;
@@ -567,6 +582,11 @@
   .mb-coupling-btn {
     flex: 1;
     min-width: 8rem;
+    /* The whole coupling row (Visual/GoTo groups + Decouple) stretches to
+       match its tallest member, same mechanism as #mb-role-cards - see
+       #mb-coupling-groups' align-items:stretch. min-height is only a floor
+       for the common single-line case. */
+    min-height: 2.7rem;
     background: #222;
     color: #ddd;
     border: 1px solid #444;
@@ -823,27 +843,25 @@
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; }
-  /* justify-content:flex-end bottom-aligns the button with its siblings'
-     actual button row - Visual/GoTo each stack a group-label above their
-     buttons, so "stretch" (the container's default cross-axis alignment)
-     alone left this flush with the label row instead, floating above/away
-     from the buttons it's supposed to sit level with. */
   /* margin-left:auto on the divider (not the group) - keeps divider and
      button tight against each other at the far right, with all leftover
      flex space absorbed before the divider instead of between it and the
      button. */
   #mb-decouple-divider { margin-left: auto; }
-  /* Its own invisible .group-label spacer (not justify-content:flex-end)
-     is what actually matches the button's height to its siblings' - the
-     container's align-items:stretch makes every .mb-coupling-group column
-     the same total height (tallest wins, e.g. GoTo's two-line button), and
-     with the same label height reserved here as everyone else, the
-     button's own flex:1 fills exactly the remaining space the sibling
-     buttons occupy - whatever that happens to be. */
+  /* Its own invisible .group-label spacer vertically offsets the button
+     past the label height Visual/GoTo have above their own buttons, so it
+     lines up with the actual button row instead of the heading row above
+     it. The button itself is flex:1 so it fills the stretched column
+     height exactly like .mb-coupling-group-buttons' buttons do - same
+     row-wide stretch as #mb-role-cards, min-height is just a floor. */
   #mb-decouple-group { flex: 0 0 auto; display: flex; flex-direction: column; }
   #mb-decouple-btn {
     flex: 1;
+    min-height: 2.7rem;
     width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 6px;
     background: #232323;
     border: 1px solid #3a3a3a;
@@ -1102,6 +1120,7 @@
         <div id="pf-keypad-style-switch" title="Quick keys layout">
           <button id="pf-keypad-style-a-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('a')">A</button>
           <button id="pf-keypad-style-b-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('b')">B</button>
+          <button id="pf-keypad-style-c-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('c')" title="Remote PiFinder links instead of Quick keys">C</button>
         </div>
       </div>
       <div id="pifinder-glance-row">
@@ -1131,6 +1150,17 @@
             <button id="pf-key-long-b" class="pf-key pf-key-long" style="grid-column:span 2;" onclick="pfToggleLong(this)">LONG</button>
             <button class="pf-key pf-key-enter" style="grid-column:span 2;" onclick="pfSendKey('SQUARE', this)">&#9632; ENTER</button>
           </div>
+        </div>
+        <!-- Layout C: not a keypad at all - one rectangular button per
+             discovered IP, opening PiFinder's own Remote page directly
+             (new tab), for whenever you'd rather drive the full remote.html
+             keypad than this page's compact one. Labeled with just the
+             last two octets (same host, so the first two rarely differ and
+             just take up space) - reuses the same ip/port discovery as
+             Quick Links' "This page"/"INDI Web Manager" rows. -->
+        <div id="pf-keypad-c" class="pf-keypad" style="display:none;">
+          <div class="group-label">Remote (per IP)</div>
+          <div id="pf-keypad-c-grid"></div>
         </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
@@ -1249,8 +1279,8 @@
           <div class="mb-coupling-group">
             <div class="group-label mb-coupling-label"><span>Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
               <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
+              <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
             </div>
           </div>
           <div id="mb-coupling-divider"></div>
@@ -1766,6 +1796,12 @@ function updatePiFinderStatusAndWizardLink() {
     remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
   }
+  // Keep Layout C's IP links in sync with reachability changes (PiFinder
+  // restarting, IP changing, ...) whenever it's the one currently shown -
+  // no point re-rendering an invisible grid.
+  if (document.getElementById('pf-keypad-c').style.display !== 'none') {
+    renderKeypadCLinks();
+  }
   refreshDebugSolve();
 }
 
@@ -2126,13 +2162,40 @@ async function pfSendKey(code, btn) {
   }
 }
 
+// Layout C: one button per discovered IP, straight to PiFinder's own
+// Remote page (new tab) - reuses knownIps (populated once at page load
+// from /state, same source Quick Links' rows use) and pifinderScreenUrl's
+// port (PiFinder's own port, not this page's). Labeled with just the last
+// two octets - on one LAN the first two rarely differ between candidate
+// IPs, so showing them is mostly wasted button width.
+function lastTwoOctets(ip) {
+  const parts = ip.split('.');
+  return parts.length === 4 ? `...${parts[2]}.${parts[3]}` : ip;
+}
+function renderKeypadCLinks() {
+  const grid = document.getElementById('pf-keypad-c-grid');
+  if (!knownIps || knownIps.length === 0 || !pifinderScreenUrl) {
+    grid.innerHTML = '<span class="pf-keypad-c-empty">PiFinder not reachable yet</span>';
+    return;
+  }
+  const port = new URL(pifinderScreenUrl).port || 80;
+  grid.innerHTML = knownIps.map(ip =>
+    `<a class="pf-keypad-c-btn" href="http://${ip}:${port}/remote" target="_blank" rel="noopener">${lastTwoOctets(ip)}</a>`
+  ).join('');
+}
+
 // Persisted like the tile-collapse state above - same localStorage
 // convention, own key since this isn't a show/hide toggle.
 function setKeypadStyle(style) {
   document.getElementById('pf-keypad-a').style.display = style === 'a' ? 'flex' : 'none';
   document.getElementById('pf-keypad-b').style.display = style === 'b' ? 'flex' : 'none';
+  // Block, not flex like A/B - C has a label above its button grid, needs
+  // to stack vertically rather than lay out as a flex row.
+  document.getElementById('pf-keypad-c').style.display = style === 'c' ? 'block' : 'none';
   document.getElementById('pf-keypad-style-a-btn').classList.toggle('active', style === 'a');
   document.getElementById('pf-keypad-style-b-btn').classList.toggle('active', style === 'b');
+  document.getElementById('pf-keypad-style-c-btn').classList.toggle('active', style === 'c');
+  if (style === 'c') renderKeypadCLinks();
   try {
     localStorage.setItem('pf-keypad-style', style);
   } catch (e) {
