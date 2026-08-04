@@ -158,8 +158,10 @@ coupled mount and let real IMU dead-reckoning track from there, for testing with
 "Toggle Display" button
 for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
 buttons for the whole Pi. A **Mount Bridge** tile folds the Coupling Dial setup (Web Manager profile,
-drivers, mount link, connect, and four one-click Coupling presets — Verify/Alert only,
-Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward) into a single guided checklist,
+drivers, mount link, connect, and five one-click Coupling presets — Verify/Alert only,
+Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward, and "Mount is source" - reverses the
+usual direction so the mount drives PiFinder's position instead, for full simulation without any
+PiFinder hardware) into a single guided checklist,
 including an "Autoconnect" mode that drives the whole thing automatically once you pick a Coupling
 preset, or an explicit "Setup" button to run that same setup deliberately first. Run it with:
 ```bash

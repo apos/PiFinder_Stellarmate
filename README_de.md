@@ -159,8 +159,10 @@ Reckoning verfolgt sie danach weiter, zum Testen ohne Himmelszugang), ein "Toggl
 für ein optionales kleines SPI-Zweitdisplay
 (siehe `test_tools/`) sowie immer verfügbare Reboot-/Shutdown-Buttons für den ganzen Pi. Eine
 **Mount-Bridge**-Kachel fasst die Einrichtung des Coupling Dial (Web-Manager-Profil, Treiber,
-Mount-Verknüpfung, Verbinden sowie vier Ein-Klick-Coupling-Presets — Verify/Alert only,
-Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward) in einer einzigen geführten
+Mount-Verknüpfung, Verbinden sowie fünf Ein-Klick-Coupling-Presets — Verify/Alert only,
+Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward und "Mount is source" — kehrt die
+übliche Richtung um, sodass die Montierung PiFinders Position vorgibt statt umgekehrt, für volle
+Simulation ganz ohne PiFinder-Hardware) in einer einzigen geführten
 Checkliste zusammen, inklusive eines "Autoconnect"-Modus, der den ganzen Ablauf automatisch
 durchführt, sobald ein Coupling-Preset ausgewählt wird, oder eines expliziten "Setup"-Buttons, um
 das gezielt vorab zu erledigen. Starten mit:
