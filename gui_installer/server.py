@@ -372,19 +372,32 @@ def _imu_hardware_present():
     whether PiFinder is currently running: I2C bus scanning is a shared,
     non-exclusive operation (unlike the keypad's GPIO lines), so this is safe
     to run alongside a live pifinder.service.
+
+    Retries a couple of times before concluding "not present" - found live
+    2026-08-04 that a single miss can happen even with a genuinely present,
+    working IMU: try_lock() only serializes within this one process, not
+    bus-wide against PiFinder's own IMU reader polling the same device at
+    ~30Hz, so an unlucky scan can occasionally race a concurrent transaction
+    and come back empty. A momentary miss isn't a "not detected" verdict on
+    its own; only every attempt missing is.
     """
     if not PIFINDER_VENV_PY.exists():
         return None
-    try:
-        result = subprocess.run(
-            [str(PIFINDER_VENV_PY), "-c", _IMU_SCAN_SCRIPT],
-            capture_output=True, text=True, timeout=10,
-        )
-    except Exception:
-        return None
-    if result.returncode != 0 or "LOCK_FAILED" in result.stdout:
-        return None
-    return any(addr in result.stdout for addr in _BNO055_I2C_ADDRESSES)
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                [str(PIFINDER_VENV_PY), "-c", _IMU_SCAN_SCRIPT],
+                capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or "LOCK_FAILED" in result.stdout:
+            return None
+        if any(addr in result.stdout for addr in _BNO055_I2C_ADDRESSES):
+            return True
+        if attempt < 2:
+            time.sleep(0.3)
+    return False
 
 
 def _gps_hardware_present():
@@ -882,6 +895,59 @@ def _ekos_indi_status() -> dict:
     return {"kstars_running": True, "connected": status == 2}
 
 
+def _ekos_qdbus(*args):
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    return subprocess.run(
+        ["qdbus6", "org.kde.kstars", "/KStars/Ekos", *args],
+        env=env, capture_output=True, text=True, timeout=5,
+    )
+
+
+def _ekos_start_profile(profile_name: str) -> dict:
+    """Starts the given Ekos profile via org.kde.kstars.Ekos's D-Bus
+    interface (setProfile + start) - unlike _ekos_indi_status() above,
+    this DOES drive Ekos's own GUI, on purpose: found live 2026-08-04 that
+    "go click Start/Connect in KStars yourself" was a hard blocker for
+    Autoconnect, even though the profile name is already known here (same
+    Web Manager profile the user already picked in this tile) and Ekos
+    exposes exactly the needed calls (verified live via `qdbus6
+    org.kde.kstars /KStars/Ekos org.kde.kstars.Ekos.getProfiles`).
+
+    Only acts while Ekos is genuinely Idle (ekosStatus == 0) - if a session
+    is already Pending/Success/Error, something is already going on (maybe
+    the user's own unrelated KStars work) and this backs off rather than
+    yanking their currently-loaded profile out from under them. Only ever
+    called from the explicit, user-initiated Autoconnect flow, never from
+    a passive/background poll - same reasoning _ekos_indi_status() already
+    documents, just not an absolute "never touch Ekos" rule.
+
+    Returns {"attempted": bool, "reason": str|None} - "attempted": False
+    with a reason means the caller should fall back to the manual
+    instructions, not that anything failed loudly.
+    """
+    try:
+        status_result = _ekos_qdbus("org.kde.kstars.Ekos.ekosStatus")
+    except (OSError, subprocess.TimeoutExpired):
+        return {"attempted": False, "reason": "KStars/Ekos not reachable via D-Bus"}
+    if status_result.returncode != 0:
+        return {"attempted": False, "reason": "KStars not running"}
+    try:
+        ekos_status = int(status_result.stdout.strip())
+    except ValueError:
+        return {"attempted": False, "reason": "unexpected ekosStatus value"}
+    if ekos_status != 0:
+        return {"attempted": False, "reason": "Ekos already has a session in progress"}
+    try:
+        set_result = _ekos_qdbus("org.kde.kstars.Ekos.setProfile", profile_name)
+        if set_result.returncode != 0 or set_result.stdout.strip() != "true":
+            return {"attempted": False, "reason": f"profile '{profile_name}' not found in Ekos"}
+        _ekos_qdbus("org.kde.kstars.Ekos.start")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"attempted": False, "reason": str(e)}
+    return {"attempted": True, "reason": None}
+
+
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
@@ -942,10 +1008,25 @@ class _BackgroundRetrier:
 _SYSTEM_LOAD_HIGH_RATIO = 1.5
 
 
+def _cpu_temp_c():
+    """SoC temperature in Celsius, or None if unreadable (non-Pi hardware,
+    permissions, ...) - /sys/class/thermal is universal across Pi models
+    and needs no subprocess (unlike vcgencmd)."""
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return round(int(f.read().strip()) / 1000, 1)
+    except Exception:
+        return None
+
+
 def _system_load_status() -> dict:
     """CPU load average (1/5/15 min, from os.getloadavg()) relative to core
-    count. "high" only means "worth a human glancing at" - see
-    _SYSTEM_LOAD_HIGH_RATIO's own comment."""
+    count, plus SoC temperature. "high" only means "worth a human glancing
+    at" - see _SYSTEM_LOAD_HIGH_RATIO's own comment. "percent" (load1 as a
+    percentage of total available CPU, uncapped - >100% means genuinely
+    oversubscribed, not a display bug) is what the UI actually shows now;
+    "a load average of 9.7" meant nothing to most users without also
+    knowing the core count to divide by themselves."""
     load1, load5, load15 = os.getloadavg()
     cpu_count = os.cpu_count() or 1
     ratio1 = load1 / cpu_count
@@ -955,6 +1036,8 @@ def _system_load_status() -> dict:
         "load15": round(load15, 2),
         "cpu_count": cpu_count,
         "ratio1": round(ratio1, 2),
+        "percent": round(ratio1 * 100),
+        "temp_c": _cpu_temp_c(),
         "high": ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
     }
 
@@ -2806,6 +2889,19 @@ class Handler(BaseHTTPRequestHandler):
             if not restart_and_retry(lambda: indi_client.connect_device(device)):
                 return  # restart_and_retry() already sent the error response
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/ekos_start_profile":
+            # Explicit, user-initiated only (Autoconnect step 5) - see
+            # _ekos_start_profile()'s own docstring for why this is safe to
+            # do here despite _ekos_indi_status() elsewhere deliberately
+            # never touching Ekos from a passive poll.
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"attempted": False, "reason": "missing 'profile' query param"}, status=400)
+                return
+            self._send_json(_ekos_start_profile(profile))
             return
 
         if parsed.path == "/api/mount_bridge_coupling":
