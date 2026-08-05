@@ -3969,7 +3969,40 @@ async function refreshMountBridgeStatus() {
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
+    if (data.running === false) {
+      // /api/mount_bridge_status always resolves "running" to an explicit
+      // true/false (see server.py) - false here is a *confirmed* answer,
+      // not a miss: the request/response cycle worked fine, the backend
+      // just told us the device genuinely isn't there right now (profile
+      // stopped, Ekos disconnected, ...). This used to fall into the same
+      // mbStatusMissStreak path as an actual fetch failure below, so
+      // wmXConnected/the Connect buttons kept showing whatever was last
+      // confirmed *while the device was still running* - found live
+      // (2026-08-05): "Disconnect Bridge" stayed displayed with the
+      // device confirmed stopped, log clearly showing running=false the
+      // whole time. Treat it as confirmed immediately instead of waiting
+      // out a miss streak meant for "we don't know yet".
+      mbStatusMissStreak = 0;
+      dotEl.classList.remove('dot-unconfirmed');
+      setMbStatusUnconfirmed(false);
+      updateWmCouplingGate();
+      updateMbDiagram(data);
+      wmActiveMount = data.active_mount || null;
+      wmPifinderConnected = data.pifinder_connected;
+      wmBridgeConnected = data.bridge_connected;
+      wmMountConnected = data.mount_connected;
+      refreshWmActiveButton();
+      refreshConnectButtons();
+      updateStepIndicators();
+      dotEl.className = 'status-dot dot-white';
+      document.getElementById('mount-bridge-text').textContent = 'not running';
+      return;
+    }
     if (!data.running) {
+      // Genuinely couldn't tell (data.running missing/non-boolean despite
+      // a parsed response - shouldn't happen given the endpoint's own
+      // contract, kept as a defensive fallback) - same "don't act on an
+      // unconfirmed miss" handling as the catch block below.
       mbStatusMissStreak++;
       // A single missed poll is treated as pure noise - pulse the dot
       // (keeping its current color) so "still confirming" is visible
