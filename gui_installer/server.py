@@ -2381,21 +2381,7 @@ class Handler(BaseHTTPRequestHandler):
         # cross-origin requests never carry this page's cached Basic Auth
         # credentials. Shutting the installer down isn't destructive, unlike
         # /start and /reboot below, which do require auth.
-        #
-        # /api/fake_solve_refresh also stays open: it never accepts
-        # client-supplied coordinates (_pifinder_refresh_fake_solve() only
-        # ever re-reads-then-reposts PiFinder's own current position, see
-        # its own docstring), so it carries the same "not destructive"
-        # exemption as /shutdown - and unlike that one, this needs it for a
-        # real reason: "Keep fresh" (#133's diagnosis session) polls it
-        # every 3s, and PAM's per-request cost (real subprocess spawn, not
-        # cached) measurably added to system load on top of the ~15 other
-        # concurrent polling loops already documented in _require_auth()'s
-        # own docstring - found live (2026-08-05): CPU load average 7.4 on
-        # a 4-core Pi 4, "unconfirmed" Mount Bridge status, coupling preset
-        # buttons disabled - the status *checks* themselves were timing out
-        # under the load their own polling helped cause.
-        if parsed.path not in ("/shutdown", "/api/fake_solve_refresh") and not self._require_auth():
+        if parsed.path != "/shutdown" and not self._require_auth():
             return
 
         if parsed.path == "/start":
