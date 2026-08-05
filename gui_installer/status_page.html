@@ -1447,13 +1447,9 @@
             <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
-          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against - see 'Mount is source' in the Mount Bridge tile for a version anchored to the mount's actual position instead. See Help for details.">
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. See Help for details.">
             <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
             <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
-          </div>
-          <div class="hw-row" title="Reverses the usual direction: the mount's position (real, or the stock INDI Telescope Simulator) is pushed into PiFinder via the same /api/fake_solve mechanism as Injected Solve above, instead of PiFinder driving the mount. Unlike a plain Injected Solve seed, this keeps re-anchoring to the mount's actual live position on every meaningful move - PiFinder's IMU dead-reckoning still bridges the gaps in between, but each mount push is an independent ground-truth check, not just PiFinder trusting its own estimate. Enables full simulation with zero real PiFinder hardware (see #130). This is a Mount Bridge Coupling preset like Verify/Alert or Auto-correct, not a plain on/off toggle - needs a mount connected in Mount Bridge (real or the INDI Telescope Simulator) to activate.">
-            <span class="status-dot dot-unconfirmed" id="mount-source-dot"></span>Mount is source (Mount Bridge): <span id="mount-source-text">off</span>
-            <button id="wm-preset-mount-source-btn" class="ql-small-btn" onclick="onMountSourceRowClick()" disabled>Activate</button>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -3492,12 +3488,7 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
-  // wm-preset-mount-source-btn ("Mount is source", added by #130/PR #131)
-  // was missing from this list - found live 2026-08-04. It stayed
-  // permanently disabled regardless of setup state since nothing ever
-  // cleared its HTML "disabled" attribute, unlike its four sibling preset
-  // buttons here.
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn', 'wm-preset-mount-source-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }
@@ -3631,37 +3622,12 @@ function updateCouplingButtons(mode, correctionAction) {
   let active = null;
   if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
   else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
-  else if (mode === 'MODE_MOUNT_SOURCE') active = 'wm-preset-mount-source-btn';
   else if (mode === 'MODE_AUTO_CORRECT') {
     active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
   }
   ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
-  // Mount is source now lives as its own dot/label/button row in the
-  // "PiFinder Mode, Test and Power" tile (moved there per direct feedback,
-  // 2026-08-04 - it behaves like the other simulation tools there, not
-  // like a Mount Bridge status readout) - same dot-first pattern as its
-  // new neighbors, driven by the same coupling-mode data as the highlight
-  // above rather than a separate poll.
-  const mountSourceActive = mode === 'MODE_MOUNT_SOURCE';
-  document.getElementById('mount-source-dot').className = 'status-dot ' + (mountSourceActive ? 'dot-green' : 'dot-white');
-  document.getElementById('mount-source-text').textContent = mountSourceActive ? 'active' : 'off';
-  document.getElementById('wm-preset-mount-source-btn').textContent = mountSourceActive ? 'Decouple' : 'Activate';
-}
-
-// Dispatches to whichever action the row's single button currently means -
-// Activate (a Coupling preset, same as the other presets) while off,
-// Decouple (Coupling back to Off) while this preset is the active one. Two
-// different underlying calls behind one button because this preset - unlike
-// Solve Simulation/Injected Solve above it - isn't a simple on/off toggle;
-// see its row's own tooltip.
-function onMountSourceRowClick() {
-  if (document.getElementById('wm-preset-mount-source-btn').textContent === 'Decouple') {
-    onDecoupleClick();
-  } else {
-    onCouplingPresetClick('mount_source');
-  }
 }
 
 const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
@@ -3717,13 +3683,10 @@ function updateBridgeSettingsInfo(data) {
 // coupling_mode reading, from both the slow and fast polls.
 // Threshold only actually does anything for Verify/Alert and the two
 // Auto-correct presets (see applyThresholdChange()) - Goto-Forward ignores
-// it entirely, and Mount is source uses its own fixed, non-configurable
-// 2' push-threshold (MOUNT_SOURCE_MIN_CHANGE_ARCMIN) instead. Left the
-// input live and editable regardless of mode before this, with nothing
-// to say so - found live (2026-08-05): changing it while Mount is source
-// was active looked like it took effect (no error, no visual difference)
-// but silently did nothing, and edited it again expecting ~10' pushes to
-// see the same ~2' cadence as always, unrelated to the field.
+// it entirely. Left the input live and editable regardless of mode before
+// this, with nothing to say so - found live (2026-08-05): changing it
+// while a mode that ignores it was active looked like it took effect (no
+// error, no visual difference) but silently did nothing.
 const THRESHOLD_USING_MODES = ['MODE_VERIFY_ALERT', 'MODE_AUTO_CORRECT'];
 function updateThresholdInputRelevance(couplingMode) {
   const input = document.getElementById('wm-threshold-input');
@@ -3732,8 +3695,6 @@ function updateThresholdInputRelevance(couplingMode) {
   input.disabled = !usesThreshold;
   wrap.title = usesThreshold
     ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
-    : couplingMode === 'MODE_MOUNT_SOURCE'
-    ? "Not used by Mount is source - it pushes on its own fixed 2' change instead, not this value."
     : "Not used by Goto-Forward - every mount goto forwards immediately, regardless of this value.";
 }
 
@@ -3783,13 +3744,6 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     setMbArrow('mb-arrow-left', 'goto');
     setMbArrow('mb-arrow-right', 'goto');
     captionEl.textContent = 'Forwarding goto commands straight to the mount';
-  } else if (couplingMode === 'MODE_MOUNT_SOURCE') {
-    // Reversed direction from every other mode - the mount drives PiFinder,
-    // not the other way round (see #130), so the arrows point the opposite
-    // way too: reading from the mount (right), writing to PiFinder (left).
-    setMbArrow('mb-arrow-left', 'write');
-    setMbArrow('mb-arrow-right', 'read');
-    captionEl.textContent = "Mount is the source - pushing its position to PiFinder as an Injected Solve";
   }
   const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
   document.getElementById('mount-bridge-text').textContent =
@@ -4112,7 +4066,6 @@ const MB_PRESET_INFO = {
   auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
   auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
-  mount_source: { btnId: 'wm-preset-mount-source-btn', mode: 'mount_source' },
 };
 
 // Pushes a changed threshold to the driver immediately, without requiring
@@ -4157,7 +4110,7 @@ async function setWmCoupling(preset) {
   const threshold = document.getElementById('wm-threshold-input').value;
   try {
     const params = new URLSearchParams({ mode });
-    if (mode !== 'goto_forward' && mode !== 'mount_source') {
+    if (mode !== 'goto_forward') {
       params.set('threshold', threshold);
       if (action) params.set('action', action);
     }

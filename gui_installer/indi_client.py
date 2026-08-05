@@ -581,7 +581,7 @@ def set_number(
 # maps to - which mode needs DRIFT_THRESHOLD/CORRECTION_ACTION and which
 # doesn't (MODE_GOTO_FORWARD needs neither, confirmed against
 # pifinder_mount_bridge.cpp's TimerHit()).
-COUPLING_MODES = {"MODE_OFF", "MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD", "MODE_MOUNT_SOURCE"}
+COUPLING_MODES = {"MODE_OFF", "MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD"}
 DRIFT_THRESHOLD_DEFAULT = 5.0  # matches the driver's own IUFillNumber default
 CORRECTION_ACTION_DEFAULT = "sync"  # matches the driver's own default (ACTION_SYNC is ISS_ON)
 
@@ -619,8 +619,6 @@ def set_coupling_mode(
       - MODE_VERIFY_ALERT: DRIFT_THRESHOLD only
       - MODE_AUTO_CORRECT: DRIFT_THRESHOLD + CORRECTION_ACTION
       - MODE_GOTO_FORWARD: neither (both args silently ignored if given)
-      - MODE_MOUNT_SOURCE: neither either (see #130 - reverses direction,
-        mount drives PiFinder instead of the other way round)
     `correction_action` is "sync" or "goto" (matching the driver's own
     Sync/Goto-Track choice). Supporting properties are set *before*
     BRIDGE_MODE itself, so there's no window where coupling is already
