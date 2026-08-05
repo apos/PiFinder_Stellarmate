@@ -2752,6 +2752,19 @@ class Handler(BaseHTTPRequestHandler):
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            # Persist to the driver's own config file (CONFIG_PROCESS.CONFIG_SAVE) -
+            # set_text() above only changes the *live* property. Without this, any
+            # later reconnect (driver restart, Ekos profile restart, ...) silently
+            # reloads whatever ACTIVE_MOUNT was saved on disk from a much earlier
+            # session, undoing this selection with no indication anything reverted -
+            # found live (#158) chasing a "Mount is source" test that kept reading
+            # from a stale mount device not even in the current profile. Best-effort:
+            # the live selection above already took effect either way, so a save
+            # failure here is logged, not fatal to the request.
+            try:
+                indi_client.set_switch("PiFinder Mount Bridge", "CONFIG_PROCESS", "CONFIG_SAVE")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  warning: active-devices selection applied but not saved to disk: {e}")
             _mb_log(f"  done.")
             self._send_json({"success": True})
             return

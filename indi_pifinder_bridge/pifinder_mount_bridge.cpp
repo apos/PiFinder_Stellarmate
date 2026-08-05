@@ -321,6 +321,23 @@ void PiFinderMountBridge::handleMountSource()
     if (!m_client->getMountRADE(mountRA, mountDec))
         return;
 
+    // Every other mode's TimerHit() branch computes/publishes DriftStatusN
+    // before dispatching to its own handler - this early-return branch
+    // skipped that entirely, so the GUI's drift badge for this mode just
+    // carried over whatever value was last set in a *different* mode (often
+    // a stale "0.0'" from before switching in), silently misreporting sync
+    // even while PiFinder and the mount were nowhere near each other. Update
+    // it here from PiFinder's actual reported position, same formula as
+    // every other mode - this reads honestly regardless of whether the
+    // fake-solve push below is currently working.
+    double piRA, piDec;
+    if (m_client->getPiFinderRADE(piRA, piDec))
+    {
+        DriftStatusN[0].value = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+        DriftStatusNP.s = IPS_OK;
+        IDSetNumber(&DriftStatusNP, nullptr);
+    }
+
     if (!std::isnan(m_lastPushedMountRA))
     {
         const double changeArcmin = angularSeparationArcmin(mountRA, mountDec, m_lastPushedMountRA, m_lastPushedMountDec);
@@ -648,6 +665,27 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             IUUpdateText(&ActiveDeviceTP, texts, names, n);
             ActiveDeviceTP.s = IPS_OK;
             IDSetText(&ActiveDeviceTP, nullptr);
+
+            // Found live (#158): changing which device is watched here used to
+            // be cosmetic while already connected - m_client's watchDevice()
+            // subscriptions were only ever established once, inside Connect(),
+            // so re-pointing ActiveDeviceTP at a different mount mid-session
+            // updated what the property *displayed* but left the embedded
+            // client silently bound to whichever device was active at the
+            // last Connect(). isReady() then depended on properties from a
+            // device nobody was watching anymore - MANUAL_TRIGGER went
+            // straight to Alert ("not ready"), and TimerHit()'s isReady()
+            // gate blocked handleMountSource()/drift entirely, with nothing
+            // in the log to explain why. Cycling the connection re-runs
+            // Connect()'s setDevices() against the new names, the same
+            // recovery a full disconnect/reconnect (or driver restart)
+            // already provided manually.
+            if (isConnected())
+            {
+                LOG_INFO("Active devices changed - reconnecting to apply.");
+                Disconnect();
+                Connect();
+            }
             return true;
         }
     }
