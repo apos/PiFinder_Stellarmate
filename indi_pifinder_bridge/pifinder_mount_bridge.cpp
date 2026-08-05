@@ -418,7 +418,6 @@ void PiFinderMountBridge::TimerHit()
     }
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
-        DriftStatusNP.s = IPS_OK;
         if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
         {
             // Found live (#79): correcting off a continuously
@@ -428,6 +427,13 @@ void PiFinderMountBridge::TimerHit()
             // wherever dead-reckoning currently thinks PiFinder points,
             // instead of a verified position. Skip the correction and wait
             // for the next tick's fresh-solve check instead.
+            //
+            // IPS_ALERT here (not IPS_OK) so the GUI can tell "exceeded but
+            // gated" apart from "exceeded and actively correcting" - found
+            // live (2026-08-05): the GUI's caption previously said
+            // "Correcting the mount now" purely from drift > threshold, with
+            // no way to know the driver was silently refusing underneath.
+            DriftStatusNP.s = IPS_ALERT;
             LOGF_DEBUG(
                 "Drift %.1f arcmin exceeded threshold, but PiFinder's position isn't backed by a solve "
                 "within the last %.1fs - skipping correction.",
@@ -435,6 +441,11 @@ void PiFinderMountBridge::TimerHit()
         }
         else if (exceeded)
         {
+            // Actually correcting this tick (or the Goto-in-progress guard
+            // below is letting a prior one finish) - IPS_BUSY, distinct from
+            // both IPS_OK (within threshold) and the IPS_ALERT gated case
+            // above.
+            DriftStatusNP.s = IPS_BUSY;
             const bool useGoto = CorrectionActionS[ACTION_GOTO].s == ISS_ON;
 
             // A Goto correction takes far longer than one 2s tick to
@@ -458,6 +469,10 @@ void PiFinderMountBridge::TimerHit()
                 else
                     LOG_ERROR("Failed to send correction to mount.");
             }
+        }
+        else
+        {
+            DriftStatusNP.s = IPS_OK;
         }
     }
 

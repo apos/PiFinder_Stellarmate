@@ -3715,7 +3715,7 @@ function updateBridgeSettingsInfo(data) {
 // below) - this is the only place that reliably sees every fresh
 // coupling_mode reading, from both the slow and fast polls.
 let wmLastCouplingMode = null;
-function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin) {
+function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
   wmLastCouplingMode = couplingMode;
   const captionEl = document.getElementById('mb-mode-caption');
   const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
@@ -3741,8 +3741,18 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin) {
   } else if (couplingMode === 'MODE_AUTO_CORRECT') {
     setMbArrow('mb-arrow-left', 'read');
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
-    setMbArrow('mb-arrow-right', exceeded ? 'write' : 'read');
-    captionEl.textContent = exceeded
+    // Busy = actively sending a correction this tick. Alert = exceeded but
+    // gated by #79's solve-freshness check (real drift, driver just won't
+    // act on it yet - not the same as "correcting now"). Distinguishing
+    // these needs driftState, not just exceeded - drift alone can't tell
+    // them apart, and conflating them previously claimed "Correcting the
+    // mount now" while the driver silently did nothing (found live
+    // 2026-08-05, PiFinder's last solve was several minutes old).
+    const gated = exceeded && driftState === 'Alert';
+    setMbArrow('mb-arrow-right', exceeded && !gated ? 'write' : 'read');
+    captionEl.textContent = gated
+      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}', but PiFinder's last solve isn't fresh enough to correct from yet`
+      : exceeded
       ? `Correcting the mount now - drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}'`
       : `Watching for drift - will correct the mount past ${threshold}'`;
   } else if (couplingMode === 'MODE_GOTO_FORWARD') {
@@ -3769,7 +3779,7 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateBridgeSettingsInfo(data);
-  applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin);
+  applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered
@@ -4016,7 +4026,7 @@ async function refreshMbDrift() {
     const resp = await fetch('/api/mount_bridge_drift', { cache: 'no-store' });
     const data = await resp.json();
     if (data.running) {
-      applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin);
+      applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle

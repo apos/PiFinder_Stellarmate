@@ -259,7 +259,8 @@ def mount_bridge_status(
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
-    drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    drift_status_prop = device_props.get("DRIFT_STATUS", {})
+    drift_status = drift_status_prop.get("elements", {})
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
@@ -299,6 +300,8 @@ def mount_bridge_status(
         "mount_connected": mount_connected,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        # See mount_bridge_drift()'s matching field for why this exists.
+        "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
         "settings_host": settings_host,
         "settings_port": settings_port,
@@ -332,7 +335,8 @@ def mount_bridge_drift(
         return {"running": False, "coupling_mode": None, "correction_action": None, "drift_arcmin": None}
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
-    drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    drift_status_prop = device_props.get("DRIFT_STATUS", {})
+    drift_status = drift_status_prop.get("elements", {})
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -343,6 +347,17 @@ def mount_bridge_drift(
         "running": True,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        # DRIFT_STATUS's own INDI state (Ok/Busy/Alert/Idle) - in
+        # MODE_AUTO_CORRECT specifically, the driver sets Busy while
+        # actually sending a correction vs. Alert when drift exceeds the
+        # threshold but is gated by #79's solve-freshness check (still
+        # "wrong", just not something the driver will act on yet). Exposed
+        # so the GUI can tell those two apart instead of assuming "exceeded
+        # threshold" always means "correcting now" - found live (2026-08-05)
+        # showing "Correcting the mount now" while the driver silently
+        # skipped every attempt because PiFinder's last solve was minutes
+        # old.
+        "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
     }
 
