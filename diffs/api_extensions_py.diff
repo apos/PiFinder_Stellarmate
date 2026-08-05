@@ -1,5 +1,5 @@
 diff --git a/python/PiFinder/api_extensions.py b/python/PiFinder/api_extensions.py
-index 0bad6cf9..ccebb0a2 100644
+index 5d973c7b..79fab7ea 100644
 --- a/python/PiFinder/api_extensions.py
 +++ b/python/PiFinder/api_extensions.py
 @@ -21,6 +21,7 @@ import logging
@@ -19,7 +19,7 @@ index 0bad6cf9..ccebb0a2 100644
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -750,6 +753,66 @@ def register_api_routes(app, server_instance, require_auth=False):
+@@ -750,6 +753,90 @@ def register_api_routes(app, server_instance, require_auth=False):
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -45,7 +45,10 @@ index 0bad6cf9..ccebb0a2 100644
 +        image capture/plate-solving entirely - lets PiFinder's own IMU
 +        dead-reckoning take over from that fixed point, for testing
 +        anything downstream of a solve (e.g. an external mount bridge)
-+        without a real sky. JSON body: {"ra": <deg>, "dec": <deg>}.
++        without a real sky. JSON body: {"ra": <deg>, "dec": <deg>} - JNow
++        (current epoch, i.e. exactly what an INDI mount's own
++        EQUATORIAL_EOD_COORD reports - callers are expected to pass that
++        straight through, not precess it themselves).
 +        Distinct from /api/debug_solve, which substitutes a canned image
 +        for the real solver to actually plate-solve.
 +        """
@@ -58,8 +61,29 @@ index 0bad6cf9..ccebb0a2 100644
 +            body = request.get_json(silent=True)
 +            if not body or "ra" not in body or "dec" not in body:
 +                return _json_response({"error": "Missing 'ra'/'dec' field"}, 400)
-+            ra = float(body["ra"])
-+            dec = float(body["dec"])
++            ra_jnow = float(body["ra"])
++            dec_jnow = float(body["dec"])
++            # PiFinder's own solved/tracked position is J2000 (see
++            # /api/solution's Alt/Az computation above, and _apply_
++            # successful_solve()'s callers) - a mount's EQUATORIAL_EOD_COORD
++            # is JNow (epoch of date), so injecting it unconverted leaves a
++            # systematic offset equal to the current precession from J2000
++            # (~12-14' as of 2026, growing over time) in a fixed direction,
++            # not random drift. Found live (2026-08-05) testing #130's
++            # "Mount is source": PiFinder consistently sat northwest of the
++            # coupled Telescope Simulator regardless of target. Same
++            # JNow->J2000 conversion pos_server.py's handle_goto_command()
++            # already does for incoming LX200 GOTOs, applied here too since
++            # this is the same kind of "coordinates arriving from an
++            # external INDI mount" boundary.
++            from PiFinder.calc_utils import sf_utils
++            from skyfield.positionlib import position_of_radec
++
++            ts = sf_utils.ts
++            p = position_of_radec(ra_hours=ra_jnow / 15.0, dec_degrees=dec_jnow, epoch=ts.now())
++            ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
++            ra = float(ra_h._degrees)
++            dec = float(dec_d.degrees)
 +            server_instance.fake_solve_command_queue.put(FakeSolve(ra=ra, dec=dec))
 +            return _json_response({"success": True, "ra": ra, "dec": dec})
 +        except Exception as e:
