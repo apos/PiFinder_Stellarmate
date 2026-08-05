@@ -696,9 +696,18 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
 
         if (strcmp(name, ActiveDeviceTP.name) == 0)
         {
+            // Captured before IUUpdateText() overwrites them, so the
+            // reconnect below only fires on a genuine change - see its own
+            // comment for why this guard is required, not optional.
+            const std::string prevPiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
+            const std::string prevMount = ActiveDeviceT[ACTIVE_MOUNT].text;
+
             IUUpdateText(&ActiveDeviceTP, texts, names, n);
             ActiveDeviceTP.s = IPS_OK;
             IDSetText(&ActiveDeviceTP, nullptr);
+
+            const bool changed = prevPiFinder != ActiveDeviceT[ACTIVE_PIFINDER].text
+                || prevMount != ActiveDeviceT[ACTIVE_MOUNT].text;
 
             // Found live (#158): changing which device is watched here used to
             // be cosmetic while already connected - m_client's watchDevice()
@@ -714,7 +723,18 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             // Connect()'s setDevices() against the new names, the same
             // recovery a full disconnect/reconnect (or driver restart)
             // already provided manually.
-            if (isConnected())
+            //
+            // The `changed` guard is not optional: found live (2026-08-05)
+            // that some other INDI client (KStars/Ekos, the Web Manager, or
+            // this driver's own profile-load cycle) periodically re-asserts
+            // ActiveDeviceTP with its *current, unchanged* values as routine
+            // INDI traffic - completely normal, but the original fix reacted
+            // to *any* ISNewText call for this vector, not just an actual
+            // value change, so it disconnected and reconnected every single
+            // time that happened - a self-inflicted periodic drop that
+            // looked identical to "something else keeps killing the
+            // connection" from the outside.
+            if (changed && isConnected())
             {
                 LOG_INFO("Active devices changed - reconnecting to apply.");
                 Disconnect();
