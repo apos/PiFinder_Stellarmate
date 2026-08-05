@@ -1311,10 +1311,10 @@
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
             </div>
           </div>
-          <div id="mb-decouple-divider" class="mb-coupling-divider" style="display:none;"></div>
+          <div id="mb-decouple-divider" class="mb-coupling-divider"></div>
           <div id="mb-decouple-group">
             <div class="group-label" style="visibility:hidden;">&nbsp;</div>
-            <button id="mb-decouple-btn" onclick="onDecoupleClick()" style="display:none;" title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state).">&times;</button>
+            <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">&times;</button>
           </div>
         </div>
       </div>
@@ -3707,18 +3707,19 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
 
+  // Disabled (not hidden) while there's nothing to decouple from - per
+  // live feedback (2026-08-05), hiding interface elements outright makes a
+  // tile's layout unpredictable/inconsistent; a grayed-out button in its
+  // usual place is preferred over one that disappears.
   const decoupleBtnEl = document.getElementById('mb-decouple-btn');
-  const decoupleDividerEl = document.getElementById('mb-decouple-divider');
   if (!couplingMode || couplingMode === 'MODE_OFF') {
     setMbArrow('mb-arrow-left', 'off');
     setMbArrow('mb-arrow-right', 'off');
     captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
-    decoupleBtnEl.style.display = 'none';
-    decoupleDividerEl.style.display = 'none';
+    decoupleBtnEl.disabled = true;
     return false;
   }
-  decoupleBtnEl.style.display = '';
-  decoupleDividerEl.style.display = '';
+  decoupleBtnEl.disabled = false;
   if (couplingMode === 'MODE_VERIFY_ALERT') {
     setMbArrow('mb-arrow-left', 'read');
     setMbArrow('mb-arrow-right', 'read');
