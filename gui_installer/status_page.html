@@ -228,6 +228,7 @@
     padding: 0.15rem 0.4rem;
   }
   .pf-num-input:focus { border-color: #666; outline: none; }
+  .pf-num-input:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   /* Chrome/Safari default spinner arrows render as light-on-light
      against this dark background - not just "a stray one", the whole
      control looked out of place next to everything else (found live
@@ -1319,7 +1320,7 @@
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" id="mb-threshold-manual-row">
-        <span title="Only used by the two Auto-correct presets: how far off before they correct.">
+        <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
           <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
         </span>
@@ -3714,6 +3715,28 @@ function updateBridgeSettingsInfo(data) {
 // Tracks the last-known mode in wmLastCouplingMode (see applyThresholdChange
 // below) - this is the only place that reliably sees every fresh
 // coupling_mode reading, from both the slow and fast polls.
+// Threshold only actually does anything for Verify/Alert and the two
+// Auto-correct presets (see applyThresholdChange()) - Goto-Forward ignores
+// it entirely, and Mount is source uses its own fixed, non-configurable
+// 2' push-threshold (MOUNT_SOURCE_MIN_CHANGE_ARCMIN) instead. Left the
+// input live and editable regardless of mode before this, with nothing
+// to say so - found live (2026-08-05): changing it while Mount is source
+// was active looked like it took effect (no error, no visual difference)
+// but silently did nothing, and edited it again expecting ~10' pushes to
+// see the same ~2' cadence as always, unrelated to the field.
+const THRESHOLD_USING_MODES = ['MODE_VERIFY_ALERT', 'MODE_AUTO_CORRECT'];
+function updateThresholdInputRelevance(couplingMode) {
+  const input = document.getElementById('wm-threshold-input');
+  const wrap = document.getElementById('mb-threshold-wrap');
+  const usesThreshold = THRESHOLD_USING_MODES.includes(couplingMode);
+  input.disabled = !usesThreshold;
+  wrap.title = usesThreshold
+    ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
+    : couplingMode === 'MODE_MOUNT_SOURCE'
+    ? "Not used by Mount is source - it pushes on its own fixed 2' change instead, not this value."
+    : "Not used by Goto-Forward - every mount goto forwards immediately, regardless of this value.";
+}
+
 let wmLastCouplingMode = null;
 function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
   wmLastCouplingMode = couplingMode;
@@ -3721,6 +3744,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
+  updateThresholdInputRelevance(couplingMode);
 
   const decoupleBtnEl = document.getElementById('mb-decouple-btn');
   const decoupleDividerEl = document.getElementById('mb-decouple-divider');
