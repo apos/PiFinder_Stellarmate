@@ -171,6 +171,8 @@ bool PiFinderMountBridge::initProperties()
     IUFillText(&ActiveDeviceT[ACTIVE_MOUNT], "ACTIVE_MOUNT", "Mount", "");
     IUFillTextVector(&ActiveDeviceTP, ActiveDeviceT, 2, getDeviceName(), "ACTIVE_DEVICES", "Active devices",
                      "Options", IP_RW, 60, IPS_IDLE);
+    m_lastActivePiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
+    m_lastActiveMount = ActiveDeviceT[ACTIVE_MOUNT].text;
 
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
@@ -696,18 +698,25 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
 
         if (strcmp(name, ActiveDeviceTP.name) == 0)
         {
-            // Captured before IUUpdateText() overwrites them, so the
-            // reconnect below only fires on a genuine change - see its own
-            // comment for why this guard is required, not optional.
-            const std::string prevPiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
-            const std::string prevMount = ActiveDeviceT[ACTIVE_MOUNT].text;
-
             IUUpdateText(&ActiveDeviceTP, texts, names, n);
             ActiveDeviceTP.s = IPS_OK;
             IDSetText(&ActiveDeviceTP, nullptr);
 
-            const bool changed = prevPiFinder != ActiveDeviceT[ACTIVE_PIFINDER].text
-                || prevMount != ActiveDeviceT[ACTIVE_MOUNT].text;
+            // Compared against m_lastActive*, not a pre-update snapshot of
+            // ActiveDeviceT[...].text - crashed live (2026-08-05) reading
+            // that field's raw char* into a std::string here, apparently
+            // reentered via loadConfig()'s config replay inside
+            // ISGetProperties() at a point where it wasn't yet safe to
+            // read. m_lastActive* is always a valid owned string (seeded
+            // from the same defaults in initProperties()), so this needs
+            // no null-checks and only reads ActiveDeviceT[...].text after
+            // IUUpdateText() has just populated it from the incoming,
+            // known-valid texts[] array.
+            const std::string newPiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
+            const std::string newMount = ActiveDeviceT[ACTIVE_MOUNT].text;
+            const bool changed = newPiFinder != m_lastActivePiFinder || newMount != m_lastActiveMount;
+            m_lastActivePiFinder = newPiFinder;
+            m_lastActiveMount = newMount;
 
             // Found live (#158): changing which device is watched here used to
             // be cosmetic while already connected - m_client's watchDevice()

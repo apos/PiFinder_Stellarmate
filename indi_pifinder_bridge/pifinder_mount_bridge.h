@@ -73,6 +73,16 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // what was actually saved on disk.
         bool m_connectedConfigLoaded = false;
 
+        // Last-applied ACTIVE_DEVICES values, used by ISNewText() to detect
+        // a genuine change worth reconnecting for. Deliberately NOT read
+        // from ActiveDeviceT[...].text before IUUpdateText() runs - that
+        // crashed (2026-08-05) when ISNewText() fires from loadConfig()'s
+        // config replay inside ISGetProperties(). Populated from the
+        // same defaults as ActiveDeviceT in initProperties(), then kept in
+        // sync after every applied update.
+        std::string m_lastActivePiFinder;
+        std::string m_lastActiveMount;
+
         // Settings: how to reach the local indiserver
         ITextVectorProperty SettingsTP;
         IText SettingsT[2] {};
