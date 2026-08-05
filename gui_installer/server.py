@@ -1360,6 +1360,47 @@ def _pifinder_disable_fake_solve(port: str) -> bool:
         return False
 
 
+def _pifinder_refresh_fake_solve(port: str):
+    """Re-inject PiFinder's own currently-reported RA/Dec back into itself
+    via /api/fake_solve - same position, just a fresh timestamp. Testing
+    aid (#79's SolveFreshnessMaxAgeNP gate needs an actually-recent solve
+    before Auto-correct will act, but Auto-correct is exactly what a
+    hardware-free simulation setup needs to exercise): without this,
+    seeding a position once via "Mount is source" or the manual Toggle
+    goes stale within SolveFreshnessMaxAgeNP's default 5s, permanently
+    blocking Auto-correct in any test that doesn't have a mount to
+    correct *from* an independent, continuously-fresh source - see the
+    #133 diagnosis thread. Reads-then-reposts the SAME value entirely
+    server-side (not client-supplied coordinates) specifically so this
+    can't be used to inject an arbitrary position, only to keep whatever
+    PiFinder already reports alive a little longer.
+    Returns (success: bool, error: str or None)."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False, "invalid port"
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+            status = json.loads(resp.read())
+        solution = status.get("solution") or {}
+        ra = solution.get("RA")
+        dec = solution.get("Dec")
+        if ra is None or dec is None:
+            return False, "PiFinder has no current position to refresh"
+    except Exception as e:
+        return False, f"could not read PiFinder's current position: {e}"
+    try:
+        body = json.dumps({"ra": ra, "dec": dec}).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/fake_solve",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200, None
+    except Exception as e:
+        return False, str(e)
+
+
 def _pifinder_toggle_debug_solve(port: str) -> bool:
     """POST to PiFinder's own /api/debug_solve - toggles Tools -> Test Mode
     directly via PiFinder's ui_queue, bypassing menu navigation/keyboard_queue
@@ -2526,6 +2567,13 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             ok, err = _pifinder_enable_fake_solve_from_mount(port)
+            self._send_json({"success": ok, "error": err})
+            return
+
+        if parsed.path == "/api/fake_solve_refresh":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            ok, err = _pifinder_refresh_fake_solve(port)
             self._send_json({"success": ok, "error": err})
             return
 
