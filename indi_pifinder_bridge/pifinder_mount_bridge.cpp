@@ -171,8 +171,13 @@ bool PiFinderMountBridge::initProperties()
     IUFillText(&ActiveDeviceT[ACTIVE_MOUNT], "ACTIVE_MOUNT", "Mount", "");
     IUFillTextVector(&ActiveDeviceTP, ActiveDeviceT, 2, getDeviceName(), "ACTIVE_DEVICES", "Active devices",
                      "Options", IP_RW, 60, IPS_IDLE);
-    m_lastActivePiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
-    m_lastActiveMount = ActiveDeviceT[ACTIVE_MOUNT].text;
+    // Seeded from the same literals just passed to IUFillText() above, not
+    // read back from ActiveDeviceT[...].text - that crashed live
+    // (2026-08-05), apparently not yet populated at this point in this
+    // libindi build. Whatever the reason, there's no need to read it back:
+    // we just set it.
+    m_lastActivePiFinder = "PiFinder LX200";
+    m_lastActiveMount = "";
 
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
