@@ -62,6 +62,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // whatever mode the user just chose back to the last-saved one.
         bool m_configLoaded = false;
 
+        // Same idea, for the properties that only exist once connected
+        // (BRIDGE_MODE, CORRECTION_ACTION, DRIFT_THRESHOLD,
+        // SOLVE_FRESHNESS) - ISGetProperties() runs before the device is
+        // connected, so its loadConfig() call above has nothing to apply
+        // BRIDGE_MODE's saved value to yet (the property doesn't exist as a
+        // target). Found live (2026-08-05): Coupling mode never survived a
+        // reconnect/profile restart, always came back up as whatever
+        // in-memory default the switch was initialized with, regardless of
+        // what was actually saved on disk.
+        bool m_connectedConfigLoaded = false;
+
         // Settings: how to reach the local indiserver
         ITextVectorProperty SettingsTP;
         IText SettingsT[2] {};

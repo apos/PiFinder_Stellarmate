@@ -234,6 +234,17 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&DriftThresholdNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+
+        // Restore the saved Coupling mode/threshold/etc. now that their
+        // properties actually exist - see m_connectedConfigLoaded's
+        // comment. Applies via the normal IUUpdateSwitch path, same as a
+        // client sending it, so BridgeModeSP.s/IDSetSwitch etc. still fire
+        // correctly.
+        if (!m_connectedConfigLoaded)
+        {
+            loadConfig(true);
+            m_connectedConfigLoaded = true;
+        }
     }
     else
     {
@@ -598,6 +609,14 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // stint in this mode.
             m_lastPushedMountRA = std::nan("");
             m_lastPushedMountDec = std::nan("");
+
+            // Persist so the chosen mode actually survives a reconnect -
+            // see m_connectedConfigLoaded's comment. Without this, the
+            // saved config just keeps replaying whatever was last actively
+            // saved (typically Off/Verify-Alert from ages ago) regardless
+            // of what the user picks live, same "selection doesn't stick"
+            // shape as #158's ACTIVE_DEVICES bug.
+            saveConfig(true, BridgeModeSP.name);
             return true;
         }
 
