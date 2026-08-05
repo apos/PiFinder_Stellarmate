@@ -1447,9 +1447,10 @@
             <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
-          <div class="hw-row" id="fake-solve-row" title="Simulates PiFinder pinned to a fixed point on the real sky, exactly like a correctly-tracking telescope keeps re-solving the same RA/Dec indefinitely - a stable, independent 'ground truth' for testing Verify/Alert and the two Auto-correct presets (a mount can then be intentionally desynced from it - GoTo it elsewhere, disable its tracking - to see those modes actually detect and fix the divergence). Seeds a one-time position from the currently coupled mount (via Mount Bridge), then periodically re-confirms that same position via PiFinder's own /api/fake_solve (see #106) so it never goes stale - real IMU dead-reckoning still bridges the small gaps in between (visible as minor wander with a real device), it just gets re-anchored back to the held position every couple seconds instead of drifting indefinitely. Not a continuous follow (see 'Mount is source' in the Mount Bridge tile for that instead). See Help for details.">
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against - see 'Mount is source' in the Mount Bridge tile for a version anchored to the mount's actual position instead. See Help for details.">
             <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
             <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+            <button id="fake-solve-keepfresh-btn" class="ql-small-btn" onclick="toggleFakeSolveKeepFresh()" disabled title="Testing aid for Verify/Alert and the two Auto-correct presets: re-injects this same position every few seconds so it never goes stale enough to trip #79's solve-freshness gate - without a real mount or sky, there's nothing else that would keep it fresh on its own. Lets you hold PiFinder at a fixed 'ground truth' while intentionally desyncing a mount (GoTo it elsewhere, disable its tracking, ...) to see Auto-correct actually pull it back - simulating a mount that's drifting/misconfigured while PiFinder stays right, not PiFinder trailing the mount. See Help for details.">Keep fresh: Off</button>
           </div>
           <div class="hw-row" title="Reverses the usual direction: the mount's position (real, or the stock INDI Telescope Simulator) is pushed into PiFinder via the same /api/fake_solve mechanism as Injected Solve above, instead of PiFinder driving the mount. Unlike a plain Injected Solve seed, this keeps re-anchoring to the mount's actual live position on every meaningful move - PiFinder's IMU dead-reckoning still bridges the gaps in between, but each mount push is an independent ground-truth check, not just PiFinder trusting its own estimate. Enables full simulation with zero real PiFinder hardware (see #130). This is a Mount Bridge Coupling preset like Verify/Alert or Auto-correct, not a plain on/off toggle - needs a mount connected in Mount Bridge (real or the INDI Telescope Simulator) to activate.">
             <span class="status-dot dot-unconfirmed" id="mount-source-dot"></span>Mount is source (Mount Bridge): <span id="mount-source-text">off</span>
@@ -1983,6 +1984,7 @@ function applyFakeSolveStatus(data) {
   const dotEl = document.getElementById('fake-solve-dot');
   const textEl = document.getElementById('fake-solve-text');
   const btn = document.getElementById('fake-solve-btn');
+  const keepFreshBtn = document.getElementById('fake-solve-keepfresh-btn');
   const badge = document.getElementById('mode-ampel-fake-solve-badge');
 
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
@@ -2010,24 +2012,22 @@ function applyFakeSolveStatus(data) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'off';
     btn.textContent = 'Toggle';
-    // Safety net: nothing left to keep fresh if this row reports off for
-    // any reason (not just via this row's own Toggle, e.g. a stale reload
-    // or the backend having been disabled some other way) - stop rather
-    // than leaving the interval silently ticking against nothing.
-    stopFakeSolveKeepFresh();
+    // Nothing left to keep fresh - stop and reset rather than leaving it
+    // silently running (and disabled-but-still-ticking) against an
+    // Injected Solve that's no longer active.
+    if (fakeSolveKeepFreshTimer) {
+      clearInterval(fakeSolveKeepFreshTimer);
+      fakeSolveKeepFreshTimer = null;
+      keepFreshBtn.textContent = 'Keep fresh: Off';
+      keepFreshBtn.classList.remove('mb-btn-active');
+    }
+    keepFreshBtn.disabled = true;
     return;
   }
 
   setHwDot(dotEl, 'status-dot dot-green');
   btn.textContent = 'Turn off';
-  // Resume keep-fresh if this row reports active but nothing's actually
-  // refreshing it - the interval lives only in this page's memory, so a
-  // reload (or landing on this page after Injected Solve was enabled some
-  // other way) would otherwise silently leave it aging toward #79's
-  // freshness gate with the row still confidently showing "active".
-  if (!fakeSolveKeepFreshTimer && pifinderScreenUrl) {
-    startFakeSolveKeepFresh(new URL(pifinderScreenUrl).port || '80');
-  }
+  keepFreshBtn.disabled = false;
   const ra = data.fake_solve_ra;
   const dec = data.fake_solve_dec;
   const since = data.last_solve_success;
@@ -2260,14 +2260,8 @@ function setKeypadStyle(style) {
 // refreshDebugSolve() (which already applies fake-solve status via
 // applyFakeSolveStatus()) rather than duplicating the fetch/parse logic.
 // Turning on seeds a one-time position from the currently coupled mount
-// (see _pifinder_enable_fake_solve_from_mount()), then keeps it alive - see
-// startFakeSolveKeepFresh() below. Turning off clears the flag and stops
-// the keep-fresh loop. Was two separately-operated controls (Toggle + a
-// "Keep fresh" button) until #164 - merged into one, since there was no
-// real reason to ever run one without the other: an Injected Solve nobody
-// keeps fresh ages out of #79's SolveFreshnessMaxAgeNP gate within seconds,
-// and Keep fresh with nothing seeded has nothing to refresh. See #164 for
-// the full reasoning (§8).
+// (see _pifinder_enable_fake_solve_from_mount() - not a continuous follow,
+// that's the larger #130 concept). Turning off just clears the flag.
 async function toggleFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
@@ -2285,7 +2279,6 @@ async function toggleFakeSolve() {
   // seconds, given the mount-read+inject round trip) and only popped in
   // right at the very end (User feedback).
   document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
-  if (!turningOn) stopFakeSolveKeepFresh();
   try {
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
@@ -2314,31 +2307,36 @@ async function toggleFakeSolve() {
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
   if (!landed) btn.disabled = false;
-  if (turningOn && landed) startFakeSolveKeepFresh(port);
 }
 
-// Periodically re-POSTs PiFinder's own current position back to itself
-// (server-side round trip, see _pifinder_refresh_fake_solve() - this never
-// sends coordinates itself, just asks the position already there to be
-// re-confirmed) so the Injected Solve seeded above doesn't go stale within
-// #79's SolveFreshnessMaxAgeNP window (default 5s) - see #164 §8 for why
-// this is needed at all: without a real mount or sky continuously
-// refreshing PiFinder's position, Verify/Alert and Auto-correct have
-// nothing to test against that isn't either the mount itself (not
-// independent) or stale within seconds. 2s interval - comfortable margin
-// under the 5s gate while still bounding how far real IMU dead-reckoning
-// (see the row's own tooltip) can wander a real device between re-anchors.
+// "Keep fresh": periodically re-POSTs PiFinder's own current position back
+// to itself (server-side round trip, see _pifinder_refresh_fake_solve() -
+// this never sends coordinates itself, just asks the position already
+// there to be re-confirmed) so a seeded Injected Solve doesn't go stale
+// within #79's SolveFreshnessMaxAgeNP window (default 5s) - see the #133
+// diagnosis thread for why this is needed at all: without a real mount
+// providing a continuously-fresh ground truth, Auto-correct/Verify-Alert
+// have nothing to test against that isn't either the mount itself (not
+// independent) or stale within seconds. Interval, not tied to the mode -
+// stays running across mode switches, only Injected Solve turning off
+// (this row's own Toggle, or its 16s give-up) stops it.
 let fakeSolveKeepFreshTimer = null;
-function startFakeSolveKeepFresh(port) {
-  stopFakeSolveKeepFresh();
+function toggleFakeSolveKeepFresh() {
+  const btn = document.getElementById('fake-solve-keepfresh-btn');
+  if (fakeSolveKeepFreshTimer) {
+    clearInterval(fakeSolveKeepFreshTimer);
+    fakeSolveKeepFreshTimer = null;
+    btn.textContent = 'Keep fresh: Off';
+    btn.classList.remove('mb-btn-active');
+    return;
+  }
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
   const refresh = () => fetch(`/api/fake_solve_refresh?port=${port}`, { method: 'POST' }).catch(() => {});
   refresh();
-  fakeSolveKeepFreshTimer = setInterval(refresh, 2000);
-}
-function stopFakeSolveKeepFresh() {
-  if (!fakeSolveKeepFreshTimer) return;
-  clearInterval(fakeSolveKeepFreshTimer);
-  fakeSolveKeepFreshTimer = null;
+  fakeSolveKeepFreshTimer = setInterval(refresh, 3000);
+  btn.textContent = 'Keep fresh: On';
+  btn.classList.add('mb-btn-active');
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the
