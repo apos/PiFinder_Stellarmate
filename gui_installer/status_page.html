@@ -4237,7 +4237,21 @@ async function triggerManualSync() {
 // database, only reads it (see _kstars_webmanager_link_status() in
 // server.py) - a missing link is surfaced elsewhere, not blocked on here.
 let autoconnectMode = null;  // the coupling mode Autoconnect is working toward, or null if idle
-let autoconnectPoll = null;
+// Bumped once per startAutoconnect() call, threaded through every step and
+// waitForCondition() poll below. Found live (2026-08-05): `autoconnectMode`
+// alone can't tell "this run" from "an earlier, abandoned run" apart, since
+// SETUP_ONLY (and any given coupling mode) is the same fixed string every
+// time - an old waitForCondition() interval that never reached its own
+// onDone() (profile never got started/connected that time, user moved on)
+// keeps ticking forever otherwise, and *any later* run using the same mode
+// looks identical to it. Once that later run's condition is finally met,
+// BOTH the current interval and the stale one fire - the stale one calling
+// finishAutoconnect() a second time, toggling everything off again right
+// after a completely unrelated, successful connect. Comparing against this
+// generation counter (not just the mode string) lets a stale interval
+// recognize itself as superseded and stop, regardless of how long ago it
+// was abandoned.
+let autoconnectGeneration = 0;
 // Sentinel "mode" for the standalone Setup button - runs the exact same
 // Autoconnect sequence as clicking a preset, minus the final "apply this
 // coupling mode" step. Distinct from `null` (which means "nothing running")
@@ -4285,6 +4299,7 @@ function onSetupButtonClick() {
 
 async function startAutoconnect(mode) {
   autoconnectMode = mode;
+  const generation = ++autoconnectGeneration;
   if (!wmSelectedProfile) {
     setAutoconnectStatus('Autoconnect: pick a profile above first.');
     autoconnectMode = null;
@@ -4295,18 +4310,20 @@ async function startAutoconnect(mode) {
   if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
   if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
 
-  if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
+  // user clicked a different preset meanwhile, or this run's own
+  // waitForCondition() below already gave up - let that one own it now
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
 
   if (!wmActiveMount) {
     setAutoconnectStatus('⏳ Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
-    waitForCondition(mode, () => !!wmActiveMount, () => proceedPastMountLink(mode));
+    waitForCondition(mode, generation, () => !!wmActiveMount, () => proceedPastMountLink(mode, generation));
     return;
   }
-  proceedPastMountLink(mode);
+  proceedPastMountLink(mode, generation);
 }
 
-async function proceedPastMountLink(mode) {
-  if (autoconnectMode !== mode) return;
+async function proceedPastMountLink(mode, generation) {
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   // Starting Ekos itself used to be a manual step in KStars this tile
   // couldn't do for the user (see _ekos_indi_status()'s own docstring on
   // why that read-only check never drives Ekos on its own) - found live
@@ -4326,48 +4343,54 @@ async function proceedPastMountLink(mode) {
     } catch (e) {
       // fall through to the manual fallback below
     }
-    if (autoconnectMode !== mode) return;
+    if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
     if (!started) {
       setAutoconnectStatus('⏳ Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
     }
-    waitForCondition(mode, () => wmEkosConnected === true, () => finishAutoconnect(mode));
+    waitForCondition(mode, generation, () => wmEkosConnected === true, () => finishAutoconnect(mode, generation));
     return;
   }
-  finishAutoconnect(mode);
+  finishAutoconnect(mode, generation);
 }
 
 // Generic "pause until this becomes true, then resume" used for both the
 // mount-link and the Ekos-connected waits above - each is a step requiring
 // the user's own action elsewhere that Autoconnect can't take for them.
-function waitForCondition(mode, isDone, onDone) {
-  if (autoconnectPoll) clearInterval(autoconnectPoll);
-  autoconnectPoll = setInterval(() => {
-    if (autoconnectMode !== mode) {
-      clearInterval(autoconnectPoll);
-      autoconnectPoll = null;
+// Each call owns its own interval id (a local, not the old shared
+// autoconnectPoll global) - a stale call clearing the wrong, newer
+// interval was found to be a real risk, not just a stale interval running
+// forever. Staleness is checked via `generation`, not just `mode`: found
+// live (2026-08-05) that SETUP_ONLY/a coupling mode is the same fixed
+// string every run, so `autoconnectMode !== mode` alone can't tell a
+// long-abandoned run from the current one - see autoconnectGeneration's
+// own comment for the failure this caused.
+function waitForCondition(mode, generation, isDone, onDone) {
+  const pollId = setInterval(() => {
+    if (autoconnectMode !== mode || autoconnectGeneration !== generation) {
+      clearInterval(pollId);
       return;
     }
     if (isDone()) {
-      clearInterval(autoconnectPoll);
-      autoconnectPoll = null;
+      clearInterval(pollId);
       onDone();
     }
   }, 1500);
 }
 
-async function finishAutoconnect(mode) {
+async function finishAutoconnect(mode, generation) {
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   setAutoconnectStatus('Autoconnect: connecting devices…');
   connectAllAvailable();
   // connectAllAvailable() fires its connects without waiting for them -
   // poll briefly for them to actually finish before applying the coupling
   // mode, same idea as the server-side "wait for indiserver" polls.
   const deadline = Date.now() + 15000;
-  while (Date.now() < deadline && autoconnectMode === mode) {
+  while (Date.now() < deadline && autoconnectMode === mode && autoconnectGeneration === generation) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     const targets = _availableConnectTargets();
     if (targets.length > 0 && targets.every(([, , connected]) => connected)) break;
   }
-  if (autoconnectMode !== mode) return;
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   if (mode !== SETUP_ONLY) {
     setAutoconnectStatus('Autoconnect: applying coupling mode…');
     await setWmCoupling(mode);
