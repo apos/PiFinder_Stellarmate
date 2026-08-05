@@ -4380,8 +4380,8 @@ function waitForCondition(mode, generation, isDone, onDone) {
 async function finishAutoconnect(mode, generation) {
   if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   setAutoconnectStatus('Autoconnect: connecting devices…');
-  connectAllAvailable();
-  // connectAllAvailable() fires its connects without waiting for them -
+  connectAllUnconnected();
+  // connectAllUnconnected() fires its connects without waiting for them -
   // poll briefly for them to actually finish before applying the coupling
   // mode, same idea as the server-side "wait for indiserver" polls.
   const deadline = Date.now() + 15000;
@@ -4720,15 +4720,35 @@ async function refreshWmConnectRow() {
 function connectAllAvailable() {
   // Toggle: if everything available is already connected, disconnect it
   // all; otherwise connect only the ones not yet connected (never toggles
-  // an individual already-connected device off in that case).
+  // an individual already-connected device off in that case). Only ever
+  // called from the manual "Connect all" button's own onclick - the
+  // automatic Setup/Autoconnect flow uses connectAllUnconnected() below
+  // instead, never this toggle - see its own comment for why.
   const targets = _availableConnectTargets();
   const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  if (allConnected) {
+    targets.forEach(([deviceName, btnId]) => _setDeviceConnection(deviceName, btnId, true));
+    return;
+  }
+  connectAllUnconnected();
+}
+
+// Idempotent, non-toggling version used by finishAutoconnect() - only ever
+// connects whatever isn't connected yet, never disconnects anything. Found
+// live (2026-08-05): two overlapping Setup clicks (the first appeared to
+// do nothing, so the user clicked again) each run their own independent,
+// equally valid Autoconnect attempt - neither is "stale" the way
+// autoconnectGeneration guards against, since both are genuinely still in
+// progress at the same time. Once Ekos connects, both attempts'
+// waitForCondition() eventually call finishAutoconnect() - whichever
+// fired second used to call connectAllAvailable()'s toggle, see "already
+// connected", and disconnect everything the first one had just connected
+// moments earlier. Safe to call any number of times concurrently, since
+// it only ever acts on devices that are actually still disconnected.
+function connectAllUnconnected() {
+  const targets = _availableConnectTargets();
   targets.forEach(([deviceName, btnId, connected]) => {
-    if (allConnected) {
-      _setDeviceConnection(deviceName, btnId, true);
-    } else if (!connected) {
-      _setDeviceConnection(deviceName, btnId, false);
-    }
+    if (!connected) _setDeviceConnection(deviceName, btnId, false);
   });
 }
 
