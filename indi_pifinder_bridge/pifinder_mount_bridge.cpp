@@ -294,37 +294,50 @@ void PiFinderMountBridge::TimerHit()
 
     syncMountTypeToPiFinder();
 
-    if (BridgeModeS[MODE_OFF].s == ISS_ON || !m_client->isReady())
+    if (!m_client->isReady())
     {
         SetTimer(getCurrentPollingPeriod());
         return;
+    }
+
+    // Drift is computed and published whenever the bridge is ready
+    // (PiFinder solving, mount connected), regardless of Coupling mode -
+    // including Off. Found live (2026-08-05): the GUI's drift readout froze
+    // at its startup default while Coupling was Off, which looked like a
+    // broken readout rather than the intended "nothing is being watched"
+    // state - Verify/Alert's compute-and-report behavior is really the
+    // mode-independent baseline every other mode builds on, not a feature
+    // exclusive to that one preset. Coupling mode still gates the *action*
+    // (warn log, correction, forwarding) - Off stays inert there, just not
+    // blind.
+    double piRA, piDec, mountRA, mountDec;
+    const bool havePositions =
+        m_client->getPiFinderRADE(piRA, piDec) && m_client->getMountRADE(mountRA, mountDec);
+    double drift = 0.0;
+    bool exceeded = false;
+    if (havePositions)
+    {
+        drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+        DriftStatusN[0].value = drift;
+        const double threshold = DriftThresholdN[0].value;
+        exceeded = drift > threshold;
+        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
     }
 
     if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
         handleGotoForward();
-        SetTimer(getCurrentPollingPeriod());
-        return;
     }
-
-    double piRA, piDec, mountRA, mountDec;
-    if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+    else if (!havePositions)
     {
-        SetTimer(getCurrentPollingPeriod());
-        return;
+        // Nothing more to do this tick - PiFinder/mount coordinates aren't
+        // available yet, same as before this changed to compute drift
+        // unconditionally.
     }
-
-    const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
-    DriftStatusN[0].value = drift;
-
-    const double threshold = DriftThresholdN[0].value;
-    const bool exceeded = drift > threshold;
-
-    if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
+    else if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
     {
-        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
         if (exceeded)
-            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, threshold);
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, DriftThresholdN[0].value);
     }
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
@@ -380,13 +393,12 @@ void PiFinderMountBridge::TimerHit()
                     LOG_ERROR("Failed to send correction to mount.");
             }
         }
-        else
-        {
-            DriftStatusNP.s = IPS_OK;
-        }
+        // else: not exceeded - DriftStatusNP.s already set to IPS_OK by the
+        // baseline computation above.
     }
 
-    IDSetNumber(&DriftStatusNP, nullptr);
+    if (havePositions)
+        IDSetNumber(&DriftStatusNP, nullptr);
     SetTimer(getCurrentPollingPeriod());
 }
 
