@@ -563,6 +563,25 @@
     letter-spacing: 0.04em;
     margin-bottom: 0.4rem;
   }
+  /* Setup checklist's config-vs-live distinction (steps 1-4 are static
+     config facts that persist across reboots, 5-6 read Ekos/INDI's actual
+     current connection) - deliberately not the hardware status-dot
+     vocabulary (dot-green/red/...), that already means something specific
+     elsewhere on this page and reusing it here for "this whole section is
+     live" would blur the two meanings together. */
+  .mb-group-badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.05rem 0.4rem;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    cursor: default;
+  }
+  .mb-group-badge-config { background: #2a2a2a; color: #999; border: 1px solid #444; }
+  .mb-group-badge-live { background: #1c2a1c; color: #7fc97f; border: 1px solid #3a5a3a; }
   .mb-coupling-group-buttons {
     display: flex;
     flex: 1;
@@ -1344,7 +1363,7 @@
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
-        <div class="group-label">INDI Web Manager</div>
+        <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
         <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
@@ -1370,9 +1389,6 @@
              Bridge, no mount here) - wrapper for the same reason as
              #mb-operate-rows above. -->
         <div id="mb-steps-4-6">
-        <div class="mb-checklist-divider"></div>
-        <div class="group-label">Ekos / KStars</div>
-
         <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
           <select id="wm-mount-select" class="mb-step-widget" disabled><option>&hellip;</option></select>
@@ -1380,6 +1396,20 @@
         </div>
         <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
         <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+
+        <!-- Steps 1-4 above are all configuration facts (profile/driver/
+             mount-name selections) - they persist across reboots and stay
+             green regardless of whether anything is actually connected
+             right now. Only 5-6 below read live state (Ekos's own D-Bus
+             indiStatus, real CONNECTION properties) - found live (2026-08-05,
+             #133-adjacent): right after a cold reboot, before Setup was ever
+             clicked, 1-4 already showed done while nothing was connected,
+             easy to misread as "everything's fine". Badges make the
+             config-vs-live distinction explicit instead of six visually
+             identical checkmarks. -->
+        <div class="mb-checklist-divider"></div>
+        <div class="group-label">Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
+
         <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos:</span></span>
           <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
