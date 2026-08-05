@@ -3723,7 +3723,15 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   if (couplingMode === 'MODE_VERIFY_ALERT') {
     setMbArrow('mb-arrow-left', 'read');
     setMbArrow('mb-arrow-right', 'read');
-    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
+    // Found live (2026-08-05) alongside the status-dot fix above: this
+    // caption stayed the same static text regardless of drift vs.
+    // Threshold, so exceeding it (drift 16.6' against a 10' Threshold)
+    // looked identical to being well within it - nothing on the tile said
+    // so except the small numeric badge's own color.
+    const exceeded = driftArcmin !== null && driftArcmin > threshold;
+    captionEl.textContent = exceeded
+      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}' - warning only, never moves the mount`
+      : 'Watching for drift - warns only, never moves the mount';
   } else if (couplingMode === 'MODE_AUTO_CORRECT') {
     setMbArrow('mb-arrow-left', 'read');
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
@@ -3994,7 +4002,19 @@ async function refreshMountBridgeStatus() {
     // active_mount, not available to the shared function) are left to do
     // here.
     const isActiveCoupling = !!(data.coupling_mode && data.coupling_mode !== 'MODE_OFF');
-    dotEl.className = isActiveCoupling ? 'status-dot dot-green' : 'status-dot dot-yellow';
+    // Found live (2026-08-05): this only ever checked "is some mode
+    // selected", never whether drift actually exceeds Threshold - the dot
+    // (and the "verify alert (drift X')" line it sits next to) stayed
+    // green at 16.6' drift against a 10' Threshold, same as at 9.7'. Red
+    // for driftState "Alert" (threshold exceeded, whether that's
+    // Verify/Alert's plain warning or Auto-correct's freshness-gated
+    // case) - green covers both "Ok" (within threshold) and "Busy"
+    // (actively correcting, which is the system working as intended).
+    let dotColor = 'dot-yellow';
+    if (isActiveCoupling) {
+      dotColor = data.drift_state === 'Alert' ? 'dot-red' : 'dot-green';
+    }
+    dotEl.className = 'status-dot ' + dotColor;
     if (!isActiveCoupling) {
       document.getElementById('mount-bridge-text').textContent = data.active_mount
         ? 'connected, coupling off'
