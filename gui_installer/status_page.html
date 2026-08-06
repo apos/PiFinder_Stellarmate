@@ -1322,7 +1322,7 @@
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
-          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
+          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
         </span>
         <span id="mb-threshold-manual-sep"></span>
         <span title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
@@ -4113,6 +4113,25 @@ async function applyThresholdChange() {
   pollMbLog();
   await refreshMbDrift();
   clearMbActionStatus();
+}
+
+let thresholdChangeDebounce = null;
+// applyThresholdChange() above only ever fired on the field's `change`
+// event (blur/Enter) - found live (2026-08-06): typing a new value and then
+// just watching the drift number, without ever clicking away or pressing
+// Enter, never sent it. Worse, a *later* coupling-preset click (see
+// setWmCoupling() below) re-sends whatever's currently in this field too -
+// so the never-applied typed value looked right on screen while the driver
+// silently kept whatever threshold was last actually sent (a stale preset
+// click's own value), with no indication anything was wrong. Debounced
+// `input` (fires on every keystroke, unlike `change`) closes that gap
+// without spamming a request per keystroke.
+function scheduleThresholdChange() {
+  if (thresholdChangeDebounce) clearTimeout(thresholdChangeDebounce);
+  thresholdChangeDebounce = setTimeout(() => {
+    thresholdChangeDebounce = null;
+    applyThresholdChange();
+  }, 600);
 }
 
 async function setWmCoupling(preset) {
