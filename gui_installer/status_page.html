@@ -3766,7 +3766,24 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateBridgeSettingsInfo(data);
+  syncThresholdInputFromDriver(data.drift_threshold);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+}
+
+// The Threshold field had no way to ever learn the driver's actual current
+// value - found live (2026-08-06): a page reload always showed the input's
+// hardcoded HTML default (5), regardless of what was really set (e.g. 30) -
+// and the *next* coupling-preset click (setWmCoupling() below reads this
+// field directly) then silently pushed that stale 5 back to the driver,
+// overwriting a real, different threshold with no error or indication
+// anything had reverted. Skips overwriting while the user is actively
+// focused on/mid-edit of the field (a pending debounced send in flight) -
+// don't fight a live edit with a poll that hasn't seen it yet.
+function syncThresholdInputFromDriver(driftThreshold) {
+  if (driftThreshold === null || driftThreshold === undefined) return;
+  const input = document.getElementById('wm-threshold-input');
+  if (document.activeElement === input || thresholdChangeDebounce) return;
+  input.value = driftThreshold;
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered
