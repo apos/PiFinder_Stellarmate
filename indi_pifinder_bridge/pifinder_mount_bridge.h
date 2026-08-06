@@ -160,4 +160,27 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         static constexpr int MAX_SETTLE_RETRIES = 3;
 
         void handleGotoForward();
+
+        // MODE_AUTO_CORRECT with CorrectionActionS[ACTION_GOTO]: mirrors
+        // handleGotoForward()'s arrival-verify-and-refine pattern (#170 -
+        // blindly re-issuing a Goto to wherever PiFinder currently reports,
+        // every single tick drift exceeds threshold, never corrects the
+        // mount's own alignment-model error, so each Goto lands off by
+        // roughly that same fixed error and drift climbs straight back up
+        // right after - never actually converges on the target). Kept as a
+        // separate state machine rather than reusing ForwardState/
+        // handleGotoForward(): that one is driven by a discrete *new*
+        // PiFinder push-to target event; this one is driven by continuous
+        // drift-exceeds-threshold and needs to hand control back to normal
+        // per-tick monitoring once a correction settles, not wait for a
+        // "new target" event that may never come.
+        enum class CorrectState { IDLE, SLEWING, SETTLING };
+        CorrectState m_correctState = CorrectState::IDLE;
+        double m_correctTargetRA = std::nan("");
+        double m_correctTargetDec = std::nan("");
+        int m_correctSettleTicksRemaining = 0;
+        int m_correctFreshnessWaitTicksRemaining = 0;
+        int m_correctSettleRetriesRemaining = 0;
+
+        void handleAutoCorrectGoto(bool exceeded, double piRA, double piDec, double drift, double threshold);
 };
