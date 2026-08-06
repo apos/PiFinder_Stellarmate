@@ -113,36 +113,6 @@ bool isPiFinderSolveFresh(double maxAgeSeconds)
     return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
 }
 
-// MODE_MOUNT_SOURCE (#130): pushes a one-time Fake-Solve seed to PiFinder's
-// /api/fake_solve, RA in degrees (PiFinder's API expects degrees, INDI
-// reports RA in hours - the caller is responsible for that conversion).
-// Returns false on any request failure.
-bool httpPostFakeSolve(const std::string &url, double raDeg, double decDeg)
-{
-    CURL *curl = curl_easy_init();
-    if (curl == nullptr)
-        return false;
-
-    const std::string body = "{\"ra\":" + std::to_string(raDeg) + ",\"dec\":" + std::to_string(decDeg) + "}";
-
-    struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-
-    const CURLcode res = curl_easy_perform(curl);
-    long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    return res == CURLE_OK && httpCode == 200;
-}
 } // namespace
 
 PiFinderMountBridge::PiFinderMountBridge()
@@ -171,13 +141,19 @@ bool PiFinderMountBridge::initProperties()
     IUFillText(&ActiveDeviceT[ACTIVE_MOUNT], "ACTIVE_MOUNT", "Mount", "");
     IUFillTextVector(&ActiveDeviceTP, ActiveDeviceT, 2, getDeviceName(), "ACTIVE_DEVICES", "Active devices",
                      "Options", IP_RW, 60, IPS_IDLE);
+    // Seeded from the same literals just passed to IUFillText() above, not
+    // read back from ActiveDeviceT[...].text - that crashed live
+    // (2026-08-05), apparently not yet populated at this point in this
+    // libindi build. Whatever the reason, there's no need to read it back:
+    // we just set it.
+    m_lastActivePiFinder = "PiFinder LX200";
+    m_lastActiveMount = "";
 
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
-    IUFillSwitch(&BridgeModeS[MODE_MOUNT_SOURCE], "MODE_MOUNT_SOURCE", "Mount is source", ISS_OFF);
-    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 5, getDeviceName(), "BRIDGE_MODE", "Coupling",
+    IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
                        "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
 
     IUFillSwitch(&CorrectionActionS[ACTION_SYNC], "ACTION_SYNC", "Sync", ISS_ON);
@@ -311,65 +287,6 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     }
 }
 
-// MODE_MOUNT_SOURCE (#130): the reverse of every other coupling mode - the
-// mount (real, or the stock INDI Telescope Simulator) is the position
-// source, PiFinder mirrors it via a Fake-Solve injection. Mirrors physical
-// reality: a real mount and a real PiFinder are rigidly coupled, so
-// wherever the mount points, PiFinder points too. Enables full simulation
-// with zero real PiFinder hardware - point/slew the mount (from its own
-// hand controller, SkySafari, KStars, any INDI client - the source doesn't
-// matter, INDI doesn't care who issued the GoTo) and a Fake-Mode PiFinder
-// instance follows.
-//
-// Only pushes on a meaningful change (MOUNT_SOURCE_MIN_CHANGE_ARCMIN), not
-// every tick - the mount's own tracking-rate jitter would otherwise
-// re-inject an essentially-unchanged position constantly, which is both
-// pointless HTTP traffic and would keep resetting PiFinder's
-// last_solve_success to "just now" forever.
-void PiFinderMountBridge::handleMountSource()
-{
-    double mountRA, mountDec;
-    if (!m_client->getMountRADE(mountRA, mountDec))
-        return;
-
-    // Every other mode's TimerHit() branch computes/publishes DriftStatusN
-    // before dispatching to its own handler - this early-return branch
-    // skipped that entirely, so the GUI's drift badge for this mode just
-    // carried over whatever value was last set in a *different* mode (often
-    // a stale "0.0'" from before switching in), silently misreporting sync
-    // even while PiFinder and the mount were nowhere near each other. Update
-    // it here from PiFinder's actual reported position, same formula as
-    // every other mode - this reads honestly regardless of whether the
-    // fake-solve push below is currently working.
-    double piRA, piDec;
-    if (m_client->getPiFinderRADE(piRA, piDec))
-    {
-        DriftStatusN[0].value = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
-        DriftStatusNP.s = IPS_OK;
-        IDSetNumber(&DriftStatusNP, nullptr);
-    }
-
-    if (!std::isnan(m_lastPushedMountRA))
-    {
-        const double changeArcmin = angularSeparationArcmin(mountRA, mountDec, m_lastPushedMountRA, m_lastPushedMountDec);
-        if (changeArcmin < MOUNT_SOURCE_MIN_CHANGE_ARCMIN)
-            return;
-    }
-
-    const double raDeg = mountRA * 15.0; // INDI reports RA in hours
-    if (httpPostFakeSolve("http://127.0.0.1/api/fake_solve", raDeg, mountDec) ||
-        httpPostFakeSolve("http://127.0.0.1:8080/api/fake_solve", raDeg, mountDec))
-    {
-        LOGF_INFO("Mount moved to RA %.4fh/DEC %.4f - pushed to PiFinder as Fake-Solve.", mountRA, mountDec);
-        m_lastPushedMountRA = mountRA;
-        m_lastPushedMountDec = mountDec;
-    }
-    else
-    {
-        LOG_ERROR("Failed to push mount position to PiFinder.");
-    }
-}
-
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
@@ -377,44 +294,50 @@ void PiFinderMountBridge::TimerHit()
 
     syncMountTypeToPiFinder();
 
-    if (BridgeModeS[MODE_OFF].s == ISS_ON || !m_client->isReady())
+    if (!m_client->isReady())
     {
         SetTimer(getCurrentPollingPeriod());
         return;
+    }
+
+    // Drift is computed and published whenever the bridge is ready
+    // (PiFinder solving, mount connected), regardless of Coupling mode -
+    // including Off. Found live (2026-08-05): the GUI's drift readout froze
+    // at its startup default while Coupling was Off, which looked like a
+    // broken readout rather than the intended "nothing is being watched"
+    // state - Verify/Alert's compute-and-report behavior is really the
+    // mode-independent baseline every other mode builds on, not a feature
+    // exclusive to that one preset. Coupling mode still gates the *action*
+    // (warn log, correction, forwarding) - Off stays inert there, just not
+    // blind.
+    double piRA, piDec, mountRA, mountDec;
+    const bool havePositions =
+        m_client->getPiFinderRADE(piRA, piDec) && m_client->getMountRADE(mountRA, mountDec);
+    double drift = 0.0;
+    bool exceeded = false;
+    if (havePositions)
+    {
+        drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+        DriftStatusN[0].value = drift;
+        const double threshold = DriftThresholdN[0].value;
+        exceeded = drift > threshold;
+        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
     }
 
     if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
         handleGotoForward();
-        SetTimer(getCurrentPollingPeriod());
-        return;
     }
-
-    if (BridgeModeS[MODE_MOUNT_SOURCE].s == ISS_ON)
+    else if (!havePositions)
     {
-        handleMountSource();
-        SetTimer(getCurrentPollingPeriod());
-        return;
+        // Nothing more to do this tick - PiFinder/mount coordinates aren't
+        // available yet, same as before this changed to compute drift
+        // unconditionally.
     }
-
-    double piRA, piDec, mountRA, mountDec;
-    if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+    else if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
     {
-        SetTimer(getCurrentPollingPeriod());
-        return;
-    }
-
-    const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
-    DriftStatusN[0].value = drift;
-
-    const double threshold = DriftThresholdN[0].value;
-    const bool exceeded = drift > threshold;
-
-    if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
-    {
-        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
         if (exceeded)
-            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, threshold);
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, DriftThresholdN[0].value);
     }
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
@@ -470,13 +393,12 @@ void PiFinderMountBridge::TimerHit()
                     LOG_ERROR("Failed to send correction to mount.");
             }
         }
-        else
-        {
-            DriftStatusNP.s = IPS_OK;
-        }
+        // else: not exceeded - DriftStatusNP.s already set to IPS_OK by the
+        // baseline computation above.
     }
 
-    IDSetNumber(&DriftStatusNP, nullptr);
+    if (havePositions)
+        IDSetNumber(&DriftStatusNP, nullptr);
     SetTimer(getCurrentPollingPeriod());
 }
 
@@ -617,14 +539,6 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             m_lastForwardedRA = std::nan("");
             m_lastForwardedDec = std::nan("");
 
-            // Same idea for Mount-Source (#130): re-entering it should
-            // always push a fresh baseline seed immediately, not wait for
-            // the mount to move by MOUNT_SOURCE_MIN_CHANGE_ARCMIN from
-            // whatever position happened to be recorded during a previous
-            // stint in this mode.
-            m_lastPushedMountRA = std::nan("");
-            m_lastPushedMountDec = std::nan("");
-
             // Persist so the chosen mode actually survives a reconnect -
             // see m_connectedConfigLoaded's comment. Without this, the
             // saved config just keeps replaying whatever was last actively
@@ -700,6 +614,22 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             ActiveDeviceTP.s = IPS_OK;
             IDSetText(&ActiveDeviceTP, nullptr);
 
+            // Compared against m_lastActive*, not a pre-update snapshot of
+            // ActiveDeviceT[...].text - crashed live (2026-08-05) reading
+            // that field's raw char* into a std::string here, apparently
+            // reentered via loadConfig()'s config replay inside
+            // ISGetProperties() at a point where it wasn't yet safe to
+            // read. m_lastActive* is always a valid owned string (seeded
+            // from the same defaults in initProperties()), so this needs
+            // no null-checks and only reads ActiveDeviceT[...].text after
+            // IUUpdateText() has just populated it from the incoming,
+            // known-valid texts[] array.
+            const std::string newPiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
+            const std::string newMount = ActiveDeviceT[ACTIVE_MOUNT].text;
+            const bool changed = newPiFinder != m_lastActivePiFinder || newMount != m_lastActiveMount;
+            m_lastActivePiFinder = newPiFinder;
+            m_lastActiveMount = newMount;
+
             // Found live (#158): changing which device is watched here used to
             // be cosmetic while already connected - m_client's watchDevice()
             // subscriptions were only ever established once, inside Connect(),
@@ -709,12 +639,23 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             // last Connect(). isReady() then depended on properties from a
             // device nobody was watching anymore - MANUAL_TRIGGER went
             // straight to Alert ("not ready"), and TimerHit()'s isReady()
-            // gate blocked handleMountSource()/drift entirely, with nothing
+            // gate blocked the drift/correction logic entirely, with nothing
             // in the log to explain why. Cycling the connection re-runs
             // Connect()'s setDevices() against the new names, the same
             // recovery a full disconnect/reconnect (or driver restart)
             // already provided manually.
-            if (isConnected())
+            //
+            // The `changed` guard is not optional: found live (2026-08-05)
+            // that some other INDI client (KStars/Ekos, the Web Manager, or
+            // this driver's own profile-load cycle) periodically re-asserts
+            // ActiveDeviceTP with its *current, unchanged* values as routine
+            // INDI traffic - completely normal, but the original fix reacted
+            // to *any* ISNewText call for this vector, not just an actual
+            // value change, so it disconnected and reconnected every single
+            // time that happened - a self-inflicted periodic drop that
+            // looked identical to "something else keeps killing the
+            // connection" from the outside.
+            if (changed && isConnected())
             {
                 LOG_INFO("Active devices changed - reconnecting to apply.");
                 Disconnect();

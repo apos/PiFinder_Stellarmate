@@ -914,13 +914,24 @@ def _ekos_start_profile(profile_name: str) -> dict:
     exposes exactly the needed calls (verified live via `qdbus6
     org.kde.kstars /KStars/Ekos org.kde.kstars.Ekos.getProfiles`).
 
-    Only acts while Ekos is genuinely Idle (ekosStatus == 0) - if a session
-    is already Pending/Success/Error, something is already going on (maybe
-    the user's own unrelated KStars work) and this backs off rather than
-    yanking their currently-loaded profile out from under them. Only ever
-    called from the explicit, user-initiated Autoconnect flow, never from
-    a passive/background poll - same reasoning _ekos_indi_status() already
-    documents, just not an absolute "never touch Ekos" rule.
+    Only backs off while INDI is genuinely, currently connected
+    (indiStatus == 2) - something is already going on (maybe the user's own
+    unrelated KStars work) and yanking their live session out from under
+    them would be wrong. Deliberately checks indiStatus here, not
+    ekosStatus: found live (2026-08-05) that ekosStatus stays stuck at
+    Success (2) even after the underlying INDI session was stopped
+    externally (via the Web Manager's own Stop, not Ekos's Stop button),
+    which permanently blocked every later Setup click from ever attempting
+    a restart - Ekos never reset ekosStatus back to Idle on its own. If
+    ekosStatus indicates a stale loaded-but-disconnected profile in that
+    situation, stop() is called first to tear it down cleanly before
+    reloading, rather than calling start() over it and risking a second,
+    conflicting indiserver/driver launch alongside whatever's left running.
+
+    Only ever called from the explicit, user-initiated Autoconnect flow,
+    never from a passive/background poll - same reasoning
+    _ekos_indi_status() already documents, just not an absolute "never
+    touch Ekos" rule.
 
     Returns {"attempted": bool, "reason": str|None} - "attempted": False
     with a reason means the caller should fall back to the manual
@@ -936,9 +947,18 @@ def _ekos_start_profile(profile_name: str) -> dict:
         ekos_status = int(status_result.stdout.strip())
     except ValueError:
         return {"attempted": False, "reason": "unexpected ekosStatus value"}
-    if ekos_status != 0:
-        return {"attempted": False, "reason": "Ekos already has a session in progress"}
+
     try:
+        indi_result = _ekos_qdbus("org.kde.kstars.Ekos.indiStatus")
+        indi_status = int(indi_result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        indi_status = None
+    if indi_status == 2:
+        return {"attempted": False, "reason": "Ekos already has a session in progress"}
+
+    try:
+        if ekos_status != 0:
+            _ekos_qdbus("org.kde.kstars.Ekos.stop")
         set_result = _ekos_qdbus("org.kde.kstars.Ekos.setProfile", profile_name)
         if set_result.returncode != 0 or set_result.stdout.strip() != "true":
             return {"attempted": False, "reason": f"profile '{profile_name}' not found in Ekos"}
@@ -2932,12 +2952,11 @@ class Handler(BaseHTTPRequestHandler):
                 "verify_alert": "MODE_VERIFY_ALERT",
                 "auto_correct": "MODE_AUTO_CORRECT",
                 "goto_forward": "MODE_GOTO_FORWARD",
-                "mount_source": "MODE_MOUNT_SOURCE",
                 "off": "MODE_OFF",
             }
             if mode_arg not in mode_map:
                 self._send_json(
-                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward|mount_source|off"},
+                    {"success": False, "error": "expected ?mode=verify_alert|auto_correct|goto_forward|off"},
                     status=400,
                 )
                 return

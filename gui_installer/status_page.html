@@ -1311,10 +1311,10 @@
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
             </div>
           </div>
-          <div id="mb-decouple-divider" class="mb-coupling-divider" style="display:none;"></div>
+          <div id="mb-decouple-divider" class="mb-coupling-divider"></div>
           <div id="mb-decouple-group">
             <div class="group-label" style="visibility:hidden;">&nbsp;</div>
-            <button id="mb-decouple-btn" onclick="onDecoupleClick()" style="display:none;" title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state).">&times;</button>
+            <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">&times;</button>
           </div>
         </div>
       </div>
@@ -1322,7 +1322,7 @@
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
-          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()"> arcmin
+          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
         </span>
         <span id="mb-threshold-manual-sep"></span>
         <span title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
@@ -1447,13 +1447,9 @@
             <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
-          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against - see 'Mount is source' in the Mount Bridge tile for a version anchored to the mount's actual position instead. See Help for details.">
+          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. See Help for details.">
             <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
             <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
-          </div>
-          <div class="hw-row" title="Reverses the usual direction: the mount's position (real, or the stock INDI Telescope Simulator) is pushed into PiFinder via the same /api/fake_solve mechanism as Injected Solve above, instead of PiFinder driving the mount. Unlike a plain Injected Solve seed, this keeps re-anchoring to the mount's actual live position on every meaningful move - PiFinder's IMU dead-reckoning still bridges the gaps in between, but each mount push is an independent ground-truth check, not just PiFinder trusting its own estimate. Enables full simulation with zero real PiFinder hardware (see #130). This is a Mount Bridge Coupling preset like Verify/Alert or Auto-correct, not a plain on/off toggle - needs a mount connected in Mount Bridge (real or the INDI Telescope Simulator) to activate.">
-            <span class="status-dot dot-unconfirmed" id="mount-source-dot"></span>Mount is source (Mount Bridge): <span id="mount-source-text">off</span>
-            <button id="wm-preset-mount-source-btn" class="ql-small-btn" onclick="onMountSourceRowClick()" disabled>Activate</button>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -3492,12 +3488,7 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
-  // wm-preset-mount-source-btn ("Mount is source", added by #130/PR #131)
-  // was missing from this list - found live 2026-08-04. It stayed
-  // permanently disabled regardless of setup state since nothing ever
-  // cleared its HTML "disabled" attribute, unlike its four sibling preset
-  // buttons here.
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn', 'wm-preset-mount-source-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }
@@ -3631,37 +3622,12 @@ function updateCouplingButtons(mode, correctionAction) {
   let active = null;
   if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
   else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
-  else if (mode === 'MODE_MOUNT_SOURCE') active = 'wm-preset-mount-source-btn';
   else if (mode === 'MODE_AUTO_CORRECT') {
     active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
   }
   ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
-  // Mount is source now lives as its own dot/label/button row in the
-  // "PiFinder Mode, Test and Power" tile (moved there per direct feedback,
-  // 2026-08-04 - it behaves like the other simulation tools there, not
-  // like a Mount Bridge status readout) - same dot-first pattern as its
-  // new neighbors, driven by the same coupling-mode data as the highlight
-  // above rather than a separate poll.
-  const mountSourceActive = mode === 'MODE_MOUNT_SOURCE';
-  document.getElementById('mount-source-dot').className = 'status-dot ' + (mountSourceActive ? 'dot-green' : 'dot-white');
-  document.getElementById('mount-source-text').textContent = mountSourceActive ? 'active' : 'off';
-  document.getElementById('wm-preset-mount-source-btn').textContent = mountSourceActive ? 'Decouple' : 'Activate';
-}
-
-// Dispatches to whichever action the row's single button currently means -
-// Activate (a Coupling preset, same as the other presets) while off,
-// Decouple (Coupling back to Off) while this preset is the active one. Two
-// different underlying calls behind one button because this preset - unlike
-// Solve Simulation/Injected Solve above it - isn't a simple on/off toggle;
-// see its row's own tooltip.
-function onMountSourceRowClick() {
-  if (document.getElementById('wm-preset-mount-source-btn').textContent === 'Decouple') {
-    onDecoupleClick();
-  } else {
-    onCouplingPresetClick('mount_source');
-  }
 }
 
 const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
@@ -3717,13 +3683,10 @@ function updateBridgeSettingsInfo(data) {
 // coupling_mode reading, from both the slow and fast polls.
 // Threshold only actually does anything for Verify/Alert and the two
 // Auto-correct presets (see applyThresholdChange()) - Goto-Forward ignores
-// it entirely, and Mount is source uses its own fixed, non-configurable
-// 2' push-threshold (MOUNT_SOURCE_MIN_CHANGE_ARCMIN) instead. Left the
-// input live and editable regardless of mode before this, with nothing
-// to say so - found live (2026-08-05): changing it while Mount is source
-// was active looked like it took effect (no error, no visual difference)
-// but silently did nothing, and edited it again expecting ~10' pushes to
-// see the same ~2' cadence as always, unrelated to the field.
+// it entirely. Left the input live and editable regardless of mode before
+// this, with nothing to say so - found live (2026-08-05): changing it
+// while a mode that ignores it was active looked like it took effect (no
+// error, no visual difference) but silently did nothing.
 const THRESHOLD_USING_MODES = ['MODE_VERIFY_ALERT', 'MODE_AUTO_CORRECT'];
 function updateThresholdInputRelevance(couplingMode) {
   const input = document.getElementById('wm-threshold-input');
@@ -3732,8 +3695,6 @@ function updateThresholdInputRelevance(couplingMode) {
   input.disabled = !usesThreshold;
   wrap.title = usesThreshold
     ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
-    : couplingMode === 'MODE_MOUNT_SOURCE'
-    ? "Not used by Mount is source - it pushes on its own fixed 2' change instead, not this value."
     : "Not used by Goto-Forward - every mount goto forwards immediately, regardless of this value.";
 }
 
@@ -3746,22 +3707,31 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
 
+  // Disabled (not hidden) while there's nothing to decouple from - per
+  // live feedback (2026-08-05), hiding interface elements outright makes a
+  // tile's layout unpredictable/inconsistent; a grayed-out button in its
+  // usual place is preferred over one that disappears.
   const decoupleBtnEl = document.getElementById('mb-decouple-btn');
-  const decoupleDividerEl = document.getElementById('mb-decouple-divider');
   if (!couplingMode || couplingMode === 'MODE_OFF') {
     setMbArrow('mb-arrow-left', 'off');
     setMbArrow('mb-arrow-right', 'off');
     captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
-    decoupleBtnEl.style.display = 'none';
-    decoupleDividerEl.style.display = 'none';
+    decoupleBtnEl.disabled = true;
     return false;
   }
-  decoupleBtnEl.style.display = '';
-  decoupleDividerEl.style.display = '';
+  decoupleBtnEl.disabled = false;
   if (couplingMode === 'MODE_VERIFY_ALERT') {
     setMbArrow('mb-arrow-left', 'read');
     setMbArrow('mb-arrow-right', 'read');
-    captionEl.textContent = 'Watching for drift - warns only, never moves the mount';
+    // Found live (2026-08-05) alongside the status-dot fix above: this
+    // caption stayed the same static text regardless of drift vs.
+    // Threshold, so exceeding it (drift 16.6' against a 10' Threshold)
+    // looked identical to being well within it - nothing on the tile said
+    // so except the small numeric badge's own color.
+    const exceeded = driftArcmin !== null && driftArcmin > threshold;
+    captionEl.textContent = exceeded
+      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}' - warning only, never moves the mount`
+      : 'Watching for drift - warns only, never moves the mount';
   } else if (couplingMode === 'MODE_AUTO_CORRECT') {
     setMbArrow('mb-arrow-left', 'read');
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
@@ -3783,13 +3753,6 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     setMbArrow('mb-arrow-left', 'goto');
     setMbArrow('mb-arrow-right', 'goto');
     captionEl.textContent = 'Forwarding goto commands straight to the mount';
-  } else if (couplingMode === 'MODE_MOUNT_SOURCE') {
-    // Reversed direction from every other mode - the mount drives PiFinder,
-    // not the other way round (see #130), so the arrows point the opposite
-    // way too: reading from the mount (right), writing to PiFinder (left).
-    setMbArrow('mb-arrow-left', 'write');
-    setMbArrow('mb-arrow-right', 'read');
-    captionEl.textContent = "Mount is the source - pushing its position to PiFinder as an Injected Solve";
   }
   const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
   document.getElementById('mount-bridge-text').textContent =
@@ -3803,7 +3766,24 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateBridgeSettingsInfo(data);
+  syncThresholdInputFromDriver(data.drift_threshold);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+}
+
+// The Threshold field had no way to ever learn the driver's actual current
+// value - found live (2026-08-06): a page reload always showed the input's
+// hardcoded HTML default (5), regardless of what was really set (e.g. 30) -
+// and the *next* coupling-preset click (setWmCoupling() below reads this
+// field directly) then silently pushed that stale 5 back to the driver,
+// overwriting a real, different threshold with no error or indication
+// anything had reverted. Skips overwriting while the user is actively
+// focused on/mid-edit of the field (a pending debounced send in flight) -
+// don't fight a live edit with a poll that hasn't seen it yet.
+function syncThresholdInputFromDriver(driftThreshold) {
+  if (driftThreshold === null || driftThreshold === undefined) return;
+  const input = document.getElementById('wm-threshold-input');
+  if (document.activeElement === input || thresholdChangeDebounce) return;
+  input.value = driftThreshold;
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered
@@ -3969,7 +3949,40 @@ async function refreshMountBridgeStatus() {
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
+    if (data.running === false) {
+      // /api/mount_bridge_status always resolves "running" to an explicit
+      // true/false (see server.py) - false here is a *confirmed* answer,
+      // not a miss: the request/response cycle worked fine, the backend
+      // just told us the device genuinely isn't there right now (profile
+      // stopped, Ekos disconnected, ...). This used to fall into the same
+      // mbStatusMissStreak path as an actual fetch failure below, so
+      // wmXConnected/the Connect buttons kept showing whatever was last
+      // confirmed *while the device was still running* - found live
+      // (2026-08-05): "Disconnect Bridge" stayed displayed with the
+      // device confirmed stopped, log clearly showing running=false the
+      // whole time. Treat it as confirmed immediately instead of waiting
+      // out a miss streak meant for "we don't know yet".
+      mbStatusMissStreak = 0;
+      dotEl.classList.remove('dot-unconfirmed');
+      setMbStatusUnconfirmed(false);
+      updateWmCouplingGate();
+      updateMbDiagram(data);
+      wmActiveMount = data.active_mount || null;
+      wmPifinderConnected = data.pifinder_connected;
+      wmBridgeConnected = data.bridge_connected;
+      wmMountConnected = data.mount_connected;
+      refreshWmActiveButton();
+      refreshConnectButtons();
+      updateStepIndicators();
+      dotEl.className = 'status-dot dot-white';
+      document.getElementById('mount-bridge-text').textContent = 'not running';
+      return;
+    }
     if (!data.running) {
+      // Genuinely couldn't tell (data.running missing/non-boolean despite
+      // a parsed response - shouldn't happen given the endpoint's own
+      // contract, kept as a defensive fallback) - same "don't act on an
+      // unconfirmed miss" handling as the catch block below.
       mbStatusMissStreak++;
       // A single missed poll is treated as pure noise - pulse the dot
       // (keeping its current color) so "still confirming" is visible
@@ -4006,7 +4019,19 @@ async function refreshMountBridgeStatus() {
     // active_mount, not available to the shared function) are left to do
     // here.
     const isActiveCoupling = !!(data.coupling_mode && data.coupling_mode !== 'MODE_OFF');
-    dotEl.className = isActiveCoupling ? 'status-dot dot-green' : 'status-dot dot-yellow';
+    // Found live (2026-08-05): this only ever checked "is some mode
+    // selected", never whether drift actually exceeds Threshold - the dot
+    // (and the "verify alert (drift X')" line it sits next to) stayed
+    // green at 16.6' drift against a 10' Threshold, same as at 9.7'. Red
+    // for driftState "Alert" (threshold exceeded, whether that's
+    // Verify/Alert's plain warning or Auto-correct's freshness-gated
+    // case) - green covers both "Ok" (within threshold) and "Busy"
+    // (actively correcting, which is the system working as intended).
+    let dotColor = 'dot-yellow';
+    if (isActiveCoupling) {
+      dotColor = data.drift_state === 'Alert' ? 'dot-red' : 'dot-green';
+    }
+    dotEl.className = 'status-dot ' + dotColor;
     if (!isActiveCoupling) {
       document.getElementById('mount-bridge-text').textContent = data.active_mount
         ? 'connected, coupling off'
@@ -4079,7 +4104,6 @@ const MB_PRESET_INFO = {
   auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
   auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
-  mount_source: { btnId: 'wm-preset-mount-source-btn', mode: 'mount_source' },
 };
 
 // Pushes a changed threshold to the driver immediately, without requiring
@@ -4108,6 +4132,25 @@ async function applyThresholdChange() {
   clearMbActionStatus();
 }
 
+let thresholdChangeDebounce = null;
+// applyThresholdChange() above only ever fired on the field's `change`
+// event (blur/Enter) - found live (2026-08-06): typing a new value and then
+// just watching the drift number, without ever clicking away or pressing
+// Enter, never sent it. Worse, a *later* coupling-preset click (see
+// setWmCoupling() below) re-sends whatever's currently in this field too -
+// so the never-applied typed value looked right on screen while the driver
+// silently kept whatever threshold was last actually sent (a stale preset
+// click's own value), with no indication anything was wrong. Debounced
+// `input` (fires on every keystroke, unlike `change`) closes that gap
+// without spamming a request per keystroke.
+function scheduleThresholdChange() {
+  if (thresholdChangeDebounce) clearTimeout(thresholdChangeDebounce);
+  thresholdChangeDebounce = setTimeout(() => {
+    thresholdChangeDebounce = null;
+    applyThresholdChange();
+  }, 600);
+}
+
 async function setWmCoupling(preset) {
   mbActionInFlight = true;
   setMbActionStatus('⏳ Setting coupling mode…');
@@ -4124,7 +4167,7 @@ async function setWmCoupling(preset) {
   const threshold = document.getElementById('wm-threshold-input').value;
   try {
     const params = new URLSearchParams({ mode });
-    if (mode !== 'goto_forward' && mode !== 'mount_source') {
+    if (mode !== 'goto_forward') {
       params.set('threshold', threshold);
       if (action) params.set('action', action);
     }
@@ -4204,7 +4247,21 @@ async function triggerManualSync() {
 // database, only reads it (see _kstars_webmanager_link_status() in
 // server.py) - a missing link is surfaced elsewhere, not blocked on here.
 let autoconnectMode = null;  // the coupling mode Autoconnect is working toward, or null if idle
-let autoconnectPoll = null;
+// Bumped once per startAutoconnect() call, threaded through every step and
+// waitForCondition() poll below. Found live (2026-08-05): `autoconnectMode`
+// alone can't tell "this run" from "an earlier, abandoned run" apart, since
+// SETUP_ONLY (and any given coupling mode) is the same fixed string every
+// time - an old waitForCondition() interval that never reached its own
+// onDone() (profile never got started/connected that time, user moved on)
+// keeps ticking forever otherwise, and *any later* run using the same mode
+// looks identical to it. Once that later run's condition is finally met,
+// BOTH the current interval and the stale one fire - the stale one calling
+// finishAutoconnect() a second time, toggling everything off again right
+// after a completely unrelated, successful connect. Comparing against this
+// generation counter (not just the mode string) lets a stale interval
+// recognize itself as superseded and stop, regardless of how long ago it
+// was abandoned.
+let autoconnectGeneration = 0;
 // Sentinel "mode" for the standalone Setup button - runs the exact same
 // Autoconnect sequence as clicking a preset, minus the final "apply this
 // coupling mode" step. Distinct from `null` (which means "nothing running")
@@ -4252,6 +4309,7 @@ function onSetupButtonClick() {
 
 async function startAutoconnect(mode) {
   autoconnectMode = mode;
+  const generation = ++autoconnectGeneration;
   if (!wmSelectedProfile) {
     setAutoconnectStatus('Autoconnect: pick a profile above first.');
     autoconnectMode = null;
@@ -4262,18 +4320,20 @@ async function startAutoconnect(mode) {
   if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
   if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
 
-  if (autoconnectMode !== mode) return;  // user clicked a different preset meanwhile - let that one own it now
+  // user clicked a different preset meanwhile, or this run's own
+  // waitForCondition() below already gave up - let that one own it now
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
 
   if (!wmActiveMount) {
     setAutoconnectStatus('⏳ Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
-    waitForCondition(mode, () => !!wmActiveMount, () => proceedPastMountLink(mode));
+    waitForCondition(mode, generation, () => !!wmActiveMount, () => proceedPastMountLink(mode, generation));
     return;
   }
-  proceedPastMountLink(mode);
+  proceedPastMountLink(mode, generation);
 }
 
-async function proceedPastMountLink(mode) {
-  if (autoconnectMode !== mode) return;
+async function proceedPastMountLink(mode, generation) {
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   // Starting Ekos itself used to be a manual step in KStars this tile
   // couldn't do for the user (see _ekos_indi_status()'s own docstring on
   // why that read-only check never drives Ekos on its own) - found live
@@ -4293,48 +4353,54 @@ async function proceedPastMountLink(mode) {
     } catch (e) {
       // fall through to the manual fallback below
     }
-    if (autoconnectMode !== mode) return;
+    if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
     if (!started) {
       setAutoconnectStatus('⏳ Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
     }
-    waitForCondition(mode, () => wmEkosConnected === true, () => finishAutoconnect(mode));
+    waitForCondition(mode, generation, () => wmEkosConnected === true, () => finishAutoconnect(mode, generation));
     return;
   }
-  finishAutoconnect(mode);
+  finishAutoconnect(mode, generation);
 }
 
 // Generic "pause until this becomes true, then resume" used for both the
 // mount-link and the Ekos-connected waits above - each is a step requiring
 // the user's own action elsewhere that Autoconnect can't take for them.
-function waitForCondition(mode, isDone, onDone) {
-  if (autoconnectPoll) clearInterval(autoconnectPoll);
-  autoconnectPoll = setInterval(() => {
-    if (autoconnectMode !== mode) {
-      clearInterval(autoconnectPoll);
-      autoconnectPoll = null;
+// Each call owns its own interval id (a local, not the old shared
+// autoconnectPoll global) - a stale call clearing the wrong, newer
+// interval was found to be a real risk, not just a stale interval running
+// forever. Staleness is checked via `generation`, not just `mode`: found
+// live (2026-08-05) that SETUP_ONLY/a coupling mode is the same fixed
+// string every run, so `autoconnectMode !== mode` alone can't tell a
+// long-abandoned run from the current one - see autoconnectGeneration's
+// own comment for the failure this caused.
+function waitForCondition(mode, generation, isDone, onDone) {
+  const pollId = setInterval(() => {
+    if (autoconnectMode !== mode || autoconnectGeneration !== generation) {
+      clearInterval(pollId);
       return;
     }
     if (isDone()) {
-      clearInterval(autoconnectPoll);
-      autoconnectPoll = null;
+      clearInterval(pollId);
       onDone();
     }
   }, 1500);
 }
 
-async function finishAutoconnect(mode) {
+async function finishAutoconnect(mode, generation) {
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   setAutoconnectStatus('Autoconnect: connecting devices…');
-  connectAllAvailable();
-  // connectAllAvailable() fires its connects without waiting for them -
+  connectAllUnconnected();
+  // connectAllUnconnected() fires its connects without waiting for them -
   // poll briefly for them to actually finish before applying the coupling
   // mode, same idea as the server-side "wait for indiserver" polls.
   const deadline = Date.now() + 15000;
-  while (Date.now() < deadline && autoconnectMode === mode) {
+  while (Date.now() < deadline && autoconnectMode === mode && autoconnectGeneration === generation) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     const targets = _availableConnectTargets();
     if (targets.length > 0 && targets.every(([, , connected]) => connected)) break;
   }
-  if (autoconnectMode !== mode) return;
+  if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
   if (mode !== SETUP_ONLY) {
     setAutoconnectStatus('Autoconnect: applying coupling mode…');
     await setWmCoupling(mode);
@@ -4664,15 +4730,35 @@ async function refreshWmConnectRow() {
 function connectAllAvailable() {
   // Toggle: if everything available is already connected, disconnect it
   // all; otherwise connect only the ones not yet connected (never toggles
-  // an individual already-connected device off in that case).
+  // an individual already-connected device off in that case). Only ever
+  // called from the manual "Connect all" button's own onclick - the
+  // automatic Setup/Autoconnect flow uses connectAllUnconnected() below
+  // instead, never this toggle - see its own comment for why.
   const targets = _availableConnectTargets();
   const allConnected = targets.length > 0 && targets.every(([, , connected]) => connected);
+  if (allConnected) {
+    targets.forEach(([deviceName, btnId]) => _setDeviceConnection(deviceName, btnId, true));
+    return;
+  }
+  connectAllUnconnected();
+}
+
+// Idempotent, non-toggling version used by finishAutoconnect() - only ever
+// connects whatever isn't connected yet, never disconnects anything. Found
+// live (2026-08-05): two overlapping Setup clicks (the first appeared to
+// do nothing, so the user clicked again) each run their own independent,
+// equally valid Autoconnect attempt - neither is "stale" the way
+// autoconnectGeneration guards against, since both are genuinely still in
+// progress at the same time. Once Ekos connects, both attempts'
+// waitForCondition() eventually call finishAutoconnect() - whichever
+// fired second used to call connectAllAvailable()'s toggle, see "already
+// connected", and disconnect everything the first one had just connected
+// moments earlier. Safe to call any number of times concurrently, since
+// it only ever acts on devices that are actually still disconnected.
+function connectAllUnconnected() {
+  const targets = _availableConnectTargets();
   targets.forEach(([deviceName, btnId, connected]) => {
-    if (allConnected) {
-      _setDeviceConnection(deviceName, btnId, true);
-    } else if (!connected) {
-      _setDeviceConnection(deviceName, btnId, false);
-    }
+    if (!connected) _setDeviceConnection(deviceName, btnId, false);
   });
 }
 

@@ -223,6 +223,14 @@ def mount_bridge_status(
         element is "On", normalized to set_coupling_mode()'s own short-form
         vocabulary - only meaningful when coupling_mode is MODE_AUTO_CORRECT
       - "drift_arcmin": float or None - current DRIFT_STATUS reading
+      - "drift_threshold": float or None - current DRIFT_THRESHOLD reading -
+        added 2026-08-06: status_page.html's own Threshold input field had
+        no way to ever learn the driver's actual current value (a page
+        reload always showed its hardcoded HTML default, 5, regardless of
+        what was really set) - found live to cause the field showing a
+        stale value that a later coupling-preset click would then push,
+        silently overwriting a real, different threshold the driver
+        already had.
       - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
         own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
         indiserver is - not necessarily this function's own host/port args
@@ -252,6 +260,7 @@ def mount_bridge_status(
             "coupling_mode": None,
             "correction_action": None,
             "drift_arcmin": None,
+            "drift_threshold": None,
             "settings_host": None,
             "settings_port": None,
             "settings_correct": False,
@@ -261,6 +270,7 @@ def mount_bridge_status(
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
     drift_status_prop = device_props.get("DRIFT_STATUS", {})
     drift_status = drift_status_prop.get("elements", {})
+    drift_threshold_elements = device_props.get("DRIFT_THRESHOLD", {}).get("elements", {})
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
@@ -268,6 +278,7 @@ def mount_bridge_status(
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    drift_threshold_raw = drift_threshold_elements.get("THRESHOLD_ARCMIN")
     active_pifinder = active_devices.get("ACTIVE_PIFINDER") or None
     active_mount = active_devices.get("ACTIVE_MOUNT") or None
     settings_host = bridge_settings.get("INDISERVER_HOST") or None
@@ -303,6 +314,7 @@ def mount_bridge_status(
         # See mount_bridge_drift()'s matching field for why this exists.
         "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+        "drift_threshold": float(drift_threshold_raw) if drift_threshold_raw not in (None, "") else None,
         "settings_host": settings_host,
         "settings_port": settings_port,
         "settings_correct": settings_correct,
@@ -581,7 +593,7 @@ def set_number(
 # maps to - which mode needs DRIFT_THRESHOLD/CORRECTION_ACTION and which
 # doesn't (MODE_GOTO_FORWARD needs neither, confirmed against
 # pifinder_mount_bridge.cpp's TimerHit()).
-COUPLING_MODES = {"MODE_OFF", "MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD", "MODE_MOUNT_SOURCE"}
+COUPLING_MODES = {"MODE_OFF", "MODE_VERIFY_ALERT", "MODE_AUTO_CORRECT", "MODE_GOTO_FORWARD"}
 DRIFT_THRESHOLD_DEFAULT = 5.0  # matches the driver's own IUFillNumber default
 CORRECTION_ACTION_DEFAULT = "sync"  # matches the driver's own default (ACTION_SYNC is ISS_ON)
 
@@ -619,8 +631,6 @@ def set_coupling_mode(
       - MODE_VERIFY_ALERT: DRIFT_THRESHOLD only
       - MODE_AUTO_CORRECT: DRIFT_THRESHOLD + CORRECTION_ACTION
       - MODE_GOTO_FORWARD: neither (both args silently ignored if given)
-      - MODE_MOUNT_SOURCE: neither either (see #130 - reverses direction,
-        mount drives PiFinder instead of the other way round)
     `correction_action` is "sync" or "goto" (matching the driver's own
     Sync/Goto-Track choice). Supporting properties are set *before*
     BRIDGE_MODE itself, so there's no window where coupling is already
