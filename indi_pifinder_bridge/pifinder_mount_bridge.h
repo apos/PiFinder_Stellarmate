@@ -136,7 +136,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_lastForwardedRA = std::nan("");
         double m_lastForwardedDec = std::nan("");
         int m_settleTicksRemaining = 0;
-        static constexpr int SETTLE_TICKS = 3; // poll cycles to wait for a fresh PiFinder solve after slew
+        static constexpr int SETTLE_TICKS = 3; // poll cycles to wait before even checking for a fresh solve
+
+        // SETTLE_TICKS alone doesn't guarantee PiFinder has actually produced
+        // a new camera solve by then - it may still be reporting an
+        // IMU-interpolated position left over from before/during the slew.
+        // Trusting that as arrival truth would Sync the mount to a guessed
+        // position instead of a verified one, corrupting its model instead
+        // of correcting it. Found live (2026-08-07): this caused PiFinder's
+        // own reported position to overshoot the target and the mount to
+        // never converge across retries - same failure class #79 already
+        // guards against for Auto-Correct, just missing here. Bounded so a
+        // stuck/slow solver can't stall a settle attempt forever.
+        int m_freshnessWaitTicksRemaining = 0;
+        static constexpr int MAX_FRESHNESS_WAIT_TICKS = 10;
 
         // A residual after arrival usually means the mount's own model was
         // slightly off at this sky position - Sync corrects that model with
@@ -147,4 +160,27 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         static constexpr int MAX_SETTLE_RETRIES = 3;
 
         void handleGotoForward();
+
+        // MODE_AUTO_CORRECT with CorrectionActionS[ACTION_GOTO]: mirrors
+        // handleGotoForward()'s arrival-verify-and-refine pattern (#170 -
+        // blindly re-issuing a Goto to wherever PiFinder currently reports,
+        // every single tick drift exceeds threshold, never corrects the
+        // mount's own alignment-model error, so each Goto lands off by
+        // roughly that same fixed error and drift climbs straight back up
+        // right after - never actually converges on the target). Kept as a
+        // separate state machine rather than reusing ForwardState/
+        // handleGotoForward(): that one is driven by a discrete *new*
+        // PiFinder push-to target event; this one is driven by continuous
+        // drift-exceeds-threshold and needs to hand control back to normal
+        // per-tick monitoring once a correction settles, not wait for a
+        // "new target" event that may never come.
+        enum class CorrectState { IDLE, SLEWING, SETTLING };
+        CorrectState m_correctState = CorrectState::IDLE;
+        double m_correctTargetRA = std::nan("");
+        double m_correctTargetDec = std::nan("");
+        int m_correctSettleTicksRemaining = 0;
+        int m_correctFreshnessWaitTicksRemaining = 0;
+        int m_correctSettleRetriesRemaining = 0;
+
+        void handleAutoCorrectGoto(bool exceeded, double piRA, double piDec, double drift, double threshold);
 };

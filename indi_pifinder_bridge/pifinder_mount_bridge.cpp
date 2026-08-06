@@ -341,7 +341,14 @@ void PiFinderMountBridge::TimerHit()
     }
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
-        if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+        if (CorrectionActionS[ACTION_GOTO].s == ISS_ON)
+        {
+            // Goto/Track correction: needs arrival-verify-and-refine, not a
+            // one-shot fire-and-forget - see handleAutoCorrectGoto()'s
+            // header comment for why (#170).
+            handleAutoCorrectGoto(exceeded, piRA, piDec, drift, DriftThresholdN[0].value);
+        }
+        else if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
         {
             // Found live (#79): correcting off a continuously
             // IMU-interpolated position (no real solve backing it, or one
@@ -364,34 +371,12 @@ void PiFinderMountBridge::TimerHit()
         }
         else if (exceeded)
         {
-            // Actually correcting this tick (or the Goto-in-progress guard
-            // below is letting a prior one finish) - IPS_BUSY, distinct from
-            // both IPS_OK (within threshold) and the IPS_ALERT gated case
-            // above.
+            // Sync path: instantaneous, no physical motion to verify/refine.
             DriftStatusNP.s = IPS_BUSY;
-            const bool useGoto = CorrectionActionS[ACTION_GOTO].s == ISS_ON;
-
-            // A Goto correction takes far longer than one 2s tick to
-            // complete, and "drift still exceeds threshold" stays true for
-            // the whole time the mount is slewing toward it. Without this
-            // guard, every tick re-issued a fresh Goto to the (slightly
-            // updated) target, which most mount drivers handle by aborting
-            // the in-progress slew and starting over - visible as the mount
-            // repeatedly stopping/restarting, plus an "aborted" alert from
-            // the client on every abort. Sync is instantaneous (no physical
-            // motion to interrupt), so it doesn't need this guard.
-            if (useGoto && m_client->isMountSlewing())
-            {
-                // Already correcting from a previous tick - let it finish.
-            }
+            if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent SYNC to mount.", drift);
             else
-            {
-                const char *coordSet = useGoto ? "TRACK" : "SYNC";
-                if (m_client->sendMountCoords(piRA, piDec, coordSet))
-                    LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent %s to mount.", drift, coordSet);
-                else
-                    LOG_ERROR("Failed to send correction to mount.");
-            }
+                LOG_ERROR("Failed to send correction to mount.");
         }
         // else: not exceeded - DriftStatusNP.s already set to IPS_OK by the
         // baseline computation above.
@@ -451,6 +436,7 @@ void PiFinderMountBridge::handleGotoForward()
             if (!m_client->isMountSlewing())
             {
                 m_settleTicksRemaining = SETTLE_TICKS;
+                m_freshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
                 m_forwardState = ForwardState::SETTLING;
                 LOG_INFO("Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
             }
@@ -462,6 +448,19 @@ void PiFinderMountBridge::handleGotoForward()
             if (m_settleTicksRemaining > 0)
             {
                 --m_settleTicksRemaining;
+                break;
+            }
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            {
+                // PiFinder hasn't produced a real camera solve since arrival
+                // yet - see the header comment on m_freshnessWaitTicksRemaining.
+                // Keep waiting rather than verifying/correcting off a guess.
+                if (--m_freshnessWaitTicksRemaining <= 0)
+                {
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - skipping this settle attempt.");
+                    m_forwardState = ForwardState::IDLE;
+                }
                 break;
             }
 
@@ -522,6 +521,130 @@ void PiFinderMountBridge::handleGotoForward()
     }
 }
 
+void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, double piDec, double drift, double threshold)
+{
+    switch (m_correctState)
+    {
+        case CorrectState::IDLE:
+        {
+            if (!exceeded)
+                return;
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            {
+                DriftStatusNP.s = IPS_ALERT;
+                LOGF_DEBUG(
+                    "Drift %.1f arcmin exceeded threshold, but PiFinder's position isn't backed by a solve "
+                    "within the last %.1fs - skipping correction.",
+                    drift, SolveFreshnessMaxAgeN[0].value);
+                return;
+            }
+
+            DriftStatusNP.s = IPS_BUSY;
+            if (m_client->sendMountCoords(piRA, piDec, "TRACK"))
+            {
+                LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent Goto to mount.", drift);
+                m_correctTargetRA = piRA;
+                m_correctTargetDec = piDec;
+                m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                m_correctState = CorrectState::SLEWING;
+            }
+            else
+            {
+                LOG_ERROR("Failed to send correction to mount.");
+            }
+            break;
+        }
+
+        case CorrectState::SLEWING:
+        {
+            // A Goto correction takes far longer than one poll tick to
+            // complete, and "drift still exceeds threshold" stays true for
+            // the whole time the mount is slewing toward it - stay BUSY and
+            // just wait for it to finish rather than re-issuing (which most
+            // mount drivers handle by aborting the in-progress slew and
+            // starting over).
+            DriftStatusNP.s = IPS_BUSY;
+            if (!m_client->isMountSlewing())
+            {
+                m_correctSettleTicksRemaining = SETTLE_TICKS;
+                m_correctFreshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
+                m_correctState = CorrectState::SETTLING;
+                LOG_INFO("Auto-correct Goto finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
+            }
+            break;
+        }
+
+        case CorrectState::SETTLING:
+        {
+            DriftStatusNP.s = IPS_BUSY;
+            if (m_correctSettleTicksRemaining > 0)
+            {
+                --m_correctSettleTicksRemaining;
+                break;
+            }
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            {
+                // See m_freshnessWaitTicksRemaining's comment on ForwardState
+                // - same reasoning applies here: trusting an IMU-interpolated
+                // "arrival" position would Sync the mount to a guessed
+                // position instead of a verified one.
+                if (--m_correctFreshnessWaitTicksRemaining <= 0)
+                {
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after auto-correct Goto - resuming normal monitoring.");
+                    m_correctState = CorrectState::IDLE;
+                }
+                break;
+            }
+
+            // drift/threshold reflect this tick's freshly-computed
+            // separation (passed in from TimerHit), i.e. the actual residual
+            // now that the mount has stopped and PiFinder has a fresh solve.
+            if (drift > threshold && m_correctSettleRetriesRemaining > 0)
+            {
+                // The mount already physically arrived via the Goto above,
+                // but a residual this size usually means its own alignment
+                // model was slightly off at this sky position - blindly
+                // re-issuing Goto to a corrected RA/Dec never fixes that (see
+                // #170: drift kept climbing right back up after each
+                // "correction"). Sync first to fix the model with PiFinder's
+                // verified solve, then re-issue the Goto so it benefits from
+                // the corrected model. Bounded so a genuinely noisy solve
+                // can't loop forever chasing it.
+                --m_correctSettleRetriesRemaining;
+                if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                {
+                    LOG_ERROR("Failed to send verification sync to mount.");
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                if (!m_client->sendMountCoords(m_correctTargetRA, m_correctTargetDec, "TRACK"))
+                {
+                    LOG_ERROR("Failed to re-issue Goto to mount after sync.");
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                LOGF_INFO("Auto-correct arrival verified by PiFinder solve: residual %.1f arcmin exceeds threshold %.1f -"
+                          " synced and re-issued Goto (%d attempt(s) left).",
+                          drift, threshold, m_correctSettleRetriesRemaining);
+                m_correctState = CorrectState::SLEWING;
+            }
+            else
+            {
+                if (drift > threshold)
+                    LOGF_WARN("Auto-correct gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
+                              MAX_SETTLE_RETRIES, drift, threshold);
+                else
+                    LOGF_INFO("Auto-correct arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                              drift, threshold);
+                m_correctState = CorrectState::IDLE;
+            }
+            break;
+        }
+    }
+}
+
 bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
@@ -539,6 +662,12 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             m_lastForwardedRA = std::nan("");
             m_lastForwardedDec = std::nan("");
 
+            // Same idea for Auto-Correct's Goto-refine state machine - don't
+            // let an in-progress settle/retry cycle from a previous mode
+            // silently keep running (or resume stale) after switching away
+            // and back.
+            m_correctState = CorrectState::IDLE;
+
             // Persist so the chosen mode actually survives a reconnect -
             // see m_connectedConfigLoaded's comment. Without this, the
             // saved config just keeps replaying whatever was last actively
@@ -554,6 +683,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IUUpdateSwitch(&CorrectionActionSP, states, names, n);
             CorrectionActionSP.s = IPS_OK;
             IDSetSwitch(&CorrectionActionSP, nullptr);
+
+            // Switching Sync<->Goto mid-correction shouldn't leave a stale
+            // settle/retry cycle running for the action that's no longer
+            // selected.
+            m_correctState = CorrectState::IDLE;
             return true;
         }
 
