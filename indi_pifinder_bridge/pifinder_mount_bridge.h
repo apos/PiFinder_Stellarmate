@@ -136,7 +136,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_lastForwardedRA = std::nan("");
         double m_lastForwardedDec = std::nan("");
         int m_settleTicksRemaining = 0;
-        static constexpr int SETTLE_TICKS = 3; // poll cycles to wait for a fresh PiFinder solve after slew
+        static constexpr int SETTLE_TICKS = 3; // poll cycles to wait before even checking for a fresh solve
+
+        // SETTLE_TICKS alone doesn't guarantee PiFinder has actually produced
+        // a new camera solve by then - it may still be reporting an
+        // IMU-interpolated position left over from before/during the slew.
+        // Trusting that as arrival truth would Sync the mount to a guessed
+        // position instead of a verified one, corrupting its model instead
+        // of correcting it. Found live (2026-08-07): this caused PiFinder's
+        // own reported position to overshoot the target and the mount to
+        // never converge across retries - same failure class #79 already
+        // guards against for Auto-Correct, just missing here. Bounded so a
+        // stuck/slow solver can't stall a settle attempt forever.
+        int m_freshnessWaitTicksRemaining = 0;
+        static constexpr int MAX_FRESHNESS_WAIT_TICKS = 10;
 
         // A residual after arrival usually means the mount's own model was
         // slightly off at this sky position - Sync corrects that model with

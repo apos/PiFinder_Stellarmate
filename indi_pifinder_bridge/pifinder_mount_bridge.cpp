@@ -451,6 +451,7 @@ void PiFinderMountBridge::handleGotoForward()
             if (!m_client->isMountSlewing())
             {
                 m_settleTicksRemaining = SETTLE_TICKS;
+                m_freshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
                 m_forwardState = ForwardState::SETTLING;
                 LOG_INFO("Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
             }
@@ -462,6 +463,19 @@ void PiFinderMountBridge::handleGotoForward()
             if (m_settleTicksRemaining > 0)
             {
                 --m_settleTicksRemaining;
+                break;
+            }
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            {
+                // PiFinder hasn't produced a real camera solve since arrival
+                // yet - see the header comment on m_freshnessWaitTicksRemaining.
+                // Keep waiting rather than verifying/correcting off a guess.
+                if (--m_freshnessWaitTicksRemaining <= 0)
+                {
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - skipping this settle attempt.");
+                    m_forwardState = ForwardState::IDLE;
+                }
                 break;
             }
 
