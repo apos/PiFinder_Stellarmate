@@ -22,6 +22,8 @@
 
 #include "lx200telescope.h"
 
+#include <cmath>
+
 #define LX200_TIMEOUT 5 /* FD timeout in seconds - moved here (was in the .cpp) so it's visible as a default parameter value below */
 
 class LX200_PIFINDER : public LX200Telescope
@@ -61,4 +63,14 @@ class LX200_PIFINDER : public LX200Telescope
         // the whole polling cycle on a merely-slow (not dead) reply, while
         // tolerating roughly the same total worst-case wait as before.
         int readWithRetry(const char *data, char *response, int max_response_length);
+
+        // Polls PiFinder's own /api/current_target (the on-device push-to
+        // selection - see PiFinder_Stellarmate#171) and publishes it via
+        // the base class's TargetNP whenever it changes, so an external
+        // Mount Bridge watching TARGET_EOD_COORD sees on-device push-to
+        // targets the same way it already sees external Goto()-driven
+        // ones - no change needed on the Mount Bridge side.
+        void pollCurrentTarget();
+        double m_lastTargetRA = std::nan("");
+        double m_lastTargetDec = std::nan("");
 };

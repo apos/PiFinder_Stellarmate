@@ -1,5 +1,5 @@
 diff --git a/python/PiFinder/api_extensions.py b/python/PiFinder/api_extensions.py
-index 5d973c7b..79fab7ea 100644
+index 5d973c7b..04179883 100644
 --- a/python/PiFinder/api_extensions.py
 +++ b/python/PiFinder/api_extensions.py
 @@ -21,6 +21,7 @@ import logging
@@ -19,7 +19,43 @@ index 5d973c7b..79fab7ea 100644
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -750,6 +753,90 @@ def register_api_routes(app, server_instance, require_auth=False):
+@@ -213,6 +216,35 @@ def register_api_routes(app, server_instance, require_auth=False):
+             logger.error("api/location error: %s", e)
+             return _json_response({"error": str(e)}, 500)
+ 
++    @app.route("/api/current_target")
++    def api_current_target():
++        """Returns the on-device push-to target, if any - whatever object the
++        UI's Object Details/Locate screen (the offset-arrow push-to guidance
++        display) is currently showing. RA and Dec are both in **degrees**
++        (CompositeObject.ra/.dec's own native unit - RA is NOT in hours here,
++        unlike /api/fake_solve's input), J2000 (same convention as everywhere
++        else in PiFinder) - callers that need JNow/epoch-of-date are expected
++        to precess themselves, same as POST /api/fake_solve's own convention
++        in the other direction. `null` if nothing has been selected yet this
++        session.
++        """
++        try:
++            target = server_instance.shared_state.ui_state().target()
++            if target is None:
++                return _json_response({"target": None})
++            return _json_response(
++                {
++                    "target": {
++                        "ra": target.ra,
++                        "dec": target.dec,
++                        "name": target.display_name,
++                    }
++                }
++            )
++        except Exception as e:
++            logger.error("api/current_target error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
+     @app.route("/api/solution")
+     def api_solution():
+         try:
+@@ -750,6 +782,90 @@ def register_api_routes(app, server_instance, require_auth=False):
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
