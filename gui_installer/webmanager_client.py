@@ -54,6 +54,7 @@ DEFAULT_TIMEOUT = 5.0
 
 PIFINDER_LX200_LABEL = "PiFinder LX200"
 PIFINDER_BRIDGE_LABEL = "PiFinder Mount Bridge"
+PIFINDER_SIMULATOR_LABEL = "PiFinder Simulator"
 
 
 class WebManagerError(Exception):
@@ -319,26 +320,33 @@ def driver_families(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout:
 def other_profile_drivers(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> list:
-    """Phase 3 (UC5): every driver label in the profile except the two
-    PiFinder ones - candidates for "which one is the mount", queried live
-    rather than hardcoded. Each entry also flags is_telescope (family ==
-    "Telescopes" per driver_families() above) so the caller can auto-select
-    an unambiguous single candidate instead of always asking the user.
+    """Phase 3 (UC5): every driver label in the profile except the PiFinder
+    ones - candidates for "which one is the mount", queried live rather than
+    hardcoded. Each entry also flags is_telescope (family == "Telescopes"
+    per driver_families() above) so the caller can auto-select an
+    unambiguous single candidate instead of always asking the user.
 
-    Known exception: "PiFinder LX200" is *also* family "Telescopes" (it
-    implements INDI::Telescope to emulate an LX200 mount) - already
-    excluded above by label, same as PiFinder Mount Bridge, so this needs
-    no special case for it. Two residual cases this can't resolve on its
-    own: (a) more than one Telescope-family driver in the profile (e.g. a
-    leftover Telescope Simulator alongside the user's real mount) - can't
-    tell which is genuinely in use; (b) a driver mislabeled by its own
-    INDI skeleton file (family is whatever the driver author declared, not
-    independently verified). Both fall back to manual selection - see
-    is_telescope's only caller, status_page.html's mount-dropdown logic."""
+    Known exceptions: "PiFinder LX200" and "PiFinder Simulator" are *also*
+    family "Telescopes" (both implement INDI::Telescope - the former to
+    emulate an LX200 mount, the latter as a settable PiFinder-side "sky
+    truth" for testing, see basic-memory pifinder-stellarmate/00092) -
+    already excluded above by label, same as PiFinder Mount Bridge, so this
+    needs no special case for either. Found live (2026-08-07): before
+    PIFINDER_SIMULATOR_LABEL was added here, "PiFinder Simulator" showed up
+    as a selectable mount candidate even though it's the opposite role - the
+    PiFinder-side truth source, never the thing being corrected.
+
+    Two residual cases this can't resolve on its own: (a) more than one
+    Telescope-family driver in the profile (e.g. a Telescope Simulator
+    alongside the user's real mount) - can't tell which is genuinely in use;
+    (b) a driver mislabeled by its own INDI skeleton file (family is
+    whatever the driver author declared, not independently verified). Both
+    fall back to manual selection - see is_telescope's only caller,
+    status_page.html's mount-dropdown logic."""
     labels = get_profile_labels(profile, host, port, timeout)
     families = driver_families(host, port, timeout)
     return [
         {"label": label, "is_telescope": families.get(label) == "Telescopes"}
         for label in labels
-        if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL)
+        if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL, PIFINDER_SIMULATOR_LABEL)
     ]
