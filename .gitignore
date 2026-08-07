@@ -7,6 +7,7 @@
 /tmp/lx200driver.h
 /indi_pifinder/build/
 /indi_pifinder_bridge/build/
+/indi_pifinder_simulator/build/
 /.gui_setup.log
 /.setup_warnings
 /.resume_from_venv
