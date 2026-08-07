@@ -13,6 +13,7 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_piFinderTargetNP = nullptr;
     m_mountOnCoordSetSP = nullptr;
     m_mountMountTypeSP = nullptr;
+    m_mountAbortSP = nullptr;
 
     watchDevice(m_piFinderName.c_str());
     watchDevice(m_mountName.c_str());
@@ -42,6 +43,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountOnCoordSetSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_MOUNT_TYPE"))
         m_mountMountTypeSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
+        m_mountAbortSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
@@ -60,6 +63,8 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountMountTypeSP)
         m_mountMountTypeSP = nullptr;
+    else if (property.getSwitch() == m_mountAbortSP)
+        m_mountAbortSP = nullptr;
 }
 
 bool PiFinderBridgeClient::getPiFinderRADE(double &ra, double &dec) const
@@ -134,6 +139,20 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     m_mountEqNP->at(1)->setValue(dec);
     m_mountEqNP->setState(IPS_BUSY);
     sendNewNumber(m_mountEqNP);
+
+    return true;
+}
+
+bool PiFinderBridgeClient::abortMount()
+{
+    if (m_mountAbortSP == nullptr)
+        return false;
+
+    // Single-switch property on every INDI::Telescope - by position, not
+    // name, same reasoning as getMountType() above.
+    m_mountAbortSP->reset();
+    m_mountAbortSP->at(0)->setState(ISS_ON);
+    sendNewSwitch(m_mountAbortSP);
 
     return true;
 }

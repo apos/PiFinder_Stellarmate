@@ -529,6 +529,11 @@
   .ql-small-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .ql-small-btn:not(:disabled):hover { border-color: #777; color: #fff; }
   .ql-small-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* Deliberately loud/red, unlike every other small button here - this is
+     a panic button (#179), it needs to read as different at a glance, not
+     blend in with the rest of the row. */
+  .mb-abort-btn { background: #3a1414; color: #ff8a80; border-color: #e53935; font-weight: 600; }
+  .mb-abort-btn:not(:disabled):hover { background: #e53935; color: #fff; border-color: #e53935; }
   /* Coupling presets are the tile's central control (per live feedback) -
      bigger and full-width, with their own label line above instead of
      squeezed inline to the buttons' left. */
@@ -541,18 +546,24 @@
     color: #ddd;
     font-size: 0.85rem;
   }
-  /* Grouped into "Visual" (never/gently touches the mount) vs "GoTo"
-     (actually slews it) per live feedback - a divider plus small labels,
-     reusing the same muted-caption + hairline-divider vocabulary already
-     used elsewhere on this tile, rather than inventing new colors/icons
-     to encode the same distinction. */
+  /* Grouped into Visual / Goto Mount / Goto PiFinder per live feedback -
+     small caption labels do the separating (no divider lines - those
+     looked orphaned once groups started wrapping to their own row below).
+     flex-wrap lets groups reflow by available width instead of a hard
+     mobile/desktop breakpoint: wide screens keep everything in one row,
+     narrower windows drop to 2 then 1 per row on their own, so a
+     moderately-narrowed desktop browser never lands on oversized
+     one-column buttons the way a fixed breakpoint would - found live
+     (2026-08-07): a single "stack below Npx" breakpoint made a merely
+     narrow (not phone-width) browser window look broken. */
   #mb-coupling-groups {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.7rem;
     margin-bottom: 0.6rem;
     align-items: stretch;
   }
-  .mb-coupling-group { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .mb-coupling-group { flex: 1 1 180px; min-width: 180px; display: flex; flex-direction: column; }
   /* Generic small muted group-label, reused wherever controls split into
      meaningfully different categories (Coupling's Visual/GoTo, Mode & Power's
      PiFinder/This Pi, ...) - not Mount-Bridge-specific despite the name it
@@ -590,11 +601,6 @@
     gap: 0.5rem;
     align-items: stretch;
   }
-  #mb-coupling-divider, .mb-coupling-divider {
-    width: 1px;
-    background: #444;
-    margin-top: 1.3rem;
-  }
   /* Same visual language as .mb-role-card (border-based active state, not
      a solid fill) - per direct feedback, these presets are conceptually
      the same kind of choice (pick one option among a small set) as the
@@ -602,8 +608,9 @@
   .mb-coupling-btn {
     flex: 1;
     min-width: 8rem;
-    /* The whole coupling row (Visual/GoTo groups + Decouple) stretches to
-       match its tallest member, same mechanism as #mb-role-cards - see
+    /* The whole coupling row (Visual/Goto Mount/Goto PiFinder groups +
+       Decouple) stretches to match its tallest member, same mechanism as
+       #mb-role-cards - see
        #mb-coupling-groups' align-items:stretch. min-height is only a floor
        for the common single-line case. */
     min-height: 2.7rem;
@@ -620,6 +627,14 @@
   .mb-coupling-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .mb-coupling-btn:not(:disabled):hover { border-color: #777; }
   .mb-coupling-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* True phone widths only - flex-wrap above already reflows to 2 then 1
+     column as space runs out, but on an actually narrow phone the buttons
+     also want to be a bit taller/roomier as real touch targets, not just
+     narrower copies of the desktop button. */
+  @media (max-width: 420px) {
+    .mb-coupling-group { flex-basis: 100%; }
+    .mb-coupling-btn { min-height: 3rem; padding: 0.8rem 0.6rem; font-size: 0.9rem; }
+  }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -863,18 +878,16 @@
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; }
-  /* margin-left:auto on the divider (not the group) - keeps divider and
-     button tight against each other at the far right, with all leftover
-     flex space absorbed before the divider instead of between it and the
-     button. */
-  #mb-decouple-divider { margin-left: auto; }
   /* Its own invisible .group-label spacer vertically offsets the button
      past the label height Visual/GoTo have above their own buttons, so it
      lines up with the actual button row instead of the heading row above
      it. The button itself is flex:1 so it fills the stretched column
      height exactly like .mb-coupling-group-buttons' buttons do - same
-     row-wide stretch as #mb-role-cards, min-height is just a floor. */
-  #mb-decouple-group { flex: 0 0 auto; display: flex; flex-direction: column; }
+     row-wide stretch as #mb-role-cards, min-height is just a floor.
+     margin-left:auto pins it to the far right on its own row once the
+     coupling groups wrap - falls back to sitting right after the last
+     group when there's no room left to push it further. */
+  #mb-decouple-group { flex: 0 0 auto; display: flex; flex-direction: column; margin-left: auto; }
   #mb-decouple-btn {
     flex: 1;
     min-height: 2.7rem;
@@ -1303,15 +1316,18 @@
               <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
             </div>
           </div>
-          <div id="mb-coupling-divider"></div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>Goto Mount</span><a class="help-link" href="/help.html#coupling-goto-mount" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Follow mount's goto</button>
             </div>
           </div>
-          <div id="mb-decouple-divider" class="mb-coupling-divider"></div>
+          <div class="mb-coupling-group">
+            <div class="group-label mb-coupling-label"><span>Goto PiFinder</span><a class="help-link" href="/help.html#coupling-goto-pifinder" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="mb-coupling-group-buttons">
+              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Forwards every push-to/goto target sent to PiFinder (from its own menu, or KStars' Goto on the 'PiFinder LX200' device) straight through to the real mount too.">Follow PiFinder's push to</button>
+            </div>
+          </div>
           <div id="mb-decouple-group">
             <div class="group-label" style="visibility:hidden;">&nbsp;</div>
             <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">&times;</button>
@@ -1329,6 +1345,7 @@
           <span class="mb-row-label">Manual:</span>
           <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
         </span>
+        <button id="mb-abort-btn" class="ql-small-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -3695,7 +3712,7 @@ function updateThresholdInputRelevance(couplingMode) {
   input.disabled = !usesThreshold;
   wrap.title = usesThreshold
     ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
-    : "Not used by Goto-Forward - every mount goto forwards immediately, regardless of this value.";
+    : "Not used by \"Follow PiFinder's push to\" - every mount goto forwards immediately, regardless of this value.";
 }
 
 let wmLastCouplingMode = null;
@@ -4232,6 +4249,28 @@ async function triggerManualSync() {
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
+}
+
+async function triggerAbortMount() {
+  // Deliberately no confirm() dialog and no mbActionInFlight gate - an
+  // emergency stop needs to fire immediately on click, every time,
+  // regardless of whatever else is in progress.
+  setMbActionStatus('🛑 Stopping mount movement and decoupling…');
+  const btn = document.getElementById('mb-abort-btn');
+  btn.disabled = true;
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
+  try {
+    const resp = await fetch('/api/mount_bridge_abort', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the other manual action buttons.
+  }
+  btn.disabled = false;
+  pollMbLog();
+  await refreshMountBridgeStatus();
   clearMbActionStatus();
 }
 

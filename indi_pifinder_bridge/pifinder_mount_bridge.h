@@ -109,6 +109,19 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ISwitch ManualTriggerS[2];
         enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW };
 
+        // Emergency stop - sends TELESCOPE_ABORT_MOTION to the active mount
+        // immediately, independent of Coupling mode or any in-progress
+        // settle-retry cycle. Separate property from ManualTriggerSP
+        // (rather than a third option there) so it's never gated behind
+        // the same handler path as Sync/Goto - a panic button should stay
+        // as simple and direct as possible. See #179 (found live
+        // 2026-08-07: Mount Bridge had no way at all to stop the mount if
+        // a settle-retry cycle went wrong, e.g. #177's missing
+        // dead-reckoning made it sync onto a stale position and re-slew
+        // repeatedly).
+        ISwitchVectorProperty AbortMountSP;
+        ISwitch AbortMountS[1];
+
         INumberVectorProperty DriftThresholdNP;
         INumber DriftThresholdN[1];
 
