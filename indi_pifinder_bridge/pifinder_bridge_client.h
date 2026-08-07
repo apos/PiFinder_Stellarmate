@@ -56,6 +56,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // that doesn't set it).
         bool getMountType(std::string &outType) const;
 
+        // TELESCOPE_SLEW_RATE, by index position rather than item name -
+        // same "mount-agnostic, no assumed item names" reasoning as
+        // getMountType(). Returns 0 if the mount doesn't expose slew rates
+        // at all (some simulators/drivers don't) - callers must treat that
+        // as "not supported", not "index 0 selected".
+        int getSlewRateCount() const;
+        bool setSlewRateIndex(int index);
+
         // Emergency stop: sends TELESCOPE_ABORT_MOTION to the active mount
         // immediately. Deliberately does NOT gate on isReady() (which also
         // requires PiFinder's own properties) - the mount should be
@@ -80,6 +88,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;
 
         std::string m_shadowName;
         bool m_shadowOnline = false;

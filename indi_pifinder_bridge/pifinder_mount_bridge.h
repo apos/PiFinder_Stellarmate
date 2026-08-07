@@ -146,6 +146,40 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty DriftThresholdNP;
         INumber DriftThresholdN[1];
 
+        // Sanity cap on the SYNC step of every automatic correction (Auto-
+        // correct's plain Sync path, and the Sync+re-Goto refine pattern
+        // SETTLING/HOLDING/CorrectState::SETTLING all share). Separate from
+        // DriftThresholdNP, which only decides *whether* to correct at all -
+        // this decides whether an automatic Sync is even plausible as a
+        // small model refinement versus almost certainly a bad/outlier
+        // solve. Found live (2026-08-08): a several-degree drift reading
+        // (way beyond anything a real alignment-model residual would be)
+        // still passed the ordinary freshness gate (#79) and got Synced to
+        // the mount unconditionally, risking corrupting its model with a
+        // spurious solve instead of refining it - same failure class #79
+        // guards against for staleness, just for implausible magnitude
+        // instead. Deliberately NOT applied to ManualTriggerSP - those are
+        // one-shot, user-initiated actions where the user already has eyes
+        // on the situation before clicking.
+        INumberVectorProperty MaxSyncDriftNP;
+        INumber MaxSyncDriftN[1];
+
+        // Graduated slew rate for correction Gotos (2026-08-08): sending
+        // every correction at whatever rate happens to be currently
+        // selected on the mount (found live: "Half-Max") risks overshoot -
+        // real handsets have long used slower "Guide/Center" rates
+        // specifically for fine centering, only using fast rates for big
+        // slews (see basic-memory pifinder-stellarmate for the KStars/Ekos
+        // Align research this mirrors). Picks by INDEX POSITION in
+        // whatever TELESCOPE_SLEW_RATE list the mount reports (same
+        // mount-agnostic philosophy as getMountType() - never assumes a
+        // specific driver's item names/count). Deliberately fixed
+        // constants, not a GUI-configurable property, to avoid scope
+        // creep - can become tunable later if needed.
+        static constexpr double SLEW_RATE_FAR_THRESHOLD_ARCMIN = 30.0;
+        static constexpr double SLEW_RATE_CLOSE_THRESHOLD_ARCMIN = 3.0;
+        void applySlewRateForDrift(double driftArcmin);
+
         // Auto-correct only fires off a position PiFinder itself reports as
         // a real, recent camera solve (via /api/status - see #79/#107 in
         // basic-memory pifinder-stellarmate: LX200 has no room to carry this,

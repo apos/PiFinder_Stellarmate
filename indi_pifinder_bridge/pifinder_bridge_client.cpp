@@ -14,6 +14,7 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_mountOnCoordSetSP = nullptr;
     m_mountMountTypeSP = nullptr;
     m_mountAbortSP = nullptr;
+    m_mountSlewRateSP = nullptr;
 
     watchDevice(m_piFinderName.c_str());
     watchDevice(m_mountName.c_str());
@@ -88,6 +89,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountMountTypeSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
         m_mountAbortSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("TELESCOPE_SLEW_RATE"))
+        m_mountSlewRateSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
@@ -112,6 +115,8 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountMountTypeSP = nullptr;
     else if (property.getSwitch() == m_mountAbortSP)
         m_mountAbortSP = nullptr;
+    else if (property.getSwitch() == m_mountSlewRateSP)
+        m_mountSlewRateSP = nullptr;
     else if (property.getNumber() == m_shadowEqNP)
         m_shadowEqNP = nullptr;
     else if (property.getSwitch() == m_shadowOnCoordSetSP)
@@ -170,6 +175,26 @@ bool PiFinderBridgeClient::getMountType(std::string &outType) const
     else
         return false;
 
+    return true;
+}
+
+int PiFinderBridgeClient::getSlewRateCount() const
+{
+    return m_mountSlewRateSP == nullptr ? 0 : static_cast<int>(m_mountSlewRateSP->count());
+}
+
+bool PiFinderBridgeClient::setSlewRateIndex(int index)
+{
+    if (m_mountSlewRateSP == nullptr || index < 0 || index >= static_cast<int>(m_mountSlewRateSP->count()))
+        return false;
+
+    auto rateSwitch = m_mountSlewRateSP->at(index);
+    if (rateSwitch->getState() == ISS_ON)
+        return true; // already selected - avoid redundant INDI traffic every tick
+
+    m_mountSlewRateSP->reset();
+    rateSwitch->setState(ISS_ON);
+    sendNewSwitch(m_mountSlewRateSP);
     return true;
 }
 
