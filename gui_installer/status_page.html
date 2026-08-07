@@ -602,8 +602,9 @@
   .mb-coupling-btn {
     flex: 1;
     min-width: 8rem;
-    /* The whole coupling row (Visual/GoTo groups + Decouple) stretches to
-       match its tallest member, same mechanism as #mb-role-cards - see
+    /* The whole coupling row (Visual/Goto Mount/Goto PiFinder groups +
+       Decouple) stretches to match its tallest member, same mechanism as
+       #mb-role-cards - see
        #mb-coupling-groups' align-items:stretch. min-height is only a floor
        for the common single-line case. */
     min-height: 2.7rem;
@@ -1305,9 +1306,15 @@
           </div>
           <div id="mb-coupling-divider"></div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>Goto Mount</span><a class="help-link" href="/help.html#coupling-goto-mount" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
+            </div>
+          </div>
+          <div class="mb-coupling-divider"></div>
+          <div class="mb-coupling-group">
+            <div class="group-label mb-coupling-label"><span>Goto PiFinder</span><a class="help-link" href="/help.html#coupling-goto-pifinder" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="mb-coupling-group-buttons">
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
             </div>
           </div>

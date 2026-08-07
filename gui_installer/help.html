@@ -78,7 +78,8 @@
         <li><a href="#coupling">Coupling &amp; Autoconnect</a>
           <ul>
             <li><a href="#coupling-visual">Visual group</a></li>
-            <li><a href="#coupling-goto">GoTo group</a></li>
+            <li><a href="#coupling-goto-mount">Goto Mount group</a></li>
+            <li><a href="#coupling-goto-pifinder">Goto PiFinder group</a></li>
           </ul>
         </li>
         <li><a href="#drift-badge">Drift readout</a></li>
@@ -203,8 +204,11 @@
 <h4 id="coupling-visual">Visual group</h4>
 <p><strong>Verify/Alert only</strong> and <strong>Auto-correct (Sync)</strong> never slew the mount - a Sync is an instant position update, not a physical move - so both work on any mount, Goto-capable or not. This matches two of this project's original use cases: astrophotography's passive "is my mount still correctly aligned?" sanity check (Verify/Alert), and a manual push-to-then-correct workflow where you slew by hand until PiFinder shows on-target, and Auto-correct (Sync) straightens out whatever drift results afterward.</p>
 
-<h4 id="coupling-goto">GoTo group</h4>
-<p><strong>Auto-correct (Goto &amp; Track)</strong> and <strong>Goto-Forward</strong> both physically slew the mount, so both need a real Goto-capable mount. Auto-correct (Goto &amp; Track) continuously corrects existing drift by slewing to it; Goto-Forward matches this project's standalone-visual-use case instead - PiFinder becomes the single GoTo interface, and every new PiFinder target is forwarded regardless of Threshold, though Threshold still governs whether the arrival needs refining afterward (see above).</p>
+<h4 id="coupling-goto-mount">Goto Mount group</h4>
+<p><strong>Auto-correct (Goto &amp; Track)</strong> physically slews the mount, so it needs a real Goto-capable mount. The mount is the one that moves to correct drift - you (or the mount's own controls/KStars) drive the mount directly, and this preset continuously corrects any resulting drift by slewing it back onto PiFinder's solved position.</p>
+
+<h4 id="coupling-goto-pifinder">Goto PiFinder group</h4>
+<p><strong>Goto-Forward</strong> also physically slews the mount, so it too needs a real Goto-capable mount - but the direction is reversed from the group above: PiFinder is the one you drive (its own menu, or KStars' Goto on the "PiFinder LX200" device), and every new PiFinder target is forwarded to the mount regardless of Threshold. This matches this project's standalone-visual-use case - PiFinder becomes the single GoTo interface. Threshold still governs whether the arrival needs refining afterward (see above).</p>
 
 <p><strong>Setup</strong>: runs steps 1-4/6 above in one click (start profile, add drivers, connect - pausing for you to link your mount, the one step it can't decide for you) without applying any Coupling preset at the end. Use this to get everything ready first, then pick a mode deliberately once it's all connected.</p>
 <p><strong>Autoconnect</strong>: clicking any preset before steps 1-6 are actually finished doesn't just fail - it runs the exact same setup as the Setup button above automatically, then applies the coupling mode you originally clicked once it's done. The Setup button exists so you're not only discovering this by clicking a preset and seeing setup start unexpectedly.</p>
