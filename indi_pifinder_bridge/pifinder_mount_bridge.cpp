@@ -166,6 +166,10 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 2, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
 
+    IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
+    IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
+                       "Emergency stop", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
     IUFillNumber(&DriftThresholdN[0], "THRESHOLD_ARCMIN", "Threshold (arcmin)", "%.1f", 0.1, 600, 0.5, 5);
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -207,6 +211,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&BridgeModeSP);
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
+        defineProperty(&AbortMountSP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
@@ -227,6 +232,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(BridgeModeSP.name);
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
+        deleteProperty(AbortMountSP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
@@ -723,6 +729,32 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             IUResetSwitch(&ManualTriggerSP);
             IDSetSwitch(&ManualTriggerSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, AbortMountSP.name) == 0)
+        {
+            IUUpdateSwitch(&AbortMountSP, states, names, n);
+
+            if (AbortMountS[0].s == ISS_ON)
+            {
+                // Deliberately not gated on m_client->isReady() - see
+                // abortMount()'s own comment, this must work even if
+                // PiFinder's side is unavailable/stale.
+                if (m_client->abortMount())
+                {
+                    LOG_WARN("Emergency stop: sent ABORT to the mount.");
+                    AbortMountSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Emergency stop: mount not available - could not send ABORT.");
+                    AbortMountSP.s = IPS_ALERT;
+                }
+            }
+
+            IUResetSwitch(&AbortMountSP);
+            IDSetSwitch(&AbortMountSP, nullptr);
             return true;
         }
     }
