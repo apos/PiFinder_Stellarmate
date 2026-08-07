@@ -529,6 +529,11 @@
   .ql-small-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .ql-small-btn:not(:disabled):hover { border-color: #777; color: #fff; }
   .ql-small-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* Deliberately loud/red, unlike every other small button here - this is
+     a panic button (#179), it needs to read as different at a glance, not
+     blend in with the rest of the row. */
+  .mb-abort-btn { background: #3a1414; color: #ff8a80; border-color: #e53935; font-weight: 600; }
+  .mb-abort-btn:not(:disabled):hover { background: #e53935; color: #fff; border-color: #e53935; }
   /* Coupling presets are the tile's central control (per live feedback) -
      bigger and full-width, with their own label line above instead of
      squeezed inline to the buttons' left. */
@@ -1340,6 +1345,7 @@
           <span class="mb-row-label">Manual:</span>
           <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
         </span>
+        <button id="mb-abort-btn" class="ql-small-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -4243,6 +4249,28 @@ async function triggerManualSync() {
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
+}
+
+async function triggerAbortMount() {
+  // Deliberately no confirm() dialog and no mbActionInFlight gate - an
+  // emergency stop needs to fire immediately on click, every time,
+  // regardless of whatever else is in progress.
+  setMbActionStatus('🛑 Stopping mount movement and decoupling…');
+  const btn = document.getElementById('mb-abort-btn');
+  btn.disabled = true;
+  document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
+  try {
+    const resp = await fetch('/api/mount_bridge_abort', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the other manual action buttons.
+  }
+  btn.disabled = false;
+  pollMbLog();
+  await refreshMountBridgeStatus();
   clearMbActionStatus();
 }
 

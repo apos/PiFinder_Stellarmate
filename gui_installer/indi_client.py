@@ -662,3 +662,15 @@ def trigger_manual_sync(
     hand (no Goto involved at all), where none of the Coupling presets would
     otherwise react."""
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)
+
+
+def trigger_abort_mount(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Emergency stop: sends TELESCOPE_ABORT_MOTION to the active mount right
+    now (ABORT_MOUNT's ABORT_MOUNT_NOW element) - works regardless of which
+    Coupling mode (or Off) is active, and independent of whether PiFinder's
+    own side is ready/available. See #179."""
+    set_switch("PiFinder Mount Bridge", "ABORT_MOUNT", "ABORT_MOUNT_NOW", host, port, timeout)

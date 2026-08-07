@@ -3030,6 +3030,36 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_abort":
+            # Emergency stop - see #179. Two steps, in this order:
+            # 1. ABORT_MOUNT stops the mount's *current* physical motion
+            #    immediately.
+            # 2. Coupling -> Off (same as Decouple/onDecoupleClick()) stops
+            #    Mount Bridge from re-triggering another correction on its
+            #    next poll tick - found live 2026-08-07: sending ABORT
+            #    alone stopped the mount for a moment, then Auto-correct/
+            #    Goto-Forward just synced and re-slewed it right back
+            #    toward the same target, since nothing about the drift/mode
+            #    that caused the original correction had changed. A stop
+            #    button that only pauses for one tick isn't a stop button.
+            _mb_log("EMERGENCY STOP: sending ABORT to the mount...")
+            try:
+                indi_client.trigger_abort_mount()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  decoupling (Coupling -> Off) so nothing re-triggers another correction...")
+            try:
+                indi_client.set_coupling_mode("MODE_OFF")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 
