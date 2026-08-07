@@ -3781,8 +3781,21 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
       : `Watching for drift - will correct the mount past ${threshold}'`;
   } else if (couplingMode === 'MODE_GOTO_FORWARD') {
     setMbArrow('mb-arrow-left', 'goto');
-    setMbArrow('mb-arrow-right', 'goto');
-    captionEl.textContent = 'Forwarding goto commands straight to the mount';
+    // Same three-way pattern as Auto-correct above (found live 2026-08-08:
+    // this caption was a static string regardless of drift/state, unlike
+    // every other mode - couldn't tell "holding fine" from "drifted and
+    // stuck waiting on a fresh solve" from "actively correcting right
+    // now"). The driver now sets driftState=Busy while a correction Goto
+    // is actually in flight (SLEWING, or HOLDING's own re-sync/re-goto) -
+    // same signal Auto-correct already had, see pifinder_mount_bridge.cpp.
+    const exceeded = driftArcmin !== null && driftArcmin > threshold;
+    const busy = driftState === 'Busy';
+    setMbArrow('mb-arrow-right', busy ? 'write' : 'goto');
+    captionEl.textContent = busy
+      ? `Correcting the mount now - drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}'`
+      : exceeded
+      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting`
+      : `Holding target - drift ${driftArcmin !== null ? driftArcmin.toFixed(1) : '0.0'}' within ${threshold}'`;
   }
   const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
   document.getElementById('mount-bridge-text').textContent =

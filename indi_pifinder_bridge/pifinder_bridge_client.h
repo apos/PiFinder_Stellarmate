@@ -23,6 +23,16 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         void setDevices(const std::string &piFinderName, const std::string &mountName);
 
+        // Third, fully independent device (#181) - purely mirrors
+        // PiFinder's position via Sync for visualization/testing, never
+        // participates in isReady()/getMountRADE()/sendMountCoords(). Safe
+        // to call repeatedly (e.g. whenever the user retypes the device
+        // name) - re-watching an already-watched device name is a no-op on
+        // the libindi side. Pass an empty name to stop watching.
+        void setShadowDevice(const std::string &shadowName);
+        bool isShadowReady() const;
+        bool syncShadowCoords(double ra, double dec);
+
         bool isReady() const;
 
         bool getPiFinderRADE(double &ra, double &dec) const;
@@ -45,6 +55,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // mount hasn't reported this property yet (not connected, or a driver
         // that doesn't set it).
         bool getMountType(std::string &outType) const;
+
+        // TELESCOPE_SLEW_RATE, by index position rather than item name -
+        // same "mount-agnostic, no assumed item names" reasoning as
+        // getMountType(). Returns 0 if the mount doesn't expose slew rates
+        // at all (some simulators/drivers don't) - callers must treat that
+        // as "not supported", not "index 0 selected".
+        int getSlewRateCount() const;
+        bool setSlewRateIndex(int index);
 
         // Emergency stop: sends TELESCOPE_ABORT_MOTION to the active mount
         // immediately. Deliberately does NOT gate on isReady() (which also
@@ -70,4 +88,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;
+
+        std::string m_shadowName;
+        bool m_shadowOnline = false;
+        INDI::PropertyViewNumber *m_shadowEqNP = nullptr;
+        INDI::PropertyViewSwitch *m_shadowOnCoordSetSP = nullptr;
 };

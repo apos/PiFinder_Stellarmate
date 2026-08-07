@@ -149,6 +149,15 @@ bool PiFinderMountBridge::initProperties()
     m_lastActivePiFinder = "PiFinder LX200";
     m_lastActiveMount = "";
 
+    IUFillText(&ShadowDeviceT[SHADOW_DEVICE], "SHADOW_DEVICE", "Shadow device", "PiFinder Simulator");
+    IUFillTextVector(&ShadowDeviceTP, ShadowDeviceT, 1, getDeviceName(), "SHADOW_DEVICE_NAME",
+                     "Shadow device", "Shadow Sync", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_ENABLE], "SHADOW_SYNC_ENABLE", "Enable", ISS_OFF);
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_DISABLE], "SHADOW_SYNC_DISABLE", "Disable", ISS_ON);
+    IUFillSwitchVector(&ShadowSyncSP, ShadowSyncS, 2, getDeviceName(), "SHADOW_SYNC", "Mirror to shadow device",
+                       "Shadow Sync", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
@@ -174,6 +183,10 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillNumber(&MaxSyncDriftN[0], "MAX_SYNC_DRIFT_ARCMIN", "Max auto-Sync drift (arcmin)", "%.0f", 10, 10000, 10, 120);
+    IUFillNumberVector(&MaxSyncDriftNP, MaxSyncDriftN, 1, getDeviceName(), "MAX_SYNC_DRIFT",
+                       "Auto-Sync sanity limit", "Main Control", IP_RW, 60, IPS_IDLE);
+
     IUFillNumber(&SolveFreshnessMaxAgeN[0], "MAX_AGE_SEC", "Max solve age (s)", "%.1f", 0.5, 60, 0.5, 5);
     IUFillNumberVector(&SolveFreshnessMaxAgeNP, SolveFreshnessMaxAgeN, 1, getDeviceName(), "SOLVE_FRESHNESS",
                        "Auto-correct solve freshness", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -194,6 +207,7 @@ void PiFinderMountBridge::ISGetProperties(const char *dev)
 
     defineProperty(&SettingsTP);
     defineProperty(&ActiveDeviceTP);
+    defineProperty(&ShadowDeviceTP);
 
     if (!m_configLoaded)
     {
@@ -213,8 +227,10 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ManualTriggerSP);
         defineProperty(&AbortMountSP);
         defineProperty(&DriftThresholdNP);
+        defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&ShadowSyncSP);
 
         // Restore the saved Coupling mode/threshold/etc. now that their
         // properties actually exist - see m_connectedConfigLoaded's
@@ -234,8 +250,10 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ManualTriggerSP.name);
         deleteProperty(AbortMountSP.name);
         deleteProperty(DriftThresholdNP.name);
+        deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(ShadowSyncSP.name);
     }
 
     return true;
@@ -254,6 +272,7 @@ bool PiFinderMountBridge::Connect()
 
     m_client->setServer(SettingsT[INDISERVER_HOST].text, std::stoi(SettingsT[INDISERVER_PORT].text));
     m_client->setDevices(piFinderName, mountName);
+    m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
 
     if (!m_client->connectServer())
     {
@@ -293,12 +312,40 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     }
 }
 
+void PiFinderMountBridge::handleShadowSync()
+{
+    // Deliberately does not depend on m_client->isReady() (which requires
+    // the real mount's properties too) - the shadow device (#181) must
+    // work independent of ACTIVE_MOUNT/Coupling entirely, purely mirroring
+    // PiFinder's own verified position for visualization. Also deliberately
+    // never touches DriftStatusNP/exceeded/drift - those describe PiFinder
+    // vs the *real* mount, unrelated to this.
+    if (ShadowSyncS[SHADOW_SYNC_ENABLE].s != ISS_ON)
+        return;
+
+    if (!m_client->isShadowReady())
+        return;
+
+    // Same freshness gate as every other automatic action here (#79) -
+    // mirroring a stale/IMU-interpolated position would just teach the
+    // shadow device to lie too, defeating the point of it being "truth".
+    if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+        return;
+
+    double piRA, piDec;
+    if (!m_client->getPiFinderRADE(piRA, piDec))
+        return;
+
+    m_client->syncShadowCoords(piRA, piDec);
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
         return;
 
     syncMountTypeToPiFinder();
+    handleShadowSync();
 
     if (!m_client->isReady())
     {
@@ -375,6 +422,13 @@ void PiFinderMountBridge::TimerHit()
                 "within the last %.1fs - skipping correction.",
                 drift, SolveFreshnessMaxAgeN[0].value);
         }
+        else if (exceeded && drift > MaxSyncDriftN[0].value)
+        {
+            DriftStatusNP.s = IPS_ALERT;
+            LOGF_WARN("Drift %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - skipping Sync to "
+                      "avoid corrupting the mount's model off a possibly bad solve.",
+                      drift, MaxSyncDriftN[0].value);
+        }
         else if (exceeded)
         {
             // Sync path: instantaneous, no physical motion to verify/refine.
@@ -393,6 +447,23 @@ void PiFinderMountBridge::TimerHit()
     SetTimer(getCurrentPollingPeriod());
 }
 
+void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
+{
+    const int count = m_client->getSlewRateCount();
+    if (count <= 0)
+        return; // driver doesn't expose slew rates - optional enhancement, not fatal to the Goto
+
+    int index;
+    if (driftArcmin > SLEW_RATE_FAR_THRESHOLD_ARCMIN)
+        index = count - 1; // fastest available
+    else if (driftArcmin > SLEW_RATE_CLOSE_THRESHOLD_ARCMIN)
+        index = count / 2; // a middle rate
+    else
+        index = 0; // slowest/most precise available
+
+    m_client->setSlewRateIndex(index);
+}
+
 void PiFinderMountBridge::handleGotoForward()
 {
     double targetRA, targetDec;
@@ -408,11 +479,26 @@ void PiFinderMountBridge::handleGotoForward()
             if (std::isnan(m_lastForwardedRA))
             {
                 // First observation since entering this mode - establish a
-                // baseline without forwarding, so switching into Goto-Forward
-                // doesn't immediately re-send whatever push-to target
+                // baseline without forwarding a Goto, so switching into
+                // Goto-Forward (or a driver restart, e.g. for a hot-swapped
+                // build) doesn't immediately re-send whatever push-to target
                 // happened to already be set on PiFinder.
+                //
+                // Transition straight to HOLDING rather than staying IDLE:
+                // found live (2026-08-08) that a driver restart while
+                // Goto-Forward was already active and holding a target left
+                // the state machine permanently stuck in IDLE - the target
+                // hadn't "changed" since it was already set before the
+                // restart, so isNewTarget below never fired and drift went
+                // uncorrected indefinitely (Altair drifted to 3.3' with no
+                // correction). HOLDING doesn't fire anything on this tick
+                // either (no Goto here), but from the *next* tick on it
+                // actively re-checks drift/threshold and self-corrects -
+                // exactly the same "just establish a baseline, don't fire
+                // yet" intent above, but without going permanently dormant.
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
+                m_forwardState = ForwardState::HOLDING;
                 return;
             }
 
@@ -421,6 +507,12 @@ void PiFinderMountBridge::handleGotoForward()
             if (!isNewTarget)
                 return;
 
+            {
+                double mountRA, mountDec;
+                applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                          ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
+                                          : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0); // unknown - assume far, safe default
+            }
             if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
             {
                 LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
@@ -439,6 +531,15 @@ void PiFinderMountBridge::handleGotoForward()
 
         case ForwardState::SLEWING:
         {
+            // Mirrors CorrectState::SLEWING's IPS_BUSY (#170) - lets the GUI
+            // tell "actively slewing/correcting" apart from "holding", same
+            // signal Auto-correct already gives. Previously left whatever
+            // TimerHit's baseline drift computation set here (found live
+            // 2026-08-08: the GUI caption for Goto-Forward was a static
+            // string regardless of state - couldn't distinguish this from
+            // "holding, drift exceeded").
+            DriftStatusNP.s = IPS_BUSY;
+            IDSetNumber(&DriftStatusNP, nullptr);
             if (!m_client->isMountSlewing())
             {
                 m_settleTicksRemaining = SETTLE_TICKS;
@@ -483,7 +584,18 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift > threshold && m_settleRetriesRemaining > 0)
+            if (drift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - a residual this
+                // large is almost certainly a bad/outlier solve, not a
+                // plausible alignment-model error. Don't Sync off it; hold
+                // and keep re-checking on the next fresh solve instead.
+                LOGF_WARN("Residual %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - not syncing,"
+                          " will re-check on the next fresh solve.",
+                          drift, MaxSyncDriftN[0].value);
+                m_forwardState = ForwardState::HOLDING;
+            }
+            else if (drift > threshold && m_settleRetriesRemaining > 0)
             {
                 // The mount already physically arrived via the Goto above,
                 // but a residual this size usually means its own model was
@@ -501,6 +613,7 @@ void PiFinderMountBridge::handleGotoForward()
                     m_forwardState = ForwardState::IDLE;
                     break;
                 }
+                applySlewRateForDrift(drift);
                 if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
                 {
                     LOG_ERROR("Failed to re-issue Goto to mount after sync.");
@@ -535,6 +648,12 @@ void PiFinderMountBridge::handleGotoForward()
                                           std::abs(targetDec - m_lastForwardedDec) > 1e-9;
                 if (isNewTarget)
                 {
+                    {
+                        double mountRA, mountDec;
+                        applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                                  ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
+                                                  : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0);
+                    }
                     if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
                     {
                         LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
@@ -550,6 +669,23 @@ void PiFinderMountBridge::handleGotoForward()
                     }
                     break;
                 }
+            }
+
+            // If our own last correction is still physically executing,
+            // skip this tick entirely - found live (2026-08-08): without
+            // this, re-checking on the very next 2s poll tick could either
+            // stack a new Sync+Goto on top of one still in flight, or read
+            // piRA/mountRA mid-motion (transitional positions), teaching
+            // the mount's model a bogus association via Sync. No fixed
+            // settle-tick delay here (that was for verifying an uncertain
+            // *new arrival* after a real slew, see SETTLING above) - a
+            // continuous holding-correction is to a target we already
+            // trust, so just wait for the mount to actually report done.
+            if (m_client->isMountSlewing())
+            {
+                DriftStatusNP.s = IPS_BUSY;
+                IDSetNumber(&DriftStatusNP, nullptr);
+                break;
             }
 
             // Still the same held target - watch for it drifting past
@@ -574,12 +710,17 @@ void PiFinderMountBridge::handleGotoForward()
             if (drift <= threshold)
                 break;
 
-            // Fresh retry budget for this holding-correction cycle - not a
-            // continuation of whatever was left over from the initial
-            // arrival's settle attempts, so ordinary tracking drift keeps
-            // getting corrected indefinitely rather than only a few times
-            // total.
-            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+            if (drift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - stay in HOLDING and
+                // keep watching rather than syncing off a likely-bad solve.
+                LOGF_WARN("Held target drifted %.1f arcmin, exceeding the auto-Sync sanity limit (%.1f) -"
+                          " not syncing, will re-check on the next fresh solve.",
+                          drift, MaxSyncDriftN[0].value);
+                break;
+            }
+
+            applySlewRateForDrift(drift);
             if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
             {
                 LOG_ERROR("Failed to send verification sync to mount while holding.");
@@ -590,9 +731,15 @@ void PiFinderMountBridge::handleGotoForward()
                 LOG_ERROR("Failed to re-issue Goto to mount while holding.");
                 break;
             }
+            // Deliberately stays in HOLDING (no SLEWING/SETTLING detour) -
+            // the isMountSlewing() check above on the next tick is the only
+            // gate needed; retrying indefinitely every tick drift still
+            // exceeds threshold is the intended "hold" behavior, not a
+            // bounded settle attempt to give up on.
+            DriftStatusNP.s = IPS_BUSY;
+            IDSetNumber(&DriftStatusNP, nullptr);
             LOGF_INFO("Held target drifted %.1f arcmin past threshold %.1f - synced and re-issued Goto to hold it.",
                       drift, threshold);
-            m_forwardState = ForwardState::SLEWING;
             break;
         }
     }
@@ -618,6 +765,7 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
             }
 
             DriftStatusNP.s = IPS_BUSY;
+            applySlewRateForDrift(drift);
             if (m_client->sendMountCoords(piRA, piDec, "TRACK"))
             {
                 LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent Goto to mount.", drift);
@@ -678,7 +826,16 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
             // drift/threshold reflect this tick's freshly-computed
             // separation (passed in from TimerHit), i.e. the actual residual
             // now that the mount has stopped and PiFinder has a fresh solve.
-            if (drift > threshold && m_correctSettleRetriesRemaining > 0)
+            if (drift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - don't Sync off a
+                // likely-bad solve; fall back to normal monitoring instead.
+                LOGF_WARN("Auto-correct residual %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) -"
+                          " not syncing, resuming normal monitoring.",
+                          drift, MaxSyncDriftN[0].value);
+                m_correctState = CorrectState::IDLE;
+            }
+            else if (drift > threshold && m_correctSettleRetriesRemaining > 0)
             {
                 // The mount already physically arrived via the Goto above,
                 // but a residual this size usually means its own alignment
@@ -696,6 +853,7 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
                     m_correctState = CorrectState::IDLE;
                     break;
                 }
+                applySlewRateForDrift(drift);
                 if (!m_client->sendMountCoords(m_correctTargetRA, m_correctTargetDec, "TRACK"))
                 {
                     LOG_ERROR("Failed to re-issue Goto to mount after sync.");
@@ -803,6 +961,15 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             return true;
         }
 
+        if (strcmp(name, ShadowSyncSP.name) == 0)
+        {
+            IUUpdateSwitch(&ShadowSyncSP, states, names, n);
+            ShadowSyncSP.s = IPS_OK;
+            IDSetSwitch(&ShadowSyncSP, nullptr);
+            saveConfig(true, ShadowSyncSP.name);
+            return true;
+        }
+
         if (strcmp(name, AbortMountSP.name) == 0)
         {
             IUUpdateSwitch(&AbortMountSP, states, names, n);
@@ -900,6 +1067,23 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             }
             return true;
         }
+
+        if (strcmp(name, ShadowDeviceTP.name) == 0)
+        {
+            IUUpdateText(&ShadowDeviceTP, texts, names, n);
+            ShadowDeviceTP.s = IPS_OK;
+            IDSetText(&ShadowDeviceTP, nullptr);
+
+            // Rebinds only the client's shadow-device watch, not the whole
+            // session - deliberately not a Disconnect()/Connect() cycle
+            // like ActiveDeviceTP above. The shadow device is independent
+            // of the real PiFinder/mount coupling (#181); re-pointing it
+            // must never interrupt an in-progress correction/settle cycle
+            // on the real mount.
+            if (isConnected())
+                m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
+            return true;
+        }
     }
 
     return DefaultDevice::ISNewText(dev, name, texts, names, n);
@@ -914,6 +1098,14 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IUUpdateNumber(&DriftThresholdNP, values, names, n);
             DriftThresholdNP.s = IPS_OK;
             IDSetNumber(&DriftThresholdNP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, MaxSyncDriftNP.name) == 0)
+        {
+            IUUpdateNumber(&MaxSyncDriftNP, values, names, n);
+            MaxSyncDriftNP.s = IPS_OK;
+            IDSetNumber(&MaxSyncDriftNP, nullptr);
             return true;
         }
 
@@ -933,9 +1125,12 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
 {
     IUSaveConfigText(fp, &SettingsTP);
     IUSaveConfigText(fp, &ActiveDeviceTP);
+    IUSaveConfigText(fp, &ShadowDeviceTP);
+    IUSaveConfigSwitch(fp, &ShadowSyncSP);
     IUSaveConfigSwitch(fp, &BridgeModeSP);
     IUSaveConfigSwitch(fp, &CorrectionActionSP);
     IUSaveConfigNumber(fp, &DriftThresholdNP);
+    IUSaveConfigNumber(fp, &MaxSyncDriftNP);
     IUSaveConfigNumber(fp, &SolveFreshnessMaxAgeNP);
     return true;
 }
