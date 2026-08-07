@@ -3698,28 +3698,41 @@ function updateBridgeSettingsInfo(data) {
 // Tracks the last-known mode in wmLastCouplingMode (see applyThresholdChange
 // below) - this is the only place that reliably sees every fresh
 // coupling_mode reading, from both the slow and fast polls.
-// Threshold only actually does anything for Verify/Alert and the two
-// Auto-correct presets (see applyThresholdChange()) - Goto-Forward ignores
-// it entirely. Left the input live and editable regardless of mode before
-// this, with nothing to say so - found live (2026-08-05): changing it
-// while a mode that ignores it was active looked like it took effect (no
-// error, no visual difference) but silently did nothing.
-const THRESHOLD_USING_MODES = ['MODE_VERIFY_ALERT', 'MODE_AUTO_CORRECT'];
+// Threshold matters for Verify/Alert, both Auto-correct presets, AND
+// Goto-Forward (see applyThresholdChange()) - Goto-Forward's initial
+// forward-a-new-target trigger ignores it (every new push-to target
+// forwards immediately regardless), but once settled it now holds that
+// target and re-corrects drift past Threshold, same as Auto-correct (added
+// 2026-08-07, see handleGotoForward()'s HOLDING state). Left the input live
+// and editable regardless of mode before this, with nothing to say so -
+// found live (2026-08-05): changing it while a mode that ignores it was
+// active looked like it took effect (no error, no visual difference) but
+// silently did nothing.
+const THRESHOLD_USING_MODES = ['MODE_VERIFY_ALERT', 'MODE_AUTO_CORRECT', 'MODE_GOTO_FORWARD'];
 function updateThresholdInputRelevance(couplingMode) {
   const input = document.getElementById('wm-threshold-input');
   const wrap = document.getElementById('mb-threshold-wrap');
   const usesThreshold = THRESHOLD_USING_MODES.includes(couplingMode);
   input.disabled = !usesThreshold;
   wrap.title = usesThreshold
-    ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
-    : "Not used by \"Follow PiFinder's push to\" - every mount goto forwards immediately, regardless of this value.";
+    ? 'Used by Verify/Alert, both Auto-correct presets, and Goto-Forward once it has settled onto a target: how far off before they warn/correct.'
+    : 'Not used while Coupling is Off.';
+}
+
+// European keyboards/locales often produce a comma decimal separator (e.g.
+// typing "0,5") - parseFloat() and the server's Python float() both only
+// accept a period, so a comma either silently parses as a truncated integer
+// (JS) or fails outright (Python). Normalize once here, used everywhere the
+// threshold input's raw value is read. Found live 2026-08-07.
+function readThresholdInputRaw() {
+  return document.getElementById('wm-threshold-input').value.replace(',', '.');
 }
 
 let wmLastCouplingMode = null;
 function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
   wmLastCouplingMode = couplingMode;
   const captionEl = document.getElementById('mb-mode-caption');
-  const threshold = parseFloat(document.getElementById('wm-threshold-input').value) || 5;
+  const threshold = parseFloat(readThresholdInputRaw()) || 5;
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
@@ -4134,9 +4147,8 @@ const MB_PRESET_INFO = {
 // - otherwise there's nothing running that uses the threshold yet, and the
 // next preset-button click already picks up whatever's in the field.
 async function applyThresholdChange() {
-  if (wmLastCouplingMode !== 'MODE_VERIFY_ALERT' && wmLastCouplingMode !== 'MODE_AUTO_CORRECT') return;
-  const input = document.getElementById('wm-threshold-input');
-  const threshold = parseFloat(input.value);
+  if (!THRESHOLD_USING_MODES.includes(wmLastCouplingMode)) return;
+  const threshold = parseFloat(readThresholdInputRaw());
   if (!Number.isFinite(threshold) || threshold <= 0) return;
   setMbActionStatus('⏳ Updating threshold…');
   try {
@@ -4181,7 +4193,7 @@ async function setWmCoupling(preset) {
   // language as everywhere else on this page, not just a text change on the
   // one button someone happened to click.
   document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
-  const threshold = document.getElementById('wm-threshold-input').value;
+  const threshold = readThresholdInputRaw();
   try {
     const params = new URLSearchParams({ mode });
     if (mode !== 'goto_forward') {

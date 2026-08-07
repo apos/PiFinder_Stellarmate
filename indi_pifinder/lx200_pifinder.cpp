@@ -6,7 +6,11 @@
     aid. This driver reports PiFinder's solved position and, on Goto(), reuses
     PiFinder's existing SkySafari "push-to" mechanism (:Sr#/:Sd#, already
     implemented in PiFinder's pos_server.py) to register a target in the
-    PiFinder UI. No PiFinder-side changes are required.
+    PiFinder UI - that direction needs no PiFinder-side change. The reverse
+    direction (an on-device push-to selection, PiFinder's own catalog/menu)
+    does need a small PiFinder-side patch (see PiFinder_Stellarmate#171 and
+    diffs/object_details_py.diff) - pollCurrentTarget() below polls its
+    /api/current_target and republishes via TargetNP, same as any Goto().
 
     Originally based on a 10micron INDI driver (GM1000HPS GM2000QCI GM2000HPS
     GM3000HPS GM4000QCI GM4000HPS AZ2000, Mount Command Protocol 2.14.11),
@@ -41,13 +45,72 @@
 #include "indicom.h"
 #include "lx200driver.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <memory>
+#include <string>
 #include <termios.h>
 #include <libnova/libnova.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
+namespace
+{
+// Same pattern as PiFinder Mount Bridge's own HTTP GET helper
+// (pifinder_mount_bridge.cpp) - single-threaded INDI driver (TimerHit/
+// ReadScopeStatus callback style), no explicit curl_global_init() needed.
+size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+// Fetches PiFinder's own /api/current_target. RA/Dec come back J2000 (see
+// that endpoint's own docstring) - precession to JNow happens in
+// pollCurrentTarget() below, not here. Returns false on any request/parse
+// failure or if no target is currently selected.
+bool httpGetCurrentTarget(const std::string &url, double &raJ2000, double &decJ2000, std::string &name)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &target = parsed.at("target");
+        if (target.is_null())
+            return false;
+        raJ2000 = target.at("ra").get<double>();
+        decJ2000 = target.at("dec").get<double>();
+        name = target.value("name", std::string());
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+}
 
 // See #139's investigation: pos_server.py can take several seconds to
 // answer under CPU load without the connection actually being dead. Retry
@@ -240,7 +303,45 @@ bool LX200_PIFINDER::ReadScopeStatus()
     // For now, assume a default pier side or infer from RA/Dec if possible.
     setPierSide(INDI::Telescope::PIER_EAST); // Default to East for now
 
+    pollCurrentTarget();
+
     return true;
+}
+
+void LX200_PIFINDER::pollCurrentTarget()
+{
+    double raJ2000, decJ2000;
+    std::string name;
+    const bool ok = httpGetCurrentTarget("http://127.0.0.1/api/current_target", raJ2000, decJ2000, name) ||
+                    httpGetCurrentTarget("http://127.0.0.1:8080/api/current_target", raJ2000, decJ2000, name);
+    if (!ok)
+        return;
+
+    if (!std::isnan(m_lastTargetRA) && std::abs(raJ2000 - m_lastTargetRA) < 1e-9 &&
+        std::abs(decJ2000 - m_lastTargetDec) < 1e-9)
+        return; // unchanged since the last poll - don't republish every cycle
+
+    m_lastTargetRA = raJ2000;
+    m_lastTargetDec = decJ2000;
+
+    // PiFinder's catalog coordinates are J2000 - precess to the mount's own
+    // JNow (epoch-of-date) convention via libnova, the same library this
+    // driver already links against for its own timekeeping. Matches this
+    // project's established convention (PiFinder returns J2000, the
+    // consumer precesses - see /api/current_target's own docstring, and
+    // /api/fake_solve's equivalent convention in the opposite direction).
+    ln_equ_posn meanPosition {raJ2000, decJ2000}; // /api/current_target already returns RA in degrees
+    ln_equ_posn nowPosition {0, 0};
+    const double jd = ln_get_julian_from_sys();
+    ln_get_equ_prec(&meanPosition, jd, &nowPosition);
+
+    TargetNP[0].setValue(nowPosition.ra / 15.0); // back to hours for INDI's own convention
+    TargetNP[1].setValue(nowPosition.dec);
+    TargetNP.setState(IPS_OK);
+    TargetNP.apply();
+
+    LOGF_INFO("On-device push-to target detected: %s (RA %.4fh, DEC %.4f deg, JNow).",
+              name.c_str(), nowPosition.ra / 15.0, nowPosition.dec);
 }
 
 // See the header's own comment and this file's LX200_READ_ATTEMPT_TIMEOUT/

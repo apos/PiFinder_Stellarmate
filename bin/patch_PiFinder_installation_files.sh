@@ -522,6 +522,20 @@ python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ 
 echo "------------------------------------"
 
 ##################################################
+# PiFinder ui/object_details.py - surfaces the on-device push-to target
+# (UIState's own target()/set_target(), previously never called) so GET
+# /api/current_target (see api_extensions.py above) can report it - see
+# PiFinder_Stellarmate#171
+
+echo "🔧 Updating ui/object_details.py ..."
+cp "$object_details_py" "$object_details_py.bak"
+
+    apply_patch_or_warn "$object_details_py" "${pifinder_stellarmate_dir}/diffs/object_details_py.diff"
+show_diff_if_changed "$object_details_py"
+python3 -m py_compile "$object_details_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder types/positioning.py - new FakeSolve dataclass, the message
 # type used to inject a one-time synthetic solve (see integrator.py below)
 

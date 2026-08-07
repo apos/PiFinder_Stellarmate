@@ -165,7 +165,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // PiFinder to produce a fresh plate-solve of the arrival position
         // before auto-correcting any residual error. See 00009/00012 in
         // basic-memory pifinder-stellarmate for the design rationale.
-        enum class ForwardState { IDLE, SLEWING, SETTLING };
+        //
+        // HOLDING (added for #171's follow-up): after a successful (or
+        // exhausted) SETTLING, don't just go quiet - the whole point of a
+        // push-to is that the mount then *holds* that target, same as any
+        // other coupling mode. HOLDING watches for either a new push-to
+        // target (same as IDLE) or the held target drifting past Threshold
+        // (same Sync+re-Goto correction as SETTLING, just re-triggered on
+        // an ongoing basis instead of only right after arrival) - found
+        // live (2026-08-07): without this, normal mount tracking drift went
+        // completely uncorrected once Goto-Forward settled once.
+        enum class ForwardState { IDLE, SLEWING, SETTLING, HOLDING };
         ForwardState m_forwardState = ForwardState::IDLE;
         double m_lastForwardedRA = std::nan("");
         double m_lastForwardedDec = std::nan("");
