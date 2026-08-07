@@ -977,6 +977,16 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+def _parse_threshold(raw: str) -> float:
+    """European keyboards/locales often produce a comma decimal separator
+    (e.g. "0,5") - Python's float() only accepts a period and raises
+    ValueError otherwise. The frontend already normalizes this before
+    sending (see status_page.html's readThresholdInputRaw()), but this is a
+    public HTTP endpoint - normalize here too as a backstop for any other
+    caller. Raises ValueError on genuinely invalid input, same as float()."""
+    return float(raw.replace(",", "."))
+
+
 class _BackgroundRetrier:
     """Fire-and-forget 'run this in a background thread, but never run two
     attempts at once' helper - extracted from #118's original hand-rolled
@@ -2963,7 +2973,7 @@ class Handler(BaseHTTPRequestHandler):
             threshold_arg = qs.get("threshold", [""])[0]
             action_arg = qs.get("action", [""])[0]
             try:
-                threshold = float(threshold_arg) if threshold_arg else None
+                threshold = _parse_threshold(threshold_arg) if threshold_arg else None
             except ValueError:
                 self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
                 return
@@ -2998,7 +3008,7 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             threshold_arg = qs.get("threshold", [""])[0]
             try:
-                threshold = float(threshold_arg)
+                threshold = _parse_threshold(threshold_arg)
             except ValueError:
                 self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
                 return

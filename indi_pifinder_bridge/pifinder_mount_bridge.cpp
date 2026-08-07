@@ -464,8 +464,8 @@ void PiFinderMountBridge::handleGotoForward()
                 // Keep waiting rather than verifying/correcting off a guess.
                 if (--m_freshnessWaitTicksRemaining <= 0)
                 {
-                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - skipping this settle attempt.");
-                    m_forwardState = ForwardState::IDLE;
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - resuming normal holding.");
+                    m_forwardState = ForwardState::HOLDING;
                 }
                 break;
             }
@@ -515,13 +515,84 @@ void PiFinderMountBridge::handleGotoForward()
             else
             {
                 if (drift > threshold)
-                    LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
+                    LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f - now holding, will retry on the next drift check.",
                               MAX_SETTLE_RETRIES, drift, threshold);
                 else
-                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f - now holding.",
                               drift, threshold);
-                m_forwardState = ForwardState::IDLE;
+                m_forwardState = ForwardState::HOLDING;
             }
+            break;
+        }
+
+        case ForwardState::HOLDING:
+        {
+            // A new push-to target always takes priority over continuing to
+            // hold the old one - same "is this genuinely new" check as IDLE.
+            if (hasTarget)
+            {
+                const bool isNewTarget = std::abs(targetRA - m_lastForwardedRA) > 1e-9 ||
+                                          std::abs(targetDec - m_lastForwardedDec) > 1e-9;
+                if (isNewTarget)
+                {
+                    if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
+                    {
+                        LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
+                                  targetRA, targetDec);
+                        m_lastForwardedRA = targetRA;
+                        m_lastForwardedDec = targetDec;
+                        m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                        m_forwardState = ForwardState::SLEWING;
+                    }
+                    else
+                    {
+                        LOG_ERROR("Failed to forward Goto to mount.");
+                    }
+                    break;
+                }
+            }
+
+            // Still the same held target - watch for it drifting past
+            // Threshold (e.g. ordinary mount tracking imperfection) and
+            // correct exactly like SETTLING does, just re-triggerable
+            // indefinitely instead of only right after arrival. Same
+            // freshness gate as everywhere else - never correct off a
+            // guessed/stale position.
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+                break;
+
+            double piRA, piDec, mountRA, mountDec;
+            if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+                break;
+
+            const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+            const double threshold = DriftThresholdN[0].value;
+            DriftStatusN[0].value = drift;
+            DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
+            IDSetNumber(&DriftStatusNP, nullptr);
+
+            if (drift <= threshold)
+                break;
+
+            // Fresh retry budget for this holding-correction cycle - not a
+            // continuation of whatever was left over from the initial
+            // arrival's settle attempts, so ordinary tracking drift keeps
+            // getting corrected indefinitely rather than only a few times
+            // total.
+            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+            if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            {
+                LOG_ERROR("Failed to send verification sync to mount while holding.");
+                break;
+            }
+            if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            {
+                LOG_ERROR("Failed to re-issue Goto to mount while holding.");
+                break;
+            }
+            LOGF_INFO("Held target drifted %.1f arcmin past threshold %.1f - synced and re-issued Goto to hold it.",
+                      drift, threshold);
+            m_forwardState = ForwardState::SLEWING;
             break;
         }
     }
