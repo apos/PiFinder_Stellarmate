@@ -1308,14 +1308,14 @@
           <div class="mb-coupling-group">
             <div class="group-label mb-coupling-label"><span>Goto Mount</span><a class="help-link" href="/help.html#coupling-goto-mount" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Auto-correct (Goto &amp; Track)</button>
+              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Follow mount's goto</button>
             </div>
           </div>
           <div class="mb-coupling-divider"></div>
           <div class="mb-coupling-group">
             <div class="group-label mb-coupling-label"><span>Goto PiFinder</span><a class="help-link" href="/help.html#coupling-goto-pifinder" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled>Goto-Forward</button>
+              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Forwards every push-to/goto target sent to PiFinder (from its own menu, or KStars' Goto on the 'PiFinder LX200' device) straight through to the real mount too.">Follow PiFinder's push to</button>
             </div>
           </div>
           <div id="mb-decouple-divider" class="mb-coupling-divider"></div>
@@ -3702,7 +3702,7 @@ function updateThresholdInputRelevance(couplingMode) {
   input.disabled = !usesThreshold;
   wrap.title = usesThreshold
     ? 'Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.'
-    : "Not used by Goto-Forward - every mount goto forwards immediately, regardless of this value.";
+    : "Not used by \"Follow PiFinder's push to\" - every mount goto forwards immediately, regardless of this value.";
 }
 
 let wmLastCouplingMode = null;
