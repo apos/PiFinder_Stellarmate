@@ -93,6 +93,27 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         IText ActiveDeviceT[2] {};
         enum { ACTIVE_PIFINDER, ACTIVE_MOUNT };
 
+        // Shadow Sync (#181): a purely additive, optional mirror of
+        // PiFinder's verified solved position onto a second, independent
+        // device (typically "PiFinder Simulator", #164/#176) via Sync -
+        // for visualization/testing only. Deliberately decoupled from
+        // ACTIVE_DEVICES/BridgeModeSP/CorrectionActionSP entirely: found
+        // live (2026-08-07) that with the real mount as ACTIVE_MOUNT,
+        // nothing ever targets the Simulator device, so it silently sits
+        // at its RA=0/DEC=0 init default indefinitely. This must never be
+        // able to influence the real mount or Coupling correction logic -
+        // it only ever reads PiFinder's position and Syncs a second
+        // device, nothing else.
+        ITextVectorProperty ShadowDeviceTP;
+        IText ShadowDeviceT[1] {};
+        enum { SHADOW_DEVICE };
+
+        ISwitchVectorProperty ShadowSyncSP;
+        ISwitch ShadowSyncS[2];
+        enum { SHADOW_SYNC_ENABLE, SHADOW_SYNC_DISABLE };
+
+        void handleShadowSync();
+
         // Coupling degree - see 00009 for the rationale of each stage.
         ISwitchVectorProperty BridgeModeSP;
         ISwitch BridgeModeS[4];

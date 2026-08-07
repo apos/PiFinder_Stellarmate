@@ -149,6 +149,15 @@ bool PiFinderMountBridge::initProperties()
     m_lastActivePiFinder = "PiFinder LX200";
     m_lastActiveMount = "";
 
+    IUFillText(&ShadowDeviceT[SHADOW_DEVICE], "SHADOW_DEVICE", "Shadow device", "PiFinder Simulator");
+    IUFillTextVector(&ShadowDeviceTP, ShadowDeviceT, 1, getDeviceName(), "SHADOW_DEVICE_NAME",
+                     "Shadow device", "Shadow Sync", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_ENABLE], "SHADOW_SYNC_ENABLE", "Enable", ISS_OFF);
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_DISABLE], "SHADOW_SYNC_DISABLE", "Disable", ISS_ON);
+    IUFillSwitchVector(&ShadowSyncSP, ShadowSyncS, 2, getDeviceName(), "SHADOW_SYNC", "Mirror to shadow device",
+                       "Shadow Sync", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
     IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
@@ -194,6 +203,7 @@ void PiFinderMountBridge::ISGetProperties(const char *dev)
 
     defineProperty(&SettingsTP);
     defineProperty(&ActiveDeviceTP);
+    defineProperty(&ShadowDeviceTP);
 
     if (!m_configLoaded)
     {
@@ -215,6 +225,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&DriftThresholdNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&ShadowSyncSP);
 
         // Restore the saved Coupling mode/threshold/etc. now that their
         // properties actually exist - see m_connectedConfigLoaded's
@@ -236,6 +247,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(ShadowSyncSP.name);
     }
 
     return true;
@@ -254,6 +266,7 @@ bool PiFinderMountBridge::Connect()
 
     m_client->setServer(SettingsT[INDISERVER_HOST].text, std::stoi(SettingsT[INDISERVER_PORT].text));
     m_client->setDevices(piFinderName, mountName);
+    m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
 
     if (!m_client->connectServer())
     {
@@ -293,12 +306,40 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     }
 }
 
+void PiFinderMountBridge::handleShadowSync()
+{
+    // Deliberately does not depend on m_client->isReady() (which requires
+    // the real mount's properties too) - the shadow device (#181) must
+    // work independent of ACTIVE_MOUNT/Coupling entirely, purely mirroring
+    // PiFinder's own verified position for visualization. Also deliberately
+    // never touches DriftStatusNP/exceeded/drift - those describe PiFinder
+    // vs the *real* mount, unrelated to this.
+    if (ShadowSyncS[SHADOW_SYNC_ENABLE].s != ISS_ON)
+        return;
+
+    if (!m_client->isShadowReady())
+        return;
+
+    // Same freshness gate as every other automatic action here (#79) -
+    // mirroring a stale/IMU-interpolated position would just teach the
+    // shadow device to lie too, defeating the point of it being "truth".
+    if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+        return;
+
+    double piRA, piDec;
+    if (!m_client->getPiFinderRADE(piRA, piDec))
+        return;
+
+    m_client->syncShadowCoords(piRA, piDec);
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
         return;
 
     syncMountTypeToPiFinder();
+    handleShadowSync();
 
     if (!m_client->isReady())
     {
@@ -732,6 +773,15 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             return true;
         }
 
+        if (strcmp(name, ShadowSyncSP.name) == 0)
+        {
+            IUUpdateSwitch(&ShadowSyncSP, states, names, n);
+            ShadowSyncSP.s = IPS_OK;
+            IDSetSwitch(&ShadowSyncSP, nullptr);
+            saveConfig(true, ShadowSyncSP.name);
+            return true;
+        }
+
         if (strcmp(name, AbortMountSP.name) == 0)
         {
             IUUpdateSwitch(&AbortMountSP, states, names, n);
@@ -829,6 +879,23 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             }
             return true;
         }
+
+        if (strcmp(name, ShadowDeviceTP.name) == 0)
+        {
+            IUUpdateText(&ShadowDeviceTP, texts, names, n);
+            ShadowDeviceTP.s = IPS_OK;
+            IDSetText(&ShadowDeviceTP, nullptr);
+
+            // Rebinds only the client's shadow-device watch, not the whole
+            // session - deliberately not a Disconnect()/Connect() cycle
+            // like ActiveDeviceTP above. The shadow device is independent
+            // of the real PiFinder/mount coupling (#181); re-pointing it
+            // must never interrupt an in-progress correction/settle cycle
+            // on the real mount.
+            if (isConnected())
+                m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
+            return true;
+        }
     }
 
     return DefaultDevice::ISNewText(dev, name, texts, names, n);
@@ -862,6 +929,8 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
 {
     IUSaveConfigText(fp, &SettingsTP);
     IUSaveConfigText(fp, &ActiveDeviceTP);
+    IUSaveConfigText(fp, &ShadowDeviceTP);
+    IUSaveConfigSwitch(fp, &ShadowSyncSP);
     IUSaveConfigSwitch(fp, &BridgeModeSP);
     IUSaveConfigSwitch(fp, &CorrectionActionSP);
     IUSaveConfigNumber(fp, &DriftThresholdNP);

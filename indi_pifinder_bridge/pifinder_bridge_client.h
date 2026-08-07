@@ -23,6 +23,16 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         void setDevices(const std::string &piFinderName, const std::string &mountName);
 
+        // Third, fully independent device (#181) - purely mirrors
+        // PiFinder's position via Sync for visualization/testing, never
+        // participates in isReady()/getMountRADE()/sendMountCoords(). Safe
+        // to call repeatedly (e.g. whenever the user retypes the device
+        // name) - re-watching an already-watched device name is a no-op on
+        // the libindi side. Pass an empty name to stop watching.
+        void setShadowDevice(const std::string &shadowName);
+        bool isShadowReady() const;
+        bool syncShadowCoords(double ra, double dec);
+
         bool isReady() const;
 
         bool getPiFinderRADE(double &ra, double &dec) const;
@@ -70,4 +80,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
+
+        std::string m_shadowName;
+        bool m_shadowOnline = false;
+        INDI::PropertyViewNumber *m_shadowEqNP = nullptr;
+        INDI::PropertyViewSwitch *m_shadowOnCoordSetSP = nullptr;
 };
