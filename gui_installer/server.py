@@ -1264,7 +1264,7 @@ def _run_hardware_test():
             _hwtest_running = False
 
 
-def _startup_hardware_test(timeout=120, interval=2):
+def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
     """Runs at Control Center startup (see main()). pifinder-control-center.
     service has no ordering dependency on pifinder.service (deliberately -
     the Control Center must be able to start standalone, e.g. before PiFinder
@@ -1276,13 +1276,41 @@ def _startup_hardware_test(timeout=120, interval=2):
     clicked the button by hand (live-reproduced across two reboots - see
     basic-memory pifinder-stellarmate/00048). Poll for PiFinder to answer
     first, then run the real test - if it never comes up within `timeout`,
-    run anyway (accurately reports "not running" rather than waiting forever)."""
+    run anyway (accurately reports "not running" rather than waiting forever).
+
+    Found live (2026-08-09, #188) after a full Pi reboot (not just a Control
+    Center restart): PiFinder can take noticeably longer than this initial
+    `timeout` to become reachable, competing with everything else the whole
+    system is starting at once (X11, KStars, indiserver, ...) - the original
+    design's own tradeoff ("run anyway, accurately reports not-running") then
+    left a stale "PiFinder API unreachable" result sitting there with nothing
+    to self-correct it once PiFinder actually did come up moments later,
+    same symptom as before the 00048 fix just with a longer boot this time.
+    Self-heals now: if the first attempt still couldn't reach PiFinder, keep
+    quietly re-running the test every extended_retry_interval seconds,
+    indefinitely, stopping as soon as PiFinder answers - each check is cheap
+    (one HTTP call plus, once reachable, the same lightweight camera/imu/gps
+    checks the button itself triggers) and this loop's whole purpose is
+    stopping itself the moment it succeeds, so there's no real cost to not
+    giving up after some arbitrary window - the alternative (silently
+    staying stale forever after a slow-but-real boot) is worse than a few
+    more harmless checks."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
             break
         time.sleep(interval)
     _run_hardware_test()
+
+    while True:
+        with _lock:
+            still_unreachable = _hwtest_result.get("gps") is None
+        if not still_unreachable:
+            break
+        time.sleep(extended_retry_interval)
+        if _pifinder_status_snapshot(ports=("80", "8080")) is None and not _fake_mode_up():
+            continue  # still not reachable - no point re-running the test yet
+        _run_hardware_test()
 
 
 def _pifinder_solve_status(port: str):
