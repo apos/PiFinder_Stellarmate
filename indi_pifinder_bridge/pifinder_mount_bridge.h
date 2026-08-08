@@ -387,4 +387,11 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ISwitch TargetSourceS[2];
         enum { TARGET_SOURCE_PIFINDER, TARGET_SOURCE_MOUNT };
         void setTargetSource(int index);
+
+        // Read-only, GUI-visible warning distinct from DriftStatusNP - see
+        // the initProperties() comment. Empty message + IPS_OK/IDLE while
+        // clear, driver's own refusal text + IPS_ALERT while active.
+        ITextVectorProperty MountRejectTP;
+        IText MountRejectT[1];
+        void setMountRejectWarning(bool active, const std::string &message);
 };

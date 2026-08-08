@@ -889,6 +889,15 @@
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
   #mb-mode-caption-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
   #mb-mode-caption { color: #888; font-size: 0.76rem; }
+  /* Same danger palette as .mb-abort-btn - the mount's own driver refused a
+     Goto/Sync (elevation/cable-wrap/axis limit), distinct from ordinary
+     drift (yellow/red badge above). */
+  #mb-reject-warning-row {
+    display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem;
+    padding: 0.4rem 0.6rem; border-radius: 6px;
+    background: #3a1414; color: #ff8a80; border: 1px solid #e53935;
+    font-size: 0.8rem;
+  }
   /* Its own invisible .group-label spacer vertically offsets the button
      past the label height Visual/GoTo have above their own buttons, so it
      lines up with the actual button row instead of the heading row above
@@ -1307,6 +1316,9 @@
       </div>
       <div id="mb-mode-caption-row">
         <span id="mb-mode-caption">Not coupled yet</span>
+      </div>
+      <div id="mb-reject-warning-row" style="display:none;" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">
+        <span>&#9888;</span><span id="mb-reject-warning-text"></span>
       </div>
       <div id="mb-status-row">
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span></div>
@@ -4136,6 +4148,22 @@ refreshMountBridgeStatus();
 // unlike the button-gated actions, which stay blocked until the slower poll
 // itself reconfirms things are safe to touch.
 let mbDriftPollInFlight = false;
+// Distinct from the drift badge - the mount's own driver refused a
+// Goto/Sync outright (elevation/cable-wrap/axis limit), not just imprecise
+// tracking. Kept on the fast poll (same cadence as the drift badge) since
+// this is exactly the kind of thing that must not go unnoticed - the whole
+// point is not silently accepting a refusal like before.
+function updateMountRejectWarning(active, message) {
+  const row = document.getElementById('mb-reject-warning-row');
+  const text = document.getElementById('mb-reject-warning-text');
+  if (!active) {
+    row.style.display = 'none';
+    return;
+  }
+  text.textContent = message || 'Mount refused the last Goto/Sync.';
+  row.style.display = 'flex';
+}
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -4144,6 +4172,7 @@ async function refreshMbDrift() {
     const data = await resp.json();
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+      updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle

@@ -265,6 +265,8 @@ def mount_bridge_status(
             "settings_port": None,
             "settings_correct": False,
             "target_source": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -281,6 +283,12 @@ def mount_bridge_status(
     target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
     target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
     target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
+    # Mount refused a Goto/Sync outright (elevation/cable-wrap/axis limit) -
+    # distinct from ordinary drift, see MOUNT_REJECT's own comment in
+    # pifinder_mount_bridge.cpp. IPS_ALERT means still active.
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
@@ -326,6 +334,8 @@ def mount_bridge_status(
         "settings_port": settings_port,
         "settings_correct": settings_correct,
         "target_source": target_source,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
     }
 
 
@@ -352,7 +362,14 @@ def mount_bridge_drift(
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
-        return {"running": False, "coupling_mode": None, "correction_action": None, "drift_arcmin": None}
+        return {
+            "running": False,
+            "coupling_mode": None,
+            "correction_action": None,
+            "drift_arcmin": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
+        }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
     drift_status_prop = device_props.get("DRIFT_STATUS", {})
@@ -362,11 +379,16 @@ def mount_bridge_drift(
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
 
     return {
         "running": True,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
         # DRIFT_STATUS's own INDI state (Ok/Busy/Alert/Idle) - in
         # MODE_AUTO_CORRECT specifically, the driver sets Busy while
         # actually sending a correction vs. Alert when drift exceeds the

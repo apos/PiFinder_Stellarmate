@@ -45,11 +45,13 @@ class PiFinderSimulator : public INDI::Telescope
 
     protected:
         bool initProperties() override;
+        bool updateProperties() override;
         bool Connect() override;
         bool Disconnect() override;
         bool ReadScopeStatus() override;
         bool Goto(double ra, double dec) override;
         bool Sync(double ra, double dec) override;
+        bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
 
     private:
         // Wherever it was last Sync'd/GoTo'd to - defaults to RA 0h/Dec 0deg
@@ -58,4 +60,15 @@ class PiFinderSimulator : public INDI::Telescope
         // fix in #107) until the user sets something real.
         double m_currentRA = 0.0;
         double m_currentDEC = 0.0;
+
+        // Distinct from Sync()/Goto() above, which move the simulated "sky
+        // truth" position itself (m_currentRA/DEC, what a test session feeds
+        // PiFinder via fake_solve). This instead only updates the inherited
+        // TargetNP (TARGET_EOD_COORD) - the exact same base-class mechanism
+        // every real INDI::Telescope driver (including the real "PiFinder
+        // LX200") populates on a genuine push-to, and exactly what Mount
+        // Bridge's getPiFinderTargetRADE() watches for Fall 1 detection.
+        // Lets a test session simulate a PiFinder push-to without needing
+        // real PiFinder hardware/software running - see #186.
+        INDI::PropertyNumber PushToTargetNP {2};
 };

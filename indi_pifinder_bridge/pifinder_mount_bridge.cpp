@@ -205,6 +205,16 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // Distinct from DriftStatusNP - that one means "the mount is tracking a
+    // bit imprecisely, will self-correct". This means the mount refused a
+    // Goto/Sync outright (e.g. an elevation or cable-wrap/axis limit), which
+    // is what led to the balcony-wall incident: the software silently
+    // accepted the refusal instead of telling the user. IPS_ALERT while a
+    // refusal is active, IPS_OK once a subsequent attempt succeeds.
+    IUFillText(&MountRejectT[0], "MESSAGE", "Message", "");
+    IUFillTextVector(&MountRejectTP, MountRejectT, 1, getDeviceName(), "MOUNT_REJECT",
+                       "Mount refused Goto/Sync", "Main Control", IP_RO, 60, IPS_IDLE);
+
     addDebugControl();
     setDefaultPollingPeriod(2000);
 
@@ -240,6 +250,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&MountRejectTP);
         defineProperty(&ShadowSyncSP);
         defineProperty(&RepositionConfirmSP);
         defineProperty(&TargetSourceSP);
@@ -265,6 +276,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(MountRejectTP.name);
         deleteProperty(ShadowSyncSP.name);
         deleteProperty(RepositionConfirmSP.name);
         deleteProperty(TargetSourceSP.name);
@@ -712,6 +724,21 @@ void PiFinderMountBridge::TimerHit()
     SetTimer(getCurrentPollingPeriod());
 }
 
+void PiFinderMountBridge::setMountRejectWarning(bool active, const std::string &message)
+{
+    const IPState newState = active ? IPS_ALERT : IPS_OK;
+    const char *newText = active ? message.c_str() : "";
+
+    // Avoid redundant INDI traffic/log noise every poll tick when nothing
+    // changed - same reasoning as setTargetSource() below.
+    if (MountRejectTP.s == newState && std::string(MountRejectT[0].text ? MountRejectT[0].text : "") == newText)
+        return;
+
+    IUSaveText(&MountRejectT[0], newText);
+    MountRejectTP.s = newState;
+    IDSetText(&MountRejectTP, nullptr);
+}
+
 void PiFinderMountBridge::setTargetSource(int index)
 {
     if (TargetSourceS[index].s == ISS_ON)
@@ -793,6 +820,7 @@ void PiFinderMountBridge::handleGotoForward()
                 LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
                           targetRA, targetDec);
                 setTargetSource(TARGET_SOURCE_PIFINDER);
+                setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
                 m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
@@ -828,6 +856,23 @@ void PiFinderMountBridge::handleGotoForward()
 
         case ForwardState::SETTLING:
         {
+            std::string rejectMsg;
+            if (m_client->mountRejectedLastCoords(rejectMsg))
+            {
+                LOGF_WARN("Mount refused the Goto (%s) - likely an elevation or cable-wrap/axis limit, not just"
+                          " settling. Not retrying the same command - now holding.",
+                          rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the Goto (no message from driver)" : rejectMsg);
+                m_forwardState = ForwardState::HOLDING;
+                break;
+            }
+            // Deliberately NOT clearing the warning just because *this tick*
+            // saw no new rejection - mountRejectedLastCoords() is
+            // consume-on-read, so it reads false on every tick after the one
+            // that actually caught it. Clearing here would erase the warning
+            // one tick after showing it, before a human ever sees it. Only
+            // cleared below on a genuinely confirmed-good arrival.
+
             if (m_settleTicksRemaining > 0)
             {
                 --m_settleTicksRemaining;
@@ -907,8 +952,11 @@ void PiFinderMountBridge::handleGotoForward()
                     LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f - now holding, will retry on the next drift check.",
                               MAX_SETTLE_RETRIES, drift, threshold);
                 else
+                {
                     LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f - now holding.",
                               drift, threshold);
+                    setMountRejectWarning(false, "");
+                }
                 m_forwardState = ForwardState::HOLDING;
             }
             break;
@@ -935,6 +983,7 @@ void PiFinderMountBridge::handleGotoForward()
                         LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
                                   targetRA, targetDec);
                         setTargetSource(TARGET_SOURCE_PIFINDER);
+                        setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
                         m_lastForwardedRA = targetRA;
                         m_lastForwardedDec = targetDec;
                         m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
@@ -965,6 +1014,20 @@ void PiFinderMountBridge::handleGotoForward()
                 break;
             }
 
+            {
+                std::string rejectMsg;
+                if (m_client->mountRejectedLastCoords(rejectMsg))
+                {
+                    LOGF_WARN("Mount refused the correction (%s) - likely an elevation or cable-wrap/axis limit."
+                              " Not retrying the same command this tick.",
+                              rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                    setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the correction (no message from driver)" : rejectMsg);
+                    break;
+                }
+                // Same reasoning as SETTLING above - not cleared here, only
+                // on a genuinely confirmed-good drift check below.
+            }
+
             // Still the same held target - watch for it drifting past
             // Threshold (e.g. ordinary mount tracking imperfection) and
             // correct exactly like SETTLING does, just re-triggerable
@@ -985,7 +1048,10 @@ void PiFinderMountBridge::handleGotoForward()
             IDSetNumber(&DriftStatusNP, nullptr);
 
             if (drift <= threshold)
+            {
+                setMountRejectWarning(false, "");
                 break;
+            }
 
             if (drift > MaxSyncDriftN[0].value)
             {
@@ -1050,6 +1116,7 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
                 m_correctTargetDec = piDec;
                 m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
                 m_correctState = CorrectState::SLEWING;
+                setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
             }
             else
             {
@@ -1080,6 +1147,24 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
         case CorrectState::SETTLING:
         {
             DriftStatusNP.s = IPS_BUSY;
+
+            {
+                std::string rejectMsg;
+                if (m_client->mountRejectedLastCoords(rejectMsg))
+                {
+                    LOGF_WARN("Mount refused the auto-correct Goto (%s) - likely an elevation or"
+                              " cable-wrap/axis limit, not just settling. Not retrying the same command -"
+                              " resuming normal monitoring.",
+                              rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                    setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the auto-correct Goto (no message from driver)" : rejectMsg);
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                // Same reasoning as ForwardState::SETTLING above - not
+                // cleared here, only on a genuinely confirmed-good residual
+                // check below.
+            }
+
             if (m_correctSettleTicksRemaining > 0)
             {
                 --m_correctSettleTicksRemaining;
@@ -1148,8 +1233,11 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
                     LOGF_WARN("Auto-correct gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
                               MAX_SETTLE_RETRIES, drift, threshold);
                 else
+                {
                     LOGF_INFO("Auto-correct arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
                               drift, threshold);
+                    setMountRejectWarning(false, "");
+                }
                 m_correctState = CorrectState::IDLE;
             }
             break;
