@@ -104,6 +104,19 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // able to influence the real mount or Coupling correction logic -
         // it only ever reads PiFinder's position and Syncs a second
         // device, nothing else.
+        //
+        // Kept the manual switch (2026-08-08, User decision after
+        // weighing removing it): rather than removing the toggle to avoid
+        // "forgot to re-enable it", auto-arm it instead - see
+        // autoArmShadowSyncIfDevicePresent(), called whenever the shadow
+        // device is (re)detected, so it's on by default whenever the
+        // Simulator exists without the user needing to remember, while
+        // still leaving a real, discoverable way to turn it off if
+        // explicitly wanted (not just an obscure blank-the-name trick).
+        // Also gated by isShadowDeviceSafe() regardless of the switch -
+        // MUST never fire if the shadow name happens to equal the real
+        // ACTIVE_MOUNT/ACTIVE_PIFINDER (typo, profile mixup, future
+        // reconfiguration).
         ITextVectorProperty ShadowDeviceTP;
         IText ShadowDeviceT[1] {};
         enum { SHADOW_DEVICE };
@@ -111,6 +124,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ISwitchVectorProperty ShadowSyncSP;
         ISwitch ShadowSyncS[2];
         enum { SHADOW_SYNC_ENABLE, SHADOW_SYNC_DISABLE };
+
+        bool isShadowDeviceSafe() const;
+        bool m_shadowAutoArmed = false; // guards auto-arm to once per device (re)appearance, not every tick
+        void autoArmShadowSyncIfDevicePresent();
 
         void handleShadowSync();
 

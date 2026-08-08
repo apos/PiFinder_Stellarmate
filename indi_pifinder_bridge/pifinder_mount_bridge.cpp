@@ -312,6 +312,60 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     }
 }
 
+bool PiFinderMountBridge::isShadowDeviceSafe() const
+{
+    const std::string shadowName = ShadowDeviceT[SHADOW_DEVICE].text;
+    if (shadowName.empty())
+        return false;
+
+    // Must never fire if the shadow name happens to coincide with a real,
+    // load-bearing device (typo, profile mixup, future reconfiguration) -
+    // otherwise Shadow Sync would start Sync-ing the REAL mount or
+    // PiFinder straight from PiFinder's raw live position, completely
+    // bypassing Coupling's threshold/freshness/MaxSyncDrift gates. Found
+    // via user pushback (2026-08-08) while designing the auto-arm below -
+    // auto-arming removes the one manual "did I really mean to point this
+    // there" pause a human had before, so this check has to stand in for
+    // it unconditionally.
+    if (shadowName == std::string(ActiveDeviceT[ACTIVE_MOUNT].text))
+        return false;
+    if (shadowName == std::string(ActiveDeviceT[ACTIVE_PIFINDER].text))
+        return false;
+
+    return true;
+}
+
+void PiFinderMountBridge::autoArmShadowSyncIfDevicePresent()
+{
+    // Auto-enables ShadowSyncSP the moment its target device is actually
+    // present and safe to use - User decision (2026-08-08): keep the
+    // manual switch (discoverable, real off-switch) rather than removing
+    // it, but make sure nobody has to remember to (re-)flip it after every
+    // driver restart. Fires once per device (re)appearance, not every
+    // tick - m_shadowAutoArmed resets below once the device drops out
+    // again, so reconnecting re-triggers auto-arm rather than leaving a
+    // stale "already armed" flag across a device swap.
+    if (!m_client->isShadowReady() || !isShadowDeviceSafe())
+    {
+        m_shadowAutoArmed = false;
+        return;
+    }
+
+    if (m_shadowAutoArmed || ShadowSyncS[SHADOW_SYNC_ENABLE].s == ISS_ON)
+    {
+        m_shadowAutoArmed = true;
+        return;
+    }
+
+    IUResetSwitch(&ShadowSyncSP);
+    ShadowSyncS[SHADOW_SYNC_ENABLE].s = ISS_ON;
+    ShadowSyncSP.s = IPS_OK;
+    IDSetSwitch(&ShadowSyncSP, nullptr);
+    saveConfig(true, ShadowSyncSP.name);
+    m_shadowAutoArmed = true;
+    LOGF_INFO("Shadow device '%s' detected - Shadow Sync auto-enabled.", ShadowDeviceT[SHADOW_DEVICE].text);
+}
+
 void PiFinderMountBridge::handleShadowSync()
 {
     // Deliberately does not depend on m_client->isReady() (which requires
@@ -321,6 +375,9 @@ void PiFinderMountBridge::handleShadowSync()
     // never touches DriftStatusNP/exceeded/drift - those describe PiFinder
     // vs the *real* mount, unrelated to this.
     if (ShadowSyncS[SHADOW_SYNC_ENABLE].s != ISS_ON)
+        return;
+
+    if (!isShadowDeviceSafe())
         return;
 
     if (!m_client->isShadowReady())
@@ -345,6 +402,7 @@ void PiFinderMountBridge::TimerHit()
         return;
 
     syncMountTypeToPiFinder();
+    autoArmShadowSyncIfDevicePresent();
     handleShadowSync();
 
     if (!m_client->isReady())
