@@ -16,20 +16,26 @@
   @media (max-width: 767px) {
     body { padding: 0.8rem; }
   }
+  /* Grid layout (2026-08-09, direct feedback): PiFinder + Mode/Test/Power
+     stack in one column, Mount Bridge stands alone in the other (it's the
+     tile that most benefits from extra vertical room - the diagram/status/
+     coupling controls all stack inside it), Install/Update+Terminal always
+     spans the full width at the very bottom regardless of column count.
+     Named areas keep this independent of DOM order - .right-col (wrapping
+     #install-tile) stays exactly where it already was in the markup. */
   .page {
-    display: flex;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "pifinder    mountbridge"
+      "mode        mountbridge"
+      "install     install";
     gap: 1.5rem;
   }
-  .left-col {
-    width: 40%;
-    min-width: 280px;
-    box-sizing: border-box;
-  }
-  .right-col {
-    width: 60%;
-    box-sizing: border-box;
-  }
+  #pifinder-glance-tile { grid-area: pifinder; }
+  #mount-bridge-tile { grid-area: mountbridge; }
+  #mode-tile { grid-area: mode; }
+  .right-col { grid-area: install; box-sizing: border-box; }
   /* Minimal responsive layout. Phones: always single column, both
      orientations - a phone's long side rarely exceeds ~900px even in
      landscape, well under the tablet range this project cares about, so
@@ -38,17 +44,24 @@
      the default below, needs no extra rule) - except large tablets
      (>=1366px, e.g. 12.9" iPad Pro), which behave like a PC regardless of
      orientation since the portrait-collapse rule is capped below that
-     width. PCs: the existing 40%/60% split already scales with the actual
-     window width with no extra rule needed - narrowing a desktop window
-     below 768px falls into the same phone rule above, so "depends on the
-     window" falls out of these two rules rather than needing a third. */
+     width. PCs: the existing two-column grid already scales with the
+     actual window width with no extra rule needed - narrowing a desktop
+     window below 768px falls into the same phone rule above, so "depends
+     on the window" falls out of these two rules rather than needing a
+     third. */
   @media (max-width: 767px) {
-    .page { flex-direction: column; gap: 1rem; }
-    .left-col, .right-col { width: 100%; min-width: 0; }
+    .page {
+      grid-template-columns: 1fr;
+      grid-template-areas: "pifinder" "mountbridge" "mode" "install";
+      gap: 1rem;
+    }
   }
   @media (min-width: 768px) and (max-width: 1365px) and (orientation: portrait) {
-    .page { flex-direction: column; gap: 1rem; }
-    .left-col, .right-col { width: 100%; min-width: 0; }
+    .page {
+      grid-template-columns: 1fr;
+      grid-template-areas: "pifinder" "mountbridge" "mode" "install";
+      gap: 1rem;
+    }
   }
   h1 { font-size: 1.3rem; margin: 0; }
   #page-title-row {
@@ -495,7 +508,6 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
-    margin-top: 1rem;
   }
   #mode-status-line { font-weight: bold; margin-bottom: 0.6rem; }
   #mode-toggle-btn {
@@ -529,6 +541,19 @@
   .ql-small-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .ql-small-btn:not(:disabled):hover { border-color: #777; color: #fff; }
   .ql-small-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* Shared sizing for Sync/Stop (2026-08-09, direct feedback: these two are
+     frequent, important, mode-independent actions and need the same visual
+     weight as the coupling presets) - a self-contained base rather than
+     reusing .mb-coupling-btn directly, so .mb-abort-btn's red doesn't have
+     to fight a later cascade rule for who wins the background color. */
+  .mb-big-action-btn {
+    flex: 1; min-width: 8rem; min-height: 2.7rem; border-radius: 6px;
+    padding: 0.65rem 0.5rem; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; text-align: center; border: 1px solid #444;
+  }
+  #mb-big-actions-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .mb-big-sync-btn { background: #1c2a1c; color: #7fc97f; border-color: #3a5a3a; }
+  .mb-big-sync-btn:hover { background: #24371f; border-color: #4caf50; color: #97dc97; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -710,7 +735,6 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
-    margin-top: 1rem;
     position: relative;
   }
   #pfhost-ip { color: #4caf50; font-weight: bold; user-select: all; }
@@ -898,29 +922,16 @@
     background: #3a1414; color: #ff8a80; border: 1px solid #e53935;
     font-size: 0.8rem;
   }
-  /* Its own invisible .group-label spacer vertically offsets the button
-     past the label height Visual/GoTo have above their own buttons, so it
-     lines up with the actual button row instead of the heading row above
-     it. The button itself is flex:1 so it fills the stretched column
-     height exactly like .mb-coupling-group-buttons' buttons do - same
-     row-wide stretch as #mb-role-cards, min-height is just a floor.
-     margin-left:auto pins it to the far right on its own row once the
-     coupling groups wrap - falls back to sitting right after the last
-     group when there's no room left to push it further. */
-  #mb-decouple-group { flex: 0 0 auto; display: flex; flex-direction: column; margin-left: auto; }
+  /* Elongated pill (2026-08-09, direct feedback) - moved out of the
+     coupling-groups row into the Threshold row, next to the other
+     mode-independent one-shot actions above. */
   #mb-decouple-btn {
-    flex: 1;
-    min-height: 2.7rem;
-    width: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
+    border-radius: 999px;
+    padding: 0.3rem 1rem;
     background: #232323;
     border: 1px solid #3a3a3a;
     color: #ccc;
-    font-size: 1rem;
-    line-height: 1;
+    font-size: 0.78rem;
     cursor: pointer;
   }
   #mb-decouple-btn:hover { background: #2a2a2a; color: #fff; }
@@ -1166,7 +1177,6 @@
 </div>
 
 <div class="page">
-  <div class="left-col">
     <div id="pifinder-glance-tile">
       <div class="tile-heading-row" style="cursor:default;">
         <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
@@ -1340,30 +1350,30 @@
             </div>
           </div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
-              <span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span>
             </div>
-          </div>
-          <div id="mb-decouple-group">
-            <div class="group-label" style="visibility:hidden;">&nbsp;</div>
-            <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">&times;</button>
           </div>
         </div>
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
+      <!-- Big, equal-weight action row (2026-08-09, direct feedback): Sync
+           and Stop are frequent, important, mode-independent actions - they
+           don't belong squeezed in as small text-labelled buttons next to
+           Threshold, they need the same visual weight as the coupling
+           presets above. -->
+      <div class="mb-row" id="mb-big-actions-row">
+        <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
+        <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
+      </div>
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
           <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
         </span>
         <span id="mb-threshold-manual-sep"></span>
-        <span title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
-          <span class="mb-row-label">Manual:</span>
-          <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
-        </span>
-        <button id="mb-abort-btn" class="ql-small-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
+        <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -1566,8 +1576,6 @@ sudo systemctl start pifinder</pre>
         </div>
       </div>
       </div>
-
-  </div>
 
   <div class="right-col">
     <div id="install-tile">
