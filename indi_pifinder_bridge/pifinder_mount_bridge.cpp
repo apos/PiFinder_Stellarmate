@@ -396,6 +396,40 @@ void PiFinderMountBridge::handleShadowSync()
     m_client->syncShadowCoords(piRA, piDec);
 }
 
+void PiFinderMountBridge::runModeReadinessCheck()
+{
+    if (BridgeModeS[MODE_OFF].s == ISS_ON)
+        return; // nothing to verify - Coupling being Off is itself the "nothing needed" state
+
+    if (!m_client->isReady())
+    {
+        // Not fixable here (needs the devices to actually connect) - just
+        // make sure it's visible instead of silently doing nothing until
+        // someone notices drift never updates. TimerHit()'s own isReady()
+        // gate already handles this correctly once connected; this is
+        // purely a heads-up at the moment the mode was chosen.
+        LOG_WARN("Coupling mode enabled, but PiFinder and/or mount aren't both connected yet - "
+                 "will start once ready.");
+    }
+
+    // A sanity limit smaller than the correction threshold would silently
+    // block every correction whose drift falls between the two forever -
+    // "exceeds threshold" but also "exceeds sanity cap", so it never syncs
+    // and the GUI just shows a permanent, unexplained Alert. Safe to
+    // auto-fix (raising a limit is strictly less restrictive, never a
+    // safety regression) rather than just warn.
+    if (MaxSyncDriftN[0].value < DriftThresholdN[0].value)
+    {
+        LOGF_WARN("Auto-Sync sanity limit (%.1f') was smaller than Threshold (%.1f') - corrections in "
+                  "that gap could never fire. Raised the sanity limit to match.",
+                  MaxSyncDriftN[0].value, DriftThresholdN[0].value);
+        MaxSyncDriftN[0].value = DriftThresholdN[0].value;
+        MaxSyncDriftNP.s = IPS_OK;
+        IDSetNumber(&MaxSyncDriftNP, nullptr);
+        saveConfig(true, MaxSyncDriftNP.name);
+    }
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
@@ -968,6 +1002,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // of what the user picks live, same "selection doesn't stick"
             // shape as #158's ACTIVE_DEVICES bug.
             saveConfig(true, BridgeModeSP.name);
+            runModeReadinessCheck();
             return true;
         }
 

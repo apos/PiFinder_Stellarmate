@@ -129,6 +129,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         bool m_shadowAutoArmed = false; // guards auto-arm to once per device (re)appearance, not every tick
         void autoArmShadowSyncIfDevicePresent();
 
+        // Mode-Readiness-Check (2026-08-08, User request): runs whenever a
+        // Coupling mode other than Off is (re-)selected. Verifies known
+        // easy-to-forget preconditions instead of silently assuming them -
+        // reports what it can't fix itself, auto-corrects what it safely
+        // can (currently: MaxSyncDriftNP being smaller than
+        // DriftThresholdNP, which would silently block every correction
+        // in that gap forever). Deliberately does NOT touch
+        // TELESCOPE_TRACK_STATE or anything else the user might have
+        // intentionally configured - see 00090's Regel 2 in basic-memory.
+        void runModeReadinessCheck();
+
         void handleShadowSync();
 
         // Coupling degree - see 00009 for the rationale of each stage.
