@@ -511,24 +511,46 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     if (!havePositions)
         return false;
 
-    // --- Fall 2: mount busy/moved without either of our own state machines having commanded it. ---
+    // --- Fall 2: mount moved without either of our own state machines having commanded it. ---
     const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING;
-    const bool mountBusy = m_client->isMountSlewing();
 
-    if (mountBusy && !weCommandedIt)
+    // Onset detection: compare the mount's own position against the last
+    // tick's, rather than watching isMountSlewing() (see m_lastPolledMountRA's
+    // own comment in the header - a real external move can complete without
+    // ever reporting IPS_BUSY at all). Skipped while we already know about
+    // an in-progress external move (avoids re-triggering the log/settle
+    // countdown every tick while it's still settling) and while we
+    // commanded the current motion ourselves (that's a real, large,
+    // expected delta - not Fall 2).
+    if (!std::isnan(m_lastPolledMountRA) && !weCommandedIt && !m_externalSlewInProgress)
     {
-        if (!m_externalSlewInProgress)
-            LOG_INFO("Mount is slewing without a command from Mount Bridge itself - external control detected "
-                      "(hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will adopt the new "
-                      "position once settled and confirmed by a fresh PiFinder solve.");
-        m_externalSlewInProgress = true;
-        return true;
+        const double mountDeltaArcmin =
+            angularSeparationArcmin(mountRA, mountDec, m_lastPolledMountRA, m_lastPolledMountDec);
+        const double elapsedSec = std::max(0.0, static_cast<double>(time(nullptr) - m_lastPolledMountTime));
+        const double maxPlausiblePassiveDrift = elapsedSec * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+
+        if (mountDeltaArcmin > maxPlausiblePassiveDrift)
+        {
+            LOGF_INFO("Mount moved %.1f arcmin since the last check (~%.0fs ago, more than the %.1f' passive sky "
+                      "motion could plausibly produce) without a command from Mount Bridge itself - external "
+                      "control detected (hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will "
+                      "adopt the new position once settled and confirmed by a fresh PiFinder solve.",
+                      mountDeltaArcmin, elapsedSec, maxPlausiblePassiveDrift);
+            m_externalSlewInProgress = true;
+            m_externalSettleTicksRemaining = SETTLE_TICKS;
+        }
     }
+    m_lastPolledMountRA = mountRA;
+    m_lastPolledMountDec = mountDec;
+    m_lastPolledMountTime = time(nullptr);
 
     if (m_externalSlewInProgress)
     {
-        if (mountBusy)
-            return true; // still moving
+        if (m_externalSettleTicksRemaining > 0)
+        {
+            --m_externalSettleTicksRemaining;
+            return true; // give the mount a few ticks to physically finish settling - isMountSlewing() can't be trusted to tell us (see above)
+        }
         if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
             return true; // finished moving, but waiting for a fresh solve to confirm before trusting it (#79)
 

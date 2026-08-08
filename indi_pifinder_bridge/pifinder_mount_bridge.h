@@ -335,6 +335,34 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // never needs to know *which* one - only that it wasn't itself).
         bool m_externalSlewInProgress = false;
 
+        // Fall-2 onset detection (2026-08-08 revision) - compares the
+        // mount's own EQUATORIAL_EOD_COORD tick-to-tick instead of watching
+        // for an IPS_BUSY state. Found live: a real, small/fast external
+        // Sync+Goto (~20', the exact "hand-paddle nudge" scenario #178 is
+        // meant to support) never produced an observable Busy state at all -
+        // verified via a raw INDI wire capture on port 7624, state stayed
+        // "Idle" throughout. isMountSlewing() is reliable for OUR OWN larger
+        // Goto-Forward/Auto-correct moves elsewhere in this file (unchanged,
+        // still fine there) but cannot be trusted as the *detection* signal
+        // for Fall 2, at any poll rate - the edge it would need to be caught
+        // on may simply never exist on the wire. A tick-to-tick position
+        // delta needs no such edge - any real movement shows up, however
+        // fast. Distinguished from passive drift (no tracking - see
+        // MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC's own comment: deliberate
+        // routine practice on this friction-clutch mount) using the exact
+        // same physical plausibility bound Fall 3/4 already uses, applied
+        // here to the mount's own movement rather than the PiFinder-vs-
+        // mount difference.
+        double m_lastPolledMountRA = std::nan("");
+        double m_lastPolledMountDec = std::nan("");
+        long m_lastPolledMountTime = 0;
+
+        // Once a genuine external move is detected, give the mount a few
+        // ticks to physically finish settling before trusting its position -
+        // same reasoning/constant as SETTLE_TICKS for our own moves, since
+        // isMountSlewing() can't reliably tell us "still moving" here either.
+        int m_externalSettleTicksRemaining = 0;
+
         // Timestamp of the last position Mount Bridge is confident is
         // correct (either a just-adopted reposition, or the last
         // successful HOLDING/SETTLING correction) - the reference point the
