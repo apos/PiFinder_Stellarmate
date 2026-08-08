@@ -554,6 +554,18 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         return false;
 
     // --- Fall 3 vs Fall 4: no command signal seen, but PiFinder-vs-mount disagree past Threshold. ---
+    // Never trust this drift number off a stale solve - same freshness gate
+    // every other drift-consuming code path in this file already has
+    // (SETTLING, HOLDING's own correction, CorrectState::SETTLING). Found
+    // live (2026-08-08, #186 testing): right after Fall 1 forwards a
+    // legitimate PushTo and the mount arrives, PiFinder's own reported
+    // position hasn't necessarily been reconfirmed by a fresh solve yet -
+    // without this gate, that transient (but real) mismatch got
+    // misclassified as an implausible Fall-4 jump instead of just waiting
+    // for the next solve like every other arrival-verification path does.
+    if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+        return false;
+
     if (drift <= DriftThresholdN[0].value)
     {
         m_lastConfirmedGoodTime = time(nullptr); // currently agreeing - this moment is confirmed-good
