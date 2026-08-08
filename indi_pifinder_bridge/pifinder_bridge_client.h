@@ -14,6 +14,7 @@
 #include "baseclient.h"
 #include "basedevice.h"
 
+#include <mutex>
 #include <string>
 
 class PiFinderBridgeClient : public INDI::BaseClient
@@ -57,6 +58,11 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // that poll on a timer don't get stuck re-handling the same event
         // forever - also cleared by the next sendMountCoords() call.
         // outMessage receives the driver's own log text if one was seen.
+        // Thread-safe: the underlying INDI::BaseClient runs its own incoming-
+        // traffic thread (per its own doc comment on connectServer()), so
+        // updateProperty()/newMessage() - which set the state this reads -
+        // fire on a different thread than the driver's TimerHit(), which
+        // calls this. See m_mountRejectMutex.
         bool mountRejectedLastCoords(std::string &outMessage);
 
         // Reads the mount's own TELESCOPE_MOUNT_TYPE switch (every INDI::Telescope
@@ -102,6 +108,11 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
         INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;
 
+        // Written from updateProperty()/newMessage() (INDI::BaseClient's own
+        // I/O thread), read/written from sendMountCoords()/
+        // mountRejectedLastCoords() (the driver's TimerHit() thread) - needs
+        // real synchronization, not just "worked in testing so far".
+        mutable std::mutex m_mountRejectMutex;
         bool m_mountRejectedLastCoords = false;
         std::string m_mountRejectMessage;
 

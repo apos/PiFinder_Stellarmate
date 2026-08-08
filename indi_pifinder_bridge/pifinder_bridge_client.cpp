@@ -106,7 +106,10 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
     const bool fromMount = m_mountName == property.getDeviceName();
 
     if (fromMount && property.isNameMatch("EQUATORIAL_EOD_COORD") && property.getState() == IPS_ALERT)
+    {
+        std::lock_guard<std::mutex> lock(m_mountRejectMutex);
         m_mountRejectedLastCoords = true;
+    }
 }
 
 void PiFinderBridgeClient::newMessage(INDI::BaseDevice baseDevice, int messageID)
@@ -121,6 +124,8 @@ void PiFinderBridgeClient::newMessage(INDI::BaseDevice baseDevice, int messageID
     const auto sep = msg.find(": ");
     if (sep != std::string::npos)
         msg = msg.substr(sep + 2);
+
+    std::lock_guard<std::mutex> lock(m_mountRejectMutex);
     m_mountRejectMessage = msg;
 }
 
@@ -230,8 +235,11 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     if (coordSetSwitch == nullptr)
         return false;
 
-    m_mountRejectedLastCoords = false;
-    m_mountRejectMessage.clear();
+    {
+        std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+        m_mountRejectedLastCoords = false;
+        m_mountRejectMessage.clear();
+    }
 
     m_mountOnCoordSetSP->reset();
     coordSetSwitch->setState(ISS_ON);
@@ -247,6 +255,8 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
 
 bool PiFinderBridgeClient::mountRejectedLastCoords(std::string &outMessage)
 {
+    std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+
     if (!m_mountRejectedLastCoords)
         return false;
 
