@@ -6,6 +6,10 @@
 > [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178) on
 > [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
 > promoted, revised, or dropped. Design context: `basic-memory/pifinder-stellarmate/00093`.
+>
+> **Overlaps with [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md)**
+> - found late while writing this, see §8 for how the two relate. Read that document's §4-§5
+> before implementing either.
 
 ## 1. Overview
 
@@ -33,7 +37,7 @@ classification exists, the two-button split becomes unnecessary - a single mode 
 | UC1 | Push-to on PiFinder (on-device menu, or KStars Goto on "PiFinder LX200") | Only reacts if `MODE_GOTO_FORWARD` is active | Always forwards to the mount and becomes the new held target |
 | UC2 | GoTo commanded on the mount side - KStars on "LX200 OnStep", SkySafari, the OnStep app, or a hand-paddle/handbox connected directly to the OnStep controller over its own TCP/WiFi link (**not** through INDI at all - confirmed live 2026-08-08, IP `192.168.0.142`) | Only reacts if `MODE_AUTO_CORRECT`+Goto is active, and only reactively once drift already exceeds Threshold | Detected as soon as the mount's own `EQUATORIAL_EOD_COORD`/`ON_COORD_SET` change without Mount Bridge itself having issued the command; once settled and confirmed by a fresh PiFinder solve, becomes the new held target |
 | UC3 | Ordinary uncorrected sidereal drift (tracking intentionally off, see `00093`) | Corrected in `MODE_GOTO_FORWARD`'s `HOLDING` state (fixed tonight - see `00093` §1) | Unchanged: Sync+re-Goto back to the held target |
-| UC4 | Mechanical disturbance with the mount's clutch open (OTA moved by hand without the motor/encoders registering it - live-observed 2026-08-08, ~92° real drift from an eyepiece swap) | `MaxSyncDriftNP` already refuses to auto-Sync above its sanity limit (120', see `00093` §2) - but the driver has no way to explain *why* it's refusing | Same refusal, but explicitly classified and reported as "likely mechanical disturbance, not GoTo/paddle" rather than a generic "drift too large" warning - still requires a manual confirmation before Mount Bridge will trust the new position |
+| UC4 | Manual repositioning with the mount's clutch open - **a normal, deliberate workflow on friction-clutch mounts** (User's own equipment: an old Lichtenknecker mount built exactly this way, also used occasionally on the EQ-6; historically standard practice, not an edge case), indistinguishable in the data from an unintentional disturbance (bumped, wind, eyepiece caught) - live-observed 2026-08-08 as an *unintentional* instance, ~92° real drift from an eyepiece swap | `MaxSyncDriftNP` already refuses to auto-Sync above its sanity limit (120', see `00093` §2) | **Corrected 2026-08-08** (was: auto-refuse with just a warning): since intentional clutch-repositioning is common and this can't be told apart from an accidental disturbance by data alone, surface a single, low-friction confirmation ("Adopt new position?") instead of requiring a full manual Sync workflow - accept -> treated like UC2 (new held target); decline/no response -> stays held at the old target |
 
 ## 3. Architecture
 
@@ -180,6 +184,41 @@ Center GUI) rather than introducing a new one.
    2026-08-07 (see the issue's original direction).
 3. **Depends on this**: none currently identified - this is the terminal item in the Goto-Forward/
    Auto-Correct-Goto redesign chain that started with #170/#171 tonight.
+
+## 8. Relationship to `pifinder_mount_model_cloud_tracking.md`
+
+Found late while writing this document (should have been checked first, per the `cpt` procedure's
+own step 1 - corrected here rather than left as an undisclosed gap). Real, substantive overlap:
+
+- That document's §4 proposes an **Align** command - a Sync variant meaning "here is a verified
+  position, incorporate it into your model," explicitly distinct from a plain Sync's "reset your
+  current pointing to this." This concept's UC2/UC4 "adopt the new position as the held target"
+  step is the same underlying pattern, just in the opposite data-flow direction: that document is
+  about the **mount teaching PiFinder** (so PiFinder can keep tracking through cloud gaps using the
+  mount's own model as a fallback); this concept is about **Mount Bridge deciding what to hold**
+  once an external reposition is confirmed. Both need the same underlying primitive - "a verified
+  position update, not a blind reset" - so implementing one should produce a primitive reusable by
+  the other, not two independent Align-like mechanisms.
+- That document's §5 discusses reusing **#130 ("Mount is source")** for a mount-model role. #130 was
+  built, found buggy, and surgically removed (`basic-memory/basic-memory/00089_bm-git-development-workflow.md`
+  §2 - a 6-file, ~194-line removal because the feature wasn't isolated cleanly). This concept's UC2
+  does **not** revive #130 or make the mount an unconditional position source - it only ever adopts
+  a mount-side position after (a) an explicit, attributable command signal (§3.2 row 2) or (b) an
+  explicit user confirmation (§3.2 row 4, corrected), never silently or continuously. Worth being
+  explicit about this distinction given #130's history, so this isn't mistaken for the same failed
+  approach revisited.
+- That document's §7 references `complete_position_simulator.md`'s existing settle-detection
+  mechanism (movement stops -> a solve lands on the settled position, #106) as a precedent for
+  "detect motion has genuinely stopped before trusting a new position." This concept's UC2 needs the
+  same kind of settle detection (wait for the mount to actually finish moving, confirmed via
+  `isMountSlewing()`, before adopting) - same principle, already implemented once (#106) and once
+  more tonight (`isMountSlewing()`-gated `HOLDING`, see `00093` §1), should be the same shared
+  primitive a third time here, not a fourth bespoke implementation.
+
+**Practical consequence for sequencing**: before implementing this concept, revisit
+`pifinder_mount_model_cloud_tracking.md` and decide whether the "Align" primitive should be built
+once, shared by both concepts, rather than implementing this concept's UC2/UC4 adoption logic in a
+way that would need to be redone once the cloud-tracking concept is eventually tackled too.
 
 ## Related
 
