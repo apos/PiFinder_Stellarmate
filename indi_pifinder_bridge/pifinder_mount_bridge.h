@@ -289,4 +289,102 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         int m_correctSettleRetriesRemaining = 0;
 
         void handleAutoCorrectGoto(bool exceeded, double piRA, double piDec, double drift, double threshold);
+
+        // Reposition Detection (#178, 2026-08-08) - see
+        // docs/concepts/mount_bridge_reposition_detection.md for the full
+        // design (decision matrix, sequence diagrams, ADR). Runs as a
+        // shared pre-check in TimerHit(), before handleGotoForward()/
+        // handleAutoCorrectGoto() - classifies every PiFinder-vs-mount
+        // disagreement instead of blindly treating all of them as
+        // "ordinary drift to correct":
+        //   - Mount busy/moved, but NEITHER of our own state machines just
+        //     commanded it (SLEWING) -> an external client did (hand-paddle
+        //     over its own direct TCP/WiFi link to the mount controller,
+        //     SkySafari, the OnStep app, KStars-GoTo-on-the-mount - all
+        //     indistinguishable from each other and not distinguished on
+        //     purpose, see the concept doc's Architecture section). Wait
+        //     for it to finish + a fresh PiFinder solve, then adopt the new
+        //     position as the held target - no Sync/Goto needed, the
+        //     mount's own model is already correct since real motor motion
+        //     was involved.
+        //   - No command signal at all, but PiFinder-vs-mount disagree by
+        //     more than the sky's own physical speed limit could produce
+        //     since the last confirmed-good position -> the mount's
+        //     internal model itself is stale (classic case: clutch open,
+        //     OTA moved by hand without the motor/encoders registering it -
+        //     live-verified 2026-08-08, see basic-memory 00093). Genuinely
+        //     ambiguous whether this was deliberate (User: normal practice
+        //     on friction-clutch mounts, incl. occasionally this EQ-6) or
+        //     accidental - ask via ShadowSync-style low-friction
+        //     confirmation rather than guessing either way.
+        // Returns true if this tick was fully handled here (external slew
+        // in progress or just adopted, or a Fall-4 confirmation is pending/
+        // just resolved) - callers must skip their own normal handling for
+        // this tick in that case, so the old per-mode Sync+re-Goto logic
+        // never fires on the same drift a pending confirmation is already
+        // watching.
+        bool handleRepositionDetection(bool havePositions, double piRA, double piDec, double mountRA,
+                                        double mountDec, double drift);
+
+        // True while we're watching a mount slew we did NOT ourselves just
+        // command (i.e. neither ForwardState::SLEWING nor
+        // CorrectState::SLEWING) - sudden onset is what proves "someone
+        // else is driving this mount right now" (see 3.1/3.2 in the concept
+        // doc: the INDI driver reflects the mount controller's real state
+        // regardless of which external client caused it, so Mount Bridge
+        // never needs to know *which* one - only that it wasn't itself).
+        bool m_externalSlewInProgress = false;
+
+        // Timestamp of the last position Mount Bridge is confident is
+        // correct (either a just-adopted reposition, or the last
+        // successful HOLDING/SETTLING correction) - the reference point the
+        // physical drift-rate classification measures elapsed time from.
+        // Deliberately time_t via std::time(), matching isPiFinderSolveFresh()'s
+        // own existing timestamp convention elsewhere in this file.
+        long m_lastConfirmedGoodTime = 0;
+        static constexpr double MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC = 0.35; // measured live 2026-08-08 (~0.25-0.3'/s), generous margin
+
+        // Found live (2026-08-08): right after a restart/mode-switch,
+        // m_lastConfirmedGoodTime gets baselined on the very first tick
+        // regardless of how much drift already exists (e.g. accumulated
+        // during the restart itself, or left over from before) - the very
+        // NEXT tick then judges that pre-existing drift against only ~1
+        // poll interval of elapsed time, almost always exceeding the
+        // physical plausibility bound and misfiring Fall 4 before the
+        // existing, proven HOLDING/Auto-correct mechanism ever got a
+        // chance to just fix it normally. Fix: the rate-based Fall-3/4
+        // judgment only activates once a genuine confirmed-good moment
+        // (drift already within Threshold) has actually been observed
+        // since the last reset - until then, defer entirely to the
+        // existing correction logic (still backstopped by MaxSyncDriftNP).
+        bool m_repositionBaselineTrusted = false;
+
+        // Fall 4 (clutch/disturbance) pending-confirmation state - a
+        // ShadowSync-style low-friction Yes/No, not a full manual-Sync
+        // workflow. Times out to an automatic "No" (revert) rather than
+        // sitting on a stale position indefinitely if nobody answers.
+        bool m_repositionConfirmPending = false;
+        long m_repositionConfirmDeadline = 0;
+        static constexpr int REPOSITION_CONFIRM_TIMEOUT_SEC = 45;
+        ISwitchVectorProperty RepositionConfirmSP;
+        ISwitch RepositionConfirmS[2];
+        enum { REPOSITION_CONFIRM_YES, REPOSITION_CONFIRM_NO };
+
+        // Read-only "who does the currently held target come from" badge
+        // (#178 GUI unification, 2026-08-08): with Reposition Detection
+        // active, MODE_GOTO_FORWARD alone already reacts symmetrically to
+        // both a PiFinder push-to (Fall 1) and an external mount-side
+        // command (Fall 2) - the separate "Follow mount's goto" preset
+        // (MODE_AUTO_CORRECT+ACTION_GOTO) is now redundant for this use
+        // case. The GUI replaces both with a single "GoTo" button (always
+        // sets MODE_GOTO_FORWARD) and shows this badge instead of making
+        // the user pre-select a source. Set whenever a target is adopted -
+        // Fall 1 -> PIFINDER, Fall 2/Fall-4-confirmed-yes -> MOUNT (the
+        // mount's own position was what got trusted); ordinary Fall-3
+        // corrections and Fall-4 reverts don't change the source, they're
+        // just re-affirming the existing held target.
+        ISwitchVectorProperty TargetSourceSP;
+        ISwitch TargetSourceS[2];
+        enum { TARGET_SOURCE_PIFINDER, TARGET_SOURCE_MOUNT };
+        void setTargetSource(int index);
 };

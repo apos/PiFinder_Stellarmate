@@ -179,6 +179,16 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
                        "Emergency stop", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 
+    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
+    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
+    IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
+                       "Unexplained reposition", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    IUFillSwitch(&TargetSourceS[TARGET_SOURCE_PIFINDER], "TARGET_SOURCE_PIFINDER", "PiFinder", ISS_ON);
+    IUFillSwitch(&TargetSourceS[TARGET_SOURCE_MOUNT], "TARGET_SOURCE_MOUNT", "Mount", ISS_OFF);
+    IUFillSwitchVector(&TargetSourceSP, TargetSourceS, 2, getDeviceName(), "TARGET_SOURCE",
+                       "Following", "Main Control", IP_RO, ISR_1OFMANY, 0, IPS_IDLE);
+
     IUFillNumber(&DriftThresholdN[0], "THRESHOLD_ARCMIN", "Threshold (arcmin)", "%.1f", 0.1, 600, 0.5, 5);
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -231,6 +241,8 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
         defineProperty(&ShadowSyncSP);
+        defineProperty(&RepositionConfirmSP);
+        defineProperty(&TargetSourceSP);
 
         // Restore the saved Coupling mode/threshold/etc. now that their
         // properties actually exist - see m_connectedConfigLoaded's
@@ -254,6 +266,8 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
         deleteProperty(ShadowSyncSP.name);
+        deleteProperty(RepositionConfirmSP.name);
+        deleteProperty(TargetSourceSP.name);
     }
 
     return true;
@@ -430,6 +444,141 @@ void PiFinderMountBridge::runModeReadinessCheck()
     }
 }
 
+bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double piRA, double piDec, double mountRA,
+                                                     double mountDec, double drift)
+{
+    // --- A Fall-4 confirmation from a previous tick is still open: only check its timeout here. ---
+    if (m_repositionConfirmPending)
+    {
+        if (time(nullptr) < m_repositionConfirmDeadline)
+            return true; // still waiting on a response - don't let the old per-mode logic act meanwhile
+
+        LOG_WARN("Reposition confirmation timed out - treating as unintentional, reverting to the held target.");
+        m_repositionConfirmPending = false;
+        IUResetSwitch(&RepositionConfirmSP);
+        RepositionConfirmSP.s = IPS_ALERT;
+        IDSetSwitch(&RepositionConfirmSP, nullptr);
+        if (havePositions)
+        {
+            // Same Sync+re-Goto pattern HOLDING already uses for ordinary
+            // drift - explicitly authorized past MaxSyncDriftNP this one
+            // time, since a human-reviewable confirmation window just
+            // expired unanswered rather than this being blind automation.
+            //
+            // Found live (2026-08-08): NOT routing this through the normal
+            // SLEWING state caused an infinite loop - the next tick saw the
+            // mount moving without weCommandedIt being true (misclassified
+            // as ANOTHER external reposition), and marking "confirmed good"
+            // immediately (before the Goto had actually converged) meant
+            // any still-remaining residual looked implausible again right
+            // away. Fixed: fire the same commands, but hand control back to
+            // the existing SLEWING/SETTLING machinery to verify real
+            // convergence (same discipline as every other correction path)
+            // instead of declaring success ourselves. m_lastConfirmedGoodTime
+            // is deliberately NOT touched here - it only updates once drift
+            // is actually observed back within Threshold, same as normal.
+            applySlewRateForDrift(drift);
+            if (m_client->sendMountCoords(piRA, piDec, "SYNC") &&
+                m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            {
+                if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+                {
+                    m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                    m_forwardState = ForwardState::SLEWING;
+                }
+                else
+                {
+                    m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                    m_correctState = CorrectState::SLEWING;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (!havePositions)
+        return false;
+
+    // --- Fall 2: mount busy/moved without either of our own state machines having commanded it. ---
+    const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING;
+    const bool mountBusy = m_client->isMountSlewing();
+
+    if (mountBusy && !weCommandedIt)
+    {
+        if (!m_externalSlewInProgress)
+            LOG_INFO("Mount is slewing without a command from Mount Bridge itself - external control detected "
+                      "(hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will adopt the new "
+                      "position once settled and confirmed by a fresh PiFinder solve.");
+        m_externalSlewInProgress = true;
+        return true;
+    }
+
+    if (m_externalSlewInProgress)
+    {
+        if (mountBusy)
+            return true; // still moving
+        if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            return true; // finished moving, but waiting for a fresh solve to confirm before trusting it (#79)
+
+        m_externalSlewInProgress = false;
+        m_lastForwardedRA = piRA;
+        m_lastForwardedDec = piDec;
+        m_correctTargetRA = piRA;
+        m_correctTargetDec = piDec;
+        m_lastConfirmedGoodTime = time(nullptr);
+        m_forwardState = ForwardState::HOLDING;
+        m_correctState = CorrectState::IDLE;
+        setTargetSource(TARGET_SOURCE_MOUNT);
+        LOGF_INFO("External reposition confirmed by a fresh PiFinder solve (RA %.4fh, DEC %.4f deg) - adopted "
+                  "as the new held target.",
+                  piRA, piDec);
+        return true;
+    }
+
+    // Our own correction is already mid-flight (SLEWING/SETTLING) - let
+    // handleGotoForward()/handleAutoCorrectGoto() manage it uninterrupted,
+    // don't reclassify a transitional position as anything.
+    if (weCommandedIt)
+        return false;
+
+    // --- Fall 3 vs Fall 4: no command signal seen, but PiFinder-vs-mount disagree past Threshold. ---
+    if (drift <= DriftThresholdN[0].value)
+    {
+        m_lastConfirmedGoodTime = time(nullptr); // currently agreeing - this moment is confirmed-good
+        m_repositionBaselineTrusted = true;
+        return false;
+    }
+
+    if (!m_repositionBaselineTrusted)
+    {
+        // Haven't observed a genuine confirmed-good moment since the last
+        // reset (restart/mode-switch) yet - any pre-existing drift here
+        // could simply be a backlog from being offline, not a sudden
+        // implausible jump. Defer entirely to the existing HOLDING/Auto-
+        // correct logic (still backstopped by MaxSyncDriftNP) until a real
+        // baseline has actually been established.
+        return false;
+    }
+
+    const double elapsedSec = static_cast<double>(time(nullptr) - m_lastConfirmedGoodTime);
+    const double maxPlausibleDrift = elapsedSec * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+
+    if (drift <= maxPlausibleDrift)
+        return false; // Fall 3: physically plausible passive drift - let the existing HOLDING/Auto-correct logic handle it as before
+
+    // Fall 4: exceeds what passive sky motion could produce in the elapsed
+    // time - ask rather than guess (see docs/concepts/mount_bridge_reposition_detection.md UC4).
+    m_repositionConfirmPending = true;
+    m_repositionConfirmDeadline = time(nullptr) + REPOSITION_CONFIRM_TIMEOUT_SEC;
+    RepositionConfirmSP.s = IPS_BUSY;
+    IDSetSwitch(&RepositionConfirmSP, nullptr);
+    LOGF_WARN("Drift %.1f arcmin exceeds what passive sky motion could produce in %.0fs (max plausible %.1f') - "
+              "likely a deliberate reposition (e.g. clutch released) or a disturbance. Confirm via "
+              "REPOSITION_CONFIRM within %ds, or it will be treated as unintentional and reverted automatically.",
+              drift, elapsedSec, maxPlausibleDrift, REPOSITION_CONFIRM_TIMEOUT_SEC);
+    return true;
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
@@ -469,7 +618,31 @@ void PiFinderMountBridge::TimerHit()
         DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
     }
 
-    if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+    // Reposition Detection (#178) only applies to the two "held target"
+    // Goto-based modes (Goto-Forward, Auto-correct's Goto action) - it
+    // needs a held-target concept to adopt into, which Verify/Alert (never
+    // touches the mount) and Auto-correct's plain Sync action (no target,
+    // just continuous re-sync) don't have. See
+    // docs/concepts/mount_bridge_reposition_detection.md.
+    // Was emergency-disabled live (2026-08-08) after a false-positive
+    // Fall-4 loop (see git history) - re-enabled after two fixes: reverts
+    // now route through the normal SLEWING state instead of declaring
+    // success immediately (so convergence is actually verified), and the
+    // rate-based classification only activates after a genuine
+    // confirmed-good baseline, not immediately after every restart.
+    const bool repositionDetectionApplies =
+        BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON ||
+        (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON);
+    const bool repositionHandledThisTick =
+        repositionDetectionApplies && handleRepositionDetection(havePositions, piRA, piDec, mountRA, mountDec, drift);
+
+    if (repositionHandledThisTick)
+    {
+        // Fully handled above (external slew in progress/just adopted, or
+        // a Fall-4 confirmation pending/just resolved) - skip the normal
+        // per-mode logic so it can't act on the same drift a moment ago.
+    }
+    else if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
         handleGotoForward();
     }
@@ -537,6 +710,16 @@ void PiFinderMountBridge::TimerHit()
     if (havePositions)
         IDSetNumber(&DriftStatusNP, nullptr);
     SetTimer(getCurrentPollingPeriod());
+}
+
+void PiFinderMountBridge::setTargetSource(int index)
+{
+    if (TargetSourceS[index].s == ISS_ON)
+        return; // already showing this - avoid redundant INDI traffic every tick
+    IUResetSwitch(&TargetSourceSP);
+    TargetSourceS[index].s = ISS_ON;
+    TargetSourceSP.s = IPS_OK;
+    IDSetSwitch(&TargetSourceSP, nullptr);
 }
 
 void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
@@ -609,6 +792,7 @@ void PiFinderMountBridge::handleGotoForward()
             {
                 LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
                           targetRA, targetDec);
+                setTargetSource(TARGET_SOURCE_PIFINDER);
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
                 m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
@@ -750,6 +934,7 @@ void PiFinderMountBridge::handleGotoForward()
                     {
                         LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
                                   targetRA, targetDec);
+                        setTargetSource(TARGET_SOURCE_PIFINDER);
                         m_lastForwardedRA = targetRA;
                         m_lastForwardedDec = targetDec;
                         m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
@@ -995,6 +1180,21 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // and back.
             m_correctState = CorrectState::IDLE;
 
+            // Same for Reposition Detection's own tracking (#178) - don't
+            // let a stale "watching an external slew" or "confirmation
+            // pending" state, or an outdated drift-rate baseline, survive a
+            // mode switch.
+            m_externalSlewInProgress = false;
+            m_lastConfirmedGoodTime = 0;
+            m_repositionBaselineTrusted = false;
+            if (m_repositionConfirmPending)
+            {
+                m_repositionConfirmPending = false;
+                IUResetSwitch(&RepositionConfirmSP);
+                RepositionConfirmSP.s = IPS_IDLE;
+                IDSetSwitch(&RepositionConfirmSP, nullptr);
+            }
+
             // Persist so the chosen mode actually survives a reconnect -
             // see m_connectedConfigLoaded's comment. Without this, the
             // saved config just keeps replaying whatever was last actively
@@ -1086,6 +1286,79 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             IUResetSwitch(&AbortMountSP);
             IDSetSwitch(&AbortMountSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, RepositionConfirmSP.name) == 0)
+        {
+            IUUpdateSwitch(&RepositionConfirmSP, states, names, n);
+
+            if (!m_repositionConfirmPending)
+            {
+                LOG_WARN("No reposition confirmation is currently pending.");
+                RepositionConfirmSP.s = IPS_ALERT;
+            }
+            else if (RepositionConfirmS[REPOSITION_CONFIRM_YES].s == ISS_ON)
+            {
+                double piRA, piDec;
+                if (m_client->getPiFinderRADE(piRA, piDec))
+                {
+                    m_lastForwardedRA = piRA;
+                    m_lastForwardedDec = piDec;
+                    m_correctTargetRA = piRA;
+                    m_correctTargetDec = piDec;
+                    m_forwardState = ForwardState::HOLDING;
+                    m_correctState = CorrectState::IDLE;
+                    m_lastConfirmedGoodTime = time(nullptr);
+                    setTargetSource(TARGET_SOURCE_MOUNT);
+                    LOGF_INFO("Reposition confirmed - adopted (RA %.4fh, DEC %.4f deg) as the new held target.",
+                              piRA, piDec);
+                    RepositionConfirmSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Could not read PiFinder's position to adopt - not ready.");
+                    RepositionConfirmSP.s = IPS_ALERT;
+                }
+                m_repositionConfirmPending = false;
+            }
+            else if (RepositionConfirmS[REPOSITION_CONFIRM_NO].s == ISS_ON)
+            {
+                double piRA, piDec;
+                if (m_client->getPiFinderRADE(piRA, piDec))
+                {
+                    // Same fix as the timeout path above (see its comment) -
+                    // route through the normal SLEWING state so the existing
+                    // SETTLING logic verifies real convergence, instead of
+                    // declaring success immediately.
+                    applySlewRateForDrift(angularSeparationArcmin(piRA, piDec, m_lastForwardedRA, m_lastForwardedDec));
+                    if (m_client->sendMountCoords(piRA, piDec, "SYNC") &&
+                        m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                    {
+                        if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+                        {
+                            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                            m_forwardState = ForwardState::SLEWING;
+                        }
+                        else
+                        {
+                            m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                            m_correctState = CorrectState::SLEWING;
+                        }
+                    }
+                    LOG_INFO("Reposition declined - reverting to the held target.");
+                    RepositionConfirmSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Could not read PiFinder's position to revert from - not ready.");
+                    RepositionConfirmSP.s = IPS_ALERT;
+                }
+                m_repositionConfirmPending = false;
+            }
+
+            IUResetSwitch(&RepositionConfirmSP);
+            IDSetSwitch(&RepositionConfirmSP, nullptr);
             return true;
         }
     }

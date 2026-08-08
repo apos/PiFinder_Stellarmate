@@ -264,6 +264,7 @@ def mount_bridge_status(
             "settings_host": None,
             "settings_port": None,
             "settings_correct": False,
+            "target_source": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -274,6 +275,12 @@ def mount_bridge_status(
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
+    # #178 unified GoTo button: read-only "who does the held target come
+    # from" badge (TARGET_SOURCE_PIFINDER/TARGET_SOURCE_MOUNT) - see
+    # docs/concepts/mount_bridge_reposition_detection.md.
+    target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
+    target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
+    target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
@@ -318,6 +325,7 @@ def mount_bridge_status(
         "settings_host": settings_host,
         "settings_port": settings_port,
         "settings_correct": settings_correct,
+        "target_source": target_source,
     }
 
 

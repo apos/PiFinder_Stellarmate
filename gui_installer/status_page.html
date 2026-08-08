@@ -873,6 +873,17 @@
   #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
   #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
   #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
+  /* #178: read-only "who does the held target come from" badge next to the
+     unified GoTo button - deliberately plain/quiet (no color coding, this
+     isn't a warning state, just informational) per the "no manual
+     source switch" GUI direction. */
+  .mb-target-source-badge {
+    font-size: 0.76rem;
+    color: #888;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+  }
+  .mb-target-source-badge #mb-target-source-value { color: #ccc; font-weight: 600; }
   .mb-arrow.mb-arrow-read { color: #5b9bd5; }
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
@@ -1317,15 +1328,10 @@
             </div>
           </div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Goto Mount</span><a class="help-link" href="/help.html#coupling-goto-mount" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Follow mount's goto</button>
-            </div>
-          </div>
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Goto PiFinder</span><a class="help-link" href="/help.html#coupling-goto-pifinder" target="_blank" rel="noopener" title="Help">i</a></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Forwards every push-to/goto target sent to PiFinder (from its own menu, or KStars' Goto on the 'PiFinder LX200' device) straight through to the real mount too.">Follow PiFinder's push to</button>
+              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
+              <span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span>
             </div>
           </div>
           <div id="mb-decouple-group">
@@ -3505,7 +3511,7 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }
@@ -3639,12 +3645,30 @@ function updateCouplingButtons(mode, correctionAction) {
   let active = null;
   if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
   else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
-  else if (mode === 'MODE_AUTO_CORRECT') {
-    active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
-  }
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  // MODE_AUTO_CORRECT + goto ("Follow mount's goto") no longer has a GUI
+  // button (#178, see MB_PRESET_INFO's comment) - if the driver still
+  // somehow reports it (e.g. set via the raw INDI panel), fall back to
+  // highlighting the Sync preset's row so the tile doesn't just show
+  // nothing highlighted for a real, active mode.
+  else if (mode === 'MODE_AUTO_CORRECT') active = 'wm-preset-auto-sync-btn';
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
+}
+
+// #178: read-only "who does the currently held target come from" badge -
+// only meaningful while GoTo (MODE_GOTO_FORWARD) is the active mode, hidden
+// otherwise (Verify/Alert and Auto-correct-Sync have no "held target"
+// concept at all).
+function updateTargetSourceBadge(mode, targetSource) {
+  const badge = document.getElementById('mb-target-source-badge');
+  if (mode !== 'MODE_GOTO_FORWARD' || !targetSource) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  document.getElementById('mb-target-source-value').textContent =
+    targetSource === 'mount' ? 'Mount' : 'PiFinder';
 }
 
 const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
@@ -3811,6 +3835,7 @@ function updateMbDiagram(data) {
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+  updateTargetSourceBadge(data.coupling_mode, data.target_source);
 }
 
 // The Threshold field had no way to ever learn the driver's actual current
@@ -4142,10 +4167,15 @@ setInterval(refreshMbDrift, 2000);
 // made no sense once you consider it's irrelevant for the other two
 // presets), but still just one underlying mode server-side, distinguished
 // by the action.
+// auto_correct_goto ("Follow mount's goto") removed 2026-08-08 (#178) - now
+// redundant: with Reposition Detection active, goto_forward alone already
+// reacts symmetrically to both a PiFinder push-to AND an external mount-side
+// command, so the two-preset split no longer reflects a real behavioral
+// difference, only unnecessary GUI complexity. See
+// docs/concepts/mount_bridge_reposition_detection.md.
 const MB_PRESET_INFO = {
   verify_alert: { btnId: 'wm-preset-verify-btn', mode: 'verify_alert' },
   auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
-  auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
 };
 
