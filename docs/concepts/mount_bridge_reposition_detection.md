@@ -37,7 +37,7 @@ classification exists, the two-button split becomes unnecessary - a single mode 
 | UC1 | Push-to on PiFinder (on-device menu, or KStars Goto on "PiFinder LX200") | Only reacts if `MODE_GOTO_FORWARD` is active | Always forwards to the mount and becomes the new held target |
 | UC2 | GoTo commanded on the mount side - KStars on "LX200 OnStep", SkySafari, the OnStep app, or a hand-paddle/handbox connected directly to the OnStep controller over its own TCP/WiFi link (**not** through INDI at all - confirmed live 2026-08-08, IP `192.168.0.142`) | Only reacts if `MODE_AUTO_CORRECT`+Goto is active, and only reactively once drift already exceeds Threshold | Detected as soon as the mount's own `EQUATORIAL_EOD_COORD`/`ON_COORD_SET` change without Mount Bridge itself having issued the command; once settled and confirmed by a fresh PiFinder solve, becomes the new held target |
 | UC3 | Ordinary uncorrected sidereal drift (tracking intentionally off, see `00093`) | Corrected in `MODE_GOTO_FORWARD`'s `HOLDING` state (fixed tonight - see `00093` §1) | Unchanged: Sync+re-Goto back to the held target |
-| UC4 | Manual repositioning with the mount's clutch open - **a normal, deliberate workflow on friction-clutch mounts** (User's own equipment: an old Lichtenknecker mount built exactly this way, also used occasionally on the EQ-6; historically standard practice, not an edge case), indistinguishable in the data from an unintentional disturbance (bumped, wind, eyepiece caught) - live-observed 2026-08-08 as an *unintentional* instance, ~92° real drift from an eyepiece swap | `MaxSyncDriftNP` already refuses to auto-Sync above its sanity limit (120', see `00093` §2) | **Corrected 2026-08-08** (was: auto-refuse with just a warning): since intentional clutch-repositioning is common and this can't be told apart from an accidental disturbance by data alone, surface a single, low-friction confirmation ("Adopt new position?") instead of requiring a full manual Sync workflow - accept -> treated like UC2 (new held target); decline/no response -> stays held at the old target |
+| UC4 | Manual repositioning with the mount's clutch open - **a normal, deliberate workflow on friction-clutch mounts** (User's own equipment: an old Lichtenknecker mount built exactly this way, also used occasionally on the EQ-6; historically standard practice, not an edge case), indistinguishable in the data from an unintentional disturbance (bumped, wind, eyepiece caught) - live-observed 2026-08-08 as an *unintentional* instance, ~92° real drift from an eyepiece swap | `MaxSyncDriftNP` already refuses to auto-Sync above its sanity limit (120', see `00093` §2) | **Corrected 2026-08-08** (was: auto-refuse with just a warning): since intentional clutch-repositioning is common and this can't be told apart from an accidental disturbance by data alone, surface a single, low-friction confirmation ("Adopt new position?"). **Yes** -> treated like UC2, new position becomes the held target. **No, or no response within a timeout** -> this was a slip, not intentional - actively Sync+re-Goto the mount back to the still-correct held target (a one-time, explicitly user-authorized override of `MaxSyncDriftNP`'s normal refusal, not a silent bypass of it - without this, the mount would otherwise sit at the wrong position indefinitely, since the sanity cap would keep blocking any *future* automatic correction of the same gap too) |
 
 ## 3. Architecture
 
@@ -87,7 +87,7 @@ about its own position and PiFinder's independently-solved, physically-true posi
 | 1 | `TARGET_EOD_COORD` (PiFinder) changes | - | PushTo (UC1) | Forward immediately, becomes new held target |
 | 2 | Mount's `ON_COORD_SET`/`EQUATORIAL_EOD_COORD` changes, **not** self-originated | - | External mount-side command (UC2) | Wait for settle + a fresh PiFinder solve confirms it, then becomes new held target |
 | 3 | No signal, PiFinder-vs-mount disagree | Within the physically possible sidereal drift rate (~0.25-0.3 arcmin/s, measured live) for the elapsed time | Ordinary uncorrected drift (UC3) | Sync+re-Goto back to the held target (today's `HOLDING`, unchanged) |
-| 4 | No signal, PiFinder-vs-mount disagree | Exceeds the physically possible drift rate | Likely mechanical disturbance (UC4) | Refuse to auto-Sync (`MaxSyncDriftNP` already does this) - explicitly reported as such, requires manual confirmation |
+| 4 | No signal, PiFinder-vs-mount disagree | Exceeds the physically possible drift rate | Deliberate clutch-reposition or accidental disturbance (UC4) - indistinguishable from data alone | Refuse to auto-Sync (`MaxSyncDriftNP` already does this), surface a low-friction "Adopt new position?" confirmation - Yes -> adopt; No/timeout -> actively correct back to the held target |
 
 Row 2 vs. row 4 is the crux of the whole design: both can produce an arbitrarily large, sudden
 position disagreement, but only row 2 has **evidence of an intentional command** (something told
@@ -108,7 +108,10 @@ flowchart TD
     Drift -- no --> Idle[Nothing to do - holding correctly]
     Drift -- yes --> RateCheck{Disagreement within\nphysical drift-rate bound?}
     RateCheck -- yes --> UC3[UC3: ordinary drift - Sync+re-Goto to held target]
-    RateCheck -- no --> UC4[UC4: likely mechanical disturbance - refuse auto-Sync, report, await manual confirmation]
+    RateCheck -- no --> UC4["UC4: clutch-reposition or accidental disturbance -\nrefuse auto-Sync, ask 'Adopt new position?'"]
+    UC4 --> UC4Yes{User response}
+    UC4Yes -- yes --> UC4Adopt[Adopt new position as held target]
+    UC4Yes -- no / timeout --> UC4Revert[Actively Sync+re-Goto back to the held target]
 ```
 
 ### 3.4 Building blocks: consolidating `ForwardState`/`CorrectState`
