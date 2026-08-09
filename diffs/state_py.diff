@@ -1,8 +1,6 @@
-diff --git a/python/PiFinder/state.py b/python/PiFinder/state.py
-index 3c29105d..951113f4 100644
---- a/python/PiFinder/state.py
-+++ b/python/PiFinder/state.py
-@@ -303,6 +303,17 @@ class SharedStateObj:
+--- python/PiFinder/state.py.orig
++++ python/PiFinder/state.py
+@@ -305,6 +305,17 @@
          self.__arch = None
          self.__camera_align = False
          self.__camera_type = "imx296"  # Default, will be set by camera process
@@ -17,10 +15,10 @@ index 3c29105d..951113f4 100644
 +        # detection) - distinct from debug_solve, which fakes the camera
 +        # image, not the position pipeline.
 +        self.__fake_solve_active: bool = False
-         self.__cam_raw = None
-         # Are we prepared to do alt/az math
-         # We need gps lock and datetime
-@@ -368,6 +379,18 @@ class SharedStateObj:
+         # Degrees the camera process rotates the solve/display image relative
+         # to the stored raw frame (PIL CCW). None until the camera reports.
+         self.__solve_image_rotation = None
+@@ -380,6 +391,18 @@
      def set_camera_type(self, v: str):
          self.__camera_type = v
  
