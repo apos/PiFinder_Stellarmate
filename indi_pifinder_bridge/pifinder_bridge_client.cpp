@@ -104,11 +104,21 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
 void PiFinderBridgeClient::updateProperty(INDI::Property property)
 {
     const bool fromMount = m_mountName == property.getDeviceName();
+    const bool fromPiFinder = m_piFinderName == property.getDeviceName();
 
     if (fromMount && property.isNameMatch("EQUATORIAL_EOD_COORD") && property.getState() == IPS_ALERT)
     {
         std::lock_guard<std::mutex> lock(m_mountRejectMutex);
         m_mountRejectedLastCoords = true;
+    }
+    else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
+    {
+        // Every genuine Goto request on the PiFinder device re-publishes
+        // this property (see consumePiFinderTargetPending()'s own comment
+        // in the header) - mark it pending regardless of whether the value
+        // actually changed from last time.
+        std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
+        m_piFinderTargetPending = true;
     }
 }
 
@@ -179,6 +189,14 @@ bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
     ra = m_piFinderTargetNP->at(0)->getValue();
     dec = m_piFinderTargetNP->at(1)->getValue();
     return true;
+}
+
+bool PiFinderBridgeClient::consumePiFinderTargetPending()
+{
+    std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
+    const bool wasPending = m_piFinderTargetPending;
+    m_piFinderTargetPending = false;
+    return wasPending;
 }
 
 bool PiFinderBridgeClient::isMountSlewing() const
