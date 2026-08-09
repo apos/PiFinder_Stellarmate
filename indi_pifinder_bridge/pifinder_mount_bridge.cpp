@@ -1684,11 +1684,34 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             // time that happened - a self-inflicted periodic drop that
             // looked identical to "something else keeps killing the
             // connection" from the outside.
+            // #204: Connect()/Disconnect() called as plain functions here
+            // used to bypass INDI::DefaultDevice's own post-connect
+            // bookkeeping entirely - the framework's own CONNECTION switch
+            // handler (defaultdevice.cpp's onNewValues lambda) always
+            // follows a successful Connect()/Disconnect() with
+            // setConnected()+updateProperties(), which is what actually
+            // flips isConnected() and re-defines/deletes the
+            // connected-only properties (including the ones #161's second
+            // loadConfig(true) call and TimerHit()'s own continued
+            // scheduling implicitly depend on). Skipping both left
+            // TimerHit() permanently stopped after this reconnect - found
+            // live (2026-08-10) testing #159: drift froze for good, even
+            // after reverting ActiveDeviceTP back to the original working
+            // device, only a full process restart recovered it. Now
+            // mirrors the framework's own two-branch sequence exactly.
             if (changed && isConnected())
             {
                 LOG_INFO("Active devices changed - reconnecting to apply.");
-                Disconnect();
-                Connect();
+                if (Disconnect())
+                {
+                    setConnected(false, IPS_IDLE);
+                    updateProperties();
+                }
+                if (Connect())
+                {
+                    setConnected(true);
+                    updateProperties();
+                }
             }
             return true;
         }
