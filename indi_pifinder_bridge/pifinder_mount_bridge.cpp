@@ -100,6 +100,44 @@ bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource
 // verified. See #79: Auto-correct previously corrected off a continuously
 // IMU-interpolated position with no freshness check at all, chasing a
 // target that kept moving between real solves.
+// Fetches PiFinder's own /api/orientation_status (Mount Type +
+// screen_direction/PiFinder Type, both read straight from config.json) -
+// same request/response shape convention as httpGetPiFinderSolveStatus()
+// above. Returns false on any request/parse failure.
+bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, std::string &screenDirection)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        mountType = parsed.value("mount_type", std::string());
+        screenDirection = parsed.value("screen_direction", std::string());
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
 bool isPiFinderSolveFresh(double maxAgeSeconds)
 {
     std::string solveSource;
@@ -215,6 +253,11 @@ bool PiFinderMountBridge::initProperties()
     IUFillTextVector(&MountRejectTP, MountRejectT, 1, getDeviceName(), "MOUNT_REJECT",
                        "Mount refused Goto/Sync", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    IUFillText(&PiFinderOrientationT[ORIENTATION_MOUNT_TYPE], "MOUNT_TYPE", "PiFinder's Mount Type", "");
+    IUFillText(&PiFinderOrientationT[ORIENTATION_SCREEN_DIRECTION], "SCREEN_DIRECTION", "PiFinder Type", "");
+    IUFillTextVector(&PiFinderOrientationTP, PiFinderOrientationT, 2, getDeviceName(), "PIFINDER_ORIENTATION",
+                       "PiFinder Orientation", "Main Control", IP_RO, 60, IPS_IDLE);
+
     addDebugControl();
     setDefaultPollingPeriod(2000);
 
@@ -251,6 +294,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
         defineProperty(&MountRejectTP);
+        defineProperty(&PiFinderOrientationTP);
         defineProperty(&ShadowSyncSP);
         defineProperty(&RepositionConfirmSP);
         defineProperty(&TargetSourceSP);
@@ -277,6 +321,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
         deleteProperty(MountRejectTP.name);
+        deleteProperty(PiFinderOrientationTP.name);
         deleteProperty(ShadowSyncSP.name);
         deleteProperty(RepositionConfirmSP.name);
         deleteProperty(TargetSourceSP.name);
@@ -336,6 +381,39 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
         LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
         m_lastSyncedMountType = mountType;
     }
+}
+
+void PiFinderMountBridge::syncOrientationStatus()
+{
+    std::string piFinderMountType, screenDirection;
+    const bool gotOrientation =
+        httpGetPiFinderOrientation("http://127.0.0.1/api/orientation_status", piFinderMountType, screenDirection) ||
+        httpGetPiFinderOrientation("http://127.0.0.1:8080/api/orientation_status", piFinderMountType, screenDirection);
+    if (!gotOrientation)
+        return; // PiFinder unreachable this tick - leave the last-known values/state showing rather than blank them
+
+    std::string indiMountType;
+    const bool haveIndiMountType = m_client && m_client->getMountType(indiMountType);
+
+    // Both sides already use the exact same two-value vocabulary ("EQ"/
+    // "Alt/Az") - see /api/set_mount_type's accepted values and
+    // getMountType()'s own mapping - so this is a plain string compare, no
+    // separate normalization needed.
+    const bool mountTypeMatches = haveIndiMountType && indiMountType == piFinderMountType;
+
+    const std::string key = piFinderMountType + "|" + screenDirection + "|" + (mountTypeMatches ? "1" : "0") +
+                             "|" + (haveIndiMountType ? "1" : "0");
+    if (key == m_lastOrientationStatusKey)
+        return; // nothing changed since last publish - avoid redundant INDI traffic every tick
+
+    m_lastOrientationStatusKey = key;
+    IUSaveText(&PiFinderOrientationT[ORIENTATION_MOUNT_TYPE], piFinderMountType.c_str());
+    IUSaveText(&PiFinderOrientationT[ORIENTATION_SCREEN_DIRECTION], screenDirection.c_str());
+    // No INDI mount type known yet (not connected, or a driver that doesn't
+    // report it) - IPS_IDLE rather than a false-positive IPS_ALERT, since
+    // there's nothing to actually disagree with yet.
+    PiFinderOrientationTP.s = !haveIndiMountType ? IPS_IDLE : (mountTypeMatches ? IPS_OK : IPS_ALERT);
+    IDSetText(&PiFinderOrientationTP, nullptr);
 }
 
 bool PiFinderMountBridge::isShadowDeviceSafe() const
@@ -631,6 +709,7 @@ void PiFinderMountBridge::TimerHit()
         return;
 
     syncMountTypeToPiFinder();
+    syncOrientationStatus();
     autoArmShadowSyncIfDevicePresent();
     handleShadowSync();
 

@@ -1,8 +1,6 @@
-diff --git a/python/PiFinder/server.py b/python/PiFinder/server.py
-index 431af27f..39b17b28 100644
---- a/python/PiFinder/server.py
-+++ b/python/PiFinder/server.py
-@@ -6,6 +6,7 @@ import uuid
+--- python/PiFinder/server.py.orig
++++ python/PiFinder/server.py
+@@ -6,6 +6,7 @@
  import os
  import argparse
  import sys
@@ -10,7 +8,7 @@ index 431af27f..39b17b28 100644
  import multiprocessing
  from datetime import timezone
  
-@@ -109,12 +110,17 @@ class Server:
+@@ -109,12 +110,17 @@
          gps_queue=None,
          shared_state=None,
          is_debug=False,
@@ -28,7 +26,7 @@ index 431af27f..39b17b28 100644
          self.ki = KeyboardInterface()
          # gps info
          self.lat = None
-@@ -253,7 +259,9 @@ class Server:
+@@ -253,7 +259,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
                  wifi_mode=self.network.wifi_mode(),
@@ -39,7 +37,7 @@ index 431af27f..39b17b28 100644
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -264,6 +272,28 @@ class Server:
+@@ -264,6 +272,28 @@
                  dec_text=dec_text,
              )
  
@@ -68,7 +66,7 @@ index 431af27f..39b17b28 100644
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -272,7 +302,7 @@ class Server:
+@@ -272,7 +302,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -77,7 +75,7 @@ index 431af27f..39b17b28 100644
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -538,6 +568,27 @@ class Server:
+@@ -538,6 +568,48 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -102,10 +100,31 @@ index 431af27f..39b17b28 100644
 +            self.ui_queue.put("reload_config")
 +            return jsonify({"ok": True, "mount_type": mount_type})
 +
++        @app.route("/api/orientation_status")
++        def api_orientation_status():
++            # Read-only counterpart to /api/set_mount_type above - lets the
++            # Mount Bridge INDI driver (StellarMate integration) show both of
++            # PiFinder's own IMU-dead-reckoning-relevant settings (Mount Type
++            # and PiFinder Type/screen_direction, Settings -> Advanced ->
++            # PiFinder Type) as status badges, without needing to guess them
++            # from config.json directly. Same loopback-only restriction as
++            # /api/set_mount_type - machine-to-machine, not a browser session.
++            if request.remote_addr not in ("127.0.0.1", "::1"):
++                return jsonify({"error": "forbidden"}), 403
++
++            cfg = config.Config()
++            cfg.load_config()
++            return jsonify(
++                {
++                    "mount_type": cfg.get_option("mount_type"),
++                    "screen_direction": cfg.get_option("screen_direction"),
++                }
++            )
++
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -553,7 +604,7 @@ class Server:
+@@ -553,7 +625,7 @@
  
              if new_passworda == new_passwordb:
                  if sys_utils.change_password(
@@ -114,7 +133,7 @@ index 431af27f..39b17b28 100644
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
-@@ -1230,6 +1281,15 @@ class Server:
+@@ -1230,6 +1302,15 @@
          self.app = app
  
      def run(self):
@@ -130,7 +149,7 @@ index 431af27f..39b17b28 100644
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
-@@ -1265,10 +1325,23 @@ class Server:
+@@ -1265,10 +1346,23 @@
  
  
  def run_server(
