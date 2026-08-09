@@ -14,6 +14,7 @@
 #include "baseclient.h"
 #include "basedevice.h"
 
+#include <mutex>
 #include <string>
 
 class PiFinderBridgeClient : public INDI::BaseClient
@@ -49,6 +50,21 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
+        // True (once) if, since the last sendMountCoords() call, the mount's
+        // own EQUATORIAL_EOD_COORD reported IPS_ALERT - every INDI telescope
+        // driver's native way of saying it refused or could not complete a
+        // Goto/Sync (e.g. an elevation or cable-wrap/axis-limit rejection).
+        // Consumed on read (clears itself once returned true) so callers
+        // that poll on a timer don't get stuck re-handling the same event
+        // forever - also cleared by the next sendMountCoords() call.
+        // outMessage receives the driver's own log text if one was seen.
+        // Thread-safe: the underlying INDI::BaseClient runs its own incoming-
+        // traffic thread (per its own doc comment on connectServer()), so
+        // updateProperty()/newMessage() - which set the state this reads -
+        // fire on a different thread than the driver's TimerHit(), which
+        // calls this. See m_mountRejectMutex.
+        bool mountRejectedLastCoords(std::string &outMessage);
+
         // Reads the mount's own TELESCOPE_MOUNT_TYPE switch (every INDI::Telescope
         // has it: MOUNT_ALTAZ / MOUNT_EQ_FORK / MOUNT_EQ_GEM) and maps it to
         // PiFinder's own "Alt/Az" / "EQ" setting values. Returns false if the
@@ -74,7 +90,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
     protected:
         void newDevice(INDI::BaseDevice dp) override;
         void newProperty(INDI::Property property) override;
+        void updateProperty(INDI::Property property) override;
         void removeProperty(INDI::Property property) override;
+        void newMessage(INDI::BaseDevice baseDevice, int messageID) override;
 
     private:
         std::string m_piFinderName;
@@ -89,6 +107,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
         INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;
+
+        // Written from updateProperty()/newMessage() (INDI::BaseClient's own
+        // I/O thread), read/written from sendMountCoords()/
+        // mountRejectedLastCoords() (the driver's TimerHit() thread) - needs
+        // real synchronization, not just "worked in testing so far".
+        mutable std::mutex m_mountRejectMutex;
+        bool m_mountRejectedLastCoords = false;
+        std::string m_mountRejectMessage;
 
         std::string m_shadowName;
         bool m_shadowOnline = false;

@@ -1,5 +1,7 @@
 #include "pifinder_simulator.h"
 
+#include <cstring>
+
 static std::unique_ptr<PiFinderSimulator> pifinder_simulator(new PiFinderSimulator());
 
 PiFinderSimulator::PiFinderSimulator()
@@ -24,6 +26,22 @@ bool PiFinderSimulator::initProperties()
     SetParkDataType(PARK_NONE);
 
     addAuxControls();
+
+    PushToTargetNP[0].fill("RA", "RA (h)", "%.6f", 0, 24, 0, 0);
+    PushToTargetNP[1].fill("DEC", "DEC (deg)", "%.6f", -90, 90, 0, 0);
+    PushToTargetNP.fill(getDeviceName(), "SIMULATE_PUSH_TO", "Simulate push-to", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+
+    return true;
+}
+
+bool PiFinderSimulator::updateProperties()
+{
+    INDI::Telescope::updateProperties();
+
+    if (isConnected())
+        defineProperty(PushToTargetNP);
+    else
+        deleteProperty(PushToTargetNP);
 
     return true;
 }
@@ -72,4 +90,29 @@ bool PiFinderSimulator::Sync(double ra, double dec)
     LOGF_INFO("Sync: RA %.4fh, DEC %.4f deg.", ra, dec);
     NewRaDec(m_currentRA, m_currentDEC);
     return true;
+}
+
+bool PiFinderSimulator::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
+{
+    if (dev != nullptr && !strcmp(dev, getDeviceName()) && !strcmp(name, PushToTargetNP.getName()))
+    {
+        PushToTargetNP.update(values, names, n);
+        PushToTargetNP.setState(IPS_OK);
+        PushToTargetNP.apply();
+
+        // Deliberately only touches TargetNP (TARGET_EOD_COORD), not
+        // m_currentRA/DEC - see the header comment on PushToTargetNP. A real
+        // push-to doesn't change PiFinder's own reported position either.
+        TargetNP[0].setValue(PushToTargetNP[0].getValue());
+        TargetNP[1].setValue(PushToTargetNP[1].getValue());
+        TargetNP.setState(IPS_OK);
+        TargetNP.apply();
+
+        LOGF_INFO("Simulated PiFinder push-to: RA %.4fh, DEC %.4f deg (TARGET_EOD_COORD updated, "
+                  "current position left unchanged).",
+                  PushToTargetNP[0].getValue(), PushToTargetNP[1].getValue());
+        return true;
+    }
+
+    return INDI::Telescope::ISNewNumber(dev, name, values, names, n);
 }

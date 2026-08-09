@@ -241,6 +241,16 @@ def mount_bridge_status(
         default) - a quick "is Mount Bridge pointed at the right things"
         sanity check, surfaced in the tile per user request rather than
         only being visible via the INDI Control Panel.
+      - "mount_web_ip": str or None - the mount device's own DEVICE_ADDRESS.
+        ADDRESS, i.e. the IP the mount driver itself connects to, but only
+        when CONNECTION_MODE says that connection is CONNECTION_TCP (a
+        serial/USB-connected mount has no IP at all here). This is the same
+        IP the mount's own onboard web UI listens on (OnStep's WiFi module
+        serves both its LX200 command port and its web interface from the
+        same address) - added 2026-08-09 for the Control Center's "open all
+        the important links at once" button, no separate INDI round-trip
+        needed since mt_props below already has the mount's full property
+        set from the connection-state lookup just above it.
     All fields besides "running" are None (or False for settings_correct)
     if the device isn't running/known. `device_timeout` is shorter than
     `timeout` for the two extra per-device lookups (kept modest since this
@@ -264,6 +274,10 @@ def mount_bridge_status(
             "settings_host": None,
             "settings_port": None,
             "settings_correct": False,
+            "target_source": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
+            "mount_web_ip": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -274,6 +288,18 @@ def mount_bridge_status(
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
+    # #178 unified GoTo button: read-only "who does the held target come
+    # from" badge (TARGET_SOURCE_PIFINDER/TARGET_SOURCE_MOUNT) - see
+    # docs/concepts/mount_bridge_reposition_detection.md.
+    target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
+    target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
+    target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
+    # Mount refused a Goto/Sync outright (elevation/cable-wrap/axis limit) -
+    # distinct from ordinary drift, see MOUNT_REJECT's own comment in
+    # pifinder_mount_bridge.cpp. IPS_ALERT means still active.
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
@@ -298,9 +324,15 @@ def mount_bridge_status(
         pifinder_connected = _connection_state(pf_props.get(active_pifinder))
 
     mount_connected = None
+    mount_web_ip = None
     if active_mount:
         mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
-        mount_connected = _connection_state(mt_props.get(active_mount))
+        mt_device_props = mt_props.get(active_mount)
+        mount_connected = _connection_state(mt_device_props)
+        if mt_device_props:
+            mount_connection_mode = mt_device_props.get("CONNECTION_MODE", {}).get("elements", {})
+            if mount_connection_mode.get("CONNECTION_TCP") == "On":
+                mount_web_ip = mt_device_props.get("DEVICE_ADDRESS", {}).get("elements", {}).get("ADDRESS") or None
 
     return {
         "running": True,
@@ -318,6 +350,10 @@ def mount_bridge_status(
         "settings_host": settings_host,
         "settings_port": settings_port,
         "settings_correct": settings_correct,
+        "target_source": target_source,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
+        "mount_web_ip": mount_web_ip,
     }
 
 
@@ -344,7 +380,14 @@ def mount_bridge_drift(
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
-        return {"running": False, "coupling_mode": None, "correction_action": None, "drift_arcmin": None}
+        return {
+            "running": False,
+            "coupling_mode": None,
+            "correction_action": None,
+            "drift_arcmin": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
+        }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
     drift_status_prop = device_props.get("DRIFT_STATUS", {})
@@ -354,11 +397,16 @@ def mount_bridge_drift(
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
 
     return {
         "running": True,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
         # DRIFT_STATUS's own INDI state (Ok/Busy/Alert/Idle) - in
         # MODE_AUTO_CORRECT specifically, the driver sets Busy while
         # actually sending a correction vs. Alert when drift exceeds the

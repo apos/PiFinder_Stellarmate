@@ -101,6 +101,34 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_shadowOnCoordSetSP = property.getSwitch();
 }
 
+void PiFinderBridgeClient::updateProperty(INDI::Property property)
+{
+    const bool fromMount = m_mountName == property.getDeviceName();
+
+    if (fromMount && property.isNameMatch("EQUATORIAL_EOD_COORD") && property.getState() == IPS_ALERT)
+    {
+        std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+        m_mountRejectedLastCoords = true;
+    }
+}
+
+void PiFinderBridgeClient::newMessage(INDI::BaseDevice baseDevice, int messageID)
+{
+    if (m_mountName != baseDevice.getDeviceName())
+        return;
+
+    // messageQueue() returns "<ISO-8601 timestamp>: <text>" - strip the
+    // timestamp prefix for GUI display, INDI clients already show one of
+    // their own alongside it.
+    std::string msg = baseDevice.messageQueue(messageID);
+    const auto sep = msg.find(": ");
+    if (sep != std::string::npos)
+        msg = msg.substr(sep + 2);
+
+    std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+    m_mountRejectMessage = msg;
+}
+
 void PiFinderBridgeClient::removeProperty(INDI::Property property)
 {
     if (property.getNumber() == m_piFinderEqNP)
@@ -207,6 +235,12 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     if (coordSetSwitch == nullptr)
         return false;
 
+    {
+        std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+        m_mountRejectedLastCoords = false;
+        m_mountRejectMessage.clear();
+    }
+
     m_mountOnCoordSetSP->reset();
     coordSetSwitch->setState(ISS_ON);
     sendNewSwitch(m_mountOnCoordSetSP);
@@ -216,6 +250,18 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     m_mountEqNP->setState(IPS_BUSY);
     sendNewNumber(m_mountEqNP);
 
+    return true;
+}
+
+bool PiFinderBridgeClient::mountRejectedLastCoords(std::string &outMessage)
+{
+    std::lock_guard<std::mutex> lock(m_mountRejectMutex);
+
+    if (!m_mountRejectedLastCoords)
+        return false;
+
+    outMessage = m_mountRejectMessage;
+    m_mountRejectedLastCoords = false;
     return true;
 }
 

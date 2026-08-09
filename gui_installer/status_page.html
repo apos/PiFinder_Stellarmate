@@ -16,20 +16,26 @@
   @media (max-width: 767px) {
     body { padding: 0.8rem; }
   }
+  /* Grid layout (2026-08-09, direct feedback): PiFinder + Mode/Test/Power
+     stack in one column, Mount Bridge stands alone in the other (it's the
+     tile that most benefits from extra vertical room - the diagram/status/
+     coupling controls all stack inside it), Install/Update+Terminal always
+     spans the full width at the very bottom regardless of column count.
+     Named areas keep this independent of DOM order - .right-col (wrapping
+     #install-tile) stays exactly where it already was in the markup. */
   .page {
-    display: flex;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "pifinder    mountbridge"
+      "mode        mountbridge"
+      "install     install";
     gap: 1.5rem;
   }
-  .left-col {
-    width: 40%;
-    min-width: 280px;
-    box-sizing: border-box;
-  }
-  .right-col {
-    width: 60%;
-    box-sizing: border-box;
-  }
+  #pifinder-glance-tile { grid-area: pifinder; }
+  #mount-bridge-tile { grid-area: mountbridge; }
+  #mode-tile { grid-area: mode; }
+  .right-col { grid-area: install; box-sizing: border-box; }
   /* Minimal responsive layout. Phones: always single column, both
      orientations - a phone's long side rarely exceeds ~900px even in
      landscape, well under the tablet range this project cares about, so
@@ -38,17 +44,24 @@
      the default below, needs no extra rule) - except large tablets
      (>=1366px, e.g. 12.9" iPad Pro), which behave like a PC regardless of
      orientation since the portrait-collapse rule is capped below that
-     width. PCs: the existing 40%/60% split already scales with the actual
-     window width with no extra rule needed - narrowing a desktop window
-     below 768px falls into the same phone rule above, so "depends on the
-     window" falls out of these two rules rather than needing a third. */
+     width. PCs: the existing two-column grid already scales with the
+     actual window width with no extra rule needed - narrowing a desktop
+     window below 768px falls into the same phone rule above, so "depends
+     on the window" falls out of these two rules rather than needing a
+     third. */
   @media (max-width: 767px) {
-    .page { flex-direction: column; gap: 1rem; }
-    .left-col, .right-col { width: 100%; min-width: 0; }
+    .page {
+      grid-template-columns: 1fr;
+      grid-template-areas: "pifinder" "mountbridge" "mode" "install";
+      gap: 1rem;
+    }
   }
   @media (min-width: 768px) and (max-width: 1365px) and (orientation: portrait) {
-    .page { flex-direction: column; gap: 1rem; }
-    .left-col, .right-col { width: 100%; min-width: 0; }
+    .page {
+      grid-template-columns: 1fr;
+      grid-template-areas: "pifinder" "mountbridge" "mode" "install";
+      gap: 1rem;
+    }
   }
   h1 { font-size: 1.3rem; margin: 0; }
   #page-title-row {
@@ -108,8 +121,30 @@
     image-rendering: pixelated;
     border-radius: 4px;
     background: #000;
-    flex-shrink: 0;
   }
+  #pifinder-screen-wrap { position: relative; flex-shrink: 0; }
+  /* Found live (2026-08-09, #187): the static splash fallback
+     (pifinder_welcome.png, red-channel-only to match the real OLED) is dark
+     enough that right after a real Pi reboot - before PiFinder's own web
+     server is even reachable to probe, can take up to a minute or more
+     competing with everything else the system starts at once - the tile
+     just looked dead, with nothing telling the user PiFinder was even
+     starting. This overlay makes that wait explicit regardless of how the
+     underlying splash image reads. Shown/hidden in
+     updatePiFinderStatusAndWizardLink(). */
+  #pifinder-screen-waiting {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.55);
+    color: #ccc;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #pifinder-screen-waiting.pifinder-screen-waiting-visible { display: flex; }
   #progress-wrap { margin-bottom: 0.8rem; }
   #progress-track {
     background: #262626;
@@ -189,6 +224,15 @@
     vertical-align: middle;
   }
   .help-link:hover { color: #ccc; border-color: #999; }
+  /* Pinned to the OLED thumbnail's own corner (2026-08-09, direct feedback)
+     rather than sitting inline with the tile heading like the other
+     .help-link uses - this one specifically documents the OLED screen
+     itself, so it stays visually attached to it. #pifinder-screen-wrap is
+     already position:relative (see #pifinder-screen-waiting above it). */
+  .pifinder-screen-help {
+    position: absolute; top: 3px; right: 3px;
+    background: rgba(0, 0, 0, 0.55);
+  }
   .refresh-link {
     display: inline-block;
     margin-left: 0.4rem;
@@ -320,7 +364,6 @@
     min-width: 180px;
     justify-content: center;
   }
-  #pifinder-status-line { font-weight: bold; }
   #pf-keypad-style-switch { display: flex; flex-shrink: 0; }
   .pf-keypad-style-btn {
     background: #2a2a2a;
@@ -338,7 +381,7 @@
   #pf-keypad-a {
     display: flex;
     align-items: center;
-    gap: 2.6rem;
+    gap: 1rem;
   }
   .pf-key {
     background: #232323;
@@ -358,6 +401,16 @@
     transform: scale(0.92);
     filter: brightness(1.4);
   }
+  /* Distinct from the plain press-flash above (2026-08-09, direct feedback:
+     the D-pad "just doesn't work") - pfSendKey() used to fail completely
+     silently (PiFinder unreachable, wrong ?port=, login rejected, etc) while
+     still flashing the ordinary "pressed" look, so a press that did nothing
+     looked identical to one that worked. This red flash only fires on an
+     actual failure, held longer than the press-flash so it's clearly seen. */
+  .pf-key.pf-key-error, .pf-key-long-square.pf-key-error {
+    background: #5c1f1f;
+    border-color: #e53935;
+  }
   #pf-keypad-a .pf-key { height: 46px; }
   .pf-arrow { width: 28px; height: 28px; fill: currentColor; }
   #pf-keypad-a .pf-arrow { width: 23px; height: 23px; }
@@ -375,9 +428,9 @@
     border: 1px solid #3a3a3a;
     border-radius: 8px;
     color: #ccc;
-    width: 95px;
-    height: 95px;
-    font-size: 0.8rem;
+    width: 47px;
+    height: 47px;
+    font-size: 0.6rem;
     cursor: pointer;
     flex-shrink: 0;
     transition: transform 0.08s ease, filter 0.08s ease;
@@ -433,6 +486,26 @@
   .status-dot.dot-unconfirmed { background: #f5a623; border-color: #f5a623; animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-section { margin-top: 0.4rem; }
   .ql-label { color: #888; margin-right: 0.4rem; }
+  /* Plain-text "ip:port  ip:port  ip:port" rows read as a wall of digits and
+     wrap unpredictably (2026-08-09, direct feedback: "als Button wie oben in
+     der PiFinder Kachel") - same small-button look already used for Quick
+     keys layout C's per-IP buttons (.pf-keypad-c-btn), just sized for this
+     denser list. Full "ip:port" only in the tooltip; the button itself shows
+     just the last two octets, same reasoning as lastTwoOctets()'s own
+     comment (first two rarely differ on one LAN). */
+  .ql-ip-btn {
+    display: inline-block;
+    background: #232323;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 0.74rem;
+    padding: 0.15rem 0.5rem;
+    text-decoration: none;
+  }
+  .ql-ip-btn:hover { border-color: #777; color: #fff; }
+  .ql-section a { margin-right: 0.6rem; }
+  .ql-section a:last-child { margin-right: 0; }
   #ql-links a {
     color: #7ec8ff;
     text-decoration: none;
@@ -495,7 +568,6 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
-    margin-top: 1rem;
   }
   #mode-status-line { font-weight: bold; margin-bottom: 0.6rem; }
   #mode-toggle-btn {
@@ -529,6 +601,25 @@
   .ql-small-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .ql-small-btn:not(:disabled):hover { border-color: #777; color: #fff; }
   .ql-small-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* Browsers only let one window.open() through per click by default and
+     silently block the rest (2026-08-09, found live: "Open all links" only
+     ever opened the first tab, PiFinder Remote) - openAllQuickLinks() below
+     now checks each call's return value and surfaces this instead of
+     leaving the missing tabs unexplained. */
+  #ql-open-all-note { color: #f5a623; font-size: 0.72rem; margin-left: 0.5rem; }
+  /* Shared sizing for Sync/Stop (2026-08-09, direct feedback: these two are
+     frequent, important, mode-independent actions and need the same visual
+     weight as the coupling presets) - a self-contained base rather than
+     reusing .mb-coupling-btn directly, so .mb-abort-btn's red doesn't have
+     to fight a later cascade rule for who wins the background color. */
+  .mb-big-action-btn {
+    flex: 1; min-width: 8rem; min-height: 2.7rem; border-radius: 6px;
+    padding: 0.65rem 0.5rem; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; text-align: center; border: 1px solid #444;
+  }
+  #mb-big-actions-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .mb-big-sync-btn { background: #1c2a1c; color: #7fc97f; border-color: #3a5a3a; }
+  .mb-big-sync-btn:hover { background: #24371f; border-color: #4caf50; color: #97dc97; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -710,7 +801,6 @@
     border-radius: 8px;
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
-    margin-top: 1rem;
     position: relative;
   }
   #pfhost-ip { color: #4caf50; font-weight: bold; user-select: all; }
@@ -737,15 +827,18 @@
   .mb-role-card-title { font-weight: bold; color: #ddd; font-size: 0.8rem; }
   .mb-role-card.mb-role-active .mb-role-card-title { color: #4caf50; }
   .mb-role-card-sub { color: #999; font-size: 0.72rem; margin-top: 2px; line-height: 1.35; }
+  /* Column, not row (2026-08-09, direct feedback: the blue action-status
+     banner used to sit inline next to the status line via space-between,
+     which shoved/reflowed the status line sideways whenever the banner
+     appeared. Stacking it on its own line below keeps the status line's
+     position fixed regardless of whether an action is in flight. */
   #mb-status-row {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.6rem;
+    flex-direction: column;
+    gap: 0.3rem;
     margin-bottom: 0.6rem;
   }
   #mb-status-line {
-    font-weight: bold;
     white-space: nowrap;
   }
   #mount-bridge-unconfirmed {
@@ -774,8 +867,6 @@
     border-radius: 6px;
     padding: 0.4rem 0.7rem;
     font-size: 0.8rem;
-    flex-shrink: 0;
-    max-width: 60%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -873,34 +964,62 @@
   #mb-drift-badge.mb-drift-green { color: #4caf50; border-color: #4caf50; }
   #mb-drift-badge.mb-drift-yellow { color: #f5a623; border-color: #f5a623; }
   #mb-drift-badge.mb-drift-red { color: #e53935; border-color: #e53935; }
+  /* #178: read-only "who does the held target come from" badge next to the
+     unified GoTo button - deliberately plain/quiet (no color coding, this
+     isn't a warning state, just informational) per the "no manual
+     source switch" GUI direction. */
+  .mb-target-source-badge {
+    font-size: 0.76rem;
+    color: #888;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+  }
+  .mb-target-source-badge #mb-target-source-value { color: #ccc; font-weight: 600; }
   .mb-arrow.mb-arrow-read { color: #5b9bd5; }
   .mb-arrow.mb-arrow-write { color: #f5a623; font-weight: bold; }
   .mb-arrow.mb-arrow-goto { color: #4caf50; font-weight: bold; }
-  #mb-mode-caption-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
-  #mb-mode-caption { color: #888; font-size: 0.76rem; }
-  /* Its own invisible .group-label spacer vertically offsets the button
-     past the label height Visual/GoTo have above their own buttons, so it
-     lines up with the actual button row instead of the heading row above
-     it. The button itself is flex:1 so it fills the stretched column
-     height exactly like .mb-coupling-group-buttons' buttons do - same
-     row-wide stretch as #mb-role-cards, min-height is just a floor.
-     margin-left:auto pins it to the far right on its own row once the
-     coupling groups wrap - falls back to sitting right after the last
-     group when there's no room left to push it further. */
-  #mb-decouple-group { flex: 0 0 auto; display: flex; flex-direction: column; margin-left: auto; }
+  /* Fixed-height row, deliberately short caption text (2026-08-09, direct
+     feedback: the previous long, variable-length sentence directly in this
+     row reflowed the whole page every time drift/mode changed - "das macht
+     alles sehr unruhig"). Dot+short-label follows the same ampel convention
+     every other status line on this page already uses (see basic-memory
+     00017) - no bespoke badge/icon. The full explanatory sentence moves to
+     #mb-mode-details, an ordinary collapsible section (opt-in, touch-
+     friendly, doesn't reflow anything unless the user actually opens it). */
+  #mb-mode-caption-row { display: flex; align-items: center; gap: 0.4rem; height: 1.3rem; margin-bottom: 0.6rem; }
+  /* Dot+text share ONE flex item on purpose (2026-08-09, direct feedback:
+     dot/text baseline mismatch) - as two separate flex items, align-items:
+     center centers each by its own box height, which does not match the
+     dot's vertical-align:middle look used everywhere else on this page
+     (#pifinder-status-line, #mb-status-line, etc). Keeping them in a single
+     non-flex inline wrapper lets vertical-align do the same job here too. */
+  #mb-mode-caption-dot-text { min-width: 0; overflow: hidden; }
+  #mb-mode-caption { color: #ccc; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mb-mode-details-toggle { color: #777; font-size: 0.72rem; cursor: pointer; margin-left: auto; flex: none; white-space: nowrap; }
+  #mb-mode-details-toggle:hover { color: #ccc; }
+  #mb-mode-details { color: #999; font-size: 0.76rem; line-height: 1.4; margin: -0.2rem 0 0.6rem 0; }
+  /* Small inline toggle appended to #mb-status-line (2026-08-09, direct
+     feedback - see updateMountRejectWarning()'s own comment for why this
+     replaced the old always-reflowing standalone warning row). Same danger
+     color as .mb-abort-btn, but text-only/no background - it's a small
+     addition to an existing line, not its own alert box. */
+  #mb-reject-warning-toggle { margin-left: 0.6rem; color: #ff8a80; cursor: pointer; white-space: nowrap; }
+  #mb-reject-warning-toggle:hover { color: #ffb3ab; }
+  #mb-reject-warning-details {
+    margin: 0.4rem 0 0.6rem 0; padding: 0.4rem 0.6rem; border-radius: 6px;
+    background: #3a1414; color: #ff8a80; border: 1px solid #e53935;
+    font-size: 0.8rem;
+  }
+  /* Elongated pill (2026-08-09, direct feedback) - moved out of the
+     coupling-groups row into the Threshold row, next to the other
+     mode-independent one-shot actions above. */
   #mb-decouple-btn {
-    flex: 1;
-    min-height: 2.7rem;
-    width: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
+    border-radius: 999px;
+    padding: 0.3rem 1rem;
     background: #232323;
     border: 1px solid #3a3a3a;
     color: #ccc;
-    font-size: 1rem;
-    line-height: 1;
+    font-size: 0.78rem;
     cursor: pointer;
   }
   #mb-decouple-btn:hover { background: #2a2a2a; color: #fff; }
@@ -1118,7 +1237,6 @@
     margin: 0.3rem 0 0.8rem;
     font-size: 0.85rem;
   }
-  #mb-role-line .role-name { font-weight: bold; }
   #mb-role-line .role-detail { color: #999; }
   #mb-role-line .role-warn { color: #e0a030; }
 </style>
@@ -1146,7 +1264,6 @@
 </div>
 
 <div class="page">
-  <div class="left-col">
     <div id="pifinder-glance-tile">
       <div class="tile-heading-row" style="cursor:default;">
         <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
@@ -1157,7 +1274,11 @@
         </div>
       </div>
       <div id="pifinder-glance-row">
-        <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+        <div id="pifinder-screen-wrap">
+          <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+          <div id="pifinder-screen-waiting">Waiting for<br>PiFinder&hellip;</div>
+          <a class="help-link pifinder-screen-help" href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener" title="PiFinder User Guide">i</a>
+        </div>
         <!-- Quick keys: same LEFT/UP/DOWN/RIGHT/SQUARE(+LNG_ Long-combo) codes
              PiFinder's own remote.html sends to /key_callback, proxied
              through this server's /api/pifinder_key (browser can't reach
@@ -1250,18 +1371,16 @@
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
-      </div>
-    <div id="mount-bridge-tile">
-      <!-- Current status first: connection diagram, Coupling, Threshold -
-           the "operate it" workflow, always visible. The one-time "set it
-           up" rows (Profile/Drivers/Mount/Connect) plus Ekos status, bridge
-           settings, and the log collapse behind #mb-details-toggle - see
-           its own CSS comment. -->
-      <div class="tile-heading-row" onclick="toggleTileBody('mount-bridge-body', 'mount-bridge-tile-chevron')">
-        <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">INDI Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
-        <span class="tile-chevron" id="mount-bridge-tile-chevron">&#9650;</span>
-      </div>
-      <div id="mount-bridge-body">
+      <!-- Mount Bridge diagram/status moved here (2026-08-09, direct
+           feedback: "das ist ja auch eine Infogruppe von Icons... gehören
+           direkt unter die Cam, Solve... Gruppe") - both are pure info/
+           status displays, unlike the Mount Bridge tile's own remaining
+           content (Coupling presets, Sync/Stop, Threshold, Role), which is
+           all settings/actions, not status. IDs/onclick handlers unchanged,
+           only their position moved - see updateProfileRoleLine() for the
+           "PiFinder host" role hiding this whole group too. -->
+      <div class="hgroup-divider"></div>
+      <div class="group-label">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -1295,12 +1414,27 @@
         </div>
       </div>
       <div id="mb-mode-caption-row">
-        <span id="mb-mode-caption">Not coupled yet</span>
+        <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
+        <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
       </div>
+      <div id="mb-mode-details" style="display:none;"></div>
       <div id="mb-status-row">
-        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span></div>
+        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
         <div id="mb-action-status"></div>
       </div>
+      <div id="mb-reject-warning-details" style="display:none;"><span id="mb-reject-warning-text"></span></div>
+      </div>
+    <div id="mount-bridge-tile">
+      <!-- Current status first: connection diagram, Coupling, Threshold -
+           the "operate it" workflow, always visible. The one-time "set it
+           up" rows (Profile/Drivers/Mount/Connect) plus Ekos status, bridge
+           settings, and the log collapse behind #mb-details-toggle - see
+           its own CSS comment. -->
+      <div class="tile-heading-row" onclick="toggleTileBody('mount-bridge-body', 'mount-bridge-tile-chevron')">
+        <h3 class="tile-heading" title="Couples PiFinder's solved position with your mount via the Mount Bridge INDI driver - connect the pieces, then pick a coupling mode.">INDI Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
+        <span class="tile-chevron" id="mount-bridge-tile-chevron">&#9650;</span>
+      </div>
+      <div id="mount-bridge-body">
       <div class="hgroup-divider"></div>
       <!-- Everything from coupling presets to manual sync is meaningless in
            the "PiFinder host" role (no Mount Bridge in the profile) - this
@@ -1317,35 +1451,30 @@
             </div>
           </div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Goto Mount</span><a class="help-link" href="/help.html#coupling-goto-mount" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
             <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_goto')" disabled title="Corrects by slewing the mount to PiFinder's solved position once drift exceeds the threshold - actually moves the mount, needs a Goto-capable mount.">Follow mount's goto</button>
+              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
             </div>
-          </div>
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Goto PiFinder</span><a class="help-link" href="/help.html#coupling-goto-pifinder" target="_blank" rel="noopener" title="Help">i</a></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Forwards every push-to/goto target sent to PiFinder (from its own menu, or KStars' Goto on the 'PiFinder LX200' device) straight through to the real mount too.">Follow PiFinder's push to</button>
-            </div>
-          </div>
-          <div id="mb-decouple-group">
-            <div class="group-label" style="visibility:hidden;">&nbsp;</div>
-            <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">&times;</button>
           </div>
         </div>
       </div>
       <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
+      <!-- Big, equal-weight action row (2026-08-09, direct feedback): Sync
+           and Stop are frequent, important, mode-independent actions - they
+           don't belong squeezed in as small text-labelled buttons next to
+           Threshold, they need the same visual weight as the coupling
+           presets above. -->
+      <div class="mb-row" id="mb-big-actions-row">
+        <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
+        <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
+      </div>
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
           <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
         </span>
         <span id="mb-threshold-manual-sep"></span>
-        <span title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">
-          <span class="mb-row-label">Manual:</span>
-          <button id="mb-manual-sync-btn" class="ql-small-btn" onclick="triggerManualSync()">Sync mount from PiFinder</button>
-        </span>
-        <button id="mb-abort-btn" class="ql-small-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
+        <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -1534,22 +1663,24 @@ sudo systemctl start pifinder</pre>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('ql-links', 'ql-links-chevron')">
-          <span>Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span>Links<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a><button class="ql-small-btn" onclick="event.stopPropagation(); openAllQuickLinks();" title="Opens PiFinder Remote, INDI Web Manager, StellarMate Dashboard and (if known) the OnStep Web UI, each in a new tab">Open all links</button><span id="ql-open-all-note" style="display:none;"></span></span>
           <span id="ql-links-chevron">&#9660; show</span>
         </div>
         <div id="ql-links" style="display:none;">
-          <div class="ql-section"><span class="ql-label">PiFinder Remote Page:</span><span id="pifinder-remote-link">not available yet</span></div>
-          <div class="ql-section"><span class="ql-label">INDI driver setup on PiFinder:</span><span id="wizard-link">not available yet</span></div>
+          <div class="ql-section"><span id="pifinder-remote-link">PiFinder Remote Page: not available yet</span></div>
+          <div class="ql-section"><span id="wizard-link">INDI driver setup on PiFinder: not available yet</span></div>
           <div class="ql-section"><span class="ql-label">This page:</span><span id="remote-links"></span></div>
           <div class="ql-section"><span class="ql-label">INDI Web Manager:</span><span id="indi-webmanager-links"></span></div>
           <div class="ql-section"><span class="ql-label">StellarMate Dashboard:</span><span id="sm-dashboard-links"></span></div>
           <div class="ql-section"><span class="ql-label">StellarMate Web VNC:</span><span id="sm-vnc-links"></span> (password: <code>smate</code>)</div>
-          <div class="ql-section"><span class="ql-label">GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+          <div class="ql-section" id="onstep-web-row" style="display:none;"><span class="ql-label">OnStep Web UI:</span><span id="onstep-web-link"></span></div>
+          <div class="hgroup-divider"></div>
+          <div class="ql-section"><span class="ql-label">PFSM GitHub:</span><a href="https://github.com/apos/PiFinder_Stellarmate#readme" target="_blank" rel="noopener">Project docs</a><a href="https://github.com/apos/PiFinder_Stellarmate/blob/main/Readme_PiFinder_LX200.md" target="_blank" rel="noopener">INDI / LX200 docs</a></div>
+          <div class="ql-section"><span class="ql-label">PiFinder:</span><a href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener">User Guide</a><a href="https://www.pifinder.io/support" target="_blank" rel="noopener">Support</a><a href="https://discord.gg/PFhduXzv5" target="_blank" rel="noopener">Discord</a></div>
+          <div class="ql-section"><span class="ql-label">StellarMate:</span><a href="https://stellarmate.com/" target="_blank" rel="noopener">stellarmate.com</a><a href="https://discord.gg/6ptpCwGUF" target="_blank" rel="noopener">Discord</a></div>
         </div>
       </div>
       </div>
-
-  </div>
 
   <div class="right-col">
     <div id="install-tile">
@@ -1781,7 +1912,9 @@ function renderServiceLinks(elId, ips, port) {
     el.innerHTML = 'n/a';
     return;
   }
-  el.innerHTML = ips.map(ip => `<a href="http://${ip}:${port}/" target="_blank" rel="noopener">${ip}:${port}</a>`).join('');
+  el.innerHTML = ips.map(ip =>
+    `<a class="ql-ip-btn" href="http://${ip}:${port}/" target="_blank" rel="noopener" title="${ip}:${port}">${lastTwoOctets(ip)}</a>`
+  ).join('');
 }
 
 function renderRemoteLinks(ips, port) {
@@ -1790,7 +1923,9 @@ function renderRemoteLinks(ips, port) {
     el.innerHTML = 'n/a';
     return;
   }
-  el.innerHTML = ips.map(ip => `<a href="http://${ip}:${port}/">${ip}:${port}</a>`).join('');
+  el.innerHTML = ips.map(ip =>
+    `<a class="ql-ip-btn" href="http://${ip}:${port}/" title="${ip}:${port}">${lastTwoOctets(ip)}</a>`
+  ).join('');
 }
 
 // Reflects whether PiFinder itself is currently reachable (same probe that
@@ -1811,6 +1946,7 @@ function updatePiFinderStatusAndWizardLink() {
   // implying a check is in progress when there is nothing to check yet.
   // Found live 2026-08-03 testing PR #154's reinstall on real hardware.
   document.getElementById('mode-ampel-row').style.display = pifinderScreenUrl ? 'flex' : 'none';
+  document.getElementById('pifinder-screen-waiting').classList.toggle('pifinder-screen-waiting-visible', !pifinderScreenUrl);
   if (pifinderScreenUrl) {
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
     const port = new URL(pifinderScreenUrl).port || 80;
@@ -2143,10 +2279,11 @@ let pfLongArmed = false;
 // too brief to register on a fast click/tap. This flash keeps the pressed
 // look for a fixed short moment instead, so every press gets visible
 // feedback regardless of how quickly the click completes.
-function pfFlashKey(el) {
+function pfFlashKey(el, error) {
   if (!el) return;
-  el.classList.add('pf-key-pressed');
-  setTimeout(() => el.classList.remove('pf-key-pressed'), 150);
+  const cls = error ? 'pf-key-error' : 'pf-key-pressed';
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), error ? 500 : 150);
 }
 
 function pfToggleLong(btn) {
@@ -2170,13 +2307,18 @@ async function pfSendKey(code, btn) {
   pfKeyBusy = true;
   document.getElementById('pf-keypad-a').classList.add('pf-keypad-busy');
   document.getElementById('pf-keypad-b').classList.add('pf-keypad-busy');
-  pfFlashKey(btn);
   if (!pifinderScreenUrl) {
+    // Screen mirror hasn't been discovered (yet) - _pifinder_send_key() has
+    // no host/port to send to at all. Used to fall through silently here,
+    // which is indistinguishable from a working press from the pressed-flash
+    // alone - flash red instead so a dead keypad actually looks dead.
+    pfFlashKey(btn, true);
     pfKeyBusy = false;
     document.getElementById('pf-keypad-a').classList.remove('pf-keypad-busy');
     document.getElementById('pf-keypad-b').classList.remove('pf-keypad-busy');
     return;
   }
+  pfFlashKey(btn);
   const port = new URL(pifinderScreenUrl).port || '80';
   if (pfLongArmed) {
     code = `LNG_${code}`;
@@ -2185,20 +2327,28 @@ async function pfSendKey(code, btn) {
     document.getElementById('pf-key-long-b').classList.remove('pf-armed');
   }
   try {
-    await fetch(`/api/pifinder_key?port=${port}&key=${code}`, { method: 'POST' });
-    // The normal OLED mirror only ticks once a second (refreshPiFinderScreen's
-    // own setTimeout chain) - after a press, force one extra fetch right now
-    // instead of waiting up to a second for that chain's next tick, so the
-    // screen visibly reacts to the press instead of looking like it needs a
-    // manual page reload to catch up. A plain one-off src update, not a call
-    // to refreshPiFinderScreen() itself - that function reschedules its own
-    // next tick via onload/onerror, so calling it again here would spawn a
-    // second parallel polling chain instead of just refreshing once.
-    if (pifinderScreenUrl) {
+    const resp = await fetch(`/api/pifinder_key?port=${port}&key=${code}`, { method: 'POST' });
+    // _pifinder_send_key() (server.py) returns false - without raising -
+    // for a bad ?port=, a rejected login (default Remote-page password
+    // changed), or PiFinder just not answering. That used to be swallowed
+    // here entirely; check it explicitly now so those failures are visible
+    // instead of looking exactly like a successful press.
+    const result = await resp.json().catch(() => ({ success: false }));
+    if (!result.success) {
+      pfFlashKey(btn, true);
+    } else if (pifinderScreenUrl) {
+      // The normal OLED mirror only ticks once a second (refreshPiFinderScreen's
+      // own setTimeout chain) - after a press, force one extra fetch right now
+      // instead of waiting up to a second for that chain's next tick, so the
+      // screen visibly reacts to the press instead of looking like it needs a
+      // manual page reload to catch up. A plain one-off src update, not a call
+      // to refreshPiFinderScreen() itself - that function reschedules its own
+      // next tick via onload/onerror, so calling it again here would spawn a
+      // second parallel polling chain instead of just refreshing once.
       document.getElementById('pifinder-screen').src = pifinderScreenUrl + '?t=' + Date.now();
     }
   } catch (e) {
-    // best-effort - the OLED mirror image below will just not have moved
+    pfFlashKey(btn, true);
   } finally {
     pfKeyBusy = false;
     document.getElementById('pf-keypad-a').classList.remove('pf-keypad-busy');
@@ -3505,7 +3655,7 @@ async function refreshHardwareStatus() {
 // already done.
 function updateWmCouplingGate() {
   const enabled = !!wmSelectedProfile && !mbStatusUnconfirmed;
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).disabled = !enabled;
   });
 }
@@ -3547,6 +3697,8 @@ function restoreCollapsibleSections() {
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
     ['mode-power-groups', 'mode-power-chevron', 'flex'],
     ['mb-details', 'mb-details-chevron', 'block'],
+    ['mb-mode-details', 'mb-mode-details-chevron', 'block'],
+    ['mb-reject-warning-details', 'mb-reject-warning-chevron', 'block'],
   ];
   for (const [contentId, chevronId, openDisplay] of sections) {
     let saved = null;
@@ -3639,15 +3791,46 @@ function updateCouplingButtons(mode, correctionAction) {
   let active = null;
   if (mode === 'MODE_VERIFY_ALERT') active = 'wm-preset-verify-btn';
   else if (mode === 'MODE_GOTO_FORWARD') active = 'wm-preset-goto-btn';
-  else if (mode === 'MODE_AUTO_CORRECT') {
-    active = correctionAction === 'goto' ? 'wm-preset-auto-goto-btn' : 'wm-preset-auto-sync-btn';
-  }
-  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-auto-goto-btn', 'wm-preset-goto-btn'].forEach((id) => {
+  // MODE_AUTO_CORRECT + goto ("Follow mount's goto") no longer has a GUI
+  // button (#178, see MB_PRESET_INFO's comment) - if the driver still
+  // somehow reports it (e.g. set via the raw INDI panel), fall back to
+  // highlighting the Sync preset's row so the tile doesn't just show
+  // nothing highlighted for a real, active mode.
+  else if (mode === 'MODE_AUTO_CORRECT') active = 'wm-preset-auto-sync-btn';
+  ['wm-preset-verify-btn', 'wm-preset-auto-sync-btn', 'wm-preset-goto-btn'].forEach((id) => {
     document.getElementById(id).classList.toggle('mb-btn-active', id === active);
   });
 }
 
+// #178: read-only "who does the currently held target come from" badge -
+// only meaningful while GoTo (MODE_GOTO_FORWARD) is the active mode, hidden
+// otherwise (Verify/Alert and Auto-correct-Sync have no "held target"
+// concept at all).
+function updateTargetSourceBadge(mode, targetSource) {
+  const badge = document.getElementById('mb-target-source-badge');
+  if (mode !== 'MODE_GOTO_FORWARD' || !targetSource) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  document.getElementById('mb-target-source-value').textContent =
+    targetSource === 'mount' ? 'Mount' : 'PiFinder';
+}
+
 const MB_FOV_LIMIT_ARCMIN = 30;  // 0.5 degrees (full-moon diameter) - generic assumption, not measured; see CSS comment on #mb-drift-badge
+
+// Arcminutes read awkwardly once they cross 60' (e.g. "65.3'") - switch to
+// degrees+arcmin past that point (2026-08-09, direct feedback: "65 dann 1°
+// 5'"). Below 60' keeps the existing one-decimal arcmin display unchanged.
+function formatDrift(driftArcmin) {
+  if (driftArcmin >= 60) {
+    const totalMin = Math.round(driftArcmin);
+    const deg = Math.floor(totalMin / 60);
+    const min = totalMin % 60;
+    return `${deg}° ${min}'`;
+  }
+  return `${driftArcmin.toFixed(1)}'`;
+}
 
 function updateDriftBadge(driftArcmin, threshold) {
   const badge = document.getElementById('mb-drift-badge');
@@ -3656,7 +3839,7 @@ function updateDriftBadge(driftArcmin, threshold) {
     return;
   }
   badge.style.display = '';
-  badge.textContent = `${driftArcmin.toFixed(1)}'`;
+  badge.textContent = formatDrift(driftArcmin);
   badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red');
   if (driftArcmin >= MB_FOV_LIMIT_ARCMIN) badge.classList.add('mb-drift-red');
   else if (driftArcmin > threshold) badge.classList.add('mb-drift-yellow');
@@ -3728,10 +3911,29 @@ function readThresholdInputRaw() {
   return document.getElementById('wm-threshold-input').value.replace(',', '.');
 }
 
+// Sets the fixed-height caption (dot + short label) and, separately, the
+// opt-in #mb-mode-details text - see #mb-mode-caption-row's own CSS comment
+// for why these are split (2026-08-09, direct feedback: the previous single
+// long/variable-length caption reflowed the whole page on every drift/mode
+// change).
+function setMbCaption(dotClass, shortLabel, longDetails) {
+  document.getElementById('mb-mode-caption-dot').className = 'status-dot ' + dotClass;
+  document.getElementById('mb-mode-caption').textContent = shortLabel;
+  const toggleEl = document.getElementById('mb-mode-details-toggle');
+  const detailsEl = document.getElementById('mb-mode-details');
+  if (longDetails) {
+    toggleEl.style.display = '';
+    detailsEl.textContent = longDetails;
+  } else {
+    toggleEl.style.display = 'none';
+    detailsEl.style.display = 'none';
+    detailsEl.textContent = '';
+  }
+}
+
 let wmLastCouplingMode = null;
 function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
   wmLastCouplingMode = couplingMode;
-  const captionEl = document.getElementById('mb-mode-caption');
   const threshold = parseFloat(readThresholdInputRaw()) || 5;
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
@@ -3745,7 +3947,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   if (!couplingMode || couplingMode === 'MODE_OFF') {
     setMbArrow('mb-arrow-left', 'off');
     setMbArrow('mb-arrow-right', 'off');
-    captionEl.textContent = 'Not coupled - PiFinder and mount move independently';
+    setMbCaption('dot-white', 'Not coupled', null);
     decoupleBtnEl.disabled = true;
     return false;
   }
@@ -3759,9 +3961,13 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     // looked identical to being well within it - nothing on the tile said
     // so except the small numeric badge's own color.
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
-    captionEl.textContent = exceeded
-      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}' - warning only, never moves the mount`
-      : 'Watching for drift - warns only, never moves the mount';
+    setMbCaption(
+      exceeded ? 'dot-yellow' : 'dot-green',
+      exceeded ? 'Drift exceeds threshold' : 'Watching for drift',
+      exceeded
+        ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}' - warning only, never moves the mount`
+        : 'Watching for drift - warns only, never moves the mount'
+    );
   } else if (couplingMode === 'MODE_AUTO_CORRECT') {
     setMbArrow('mb-arrow-left', 'read');
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
@@ -3774,11 +3980,15 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     // 2026-08-05, PiFinder's last solve was several minutes old).
     const gated = exceeded && driftState === 'Alert';
     setMbArrow('mb-arrow-right', exceeded && !gated ? 'write' : 'read');
-    captionEl.textContent = gated
-      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}', but PiFinder's last solve isn't fresh enough to correct from yet`
-      : exceeded
-      ? `Correcting the mount now - drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}'`
-      : `Watching for drift - will correct the mount past ${threshold}'`;
+    setMbCaption(
+      gated ? 'dot-unconfirmed' : exceeded ? 'dot-yellow' : 'dot-green',
+      gated ? 'Waiting on fresh solve' : exceeded ? 'Correcting now' : 'Watching for drift',
+      gated
+        ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}', but PiFinder's last solve isn't fresh enough to correct from yet`
+        : exceeded
+        ? `Correcting the mount now - drift ${formatDrift(driftArcmin)} exceeds ${threshold}'`
+        : `Watching for drift - will correct the mount past ${threshold}'`
+    );
   } else if (couplingMode === 'MODE_GOTO_FORWARD') {
     setMbArrow('mb-arrow-left', 'goto');
     // Same three-way pattern as Auto-correct above (found live 2026-08-08:
@@ -3791,13 +4001,17 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
     const busy = driftState === 'Busy';
     setMbArrow('mb-arrow-right', busy ? 'write' : 'goto');
-    captionEl.textContent = busy
-      ? `Correcting the mount now - drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}'`
-      : exceeded
-      ? `Drift ${driftArcmin.toFixed(1)}' exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting`
-      : `Holding target - drift ${driftArcmin !== null ? driftArcmin.toFixed(1) : '0.0'}' within ${threshold}'`;
+    setMbCaption(
+      busy ? 'dot-yellow' : exceeded ? 'dot-unconfirmed' : 'dot-green',
+      busy ? 'Correcting now' : exceeded ? 'Waiting on fresh solve' : 'Holding target',
+      busy
+        ? `Correcting the mount now - drift ${formatDrift(driftArcmin)} exceeds ${threshold}'`
+        : exceeded
+        ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting`
+        : `Holding target - drift ${driftArcmin !== null ? formatDrift(driftArcmin) : '0.0\''} within ${threshold}'`
+    );
   }
-  const drift = driftArcmin !== null ? ` (drift ${driftArcmin.toFixed(1)}')` : '';
+  const drift = driftArcmin !== null ? ` (drift ${formatDrift(driftArcmin)})` : '';
   document.getElementById('mount-bridge-text').textContent =
     `${couplingMode.replace('MODE_', '').replace('_', ' ').toLowerCase()}${drift}`;
   return true;
@@ -3811,6 +4025,69 @@ function updateMbDiagram(data) {
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+  updateTargetSourceBadge(data.coupling_mode, data.target_source);
+  updateOnStepWebLink(data.mount_web_ip);
+}
+
+// The mount's own DEVICE_ADDRESS (indi_client.py's mount_bridge_status(),
+// only set for a TCP-connected mount, e.g. OnStep's WiFi module) doubles as
+// its onboard web UI's address - same device, default HTTP port 80 there.
+// Kept as a plain module-level var (not read back out of the DOM) so
+// openAllQuickLinks() below can use it without re-parsing anything.
+let onstepWebIp = null;
+function updateOnStepWebLink(ip) {
+  onstepWebIp = ip || null;
+  const row = document.getElementById('onstep-web-row');
+  const link = document.getElementById('onstep-web-link');
+  if (!onstepWebIp) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  link.innerHTML = `<a class="ql-ip-btn" href="http://${onstepWebIp}/" target="_blank" rel="noopener" title="http://${onstepWebIp}/">${lastTwoOctets(onstepWebIp)}</a>`;
+}
+
+// One click, every reachable "important" link in its own tab - per direct
+// request, so the user isn't hunting through this collapsed section one
+// link at a time. Each window.open() call happens synchronously inside this
+// click handler (no fetch/await first) - popup blockers allow that; an
+// async gap before opening would get later ones blocked. Silently skips
+// whatever isn't known yet (e.g. onstepWebIp before the mount's ever been
+// seen TCP-connected) rather than erroring - same "n/a runs of missing data
+// are normal, not broken" spirit as the rest of this Links section.
+function openAllQuickLinks() {
+  let opened = 0;
+  let blocked = 0;
+  // window.open() returns null (Chrome/Firefox) when the popup blocker ate
+  // it - found live (2026-08-09): only the first tab (PiFinder Remote) ever
+  // opened, the rest were silently blocked. Most browsers allow exactly one
+  // new-tab open per click by default regardless of how many window.open()
+  // calls happen inside that same synchronous handler; there's no way
+  // around that from here short of the user allowing popups for this page,
+  // so the best this can do is detect it and say so instead of leaving the
+  // missing tabs unexplained.
+  const tryOpen = (url) => {
+    const win = window.open(url, '_blank', 'noopener');
+    if (win) opened++; else blocked++;
+  };
+  if (pifinderScreenUrl) {
+    const base = pifinderScreenUrl.replace(/\/image.*$/, '');
+    tryOpen(`${base}/remote`);
+  }
+  if (knownIps && knownIps.length > 0) {
+    tryOpen(`http://${knownIps[0]}:8624/`);
+    tryOpen(`http://${knownIps[0]}:80/`);
+  }
+  if (onstepWebIp) {
+    tryOpen(`http://${onstepWebIp}/`);
+  }
+  const note = document.getElementById('ql-open-all-note');
+  if (blocked > 0) {
+    note.textContent = `${blocked} tab${blocked === 1 ? '' : 's'} blocked by your browser - allow popups for this page and try again`;
+    note.style.display = '';
+  } else {
+    note.style.display = 'none';
+  }
 }
 
 // The Threshold field had no way to ever learn the driver's actual current
@@ -4111,6 +4388,30 @@ refreshMountBridgeStatus();
 // unlike the button-gated actions, which stay blocked until the slower poll
 // itself reconfirms things are safe to touch.
 let mbDriftPollInFlight = false;
+// Distinct from the drift badge - the mount's own driver refused a
+// Goto/Sync outright (elevation/cable-wrap/axis limit), not just imprecise
+// tracking. Kept on the fast poll (same cadence as the drift badge) since
+// this is exactly the kind of thing that must not go unnoticed - the whole
+// point is not silently accepting a refusal like before.
+function updateMountRejectWarning(active, message) {
+  // 2026-08-09, direct feedback: this used to be its own always-shown-or-
+  // hidden red box between the caption and status rows - appearing/
+  // disappearing reflowed everything below it. Now a small toggle appended
+  // to the status line itself (reflow-free by default); the full warning
+  // text only takes up space once the user actually opens it, same
+  // collapsible pattern as #mb-mode-details above.
+  const toggle = document.getElementById('mb-reject-warning-toggle');
+  const detailsEl = document.getElementById('mb-reject-warning-details');
+  const text = document.getElementById('mb-reject-warning-text');
+  if (!active) {
+    toggle.style.display = 'none';
+    detailsEl.style.display = 'none';
+    return;
+  }
+  text.textContent = message || 'Mount refused the last Goto/Sync.';
+  toggle.style.display = '';
+}
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -4119,6 +4420,7 @@ async function refreshMbDrift() {
     const data = await resp.json();
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+      updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
@@ -4142,10 +4444,15 @@ setInterval(refreshMbDrift, 2000);
 // made no sense once you consider it's irrelevant for the other two
 // presets), but still just one underlying mode server-side, distinguished
 // by the action.
+// auto_correct_goto ("Follow mount's goto") removed 2026-08-08 (#178) - now
+// redundant: with Reposition Detection active, goto_forward alone already
+// reacts symmetrically to both a PiFinder push-to AND an external mount-side
+// command, so the two-preset split no longer reflects a real behavioral
+// difference, only unnecessary GUI complexity. See
+// docs/concepts/mount_bridge_reposition_detection.md.
 const MB_PRESET_INFO = {
   verify_alert: { btnId: 'wm-preset-verify-btn', mode: 'verify_alert' },
   auto_correct_sync: { btnId: 'wm-preset-auto-sync-btn', mode: 'auto_correct', action: 'sync' },
-  auto_correct_goto: { btnId: 'wm-preset-auto-goto-btn', mode: 'auto_correct', action: 'goto' },
   goto_forward: { btnId: 'wm-preset-goto-btn', mode: 'goto_forward' },
 };
 
@@ -5003,7 +5310,8 @@ function updateProfileRoleLine() {
   // banner above already says everything this role needs to say.
   document.getElementById('mb-status-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-diagram').style.display = hostMode ? 'none' : '';
-  document.getElementById('mb-mode-caption').style.display = hostMode ? 'none' : '';
+  document.getElementById('mb-mode-caption-row').style.display = hostMode ? 'none' : '';
+  if (hostMode) document.getElementById('mb-mode-details').style.display = 'none';
   if (role === null) {
     el.style.display = 'none';
     return;
