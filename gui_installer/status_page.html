@@ -1698,6 +1698,13 @@
           <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. See Help for details.">
             <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
             <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+            <button id="fake-solve-reseed-btn" class="ql-small-btn" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
+          </div>
+          <div class="hw-detail" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
+            <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem;">
+            <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem;">
+            <button id="fake-solve-manual-btn" class="ql-small-btn" onclick="setFakeSolveManual()" disabled>Set position</button>
+            <span id="fake-solve-manual-status"></span>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -2257,6 +2264,8 @@ function applyFakeSolveStatus(data) {
   const dotEl = document.getElementById('fake-solve-dot');
   const textEl = document.getElementById('fake-solve-text');
   const btn = document.getElementById('fake-solve-btn');
+  const reseedBtn = document.getElementById('fake-solve-reseed-btn');
+  const manualBtn = document.getElementById('fake-solve-manual-btn');
   const badge = document.getElementById('mode-ampel-fake-solve-badge');
 
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
@@ -2270,6 +2279,8 @@ function applyFakeSolveStatus(data) {
     if (!fakeSolveToggleInFlight) {
       textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
       btn.disabled = true;
+      manualBtn.disabled = true;
+      reseedBtn.style.display = 'none';
       setHwDot(dotEl, lastFakeSolveActive === true ? 'status-dot dot-green dot-unconfirmed' : 'status-dot dot-white');
     }
     return;
@@ -2279,6 +2290,12 @@ function applyFakeSolveStatus(data) {
   badge.style.display = lastFakeSolveActive ? '' : 'none';
   if (fakeSolveToggleInFlight) return;
   btn.disabled = false;
+  manualBtn.disabled = false;
+  // Re-seed only makes sense while already active - turning it on fresh
+  // already seeds once, and the manual field above covers "set to a
+  // specific position" for either state (#205).
+  reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
+  reseedBtn.disabled = false;
 
   if (!lastFakeSolveActive) {
     setHwDot(dotEl, 'status-dot dot-white');
@@ -2600,6 +2617,67 @@ async function toggleFakeSolve() {
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
   if (!landed) btn.disabled = false;
+}
+
+// #205: re-read the coupled mount's current position and re-inject it
+// without disabling Injected Solve first - reuses the same enable endpoint
+// (it always seeds fresh from the mount, on or off makes no difference to
+// it), only reachable from the GUI while already active (see the
+// reseedBtn.style.display toggle in applyFakeSolveStatus() above).
+async function reseedFakeSolve() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const btn = document.getElementById('fake-solve-reseed-btn');
+  const textEl = document.getElementById('fake-solve-text');
+  const dotEl = document.getElementById('fake-solve-dot');
+  fakeSolveToggleInFlight = true;
+  btn.disabled = true;
+  textEl.textContent = 'Reading mount position…';
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
+  try {
+    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
+    const result = await resp.json();
+    if (result.success !== true) {
+      fakeSolveToggleInFlight = false;
+      textEl.textContent = `could not re-seed (${result.error || 'unknown error'})`;
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    // fall through - refreshDebugSolve() below will show whatever's true now
+  }
+  fakeSolveToggleInFlight = false;
+  await refreshDebugSolve();
+}
+
+// #205: sets Injected Solve to a specific RA/Dec (degrees, JNow) via
+// PiFinder's own /api/fake_solve directly - independent of any coupled
+// mount, works whether Injected Solve was already on or off.
+async function setFakeSolveManual() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const raEl = document.getElementById('fake-solve-manual-ra');
+  const decEl = document.getElementById('fake-solve-manual-dec');
+  const statusEl = document.getElementById('fake-solve-manual-status');
+  const btn = document.getElementById('fake-solve-manual-btn');
+  const ra = parseFloat(raEl.value);
+  const dec = parseFloat(decEl.value);
+  if (!Number.isFinite(ra) || ra < 0 || ra > 360 || !Number.isFinite(dec) || dec < -90 || dec > 90) {
+    statusEl.textContent = 'RA 0-360°, Dec -90..90°';
+    return;
+  }
+  fakeSolveToggleInFlight = true;
+  btn.disabled = true;
+  statusEl.textContent = 'Setting…';
+  try {
+    const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
+    const result = await resp.json();
+    statusEl.textContent = result.success === true ? '' : `failed (${result.error || 'unknown error'})`;
+  } catch (e) {
+    statusEl.textContent = 'failed (unreachable)';
+  }
+  fakeSolveToggleInFlight = false;
+  await refreshDebugSolve();
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the

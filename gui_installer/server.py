@@ -1442,12 +1442,7 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
 
 def _pifinder_disable_fake_solve(port: str) -> bool:
     """DELETE to PiFinder's own /api/fake_solve - turns Fake-Solve back off,
-    resuming normal real-camera solving. There's deliberately no matching
-    "enable" call here: enabling needs a target RA/Dec, which this tile has
-    no source for (see #128) - only the API endpoint used during testing
-    can turn it on. The icon/status/toggle only ever appear while already
-    active (see status_page.html), so the only action this tile needs to
-    offer is turning it off."""
+    resuming normal real-camera solving."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False
     try:
@@ -1458,6 +1453,31 @@ def _pifinder_disable_fake_solve(port: str) -> bool:
             return resp.status == 200
     except Exception:
         return False
+
+
+def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float):
+    """POST an explicit RA/Dec (degrees, JNow) straight to PiFinder's own
+    /api/fake_solve - independent of any coupled mount, unlike
+    _pifinder_enable_fake_solve_from_mount() above. Turns Injected Solve on
+    if it wasn't already, or re-seeds it to this exact position if it was
+    (#205 - the GUI had no way to set/nudge a specific position without
+    direct API access). Returns (success: bool, error: str or None)."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False, "invalid port"
+    if not (0 <= ra_deg <= 360) or not (-90 <= dec_deg <= 90):
+        return False, "RA/Dec out of range"
+    try:
+        body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/fake_solve",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200, None
+    except Exception as e:
+        return False, str(e)
 
 
 def _pifinder_toggle_debug_solve(port: str) -> bool:
@@ -2636,6 +2656,19 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             ok, err = _pifinder_enable_fake_solve_from_mount(port)
+            self._send_json({"success": ok, "error": err})
+            return
+
+        if parsed.path == "/api/fake_solve_set":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            try:
+                ra_deg = float(qs.get("ra", [""])[0])
+                dec_deg = float(qs.get("dec", [""])[0])
+            except (ValueError, IndexError):
+                self._send_json({"success": False, "error": "ra/dec must be numeric degrees"}, status=400)
+                return
+            ok, err = _pifinder_set_fake_solve(port, ra_deg, dec_deg)
             self._send_json({"success": ok, "error": err})
             return
 
