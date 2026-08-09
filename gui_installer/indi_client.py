@@ -278,6 +278,10 @@ def mount_bridge_status(
             "mount_reject_active": False,
             "mount_reject_message": None,
             "mount_web_ip": None,
+            "mount_type_raw": None,
+            "pifinder_mount_type": None,
+            "pifinder_screen_direction": None,
+            "orientation_state": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -325,6 +329,7 @@ def mount_bridge_status(
 
     mount_connected = None
     mount_web_ip = None
+    mount_type_raw = None
     if active_mount:
         mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
         mt_device_props = mt_props.get(active_mount)
@@ -333,6 +338,18 @@ def mount_bridge_status(
             mount_connection_mode = mt_device_props.get("CONNECTION_MODE", {}).get("elements", {})
             if mount_connection_mode.get("CONNECTION_TCP") == "On":
                 mount_web_ip = mt_device_props.get("DEVICE_ADDRESS", {}).get("elements", {}).get("ADDRESS") or None
+            # TELESCOPE_MOUNT_TYPE - standard INDI::Telescope switch, whichever
+            # element is "On" (MOUNT_ALTAZ/MOUNT_EQ_FORK/MOUNT_EQ_GEM). Reused
+            # for the "Mount" orientation badge (2026-08-09) - already fetched
+            # above for the connection-state check, no extra INDI round-trip.
+            mount_type_elements = mt_device_props.get("TELESCOPE_MOUNT_TYPE", {}).get("elements", {})
+            mount_type_raw = next((name for name, val in mount_type_elements.items() if val == "On"), None)
+
+    # PiFinder's own Mount Type/PiFinder Type status, pushed by the driver's
+    # own syncOrientationStatus() (PIFINDER_ORIENTATION property) - see
+    # docs/concepts/simulation_fidelity_and_pifinder_orientation.md §6.
+    orientation_elements = device_props.get("PIFINDER_ORIENTATION", {}).get("elements", {})
+    orientation_prop = device_props.get("PIFINDER_ORIENTATION", {})
 
     return {
         "running": True,
@@ -354,6 +371,10 @@ def mount_bridge_status(
         "mount_reject_active": mount_reject_active,
         "mount_reject_message": mount_reject_message,
         "mount_web_ip": mount_web_ip,
+        "mount_type_raw": mount_type_raw,
+        "pifinder_mount_type": orientation_elements.get("MOUNT_TYPE") or None,
+        "pifinder_screen_direction": orientation_elements.get("SCREEN_DIRECTION") or None,
+        "orientation_state": orientation_prop.get("state"),
     }
 
 

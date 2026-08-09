@@ -422,4 +422,25 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ITextVectorProperty MountRejectTP;
         IText MountRejectT[1];
         void setMountRejectWarning(bool active, const std::string &message);
+
+        // PiFinder's own IMU-dead-reckoning-relevant settings (Settings ->
+        // Mount Type, Settings -> Advanced -> PiFinder Type/screen_direction)
+        // - read-only status, distinct from syncMountTypeToPiFinder() below
+        // which *pushes* Mount Type one-way. This just *shows* both current
+        // values plus whether Mount Type actually matches the INDI mount's
+        // own TELESCOPE_MOUNT_TYPE right now - IPS_ALERT on a mismatch (the
+        // auto-sync failing, e.g. PiFinder unreachable), IPS_OK once they
+        // agree. PiFinder Type has no INDI-side equivalent to compare
+        // against at all (pure physical-mounting fact, see
+        // docs/concepts/simulation_fidelity_and_pifinder_orientation.md §6) -
+        // shown for the user to judge against their actual rig, never itself
+        // marked right/wrong, but bundled into the same property/state as
+        // Mount Type per direct feedback (2026-08-09): a Mount Type mismatch
+        // should flag the whole "orientation config" badge, not just half of
+        // it.
+        ITextVectorProperty PiFinderOrientationTP;
+        IText PiFinderOrientationT[2];
+        enum { ORIENTATION_MOUNT_TYPE, ORIENTATION_SCREEN_DIRECTION };
+        void syncOrientationStatus();
+        std::string m_lastOrientationStatusKey;
 };

@@ -785,6 +785,23 @@
     height: 32.5px;
     color: #666;
   }
+  /* Value-displaying counterpart to .mode-ampel-icon (2026-08-09) - these two
+     orientation badges show an actual short value (e.g. "Straight",
+     "GEM"), not a fixed icon, so the "icon area" is text instead, sized to
+     roughly the same footprint. Color carries state exactly like the icons
+     above (grey/green/red), no separate dot needed at this size. */
+  .orientation-badge-value {
+    min-height: 32.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.15;
+    font-size: 0.68rem;
+    color: #888;
+  }
+  .orientation-badge-value.orientation-ok { color: #4caf50; }
+  .orientation-badge-value.orientation-alert { color: #e53935; }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
      color itself is set inline (currentColor is already #f5a623 by then),
      this only adds the animation. */
@@ -1365,6 +1382,14 @@
               <circle cx="12" cy="9.6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
             </svg>
             <span>GPS</span>
+          </div>
+          <div class="mode-ampel-badge" id="mode-ampel-orientation-pifinder-badge" style="display:none;" title="PiFinder's own Mount Type + PiFinder Type (Settings -> Mount Type / Settings -> Advanced -> PiFinder Type) - both feed its IMU dead-reckoning math. Bundled with the Mount badge next to it: if Mount Type doesn't match the connected INDI mount, both go red - PiFinder Type itself has no way to be checked automatically (see Help), it's shown for you to judge against your actual rig.">
+            <div class="orientation-badge-value" id="orientation-pifinder-value">&ndash;</div>
+            <span>PiFinder</span>
+          </div>
+          <div class="mode-ampel-badge" id="mode-ampel-orientation-mount-badge" style="display:none;" title="The connected INDI mount's own reported Mount Type.">
+            <div class="orientation-badge-value" id="orientation-mount-value">&ndash;</div>
+            <span>Mount</span>
           </div>
           <div id="pifinder-glance-status-stack">
             <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
@@ -4054,6 +4079,56 @@ function updateMbDiagram(data) {
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
+  updateOrientationBadges(data);
+}
+
+// PiFinder Type labels match menu_structure.py's own "PiFinder Type" items
+// exactly (Settings -> Advanced -> PiFinder Type) - same values the OLED
+// menu itself shows, so this never invents a different vocabulary.
+const PIFINDER_TYPE_LABELS = {
+  left: 'Left', right: 'Right', straight: 'Straight',
+  flat3: 'Flat v3', flat: 'Flat v2',
+  as_bloom: 'AS Bloom', as_heart: 'AS Heart',
+  rev4_left: 'Rev4 Left', rev4_right: 'Rev4 Right', rev4_straight: 'Rev4 Straight',
+};
+const MOUNT_TYPE_RAW_LABELS = { MOUNT_ALTAZ: 'AltAz', MOUNT_EQ_FORK: 'Fork (EQ)', MOUNT_EQ_GEM: 'GEM' };
+const PIFINDER_MOUNT_TYPE_LABELS = { EQ: 'Equatorial', 'Alt/Az': 'Alt/Az' };
+
+// Two badges fed by the driver's own PIFINDER_ORIENTATION property
+// (syncOrientationStatus() in pifinder_mount_bridge.cpp) - see
+// docs/concepts/simulation_fidelity_and_pifinder_orientation.md §6. Hidden
+// entirely until the driver has actually published a value (matches the
+// rest of this row's "nothing to show yet" convention).
+function updateOrientationBadges(data) {
+  const pfBadge = document.getElementById('mode-ampel-orientation-pifinder-badge');
+  const mountBadge = document.getElementById('mode-ampel-orientation-mount-badge');
+  const pfValue = document.getElementById('orientation-pifinder-value');
+  const mountValue = document.getElementById('orientation-mount-value');
+
+  if (!data.pifinder_mount_type && !data.pifinder_screen_direction && !data.mount_type_raw) {
+    pfBadge.style.display = 'none';
+    mountBadge.style.display = 'none';
+    return;
+  }
+
+  pfBadge.style.display = '';
+  mountBadge.style.display = '';
+
+  const pfType = PIFINDER_TYPE_LABELS[data.pifinder_screen_direction] || data.pifinder_screen_direction || '?';
+  const pfMountType = PIFINDER_MOUNT_TYPE_LABELS[data.pifinder_mount_type] || data.pifinder_mount_type || '?';
+  pfValue.textContent = `${pfType} / ${pfMountType}`;
+  mountValue.textContent = data.mount_type_raw
+    ? (MOUNT_TYPE_RAW_LABELS[data.mount_type_raw] || data.mount_type_raw)
+    : '?';
+
+  // Bundled per direct feedback (2026-08-09): a Mount Type mismatch flags
+  // BOTH badges together, not just the PiFinder one - same "orientation
+  // config" family, even though only Mount Type itself is machine-checkable
+  // (PiFinder Type has no INDI-side equivalent to compare against at all).
+  const stateClass = data.orientation_state === 'Ok' ? 'orientation-ok'
+    : data.orientation_state === 'Alert' ? 'orientation-alert' : '';
+  pfValue.className = 'orientation-badge-value ' + stateClass;
+  mountValue.className = 'orientation-badge-value ' + stateClass;
 }
 
 // The mount's own DEVICE_ADDRESS (indi_client.py's mount_bridge_status(),
