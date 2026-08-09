@@ -7,6 +7,21 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Fix #192: the OLED-mirror wait overlay now queries `pifinder.service`'s own systemd state
+  (`_real_service_state()`, `gui_installer/server.py`, surfaced via `/api/pifinder_mode`'s new
+  `real_service_state` field) instead of only inferring things from `/image` probe success/failure -
+  shows "PiFinder service is starting…" while systemd itself is still activating, and "PiFinder
+  service failed to start" if it crashes outright, instead of the same generic "Waiting for
+  PiFinder…" throughout regardless of what's actually happening. Deliberately leaves the "inactive"
+  state's message alone (still the generic wait text) - that state is indistinguishable here from a
+  legitimately-up Fake Mode, which runs as a separate, non-systemd process this check doesn't see.
+- **Solve badge / Mount Bridge freshness (#193)**: added an explanatory tooltip to the ampel's
+  "Solve" badge (it reflects whether the camera is *currently* solving, with no age limit - a
+  different question from Mount Bridge's own "fresh enough to correct from" check) and a matching
+  parenthetical in Mount Bridge's own "waiting on fresh solve" caption details, instead of changing
+  either one's actual criteria - the two can legitimately disagree (this can stay green off an older
+  solve while Mount Bridge is still waiting for a newer one), so the fix is explaining the
+  distinction, not eliminating it.
 - **Injected Solve (Dead Reckoning)**: a real, visible simulation mode - injects a one-time RA/Dec
   into PiFinder (seeded from the currently coupled mount, or the API directly) and lets PiFinder's
   own IMU dead-reckoning carry it forward from there, the same mechanism a real solve uses. Renamed

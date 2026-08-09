@@ -240,6 +240,23 @@ def _real_service_failed() -> bool:
     ).returncode == 0
 
 
+def _real_service_state() -> str:
+    """pifinder.service's raw systemd ActiveState string (active,
+    activating, inactive, failed, deactivating, ...) - added 2026-08-09
+    (#192) so the frontend's OLED-mirror wait overlay can say something
+    concrete about *why* it's still waiting instead of a generic message
+    the whole time. Deliberately not --quiet: without it, `systemctl
+    is-active` prints the state to stdout regardless of exit code (a
+    non-0 exit just means "not active", the printed state still tells you
+    which of inactive/failed/activating/deactivating it actually is)."""
+    result = subprocess.run(
+        ["systemctl", "is-active", "pifinder.service"],
+        capture_output=True,
+        text=True,
+    )
+    return (result.stdout or "").strip() or "unknown"
+
+
 def _lcd_overlay_active() -> bool:
     """Whether the Waveshare LCD dev overlay is active right now - checked
     against the actual framebuffer device, not /boot/config.txt (overlays
@@ -2128,7 +2145,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 mode = "none"
             self._send_json(
-                {"mode": mode, "transitioning": transitioning, "error": error, "target": target}
+                {
+                    "mode": mode,
+                    "transitioning": transitioning,
+                    "error": error,
+                    "target": target,
+                    # Raw systemd state (#192) - lets the OLED-mirror wait
+                    # overlay distinguish "service not started"/"failed" from
+                    # "started, just not answering /image yet" instead of a
+                    # single generic message throughout.
+                    "real_service_state": _real_service_state(),
+                }
             )
             return
 
