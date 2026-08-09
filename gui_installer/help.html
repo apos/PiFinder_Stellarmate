@@ -88,7 +88,8 @@
 </div>
 
 <h2 id="quick-links">Quick Links</h2>
-<p>Direct links to things you'd otherwise have to look up: PiFinder's own remote page (its web UI), the INDI/mount setup wizard running on PiFinder itself, this Control Center's own address (useful if you're bookmarking it or opening it on another device), and the project's documentation on GitHub. The status line at the top reflects whether PiFinder's web server is answering at all - it can say "running" even if a piece of hardware (camera, IMU, GPS) is missing, since that's a separate check (see Mode &amp; Power below).</p>
+<p>Direct links to things you'd otherwise have to look up: PiFinder's own remote page (its web UI), the INDI/mount setup wizard running on PiFinder itself, this Control Center's own address (useful if you're bookmarking it or opening it on another device), the INDI Web Manager, the StellarMate Dashboard/Web VNC, the connected mount's own web UI (only shown once it's known - see below), and the project's documentation/community links on GitHub/readthedocs/Discord. The status line at the top reflects whether PiFinder's web server is answering at all - it can say "running" even if a piece of hardware (camera, IMU, GPS) is missing, since that's a separate check (see Mode &amp; Power below).</p>
+<p>Rows that list one entry per IP (This page, INDI Web Manager, StellarMate Dashboard, StellarMate Web VNC, OnStep Web UI) show each as a small button labeled with just the last two octets - hover or long-press for the full address. <strong>OnStep Web UI</strong>'s address isn't guessed: it's read live from the mount driver's own INDI connection settings, so it only appears once the mount is actually connected via TCP (a serial/USB-connected mount has no IP to show here). <strong>Open all links</strong> opens PiFinder Remote, INDI Web Manager, StellarMate Dashboard, and OnStep Web UI (whichever are currently known) each in a new tab in one click - most browsers only allow the first of several tabs opened this way through by default and silently block the rest, so a note appears next to the button if any were blocked; allow popups for this page in that case and click again.</p>
 <p><strong>Quick keys</strong>, next to the OLED mirror, drive PiFinder's own on-screen menu without switching to its separate Remote page. Three layouts, switched top-right and remembered per browser: <strong>A</strong> (a D-pad cross), <strong>B</strong> (a 2x4 grid) - both send the same Left/Up/Down/Right/Enter/Long presses PiFinder's Remote page does - and <strong>C</strong>, which isn't a keypad at all but one button per PiFinder found on the network (labeled by its last two IP octets), opening that PiFinder's full Remote page directly for whenever the compact keypad isn't enough. A keypad briefly dims after each press while it's in flight - PiFinder's own web server only handles one request at a time, so rapid clicks queue up rather than getting lost.</p>
 
 <h2 id="mode-power">Mode &amp; Power</h2>
@@ -166,7 +167,7 @@
 </ul>
 
 <h2 id="mount-bridge">Mount Bridge</h2>
-<p>Couples PiFinder's own solved sky position with a real telescope mount, via the <strong>PiFinder Mount Bridge</strong> INDI driver - so you don't need to open the separate INDI Control Panel for the common cases. The tile is organized as a numbered setup checklist (below the divider line) plus a live status/operate area (above it): connection diagram, Coupling presets, and the drift readout.</p>
+<p>Couples PiFinder's own solved sky position with a real telescope mount, via the <strong>PiFinder Mount Bridge</strong> INDI driver - so you don't need to open the separate INDI Control Panel for the common cases. The live connection diagram and drift readout live in the <strong>PiFinder</strong> tile (directly under the Cam/Solve/IMU/GPS badges - both are status displays, grouped with the rest of the page's own status info). This tile itself is organized as a numbered setup checklist (below the divider line) plus the actual operate area above it: Coupling presets, Sync/Stop, Threshold, and Role.</p>
 <p>Each numbered step shows a green checkmark once it's actually satisfied, and a yellow spinning symbol while its own action is running.</p>
 
 <h3 id="step1-profile">1. Profile</h3>
@@ -210,13 +211,13 @@
 <p><strong>Manual: Sync mount from PiFinder</strong>: a one-shot action, works regardless of which Coupling preset (or none) is active. Syncs the mount to PiFinder's current solved position right now - no Goto, no drift comparison, just an instant correction. Auto-correct (Sync) and Verify/Alert still only react to a manual mount move on their next poll if drift already exceeds Threshold (Verify/Alert only warns, never corrects) - GoTo is the one mode that reacts to a manual move directly, as described above.</p>
 
 <h3 id="drift-badge">Drift readout</h3>
-<p>The large number top-right of the tile is the current angular drift between PiFinder's solved position and the mount's reported position, in arcminutes:</p>
+<p>In the <strong>PiFinder</strong> tile's connection diagram (see above), the number between the Bridge and Mount icons is the current angular drift between PiFinder's solved position and the mount's reported position, in arcminutes - shown as degrees+arcmin past 60' (e.g. <code>1&deg; 5'</code> instead of <code>65'</code>):</p>
 <ul>
   <li><span class="dot dot-green"></span><strong>Green</strong>: within the Threshold you've set.</li>
   <li><span class="dot dot-yellow"></span><strong>Yellow</strong>: past the Threshold.</li>
   <li><span class="dot dot-red"></span><strong>Red</strong>: past roughly 0.5&deg; (about the diameter of a full moon) - a generic placeholder for "probably out of your eyepiece's field of view," not a measurement of your actual eyepiece/camera.</li>
 </ul>
-<p>Only shown while coupling is actively watching drift (Verify/Alert or Auto-correct) and connected - hidden otherwise.</p>
+<p>Only shown while coupling is actively watching drift (Verify/Alert or Auto-correct) and connected - hidden otherwise. The short status line below the diagram (a colored dot plus a one-line label) reflects the same state in words; click "Details" next to it for the full explanation instead of it being shown inline, which used to change the row's height and shift the rest of the page around every time the text changed length.</p>
 
 <p class="close-note">This help page is a static file served alongside the Control Center - it isn't kept open or polled by the main page, so it's safe to leave it in its own tab while you work.</p>
 </body>

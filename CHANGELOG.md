@@ -171,6 +171,37 @@ All notable changes to this project are documented in this file. Format loosely 
     anchored to independent ground truth instead of PiFinder's own estimate) and split into dedicated
     per-section headings matching the page's per-section help icons, instead of one flat `Mode &
     Power` section.
+- Mount Bridge's connection diagram (PiFinder → Bridge → Mount icons, drift badge) and its mode-caption
+  and mount-reject warning rows moved out of the "INDI Mount Bridge" tile into the "PiFinder" tile,
+  directly under the Cam/Solve/IMU/GPS badges - both were pure status/info displays, grouped with the
+  rest of the page's own status info instead of living apart from the settings/actions the Mount Bridge
+  tile keeps (Coupling presets, Sync/Stop, Threshold, Role). Mode-caption and reject-warning each used
+  to reflow the whole page whenever their text length changed (a red warning box appearing/disappearing,
+  or the caption switching between a short and a long sentence) - both now use a fixed-height dot+
+  short-label row with an opt-in "Details" toggle for the full sentence instead, matching the page's
+  `.status-dot` ampel convention (no icons, per the project's UI guideline).
+- Mount Bridge's drift readout (`formatDrift()` in `status_page.html`) now shows degrees+arcmin past
+  60' (e.g. `65'` → `1° 5'`) instead of an awkward `65.0'`, applied consistently to the drift badge and
+  every caption/status line that shows it.
+- Quick Links: an **OnStep Web UI** row, its IP read live from the mount driver's own `DEVICE_ADDRESS`
+  (`indi_client.py`'s `mount_bridge_status()` now also returns `mount_web_ip`, populated only when the
+  mount is TCP-connected - a serial/USB mount has no IP to show here, and this reuses the property
+  lookup the connection-state check already made, no extra INDI round-trip). Every IP-list row (This
+  page/INDI Web Manager/StellarMate Dashboard/StellarMate Web VNC/OnStep Web UI) now renders as a small
+  button (last two octets, full `ip:port` as the tooltip) instead of a wall of plain-text links. A new
+  **"Open all links"** button opens all of them plus PiFinder Remote in one click; each `window.open()`
+  call happens synchronously in the click handler so browser popup blockers allow it, and any tab the
+  blocker still ate is detected (via `window.open()`'s `null` return) and reported inline instead of
+  silently missing. The old single crowded "GitHub:" line split into three rows (PFSM GitHub/PiFinder/
+  StellarMate), with PiFinder's and StellarMate's own Discord invites added; the "PiFinder Remote Page"/
+  "INDI driver setup" rows dropped their redundant label text now that the link text alone already says
+  what it is.
+- Quick keys D-pad: a press that actually failed (PiFinder screen mirror not discovered yet, or the
+  proxied `/api/pifinder_key` call itself failing/rejected) now flashes red instead of flashing the same
+  "pressed" look a successful press gets - found live investigating "the D-pad just doesn't work", which
+  turned out to be exactly this: a silent no-op with zero visible difference from success. The Quick
+  keys A layout's LONG button was also sized down (95px → 47px square) and moved closer to the D-pad
+  per live feedback that it was oversized/too far away.
 
 ### Changed
 
@@ -186,6 +217,24 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Fix #194: Goto-Forward silently ignored the first Goto after any BridgeMode switch (or a driver
+  restart while it was already the active mode) - `ISNewSwitch()`'s reset of the forwarding baseline
+  to a NaN sentinel made `handleGotoForward()` treat the very next observed target, even a brand new
+  one just picked in KStars, as "first observation, just baseline it, don't forward" (the same handling
+  meant to protect against re-firing a stale, already-present target). Found live: select M31 in
+  KStars, click "PiFinder Goto" - nothing happens; click again - the mount slews. Now snapshots the
+  existing target as the baseline instead of blanking it, so a genuinely different target fires
+  immediately on the first press, while the original stale-target protection still holds.
+- Fix #195: `DriftThresholdNP`, `MaxSyncDriftNP` (direct-edit handler), and `SolveFreshnessMaxAgeNP`
+  never called `saveConfig()` after updating, unlike their sibling properties in the same `ISNewNumber()`
+  handler - none of the three survived a driver restart. Found live: "Threshold keeps resetting to 5
+  after every reload."
+- Fix #187: the OLED-mirror tile looked dead for 3-60+s after a real Pi reboot, before PiFinder's own
+  web server was even reachable to probe - added a `#pifinder-screen-waiting` overlay ("Waiting for
+  PiFinder…") explicit about the wait instead of just showing the dark static splash fallback.
+- Fix #188 (duplicate: #167): `_startup_hardware_test()`'s Cam/GPS check could leave a stale
+  "unreachable" result after a full system reboot slower than its original 120s window - now retries
+  indefinitely (every 15s) instead of giving up after one bounded attempt.
 - The Control Center's static OLED-mirror placeholder (shown before the live `/image` probe
   succeeds) showed PiFinder's original full-color/blue splash image instead of the documented
   red-converted version matching real hardware's actual red-channel-only rendering (see
