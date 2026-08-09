@@ -44,6 +44,27 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // solved position and never changes just because a target was set.
         bool getPiFinderTargetRADE(double &ra, double &dec) const;
 
+        // Edge-triggered companion to getPiFinderTargetRADE() above (added
+        // for the Goto-Forward mode-switch safety fix, see
+        // handleGotoForward()/ISNewSwitch() in pifinder_mount_bridge.cpp).
+        // getPiFinderTargetRADE() only ever answers "what is PiFinder's
+        // target *right now*" - it cannot tell "a fresh Goto request just
+        // arrived" apart from "the same value has been sitting there since
+        // before", which is exactly the ambiguity that made a value-only
+        // comparison unsafe (turning Goto-Forward mode on could immediately
+        // re-fire whatever target happened to already be there). This flag
+        // is set in updateProperty() on every genuine TARGET_EOD_COORD
+        // update from the PiFinder device - including a request for the
+        // *same* RA/Dec as before, since libindi's own INDI::Telescope::
+        // ISNewNumber() re-publishes that property on every incoming Goto
+        // request regardless of whether the value changed (verified against
+        // this project's own PiFinder LX200 driver, see lx200_pifinder.cpp's
+        // Goto() comment) - so a fresh click always sets this, even for an
+        // unchanged target, while a target that's merely still sitting there
+        // from before never does. consumePiFinderTargetPending() reads and
+        // clears it atomically so each real event is only ever acted on once.
+        bool consumePiFinderTargetPending();
+
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
 
@@ -115,6 +136,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
         mutable std::mutex m_mountRejectMutex;
         bool m_mountRejectedLastCoords = false;
         std::string m_mountRejectMessage;
+
+        // Guards m_piFinderTargetPending - same cross-thread reasoning as
+        // m_mountRejectMutex above (written from updateProperty()'s I/O
+        // thread, read/cleared from the driver's TimerHit() thread). Own
+        // mutex rather than reusing m_mountRejectMutex - unrelated state,
+        // no reason to couple their locking.
+        mutable std::mutex m_piFinderTargetMutex;
+        bool m_piFinderTargetPending = false;
 
         std::string m_shadowName;
         bool m_shadowOnline = false;

@@ -812,36 +812,35 @@ void PiFinderMountBridge::handleGotoForward()
             if (!hasTarget)
                 return;
 
-            if (std::isnan(m_lastForwardedRA))
+            if (!m_client->consumePiFinderTargetPending())
             {
-                // First observation since entering this mode - establish a
-                // baseline without forwarding a Goto, so switching into
-                // Goto-Forward (or a driver restart, e.g. for a hot-swapped
-                // build) doesn't immediately re-send whatever push-to target
-                // happened to already be set on PiFinder.
+                // No genuinely new Goto *event* since we started watching
+                // (a BridgeMode switch, or a driver restart while this mode
+                // was already active) - see consumePiFinderTargetPending()'s
+                // own header comment for why this is event-based, not a
+                // value comparison. Whatever target is already sitting here
+                // is presumed stale/already acted on, not something to
+                // blindly re-fire (found live 2026-08-09: turning Goto-
+                // Forward on immediately re-slewed to the last-held target -
+                // an earlier value-comparison approach here couldn't
+                // reliably tell "stale" apart from "new").
                 //
-                // Transition straight to HOLDING rather than staying IDLE:
+                // Still move to HOLDING rather than staying IDLE forever:
                 // found live (2026-08-08) that a driver restart while
                 // Goto-Forward was already active and holding a target left
-                // the state machine permanently stuck in IDLE - the target
-                // hadn't "changed" since it was already set before the
-                // restart, so isNewTarget below never fired and drift went
-                // uncorrected indefinitely (Altair drifted to 3.3' with no
-                // correction). HOLDING doesn't fire anything on this tick
-                // either (no Goto here), but from the *next* tick on it
-                // actively re-checks drift/threshold and self-corrects -
-                // exactly the same "just establish a baseline, don't fire
-                // yet" intent above, but without going permanently dormant.
+                // the state machine permanently stuck in IDLE - nothing
+                // "new" ever arrived, so drift went uncorrected indefinitely
+                // (Altair drifted to 3.3' with no correction). HOLDING does
+                // not fire anything on this tick either (no Goto here), but
+                // from the *next* tick on it both actively re-checks drift/
+                // threshold (self-correcting via the existing settle logic)
+                // and applies this exact same pending-flag check itself, so
+                // a subsequent genuinely new target still fires immediately.
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
                 m_forwardState = ForwardState::HOLDING;
                 return;
             }
-
-            const bool isNewTarget = std::abs(targetRA - m_lastForwardedRA) > 1e-9 ||
-                                      std::abs(targetDec - m_lastForwardedDec) > 1e-9;
-            if (!isNewTarget)
-                return;
 
             {
                 double mountRA, mountDec;
@@ -999,12 +998,11 @@ void PiFinderMountBridge::handleGotoForward()
         case ForwardState::HOLDING:
         {
             // A new push-to target always takes priority over continuing to
-            // hold the old one - same "is this genuinely new" check as IDLE.
+            // hold the old one - same pending-event check as IDLE (see
+            // consumePiFinderTargetPending()'s header comment).
             if (hasTarget)
             {
-                const bool isNewTarget = std::abs(targetRA - m_lastForwardedRA) > 1e-9 ||
-                                          std::abs(targetDec - m_lastForwardedDec) > 1e-9;
-                if (isNewTarget)
+                if (m_client->consumePiFinderTargetPending())
                 {
                     {
                         double mountRA, mountDec;
@@ -1293,27 +1291,25 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // re-entering it always re-baselines against whatever target
             // PiFinder currently has instead of reacting to a stale one.
             //
-            // Snapshot that existing target directly as the baseline (rather
-            // than NaN) - found live (2026-08-09): NaN made handleGotoForward()
-            // treat the *next* observed target, even a genuinely new one just
-            // picked in KStars right as/after this mode switch, as "first
-            // observation, just baseline it, don't forward" (see that
-            // function's own comment) - the Goto silently did nothing on the
-            // first press and only fired on a second, distinct-enough one.
-            // Snapshotting here still protects against re-firing a stale
-            // pre-existing target (the actual original intent), while letting
-            // a target that's different from what was already there act
-            // immediately. Falls back to NaN if PiFinder has no target at all
-            // yet - handleGotoForward()'s isnan-guarded baseline path (needed
-            // separately for a driver restart while this mode is already
-            // active, which never runs through ISNewSwitch at all) still
-            // covers that case correctly.
+            // Discard any pending target-update event from before this
+            // switch - handleGotoForward()'s IDLE case (see its own comment)
+            // now reacts to a genuinely new Goto *event*
+            // (consumePiFinderTargetPending(), edge-triggered) rather than
+            // comparing RA/Dec values, so this is a plain "start listening
+            // from here" reset, not a value snapshot. This replaces an
+            // earlier value-snapshot version of this fix (2026-08-09) that
+            // turned out unsafe live: turning Goto-Forward on immediately
+            // re-slewed to the mount's last-held target, because a value
+            // comparison alone can't reliably tell "stale target already
+            // sitting there" apart from "genuinely new" (see
+            // pifinder_bridge_client.h's consumePiFinderTargetPending() for
+            // why an event-based signal fixes that). A target that was
+            // already there before this switch produces no new event and is
+            // correctly ignored; picking the very same object again in
+            // KStars right after switching modes still fires immediately,
+            // since that click produces a fresh event regardless of value.
             m_forwardState = ForwardState::IDLE;
-            if (!m_client->getPiFinderTargetRADE(m_lastForwardedRA, m_lastForwardedDec))
-            {
-                m_lastForwardedRA = std::nan("");
-                m_lastForwardedDec = std::nan("");
-            }
+            m_client->consumePiFinderTargetPending();
 
             // Same idea for Auto-Correct's Goto-refine state machine - don't
             // let an in-progress settle/retry cycle from a previous mode
