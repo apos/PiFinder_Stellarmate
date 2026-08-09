@@ -4,10 +4,10 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.6.0"
+pifinder_stellarmate_version_stable="2.6.1"
 
 # This script is actually tested against this version
-pifinder_stellarmate_version_testing="2.6.0"
+pifinder_stellarmate_version_testing="2.6.1"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
 smos_version_stable="2.2.1"
@@ -361,6 +361,23 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 # just re-fetching the one already checked out.
                 if ! git fetch origin --tags; then
                     echo "❌ ERROR: 'git fetch origin --tags' failed - aborting rather than"
+                    echo "❌ patching/building against a checkout left in an unknown state."
+                    exit 1
+                fi
+                # The existing checkout always has local modifications at
+                # this point - every diffs/*.diff patch this script applies
+                # is a tracked-file modification, still present from the
+                # previous run. `git checkout <different-tag>` refuses to
+                # switch refs while those would be overwritten (found live
+                # 2026-08-09, #190: updating from a pinned v2.6.0 checkout to
+                # v2.6.1 failed with "Your local changes... would be
+                # overwritten by checkout" on every previously-patched
+                # file). They're fully reproducible (re-applied by
+                # patch_PiFinder_installation_files.sh a few lines below),
+                # so discarding them here is always safe - reset to the
+                # *current* HEAD first, before switching to the new tag.
+                if ! git reset --hard HEAD; then
+                    echo "❌ ERROR: 'git reset --hard HEAD' failed - aborting rather than"
                     echo "❌ patching/building against a checkout left in an unknown state."
                     exit 1
                 fi
