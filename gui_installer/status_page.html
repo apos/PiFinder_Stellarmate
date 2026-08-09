@@ -618,8 +618,15 @@
     cursor: pointer; text-align: center; border: 1px solid #444;
   }
   #mb-big-actions-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
-  .mb-big-sync-btn { background: #1c2a1c; color: #7fc97f; border-color: #3a5a3a; }
-  .mb-big-sync-btn:hover { background: #24371f; border-color: #4caf50; color: #97dc97; }
+  /* Same standard/neutral look as .mb-coupling-btn (2026-08-10, direct
+     feedback: green read as an active/selected state, but this is a
+     one-shot action button, not a mode toggle - it should look like the
+     other buttons at rest and only visibly change while actually
+     processing, via the :disabled rule below during triggerManualSync()'s
+     in-flight window). */
+  .mb-big-sync-btn { background: #222; color: #ddd; border-color: #444; }
+  .mb-big-sync-btn:not(:disabled):hover { border-color: #777; }
+  .mb-big-sync-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
