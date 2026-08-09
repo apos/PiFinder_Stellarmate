@@ -24,6 +24,32 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         void setDevices(const std::string &piFinderName, const std::string &mountName);
 
+        // Cold-start property-binding race (#159): watchDevice() in
+        // setDevices() only ever sends the initial <getProperties> request
+        // once - if indiserver or the watched driver itself hasn't finished
+        // registering yet at that exact moment (common right after a full
+        // Pi reboot, when every driver is starting up together), the
+        // properties isReady() depends on may simply never arrive, with
+        // nothing to notice or retry. Live-verified: a plain
+        // Disconnect()/Connect() cycle does NOT recover this (it repeats
+        // the same one-shot request), only a full process restart did.
+        // Call once per TimerHit() tick while !isReady() - internally
+        // no-ops until a short grace period has passed (give the original
+        // subscription a first real chance), then re-requests whichever of
+        // the three properties are still missing via watchProperty()
+        // (which - unlike watchDevice() - actually resends
+        // <getProperties> on every call), on a bounded backoff. Returns
+        // true on ticks where a retry was actually (re-)issued, so the
+        // driver can log it. See bindingGaveUp() for the final-failure case.
+        bool retryMissingPropertiesIfNeeded();
+
+        // True once BINDING_RETRY_MAX_ATTEMPTS has been exhausted without
+        // isReady() ever becoming true - a genuinely absent/misconfigured
+        // device (wrong name in Active devices, driver not actually
+        // running), not just a slow cold-start race. Reset by setDevices()
+        // (a fresh Connect() deserves a fresh attempt).
+        bool bindingGaveUp() const { return m_bindingGaveUp; }
+
         // Third, fully independent device (#181) - purely mirrors
         // PiFinder's position via Sync for visualization/testing, never
         // participates in isReady()/getMountRADE()/sendMountCoords(). Safe
@@ -128,6 +154,17 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
         INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;
+
+        // #159 cold-start property-binding retry - tick-counted (against
+        // TimerHit()'s own ~2s period), same idiom as the driver's own
+        // SETTLE_TICKS/MAX_FRESHNESS_WAIT_TICKS, not wall-clock timing.
+        static constexpr int BINDING_RETRY_GRACE_TICKS = 2;    // ~4s: let the original subscription resolve on its own first
+        static constexpr int BINDING_RETRY_INTERVAL_TICKS = 2; // ~4s between retry attempts
+        static constexpr int BINDING_RETRY_MAX_ATTEMPTS = 3;   // "a handful", ~16s total budget incl. grace
+        int m_bindingRetryTicksElapsed = 0;
+        int m_bindingRetryCooldownTicks = 0;
+        int m_bindingRetryAttempts = 0;
+        bool m_bindingGaveUp = false;
 
         // Written from updateProperty()/newMessage() (INDI::BaseClient's own
         // I/O thread), read/written from sendMountCoords()/
