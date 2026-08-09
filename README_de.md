@@ -16,10 +16,10 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 
 > ### ✅ **Aktuelle Version — v2.0.0**
 >
-> * Gebaut und verifiziert für **PiFinder-Software 2.6.0** auf **StellarMate OS 2.2.1** (Arch Linux) — PiFinder ist jetzt fest auf diesen Release-Tag gepinnt (siehe `version.txt`), nicht mehr auf den beweglichen HEAD des upstream `release`-Branches, für reproduzierbare Installationen.
+> * Gebaut und verifiziert für **PiFinder-Software 2.6.1** auf **StellarMate OS 2.2.1** (Arch Linux) — PiFinder ist jetzt fest auf diesen Release-Tag gepinnt (siehe `version.txt`), nicht mehr auf den beweglichen HEAD des upstream `release`-Branches, für reproduzierbare Installationen.
 > * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12).
 > * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅. (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
-> * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung, alle fünf Coupling-Presets (inklusive des neuen Simulationsmodus "Mount is source") — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
+> * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung, alle vier Coupling-Presets — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
 > * **Neu in diesem Release**: die PiFinder-Kachel hat "Quick keys" bekommen — ein kompaktes Tastenfeld direkt auf der Seite (Pfeile, Long, Enter, zwei wählbare Layouts), um PiFinders OLED-Menü zu bedienen, ohne auf die separate Remote-Seite zu wechseln. Mount Bridge, PiFinder Mode/Test/Power und Install or Update sind jetzt einklappbar, die Wahl bleibt über Reloads hinweg gespeichert. Ein Night-Mode-Umschalter stellt den gesamten Seitentext in leuchtendem Rot dar. PiFinder-Installationen/Updates zielen jetzt auf einen gepinnten Release-Tag statt auf den beweglichen HEAD des upstream `release`-Branches — behebt einen Installer, der sich weigern konnte zu laufen, sobald upstream einen neuen Release geschnitten hat. Ein neues "PiFinder"-Badge zeigt PiFinders eigene Mount-Type- + PiFinder-Type-Einstellungen auf einen Blick (grün solange PiFinder läuft, rot bei Nichtübereinstimmung mit der verbundenen Montierung), und das Montierungssymbol im Mount-Bridge-Diagramm zeigt jetzt zusätzlich den eigenen Mount Type der Montierung. Siehe [CHANGELOG.md](CHANGELOG.md) für die vollständige Liste.
 
 ---
@@ -159,10 +159,8 @@ Reckoning verfolgt sie danach weiter, zum Testen ohne Himmelszugang), ein "Toggl
 für ein optionales kleines SPI-Zweitdisplay
 (siehe `test_tools/`) sowie immer verfügbare Reboot-/Shutdown-Buttons für den ganzen Pi. Eine
 **Mount-Bridge**-Kachel fasst die Einrichtung des Coupling Dial (Web-Manager-Profil, Treiber,
-Mount-Verknüpfung, Verbinden sowie fünf Ein-Klick-Coupling-Presets — Verify/Alert only,
-Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward und "Mount is source" — kehrt die
-übliche Richtung um, sodass die Montierung PiFinders Position vorgibt statt umgekehrt, für volle
-Simulation ganz ohne PiFinder-Hardware) in einer einzigen geführten
+Mount-Verknüpfung, Verbinden sowie vier Ein-Klick-Coupling-Presets — Verify/Alert only,
+Auto-correct (Sync), Auto-correct (Goto & Track) und Goto-Forward) in einer einzigen geführten
 Checkliste zusammen, inklusive eines "Autoconnect"-Modus, der den ganzen Ablauf automatisch
 durchführt, sobald ein Coupling-Preset ausgewählt wird, oder eines expliziten "Setup"-Buttons, um
 das gezielt vorab zu erledigen. Starten mit:
