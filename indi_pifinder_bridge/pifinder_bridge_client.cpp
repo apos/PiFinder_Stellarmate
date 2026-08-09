@@ -16,6 +16,11 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_mountAbortSP = nullptr;
     m_mountSlewRateSP = nullptr;
 
+    m_bindingRetryTicksElapsed = 0;
+    m_bindingRetryCooldownTicks = 0;
+    m_bindingRetryAttempts = 0;
+    m_bindingGaveUp = false;
+
     watchDevice(m_piFinderName.c_str());
     watchDevice(m_mountName.c_str());
 }
@@ -23,6 +28,46 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
 bool PiFinderBridgeClient::isReady() const
 {
     return m_piFinderEqNP != nullptr && m_mountEqNP != nullptr && m_mountOnCoordSetSP != nullptr;
+}
+
+bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
+{
+    if (isReady() || m_bindingGaveUp)
+        return false;
+
+    ++m_bindingRetryTicksElapsed;
+
+    if (m_bindingRetryTicksElapsed < BINDING_RETRY_GRACE_TICKS)
+        return false;
+
+    if (m_bindingRetryCooldownTicks > 0)
+    {
+        --m_bindingRetryCooldownTicks;
+        return false;
+    }
+
+    if (m_bindingRetryAttempts >= BINDING_RETRY_MAX_ATTEMPTS)
+    {
+        m_bindingGaveUp = true;
+        return false;
+    }
+
+    // Re-request only whichever properties never arrived - watchProperty(),
+    // unlike watchDevice(), actually resends <getProperties> on every call,
+    // which is exactly what's needed here (a device/property that showed up
+    // late gets asked again, one that's genuinely never coming doesn't get
+    // silently retried forever without eventually hitting the attempt cap
+    // above).
+    if (!m_piFinderEqNP)
+        watchProperty(m_piFinderName.c_str(), "EQUATORIAL_EOD_COORD");
+    if (!m_mountEqNP)
+        watchProperty(m_mountName.c_str(), "EQUATORIAL_EOD_COORD");
+    if (!m_mountOnCoordSetSP)
+        watchProperty(m_mountName.c_str(), "ON_COORD_SET");
+
+    ++m_bindingRetryAttempts;
+    m_bindingRetryCooldownTicks = BINDING_RETRY_INTERVAL_TICKS;
+    return true;
 }
 
 void PiFinderBridgeClient::setShadowDevice(const std::string &shadowName)

@@ -129,6 +129,13 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         bool m_shadowAutoArmed = false; // guards auto-arm to once per device (re)appearance, not every tick
         void autoArmShadowSyncIfDevicePresent();
 
+        // #159: guards the "binding never resolved" ERROR log to once per
+        // give-up, not every tick thereafter - reset whenever isReady()
+        // comes true again (a later disconnect/reconnect deserves a fresh
+        // warning if it happens again). See PiFinderBridgeClient::
+        // retryMissingPropertiesIfNeeded()/bindingGaveUp().
+        bool m_bindingGiveUpLogged = false;
+
         // Mode-Readiness-Check (2026-08-08, User request): runs whenever a
         // Coupling mode other than Off is (re-)selected. Verifies known
         // easy-to-forget preconditions instead of silently assuming them -

@@ -715,9 +715,24 @@ void PiFinderMountBridge::TimerHit()
 
     if (!m_client->isReady())
     {
+        // #159: cold-start race - a watched device/property that hadn't
+        // registered with indiserver yet when Connect() first ran could
+        // otherwise sit "not ready" forever, indistinguishable from a real
+        // functional bug (isReady() gates most of the driver's own
+        // behavior, and nothing here previously explained why).
+        if (m_client->retryMissingPropertiesIfNeeded())
+            LOG_INFO("PiFinder/mount device properties not all available yet - retrying subscription.");
+        else if (m_client->bindingGaveUp() && !m_bindingGiveUpLogged)
+        {
+            LOG_ERROR("PiFinder/mount device properties never became available - check Active "
+                      "devices names match running drivers, or that both are actually connected. "
+                      "Reconnect once confirmed.");
+            m_bindingGiveUpLogged = true;
+        }
         SetTimer(getCurrentPollingPeriod());
         return;
     }
+    m_bindingGiveUpLogged = false;
 
     // Drift is computed and published whenever the bridge is ready
     // (PiFinder solving, mount connected), regardless of Coupling mode -
