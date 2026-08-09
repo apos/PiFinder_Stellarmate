@@ -197,12 +197,33 @@ risk flagged earlier for **real** mode too - a real installation with a PiFinder
 mismatch would produce systematically-wrong-but-internally-consistent (i.e. still "fresh") solves,
 which no freshness check could ever catch, only a physical/configuration audit could.
 
-## 7. Open questions (not decided)
+## 7. Open questions
 
-- Does Injected Solve's settle-detection already re-anchor continuously while genuinely stationary, or
-  only once per motion→settle transition? (§3/§4 - blocks choosing between Option B and C)
-- Does a real, measured solve-rate figure exist anywhere in PiFinder's own code/logs already, or would
-  measuring it be new work? (§3)
+- ~~Does Injected Solve's settle-detection already re-anchor continuously while genuinely stationary,
+  or only once per motion→settle transition?~~ **Answered (2026-08-10)**: only once, on the
+  transition itself - `integrator.py`'s fake-solve block (§4's Option A/B/C question) watches real
+  IMU angular *rate* and re-anchors (`_apply_successful_solve()`, same path a real solve uses)
+  exactly when `fake_solve_was_moving and not is_moving` - a genuine edge, not a level. Once settled
+  and staying settled, `last_solve_success`/`last_solve_attempt` are frozen at that one moment and do
+  **not** advance again until another real motion→settle cycle happens - matches tonight's own
+  live-observed behavior exactly (freshness naturally expiring ~`SolveFreshnessMaxAge` seconds after
+  a static injection, PR #202's own test log). Resolves in favor of **Option B being moot as
+  currently framed** - there's no "gap" to fix in Injected Solve's re-anchor logic itself, it's
+  working as designed; the actual friction was always just that a script-driven test (no real IMU
+  motion) can never trigger a re-anchor on its own. Between B/C: this points toward **Option A
+  staying correct as the permanent answer** (the driver's freshness gate has no reason to become
+  simulation-aware - it's accurately reflecting a real, load-bearing distinction: "has anything moved
+  and settled recently enough to trust this position").
+- ~~Does a real, measured solve-rate figure exist anywhere in PiFinder's own code/logs already, or
+  would measuring it be new work?~~ **Answered (2026-08-10)**: no dedicated solve-rate
+  tool/metric exists anywhere (searched for `solve.*rate`/`solve_rate` across `python/PiFinder/` -
+  only incidental hits: an unrelated rate-limiting comment, the fake-solve angular-rate check above,
+  nothing that computes or displays solves/second). The raw data to build one already exists, though:
+  `telemetry.py`'s `TelemetryRecorder.record_solve()` writes timestamped `last_solve_attempt`/
+  `last_solve_success` events to JSONL - opt-in via the `telemetry_record` config option (off by
+  default, toggleable live via `telemetry_record_on`/`_off` commands). A real solve-rate figure would
+  mean: enable recording during an actual observing session, then a small offline analysis script
+  over the resulting JSONL - genuinely new work (a script), not new instrumentation.
 - Should PiFinder Type ever be user-configurable *from* the Control Center (mirroring the existing
   device-role/profile UI patterns), or does it stay purely an on-device PiFinder setting this project
   never touches? (§6B - not raised by the user, noted here only as a natural follow-on question)
