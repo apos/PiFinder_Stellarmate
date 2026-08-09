@@ -217,6 +217,11 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
                        "Emergency stop", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 
+    IUFillSwitch(&MultiPointAlignS[ALIGN_START], "ALIGN_START", "Start", ISS_OFF);
+    IUFillSwitch(&MultiPointAlignS[ALIGN_STOP], "ALIGN_STOP", "Stop", ISS_OFF);
+    IUFillSwitchVector(&MultiPointAlignSP, MultiPointAlignS, 2, getDeviceName(), "MULTI_POINT_ALIGN",
+                       "Multi-Point Alignment (#191 PoC)", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
     IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
@@ -289,6 +294,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
         defineProperty(&AbortMountSP);
+        defineProperty(&MultiPointAlignSP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
@@ -316,6 +322,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
         deleteProperty(AbortMountSP.name);
+        deleteProperty(MultiPointAlignSP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
@@ -733,6 +740,13 @@ void PiFinderMountBridge::TimerHit()
         return;
     }
     m_bindingGiveUpLogged = false;
+
+    // #191 PoC - independent of Coupling mode entirely (a one-shot action,
+    // not a standing coupling mode - see the concept doc's own "Abgrenzung
+    // zu bestehenden Coupling-Modi"), so it ticks unconditionally here
+    // rather than through the BridgeModeSP dispatch below. Own state
+    // machine, no-ops immediately when IDLE/DONE.
+    handleMultiPointAlignment();
 
     // Drift is computed and published whenever the bridge is ready
     // (PiFinder solving, mount connected), regardless of Coupling mode -
@@ -1371,6 +1385,158 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
     }
 }
 
+// #191 PoC - see the header comment on MultiPointAlignSP and
+// docs/concepts/mount_bridge_multistar_alignment.md for the full design
+// this is a deliberately reduced slice of.
+bool PiFinderMountBridge::gotoAlignPoint(size_t index)
+{
+    const double ra = m_alignPoints[index].first;
+    const double dec = m_alignPoints[index].second;
+    double mountRA, mountDec;
+    applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                               ? angularSeparationArcmin(ra, dec, mountRA, mountDec)
+                               : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0);
+    if (!m_client->sendMountCoords(ra, dec, "TRACK"))
+    {
+        LOGF_ERROR("Multi-Point Alignment: failed to send Goto for point %zu/%zu (RA %.4fh, DEC %.4f deg).",
+                   index + 1, m_alignPoints.size(), ra, dec);
+        return false;
+    }
+    LOGF_INFO("Multi-Point Alignment: slewing to point %zu/%zu (RA %.4fh, DEC %.4f deg).",
+              index + 1, m_alignPoints.size(), ra, dec);
+    m_alignState = AlignState::SLEWING;
+    return true;
+}
+
+void PiFinderMountBridge::startMultiPointAlignment()
+{
+    if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+    {
+        LOG_WARN("Multi-Point Alignment: already running.");
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+    if (!m_client->isReady())
+    {
+        LOG_ERROR("Multi-Point Alignment: PiFinder/mount not ready - cannot start.");
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+
+    LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (PoC - fixed points, single "
+              "solve per point, Sync only - see #191).",
+              m_alignPoints.size());
+    m_alignPointIndex = 0;
+    if (gotoAlignPoint(m_alignPointIndex))
+    {
+        MultiPointAlignSP.s = IPS_BUSY;
+    }
+    else
+    {
+        m_alignState = AlignState::IDLE;
+        MultiPointAlignSP.s = IPS_ALERT;
+    }
+    IDSetSwitch(&MultiPointAlignSP, nullptr);
+}
+
+void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
+{
+    if (m_alignState == AlignState::IDLE)
+        return;
+
+    LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points.", reason, m_alignPointIndex,
+              m_alignPoints.size());
+    m_alignState = AlignState::IDLE;
+    // Reuses the existing panic-button path (#179) rather than a bespoke
+    // stop mechanism - matches UC4 in the concept doc exactly.
+    m_client->abortMount();
+    MultiPointAlignSP.s = IPS_ALERT;
+    IDSetSwitch(&MultiPointAlignSP, nullptr);
+}
+
+void PiFinderMountBridge::handleMultiPointAlignment()
+{
+    switch (m_alignState)
+    {
+        case AlignState::IDLE:
+        case AlignState::DONE:
+            return;
+
+        case AlignState::SLEWING:
+        {
+            if (!m_client->isMountSlewing())
+            {
+                m_alignSettleTicksRemaining = SETTLE_TICKS;
+                m_alignFreshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
+                m_alignState = AlignState::SETTLING;
+                LOGF_INFO("Multi-Point Alignment: arrived at point %zu/%zu, waiting for a fresh "
+                          "PiFinder solve to verify.",
+                          m_alignPointIndex + 1, m_alignPoints.size());
+            }
+            break;
+        }
+
+        case AlignState::SETTLING:
+        {
+            if (m_alignSettleTicksRemaining > 0)
+            {
+                --m_alignSettleTicksRemaining;
+                break;
+            }
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            {
+                if (--m_alignFreshnessWaitTicksRemaining <= 0)
+                {
+                    LOGF_WARN("Multi-Point Alignment: no fresh solve at point %zu/%zu within the "
+                              "wait budget - skipping this point (see §4.4).",
+                              m_alignPointIndex + 1, m_alignPoints.size());
+                    advanceAlignPoint();
+                }
+                break;
+            }
+
+            double piRA, piDec;
+            if (m_client->getPiFinderRADE(piRA, piDec) && m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            {
+                LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
+                          "DEC %.4f deg (fresh PiFinder solve).",
+                          m_alignPointIndex + 1, m_alignPoints.size(), piRA, piDec);
+            }
+            else
+            {
+                LOGF_WARN("Multi-Point Alignment: could not sync at point %zu/%zu - skipping.",
+                          m_alignPointIndex + 1, m_alignPoints.size());
+            }
+            advanceAlignPoint();
+            break;
+        }
+    }
+}
+
+void PiFinderMountBridge::advanceAlignPoint()
+{
+    ++m_alignPointIndex;
+    if (m_alignPointIndex >= m_alignPoints.size())
+    {
+        LOGF_INFO("Multi-Point Alignment: sequence complete (%zu point(s) attempted).",
+                  m_alignPoints.size());
+        m_alignState = AlignState::DONE;
+        MultiPointAlignSP.s = IPS_OK;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+
+    if (!gotoAlignPoint(m_alignPointIndex))
+    {
+        m_alignState = AlignState::IDLE;
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+    }
+}
+
 bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
@@ -1545,6 +1711,20 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             IUResetSwitch(&AbortMountSP);
             IDSetSwitch(&AbortMountSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, MultiPointAlignSP.name) == 0)
+        {
+            IUUpdateSwitch(&MultiPointAlignSP, states, names, n);
+
+            if (MultiPointAlignS[ALIGN_START].s == ISS_ON)
+                startMultiPointAlignment();
+            else if (MultiPointAlignS[ALIGN_STOP].s == ISS_ON)
+                stopMultiPointAlignment("stopped by user");
+
+            IUResetSwitch(&MultiPointAlignSP);
+            IDSetSwitch(&MultiPointAlignSP, nullptr);
             return true;
         }
 

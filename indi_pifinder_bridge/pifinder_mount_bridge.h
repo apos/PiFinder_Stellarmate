@@ -19,6 +19,8 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 class PiFinderBridgeClient;
 
@@ -177,6 +179,40 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // repeatedly).
         ISwitchVectorProperty AbortMountSP;
         ISwitch AbortMountS[1];
+
+        // #191 PoC - automatic multi-point alignment, see
+        // docs/concepts/mount_bridge_multistar_alignment.md. Deliberately
+        // scoped down from the full concept for a feature-branch proof of
+        // concept: a fixed, hardcoded point set instead of catalog-driven
+        // selection (§4.2), a single fresh solve per point instead of a
+        // median of several (§4.3), no KStars-model feed (§4.5, explicitly
+        // flagged there as separate/research-first). Reuses the same
+        // Sync-only approach the concept's own ADR (§5) settled on for a
+        // first OnStep-scoped implementation - no new "Align" primitive.
+        ISwitchVectorProperty MultiPointAlignSP;
+        ISwitch MultiPointAlignS[2];
+        enum { ALIGN_START, ALIGN_STOP };
+
+        enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
+        AlignState m_alignState = AlignState::IDLE;
+        // RA (hours) / Dec (degrees) - spread across RA quadrants at a
+        // moderate declination, avoiding the pole (per the concept's own
+        // "Pol und Horizont-Nähe meiden" note). No altitude/visibility
+        // filtering (§4.2's catalog-selection scope, not part of this PoC) -
+        // fine against the Simulator, would need real horizon-awareness
+        // before ever pointing at a real sky.
+        std::vector<std::pair<double, double>> m_alignPoints = {
+            {0.0, 30.0}, {6.0, 30.0}, {12.0, 30.0}, {18.0, 30.0},
+        };
+        size_t m_alignPointIndex = 0;
+        int m_alignSettleTicksRemaining = 0;
+        int m_alignFreshnessWaitTicksRemaining = 0;
+
+        void handleMultiPointAlignment();
+        void startMultiPointAlignment();
+        void stopMultiPointAlignment(const char *reason);
+        bool gotoAlignPoint(size_t index);
+        void advanceAlignPoint();
 
         INumberVectorProperty DriftThresholdNP;
         INumber DriftThresholdN[1];
