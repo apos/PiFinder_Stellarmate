@@ -1390,6 +1390,34 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             m_forwardState = ForwardState::IDLE;
             m_client->consumePiFinderTargetPending();
 
+            // Sync the mount to PiFinder's current position once, right when
+            // entering Goto-Forward - gives the mount's own model a known-
+            // good alignment reference before any Goto is ever forwarded,
+            // the same way you'd sync a real scope to a known star before
+            // doing GoTos elsewhere (direct live feedback, 2026-08-09: "At a
+            // Goto Start I should do a 'sync mount from PiFinder' first").
+            // Gated on solve freshness (same isPiFinderSolveFresh() check
+            // Auto-correct already uses) - only trust PiFinder's live
+            // position as a sync reference if it's backed by a recent real
+            // camera solve, not a stale/IMU-only guess. Found live the same
+            // session: syncing off a frozen Injected-Solve position (the
+            // physical unit wasn't actually moving with the test mount)
+            // would have synced the mount to a meaningless reference -
+            // skipping when not fresh is deliberate, not a gap to "fix" by
+            // relaxing this check.
+            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+            {
+                double piRA, piDec;
+                if (m_client->getPiFinderRADE(piRA, piDec) && isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+                {
+                    if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                        LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
+                                  piRA, piDec);
+                    else
+                        LOG_WARN("Failed to sync mount to PiFinder's position on entering Goto-Forward.");
+                }
+            }
+
             // Same idea for Auto-Correct's Goto-refine state machine - don't
             // let an in-progress settle/retry cycle from a previous mode
             // silently keep running (or resume stale) after switching away
