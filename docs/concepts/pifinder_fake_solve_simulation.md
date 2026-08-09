@@ -206,11 +206,13 @@ precedent exactly) and a ready-to-file template in `docs/upstream_pr_templates.m
 
 ## 9. Test Strategy
 
-- **Baseline verification** (per [[basic-memory/00018_bm-upstream-pr-strategy]]): before writing
-  any patch, confirm in a fresh, isolated worktree off `apos/PiFinder`'s `release` branch (the
-  branch that actually matches this project's pinned `version.txt` — currently `2.6.0` — see
-  [[00085_pifinder-version-pinning-release-vs-main]]) that the injection point behaves as
-  documented in §4, not as assumed.
+- **Baseline verification, directly against `~/PiFinder`** (per
+  [[basic-memory/00004_setup-mechanism]] — this is standard local StellarMate development, **not**
+  the separate/rare upstream-PR-preparation process in
+  [[basic-memory/00018_bm-upstream-pr-strategy]], which does not apply here): before writing any
+  patch, confirm on the live, already-working `~/PiFinder` checkout (has venv/submodules/catalogs
+  already set up — no second environment needed) that the injection point behaves as documented in
+  §4, not as assumed.
 - **Functional verification**: `py_compile`/lint at minimum; live functional testing via the
   `pifinder-remote` skill (headless PiFinder instance, driven via simulated keypresses, state read
   back via its API) to actually prove a fake-aligned position dead-reckons correctly under
@@ -254,9 +256,10 @@ this concept exists specifically to unblock safe, repeatable iteration on both.
 
 1. ~~Read `integrator.py`/`solver.py` properly~~ — **done**, see §4 and
    [#109](https://github.com/apos/PiFinder_Stellarmate/issues/109).
-2. **Isolated worktree off `apos/PiFinder`'s `release` branch** (2.6.0), baseline-verify current
-   `solver_queue`/integrator behavior matches this document's assumptions.
-3. **Implement** the fake-solve injection + trigger, as `diffs/*.diff` file(s), following the
+2. **Baseline-verify directly against `~/PiFinder`** (the live, working checkout — not a fresh
+   clone/worktree) that `solver_queue`/integrator behavior matches this document's assumptions.
+3. **Implement** the fake-solve injection + trigger, directly in `~/PiFinder`, then extract as
+   `diffs/*.diff` file(s) for `PiFinder_Stellarmate`, following the
    `debug_solve` precedent's file-by-file shape exactly (§8).
 4. **Functionally verify** via the `pifinder-remote` skill — prove a fake-aligned position
    dead-reckons correctly under simulated movement, and that every consumer's "simulated" signal is
