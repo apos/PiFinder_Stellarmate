@@ -1292,9 +1292,28 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // Any mode change resets the Goto-Forward state machine, so
             // re-entering it always re-baselines against whatever target
             // PiFinder currently has instead of reacting to a stale one.
+            //
+            // Snapshot that existing target directly as the baseline (rather
+            // than NaN) - found live (2026-08-09): NaN made handleGotoForward()
+            // treat the *next* observed target, even a genuinely new one just
+            // picked in KStars right as/after this mode switch, as "first
+            // observation, just baseline it, don't forward" (see that
+            // function's own comment) - the Goto silently did nothing on the
+            // first press and only fired on a second, distinct-enough one.
+            // Snapshotting here still protects against re-firing a stale
+            // pre-existing target (the actual original intent), while letting
+            // a target that's different from what was already there act
+            // immediately. Falls back to NaN if PiFinder has no target at all
+            // yet - handleGotoForward()'s isnan-guarded baseline path (needed
+            // separately for a driver restart while this mode is already
+            // active, which never runs through ISNewSwitch at all) still
+            // covers that case correctly.
             m_forwardState = ForwardState::IDLE;
-            m_lastForwardedRA = std::nan("");
-            m_lastForwardedDec = std::nan("");
+            if (!m_client->getPiFinderTargetRADE(m_lastForwardedRA, m_lastForwardedDec))
+            {
+                m_lastForwardedRA = std::nan("");
+                m_lastForwardedDec = std::nan("");
+            }
 
             // Same idea for Auto-Correct's Goto-refine state machine - don't
             // let an in-progress settle/retry cycle from a previous mode
@@ -1586,6 +1605,13 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IUUpdateNumber(&DriftThresholdNP, values, names, n);
             DriftThresholdNP.s = IPS_OK;
             IDSetNumber(&DriftThresholdNP, nullptr);
+            // Found live (2026-08-09): unlike MaxSyncDriftNP/BridgeModeSP/
+            // ShadowSyncSP just above/below, this handler never persisted
+            // the change - a user-set Threshold silently reverted to the
+            // compiled-in default (5) on the next driver restart, with
+            // nothing in the GUI explaining why. Same auto-save-on-change
+            // pattern as those, just missing here.
+            saveConfig(true, DriftThresholdNP.name);
             return true;
         }
 
@@ -1594,6 +1620,9 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IUUpdateNumber(&MaxSyncDriftNP, values, names, n);
             MaxSyncDriftNP.s = IPS_OK;
             IDSetNumber(&MaxSyncDriftNP, nullptr);
+            // Same gap as DriftThresholdNP above (2026-08-09) - found while
+            // fixing that one, same missing auto-save.
+            saveConfig(true, MaxSyncDriftNP.name);
             return true;
         }
 
@@ -1602,6 +1631,9 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IUUpdateNumber(&SolveFreshnessMaxAgeNP, values, names, n);
             SolveFreshnessMaxAgeNP.s = IPS_OK;
             IDSetNumber(&SolveFreshnessMaxAgeNP, nullptr);
+            // Same gap as DriftThresholdNP above (2026-08-09) - found while
+            // fixing that one, same missing auto-save.
+            saveConfig(true, SolveFreshnessMaxAgeNP.name);
             return true;
         }
     }
