@@ -1352,7 +1352,32 @@ def _pifinder_solve_status(port: str):
         # stayed grey/"unknown" through a real, confirmed plate-solve because
         # this always read None from the wrong path.
         solution = data.get("solution") or {}
+        # PiFinder's own Mount Type + PiFinder Type (Settings -> Mount Type /
+        # Settings -> Advanced -> PiFinder Type), read directly from
+        # PiFinder's own /api/orientation_status - deliberately NOT sourced
+        # from Mount Bridge's PIFINDER_ORIENTATION INDI property, which only
+        # exists while Mount Bridge is running/connected. The PiFinder
+        # orientation ampel badge must show whenever PiFinder hardware
+        # itself is present, regardless of Mount Bridge/coupling state
+        # (direct feedback, 2026-08-09: "the PiFinder badge MUST be visible
+        # when Hardware ist present, not only, when coupling is enable").
+        # Best-effort: an older PiFinder without this route, or a transient
+        # failure, just leaves both fields None - never breaks the rest of
+        # this (already independently useful) response.
+        pifinder_mount_type = None
+        pifinder_screen_direction = None
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/orientation_status", timeout=3
+            ) as resp:
+                orientation = json.loads(resp.read())
+            pifinder_mount_type = orientation.get("mount_type")
+            pifinder_screen_direction = orientation.get("screen_direction")
+        except Exception:
+            pass
         return {
+            "pifinder_mount_type": pifinder_mount_type,
+            "pifinder_screen_direction": pifinder_screen_direction,
             "debug_solve": data.get("debug_solve"),
             # Fake-Solve (see #106/#128) - a synthetic RA/Dec injected via
             # PiFinder's /api/fake_solve, with real IMU dead-reckoning taking

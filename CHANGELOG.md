@@ -7,6 +7,22 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **PiFinder/Mount orientation status**: a new always-visible "PiFinder" ampel badge shows PiFinder's
+  own Mount Type + PiFinder Type settings (its own device icon, `gui_installer/status_page.html`) -
+  amber while first checking, green once PiFinder is confirmed running, white/grey if it isn't, red
+  only once Mount Bridge separately confirms a Mount Type mismatch against the connected INDI mount
+  (bundled: the mount icon's own new second line, e.g. "EQ (GEM)", goes red at the same time). Direct
+  feedback (2026-08-09): the badge must reflect PiFinder hardware presence, not Mount Bridge/coupling
+  state - so it's now fed by a direct GET to PiFinder's own `/api/orientation_status`
+  (`_pifinder_solve_status()`, `gui_installer/server.py`, same request/port as the existing Cam/Solve
+  status, independent of INDI/Mount Bridge entirely) rather than only Mount Bridge's own
+  `PIFINDER_ORIENTATION` INDI property, which stayed invisible whenever coupling wasn't running yet.
+  Icon and layout both follow the page's general "icon, colored info beside it, white name below"
+  convention rather than each badge inventing its own.
+- The drift badge (Mount Bridge diagram) now matches the height, padding, and background/border of
+  every other node/ampel badge on the page instead of standing out as an oversized number - a white
+  "Drift" label was added underneath the value (previously just a bare colored number), while the
+  green/yellow/red outline and value coloring by threshold stayed unchanged.
 - Fix #192: the OLED-mirror wait overlay now queries `pifinder.service`'s own systemd state
   (`_real_service_state()`, `gui_installer/server.py`, surfaced via `/api/pifinder_mode`'s new
   `real_service_state` field) instead of only inferring things from `/image` probe success/failure -
