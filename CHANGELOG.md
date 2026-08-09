@@ -248,6 +248,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **picamera2/drm_preview.py patch drift**: `diffs/drm_preview_smos.diff` (makes the optional `pykms`
+  import gracefully absent on Arch/SMOS) failed to apply against picamera2 0.3.37 - found live on a
+  fresh Pi5 install, `pip install picamera2` pulled 0.3.37 (a newer release than this Pi4's existing
+  0.3.36), whose `drm_preview.py` had gained a new `FMT_MAP` entry (`"NV12"`) the diff's hunks didn't
+  account for, breaking the whole camera import on that device. Same fragility class as the earlier
+  pandas/#190 patch-drift issues - `picamera2` was entirely unpinned in requirements.txt, so a fresh
+  install's exact version (and therefore whether any given patch still applies) depended purely on
+  *when* setup happened to run. Regenerated the diff against the real 0.3.37 source and pinned
+  `picamera2==0.3.37` explicitly in `pifinder_stellarmate_setup.sh` (same reasoning as the existing
+  python-libcamera pin) so the diff and the installed version can no longer drift apart on a fresh
+  install.
 - Fix #194: Goto-Forward silently ignored the first Goto after any BridgeMode switch (or a driver
   restart while it was already the active mode) - `ISNewSwitch()`'s reset of the forwarding baseline
   to a NaN sentinel made `handleGotoForward()` treat the very next observed target, even a brand new

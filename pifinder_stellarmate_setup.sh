@@ -633,6 +633,19 @@ else
     find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
     find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
 
+    # Pin picamera2 to a known-good version - PiFinder's own requirements.txt
+    # leaves it unpinned, so a fresh install can silently pull a newer
+    # release whose drm_preview.py has drifted from
+    # diffs/drm_preview_smos.diff's expected context, breaking the patch
+    # applied below (found live 2026-08-09: a fresh Pi5 install pulled
+    # 0.3.37, which added an FMT_MAP entry the diff's hunks didn't account
+    # for - same fragility class as the pandas/#190 patch-drift issues).
+    # Same reasoning as python-libcamera's pin above - keep this version and
+    # the diff in sync; if drm_preview.py's patch ever needs regenerating
+    # for a newer picamera2, bump this pin to match in the same change.
+    echo "🔧 Pinning picamera2 to 0.3.37 (matches diffs/drm_preview_smos.diff) ..."
+    pip install picamera2==0.3.37
+
     # Install python-libinput 0.1.0 manually (0.3.0a0 unavailable; setup.py uses removed 'imp')
     echo "🔧 Installing python-libinput 0.1.0 (patched for Python 3.12+) ..."
     LIBINPUT_TMP=$(mktemp -d)
