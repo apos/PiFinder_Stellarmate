@@ -630,8 +630,17 @@
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
-  .mb-abort-btn { background: #3a1414; color: #ff8a80; border-color: #e53935; font-weight: 600; }
-  .mb-abort-btn:not(:disabled):hover { background: #e53935; color: #fff; border-color: #e53935; }
+  /* Same solid-fill danger convention as the rest of the app's destructive/
+     critical actions (.power-btn - Uninstall, Reboot, Switch to Fake Mode,
+     Reinstall/Update) - matched 2026-08-10, direct feedback: this one had
+     grown its own bespoke dark-outline look instead, the only red button
+     in the whole page that didn't match. #a33 is the same shade
+     #install-uninstall-btn/#power-poweroff-btn use for their most severe
+     tier, appropriate here too - this is a real-time physical stop, not
+     less urgent than an uninstall. */
+  .mb-abort-btn { background: #a33; color: #fff; border-color: #a33; font-weight: 600; }
+  .mb-abort-btn:not(:disabled):hover { filter: brightness(1.15); }
+  .mb-abort-btn:disabled { background: #3a1414; color: #ff8a80; border-color: #5a2020; cursor: default; }
   /* Coupling presets are the tile's central control (per live feedback) -
      bigger and full-width, with their own label line above instead of
      squeezed inline to the buttons' left. */
@@ -1060,9 +1069,10 @@
   #mb-mode-details { color: #999; font-size: 0.76rem; line-height: 1.4; margin: -0.2rem 0 0.6rem 0; }
   /* Small inline toggle appended to #mb-status-line (2026-08-09, direct
      feedback - see updateMountRejectWarning()'s own comment for why this
-     replaced the old always-reflowing standalone warning row). Same danger
-     color as .mb-abort-btn, but text-only/no background - it's a small
-     addition to an existing line, not its own alert box. */
+     replaced the old always-reflowing standalone warning row). Light-red
+     text (not the solid-fill danger convention .mb-abort-btn now uses) -
+     it's a small addition to an existing line, not its own alert box or
+     button. */
   #mb-reject-warning-toggle { margin-left: 0.6rem; color: #ff8a80; cursor: pointer; white-space: nowrap; }
   #mb-reject-warning-toggle:hover { color: #ffb3ab; }
   #mb-reject-warning-details {
