@@ -122,7 +122,14 @@
     border-radius: 4px;
     background: #000;
   }
-  #pifinder-screen-wrap { position: relative; flex-shrink: 0; }
+  /* Row: the OLED mirror itself, then the help icon in its own small
+     column to the right - NOT an overlay on top of the image (see
+     .pifinder-screen-help's own comment for why that changed). */
+  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; }
+  /* Tightly wraps just the image + its waiting-overlay (inset:0 below) -
+     kept separate from #pifinder-screen-wrap so the icon column doesn't
+     also get covered by that overlay. */
+  #pifinder-screen-inner { position: relative; flex-shrink: 0; }
   /* Found live (2026-08-09, #187): the static splash fallback
      (pifinder_welcome.png, red-channel-only to match the real OLED) is dark
      enough that right after a real Pi reboot - before PiFinder's own web
@@ -224,14 +231,14 @@
     vertical-align: middle;
   }
   .help-link:hover { color: #ccc; border-color: #999; }
-  /* Pinned to the OLED thumbnail's own corner (2026-08-09, direct feedback)
-     rather than sitting inline with the tile heading like the other
-     .help-link uses - this one specifically documents the OLED screen
-     itself, so it stays visually attached to it. #pifinder-screen-wrap is
-     already position:relative (see #pifinder-screen-waiting above it). */
+  /* Top-right, beside the OLED thumbnail - not an overlay on top of it
+     (2026-08-10, direct feedback: at the OLED's real 154x154px size, the
+     earlier absolute-positioned-on-the-image version sat right on top of
+     actual screen content, e.g. covering part of PiFinder's own "Focus"
+     screen). #pifinder-screen-wrap now lays the image and this icon out
+     side by side instead. */
   .pifinder-screen-help {
-    position: absolute; top: 3px; right: 3px;
-    background: rgba(0, 0, 0, 0.55);
+    margin-top: 1px;
   }
   .refresh-link {
     display: inline-block;
@@ -1345,8 +1352,10 @@
       </div>
       <div id="pifinder-glance-row">
         <div id="pifinder-screen-wrap">
-          <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
-          <div id="pifinder-screen-waiting"><span id="pifinder-screen-waiting-text">Waiting for<br>PiFinder&hellip;</span></div>
+          <div id="pifinder-screen-inner">
+            <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+            <div id="pifinder-screen-waiting"><span id="pifinder-screen-waiting-text">Waiting for<br>PiFinder&hellip;</span></div>
+          </div>
           <a class="help-link pifinder-screen-help" href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener" title="PiFinder User Guide">i</a>
         </div>
         <!-- Quick keys: same LEFT/UP/DOWN/RIGHT/SQUARE(+LNG_ Long-combo) codes
