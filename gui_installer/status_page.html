@@ -207,17 +207,13 @@
   .tile-heading-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.6rem;
     cursor: pointer;
     margin: 0 0 0.5rem;
   }
-  .tile-heading-row .tile-heading { margin: 0; flex-shrink: 0; }
-  /* margin-left:auto (rather than the row's own justify-content:
-     space-between, removed 2026-08-10) so a heading row can carry a third,
-     optional element (e.g. #mb-action-status) between the title and the
-     chevron without needing its own layout rule - the chevron just always
-     ends up flush right regardless of what else is in the row. */
-  .tile-chevron { color: #888; font-size: 0.8rem; flex-shrink: 0; user-select: none; margin-left: auto; }
+  .tile-heading-row .tile-heading { margin: 0; }
+  .tile-chevron { color: #888; font-size: 0.8rem; flex-shrink: 0; user-select: none; }
   .tile-heading-row:hover .tile-chevron { color: #ccc; }
   .help-link {
     display: inline-block;
