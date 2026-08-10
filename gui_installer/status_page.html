@@ -207,13 +207,17 @@
   .tile-heading-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.6rem;
     cursor: pointer;
     margin: 0 0 0.5rem;
   }
-  .tile-heading-row .tile-heading { margin: 0; }
-  .tile-chevron { color: #888; font-size: 0.8rem; flex-shrink: 0; user-select: none; }
+  .tile-heading-row .tile-heading { margin: 0; flex-shrink: 0; }
+  /* margin-left:auto (rather than the row's own justify-content:
+     space-between, removed 2026-08-10) so a heading row can carry a third,
+     optional element (e.g. #mb-action-status) between the title and the
+     chevron without needing its own layout rule - the chevron just always
+     ends up flush right regardless of what else is in the row. */
+  .tile-chevron { color: #888; font-size: 0.8rem; flex-shrink: 0; user-select: none; margin-left: auto; }
   .tile-heading-row:hover .tile-chevron { color: #ccc; }
   .help-link {
     display: inline-block;
@@ -939,20 +943,27 @@
      Reserving the space plus a short opacity transition fixes both: the
      rest of the tile never jumps, and the message arrives/leaves smoothly. */
   #mb-action-status {
-    height: 1.9rem;
+    height: 1.5rem;
     box-sizing: border-box;
     background: #1a3a5c;
     color: #7ec8ff;
     border-radius: 6px;
-    padding: 0.4rem 0.7rem;
-    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.72rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     opacity: 0;
     transition: opacity 0.15s ease;
+    min-width: 0;
+    flex: 0 1 auto;
   }
   #mb-action-status.mb-action-status-visible { opacity: 1; }
+  /* Own compact flex row for the (i)-labelled heading plus its action
+     status pill (2026-08-10, direct feedback - see the HTML comment at this
+     row's own markup) - .group-label itself stays a plain block everywhere
+     else, this ID-scoped override doesn't affect other group-label rows. */
+  #mb-diagram-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
@@ -1046,6 +1057,14 @@
     font-weight: bold;
     line-height: 1;
     color: #888;
+    /* Matches .mb-icon's fixed 32.5px exactly (2026-08-10, "Kosmetik": Drift
+       badge wasn't quite the same height as Bridge/PiFinder/Mount) - without
+       this, the big number's own line-height alone renders shorter than an
+       icon, so the badge as a whole came out a few px shorter despite
+       identical padding/gap on both. */
+    min-height: 32.5px;
+    display: flex;
+    align-items: center;
   }
   #mb-drift-badge.mb-drift-green { border-color: #4caf50; }
   #mb-drift-badge.mb-drift-green #mb-drift-value { color: #4caf50; }
@@ -1489,7 +1508,17 @@
            only their position moved - see updateProfileRoleLine() for the
            "PiFinder host" role hiding this whole group too. -->
       <div class="hgroup-divider"></div>
-      <div class="group-label">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></div>
+      <!-- #mb-action-status moved here 2026-08-10 (direct feedback: "Da ist
+           Platz. Also direkt neben dem (i). Das wird so drunter geklatscht"
+           - it used to sit full-width below the whole diagram/drift-badge/
+           warning block, well past the (i) it's most related to). Own flex
+           row rather than changing .group-label itself, which is a shared
+           utility class used by many unrelated section labels elsewhere on
+           this page. -->
+      <div class="group-label" id="mb-diagram-heading-row">
+        <span>Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
+        <div id="mb-action-status"></div>
+      </div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -1535,7 +1564,6 @@
       <div id="mb-mode-details" style="display:none;"></div>
       <div id="mb-status-row">
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
-        <div id="mb-action-status"></div>
       </div>
       <div id="mb-reject-warning-details" style="display:none;"><span id="mb-reject-warning-text"></span></div>
       </div>

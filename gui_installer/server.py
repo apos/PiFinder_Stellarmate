@@ -3367,9 +3367,23 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
-    # #191/#217: keeps the PiFinder Truth Injector running once toggled on -
-    # starts idle (desired=False), only ever spawns anything after an
-    # explicit /api/truth_injector_toggle call.
+    # #191/#217: found live (2026-08-10) - this unit's own KillMode=process
+    # (see its own comment in the .service file, needed for Uninstall's
+    # --selfmove continuation) means a restart/redeploy does NOT kill this
+    # process's subprocess children, only the main process itself. A Truth
+    # Injector left running from a previous instance survives as an orphan,
+    # invisible to this fresh instance's own _truth_injector_desired=False -
+    # directly contradicting this feature's own documented guarantee
+    # ("always starts back OFF... never persists across reboots") and, worse,
+    # silently keeps feeding PiFinder a synthetic solve indefinitely with no
+    # visible control anywhere. Enforce the guarantee for real: kill any
+    # stray instance by command line before the watchdog (which only manages
+    # processes THIS instance itself started) takes over.
+    killed = subprocess.run(
+        ["pkill", "-f", "test_tools/pifinder_truth_injector.py"],
+    ).returncode == 0
+    if killed:
+        _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
     threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving

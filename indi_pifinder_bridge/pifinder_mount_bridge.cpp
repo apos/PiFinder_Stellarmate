@@ -2122,6 +2122,14 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     IUSaveConfigNumber(fp, &DriftThresholdNP);
     IUSaveConfigNumber(fp, &MaxSyncDriftNP);
     IUSaveConfigNumber(fp, &SolveFreshnessMaxAgeNP);
+    // #191/#217: was missing here despite ISNewNumber() already calling
+    // saveConfig(true, AlignConfigNP.name) on every change - that call only
+    // *triggers* a save, saveConfigItems() (this function) is what actually
+    // decides what gets written. Without this line, radius/count/
+    // min_altitude silently never persisted across a driver restart/reboot,
+    // always resetting to the IUFillNumber defaults - found live, 2026-08-10,
+    // in response to "Überleben diese Werte einen Reload/Reboot?".
+    IUSaveConfigNumber(fp, &AlignConfigNP);
     return true;
 }
 
