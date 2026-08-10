@@ -4720,7 +4720,23 @@ function syncThresholdInputFromDriver(driftThreshold) {
 // #191/#217: same "don't stomp on an in-progress edit" reasoning as
 // syncThresholdInputFromDriver() above, one field at a time (a user editing
 // Points shouldn't have Radius silently reset under them by the same poll).
+//
+// alignConfigApplyInFlight is a SEPARATE flag from the debounce timer below,
+// deliberately: found live (2026-08-10, direct feedback - "springt immer
+// wieder auf 5, sobald ich einen anderen Wert ändere") that the debounce
+// timer's own callback cleared alignConfigChangeDebounce (= null) BEFORE
+// applyAlignConfigChange()'s fetch had actually completed - a fire-and-
+// forget async call inside a plain setTimeout. That left a real window
+// (network round trip + driver processing the newNumberVector) where the
+// fast 2s poll's own sync considered editing "over" and wrote the driver's
+// still-old value straight back over what the user just typed - so their
+// own edit (e.g. Points: 3) never actually reached the driver, and the
+// subsequent alignment run used whatever was last persisted (5) instead.
+// This flag now stays true for the *entire* apply operation, not just the
+// debounce countdown.
 let alignConfigChangeDebounce = null;
+let alignConfigApplyInFlight = false;
+
 function syncAlignConfigInputsFromDriver(radius, count, minAltitude) {
   const fields = [
     ['mb-align-radius-input', radius],
@@ -4730,7 +4746,7 @@ function syncAlignConfigInputsFromDriver(radius, count, minAltitude) {
   for (const [id, value] of fields) {
     if (value === null || value === undefined) continue;
     const input = document.getElementById(id);
-    if (document.activeElement === input || alignConfigChangeDebounce) continue;
+    if (document.activeElement === input || alignConfigChangeDebounce || alignConfigApplyInFlight) continue;
     input.value = value;
   }
 }
@@ -4740,6 +4756,7 @@ async function applyAlignConfigChange() {
   const count = parseFloat(document.getElementById('mb-align-count-input').value.replace(',', '.'));
   const minAltitude = parseFloat(document.getElementById('mb-align-min-altitude-input').value.replace(',', '.'));
   if (!Number.isFinite(radius) || !Number.isFinite(count) || !Number.isFinite(minAltitude)) return;
+  alignConfigApplyInFlight = true;
   setMbActionStatus('⏳ Updating alignment point selection…');
   try {
     await fetch(`/api/mount_bridge_align_config?radius=${radius}&count=${count}&min_altitude=${minAltitude}`, { method: 'POST' });
@@ -4748,6 +4765,7 @@ async function applyAlignConfigChange() {
   }
   pollMbLog();
   clearMbActionStatus();
+  alignConfigApplyInFlight = false;
 }
 
 function scheduleAlignConfigChange() {
