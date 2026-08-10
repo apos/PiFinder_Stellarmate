@@ -2464,36 +2464,54 @@ function applyQuickInjectorButtonState(stateClass) {
   btn.classList.add(stateClass);
 }
 
-async function refreshTruthInjectorStatus() {
-  if (truthInjectorToggleInFlight) return;
+// Single place that renders a confirmed (desired, alive) pair OR an
+// explicit error string - shared by the periodic poll and
+// toggleTruthInjector()'s own settling loop below, so both always agree on
+// what each state looks like (2026-08-10, direct feedback pass #2: the
+// fixed 2.5s hold from the previous fix was a guess, not an actual "wait
+// until really settled" - replaced with a real poll-until-target loop that
+// needed this shared renderer to stay in sync with the periodic poll).
+function applyTruthInjectorState(desired, alive, errorText) {
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
+  const btn = document.getElementById('truth-injector-btn');
+  const quickBtn = document.getElementById('sim-quick-injector-btn');
+  if (errorText) {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = errorText;
+    applyQuickInjectorButtonState('ql-small-btn-red');
+    return;
+  }
+  btn.textContent = desired ? 'Turn off' : 'Toggle';
+  if (!desired) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'off';
+    applyQuickInjectorButtonState('ql-small-btn-white');
+  } else if (alive) {
+    setHwDot(dotEl, 'status-dot dot-green');
+    textEl.textContent = 'running';
+    applyQuickInjectorButtonState('ql-small-btn-green');
+  } else {
+    // Desired on, but the process isn't alive right now - the server's own
+    // watchdog will restart it within a few seconds; shown as red (not
+    // yellow) because this genuinely means "not actually feeding PiFinder
+    // a fresh solve right now", not just an in-flight click.
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
+    applyQuickInjectorButtonState('ql-small-btn-red');
+  }
+  if (quickBtn) quickBtn.disabled = false;
+}
+
+async function refreshTruthInjectorStatus() {
+  if (truthInjectorToggleInFlight) return;
   const btn = document.getElementById('truth-injector-btn');
   try {
     const resp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
     const data = await resp.json();
     lastTruthInjectorDesired = data.desired;
     btn.disabled = false;
-    btn.textContent = data.desired ? 'Turn off' : 'Toggle';
-    const quickBtn = document.getElementById('sim-quick-injector-btn');
-    if (quickBtn) quickBtn.disabled = false;
-    if (!data.desired) {
-      setHwDot(dotEl, 'status-dot dot-white');
-      textEl.textContent = 'off';
-      applyQuickInjectorButtonState('ql-small-btn-white');
-    } else if (data.alive) {
-      setHwDot(dotEl, 'status-dot dot-green');
-      textEl.textContent = 'running';
-      applyQuickInjectorButtonState('ql-small-btn-green');
-    } else {
-      // Desired on, but the process isn't alive right now - the server's
-      // own watchdog will restart it within a few seconds; shown as red
-      // (not yellow) because this genuinely means "not actually feeding
-      // PiFinder a fresh solve right now", not just an in-flight click.
-      setHwDot(dotEl, 'status-dot dot-red');
-      textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
-      applyQuickInjectorButtonState('ql-small-btn-red');
-    }
+    applyTruthInjectorState(data.desired, data.alive, null);
   } catch (e) {
     // best-effort poll - leave the last-known state showing rather than
     // flashing to "unknown" on one missed request.
@@ -2502,42 +2520,94 @@ async function refreshTruthInjectorStatus() {
 setInterval(refreshTruthInjectorStatus, 4000);
 refreshTruthInjectorStatus();
 
+// Real poll-until-target-reached control loop (2026-08-10, direct feedback
+// pass #2: "so lange (!) nach dem Drücken der Status nicht erreicht ist:
+// gelb blinken" / "geht etwas schief: rot! ... zeige was schief gelaufen
+// ist" / "genau das Gleiche beim Ausschalten. Wir brauchen da eine klare
+// Kontrolle!") - replaces the previous fixed-delay guess entirely, and is
+// now symmetric for both directions:
+//   1. POST the toggle. If the server itself reports failure (success !==
+//      true - e.g. the subprocess couldn't be spawned), go straight to red
+//      with the real error message and stop. No guessing.
+//   2. Otherwise poll /api/truth_injector_status roughly once a second,
+//      staying yellow/pulsing, until the target state is actually
+//      confirmed reached (desired===false for "turning off",
+//      desired===true && alive===true for "turning on").
+//   3. If TOGGLE_SETTLE_TIMEOUT_MS passes without reaching the target, that
+//      is itself an error - stop, show red with an explicit timeout
+//      message (most likely cause: indiserver/Telescope Simulator not
+//      reachable, or the injector script can't resolve the device) rather
+//      than silently falling back to whatever the last poll happened to say.
+const TRUTH_INJECTOR_SETTLE_TIMEOUT_MS = 15000;
+const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
+
 async function toggleTruthInjector() {
-  const dotEl = document.getElementById('truth-injector-dot');
-  const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
   const turningOff = lastTruthInjectorDesired === true;
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
   const quickBtn = document.getElementById('sim-quick-injector-btn');
   if (quickBtn) quickBtn.disabled = true;
-  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
+  setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');
   applyQuickInjectorButtonState('ql-small-btn-yellow');
-  textEl.textContent = turningOff ? 'stopping…' : 'starting…';
+  document.getElementById('truth-injector-text').textContent = turningOff ? 'stopping…' : 'starting…';
+
+  let toggleError = null;
   try {
-    await fetch('/api/truth_injector_toggle', { method: 'POST' });
-    if (turningOff) {
+    const resp = await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    const result = await resp.json();
+    if (result.success !== true) {
+      toggleError = result.error || 'unknown error';
+    } else if (turningOff) {
       // Stopping the process alone only stops *refreshing* the shared
       // fake_solve_active flag - it stays true (just aging) until
-      // something explicitly clears it. Clear it here too so the combined
-      // Synthetic Solve line goes to "off" immediately instead of lingering
-      // as a stale "active, N min ago" (direct feedback, 2026-08-10 - the
-      // two controls share one flag, "off" here should mean off).
+      // something explicitly clears it. Clear it here too so "off" here
+      // actually means off, not just "not being refreshed anymore".
       await fetch('/api/fake_solve_disable', { method: 'POST' });
     }
   } catch (e) {
-    // fall through - the poll below shows whatever's actually true now
+    toggleError = 'could not reach the server';
   }
-  // The toggle POST itself resolves almost instantly (just spawns/kills a
-  // subprocess) - without this wait, yellow was only visible for a
-  // fraction of a second before immediately being overwritten by the
-  // refresh below, which already saw the settled state (direct feedback,
-  // 2026-08-10: "der gelbe status während 'rampup' und 'rampdown' fehlt").
-  // 2.5s matches the injector's own --interval default, giving at least
-  // one real poll cycle time to actually land before claiming settled.
-  await new Promise((r) => setTimeout(r, 2500));
+
+  if (toggleError) {
+    applyTruthInjectorState(lastTruthInjectorDesired, false, `failed to ${turningOff ? 'stop' : 'start'}: ${toggleError}`);
+    truthInjectorToggleInFlight = false;
+    btn.disabled = false;
+    if (quickBtn) quickBtn.disabled = false;
+    return;
+  }
+
+  const deadline = Date.now() + TRUTH_INJECTOR_SETTLE_TIMEOUT_MS;
+  let settled = false;
+  let lastData = null;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, TRUTH_INJECTOR_POLL_INTERVAL_MS));
+    try {
+      const resp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+      lastData = await resp.json();
+    } catch (e) {
+      continue; // best-effort - just try again next tick, still within budget
+    }
+    const target = turningOff ? lastData.desired === false : (lastData.desired === true && lastData.alive === true);
+    if (target) {
+      settled = true;
+      break;
+    }
+  }
+
   truthInjectorToggleInFlight = false;
-  await refreshTruthInjectorStatus();
+  if (settled && lastData) {
+    lastTruthInjectorDesired = lastData.desired;
+    applyTruthInjectorState(lastData.desired, lastData.alive, null);
+  } else {
+    applyTruthInjectorState(
+      lastTruthInjectorDesired,
+      false,
+      `timed out waiting to ${turningOff ? 'stop' : 'start'} - check indiserver/Telescope Simulator connection`
+    );
+  }
+  btn.disabled = false;
+  if (quickBtn) quickBtn.disabled = false;
   await refreshDebugSolve();
 }
 
