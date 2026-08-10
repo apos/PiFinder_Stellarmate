@@ -1581,6 +1581,22 @@
         <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
       </div>
       <div id="mb-multialign-progress" class="mb-hint" style="display:none;"></div>
+      <!-- #191/#217: candidate-selection settings already existed as INDI
+           properties (AlignConfigNP) since the catalog-driven selection
+           landed, but had no GUI control at all - direct feedback,
+           2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
+           debounced-input pattern as the Threshold field above. Preferred
+           cardinal direction is deliberately NOT here - it doesn't exist
+           anywhere yet (no INDI property either), a real new feature to
+           design separately, not bolted on alongside these three. -->
+      <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
+        <span class="mb-row-label">Search radius:</span>
+        <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+        <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
+        <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
+        <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
+        <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+      </div>
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
@@ -1706,8 +1722,23 @@
             <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
+          <!-- Unified 2026-08-10 (direct feedback): Injected Solve (manual
+               one-shot seed) and the Truth Injector (continuous, below)
+               both ultimately drive the exact same PiFinder-side
+               fake_solve_active flag - showing two independently-tracked
+               dots for one shared piece of state was actively misleading
+               (found live: an orphaned manual-test injector process kept
+               this flag true while the new Truth Injector toggle correctly
+               said "off", since it was tracking a different process it
+               never started). One status line now answers "is a synthetic
+               solve active, and via which mechanism" - the two rows below
+               are just two different ways to drive it, not two
+               independent things to keep straight. -->
+          <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic (via /api/fake_solve) rather than a real camera plate-solve, and which of the two controls below is driving it right now.">
+            <span class="status-dot dot-unconfirmed" id="synth-solve-dot"></span>Synthetic Solve: <span id="synth-solve-text">unknown</span>
+          </div>
           <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. See Help for details.">
-            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
+            Manual one-shot seed:
             <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
             <button id="fake-solve-reseed-btn" class="ql-small-btn" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
           </div>
@@ -1724,12 +1755,14 @@
                the piece needed to test Multi-Point Alignment's SETTLING/
                Sync step end-to-end without real sky. Bigger button + the
                same white/yellow/green/red status-dot scheme as the Mount
-               Bridge tile's own buttons (direct feedback, 2026-08-10) -
-               this one is easy to leave on by accident and forget about,
-               so its real, server-confirmed state (not just "I clicked it
-               once") needs to be obvious at a glance. -->
+               Bridge tile's own buttons (direct feedback, 2026-08-10).
+               This row's own dot is scoped narrowly to "is the background
+               process itself alive" (distinct from the combined Synthetic
+               Solve line above) - still useful on its own, since a dead
+               process is a reliability problem even in the rare instant
+               where the flag it drives hasn't gone stale yet. -->
           <div class="hw-row" id="truth-injector-row" title="Feeds &quot;Telescope Simulator&quot;'s own position into PiFinder's /api/fake_solve every 2s, keeping solve_source=CAM and last_solve_success continuously fresh - simulator testing only (Multi-Point Alignment, Auto-correct/Verify-Alert) with no real sky. A background watchdog restarts it automatically if it ever dies while toggled on. Always starts back OFF after a Control Center restart - never persists across reboots.">
-            <span class="status-dot dot-white" id="truth-injector-dot"></span>PiFinder Truth Injector (from Telescope Simulator): <span id="truth-injector-text">off</span>
+            <span class="status-dot dot-white" id="truth-injector-dot"></span>Continuous, from Telescope Simulator: <span id="truth-injector-text">off</span>
             <button id="truth-injector-btn" class="mb-big-action-btn mb-big-sync-btn" style="min-width:6rem; min-height:auto; padding:0.4rem 0.9rem; margin-left:0.4rem;" onclick="toggleTruthInjector()">Toggle</button>
           </div>
         </div>
@@ -2191,7 +2224,7 @@ function refreshSystemLoad() {
 const HW_AMPEL_ICON_IDS = {
   'hw-camera-dot': 'mode-ampel-camera-icon',
   'solve-status-dot': 'mode-ampel-solve-icon',
-  'fake-solve-dot': 'mode-ampel-fake-solve-icon',
+  'synth-solve-dot': 'mode-ampel-fake-solve-icon',
   'hw-imu-dot': 'mode-ampel-imu-icon',
   'hw-gps-dot': 'mode-ampel-gps-icon',
 };
@@ -2285,10 +2318,51 @@ let lastFakeSolveActive = null;
 // stomped the pulsing "in progress" dot back to a stale white/red before
 // the operation had actually finished.
 let fakeSolveToggleInFlight = false;
+let lastFakeSolveRa = null;
+let lastFakeSolveDec = null;
+let lastFakeSolveSince = null;
+
+// Unified 2026-08-10 (direct feedback): Injected Solve (manual one-shot,
+// this section) and the Truth Injector (continuous, see
+// refreshTruthInjectorStatus() below) both ultimately flip the same
+// PiFinder-side fake_solve_active flag - this is the single place that
+// reconciles both and renders the one combined #synth-solve-status-row.
+// Called from both pollers, in whichever order they happen to land.
+function updateSynthSolveStatusLine() {
+  const dotEl = document.getElementById('synth-solve-dot');
+  const textEl = document.getElementById('synth-solve-text');
+  if (lastFakeSolveActive !== true && lastFakeSolveActive !== false) {
+    setHwDot(dotEl, 'status-dot dot-unconfirmed');
+    textEl.textContent = 'unknown';
+    return;
+  }
+  if (!lastFakeSolveActive) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'off';
+    return;
+  }
+  setHwDot(dotEl, 'status-dot dot-green');
+  // Attribution is a best-effort guess, not a guaranteed-correct source
+  // tag: the Truth Injector's own "desired" flag is the best signal
+  // available for "which control turned this on", but a manual seed
+  // followed by turning the injector on afterwards would show the
+  // injector here even though the very first seed came from the manual
+  // control - harmless either way, since both write the exact same
+  // underlying position.
+  let text = lastTruthInjectorDesired === true ? 'active - continuous from Telescope Simulator' : 'active - manual seed, dead-reckoning';
+  if (typeof lastFakeSolveRa === 'number' && typeof lastFakeSolveDec === 'number') {
+    text += ` (RA ${lastFakeSolveRa.toFixed(1)}°/Dec ${lastFakeSolveDec.toFixed(1)}°`;
+    if (typeof lastFakeSolveSince === 'number') {
+      const minutes = Math.max(0, Math.round((Date.now() / 1000 - lastFakeSolveSince) / 60));
+      text += minutes === 0 ? ', just now)' : `, ${minutes} min ago)`;
+    } else {
+      text += ')';
+    }
+  }
+  textEl.textContent = text;
+}
 
 function applyFakeSolveStatus(data) {
-  const dotEl = document.getElementById('fake-solve-dot');
-  const textEl = document.getElementById('fake-solve-text');
   const btn = document.getElementById('fake-solve-btn');
   const reseedBtn = document.getElementById('fake-solve-reseed-btn');
   const manualBtn = document.getElementById('fake-solve-manual-btn');
@@ -2297,55 +2371,35 @@ function applyFakeSolveStatus(data) {
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
     // Unconfirmed (unreachable/failed poll, or no confirmation yet at all
     // on initial page load). Leave the badge and button as they were last
-    // confirmed, only the text/dot say we can't currently tell - but the
-    // dot must be set explicitly here, not left alone: its HTML default is
-    // the pulsing dot-unconfirmed class, and unlike every other row this
-    // one never otherwise clears that on a plain "nothing confirmed yet"
-    // state, so it pulsed forever until the first real answer arrived.
+    // confirmed - the combined status line above says "unknown" itself
+    // via updateSynthSolveStatusLine()'s own unconfirmed branch.
     if (!fakeSolveToggleInFlight) {
-      textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
       btn.disabled = true;
       manualBtn.disabled = true;
       reseedBtn.style.display = 'none';
-      setHwDot(dotEl, lastFakeSolveActive === true ? 'status-dot dot-green dot-unconfirmed' : 'status-dot dot-white');
     }
+    updateSynthSolveStatusLine();
     return;
   }
 
   lastFakeSolveActive = data.fake_solve_active;
+  lastFakeSolveRa = typeof data.fake_solve_ra === 'number' ? data.fake_solve_ra : null;
+  lastFakeSolveDec = typeof data.fake_solve_dec === 'number' ? data.fake_solve_dec : null;
+  lastFakeSolveSince = typeof data.last_solve_success === 'number' ? data.last_solve_success : null;
   badge.style.display = lastFakeSolveActive ? '' : 'none';
-  if (fakeSolveToggleInFlight) return;
-  btn.disabled = false;
-  manualBtn.disabled = false;
-  // Re-seed only makes sense while already active - turning it on fresh
-  // already seeds once, and the manual field above covers "set to a
-  // specific position" for either state (#205).
-  reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
-  reseedBtn.disabled = false;
-
-  if (!lastFakeSolveActive) {
-    setHwDot(dotEl, 'status-dot dot-white');
-    textEl.textContent = 'off';
-    btn.textContent = 'Toggle';
-    return;
+  if (!fakeSolveToggleInFlight) {
+    btn.disabled = false;
+    manualBtn.disabled = false;
+    // Re-seed only makes sense while already active - turning it on fresh
+    // already seeds once, and the manual field above covers "set to a
+    // specific position" for either state (#205).
+    reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
+    reseedBtn.disabled = false;
+    btn.textContent = lastFakeSolveActive
+      ? (lastTruthInjectorDesired === true ? 'Turn off (stops Injector too)' : 'Turn off')
+      : 'Toggle';
   }
-
-  setHwDot(dotEl, 'status-dot dot-green');
-  btn.textContent = 'Turn off';
-  const ra = data.fake_solve_ra;
-  const dec = data.fake_solve_dec;
-  const since = data.last_solve_success;
-  let text = 'active';
-  if (typeof ra === 'number' && typeof dec === 'number') {
-    text = `active (RA ${ra.toFixed(1)}°/Dec ${dec.toFixed(1)}°`;
-    if (typeof since === 'number') {
-      const minutes = Math.max(0, Math.round((Date.now() / 1000 - since) / 60));
-      text += minutes === 0 ? ', just now)' : `, ${minutes} min ago)`;
-    } else {
-      text += ')';
-    }
-  }
-  textEl.textContent = text;
+  updateSynthSolveStatusLine();
 }
 
 // #191/#217: PiFinder Truth Injector toggle - polled independently of (and
@@ -2386,6 +2440,7 @@ async function refreshTruthInjectorStatus() {
     // best-effort poll - leave the last-known state showing rather than
     // flashing to "unknown" on one missed request.
   }
+  updateSynthSolveStatusLine();
 }
 setInterval(refreshTruthInjectorStatus, 4000);
 refreshTruthInjectorStatus();
@@ -2394,17 +2449,28 @@ async function toggleTruthInjector() {
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
+  const turningOff = lastTruthInjectorDesired === true;
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
   setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
-  textEl.textContent = lastTruthInjectorDesired ? 'stopping…' : 'starting…';
+  textEl.textContent = turningOff ? 'stopping…' : 'starting…';
   try {
     await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    if (turningOff) {
+      // Stopping the process alone only stops *refreshing* the shared
+      // fake_solve_active flag - it stays true (just aging) until
+      // something explicitly clears it. Clear it here too so the combined
+      // Synthetic Solve line goes to "off" immediately instead of lingering
+      // as a stale "active, N min ago" (direct feedback, 2026-08-10 - the
+      // two controls share one flag, "off" here should mean off).
+      await fetch('/api/fake_solve_disable', { method: 'POST' });
+    }
   } catch (e) {
     // fall through - the poll below shows whatever's actually true now
   }
   truthInjectorToggleInFlight = false;
   await refreshTruthInjectorStatus();
+  await refreshDebugSolve();
 }
 
 async function refreshDebugSolve() {
@@ -2661,8 +2727,8 @@ async function toggleFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-btn');
-  const textEl = document.getElementById('fake-solve-text');
-  const dotEl = document.getElementById('fake-solve-dot');
+  const textEl = document.getElementById('synth-solve-text');
+  const dotEl = document.getElementById('synth-solve-dot');
   const turningOn = lastFakeSolveActive !== true;
   const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
   fakeSolveToggleInFlight = true;
@@ -2675,6 +2741,13 @@ async function toggleFakeSolve() {
   // right at the very end (User feedback).
   document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
   try {
+    if (!turningOn && lastTruthInjectorDesired === true) {
+      // Turning off here must also stop the Truth Injector - it shares
+      // the exact same fake_solve_active flag, so leaving it running would
+      // just re-activate this within its next 2s tick (direct feedback,
+      // 2026-08-10).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (turningOn && result.success !== true) {
@@ -2701,6 +2774,7 @@ async function toggleFakeSolve() {
   // above was a no-op for this row while in flight, by design.
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
+  await refreshTruthInjectorStatus();
   if (!landed) btn.disabled = false;
 }
 
@@ -2713,8 +2787,8 @@ async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-reseed-btn');
-  const textEl = document.getElementById('fake-solve-text');
-  const dotEl = document.getElementById('fake-solve-dot');
+  const textEl = document.getElementById('synth-solve-text');
+  const dotEl = document.getElementById('synth-solve-dot');
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = 'Reading mount position…';
@@ -4334,6 +4408,7 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
+  syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
@@ -4504,6 +4579,47 @@ function syncThresholdInputFromDriver(driftThreshold) {
   const input = document.getElementById('wm-threshold-input');
   if (document.activeElement === input || thresholdChangeDebounce) return;
   input.value = driftThreshold;
+}
+
+// #191/#217: same "don't stomp on an in-progress edit" reasoning as
+// syncThresholdInputFromDriver() above, one field at a time (a user editing
+// Points shouldn't have Radius silently reset under them by the same poll).
+let alignConfigChangeDebounce = null;
+function syncAlignConfigInputsFromDriver(radius, count, minAltitude) {
+  const fields = [
+    ['mb-align-radius-input', radius],
+    ['mb-align-count-input', count],
+    ['mb-align-min-altitude-input', minAltitude],
+  ];
+  for (const [id, value] of fields) {
+    if (value === null || value === undefined) continue;
+    const input = document.getElementById(id);
+    if (document.activeElement === input || alignConfigChangeDebounce) continue;
+    input.value = value;
+  }
+}
+
+async function applyAlignConfigChange() {
+  const radius = parseFloat(document.getElementById('mb-align-radius-input').value.replace(',', '.'));
+  const count = parseFloat(document.getElementById('mb-align-count-input').value.replace(',', '.'));
+  const minAltitude = parseFloat(document.getElementById('mb-align-min-altitude-input').value.replace(',', '.'));
+  if (!Number.isFinite(radius) || !Number.isFinite(count) || !Number.isFinite(minAltitude)) return;
+  setMbActionStatus('⏳ Updating alignment point selection…');
+  try {
+    await fetch(`/api/mount_bridge_align_config?radius=${radius}&count=${count}&min_altitude=${minAltitude}`, { method: 'POST' });
+  } catch (e) {
+    // fall through - the next refreshMountBridgeStatus() poll reflects whatever actually took effect
+  }
+  pollMbLog();
+  clearMbActionStatus();
+}
+
+function scheduleAlignConfigChange() {
+  if (alignConfigChangeDebounce) clearTimeout(alignConfigChangeDebounce);
+  alignConfigChangeDebounce = setTimeout(() => {
+    alignConfigChangeDebounce = null;
+    applyAlignConfigChange();
+  }, 600);
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered

@@ -3202,6 +3202,38 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_config":
+            # #191/#217: search radius/point count/min altitude for
+            # candidate selection - these already existed as INDI properties
+            # (AlignConfigNP) but had no GUI control at all until now (direct
+            # feedback, 2026-08-10). Same one-field-at-a-time pattern as
+            # /api/mount_bridge_threshold above.
+            qs = parse_qs(parsed.query)
+            try:
+                values = {}
+                if "radius" in qs:
+                    values["RADIUS_DEG"] = _parse_threshold(qs["radius"][0])
+                if "count" in qs:
+                    values["POINT_COUNT"] = _parse_threshold(qs["count"][0])
+                if "min_altitude" in qs:
+                    values["MIN_ALTITUDE_DEG"] = _parse_threshold(qs["min_altitude"][0])
+            except ValueError as e:
+                self._send_json({"success": False, "error": f"invalid value: {e}"}, status=400)
+                return
+            if not values:
+                self._send_json({"success": False, "error": "no radius/count/min_altitude given"}, status=400)
+                return
+            _mb_log(f"setting alignment point selection ({values})...")
+            try:
+                indi_client.set_number("PiFinder Mount Bridge", "ALIGN_CONFIG", values)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_manual_sync":
             # Manual, immediate one-shot: syncs the mount to PiFinder's
             # current solved position right now, regardless of Coupling

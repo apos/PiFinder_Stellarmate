@@ -282,6 +282,9 @@ def mount_bridge_status(
             "pifinder_mount_type": None,
             "pifinder_screen_direction": None,
             "orientation_state": None,
+            "align_radius": None,
+            "align_count": None,
+            "align_min_altitude": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -289,6 +292,7 @@ def mount_bridge_status(
     drift_status_prop = device_props.get("DRIFT_STATUS", {})
     drift_status = drift_status_prop.get("elements", {})
     drift_threshold_elements = device_props.get("DRIFT_THRESHOLD", {}).get("elements", {})
+    align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
@@ -375,6 +379,13 @@ def mount_bridge_status(
         "pifinder_mount_type": orientation_elements.get("MOUNT_TYPE") or None,
         "pifinder_screen_direction": orientation_elements.get("SCREEN_DIRECTION") or None,
         "orientation_state": orientation_prop.get("state"),
+        # #191/#217: pre-fills the Multi-Point Alignment config fields on
+        # load, same reasoning as drift_threshold above - without this a
+        # page reload always showed the HTML defaults regardless of what
+        # was actually saved/set on the driver.
+        "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
+        "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
+        "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
     }
 
 
