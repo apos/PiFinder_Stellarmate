@@ -195,20 +195,33 @@ it too rather than maintaining two separate "teach a verified position" code pat
 
 ## 6. Installation / Test
 
-**Update (2026-08-10): a reduced PoC exists**, `feature/191-multipoint-alignment-poc` (not
-merged) — `MULTI_POINT_ALIGN` INDI switch (Start/Stop) on Mount Bridge, a fixed 4-point set (§4.3's
-core sequence, no §4.2 catalog selection, no §4.3 median-of-N, no §4.5 KStars feed). See the header
-comment on `MultiPointAlignSP`/`m_alignPoints` in `pifinder_mount_bridge.h` for the exact scope.
-Live-verified end to end against `Telescope Simulator`.
+**Update (2026-08-10): §4.2 is implemented, not just documented.** Branch
+`feature/191-multipoint-alignment-poc` (not merged) - `MULTI_POINT_ALIGN` INDI switch (Start/Stop)
+on Mount Bridge, `AlignConfigNP` (radius/count/min_altitude) exposing §3's relevant parameters,
+candidates fetched fresh on every Start from PiFinder's own new `/api/nearby_bright_stars` endpoint
+(companion patch, `diffs/api_extensions_py.diff` - its "Str" bright-named-star catalog, altitude-
+filtered server-side using PiFinder's own GPS location/time via skyfield). The originally-reduced
+PoC's fixed hardcoded 4-point set is gone. §4.3's median-of-N-solves and §4.5's KStars-model feed
+remain out of scope. Live-verified end to end against `Telescope Simulator`: correctly fetched real
+candidates and slewed to the first one (Alioth) rather than any hardcoded point.
 
-**Safety — PoC has no altitude/horizon awareness, do not run against a real mount.** Live-confirmed
-(User, 2026-08-10): the fixed points get Goto'd blindly regardless of current visibility — harmless
-against a simulator, a genuine mechanical collision risk against a real mount (cable wrap,
-counterweight/OTA into the pier or tripod), independent of and not caught by the mount's own coarse
-elevation limit (e.g. OnStep's "Slew elevation Limit", which only guards ~-10° altitude, not
-"technically above that but physically unreachable from here"). §4.2's catalog-driven,
-altitude-filtered selection is what would close this — deliberately left as a documented blocker
-rather than a partial fix for this PoC (User decision).
+**Horizon safety - now closed structurally, not just documented.** The original PoC's fixed points
+had no altitude/horizon awareness at all - live-confirmed (User, 2026-08-10) starting a sequence
+while the target sat below the horizon on PiFinder's own sky-map. §4.2's catalog-driven,
+altitude-filtered selection (now implemented, see above) closes this: candidates below the
+configured minimum altitude are never selected in the first place, not caught after the fact.
+**Not yet addressed**: candidate altitude filtering rules out "below the horizon" but not
+cable-wrap/meridian-flip risk for a given mount's current orientation - same class of gap as the
+still-open KStars-horizon-fencing item, unrelated to this fix.
+
+**No Control Center GUI yet (User decision, 2026-08-10) - INDI Control Panel only.** Deliberately
+not built this session ("erstmal nicht - Branch bleibt technisch/INDI-only") - no Start/Stop button,
+no progress display, no visible warning surface in the Control Center itself. Right now the only
+places to observe this feature at all are the INDI Control Panel's own properties/log (fetch
+failures go to `MULTI_POINT_ALIGN`'s `IPS_ALERT` + a `LOG_ERROR`; a skipped point logs a
+`LOG_WARN`) - a normal Control Center user has no way to see or use this feature yet. Revisit once
+§4.3/§4.5 (or at least a scoping decision to skip them) land, per the User's own stated preference
+to build GUI "in einem Rutsch" rather than piecemeal.
 
 **Waiting for a fresh solve at each point needs no special handling for real use** (User, 2026-08-10):
 the mount arrives, PiFinder's own continuous camera solve loop naturally produces a fresh solve once
