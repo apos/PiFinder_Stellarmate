@@ -1,0 +1,192 @@
+diff --git a/drivers/telescope/lx200_OnStep.cpp b/drivers/telescope/lx200_OnStep.cpp
+index 4d4f93f..220cd95 100644
+--- a/drivers/telescope/lx200_OnStep.cpp
++++ b/drivers/telescope/lx200_OnStep.cpp
+@@ -2001,11 +2001,16 @@ void LX200_OnStep::getBasicData()
+             switch (mountTypeResponse[0])
+             {
+                 case 'A':
++                // OnStepX's :GXEM# returns the raw numeric web-interface mount select value
++                // ("1 GEM, 2 EQ Fork, or 3 Alt/Azm") on this firmware, not the letter codes
++                // used by older/other OnStep builds. '3' must be treated the same as 'A'.
++                case '3':
+                     OSMountType = MOUNTTYPE_ALTAZ;
+                     MountTypeSP[MOUNT_ALTAZ].setState(ISS_ON);
+                     LOG_INFO("Mount type detected: AltAz");
+                     break;
+                 case 'K':
++                case '2':
+                     OSMountType = MOUNTTYPE_FORK;
+                     MountTypeSP[MOUNT_EQ_FORK].setState(ISS_ON);
+                     LOG_INFO("Mount type detected: Fork (Equatorial)");
+@@ -2016,6 +2021,7 @@ void LX200_OnStep::getBasicData()
+                     LOG_INFO("Mount type detected: Fork Alt (AltAz)");
+                     break;
+                 case 'E':
++                case '1':
+                 default:
+                     OSMountType = MOUNTTYPE_GEM;
+                     MountTypeSP[MOUNT_EQ_GEM].setState(ISS_ON);
+@@ -2660,15 +2666,15 @@ bool LX200_OnStep::ReadScopeStatus()
+             //Ignored for now.
+         }
+         //Byte 0: Current Status
+-        if (OSStat[0] & 0b10000001 == 0b10000001)
++        if ((OSStat[0] & 0b10000001) == 0b10000001)
+         {
+             //Not tracking
+         }
+-        if (OSStat[0] & 0b10000010 == 0b10000010)
++        if ((OSStat[0] & 0b10000010) == 0b10000010)
+         {
+             //No goto
+         }
+-        if (OSStat[0] & 0b10000100 == 0b10000100)
++        if ((OSStat[0] & 0b10000100) == 0b10000100)
+         {
+             // PPS sync
+             OnstepStatTP[5].setText("PPS / GPS Sync Ok");
+@@ -2677,7 +2683,7 @@ bool LX200_OnStep::ReadScopeStatus()
+         {
+             OnstepStatTP[5].setText("N/A");
+         }
+-        if (OSStat[0] & 0b10001000 == 0b10001000)
++        if ((OSStat[0] & 0b10001000) == 0b10001000)
+         {
+             // Guide active
+         }
+@@ -2686,18 +2692,18 @@ bool LX200_OnStep::ReadScopeStatus()
+         // reply[0]|=0b10010000;                       // Refr enabled
+         // reply[0]|=0b11100000;                       // OnTrack enabled Single axis
+         // reply[0]|=0b10100000;                       // OnTrack enabled
+-        if ((OSStat[0] & 0b10010000 == 0b10010000
+-                || OSStat[0] & 0b10100000 == 0b10100000)) //On, either refractory only (r) or full (t)
++        if (((OSStat[0] & 0b10010000) == 0b10010000
++                || (OSStat[0] & 0b10100000) == 0b10100000)) //On, either refractory only (r) or full (t)
+         {
+-            if (OSStat[0] & 0b10100000 == 0b10100000)
++            if ((OSStat[0] & 0b10100000) == 0b10100000)
+             {
+                 OnstepStatTP[2].setText("Full Comp");
+             }
+-            if (OSStat[0] & 0b10010000 == 0b10010000)
++            if ((OSStat[0] & 0b10010000) == 0b10010000)
+             {
+                 OnstepStatTP[2].setText("Refractory Comp");
+             }
+-            if (OSStat[0] & 0b11000000 == 0b11000000)
++            if ((OSStat[0] & 0b11000000) == 0b11000000)
+             {
+                 OnstepStatTP[8].setText("Single Axis");
+             }
+@@ -2712,29 +2718,29 @@ bool LX200_OnStep::ReadScopeStatus()
+             OnstepStatTP[8].setText("N/A");
+         }
+         //Byte 1: Standard tracking rates
+-        if (OSStat[1] & 0b10000001 == 0b10000001)
++        if ((OSStat[1] & 0b10000001) == 0b10000001)
+         {
+             // Lunar rate selected
+         }
+-        if (OSStat[1] & 0b10000010 == 0b10000010)
++        if ((OSStat[1] & 0b10000010) == 0b10000010)
+         {
+             // Solar rate selected
+         }
+-        if (OSStat[1] & 0b10000011 == 0b10000011)
++        if ((OSStat[1] & 0b10000011) == 0b10000011)
+         {
+             // King rate selected
+         }
+         //Byte 2: Flags
+-        if (OSStat[2] & 0b10000001 == 0b10000001)
++        if ((OSStat[2] & 0b10000001) == 0b10000001)
+         {
+             // At home
+         }
+-        if (OSStat[2] & 0b10000010 == 0b10000010)
++        if ((OSStat[2] & 0b10000010) == 0b10000010)
+         {
+             // Waiting at home
+             OnstepStatTP[3].setText("Waiting at Home");
+         }
+-        if (OSStat[2] & 0b10000100 == 0b10000100)
++        if ((OSStat[2] & 0b10000100) == 0b10000100)
+         {
+             // Pause at home enabled?
+             //AutoPauseAtHome
+@@ -2748,11 +2754,11 @@ bool LX200_OnStep::ReadScopeStatus()
+             HomePauseSP.setState(IPS_OK);
+             HomePauseSP.apply();
+         }
+-        if (OSStat[2] & 0b10001000 == 0b10001000)
++        if ((OSStat[2] & 0b10001000) == 0b10001000)
+         {
+             // Buzzer enabled?
+         }
+-        if (OSStat[2] & 0b10010000 == 0b10010000)
++        if ((OSStat[2] & 0b10010000) == 0b10010000)
+         {
+             // Auto meridian flip
+             AutoFlipSP[0].setState(ISS_OFF);
+@@ -2767,7 +2773,7 @@ bool LX200_OnStep::ReadScopeStatus()
+             AutoFlipSP.setState(IPS_OK);
+             AutoFlipSP.apply();
+         }
+-        if (OSStat[2] & 0b10100000 == 0b10100000)
++        if ((OSStat[2] & 0b10100000) == 0b10100000)
+         {
+             // PEC data has been recorded
+         }
+@@ -2776,25 +2782,25 @@ bool LX200_OnStep::ReadScopeStatus()
+ 
+ 
+         //Byte 3: Mount type and info
+-        if (OSStat[3] & 0b10000001 == 0b10000001)
++        if ((OSStat[3] & 0b10000001) == 0b10000001)
+         {
+             // GEM
+             OnstepStatTP[6].setText("German Mount");
+             OSMountType = MOUNTTYPE_GEM;
+         }
+-        if (OSStat[3] & 0b10000010 == 0b10000010)
++        if ((OSStat[3] & 0b10000010) == 0b10000010)
+         {
+             // FORK
+             OnstepStatTP[6].setText("Fork Mount");
+             OSMountType = MOUNTTYPE_FORK;
+         }
+-        if (OSStat[3] & 0b10000100 == 0b10000100)   //Seems depreciated/subsumed into  FORK
++        if ((OSStat[3] & 0b10000100) == 0b10000100)   //Seems depreciated/subsumed into  FORK
+         {
+             // Fork Alt
+             OnstepStatTP[6].setText("Fork Alt Mount");
+             OSMountType = MOUNTTYPE_FORK_ALT;
+         }
+-        if (OSStat[3] & 0b10001000 == 0b10001000)
++        if ((OSStat[3] & 0b10001000) == 0b10001000)
+         {
+             // ALTAZM
+             OnstepStatTP[6].setText("AltAZ Mount");
+@@ -2803,18 +2809,18 @@ bool LX200_OnStep::ReadScopeStatus()
+ 
+ 
+         setPierSide(PIER_UNKNOWN);
+-        if (OSStat[3] & 0b10010000 == 0b10010000)
++        if ((OSStat[3] & 0b10010000) == 0b10010000)
+         {
+             // Pier side none
+             setPierSide(PIER_UNKNOWN);
+             // INDI doesn't account for 'None'
+         }
+-        if (OSStat[3] & 0b10100000 == 0b10100000)
++        if ((OSStat[3] & 0b10100000) == 0b10100000)
+         {
+             // Pier side east
+             setPierSide(PIER_EAST);
+         }
+-        if (OSStat[3] & 0b11000000 == 0b11000000)
++        if ((OSStat[3] & 0b11000000) == 0b11000000)
+         {
+             // Pier side west
+             setPierSide(PIER_WEST);
