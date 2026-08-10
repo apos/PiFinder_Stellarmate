@@ -195,17 +195,75 @@ it too rather than maintaining two separate "teach a verified position" code pat
 
 ## 6. Installation / Test
 
-Not yet implemented — no installation/test surface exists yet. Once built, this inherits Mount
+**Update (2026-08-10): §4.2 is implemented, not just documented.** Branch
+`feature/191-multipoint-alignment-poc` (not merged) - `MULTI_POINT_ALIGN` INDI switch (Start/Stop)
+on Mount Bridge, `AlignConfigNP` (radius/count/min_altitude) exposing §3's relevant parameters,
+candidates fetched fresh on every Start from PiFinder's own new `/api/nearby_bright_stars` endpoint
+(companion patch, `diffs/api_extensions_py.diff` - its "Str" bright-named-star catalog, altitude-
+filtered server-side using PiFinder's own GPS location/time via skyfield). The originally-reduced
+PoC's fixed hardcoded 4-point set is gone. §4.3's median-of-N-solves and §4.5's KStars-model feed
+remain out of scope. Live-verified end to end against `Telescope Simulator`: correctly fetched real
+candidates and slewed to the first one (Alioth) rather than any hardcoded point.
+
+**Horizon safety - now closed structurally, not just documented.** The original PoC's fixed points
+had no altitude/horizon awareness at all - live-confirmed (User, 2026-08-10) starting a sequence
+while the target sat below the horizon on PiFinder's own sky-map. §4.2's catalog-driven,
+altitude-filtered selection (now implemented, see above) closes this: candidates below the
+configured minimum altitude are never selected in the first place, not caught after the fact.
+**Not yet addressed**: candidate altitude filtering rules out "below the horizon" but not
+cable-wrap/meridian-flip risk for a given mount's current orientation - same class of gap as the
+still-open KStars-horizon-fencing item, unrelated to this fix.
+
+**Control Center GUI: now being built (2026-08-10) - see #217.** The earlier "erstmal nicht"
+deferral is superseded: raw-INDI testing (below) showed the underlying `ALIGN_START`/`ALIGN_STOP`
+mechanism is correct, but with no dedicated Start/Stop/progress affordance anywhere outside the
+generic INDI Control Panel, a working Stop read as "can't abort" in practice. The GUI is being
+added now rather than deferred further.
+
+**Abort verified at the INDI wire, and "PiFinder doesn't follow" root-caused - then corrected
+(2026-08-10, #217).** Raw INDI trace (no GUI - see `test_tools/multipoint_alignment_trace.py`)
+against `Telescope Simulator` confirmed `MULTI_POINT_ALIGN.ALIGN_STOP` correctly calls
+`abortMount()` and halts the sequence (0/4 points, mount position frozen after Stop) - the
+"can't abort" report traces to the missing dedicated GUI affordance, not a backend fault.
+
+A first full run showed all 4 candidate points being skipped (`isPiFinderSolveFresh()` never
+true) because PiFinder itself was asleep with a stale, non-`"CAM"` solve. **First read of that as
+an unavoidable "indoor test rig has no real sky" limitation was wrong** -
+`test_tools/pifinder_truth_injector.py` already exists precisely for this (built for #178/
+Auto-correct testing): it polls an INDI device's position and re-POSTs it to
+`/api/fake_solve` on an interval, which `integrator.py`'s `_apply_successful_solve()` treats as a
+real `SolveSource.CAMERA` result with a continuously fresh `last_solve_success` - exactly what
+`isPiFinderSolveFresh()` needs, no different from a real continuously-resolving camera. Pointed
+at `Telescope Simulator` itself (`--indi-device "Telescope Simulator"`, so the simulated PiFinder
+always agrees with wherever the mount currently is - the idealized well-solving-camera case),
+the SETTLING→SYNC path completes end-to-end: `point 1/4 verified - synced...`, `point 2/4
+verified - synced...`, `point 3/4 verified - synced...`. The mechanism works; the earlier report
+just hadn't used the simulation tooling that already existed for this exact scenario.
+
+**New, unresolved finding from that corrected re-test:** points 2 and 3 synced to an RA exactly
+12h (180°) off the announced target (target 12.9000h/13.7917h → synced 0.9000h/1.7917h); point 1
+matched exactly. Position samples show the simulator passing through very large, sometimes
+negative RA jumps between samples, suggesting either a very high simulated slew rate or a
+sampling-lag interaction with the injector's 2s poll interval during fast motion. Not yet
+isolated as a real Mount Bridge sync-accuracy issue vs. a test-methodology artifact - open
+follow-up, not a blocker for either originally-reported finding. See #217 (including its
+correction comment) for the full trace and reproduction steps.
+
+Also surfaced, independent of the above: the sequence still reports `IPS_OK` ("sequence
+complete") even when 0/N points were actually synced (seen in the pre-correction run) - worth
+fixing separately so the terminal state distinguishes a real success from an all-skipped run.
+
+Once the full feature (catalog selection, median-of-N, KStars feed) is built, it inherits Mount
 Bridge's existing test surface (INDI Control Panel, `indi_getprop`/`indi_setprop`, the Control
-Center GUI, live verification under real sky) rather than introducing a new one. Given tonight's
-live-testing experience (`basic-memory/pifinder-stellarmate/00089` §7), testing methodology notes
-worth carrying forward:
+Center GUI, live verification under real sky) rather than introducing a new one. Testing methodology
+notes worth carrying forward from earlier live-testing experience
+(`basic-memory/pifinder-stellarmate/00089` §7):
 - Prefer real, continuous camera solving over synthetic `/api/fake_solve` injection when verifying
   the median-of-N-solves step — synthetic injections showed non-deterministic drift under repeated
-  rapid calls tonight, which would confound testing an aggregation step specifically designed to
-  smooth out solve noise.
+  rapid calls, which would confound testing an aggregation step specifically designed to smooth out
+  solve noise.
 - `/api/fake_solve`'s RA is in degrees, not hours — convert before any INDI property use (a real
-  ~23° mis-slew happened tonight from exactly this mistake).
+  ~23° mis-slew happened from exactly this mistake in an earlier session).
 
 ## 7. Effort / Priority
 

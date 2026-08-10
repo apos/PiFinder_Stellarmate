@@ -19,6 +19,8 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 class PiFinderBridgeClient;
 
@@ -177,6 +179,84 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // repeatedly).
         ISwitchVectorProperty AbortMountSP;
         ISwitch AbortMountS[1];
+
+        // #191 - automatic multi-point alignment, see
+        // docs/concepts/mount_bridge_multistar_alignment.md. §4.3's core
+        // sequence and §5's Sync-only ADR (already confirmed sufficient for
+        // OnStep - repeated Syncs build a real multi-point model there) are
+        // implemented. §4.2's candidate selection is real: points come from
+        // PiFinder's own /api/nearby_bright_stars (its "Str" bright-named-
+        // star catalog, altitude-filtered server-side using PiFinder's own
+        // GPS location/time via skyfield) - not a fixed hardcoded set.
+        // Still out of scope: §4.3's median-of-N-solves (one fresh solve
+        // per point, same as everywhere else in this file), §4.5's KStars-
+        // model feed (explicitly flagged there as separate/research-first).
+        //
+        // Remaining safety caveat: altitude filtering rules out "below the
+        // horizon", but NOT cable-wrap/meridian-flip risk - a candidate
+        // star can be well above the horizon and still be in a mechanically
+        // awkward hour-angle/RA-wind position for a given mount's current
+        // orientation, which this does not model. Same class of gap as the
+        // still-open KStars-horizon-fencing item.
+        ISwitchVectorProperty MultiPointAlignSP;
+        ISwitch MultiPointAlignS[2];
+        enum { ALIGN_START, ALIGN_STOP };
+
+        // §3's configuration parameters - only the three that gate
+        // candidate selection (§4.2). Median-solve-count and the KStars-
+        // feed checkbox aren't implemented yet, so aren't exposed here.
+        INumberVectorProperty AlignConfigNP;
+        INumber AlignConfigN[3];
+        enum { ALIGN_RADIUS, ALIGN_COUNT, ALIGN_MIN_ALTITUDE };
+
+        // Poll-friendly progress readout for the Control Center GUI - a
+        // one-shot getProperties can't observe LOGF_INFO/LOGF_WARN messages
+        // (those are ephemeral <message> elements, not a queryable
+        // property), so a client that only polls properties (no persistent
+        // listening connection) would otherwise see no per-point progress
+        // at all, just the coarse MULTI_POINT_ALIGN Idle/Busy/Ok/Alert
+        // state. POINT_INDEX is 1-based (0 = no sequence has run yet this
+        // session), frozen at its last value once the sequence stops/
+        // completes/errors - not reset on Stop, so "stopped at 2/4" stays
+        // readable until the next Start.
+        INumberVectorProperty AlignProgressNP;
+        INumber AlignProgressN[3];
+        enum { ALIGN_POINT_INDEX, ALIGN_POINT_COUNT, ALIGN_POINT_SYNCED };
+
+        enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
+        AlignState m_alignState = AlignState::IDLE;
+        // RA (hours) / Dec (degrees) - populated fresh by
+        // fetchAlignmentCandidates() every time Start is clicked, not
+        // hardcoded. Empty until a sequence has actually been started.
+        std::vector<std::pair<double, double>> m_alignPoints;
+        size_t m_alignPointIndex = 0;
+        // How many of m_alignPoints actually got a verified Sync (not just
+        // attempted/skipped) - drives both AlignProgressN[ALIGN_POINT_SYNCED]
+        // and advanceAlignPoint()'s final IPS_OK vs IPS_ALERT choice: a
+        // sequence that skipped every single point (e.g. no fresh PiFinder
+        // solve ever arrived) previously still reported IPS_OK ("sequence
+        // complete"), indistinguishable from a real success - found during
+        // #217's GUI-facing follow-up, where that ambiguity would otherwise
+        // show up as a false "green" result.
+        size_t m_alignSyncedCount = 0;
+        int m_alignSettleTicksRemaining = 0;
+        int m_alignFreshnessWaitTicksRemaining = 0;
+
+        // Calls PiFinder's own /api/nearby_bright_stars (no ra/dec params -
+        // it centers on PiFinder's own current solved position itself, per
+        // §4.2's own decision) with AlignConfigN's radius/count/
+        // min_altitude, and populates m_alignPoints from the response.
+        // Returns false (having already logged why) on any request/parse
+        // failure or a zero-candidate response - callers must not start a
+        // sequence with stale/empty m_alignPoints left over from a
+        // previous attempt.
+        bool fetchAlignmentCandidates();
+
+        void handleMultiPointAlignment();
+        void startMultiPointAlignment();
+        void stopMultiPointAlignment(const char *reason);
+        bool gotoAlignPoint(size_t index);
+        void advanceAlignPoint();
 
         INumberVectorProperty DriftThresholdNP;
         INumber DriftThresholdN[1];

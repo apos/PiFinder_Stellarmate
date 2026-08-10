@@ -1,16 +1,36 @@
-diff --git a/python/PiFinder/api_extensions.py b/python/PiFinder/api_extensions.py
-index 5d973c7b..04179883 100644
---- a/python/PiFinder/api_extensions.py
-+++ b/python/PiFinder/api_extensions.py
-@@ -21,6 +21,7 @@ import logging
- 
+--- python/PiFinder/api_extensions.py.orig
++++ python/PiFinder/api_extensions.py
+@@ -18,13 +18,29 @@
+ import io
+ import json
+ import logging
++import math
+
  from flask import request, session, Response
  from PIL import Image
 +from PiFinder.types.positioning import FakeSolve
- 
+
  logger = logging.getLogger("PiFinderAPI")
- 
-@@ -160,6 +161,8 @@ def register_api_routes(app, server_instance, require_auth=False):
+
+
++def _angular_separation_deg(ra1, dec1, ra2, dec2) -> float:
++    """Great-circle separation in degrees between two J2000 RA/Dec points
++    (both in degrees). Standard haversine form - no existing helper for
++    this in calc_utils.py/catalogs.py to reuse."""
++    ra1_r, dec1_r, ra2_r, dec2_r = (math.radians(x) for x in (ra1, dec1, ra2, dec2))
++    d_ra = ra2_r - ra1_r
++    d_dec = dec2_r - dec1_r
++    a = (
++        math.sin(d_dec / 2) ** 2
++        + math.cos(dec1_r) * math.cos(dec2_r) * math.sin(d_ra / 2) ** 2
++    )
++    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a))))
++
++
+ def _json_response(data, status=200):
+     """Unified JSON response format"""
+     return Response(
+@@ -160,6 +176,8 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
@@ -19,10 +39,10 @@ index 5d973c7b..04179883 100644
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -213,6 +216,35 @@ def register_api_routes(app, server_instance, require_auth=False):
+@@ -213,6 +231,162 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
- 
+
 +    @app.route("/api/current_target")
 +    def api_current_target():
 +        """Returns the on-device push-to target, if any - whatever object the
@@ -52,13 +72,140 @@ index 5d973c7b..04179883 100644
 +            logger.error("api/current_target error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
 +
++    @app.route("/api/nearby_bright_stars")
++    def api_nearby_bright_stars():
++        """
++        Return up to `count` named bright stars from PiFinder's own "Str"
++        catalog within `radius` degrees of a center point, each currently at
++        or above `min_altitude` degrees of altitude - candidate targets for
++        an external automated multi-point mount-alignment sequence (Mount
++        Bridge's own MULTI_POINT_ALIGN, see PiFinder_Stellarmate's
++        docs/concepts/mount_bridge_multistar_alignment.md §4.2).
++
++        Not PiFinder's own "alignment" (camera-to-eyepiece target_pixel
++        calibration - see docs/ax/positioning/CONTEXT.md). Deliberately
++        named to avoid that established vocabulary rather than collide
++        with it - this has nothing to do with target_pixel/AlignOnRaDec.
++
++        Query parameters:
++            ra, dec: degrees, J2000 - center of the search. Defaults to
++                PiFinder's own current solved position if omitted.
++            radius: degrees, default 60.
++            count: max results, default 4.
++            min_altitude: degrees above horizon, default 20.
++
++        Returns {"candidates": [{"ra": deg, "dec": deg, "name": str or null,
++        "mag": float or null, "altitude": deg}, ...]}, sorted brightest
++        (lowest magnitude) first, already altitude-filtered - callers do
++        not need to re-check visibility themselves.
++        """
++        try:
++            ss = server_instance.shared_state
++            qs = request.args
++            radius = float(qs.get("radius", 60.0))
++            count = int(qs.get("count", 4))
++            min_altitude = float(qs.get("min_altitude", 20.0))
++
++            if "ra" in qs and "dec" in qs:
++                center_ra = float(qs["ra"])
++                center_dec = float(qs["dec"])
++            else:
++                sol = ss.solution()
++                if sol is None or not sol.has_pointing():
++                    return _json_response(
++                        {"error": "no ra/dec given and no current solve available"},
++                        400,
++                    )
++                aligned = sol.pointing.aligned.estimate
++                center_ra = float(aligned.RA)
++                center_dec = float(aligned.Dec)
++
++            location = ss.location()
++            dt = ss.datetime()
++            if location is None or dt is None or not location.lock:
++                return _json_response(
++                    {"error": "location/time not available (GPS not locked?)"}, 503
++                )
++
++            from PiFinder.calc_utils import sf_utils
++            from PiFinder.db.objects_db import ObjectsDatabase
++
++            sf_utils.set_location(location.lat, location.lon, location.altitude)
++
++            db = ObjectsDatabase()
++            _conn, cursor = db.get_pifinder_database()
++            # names.rowid ordering matters here: bright_stars_loader.py
++            # inserts "Str <sequence>" first, then the common name (e.g.
++            # "Alioth"), then the Latin/Bayer designation last - so each
++            # object has several rows in `names`, not one. Fetch them all
++            # per object and pick the best one in Python below rather than
++            # returning a duplicate candidate per name variant.
++            cursor.execute(
++                """
++                SELECT objects.id, objects.ra, objects.dec, objects.mag,
++                       names.common_name
++                FROM catalog_objects
++                JOIN objects ON objects.id = catalog_objects.object_id
++                LEFT JOIN names ON names.object_id = objects.id
++                WHERE catalog_objects.catalog_code = 'Str'
++                ORDER BY objects.id, names.rowid
++                """
++            )
++            rows = cursor.fetchall()
++
++            objects_by_id: dict[int, dict] = {}
++            for object_id, ra, dec, mag_json, name in rows:
++                entry = objects_by_id.get(object_id)
++                if entry is None:
++                    mag = None
++                    if mag_json:
++                        try:
++                            mag = json.loads(mag_json).get("filter_mag")
++                        except (TypeError, ValueError, json.JSONDecodeError):
++                            mag = None
++                    entry = {"ra": ra, "dec": dec, "mag": mag, "name": None}
++                    objects_by_id[object_id] = entry
++                # Prefer the first name that isn't the synthetic "Str N"
++                # catalog-sequence name (a real common/Latin name is far
++                # more useful for a user-facing candidate list); keep "Str
++                # N" only as a last-resort fallback if nothing else exists.
++                is_catalog_seq_name = name is not None and name.startswith("Str ")
++                if entry["name"] is None or (
++                    entry["name"].startswith("Str ") and not is_catalog_seq_name
++                ):
++                    entry["name"] = name
++
++            candidates = []
++            for entry in objects_by_id.values():
++                ra, dec = entry["ra"], entry["dec"]
++                if _angular_separation_deg(center_ra, center_dec, ra, dec) > radius:
++                    continue
++                alt, _az = sf_utils.radec_to_altaz(ra, dec, dt)
++                if alt < min_altitude:
++                    continue
++                candidates.append(
++                    {
++                        "ra": ra,
++                        "dec": dec,
++                        "name": entry["name"],
++                        "mag": entry["mag"],
++                        "altitude": alt,
++                    }
++                )
++
++            candidates.sort(key=lambda c: (c["mag"] is None, c["mag"]))
++            return _json_response({"candidates": candidates[:count]})
++        except Exception as e:
++            logger.error("api/nearby_bright_stars error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -750,6 +782,90 @@ def register_api_routes(app, server_instance, require_auth=False):
+@@ -750,6 +924,90 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
- 
+
 +    @app.route("/api/debug_solve", methods=["POST"])
 +    def api_debug_solve():
 +        """Toggle the same "debug"/test-image substitution as Tools -> Test

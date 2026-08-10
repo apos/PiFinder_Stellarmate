@@ -994,6 +994,62 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+# #191/#217: PiFinder Truth Injector toggle - feeds "Telescope Simulator"'s
+# own position into PiFinder's /api/fake_solve on an interval (see
+# test_tools/pifinder_truth_injector.py), so Multi-Point Alignment's
+# solve-freshness gate can be exercised end-to-end against the Simulator
+# without real sky. Deliberately a tracked subprocess.Popen, NOT a systemd
+# unit like KEYBOARD_BRIDGE_SERVICE above: that one is meant to survive
+# reboots (its whole point), this one must NOT - it's test-only and would
+# silently corrupt a real observing session if it ever auto-started outside
+# an explicit simulator test. Scoped to this Control Center process's own
+# lifetime; a Control Center restart always starts back OFF.
+TRUTH_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_truth_injector.py"
+TRUTH_INJECTOR_DEVICE = "Telescope Simulator"
+_truth_injector_proc = None  # subprocess.Popen or None
+_truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
+_truth_injector_lock = threading.Lock()
+
+
+def _truth_injector_alive() -> bool:
+    return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
+
+
+def _truth_injector_start():
+    global _truth_injector_proc
+    _truth_injector_proc = subprocess.Popen(
+        ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", TRUTH_INJECTOR_DEVICE, "--interval", "2.0"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _truth_injector_stop():
+    global _truth_injector_proc
+    if _truth_injector_proc is not None:
+        _truth_injector_proc.terminate()
+        try:
+            _truth_injector_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _truth_injector_proc.kill()
+        _truth_injector_proc = None
+
+
+def _truth_injector_watchdog(interval=5):
+    """'Muss dann zuverlässig laufen' (direct feedback, 2026-08-10): once
+    toggled on, the injector must not silently stay dead if its process
+    exits for any reason - same reliability bar as
+    _pifinder_lx200_reconnect_watchdog() above, same reasoning."""
+    while True:
+        time.sleep(interval)
+        with _truth_injector_lock:
+            if _truth_injector_desired and not _truth_injector_alive():
+                _mb_log("PiFinder Truth Injector died unexpectedly - restarting...")
+                try:
+                    _truth_injector_start()
+                except Exception as e:  # a watchdog thread must never die silently
+                    _mb_log(f"  failed to restart: {e}")
+
+
 def _parse_threshold(raw: str) -> float:
     """European keyboards/locales often produce a comma decimal separator
     (e.g. "0,5") - Python's float() only accepts a period and raises
@@ -2279,6 +2335,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(drift)
             return
 
+        if parsed.path == "/api/truth_injector_status":
+            # Polled by the toggle button's own status dot - reports the
+            # user's last desired state plus whether the process is
+            # actually, currently alive right now, so the GUI can show
+            # "should be on but died" (red) distinctly from "on and
+            # confirmed alive" (green), not just a single on/off bit.
+            with _truth_injector_lock:
+                self._send_json({"desired": _truth_injector_desired, "alive": _truth_injector_alive()})
+            return
+
         if parsed.path == "/api/webmanager/profiles":
             # Phase 2 of the Mount Bridge web integration (see
             # docs/concepts/mount_bridge_web_integration.md) - UC3 (profile
@@ -3136,6 +3202,38 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_config":
+            # #191/#217: search radius/point count/min altitude for
+            # candidate selection - these already existed as INDI properties
+            # (AlignConfigNP) but had no GUI control at all until now (direct
+            # feedback, 2026-08-10). Same one-field-at-a-time pattern as
+            # /api/mount_bridge_threshold above.
+            qs = parse_qs(parsed.query)
+            try:
+                values = {}
+                if "radius" in qs:
+                    values["RADIUS_DEG"] = _parse_threshold(qs["radius"][0])
+                if "count" in qs:
+                    values["POINT_COUNT"] = _parse_threshold(qs["count"][0])
+                if "min_altitude" in qs:
+                    values["MIN_ALTITUDE_DEG"] = _parse_threshold(qs["min_altitude"][0])
+            except ValueError as e:
+                self._send_json({"success": False, "error": f"invalid value: {e}"}, status=400)
+                return
+            if not values:
+                self._send_json({"success": False, "error": "no radius/count/min_altitude given"}, status=400)
+                return
+            _mb_log(f"setting alignment point selection ({values})...")
+            try:
+                indi_client.set_number("PiFinder Mount Bridge", "ALIGN_CONFIG", values)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_manual_sync":
             # Manual, immediate one-shot: syncs the mount to PiFinder's
             # current solved position right now, regardless of Coupling
@@ -3183,6 +3281,67 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_multialign_start":
+            # #191/#217: kicks off a Multi-Point Alignment sequence. Fresh
+            # candidates are fetched by the driver itself on every Start
+            # (fetchAlignmentCandidates()) - nothing to pass from here.
+            # Independent of Coupling mode, same as Manual Sync/Abort above.
+            _mb_log("starting Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_start()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  started - see the Alignment progress readout for per-point status.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_multialign_stop":
+            # #217: verified live against Telescope Simulator that this
+            # correctly aborts an in-progress sequence at the INDI level
+            # (stopMultiPointAlignment() -> abortMount()) - the earlier
+            # "can't abort" report traced to this button not existing in the
+            # GUI at all, not to a backend fault.
+            _mb_log("stopping Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_stop()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/truth_injector_toggle":
+            global _truth_injector_desired
+            with _truth_injector_lock:
+                if _truth_injector_desired:
+                    _truth_injector_desired = False
+                    _mb_log("stopping PiFinder Truth Injector...")
+                    try:
+                        _truth_injector_stop()
+                    except Exception as e:
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _mb_log("  done.")
+                else:
+                    _truth_injector_desired = True
+                    _mb_log(f"starting PiFinder Truth Injector (feeding '{TRUTH_INJECTOR_DEVICE}''s "
+                             "position into PiFinder's /api/fake_solve, simulator testing only)...")
+                    try:
+                        _truth_injector_start()
+                    except Exception as e:
+                        _truth_injector_desired = False
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _mb_log("  started.")
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 
@@ -3208,6 +3367,24 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # #191/#217: found live (2026-08-10) - this unit's own KillMode=process
+    # (see its own comment in the .service file, needed for Uninstall's
+    # --selfmove continuation) means a restart/redeploy does NOT kill this
+    # process's subprocess children, only the main process itself. A Truth
+    # Injector left running from a previous instance survives as an orphan,
+    # invisible to this fresh instance's own _truth_injector_desired=False -
+    # directly contradicting this feature's own documented guarantee
+    # ("always starts back OFF... never persists across reboots") and, worse,
+    # silently keeps feeding PiFinder a synthetic solve indefinitely with no
+    # visible control anywhere. Enforce the guarantee for real: kill any
+    # stray instance by command line before the watchdog (which only manages
+    # processes THIS instance itself started) takes over.
+    killed = subprocess.run(
+        ["pkill", "-f", "test_tools/pifinder_truth_injector.py"],
+    ).returncode == 0
+    if killed:
+        _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
+    threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
     # an Update run from before the setup script's start->restart fix, or a

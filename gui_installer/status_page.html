@@ -301,6 +301,11 @@
   }
   #choices button.danger { background: #a33; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - previously fell through to no rule at
+     all here, leaving a disabled destructive button visually identical to
+     an enabled one except for the cursor. */
+  #choices button:disabled, #start-fresh:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   .choice-btn { margin: 0 0.6rem 0.6rem 0; }
   #log.log-placeholder {
     color: #666;
@@ -565,7 +570,12 @@
   #power-poweroff-btn { background: #a33; }
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
-  .power-btn:disabled { background: #444; cursor: default; filter: none; }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - a plain gray here made a disabled
+     Reboot/Shutdown/Uninstall lose its "this is a dangerous action" red
+     identity entirely, inconsistent with how Stop movement/Stop alignment
+     stay visibly red-tinted while disabled. */
+  .power-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
   #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; cursor: pointer; }
   #install-heading-row .tile-heading { margin: 0; }
@@ -587,7 +597,10 @@
     cursor: pointer;
     margin-left: 0.5rem;
   }
-  #mode-toggle-btn:disabled { background: #444; cursor: default; }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - see .power-btn:disabled's own comment
+     for the reasoning. */
+  #mode-toggle-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; }
   #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
   /* Deliberately more muted than the bigger action/accent buttons
      (.mb-coupling-btn, mode-toggle-btn, ...) - per direct feedback, this
@@ -608,6 +621,25 @@
   .ql-small-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
   .ql-small-btn:not(:disabled):hover { border-color: #777; color: #fff; }
   .ql-small-btn.mb-btn-active { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  /* Traffic-light button coloring (2026-08-10, direct feedback: a
+     quick-access button that carries its own state via background color
+     alone, no status text needed next to it - "man sieht ja das icon oben
+     und dessen Status"). Same white/yellow/green/red palette as the
+     .status-dot classes, applied to a button's background/border/text
+     instead of a small circle - .ql-small-btn-green intentionally
+     duplicates .mb-btn-active's values rather than reusing that class name,
+     since "active" there means something more specific (a selected Coupling
+     preset) than "currently on" here. */
+  .ql-small-btn-white { border-color: #666; background: #2a2a2a; color: #ccc; }
+  /* Yellow only ever means "in-flight, not yet confirmed" for this button
+     (the only place that applies it is toggleTruthInjector()'s own
+     starting/stopping window) - pulses like every other in-flight signal
+     on this page (.dot-unconfirmed's own mb-status-pulse) rather than
+     sitting static, per direct feedback (2026-08-10) that it wasn't
+     blinking while green hadn't been reached yet. */
+  .ql-small-btn-yellow { border-color: #f5a623; background: #3a2f10; color: #f5a623; animation: mb-status-pulse 1.1s ease-in-out infinite; }
+  .ql-small-btn-green { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
+  .ql-small-btn-red { border-color: #e53935; background: #3a1414; color: #ff8a80; }
   /* Browsers only let one window.open() through per click by default and
      silently block the rest (2026-08-09, found live: "Open all links" only
      ever opened the first tab, PiFinder Remote) - openAllQuickLinks() below
@@ -926,20 +958,27 @@
      Reserving the space plus a short opacity transition fixes both: the
      rest of the tile never jumps, and the message arrives/leaves smoothly. */
   #mb-action-status {
-    height: 1.9rem;
+    height: 1.5rem;
     box-sizing: border-box;
     background: #1a3a5c;
     color: #7ec8ff;
     border-radius: 6px;
-    padding: 0.4rem 0.7rem;
-    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.72rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     opacity: 0;
     transition: opacity 0.15s ease;
+    min-width: 0;
+    flex: 0 1 auto;
   }
   #mb-action-status.mb-action-status-visible { opacity: 1; }
+  /* Own compact flex row for the (i)-labelled heading plus its action
+     status pill (2026-08-10, direct feedback - see the HTML comment at this
+     row's own markup) - .group-label itself stays a plain block everywhere
+     else, this ID-scoped override doesn't affect other group-label rows. */
+  #mb-diagram-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
@@ -1033,6 +1072,14 @@
     font-weight: bold;
     line-height: 1;
     color: #888;
+    /* Matches .mb-icon's fixed 32.5px exactly (2026-08-10, "Kosmetik": Drift
+       badge wasn't quite the same height as Bridge/PiFinder/Mount) - without
+       this, the big number's own line-height alone renders shorter than an
+       icon, so the badge as a whole came out a few px shorter despite
+       identical padding/gap on both. */
+    min-height: 32.5px;
+    display: flex;
+    align-items: center;
   }
   #mb-drift-badge.mb-drift-green { border-color: #4caf50; }
   #mb-drift-badge.mb-drift-green #mb-drift-value { color: #4caf50; }
@@ -1463,7 +1510,7 @@
             <span>PiFinder</span>
           </div>
           <div id="pifinder-glance-status-stack">
-            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
@@ -1476,7 +1523,17 @@
            only their position moved - see updateProfileRoleLine() for the
            "PiFinder host" role hiding this whole group too. -->
       <div class="hgroup-divider"></div>
-      <div class="group-label">Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></div>
+      <!-- #mb-action-status moved here 2026-08-10 (direct feedback: "Da ist
+           Platz. Also direkt neben dem (i). Das wird so drunter geklatscht"
+           - it used to sit full-width below the whole diagram/drift-badge/
+           warning block, well past the (i) it's most related to). Own flex
+           row rather than changing .group-label itself, which is a shared
+           utility class used by many unrelated section labels elsewhere on
+           this page. -->
+      <div class="group-label" id="mb-diagram-heading-row">
+        <span>Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
+        <div id="mb-action-status"></div>
+      </div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -1522,7 +1579,6 @@
       <div id="mb-mode-details" style="display:none;"></div>
       <div id="mb-status-row">
         <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
-        <div id="mb-action-status"></div>
       </div>
       <div id="mb-reject-warning-details" style="display:none;"><span id="mb-reject-warning-text"></span></div>
       </div>
@@ -1607,6 +1663,53 @@
         <span id="pfhost-ip">checking&hellip;</span>
       </div>
 
+      <div class="hgroup-divider"></div>
+
+      <!-- #191/#217: own collapsible section, not squeezed into
+           #mb-operate-rows above (direct feedback, 2026-08-10: pushed the
+           Threshold field down, and this is a distinct enough feature to
+           deserve its own "wie gewohnt" collapsible like Setup checklist
+           below, not another inline row). Positioned above Setup checklist
+           & diagnostics, same tier of collapsible section. -->
+      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')">
+        <span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+        <span id="mb-multialign-chevron">&#9660; show</span>
+      </div>
+      <div id="mb-multialign-details" style="display:none;">
+        <!-- Follows this project's documented status-row convention
+           (Readme_ControlCenter.md "Design Principles" #1/#2, re-read
+           2026-08-10 after direct feedback that this row was missing it
+           entirely): <dot> Label: status, white/green/yellow/red. Adapted
+           for a discrete multi-step action rather than a component health
+           check - yellow means "running" here (there's no ongoing
+           degraded-but-working state for a one-shot sequence like there is
+           for e.g. hardware presence), green always carries a real
+           completion message (what was actually done), not just "Ok". -->
+        <div class="hw-row" id="mb-multialign-status-row" title="Status of the last (or currently running) Multi-Point Alignment sequence.">
+          <span class="status-dot dot-white" id="mb-multialign-dot"></span>Multi-Point Alignment: <span id="mb-multialign-status-text">not run yet</span>
+        </div>
+        <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
+          <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
+          <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+        </div>
+        <!-- #191/#217: candidate-selection settings already existed as INDI
+             properties (AlignConfigNP) since the catalog-driven selection
+             landed, but had no GUI control at all - direct feedback,
+             2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
+             debounced-input pattern as the Threshold field above. Preferred
+             cardinal direction is deliberately NOT here - it doesn't exist
+             anywhere yet (no INDI property either), a real new feature to
+             design separately, not bolted on alongside these three. -->
+        <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
+          <span class="mb-row-label">Search radius:</span>
+          <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+          <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
+          <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
+          <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
+          <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+        </div>
+      </div>
+
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
         <span id="mb-details-chevron">&#9660; show</span>
@@ -1678,12 +1781,12 @@
     </div>
     <div id="mode-tile">
         <div class="tile-heading-row" onclick="toggleTileBody('mode-tile-body', 'mode-tile-chevron')">
-          <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
+          <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Simulation, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
-          <span>Simulation and testing<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span>Simulation and testing<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a><button id="sim-quick-injector-btn" class="ql-small-btn ql-small-btn-white" onclick="event.stopPropagation(); toggleTruthInjector();" title="Quick access to the Synthetic Solve toggle below (no need to expand this section first) - button color is the status: white=off, yellow=starting/stopping, green=running, red=died/watchdog recovering.">Injected Solve</button></span>
           <span id="sim-testing-chevron">&#9660; show</span>
         </div>
         <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
@@ -1695,16 +1798,38 @@
             <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
             <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
-          <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. See Help for details.">
-            <span class="status-dot dot-unconfirmed" id="fake-solve-dot"></span>Injected Solve (Dead Reckoning): <span id="fake-solve-text">unknown</span>
-            <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
-            <button id="fake-solve-reseed-btn" class="ql-small-btn" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
+          <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
+               alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
+               Toggle. Synthetic solve läuft oder läuft nicht. Und beides
+               zuverlässig."). ONE row, one dot, one button - the Truth
+               Injector's own start/stop (backed by the server-side
+               watchdog, so "zuverlässig" is a real property of this
+               control, not just a label) IS the toggle. The pre-existing
+               manual one-shot RA/Dec seed (#106/#205) still exists (real,
+               separately useful capability) but is demoted to its own
+               collapsed Advanced sub-section below, entirely out of the
+               primary flow - it is NOT reflected in this dot, on purpose,
+               to keep this one signal simple and trustworthy. -->
+          <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic - continuously fed from &quot;Telescope Simulator&quot;'s own position via test_tools/pifinder_truth_injector.py, kept alive by a background watchdog - rather than a real camera plate-solve. Simulator testing only, no real sky.">
+            <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
+            <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
           </div>
-          <div class="hw-detail" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
-            <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem;">
-            <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem;">
-            <button id="fake-solve-manual-btn" class="ql-small-btn" onclick="setFakeSolveManual()" disabled>Set position</button>
-            <span id="fake-solve-manual-status"></span>
+          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
+            <span>Advanced: manual one-shot seed</span>
+            <span id="fake-solve-advanced-chevron">&#9660; show</span>
+          </div>
+          <div id="fake-solve-advanced" style="display:none;">
+            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose - see its own status text here instead.">
+              Manual one-shot seed: <span id="fake-solve-advanced-status">unknown</span>
+              <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
+              <button id="fake-solve-reseed-btn" class="ql-small-btn" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
+            </div>
+            <div class="hw-detail" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
+              <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem;">
+              <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem;">
+              <button id="fake-solve-manual-btn" class="ql-small-btn" onclick="setFakeSolveManual()" disabled>Set position</button>
+              <span id="fake-solve-manual-status"></span>
+            </div>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -2095,7 +2220,7 @@ function updatePiFinderStatusAndWizardLink() {
       // (same known upstream issue the mode tile already accounts for).
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see PiFinder Mode, Test and Power)`;
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Simulation, Test and Power)`;
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
@@ -2165,7 +2290,7 @@ function refreshSystemLoad() {
 const HW_AMPEL_ICON_IDS = {
   'hw-camera-dot': 'mode-ampel-camera-icon',
   'solve-status-dot': 'mode-ampel-solve-icon',
-  'fake-solve-dot': 'mode-ampel-fake-solve-icon',
+  'truth-injector-dot': 'mode-ampel-fake-solve-icon',
   'hw-imu-dot': 'mode-ampel-imu-icon',
   'hw-gps-dot': 'mode-ampel-gps-icon',
 };
@@ -2260,9 +2385,13 @@ let lastFakeSolveActive = null;
 // the operation had actually finished.
 let fakeSolveToggleInFlight = false;
 
+// Simplified 2026-08-10 (direct feedback): the primary #synth-solve-status-row
+// dot/text is now driven entirely by refreshTruthInjectorStatus() below (see
+// that function) - ONE reliable signal, nothing here reconciles two sources
+// anymore. This function only updates the demoted Advanced sub-section's own
+// small text status, not any dot.
 function applyFakeSolveStatus(data) {
-  const dotEl = document.getElementById('fake-solve-dot');
-  const textEl = document.getElementById('fake-solve-text');
+  const statusEl = document.getElementById('fake-solve-advanced-status');
   const btn = document.getElementById('fake-solve-btn');
   const reseedBtn = document.getElementById('fake-solve-reseed-btn');
   const manualBtn = document.getElementById('fake-solve-manual-btn');
@@ -2270,18 +2399,12 @@ function applyFakeSolveStatus(data) {
 
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
     // Unconfirmed (unreachable/failed poll, or no confirmation yet at all
-    // on initial page load). Leave the badge and button as they were last
-    // confirmed, only the text/dot say we can't currently tell - but the
-    // dot must be set explicitly here, not left alone: its HTML default is
-    // the pulsing dot-unconfirmed class, and unlike every other row this
-    // one never otherwise clears that on a plain "nothing confirmed yet"
-    // state, so it pulsed forever until the first real answer arrived.
+    // on initial page load).
     if (!fakeSolveToggleInFlight) {
-      textEl.textContent = lastFakeSolveActive === true ? 'active (unconfirmed)' : 'unknown';
+      statusEl.textContent = 'unknown';
       btn.disabled = true;
       manualBtn.disabled = true;
       reseedBtn.style.display = 'none';
-      setHwDot(dotEl, lastFakeSolveActive === true ? 'status-dot dot-green dot-unconfirmed' : 'status-dot dot-white');
     }
     return;
   }
@@ -2296,16 +2419,11 @@ function applyFakeSolveStatus(data) {
   // specific position" for either state (#205).
   reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
   reseedBtn.disabled = false;
-
+  btn.textContent = lastFakeSolveActive ? 'Turn off' : 'Toggle';
   if (!lastFakeSolveActive) {
-    setHwDot(dotEl, 'status-dot dot-white');
-    textEl.textContent = 'off';
-    btn.textContent = 'Toggle';
+    statusEl.textContent = 'off';
     return;
   }
-
-  setHwDot(dotEl, 'status-dot dot-green');
-  btn.textContent = 'Turn off';
   const ra = data.fake_solve_ra;
   const dec = data.fake_solve_dec;
   const since = data.last_solve_success;
@@ -2319,7 +2437,178 @@ function applyFakeSolveStatus(data) {
       text += ')';
     }
   }
-  textEl.textContent = text;
+  statusEl.textContent = text;
+}
+
+// #191/#217: PiFinder Truth Injector toggle - polled independently of (and
+// faster than) the 20s refreshDebugSolve() cadence below, same reasoning as
+// refreshMbDrift()'s own separate 2s interval: this reflects a background
+// process that can die on its own between polls, and "must run reliably"
+// (direct feedback) means the dot has to catch that promptly, not up to
+// 20s late.
+let truthInjectorToggleInFlight = false;
+let lastTruthInjectorDesired = null;
+
+// #191/#217: quick-access duplicate of the Toggle button, in the
+// "Simulation and testing" heading row itself (direct feedback, 2026-08-10:
+// "Das ist das meist benutzte hier" - reaching it shouldn't require
+// expanding the section first). No status text on this one, deliberately -
+// the button's own background color IS the status (white/yellow/green/red,
+// same 4 states as the dot below), same "info via button coloring alone"
+// request as elsewhere. Stays in sync via the exact same two functions,
+// just touching one more element.
+function applyQuickInjectorButtonState(stateClass) {
+  const btn = document.getElementById('sim-quick-injector-btn');
+  if (!btn) return;
+  btn.classList.remove('ql-small-btn-white', 'ql-small-btn-yellow', 'ql-small-btn-green', 'ql-small-btn-red');
+  btn.classList.add(stateClass);
+}
+
+// Single place that renders a confirmed (desired, alive) pair OR an
+// explicit error string - shared by the periodic poll and
+// toggleTruthInjector()'s own settling loop below, so both always agree on
+// what each state looks like (2026-08-10, direct feedback pass #2: the
+// fixed 2.5s hold from the previous fix was a guess, not an actual "wait
+// until really settled" - replaced with a real poll-until-target loop that
+// needed this shared renderer to stay in sync with the periodic poll).
+function applyTruthInjectorState(desired, alive, errorText) {
+  const dotEl = document.getElementById('truth-injector-dot');
+  const textEl = document.getElementById('truth-injector-text');
+  const btn = document.getElementById('truth-injector-btn');
+  const quickBtn = document.getElementById('sim-quick-injector-btn');
+  if (errorText) {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = errorText;
+    applyQuickInjectorButtonState('ql-small-btn-red');
+    return;
+  }
+  btn.textContent = desired ? 'Turn off' : 'Toggle';
+  if (!desired) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'off';
+    applyQuickInjectorButtonState('ql-small-btn-white');
+  } else if (alive) {
+    setHwDot(dotEl, 'status-dot dot-green');
+    textEl.textContent = 'running';
+    applyQuickInjectorButtonState('ql-small-btn-green');
+  } else {
+    // Desired on, but the process isn't alive right now - the server's own
+    // watchdog will restart it within a few seconds; shown as red (not
+    // yellow) because this genuinely means "not actually feeding PiFinder
+    // a fresh solve right now", not just an in-flight click.
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
+    applyQuickInjectorButtonState('ql-small-btn-red');
+  }
+  if (quickBtn) quickBtn.disabled = false;
+}
+
+async function refreshTruthInjectorStatus() {
+  if (truthInjectorToggleInFlight) return;
+  const btn = document.getElementById('truth-injector-btn');
+  try {
+    const resp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+    const data = await resp.json();
+    lastTruthInjectorDesired = data.desired;
+    btn.disabled = false;
+    applyTruthInjectorState(data.desired, data.alive, null);
+  } catch (e) {
+    // best-effort poll - leave the last-known state showing rather than
+    // flashing to "unknown" on one missed request.
+  }
+}
+setInterval(refreshTruthInjectorStatus, 4000);
+refreshTruthInjectorStatus();
+
+// Real poll-until-target-reached control loop (2026-08-10, direct feedback
+// pass #2: "so lange (!) nach dem Drücken der Status nicht erreicht ist:
+// gelb blinken" / "geht etwas schief: rot! ... zeige was schief gelaufen
+// ist" / "genau das Gleiche beim Ausschalten. Wir brauchen da eine klare
+// Kontrolle!") - replaces the previous fixed-delay guess entirely, and is
+// now symmetric for both directions:
+//   1. POST the toggle. If the server itself reports failure (success !==
+//      true - e.g. the subprocess couldn't be spawned), go straight to red
+//      with the real error message and stop. No guessing.
+//   2. Otherwise poll /api/truth_injector_status roughly once a second,
+//      staying yellow/pulsing, until the target state is actually
+//      confirmed reached (desired===false for "turning off",
+//      desired===true && alive===true for "turning on").
+//   3. If TOGGLE_SETTLE_TIMEOUT_MS passes without reaching the target, that
+//      is itself an error - stop, show red with an explicit timeout
+//      message (most likely cause: indiserver/Telescope Simulator not
+//      reachable, or the injector script can't resolve the device) rather
+//      than silently falling back to whatever the last poll happened to say.
+const TRUTH_INJECTOR_SETTLE_TIMEOUT_MS = 15000;
+const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
+
+async function toggleTruthInjector() {
+  const btn = document.getElementById('truth-injector-btn');
+  const turningOff = lastTruthInjectorDesired === true;
+  truthInjectorToggleInFlight = true;
+  btn.disabled = true;
+  const quickBtn = document.getElementById('sim-quick-injector-btn');
+  if (quickBtn) quickBtn.disabled = true;
+  setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');
+  applyQuickInjectorButtonState('ql-small-btn-yellow');
+  document.getElementById('truth-injector-text').textContent = turningOff ? 'stopping…' : 'starting…';
+
+  let toggleError = null;
+  try {
+    const resp = await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    const result = await resp.json();
+    if (result.success !== true) {
+      toggleError = result.error || 'unknown error';
+    } else if (turningOff) {
+      // Stopping the process alone only stops *refreshing* the shared
+      // fake_solve_active flag - it stays true (just aging) until
+      // something explicitly clears it. Clear it here too so "off" here
+      // actually means off, not just "not being refreshed anymore".
+      await fetch('/api/fake_solve_disable', { method: 'POST' });
+    }
+  } catch (e) {
+    toggleError = 'could not reach the server';
+  }
+
+  if (toggleError) {
+    applyTruthInjectorState(lastTruthInjectorDesired, false, `failed to ${turningOff ? 'stop' : 'start'}: ${toggleError}`);
+    truthInjectorToggleInFlight = false;
+    btn.disabled = false;
+    if (quickBtn) quickBtn.disabled = false;
+    return;
+  }
+
+  const deadline = Date.now() + TRUTH_INJECTOR_SETTLE_TIMEOUT_MS;
+  let settled = false;
+  let lastData = null;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, TRUTH_INJECTOR_POLL_INTERVAL_MS));
+    try {
+      const resp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+      lastData = await resp.json();
+    } catch (e) {
+      continue; // best-effort - just try again next tick, still within budget
+    }
+    const target = turningOff ? lastData.desired === false : (lastData.desired === true && lastData.alive === true);
+    if (target) {
+      settled = true;
+      break;
+    }
+  }
+
+  truthInjectorToggleInFlight = false;
+  if (settled && lastData) {
+    lastTruthInjectorDesired = lastData.desired;
+    applyTruthInjectorState(lastData.desired, lastData.alive, null);
+  } else {
+    applyTruthInjectorState(
+      lastTruthInjectorDesired,
+      false,
+      `timed out waiting to ${turningOff ? 'stop' : 'start'} - check indiserver/Telescope Simulator connection`
+    );
+  }
+  btn.disabled = false;
+  if (quickBtn) quickBtn.disabled = false;
+  await refreshDebugSolve();
 }
 
 async function refreshDebugSolve() {
@@ -2576,20 +2865,25 @@ async function toggleFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-btn');
-  const textEl = document.getElementById('fake-solve-text');
-  const dotEl = document.getElementById('fake-solve-dot');
+  const textEl = document.getElementById('fake-solve-advanced-status');
   const turningOn = lastFakeSolveActive !== true;
   const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
-  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   // Badge follows the row's dot immediately, not just once confirmed -
   // otherwise it stayed invisible for the whole in-flight window (several
   // seconds, given the mount-read+inject round trip) and only popped in
   // right at the very end (User feedback).
   document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
   try {
+    if (!turningOn && lastTruthInjectorDesired === true) {
+      // Turning off here must also stop the Truth Injector - it shares
+      // the exact same fake_solve_active flag, so leaving it running would
+      // just re-activate this within its next 2s tick (direct feedback,
+      // 2026-08-10).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (turningOn && result.success !== true) {
@@ -2616,6 +2910,7 @@ async function toggleFakeSolve() {
   // above was a no-op for this row while in flight, by design.
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
+  await refreshTruthInjectorStatus();
   if (!landed) btn.disabled = false;
 }
 
@@ -2628,12 +2923,10 @@ async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
   const btn = document.getElementById('fake-solve-reseed-btn');
-  const textEl = document.getElementById('fake-solve-text');
-  const dotEl = document.getElementById('fake-solve-dot');
+  const textEl = document.getElementById('fake-solve-advanced-status');
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = 'Reading mount position…';
-  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   try {
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
     const result = await resp.json();
@@ -3918,9 +4211,11 @@ function restoreCollapsibleSections() {
   const sections = [
     ['ql-links', 'ql-links-chevron', 'block'],
     ['sim-testing-details', 'sim-testing-chevron', 'block'],
+    ['fake-solve-advanced', 'fake-solve-advanced-chevron', 'block'],
     ['hw-details', 'hw-details-chevron', 'block'],
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
     ['mode-power-groups', 'mode-power-chevron', 'flex'],
+    ['mb-multialign-details', 'mb-multialign-chevron', 'block'],
     ['mb-details', 'mb-details-chevron', 'block'],
     ['mb-mode-details', 'mb-mode-details-chevron', 'block'],
     ['mb-reject-warning-details', 'mb-reject-warning-chevron', 'block'],
@@ -4249,6 +4544,7 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-mount', data.mount_connected);
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
+  syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
   applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
@@ -4419,6 +4715,47 @@ function syncThresholdInputFromDriver(driftThreshold) {
   const input = document.getElementById('wm-threshold-input');
   if (document.activeElement === input || thresholdChangeDebounce) return;
   input.value = driftThreshold;
+}
+
+// #191/#217: same "don't stomp on an in-progress edit" reasoning as
+// syncThresholdInputFromDriver() above, one field at a time (a user editing
+// Points shouldn't have Radius silently reset under them by the same poll).
+let alignConfigChangeDebounce = null;
+function syncAlignConfigInputsFromDriver(radius, count, minAltitude) {
+  const fields = [
+    ['mb-align-radius-input', radius],
+    ['mb-align-count-input', count],
+    ['mb-align-min-altitude-input', minAltitude],
+  ];
+  for (const [id, value] of fields) {
+    if (value === null || value === undefined) continue;
+    const input = document.getElementById(id);
+    if (document.activeElement === input || alignConfigChangeDebounce) continue;
+    input.value = value;
+  }
+}
+
+async function applyAlignConfigChange() {
+  const radius = parseFloat(document.getElementById('mb-align-radius-input').value.replace(',', '.'));
+  const count = parseFloat(document.getElementById('mb-align-count-input').value.replace(',', '.'));
+  const minAltitude = parseFloat(document.getElementById('mb-align-min-altitude-input').value.replace(',', '.'));
+  if (!Number.isFinite(radius) || !Number.isFinite(count) || !Number.isFinite(minAltitude)) return;
+  setMbActionStatus('⏳ Updating alignment point selection…');
+  try {
+    await fetch(`/api/mount_bridge_align_config?radius=${radius}&count=${count}&min_altitude=${minAltitude}`, { method: 'POST' });
+  } catch (e) {
+    // fall through - the next refreshMountBridgeStatus() poll reflects whatever actually took effect
+  }
+  pollMbLog();
+  clearMbActionStatus();
+}
+
+function scheduleAlignConfigChange() {
+  if (alignConfigChangeDebounce) clearTimeout(alignConfigChangeDebounce);
+  alignConfigChangeDebounce = setTimeout(() => {
+    alignConfigChangeDebounce = null;
+    applyAlignConfigChange();
+  }, 600);
 }
 
 // Server-side log of every Mount Bridge action this tile has triggered
@@ -4727,6 +5064,55 @@ function updateMountRejectWarning(active, message) {
   toggle.style.display = '';
 }
 
+// #191/#217: Multi-Point Alignment status, on the same fast/best-effort
+// poll as drift above - progress changes on the same multi-second cadence
+// while a sequence is running. multiAlignActionInFlight is separate from
+// mbActionInFlight (not gated on it) so the Start/Stop buttons' own
+// disabled-state juggling during a click doesn't also freeze the drift
+// number, same reasoning as this whole poll being ungated on
+// mbStatusUnconfirmed above.
+//
+// Follows this project's documented status-row convention
+// (Readme_ControlCenter.md "Design Principles" #1/#2, re-read 2026-08-10
+// after direct feedback this row was missing it entirely): <dot> Label:
+// status, white/green/yellow/red - adapted for a discrete multi-step
+// action rather than a component health check: yellow means "running"
+// here (a one-shot sequence has no ongoing degraded-but-working state the
+// way e.g. hardware presence does), green always carries a real
+// completion message, not just "Ok".
+let multiAlignActionInFlight = false;
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced) {
+  const startBtn = document.getElementById('mb-multialign-start-btn');
+  const stopBtn = document.getElementById('mb-multialign-stop-btn');
+  const dotEl = document.getElementById('mb-multialign-dot');
+  const textEl = document.getElementById('mb-multialign-status-text');
+  const running = alignState === 'Busy';
+  if (!multiAlignActionInFlight) {
+    startBtn.disabled = running;
+    stopBtn.disabled = !running;
+  }
+  if (!pointCount) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'not run yet';
+    return;
+  }
+  if (running) {
+    setHwDot(dotEl, 'status-dot dot-yellow');
+    textEl.textContent = `running - point ${pointIndex}/${pointCount} (${pointSynced} verified so far)…`;
+  } else if (alignState === 'Ok') {
+    setHwDot(dotEl, 'status-dot dot-green');
+    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced.`;
+  } else if (alignState === 'Alert') {
+    setHwDot(dotEl, 'status-dot dot-red');
+    textEl.textContent = pointSynced > 0
+      ? `stopped at point ${pointIndex}/${pointCount} - ${pointSynced} point(s) verified before stopping.`
+      : `failed - 0/${pointCount} point(s) verified (stopped, or no fresh PiFinder solve arrived).`;
+  } else {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'not run yet';
+  }
+}
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -4736,6 +5122,8 @@ async function refreshMbDrift() {
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced);
+      syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
@@ -4918,6 +5306,43 @@ async function triggerAbortMount() {
   btn.disabled = false;
   pollMbLog();
   await refreshMountBridgeStatus();
+  clearMbActionStatus();
+}
+
+async function triggerMultiAlignStart() {
+  multiAlignActionInFlight = true;
+  setMbActionStatus('⏳ Starting Multi-Point Alignment…');
+  const btn = document.getElementById('mb-multialign-start-btn');
+  btn.disabled = true;
+  document.getElementById('mb-multialign-stop-btn').disabled = false;
+  try {
+    const resp = await fetch('/api/mount_bridge_multialign_start', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the other manual action buttons.
+  }
+  pollMbLog();
+  multiAlignActionInFlight = false;
+  clearMbActionStatus();
+}
+
+async function triggerMultiAlignStop() {
+  // Same deliberately-no-confirm()/no-mbActionInFlight-gate reasoning as
+  // triggerAbortMount() - a stop needs to fire immediately, every time.
+  setMbActionStatus('🛑 Stopping Multi-Point Alignment…');
+  const btn = document.getElementById('mb-multialign-stop-btn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/mount_bridge_multialign_stop', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below
+  }
+  document.getElementById('mb-multialign-start-btn').disabled = false;
+  pollMbLog();
   clearMbActionStatus();
 }
 
