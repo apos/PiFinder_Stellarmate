@@ -285,6 +285,7 @@ def mount_bridge_status(
             "align_radius": None,
             "align_count": None,
             "align_min_altitude": None,
+            "align_direction": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -293,6 +294,15 @@ def mount_bridge_status(
     drift_status = drift_status_prop.get("elements", {})
     drift_threshold_elements = device_props.get("DRIFT_THRESHOLD", {}).get("elements", {})
     align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
+    # #191: preferred-direction hard filter - whichever ALIGN_DIRECTION
+    # element is "On", normalized to the short form the GUI/API already use
+    # elsewhere (matches direction= on /api/nearby_bright_stars directly).
+    align_direction_elements = device_props.get("ALIGN_DIRECTION", {}).get("elements", {})
+    align_direction_raw = next((n for n, v in align_direction_elements.items() if v == "On"), None)
+    align_direction = {
+        "ALIGN_DIR_ANY": "ANY", "ALIGN_DIR_N": "N", "ALIGN_DIR_E": "E",
+        "ALIGN_DIR_S": "S", "ALIGN_DIR_W": "W",
+    }.get(align_direction_raw)
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
@@ -386,6 +396,7 @@ def mount_bridge_status(
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
+        "align_direction": align_direction,
     }
 
 
@@ -426,6 +437,7 @@ def mount_bridge_drift(
             "align_radius": None,
             "align_count": None,
             "align_min_altitude": None,
+            "align_direction": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -458,6 +470,15 @@ def mount_bridge_drift(
     # Threshold/drift fields already trust, so reading them back is as
     # reliable as everything else on this row.
     align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
+    # #191: preferred-direction hard filter - whichever ALIGN_DIRECTION
+    # element is "On", normalized to the short form the GUI/API already use
+    # elsewhere (matches direction= on /api/nearby_bright_stars directly).
+    align_direction_elements = device_props.get("ALIGN_DIRECTION", {}).get("elements", {})
+    align_direction_raw = next((n for n, v in align_direction_elements.items() if v == "On"), None)
+    align_direction = {
+        "ALIGN_DIR_ANY": "ANY", "ALIGN_DIR_N": "N", "ALIGN_DIR_E": "E",
+        "ALIGN_DIR_S": "S", "ALIGN_DIR_W": "W",
+    }.get(align_direction_raw)
 
     def _int_or_none(raw):
         return int(float(raw)) if raw not in (None, "") else None
@@ -487,6 +508,7 @@ def mount_bridge_drift(
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
+        "align_direction": align_direction,
     }
 
 

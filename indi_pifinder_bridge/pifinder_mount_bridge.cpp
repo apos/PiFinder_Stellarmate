@@ -152,6 +152,7 @@ bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, 
 // Returns false (with outError set) on any request/parse failure or a
 // zero-candidate response.
 bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, double minAltitude,
+                               const char *direction,
                                std::vector<std::pair<double, double>> &outPoints, std::string &outError)
 {
     CURL *curl = curl_easy_init();
@@ -162,8 +163,15 @@ bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, 
     }
 
     char fullUrl[256];
-    std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f",
-                  url.c_str(), radius, count, minAltitude);
+    // direction is nullptr/"" for the previous, direction-agnostic
+    // behavior - "" is skipped by PiFinder's own qs.get(...) or None
+    // default, not sent as an empty query value.
+    if (direction != nullptr && direction[0] != '\0')
+        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f&direction=%s",
+                      url.c_str(), radius, count, minAltitude, direction);
+    else
+        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f",
+                      url.c_str(), radius, count, minAltitude);
 
     std::string body;
     curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
@@ -299,6 +307,14 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&AlignConfigNP, AlignConfigN, 3, getDeviceName(), "ALIGN_CONFIG",
                        "Alignment point selection", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_ANY], "ALIGN_DIR_ANY", "Any", ISS_ON);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_N], "ALIGN_DIR_N", "N", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_E], "ALIGN_DIR_E", "E", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_S], "ALIGN_DIR_S", "S", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_W], "ALIGN_DIR_W", "W", ISS_OFF);
+    IUFillSwitchVector(&AlignDirectionSP, AlignDirectionS, 5, getDeviceName(), "ALIGN_DIRECTION",
+                       "Preferred direction", "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
     IUFillNumber(&AlignProgressN[ALIGN_POINT_INDEX], "POINT_INDEX", "Current point (1-based)", "%.0f", 0, 10, 1, 0);
     IUFillNumber(&AlignProgressN[ALIGN_POINT_COUNT], "POINT_COUNT", "Total points", "%.0f", 0, 10, 1, 0);
     IUFillNumber(&AlignProgressN[ALIGN_POINT_SYNCED], "POINT_SYNCED", "Points verified/synced", "%.0f", 0, 10, 1, 0);
@@ -379,6 +395,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&AbortMountSP);
         defineProperty(&MultiPointAlignSP);
         defineProperty(&AlignConfigNP);
+        defineProperty(&AlignDirectionSP);
         defineProperty(&AlignProgressNP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&MaxSyncDriftNP);
@@ -409,6 +426,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(AbortMountSP.name);
         deleteProperty(MultiPointAlignSP.name);
         deleteProperty(AlignConfigNP.name);
+        deleteProperty(AlignDirectionSP.name);
         deleteProperty(AlignProgressNP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(MaxSyncDriftNP.name);
@@ -1503,21 +1521,29 @@ bool PiFinderMountBridge::fetchAlignmentCandidates()
     const double radius = AlignConfigN[ALIGN_RADIUS].value;
     const int count = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
     const double minAltitude = AlignConfigN[ALIGN_MIN_ALTITUDE].value;
+    // nullptr for ALIGN_DIR_ANY (index 0) - matches
+    // httpGetNearbyBrightStars()'s own "no direction param sent" contract.
+    const char *direction = nullptr;
+    if (AlignDirectionS[ALIGN_DIR_N].s == ISS_ON) direction = "N";
+    else if (AlignDirectionS[ALIGN_DIR_E].s == ISS_ON) direction = "E";
+    else if (AlignDirectionS[ALIGN_DIR_S].s == ISS_ON) direction = "S";
+    else if (AlignDirectionS[ALIGN_DIR_W].s == ISS_ON) direction = "W";
 
     std::string error;
     const bool ok =
         httpGetNearbyBrightStars("http://127.0.0.1/api/nearby_bright_stars", radius, count, minAltitude,
-                                  m_alignPoints, error) ||
+                                  direction, m_alignPoints, error) ||
         httpGetNearbyBrightStars("http://127.0.0.1:8080/api/nearby_bright_stars", radius, count, minAltitude,
-                                  m_alignPoints, error);
+                                  direction, m_alignPoints, error);
     if (!ok)
     {
         LOGF_ERROR("Multi-Point Alignment: could not get candidate points from PiFinder (%s).", error.c_str());
         return false;
     }
     LOGF_INFO("Multi-Point Alignment: got %zu candidate point(s) from PiFinder (radius %.0f deg, "
-              "min altitude %.0f deg).",
-              m_alignPoints.size(), radius, minAltitude);
+              "min altitude %.0f deg%s%s).",
+              m_alignPoints.size(), radius, minAltitude,
+              direction ? ", direction " : "", direction ? direction : "");
     return true;
 }
 
@@ -1868,6 +1894,15 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             return true;
         }
 
+        if (strcmp(name, AlignDirectionSP.name) == 0)
+        {
+            IUUpdateSwitch(&AlignDirectionSP, states, names, n);
+            AlignDirectionSP.s = IPS_OK;
+            IDSetSwitch(&AlignDirectionSP, nullptr);
+            saveConfig(true, AlignDirectionSP.name);
+            return true;
+        }
+
         if (strcmp(name, RepositionConfirmSP.name) == 0)
         {
             IUUpdateSwitch(&RepositionConfirmSP, states, names, n);
@@ -2130,6 +2165,9 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     // always resetting to the IUFillNumber defaults - found live, 2026-08-10,
     // in response to "Überleben diese Werte einen Reload/Reboot?".
     IUSaveConfigNumber(fp, &AlignConfigNP);
+    // Learned from the AlignConfigNP omission just above - added here from
+    // the start this time, not after a repeat report.
+    IUSaveConfigSwitch(fp, &AlignDirectionSP);
     return true;
 }
 

@@ -212,6 +212,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber AlignConfigN[3];
         enum { ALIGN_RADIUS, ALIGN_COUNT, ALIGN_MIN_ALTITUDE };
 
+        // Preferred-direction hard filter (direct feedback, 2026-08-10,
+        // found live under real sky: "vom Zenith aus wandert der PiFinder
+        // sonst gerne mal in eine Region, die z.B. nicht geeignet ist" - a
+        // real obstruction in one azimuth quadrant, not modeled by
+        // min_altitude alone). ANY (default) keeps the previous,
+        // direction-agnostic behavior. A HARD filter, not a preference -
+        // matches PiFinder's own /api/nearby_bright_stars contract: too few
+        // candidates in the chosen quadrant is a failure
+        // (fetchAlignmentCandidates() below), not a silent fallback to
+        // other directions.
+        ISwitchVectorProperty AlignDirectionSP;
+        ISwitch AlignDirectionS[5];
+        enum { ALIGN_DIR_ANY, ALIGN_DIR_N, ALIGN_DIR_E, ALIGN_DIR_S, ALIGN_DIR_W };
+
         // Poll-friendly progress readout for the Control Center GUI - a
         // one-shot getProperties can't observe LOGF_INFO/LOGF_WARN messages
         // (those are ephemeral <message> elements, not a queryable
