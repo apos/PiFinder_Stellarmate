@@ -3183,6 +3183,39 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_multialign_start":
+            # #191/#217: kicks off a Multi-Point Alignment sequence. Fresh
+            # candidates are fetched by the driver itself on every Start
+            # (fetchAlignmentCandidates()) - nothing to pass from here.
+            # Independent of Coupling mode, same as Manual Sync/Abort above.
+            _mb_log("starting Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_start()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  started - see the Alignment progress readout for per-point status.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_multialign_stop":
+            # #217: verified live against Telescope Simulator that this
+            # correctly aborts an in-progress sequence at the INDI level
+            # (stopMultiPointAlignment() -> abortMount()) - the earlier
+            # "can't abort" report traced to this button not existing in the
+            # GUI at all, not to a backend fault.
+            _mb_log("stopping Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_stop()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 

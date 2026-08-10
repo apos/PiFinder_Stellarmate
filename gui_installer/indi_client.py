@@ -408,6 +408,10 @@ def mount_bridge_drift(
             "drift_arcmin": None,
             "mount_reject_active": False,
             "mount_reject_message": None,
+            "align_state": None,
+            "align_point_index": None,
+            "align_point_count": None,
+            "align_point_synced": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -421,6 +425,19 @@ def mount_bridge_drift(
     mount_reject_prop = device_props.get("MOUNT_REJECT", {})
     mount_reject_active = mount_reject_prop.get("state") == "Alert"
     mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
+
+    # #191/#217: Multi-Point Alignment's own coarse state (MULTI_POINT_ALIGN
+    # itself has no numeric elements worth reading - it's a Start/Stop
+    # switch pair, "align_state" here is its *vector* state Idle/Busy/Ok/
+    # Alert) plus ALIGN_PROGRESS's poll-friendly point-by-point numbers -
+    # added alongside drift/coupling_mode in this same fast-poll companion
+    # (not mount_bridge_status()) because progress changes on the same
+    # multi-second cadence as drift while a sequence is running.
+    align_state = device_props.get("MULTI_POINT_ALIGN", {}).get("state")
+    align_progress = device_props.get("ALIGN_PROGRESS", {}).get("elements", {})
+
+    def _int_or_none(raw):
+        return int(float(raw)) if raw not in (None, "") else None
 
     return {
         "running": True,
@@ -440,6 +457,10 @@ def mount_bridge_drift(
         # old.
         "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+        "align_state": align_state,
+        "align_point_index": _int_or_none(align_progress.get("POINT_INDEX")),
+        "align_point_count": _int_or_none(align_progress.get("POINT_COUNT")),
+        "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
     }
 
 
@@ -743,3 +764,28 @@ def trigger_abort_mount(
     Coupling mode (or Off) is active, and independent of whether PiFinder's
     own side is ready/available. See #179."""
     set_switch("PiFinder Mount Bridge", "ABORT_MOUNT", "ABORT_MOUNT_NOW", host, port, timeout)
+
+
+def trigger_multipoint_align_start(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Starts a #191 Multi-Point Alignment sequence (MULTI_POINT_ALIGN's
+    ALIGN_START element): fetches fresh candidate points from PiFinder's own
+    /api/nearby_bright_stars and works through them one at a time (Goto,
+    wait for arrival, wait for a fresh PiFinder solve, Sync). Independent of
+    Coupling mode - works whether Coupling is Off or any other preset."""
+    set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_START", host, port, timeout)
+
+
+def trigger_multipoint_align_stop(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Aborts an in-progress #191 Multi-Point Alignment sequence
+    (MULTI_POINT_ALIGN's ALIGN_STOP element) - reuses the same ABORT_MOUNT
+    path as the emergency-stop button, so any current mount motion also
+    stops immediately, not just the sequence's own bookkeeping."""
+    set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_STOP", host, port, timeout)

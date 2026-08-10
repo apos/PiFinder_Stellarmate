@@ -1570,6 +1570,17 @@
         <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
         <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
       </div>
+      <!-- #191/#217: automatic Multi-Point Alignment. Own row, not merged
+           into mb-big-actions-row above - this is a multi-step sequence
+           with its own progress readout, not a one-shot action, and the
+           Stop button here only matters (is enabled) while a sequence is
+           actually running, unlike Sync/Stop movement which are always
+           live. -->
+      <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
+        <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Multi-Point Alignment</button>
+        <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+      </div>
+      <div id="mb-multialign-progress" class="mb-hint" style="display:none;"></div>
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
@@ -4727,6 +4738,42 @@ function updateMountRejectWarning(active, message) {
   toggle.style.display = '';
 }
 
+// #191/#217: Multi-Point Alignment progress, on the same fast/best-effort
+// poll as drift above - progress changes on the same multi-second cadence
+// while a sequence is running. multiAlignActionInFlight is separate from
+// mbActionInFlight (not gated on it) so the Start/Stop buttons' own
+// disabled-state juggling during a click doesn't also freeze the drift
+// number, same reasoning as this whole poll being ungated on
+// mbStatusUnconfirmed above.
+let multiAlignActionInFlight = false;
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced) {
+  const startBtn = document.getElementById('mb-multialign-start-btn');
+  const stopBtn = document.getElementById('mb-multialign-stop-btn');
+  const progressEl = document.getElementById('mb-multialign-progress');
+  const running = alignState === 'Busy';
+  if (!multiAlignActionInFlight) {
+    startBtn.disabled = running;
+    stopBtn.disabled = !running;
+  }
+  if (!pointCount) {
+    progressEl.style.display = 'none';
+    return;
+  }
+  progressEl.style.display = '';
+  progressEl.classList.toggle('mb-hint-ok', alignState === 'Ok' && pointSynced > 0);
+  if (running) {
+    progressEl.textContent = `Aligning: point ${pointIndex}/${pointCount} (${pointSynced} verified so far)…`;
+  } else if (alignState === 'Ok') {
+    progressEl.textContent = `Last run: ${pointSynced}/${pointCount} point(s) verified and synced.`;
+  } else if (alignState === 'Alert') {
+    progressEl.textContent = pointSynced > 0
+      ? `Stopped at point ${pointIndex}/${pointCount} - ${pointSynced} point(s) verified before stopping.`
+      : `Last run: 0/${pointCount} point(s) verified - stopped or nothing synced (no fresh PiFinder solve?).`;
+  } else {
+    progressEl.style.display = 'none';
+  }
+}
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -4736,6 +4783,7 @@ async function refreshMbDrift() {
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
@@ -4918,6 +4966,43 @@ async function triggerAbortMount() {
   btn.disabled = false;
   pollMbLog();
   await refreshMountBridgeStatus();
+  clearMbActionStatus();
+}
+
+async function triggerMultiAlignStart() {
+  multiAlignActionInFlight = true;
+  setMbActionStatus('⏳ Starting Multi-Point Alignment…');
+  const btn = document.getElementById('mb-multialign-start-btn');
+  btn.disabled = true;
+  document.getElementById('mb-multialign-stop-btn').disabled = false;
+  try {
+    const resp = await fetch('/api/mount_bridge_multialign_start', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below, same pattern as
+    // the other manual action buttons.
+  }
+  pollMbLog();
+  multiAlignActionInFlight = false;
+  clearMbActionStatus();
+}
+
+async function triggerMultiAlignStop() {
+  // Same deliberately-no-confirm()/no-mbActionInFlight-gate reasoning as
+  // triggerAbortMount() - a stop needs to fire immediately, every time.
+  setMbActionStatus('🛑 Stopping Multi-Point Alignment…');
+  const btn = document.getElementById('mb-multialign-stop-btn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/mount_bridge_multialign_stop', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog() below
+  }
+  document.getElementById('mb-multialign-start-btn').disabled = false;
+  pollMbLog();
   clearMbActionStatus();
 }
 

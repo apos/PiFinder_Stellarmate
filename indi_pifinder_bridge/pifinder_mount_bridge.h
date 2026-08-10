@@ -209,6 +209,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber AlignConfigN[3];
         enum { ALIGN_RADIUS, ALIGN_COUNT, ALIGN_MIN_ALTITUDE };
 
+        // Poll-friendly progress readout for the Control Center GUI - a
+        // one-shot getProperties can't observe LOGF_INFO/LOGF_WARN messages
+        // (those are ephemeral <message> elements, not a queryable
+        // property), so a client that only polls properties (no persistent
+        // listening connection) would otherwise see no per-point progress
+        // at all, just the coarse MULTI_POINT_ALIGN Idle/Busy/Ok/Alert
+        // state. POINT_INDEX is 1-based (0 = no sequence has run yet this
+        // session), frozen at its last value once the sequence stops/
+        // completes/errors - not reset on Stop, so "stopped at 2/4" stays
+        // readable until the next Start.
+        INumberVectorProperty AlignProgressNP;
+        INumber AlignProgressN[3];
+        enum { ALIGN_POINT_INDEX, ALIGN_POINT_COUNT, ALIGN_POINT_SYNCED };
+
         enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - populated fresh by
@@ -216,6 +230,15 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // hardcoded. Empty until a sequence has actually been started.
         std::vector<std::pair<double, double>> m_alignPoints;
         size_t m_alignPointIndex = 0;
+        // How many of m_alignPoints actually got a verified Sync (not just
+        // attempted/skipped) - drives both AlignProgressN[ALIGN_POINT_SYNCED]
+        // and advanceAlignPoint()'s final IPS_OK vs IPS_ALERT choice: a
+        // sequence that skipped every single point (e.g. no fresh PiFinder
+        // solve ever arrived) previously still reported IPS_OK ("sequence
+        // complete"), indistinguishable from a real success - found during
+        // #217's GUI-facing follow-up, where that ambiguity would otherwise
+        // show up as a false "green" result.
+        size_t m_alignSyncedCount = 0;
         int m_alignSettleTicksRemaining = 0;
         int m_alignFreshnessWaitTicksRemaining = 0;
 

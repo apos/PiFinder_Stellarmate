@@ -299,6 +299,12 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&AlignConfigNP, AlignConfigN, 3, getDeviceName(), "ALIGN_CONFIG",
                        "Alignment point selection", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_INDEX], "POINT_INDEX", "Current point (1-based)", "%.0f", 0, 10, 1, 0);
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_COUNT], "POINT_COUNT", "Total points", "%.0f", 0, 10, 1, 0);
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_SYNCED], "POINT_SYNCED", "Points verified/synced", "%.0f", 0, 10, 1, 0);
+    IUFillNumberVector(&AlignProgressNP, AlignProgressN, 3, getDeviceName(), "ALIGN_PROGRESS",
+                       "Alignment progress", "Main Control", IP_RO, 60, IPS_IDLE);
+
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
     IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
@@ -373,6 +379,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&AbortMountSP);
         defineProperty(&MultiPointAlignSP);
         defineProperty(&AlignConfigNP);
+        defineProperty(&AlignProgressNP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
@@ -402,6 +409,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(AbortMountSP.name);
         deleteProperty(MultiPointAlignSP.name);
         deleteProperty(AlignConfigNP.name);
+        deleteProperty(AlignProgressNP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
@@ -1484,6 +1492,9 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     LOGF_INFO("Multi-Point Alignment: slewing to point %zu/%zu (RA %.4fh, DEC %.4f deg).",
               index + 1, m_alignPoints.size(), ra, dec);
     m_alignState = AlignState::SLEWING;
+    AlignProgressN[ALIGN_POINT_INDEX].value = static_cast<double>(index + 1);
+    AlignProgressNP.s = IPS_BUSY;
+    IDSetNumber(&AlignProgressNP, nullptr);
     return true;
 }
 
@@ -1538,6 +1549,9 @@ void PiFinderMountBridge::startMultiPointAlignment()
               "Sync only - see #191).",
               m_alignPoints.size());
     m_alignPointIndex = 0;
+    m_alignSyncedCount = 0;
+    AlignProgressN[ALIGN_POINT_COUNT].value = static_cast<double>(m_alignPoints.size());
+    AlignProgressN[ALIGN_POINT_SYNCED].value = 0;
     if (gotoAlignPoint(m_alignPointIndex))
     {
         MultiPointAlignSP.s = IPS_BUSY;
@@ -1546,6 +1560,8 @@ void PiFinderMountBridge::startMultiPointAlignment()
     {
         m_alignState = AlignState::IDLE;
         MultiPointAlignSP.s = IPS_ALERT;
+        AlignProgressNP.s = IPS_ALERT;
+        IDSetNumber(&AlignProgressNP, nullptr);
     }
     IDSetSwitch(&MultiPointAlignSP, nullptr);
 }
@@ -1555,14 +1571,19 @@ void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
     if (m_alignState == AlignState::IDLE)
         return;
 
-    LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points.", reason, m_alignPointIndex,
-              m_alignPoints.size());
+    LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points (%zu verified/synced).", reason,
+              m_alignPointIndex, m_alignPoints.size(), m_alignSyncedCount);
     m_alignState = AlignState::IDLE;
     // Reuses the existing panic-button path (#179) rather than a bespoke
     // stop mechanism - matches UC4 in the concept doc exactly.
     m_client->abortMount();
     MultiPointAlignSP.s = IPS_ALERT;
     IDSetSwitch(&MultiPointAlignSP, nullptr);
+    // Left at its last live values (not reset to 0) - "stopped at 2/4, 1
+    // synced" is more useful post-mortem info for the GUI than a blank
+    // readout. The next Start resets it fresh (see startMultiPointAlignment()).
+    AlignProgressNP.s = IPS_ALERT;
+    IDSetNumber(&AlignProgressNP, nullptr);
 }
 
 void PiFinderMountBridge::handleMultiPointAlignment()
@@ -1613,6 +1634,9 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
                           "DEC %.4f deg (fresh PiFinder solve).",
                           m_alignPointIndex + 1, m_alignPoints.size(), piRA, piDec);
+                ++m_alignSyncedCount;
+                AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
+                IDSetNumber(&AlignProgressNP, nullptr);
             }
             else
             {
@@ -1630,11 +1654,18 @@ void PiFinderMountBridge::advanceAlignPoint()
     ++m_alignPointIndex;
     if (m_alignPointIndex >= m_alignPoints.size())
     {
-        LOGF_INFO("Multi-Point Alignment: sequence complete (%zu point(s) attempted).",
-                  m_alignPoints.size());
+        LOGF_INFO("Multi-Point Alignment: sequence complete (%zu/%zu point(s) verified/synced).",
+                  m_alignSyncedCount, m_alignPoints.size());
         m_alignState = AlignState::DONE;
-        MultiPointAlignSP.s = IPS_OK;
+        // Found via #217's GUI-facing follow-up: a run where every single
+        // point got skipped (no fresh PiFinder solve ever arrived) still
+        // reported IPS_OK ("sequence complete") before this fix - identical
+        // to a real success at a glance. 0 verified points is a failure to
+        // report as one, not a completed alignment.
+        MultiPointAlignSP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
         IDSetSwitch(&MultiPointAlignSP, nullptr);
+        AlignProgressNP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
+        IDSetNumber(&AlignProgressNP, nullptr);
         return;
     }
 
