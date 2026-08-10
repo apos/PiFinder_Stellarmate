@@ -1752,7 +1752,7 @@
         <div id="mb-steps-4-6">
         <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-          <select id="wm-mount-select" class="mb-step-widget" disabled><option>&hellip;</option></select>
+          <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
           <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
         </div>
         <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
@@ -1830,13 +1830,13 @@
           <div id="fake-solve-advanced" style="display:none;">
             <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose - see its own status text here instead.">
               Manual one-shot seed: <span id="fake-solve-advanced-status">unknown</span>
-              <button id="fake-solve-btn" class="ql-small-btn" onclick="toggleFakeSolve()" disabled>Toggle</button>
-              <button id="fake-solve-reseed-btn" class="ql-small-btn" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
+              <button id="fake-solve-btn" class="ql-small-btn ql-small-btn-white" onclick="toggleFakeSolve()" disabled>Toggle</button>
+              <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
             </div>
             <div class="hw-detail" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
               <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem;">
               <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem;">
-              <button id="fake-solve-manual-btn" class="ql-small-btn" onclick="setFakeSolveManual()" disabled>Set position</button>
+              <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled>Set position</button>
               <span id="fake-solve-manual-status"></span>
             </div>
           </div>
@@ -2399,6 +2399,23 @@ let fakeSolveToggleInFlight = false;
 // that function) - ONE reliable signal, nothing here reconciles two sources
 // anymore. This function only updates the demoted Advanced sub-section's own
 // small text status, not any dot.
+// Direct feedback, 2026-08-10 ("die GUI-Regeln wurden nicht eingehalten...
+// LED button (existiert aktuell nicht)"): the three Advanced/manual-seed
+// buttons had no button-coloring state at all, unlike the primary
+// Synthetic Solve toggle. Reuses the exact same .ql-small-btn-* palette
+// (white/yellow/green/red) and mirrors applyQuickInjectorButtonState()'s
+// own shape - all three buttons share this since they all drive the same
+// underlying fake_solve_active flag (#106/#205), same reasoning as the
+// primary row's own single source of truth.
+function applyFakeSolveAdvancedButtonStates(stateClass) {
+  for (const id of ['fake-solve-btn', 'fake-solve-reseed-btn', 'fake-solve-manual-btn']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.classList.remove('ql-small-btn-white', 'ql-small-btn-yellow', 'ql-small-btn-green', 'ql-small-btn-red');
+    el.classList.add(stateClass);
+  }
+}
+
 function applyFakeSolveStatus(data) {
   const statusEl = document.getElementById('fake-solve-advanced-status');
   const btn = document.getElementById('fake-solve-btn');
@@ -2414,6 +2431,7 @@ function applyFakeSolveStatus(data) {
       btn.disabled = true;
       manualBtn.disabled = true;
       reseedBtn.style.display = 'none';
+      applyFakeSolveAdvancedButtonStates('ql-small-btn-white');
     }
     return;
   }
@@ -2429,6 +2447,7 @@ function applyFakeSolveStatus(data) {
   reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
   reseedBtn.disabled = false;
   btn.textContent = lastFakeSolveActive ? 'Turn off' : 'Toggle';
+  applyFakeSolveAdvancedButtonStates(lastFakeSolveActive ? 'ql-small-btn-green' : 'ql-small-btn-white');
   if (!lastFakeSolveActive) {
     statusEl.textContent = 'off';
     return;
@@ -2880,6 +2899,7 @@ async function toggleFakeSolve() {
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
+  applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   // Badge follows the row's dot immediately, not just once confirmed -
   // otherwise it stayed invisible for the whole in-flight window (several
   // seconds, given the mount-read+inject round trip) and only popped in
@@ -2898,6 +2918,7 @@ async function toggleFakeSolve() {
     if (turningOn && result.success !== true) {
       fakeSolveToggleInFlight = false;
       textEl.textContent = `could not enable (${result.error || 'unknown error'})`;
+      applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
       btn.disabled = false;
       return;
     }
@@ -2936,12 +2957,14 @@ async function reseedFakeSolve() {
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   textEl.textContent = 'Reading mount position…';
+  applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   try {
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
       fakeSolveToggleInFlight = false;
       textEl.textContent = `could not re-seed (${result.error || 'unknown error'})`;
+      applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
       btn.disabled = false;
       return;
     }
@@ -2971,13 +2994,18 @@ async function setFakeSolveManual() {
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
   statusEl.textContent = 'Setting…';
+  applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
+  let failed = false;
   try {
     const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
     const result = await resp.json();
+    failed = result.success !== true;
     statusEl.textContent = result.success === true ? '' : `failed (${result.error || 'unknown error'})`;
   } catch (e) {
+    failed = true;
     statusEl.textContent = 'failed (unreachable)';
   }
+  if (failed) applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
 }
@@ -4854,12 +4882,28 @@ async function pollMbLog() {
 setInterval(pollMbLog, 4000);
 pollMbLog();
 
+// Direct feedback, 2026-08-10: switching mounts (Telescope Simulator ->
+// LX200 OnStep) via the dropdown silently did nothing, because this button
+// only ever considered "is *any* mount linked", never "does the dropdown's
+// current selection match what's actually linked". While a different mount
+// was already linked, this always showed "Unlink telescope mount" with no
+// hint that picking a new one from the dropdown required unlinking first,
+// waiting, then clicking again to link the new one - a real, non-obvious
+// two-step dance. Now detects the mismatch and offers a single-click
+// "Switch to X" instead (see setWmActiveDevices() for the unlink-then-link
+// sequence that drives).
 function refreshWmActiveButton() {
   const btn = document.getElementById('wm-set-active-btn');
   if (mbStatusUnconfirmed) { btn.disabled = true; return; }  // can't confirm it's safe to act right now
   if (btn.disabled) return;  // mid-action - its own code owns the label until it re-enables
-  btn.textContent = wmActiveMount ? 'Unlink telescope mount' : 'Link telescope mount';
-  btn.classList.toggle('mb-btn-active', !!wmActiveMount);
+  const selected = document.getElementById('wm-mount-select').value;
+  if (wmActiveMount && selected && selected !== wmActiveMount) {
+    btn.textContent = `Switch to "${selected}"`;
+    btn.classList.remove('mb-btn-active');
+  } else {
+    btn.textContent = wmActiveMount ? 'Unlink telescope mount' : 'Link telescope mount';
+    btn.classList.toggle('mb-btn-active', !!wmActiveMount);
+  }
 }
 
 // Consecutive missed polls before treating the status as genuinely
@@ -5943,22 +5987,34 @@ async function setWmActiveDevices() {
   // Toggles between linking the dropdown-selected mount and unlinking
   // whatever's currently linked - per live feedback, "Link Mount" no longer
   // made sense to show once a mount was already linked.
-  const unlinking = !!wmActiveMount;
-  const mount = document.getElementById('wm-mount-select').value;
+  //
+  // "Switching" (dropdown selection differs from what's actually linked) is
+  // just a normal link call, not unlink-then-link - direct feedback,
+  // 2026-08-10: found live that /api/mount_bridge_active_devices already
+  // overwrites ACTIVE_DEVICES.ACTIVE_MOUNT directly with whatever `mount`
+  // is given, no separate unlink step ever required server-side. The old
+  // frontend logic only ever offered "Unlink" once anything was linked,
+  // with no way to tell it meant "switch first, unlink second" - selecting
+  // a different mount (e.g. Telescope Simulator -> LX200 OnStep) silently
+  // did nothing until the user happened to unlink, wait, then link again.
+  const selected = document.getElementById('wm-mount-select').value;
+  const switching = !!wmActiveMount && !!selected && selected !== wmActiveMount;
+  const unlinking = !!wmActiveMount && !switching;
+  const mount = selected;
   if (!unlinking && !mount) return;
   mbActionInFlight = true;
   setStepBusy(4, true);
-  setMbActionStatus(unlinking ? '⏳ Unlinking mount…' : `⏳ Linking mount "${mount}"…`);
+  setMbActionStatus(unlinking ? '⏳ Unlinking mount…' : `⏳ ${switching ? 'Switching to' : 'Linking mount'} "${mount}"…`);
   const btn = document.getElementById('wm-set-active-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = unlinking ? 'unlinking…' : 'linking…';
+  btn.textContent = unlinking ? 'unlinking…' : (switching ? 'switching…' : 'linking…');
   document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
   try {
     const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
     const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
     const data = await resp.json();
-    btn.textContent = data.success ? (unlinking ? 'Unlinked ✓' : 'Linked ✓') : (data.error || 'failed');
+    btn.textContent = data.success ? (unlinking ? 'Unlinked ✓' : (switching ? 'Switched ✓' : 'Linked ✓')) : (data.error || 'failed');
   } catch (e) {
     btn.textContent = 'failed';
   }
