@@ -180,61 +180,54 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ISwitchVectorProperty AbortMountSP;
         ISwitch AbortMountS[1];
 
-        // #191 PoC - automatic multi-point alignment, see
-        // docs/concepts/mount_bridge_multistar_alignment.md. Deliberately
-        // scoped down from the full concept for a feature-branch proof of
-        // concept: a fixed, hardcoded point set instead of catalog-driven
-        // selection (§4.2), a single fresh solve per point instead of a
-        // median of several (§4.3), no KStars-model feed (§4.5, explicitly
-        // flagged there as separate/research-first). Reuses the same
-        // Sync-only approach the concept's own ADR (§5) settled on for a
-        // first OnStep-scoped implementation - no new "Align" primitive.
+        // #191 - automatic multi-point alignment, see
+        // docs/concepts/mount_bridge_multistar_alignment.md. §4.3's core
+        // sequence and §5's Sync-only ADR (already confirmed sufficient for
+        // OnStep - repeated Syncs build a real multi-point model there) are
+        // implemented. §4.2's candidate selection is real: points come from
+        // PiFinder's own /api/nearby_bright_stars (its "Str" bright-named-
+        // star catalog, altitude-filtered server-side using PiFinder's own
+        // GPS location/time via skyfield) - not a fixed hardcoded set.
+        // Still out of scope: §4.3's median-of-N-solves (one fresh solve
+        // per point, same as everywhere else in this file), §4.5's KStars-
+        // model feed (explicitly flagged there as separate/research-first).
         //
-        // *** PoC ONLY - DO NOT run this against a real mount. ***
-        // m_alignPoints below has NO altitude/horizon awareness at all - it
-        // blindly Gotos each fixed point regardless of whether it's
-        // actually above the horizon right now. Live-confirmed (User,
-        // 2026-08-10, against Telescope Simulator): PiFinder's own sky-map
-        // marker sat visibly below the horizon line and the sequence
-        // started anyway. Harmless against a simulator; against a real
-        // mount this is a genuine mechanical collision risk (cable wrap,
-        // counterweight/OTA into the pier or tripod, unrelated to and not
-        // caught by the mount's own coarse elevation limit, e.g. OnStep's
-        // "Slew elevation Limit" - that only guards ~-10°, not "technically
-        // above the mount's own limit but physically unreachable from
-        // here"). §4.2's catalog-driven, altitude-filtered point selection
-        // is what would actually close this gap - explicitly out of scope
-        // for this PoC, deliberately left as documentation rather than a
-        // quick partial fix (User decision, 2026-08-10).
+        // Remaining safety caveat: altitude filtering rules out "below the
+        // horizon", but NOT cable-wrap/meridian-flip risk - a candidate
+        // star can be well above the horizon and still be in a mechanically
+        // awkward hour-angle/RA-wind position for a given mount's current
+        // orientation, which this does not model. Same class of gap as the
+        // still-open KStars-horizon-fencing item.
         ISwitchVectorProperty MultiPointAlignSP;
         ISwitch MultiPointAlignS[2];
         enum { ALIGN_START, ALIGN_STOP };
 
+        // §3's configuration parameters - only the three that gate
+        // candidate selection (§4.2). Median-solve-count and the KStars-
+        // feed checkbox aren't implemented yet, so aren't exposed here.
+        INumberVectorProperty AlignConfigNP;
+        INumber AlignConfigN[3];
+        enum { ALIGN_RADIUS, ALIGN_COUNT, ALIGN_MIN_ALTITUDE };
+
         enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
         AlignState m_alignState = AlignState::IDLE;
-        // RA (hours) / Dec (degrees) - spread across RA quadrants at a
-        // moderate declination, avoiding the pole (per the concept's own
-        // "Pol und Horizont-Nähe meiden" note). See the safety warning on
-        // MultiPointAlignSP above - no altitude/visibility filtering here.
-        //
-        // Waiting for isPiFinderSolveFresh() at each point is correct as-is
-        // and needs no special handling for the real use case: the mount
-        // arrives, PiFinder's own continuous camera solve loop naturally
-        // produces a fresh solve once it's stationary, same as it always
-        // does - nothing here needs to poke or re-seed anything. The only
-        // place this doesn't self-resolve is testing against Telescope
-        // Simulator + Injected Solve (no real camera in the loop at all,
-        // so nothing ever re-solves on its own) - a testing-environment
-        // limitation, not a gap in this code. Without a real solve, a point
-        // simply waits out MAX_FRESHNESS_WAIT_TICKS and gets skipped
-        // (§4.4's existing skip behavior); test against real sky/hardware
-        // for meaningful end-to-end verification of this PoC.
-        std::vector<std::pair<double, double>> m_alignPoints = {
-            {0.0, 30.0}, {6.0, 30.0}, {12.0, 30.0}, {18.0, 30.0},
-        };
+        // RA (hours) / Dec (degrees) - populated fresh by
+        // fetchAlignmentCandidates() every time Start is clicked, not
+        // hardcoded. Empty until a sequence has actually been started.
+        std::vector<std::pair<double, double>> m_alignPoints;
         size_t m_alignPointIndex = 0;
         int m_alignSettleTicksRemaining = 0;
         int m_alignFreshnessWaitTicksRemaining = 0;
+
+        // Calls PiFinder's own /api/nearby_bright_stars (no ra/dec params -
+        // it centers on PiFinder's own current solved position itself, per
+        // §4.2's own decision) with AlignConfigN's radius/count/
+        // min_altitude, and populates m_alignPoints from the response.
+        // Returns false (having already logged why) on any request/parse
+        // failure or a zero-candidate response - callers must not start a
+        // sequence with stale/empty m_alignPoints left over from a
+        // previous attempt.
+        bool fetchAlignmentCandidates();
 
         void handleMultiPointAlignment();
         void startMultiPointAlignment();

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <memory>
@@ -138,6 +139,76 @@ bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, 
     }
 }
 
+// #191 - fetches candidate alignment points from PiFinder's own
+// /api/nearby_bright_stars (its "Str" bright-named-star catalog, already
+// altitude-filtered server-side using PiFinder's own GPS location/time -
+// see docs/concepts/mount_bridge_multistar_alignment.md §4.2). No ra/dec
+// query params are sent - the endpoint centers on PiFinder's own current
+// solved position itself, matching §4.2's own decision to anchor on
+// PiFinder's view rather than the mount's (possibly wrong) one. RA comes
+// back in degrees (this endpoint's own convention, matching every other
+// CompositeObject-shaped PiFinder API) - converted to hours here to match
+// sendMountCoords()'s convention, same as everywhere else in this file.
+// Returns false (with outError set) on any request/parse failure or a
+// zero-candidate response.
+bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, double minAltitude,
+                               std::vector<std::pair<double, double>> &outPoints, std::string &outError)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+    {
+        outError = "curl_easy_init failed";
+        return false;
+    }
+
+    char fullUrl[256];
+    std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f",
+                  url.c_str(), radius, count, minAltitude);
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
+    {
+        outError = curl_easy_strerror(res);
+        return false;
+    }
+    if (httpCode != 200)
+    {
+        outError = "HTTP " + std::to_string(httpCode) + ": " + body;
+        return false;
+    }
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &candidates = parsed.at("candidates");
+        outPoints.clear();
+        for (const auto &c : candidates)
+            outPoints.emplace_back(c.at("ra").get<double>() / 15.0, c.at("dec").get<double>());
+        if (outPoints.empty())
+        {
+            outError = "0 candidates returned";
+            return false;
+        }
+        return true;
+    }
+    catch (const nlohmann::json::exception &e)
+    {
+        outError = std::string("JSON parse error: ") + e.what();
+        return false;
+    }
+}
+
 bool isPiFinderSolveFresh(double maxAgeSeconds)
 {
     std::string solveSource;
@@ -220,7 +291,13 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitch(&MultiPointAlignS[ALIGN_START], "ALIGN_START", "Start", ISS_OFF);
     IUFillSwitch(&MultiPointAlignS[ALIGN_STOP], "ALIGN_STOP", "Stop", ISS_OFF);
     IUFillSwitchVector(&MultiPointAlignSP, MultiPointAlignS, 2, getDeviceName(), "MULTI_POINT_ALIGN",
-                       "Multi-Point Alignment (#191 PoC)", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+                       "Multi-Point Alignment (#191)", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    IUFillNumber(&AlignConfigN[ALIGN_RADIUS], "RADIUS_DEG", "Search radius (deg)", "%.0f", 5, 180, 5, 60);
+    IUFillNumber(&AlignConfigN[ALIGN_COUNT], "POINT_COUNT", "Number of points", "%.0f", 1, 10, 1, 4);
+    IUFillNumber(&AlignConfigN[ALIGN_MIN_ALTITUDE], "MIN_ALTITUDE_DEG", "Min altitude (deg)", "%.0f", 0, 80, 5, 20);
+    IUFillNumberVector(&AlignConfigNP, AlignConfigN, 3, getDeviceName(), "ALIGN_CONFIG",
+                       "Alignment point selection", "Main Control", IP_RW, 60, IPS_IDLE);
 
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
@@ -295,6 +372,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ManualTriggerSP);
         defineProperty(&AbortMountSP);
         defineProperty(&MultiPointAlignSP);
+        defineProperty(&AlignConfigNP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
@@ -323,6 +401,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ManualTriggerSP.name);
         deleteProperty(AbortMountSP.name);
         deleteProperty(MultiPointAlignSP.name);
+        deleteProperty(AlignConfigNP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
@@ -1408,6 +1487,29 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     return true;
 }
 
+bool PiFinderMountBridge::fetchAlignmentCandidates()
+{
+    const double radius = AlignConfigN[ALIGN_RADIUS].value;
+    const int count = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
+    const double minAltitude = AlignConfigN[ALIGN_MIN_ALTITUDE].value;
+
+    std::string error;
+    const bool ok =
+        httpGetNearbyBrightStars("http://127.0.0.1/api/nearby_bright_stars", radius, count, minAltitude,
+                                  m_alignPoints, error) ||
+        httpGetNearbyBrightStars("http://127.0.0.1:8080/api/nearby_bright_stars", radius, count, minAltitude,
+                                  m_alignPoints, error);
+    if (!ok)
+    {
+        LOGF_ERROR("Multi-Point Alignment: could not get candidate points from PiFinder (%s).", error.c_str());
+        return false;
+    }
+    LOGF_INFO("Multi-Point Alignment: got %zu candidate point(s) from PiFinder (radius %.0f deg, "
+              "min altitude %.0f deg).",
+              m_alignPoints.size(), radius, minAltitude);
+    return true;
+}
+
 void PiFinderMountBridge::startMultiPointAlignment()
 {
     if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
@@ -1424,9 +1526,16 @@ void PiFinderMountBridge::startMultiPointAlignment()
         IDSetSwitch(&MultiPointAlignSP, nullptr);
         return;
     }
+    if (!fetchAlignmentCandidates())
+    {
+        // fetchAlignmentCandidates() already logged why.
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
 
-    LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (PoC - fixed points, single "
-              "solve per point, Sync only - see #191).",
+    LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (single solve per point, "
+              "Sync only - see #191).",
               m_alignPoints.size());
     m_alignPointIndex = 0;
     if (gotoAlignPoint(m_alignPointIndex))
@@ -1933,6 +2042,15 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             // nothing in the GUI explaining why. Same auto-save-on-change
             // pattern as those, just missing here.
             saveConfig(true, DriftThresholdNP.name);
+            return true;
+        }
+
+        if (strcmp(name, AlignConfigNP.name) == 0)
+        {
+            IUUpdateNumber(&AlignConfigNP, values, names, n);
+            AlignConfigNP.s = IPS_OK;
+            IDSetNumber(&AlignConfigNP, nullptr);
+            saveConfig(true, AlignConfigNP.name);
             return true;
         }
 
