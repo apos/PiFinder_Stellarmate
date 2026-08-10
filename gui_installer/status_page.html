@@ -1828,16 +1828,36 @@
             <span id="fake-solve-advanced-chevron">&#9660; show</span>
           </div>
           <div id="fake-solve-advanced" style="display:none;">
+            <!-- Re-grouped 2026-08-10 (direct feedback: "Das wirkt alles
+                 sehr unaufgeräumt" - re-read basic-memory/basic-memory/
+                 00017_bm-ui-design-anforderung-klar-einheitlich.md's own
+                 grouping rule: "optisch ansprechend (keine lose
+                 Zeilen-Wüste), platzsparend (horizontale Gruppen statt
+                 vertikaler Zeilenstapel, wo der Inhalt das hergibt)").
+                 RA/Dec/Set position previously LOOKED vertically stacked
+                 despite being one inline row in the markup - turned out to
+                 be .hw-detail's own white-space:pre-wrap rendering this
+                 block's literal source line breaks as real ones, not a
+                 CSS-grouping problem at all. Moved this row off
+                 .hw-detail (never actually the right class for a control
+                 group - it's meant for preformatted log/summary text) onto
+                 the same plain flex .mb-row every other horizontal group
+                 on this page already uses. Re-seed now gets its own row
+                 (was crammed onto the status/Toggle row before), and
+                 Set position/RA/Dec now genuinely sit in one row, button
+                 first per direct feedback's own specified order. -->
             <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose - see its own status text here instead.">
               Manual one-shot seed: <span id="fake-solve-advanced-status">unknown</span>
               <button id="fake-solve-btn" class="ql-small-btn ql-small-btn-white" onclick="toggleFakeSolve()" disabled>Toggle</button>
-              <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" style="display:none;" disabled title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">Re-seed from mount</button>
             </div>
-            <div class="hw-detail" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
-              <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem;">
-              <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem;">
+            <div class="mb-row" id="fake-solve-reseed-row" title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">
+              <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" style="display:none;" disabled>Re-seed from mount</button>
+            </div>
+            <div class="mb-row" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
               <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled>Set position</button>
-              <span id="fake-solve-manual-status"></span>
+              <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem; margin-left:0.5rem;">
+              <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem; margin-left:0.3rem;">
+              <span id="fake-solve-manual-status" style="margin-left:0.5rem;"></span>
             </div>
           </div>
         </div>
