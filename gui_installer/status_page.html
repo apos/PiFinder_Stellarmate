@@ -1717,6 +1717,21 @@
             <button id="fake-solve-manual-btn" class="ql-small-btn" onclick="setFakeSolveManual()" disabled>Set position</button>
             <span id="fake-solve-manual-status"></span>
           </div>
+          <!-- #191/#217: keeps PiFinder's solve continuously "fresh" from
+               wherever the Telescope Simulator currently points, via
+               test_tools/pifinder_truth_injector.py as a managed background
+               process (see server.py's own _truth_injector_* comments) -
+               the piece needed to test Multi-Point Alignment's SETTLING/
+               Sync step end-to-end without real sky. Bigger button + the
+               same white/yellow/green/red status-dot scheme as the Mount
+               Bridge tile's own buttons (direct feedback, 2026-08-10) -
+               this one is easy to leave on by accident and forget about,
+               so its real, server-confirmed state (not just "I clicked it
+               once") needs to be obvious at a glance. -->
+          <div class="hw-row" id="truth-injector-row" title="Feeds &quot;Telescope Simulator&quot;'s own position into PiFinder's /api/fake_solve every 2s, keeping solve_source=CAM and last_solve_success continuously fresh - simulator testing only (Multi-Point Alignment, Auto-correct/Verify-Alert) with no real sky. A background watchdog restarts it automatically if it ever dies while toggled on. Always starts back OFF after a Control Center restart - never persists across reboots.">
+            <span class="status-dot dot-white" id="truth-injector-dot"></span>PiFinder Truth Injector (from Telescope Simulator): <span id="truth-injector-text">off</span>
+            <button id="truth-injector-btn" class="mb-big-action-btn mb-big-sync-btn" style="min-width:6rem; min-height:auto; padding:0.4rem 0.9rem; margin-left:0.4rem;" onclick="toggleTruthInjector()">Toggle</button>
+          </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
           <span>Hardware test and details<a class="help-link" href="/help.html#hardware-test-and-details" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
@@ -2331,6 +2346,65 @@ function applyFakeSolveStatus(data) {
     }
   }
   textEl.textContent = text;
+}
+
+// #191/#217: PiFinder Truth Injector toggle - polled independently of (and
+// faster than) the 20s refreshDebugSolve() cadence below, same reasoning as
+// refreshMbDrift()'s own separate 2s interval: this reflects a background
+// process that can die on its own between polls, and "must run reliably"
+// (direct feedback) means the dot has to catch that promptly, not up to
+// 20s late.
+let truthInjectorToggleInFlight = false;
+let lastTruthInjectorDesired = null;
+
+async function refreshTruthInjectorStatus() {
+  if (truthInjectorToggleInFlight) return;
+  const dotEl = document.getElementById('truth-injector-dot');
+  const textEl = document.getElementById('truth-injector-text');
+  const btn = document.getElementById('truth-injector-btn');
+  try {
+    const resp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+    const data = await resp.json();
+    lastTruthInjectorDesired = data.desired;
+    btn.disabled = false;
+    btn.textContent = data.desired ? 'Turn off' : 'Toggle';
+    if (!data.desired) {
+      setHwDot(dotEl, 'status-dot dot-white');
+      textEl.textContent = 'off';
+    } else if (data.alive) {
+      setHwDot(dotEl, 'status-dot dot-green');
+      textEl.textContent = 'running';
+    } else {
+      // Desired on, but the process isn't alive right now - the server's
+      // own watchdog will restart it within a few seconds; shown as red
+      // (not yellow) because this genuinely means "not actually feeding
+      // PiFinder a fresh solve right now", not just an in-flight click.
+      setHwDot(dotEl, 'status-dot dot-red');
+      textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
+    }
+  } catch (e) {
+    // best-effort poll - leave the last-known state showing rather than
+    // flashing to "unknown" on one missed request.
+  }
+}
+setInterval(refreshTruthInjectorStatus, 4000);
+refreshTruthInjectorStatus();
+
+async function toggleTruthInjector() {
+  const dotEl = document.getElementById('truth-injector-dot');
+  const textEl = document.getElementById('truth-injector-text');
+  const btn = document.getElementById('truth-injector-btn');
+  truthInjectorToggleInFlight = true;
+  btn.disabled = true;
+  setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
+  textEl.textContent = lastTruthInjectorDesired ? 'stopping…' : 'starting…';
+  try {
+    await fetch('/api/truth_injector_toggle', { method: 'POST' });
+  } catch (e) {
+    // fall through - the poll below shows whatever's actually true now
+  }
+  truthInjectorToggleInFlight = false;
+  await refreshTruthInjectorStatus();
 }
 
 async function refreshDebugSolve() {

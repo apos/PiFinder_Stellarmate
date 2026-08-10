@@ -994,6 +994,62 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+# #191/#217: PiFinder Truth Injector toggle - feeds "Telescope Simulator"'s
+# own position into PiFinder's /api/fake_solve on an interval (see
+# test_tools/pifinder_truth_injector.py), so Multi-Point Alignment's
+# solve-freshness gate can be exercised end-to-end against the Simulator
+# without real sky. Deliberately a tracked subprocess.Popen, NOT a systemd
+# unit like KEYBOARD_BRIDGE_SERVICE above: that one is meant to survive
+# reboots (its whole point), this one must NOT - it's test-only and would
+# silently corrupt a real observing session if it ever auto-started outside
+# an explicit simulator test. Scoped to this Control Center process's own
+# lifetime; a Control Center restart always starts back OFF.
+TRUTH_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_truth_injector.py"
+TRUTH_INJECTOR_DEVICE = "Telescope Simulator"
+_truth_injector_proc = None  # subprocess.Popen or None
+_truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
+_truth_injector_lock = threading.Lock()
+
+
+def _truth_injector_alive() -> bool:
+    return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
+
+
+def _truth_injector_start():
+    global _truth_injector_proc
+    _truth_injector_proc = subprocess.Popen(
+        ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", TRUTH_INJECTOR_DEVICE, "--interval", "2.0"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _truth_injector_stop():
+    global _truth_injector_proc
+    if _truth_injector_proc is not None:
+        _truth_injector_proc.terminate()
+        try:
+            _truth_injector_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _truth_injector_proc.kill()
+        _truth_injector_proc = None
+
+
+def _truth_injector_watchdog(interval=5):
+    """'Muss dann zuverlässig laufen' (direct feedback, 2026-08-10): once
+    toggled on, the injector must not silently stay dead if its process
+    exits for any reason - same reliability bar as
+    _pifinder_lx200_reconnect_watchdog() above, same reasoning."""
+    while True:
+        time.sleep(interval)
+        with _truth_injector_lock:
+            if _truth_injector_desired and not _truth_injector_alive():
+                _mb_log("PiFinder Truth Injector died unexpectedly - restarting...")
+                try:
+                    _truth_injector_start()
+                except Exception as e:  # a watchdog thread must never die silently
+                    _mb_log(f"  failed to restart: {e}")
+
+
 def _parse_threshold(raw: str) -> float:
     """European keyboards/locales often produce a comma decimal separator
     (e.g. "0,5") - Python's float() only accepts a period and raises
@@ -2279,6 +2335,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(drift)
             return
 
+        if parsed.path == "/api/truth_injector_status":
+            # Polled by the toggle button's own status dot - reports the
+            # user's last desired state plus whether the process is
+            # actually, currently alive right now, so the GUI can show
+            # "should be on but died" (red) distinctly from "on and
+            # confirmed alive" (green), not just a single on/off bit.
+            with _truth_injector_lock:
+                self._send_json({"desired": _truth_injector_desired, "alive": _truth_injector_alive()})
+            return
+
         if parsed.path == "/api/webmanager/profiles":
             # Phase 2 of the Mount Bridge web integration (see
             # docs/concepts/mount_bridge_web_integration.md) - UC3 (profile
@@ -3216,6 +3282,34 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/truth_injector_toggle":
+            global _truth_injector_desired
+            with _truth_injector_lock:
+                if _truth_injector_desired:
+                    _truth_injector_desired = False
+                    _mb_log("stopping PiFinder Truth Injector...")
+                    try:
+                        _truth_injector_stop()
+                    except Exception as e:
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _mb_log("  done.")
+                else:
+                    _truth_injector_desired = True
+                    _mb_log(f"starting PiFinder Truth Injector (feeding '{TRUTH_INJECTOR_DEVICE}''s "
+                             "position into PiFinder's /api/fake_solve, simulator testing only)...")
+                    try:
+                        _truth_injector_start()
+                    except Exception as e:
+                        _truth_injector_desired = False
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _mb_log("  started.")
+            self._send_json({"success": True})
+            return
+
         self.send_error(404)
 
 
@@ -3241,6 +3335,10 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # #191/#217: keeps the PiFinder Truth Injector running once toggled on -
+    # starts idle (desired=False), only ever spawns anything after an
+    # explicit /api/truth_injector_toggle call.
+    threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
     # an Update run from before the setup script's start->restart fix, or a
