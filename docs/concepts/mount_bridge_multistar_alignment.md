@@ -214,38 +214,44 @@ configured minimum altitude are never selected in the first place, not caught af
 cable-wrap/meridian-flip risk for a given mount's current orientation - same class of gap as the
 still-open KStars-horizon-fencing item, unrelated to this fix.
 
-**No Control Center GUI yet (User decision, 2026-08-10) - INDI Control Panel only.** Deliberately
-not built this session ("erstmal nicht - Branch bleibt technisch/INDI-only") - no Start/Stop button,
-no progress display, no visible warning surface in the Control Center itself. Right now the only
-places to observe this feature at all are the INDI Control Panel's own properties/log (fetch
-failures go to `MULTI_POINT_ALIGN`'s `IPS_ALERT` + a `LOG_ERROR`; a skipped point logs a
-`LOG_WARN`) - a normal Control Center user has no way to see or use this feature yet. Revisit once
-§4.3/§4.5 (or at least a scoping decision to skip them) land, per the User's own stated preference
-to build GUI "in einem Rutsch" rather than piecemeal.
+**Control Center GUI: now being built (2026-08-10) - see #217.** The earlier "erstmal nicht"
+deferral is superseded: raw-INDI testing (below) showed the underlying `ALIGN_START`/`ALIGN_STOP`
+mechanism is correct, but with no dedicated Start/Stop/progress affordance anywhere outside the
+generic INDI Control Panel, a working Stop read as "can't abort" in practice. The GUI is being
+added now rather than deferred further.
 
-**Waiting for a fresh solve at each point needs no special handling for real use** (User, 2026-08-10):
-the mount arrives, PiFinder's own continuous camera solve loop naturally produces a fresh solve once
-stationary, exactly as it always does — the sequence's per-point wait is correct as designed, not a
-gap to work around. This only fails to self-resolve when testing against `Telescope Simulator` +
-Injected Solve specifically (no real camera in that loop at all, so nothing ever re-solves on its
-own) — a testing-environment limitation, not something the feature itself needs to accommodate.
-Without a real solve, a point simply waits out `MAX_FRESHNESS_WAIT_TICKS` and gets skipped (§4.4's
-existing behavior); test against real sky/hardware for meaningful end-to-end verification of this
-PoC's actual alignment behavior.
-
-**Abort verified at the INDI wire, and "PiFinder doesn't follow" root-caused (2026-08-10, #217).**
-Raw INDI trace (no GUI, no Control Center - see `test_tools/multipoint_alignment_trace.py`)
+**Abort verified at the INDI wire, and "PiFinder doesn't follow" root-caused - then corrected
+(2026-08-10, #217).** Raw INDI trace (no GUI - see `test_tools/multipoint_alignment_trace.py`)
 against `Telescope Simulator` confirmed `MULTI_POINT_ALIGN.ALIGN_STOP` correctly calls
 `abortMount()` and halts the sequence (0/4 points, mount position frozen after Stop) - the
-"can't abort" report traces to the missing dedicated GUI affordance noted just above, not a
-backend fault. Separately, a full run showed all 4 candidate points being skipped
-(`isPiFinderSolveFresh()` never true) because, on an indoor bench rig, PiFinder's own pre-solve
-sleep state machine (`main.py`'s `WARMUP`→sleep→`RETRY` cycle - no real stars in the camera's
-FOV, so no initial solve is ever reached) leaves `solve_source` stuck at `"IMU"` with a stale
-`last_solve_success`, not the required `"CAM"`. This is an environment limit of the test rig, not
-an alignment-logic bug, but it does expose a real reporting gap worth fixing separately: the
-sequence still reports `IPS_OK` ("sequence complete") even when 0/N points were actually synced -
-see #217 for the full trace, interpretation, and reproduction steps.
+"can't abort" report traces to the missing dedicated GUI affordance, not a backend fault.
+
+A first full run showed all 4 candidate points being skipped (`isPiFinderSolveFresh()` never
+true) because PiFinder itself was asleep with a stale, non-`"CAM"` solve. **First read of that as
+an unavoidable "indoor test rig has no real sky" limitation was wrong** -
+`test_tools/pifinder_truth_injector.py` already exists precisely for this (built for #178/
+Auto-correct testing): it polls an INDI device's position and re-POSTs it to
+`/api/fake_solve` on an interval, which `integrator.py`'s `_apply_successful_solve()` treats as a
+real `SolveSource.CAMERA` result with a continuously fresh `last_solve_success` - exactly what
+`isPiFinderSolveFresh()` needs, no different from a real continuously-resolving camera. Pointed
+at `Telescope Simulator` itself (`--indi-device "Telescope Simulator"`, so the simulated PiFinder
+always agrees with wherever the mount currently is - the idealized well-solving-camera case),
+the SETTLING→SYNC path completes end-to-end: `point 1/4 verified - synced...`, `point 2/4
+verified - synced...`, `point 3/4 verified - synced...`. The mechanism works; the earlier report
+just hadn't used the simulation tooling that already existed for this exact scenario.
+
+**New, unresolved finding from that corrected re-test:** points 2 and 3 synced to an RA exactly
+12h (180°) off the announced target (target 12.9000h/13.7917h → synced 0.9000h/1.7917h); point 1
+matched exactly. Position samples show the simulator passing through very large, sometimes
+negative RA jumps between samples, suggesting either a very high simulated slew rate or a
+sampling-lag interaction with the injector's 2s poll interval during fast motion. Not yet
+isolated as a real Mount Bridge sync-accuracy issue vs. a test-methodology artifact - open
+follow-up, not a blocker for either originally-reported finding. See #217 (including its
+correction comment) for the full trace and reproduction steps.
+
+Also surfaced, independent of the above: the sequence still reports `IPS_OK` ("sequence
+complete") even when 0/N points were actually synced (seen in the pre-correction run) - worth
+fixing separately so the terminal state distinguishes a real success from an all-skipped run.
 
 Once the full feature (catalog selection, median-of-N, KStars feed) is built, it inherits Mount
 Bridge's existing test surface (INDI Control Panel, `indi_getprop`/`indi_setprop`, the Control
