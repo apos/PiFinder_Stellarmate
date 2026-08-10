@@ -5098,6 +5098,19 @@ function updateMountRejectWarning(active, message) {
 // here (a one-shot sequence has no ongoing degraded-but-working state the
 // way e.g. hardware presence does), green always carries a real
 // completion message, not just "Ok".
+// Direct feedback, 2026-08-10: "Das Scope läuft bereits los, aber die
+// Status-Anzeige steht noch auf dem alten Wert und ist grün" - the buttons
+// updated instantly on click (triggerMultiAlignStart() sets their disabled
+// state directly), but this function's own dot/text rendering ran
+// unconditionally on every poll regardless of multiAlignActionInFlight, so
+// the stale "completed" state from the *previous* run kept being
+// redrawn until the first poll after the new sequence's own align_state
+// actually flipped to Busy - a real gap (candidate fetch + first Goto,
+// easily a couple seconds) during which the row visibly lied. Now skips
+// its own rendering entirely while a click is in flight - the click
+// handler sets its own immediate "starting…" state instead (see
+// triggerMultiAlignStart()), and this function reasserts the real state
+// the moment the flag clears and the next poll lands.
 let multiAlignActionInFlight = false;
 function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced) {
   const startBtn = document.getElementById('mb-multialign-start-btn');
@@ -5105,10 +5118,9 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   const dotEl = document.getElementById('mb-multialign-dot');
   const textEl = document.getElementById('mb-multialign-status-text');
   const running = alignState === 'Busy';
-  if (!multiAlignActionInFlight) {
-    startBtn.disabled = running;
-    stopBtn.disabled = !running;
-  }
+  if (multiAlignActionInFlight) return;
+  startBtn.disabled = running;
+  stopBtn.disabled = !running;
   if (!pointCount) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'not run yet';
@@ -5327,12 +5339,31 @@ async function triggerAbortMount() {
   clearMbActionStatus();
 }
 
+// How long to hold the optimistic "starting…" state after the POST itself
+// resolves, before handing rendering back to the normal poller (2026-08-10,
+// direct feedback: "bei Klick auf Start wird die alte Anzeige gelöscht").
+// The POST only confirms the ALIGN_START switch was sent - the driver's own
+// fetchAlignmentCandidates() (an HTTP round trip to PiFinder) and first
+// gotoAlignPoint() still run afterward in its own TimerHit, so the *real*
+// Busy/point-1 state can lag the POST's own response by a couple of
+// seconds. Two poll cycles (refreshMbDrift runs every 2s) is enough margin
+// for that to have landed for real, rather than briefly re-showing the
+// previous run's stale state the instant the flag clears.
+const MULTIALIGN_START_SETTLE_MS = 4500;
+
 async function triggerMultiAlignStart() {
   multiAlignActionInFlight = true;
   setMbActionStatus('⏳ Starting Multi-Point Alignment…');
   const btn = document.getElementById('mb-multialign-start-btn');
   btn.disabled = true;
   document.getElementById('mb-multialign-stop-btn').disabled = false;
+  // Clear the previous run's result immediately, don't wait for the first
+  // real poll - reads the Points field as currently shown so the "1/N"
+  // matches what's actually about to be requested.
+  const pointsField = parseInt(document.getElementById('mb-align-count-input').value, 10);
+  const pointCount = Number.isFinite(pointsField) && pointsField > 0 ? pointsField : '?';
+  setHwDot(document.getElementById('mb-multialign-dot'), 'status-dot dot-yellow');
+  document.getElementById('mb-multialign-status-text').textContent = `moving to 1/${pointCount} point(s)…`;
   try {
     const resp = await fetch('/api/mount_bridge_multialign_start', { method: 'POST' });
     const data = await resp.json();
@@ -5342,6 +5373,7 @@ async function triggerMultiAlignStart() {
     // the other manual action buttons.
   }
   pollMbLog();
+  await new Promise((r) => setTimeout(r, MULTIALIGN_START_SETTLE_MS));
   multiAlignActionInFlight = false;
   clearMbActionStatus();
 }
@@ -5349,9 +5381,15 @@ async function triggerMultiAlignStart() {
 async function triggerMultiAlignStop() {
   // Same deliberately-no-confirm()/no-mbActionInFlight-gate reasoning as
   // triggerAbortMount() - a stop needs to fire immediately, every time.
+  // Also clears the stale "running" display immediately (same reasoning as
+  // triggerMultiAlignStart() above), rather than leaving it up to the next
+  // poll.
+  multiAlignActionInFlight = true;
   setMbActionStatus('🛑 Stopping Multi-Point Alignment…');
   const btn = document.getElementById('mb-multialign-stop-btn');
   btn.disabled = true;
+  setHwDot(document.getElementById('mb-multialign-dot'), 'status-dot dot-yellow');
+  document.getElementById('mb-multialign-status-text').textContent = 'stopping…';
   try {
     const resp = await fetch('/api/mount_bridge_multialign_stop', { method: 'POST' });
     const data = await resp.json();
@@ -5359,6 +5397,7 @@ async function triggerMultiAlignStop() {
   } catch (e) {
     // fall through - errors show up via pollMbLog() below
   }
+  multiAlignActionInFlight = false;
   document.getElementById('mb-multialign-start-btn').disabled = false;
   pollMbLog();
   clearMbActionStatus();
