@@ -210,9 +210,17 @@ had no altitude/horizon awareness at all - live-confirmed (User, 2026-08-10) sta
 while the target sat below the horizon on PiFinder's own sky-map. §4.2's catalog-driven,
 altitude-filtered selection (now implemented, see above) closes this: candidates below the
 configured minimum altitude are never selected in the first place, not caught after the fact.
-**Not yet addressed**: candidate altitude filtering rules out "below the horizon" but not
-cable-wrap/meridian-flip risk for a given mount's current orientation - same class of gap as the
-still-open KStars-horizon-fencing item, unrelated to this fix.
+**Slew-path/cable-wrap risk (#218) - scoped out, not a gap.** A slew between two altitude-safe
+points can still, depending on a given mount's axis geometry, pass through a below-horizon or
+cable-wrap orientation mid-transit - candidate-time altitude filtering alone can't catch that.
+Decided (2026-08-10, #218) this stays out of Mount Bridge's own scope: the symptom observed live
+was specific to the Telescope Simulator, which has no elevation/meridian-flip protection of its
+own: a real mount normally already handles this itself (OnStep's own `Slew elevation Limit`, most
+GEM/Alt-Az controllers have their own axis/meridian-flip limits). Re-implementing per-mount
+slew-path geometry here would duplicate what the mount's own firmware is already responsible for
+and better positioned to do correctly, and cuts against Mount Bridge's own generic-protocol-only
+philosophy (§5's ADR). Candidate-time altitude filtering (above) remains Mount Bridge's own,
+correctly-scoped responsibility.
 
 **Control Center GUI: now being built (2026-08-10) - see #217.** The earlier "erstmal nicht"
 deferral is superseded: raw-INDI testing (below) showed the underlying `ALIGN_START`/`ALIGN_STOP`
