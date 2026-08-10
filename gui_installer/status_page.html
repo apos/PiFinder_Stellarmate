@@ -301,6 +301,11 @@
   }
   #choices button.danger { background: #a33; }
   #choices button:hover, #start-fresh:hover { filter: brightness(1.15); }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - previously fell through to no rule at
+     all here, leaving a disabled destructive button visually identical to
+     an enabled one except for the cursor. */
+  #choices button:disabled, #start-fresh:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   .choice-btn { margin: 0 0.6rem 0.6rem 0; }
   #log.log-placeholder {
     color: #666;
@@ -565,7 +570,12 @@
   #power-poweroff-btn { background: #a33; }
   #install-uninstall-btn { background: #a33; }
   .power-btn:hover { filter: brightness(1.15); }
-  .power-btn:disabled { background: #444; cursor: default; filter: none; }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - a plain gray here made a disabled
+     Reboot/Shutdown/Uninstall lose its "this is a dangerous action" red
+     identity entirely, inconsistent with how Stop movement/Stop alignment
+     stay visibly red-tinted while disabled. */
+  .power-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
   #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; cursor: pointer; }
   #install-heading-row .tile-heading { margin: 0; }
@@ -587,7 +597,10 @@
     cursor: pointer;
     margin-left: 0.5rem;
   }
-  #mode-toggle-btn:disabled { background: #444; cursor: default; }
+  /* Same muted red-tinted disabled look as .mb-abort-btn:disabled
+     (2026-08-10, direct feedback) - see .power-btn:disabled's own comment
+     for the reasoning. */
+  #mode-toggle-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; }
   #mode-toggle-btn:not(:disabled):hover { filter: brightness(1.15); }
   /* Deliberately more muted than the bigger action/accent buttons
      (.mb-coupling-btn, mode-toggle-btn, ...) - per direct feedback, this
@@ -1570,33 +1583,6 @@
         <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
         <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
       </div>
-      <!-- #191/#217: automatic Multi-Point Alignment. Own row, not merged
-           into mb-big-actions-row above - this is a multi-step sequence
-           with its own progress readout, not a one-shot action, and the
-           Stop button here only matters (is enabled) while a sequence is
-           actually running, unlike Sync/Stop movement which are always
-           live. -->
-      <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
-        <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Multi-Point Alignment</button>
-        <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
-      </div>
-      <div id="mb-multialign-progress" class="mb-hint" style="display:none;"></div>
-      <!-- #191/#217: candidate-selection settings already existed as INDI
-           properties (AlignConfigNP) since the catalog-driven selection
-           landed, but had no GUI control at all - direct feedback,
-           2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
-           debounced-input pattern as the Threshold field above. Preferred
-           cardinal direction is deliberately NOT here - it doesn't exist
-           anywhere yet (no INDI property either), a real new feature to
-           design separately, not bolted on alongside these three. -->
-      <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
-        <span class="mb-row-label">Search radius:</span>
-        <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-        <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
-        <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
-        <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
-        <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-      </div>
       <div class="mb-row" id="mb-threshold-manual-row">
         <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
           <span class="mb-row-label">Threshold:</span>
@@ -1632,6 +1618,42 @@
       <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
         <span class="mb-row-label">This device's IP:</span>
         <span id="pfhost-ip">checking&hellip;</span>
+      </div>
+
+      <div class="hgroup-divider"></div>
+
+      <!-- #191/#217: own collapsible section, not squeezed into
+           #mb-operate-rows above (direct feedback, 2026-08-10: pushed the
+           Threshold field down, and this is a distinct enough feature to
+           deserve its own "wie gewohnt" collapsible like Setup checklist
+           below, not another inline row). Positioned above Setup checklist
+           & diagnostics, same tier of collapsible section. -->
+      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')">
+        <span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+        <span id="mb-multialign-chevron">&#9660; show</span>
+      </div>
+      <div id="mb-multialign-details" style="display:none;">
+        <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
+          <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Multi-Point Alignment</button>
+          <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+        </div>
+        <div id="mb-multialign-progress" class="mb-hint" style="display:none;"></div>
+        <!-- #191/#217: candidate-selection settings already existed as INDI
+             properties (AlignConfigNP) since the catalog-driven selection
+             landed, but had no GUI control at all - direct feedback,
+             2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
+             debounced-input pattern as the Threshold field above. Preferred
+             cardinal direction is deliberately NOT here - it doesn't exist
+             anywhere yet (no INDI property either), a real new feature to
+             design separately, not bolted on alongside these three. -->
+        <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
+          <span class="mb-row-label">Search radius:</span>
+          <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+          <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
+          <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
+          <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
+          <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+        </div>
       </div>
 
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
@@ -4080,6 +4102,7 @@ function restoreCollapsibleSections() {
     ['hw-details', 'hw-details-chevron', 'block'],
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
     ['mode-power-groups', 'mode-power-chevron', 'flex'],
+    ['mb-multialign-details', 'mb-multialign-chevron', 'block'],
     ['mb-details', 'mb-details-chevron', 'block'],
     ['mb-mode-details', 'mb-mode-details-chevron', 'block'],
     ['mb-reject-warning-details', 'mb-reject-warning-chevron', 'block'],
