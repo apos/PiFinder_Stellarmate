@@ -423,6 +423,9 @@ def mount_bridge_drift(
             "align_point_index": None,
             "align_point_count": None,
             "align_point_synced": None,
+            "align_radius": None,
+            "align_count": None,
+            "align_min_altitude": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -446,6 +449,15 @@ def mount_bridge_drift(
     # multi-second cadence as drift while a sequence is running.
     align_state = device_props.get("MULTI_POINT_ALIGN", {}).get("state")
     align_progress = device_props.get("ALIGN_PROGRESS", {}).get("elements", {})
+    # #191/#217: found live (2026-08-10, direct feedback - "die Werte werden
+    # immer wieder auf Default gesetzt") that relying solely on
+    # mount_bridge_status() (gated behind role/wmServerRunning checks in the
+    # frontend, 20s cadence) left the config fields stuck on their HTML
+    # defaults whenever that slower poll's own gating didn't fire for
+    # whatever reason - added here too, on the same always-on fast poll the
+    # Threshold/drift fields already trust, so reading them back is as
+    # reliable as everything else on this row.
+    align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
 
     def _int_or_none(raw):
         return int(float(raw)) if raw not in (None, "") else None
@@ -472,6 +484,9 @@ def mount_bridge_drift(
         "align_point_index": _int_or_none(align_progress.get("POINT_INDEX")),
         "align_point_count": _int_or_none(align_progress.get("POINT_COUNT")),
         "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
+        "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
+        "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
+        "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
     }
 
 

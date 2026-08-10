@@ -5123,6 +5123,7 @@ async function refreshMbDrift() {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
       updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced);
+      syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
