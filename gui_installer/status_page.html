@@ -2528,6 +2528,14 @@ async function toggleTruthInjector() {
   } catch (e) {
     // fall through - the poll below shows whatever's actually true now
   }
+  // The toggle POST itself resolves almost instantly (just spawns/kills a
+  // subprocess) - without this wait, yellow was only visible for a
+  // fraction of a second before immediately being overwritten by the
+  // refresh below, which already saw the settled state (direct feedback,
+  // 2026-08-10: "der gelbe status während 'rampup' und 'rampdown' fehlt").
+  // 2.5s matches the injector's own --interval default, giving at least
+  // one real poll cycle time to actually land before claiming settled.
+  await new Promise((r) => setTimeout(r, 2500));
   truthInjectorToggleInFlight = false;
   await refreshTruthInjectorStatus();
   await refreshDebugSolve();
