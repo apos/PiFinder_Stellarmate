@@ -1510,7 +1510,7 @@
             <span>PiFinder</span>
           </div>
           <div id="pifinder-glance-status-stack">
-            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see PiFinder Mode, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
@@ -1781,7 +1781,7 @@
     </div>
     <div id="mode-tile">
         <div class="tile-heading-row" onclick="toggleTileBody('mode-tile-body', 'mode-tile-chevron')">
-          <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">PiFinder Mode, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
+          <h3 class="tile-heading" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">Simulation, Test and Power<a class="help-link" href="/help.html#mode-power" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></h3>
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
@@ -2220,7 +2220,7 @@ function updatePiFinderStatusAndWizardLink() {
       // (same known upstream issue the mode tile already accounts for).
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see PiFinder Mode, Test and Power)`;
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Simulation, Test and Power)`;
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'PiFinder is running';
