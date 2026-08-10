@@ -233,6 +233,20 @@ Without a real solve, a point simply waits out `MAX_FRESHNESS_WAIT_TICKS` and ge
 existing behavior); test against real sky/hardware for meaningful end-to-end verification of this
 PoC's actual alignment behavior.
 
+**Abort verified at the INDI wire, and "PiFinder doesn't follow" root-caused (2026-08-10, #217).**
+Raw INDI trace (no GUI, no Control Center - see `test_tools/multipoint_alignment_trace.py`)
+against `Telescope Simulator` confirmed `MULTI_POINT_ALIGN.ALIGN_STOP` correctly calls
+`abortMount()` and halts the sequence (0/4 points, mount position frozen after Stop) - the
+"can't abort" report traces to the missing dedicated GUI affordance noted just above, not a
+backend fault. Separately, a full run showed all 4 candidate points being skipped
+(`isPiFinderSolveFresh()` never true) because, on an indoor bench rig, PiFinder's own pre-solve
+sleep state machine (`main.py`'s `WARMUP`→sleep→`RETRY` cycle - no real stars in the camera's
+FOV, so no initial solve is ever reached) leaves `solve_source` stuck at `"IMU"` with a stale
+`last_solve_success`, not the required `"CAM"`. This is an environment limit of the test rig, not
+an alignment-logic bug, but it does expose a real reporting gap worth fixing separately: the
+sequence still reports `IPS_OK` ("sequence complete") even when 0/N points were actually synced -
+see #217 for the full trace, interpretation, and reproduction steps.
+
 Once the full feature (catalog selection, median-of-N, KStars feed) is built, it inherits Mount
 Bridge's existing test surface (INDI Control Panel, `indi_getprop`/`indi_setprop`, the Control
 Center GUI, live verification under real sky) rather than introducing a new one. Testing methodology

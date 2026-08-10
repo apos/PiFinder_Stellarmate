@@ -138,6 +138,49 @@ guessing across camera/GPIO/software/menu-logic all at once.
   long-press timer, and a thread race that closed the marking menu
   immediately on release).
 
+## multipoint_alignment_trace.py
+
+- **Purpose:** repeatable, GUI-independent verification of the #191
+  Multi-Point Alignment sequence (Start/Stop, per-point Goto/Sync,
+  drift/freshness gating) straight off the INDI wire - no KStars UI, no
+  Control Center (which deliberately has no #191 GUI yet), so results can't
+  be confused with a client-side rendering/interaction issue.
+- **What it does:** opens raw sockets to `indiserver` (default
+  `localhost:7624`), does one-shot `getProperties` polls for `PiFinder
+  Mount Bridge` and `PiFinder LX200` plus a persistent background listener
+  that captures every `setNumberVector`/`setSwitchVector`/`message` XML
+  fragment from those two devices as they're pushed. Runs a baseline trace
+  (no alignment active), then sends `MULTI_POINT_ALIGN.ALIGN_START` and
+  traces until the property reaches a terminal state (`Ok`/`Alert`) or a
+  timeout. With `--test-abort`, sends `ALIGN_STOP` mid-sequence at
+  `--abort-after-secs` and checks whether the mount's position samples stop
+  changing afterward. Prints a report: baseline PiFinder/mount agreement,
+  the raw wire event log, sampled mount positions over time, and
+  `MULTI_POINT_ALIGN` state transitions.
+- **Usage:**
+  ```bash
+  python3 test_tools/multipoint_alignment_trace.py
+  python3 test_tools/multipoint_alignment_trace.py --test-abort
+  python3 test_tools/multipoint_alignment_trace.py --host localhost --port 7624 \
+      --baseline-secs 15 --timeout-secs 180 --poll-interval 2.5
+  ```
+  Requires `indiserver` running with both `PiFinder Mount Bridge` and the
+  target mount driver (e.g. Telescope Simulator) already connected -
+  `ACTIVE_DEVICES.ACTIVE_MOUNT` on the Mount Bridge determines which mount
+  device it traces.
+- **When to use:** verifying/reproducing #191 behavior without relying on
+  KStars' own INDI Control Panel rendering or a Control Center GUI that
+  doesn't exist for this feature yet. Live-tested 2026-08-10 against the
+  Telescope Simulator: confirmed `ALIGN_STOP` correctly aborts the sequence
+  and stops the mount at the INDI level (0/4 points, mount position frozen
+  after Stop) - the "can't abort" complaint traced to a missing dedicated
+  GUI affordance, not a backend fault. Also surfaced that on an indoor bench
+  rig, PiFinder's own pre-solve sleep state machine
+  (`PiFinder/python/PiFinder/main.py`'s `WARMUP`→sleep→`RETRY` cycle, no
+  real stars in view) leaves `solve_source` stuck at `"IMU"` with a stale
+  `last_solve_success`, which starves every alignment point's
+  `isPiFinderSolveFresh()` gate - see #191's TE issue for the full writeup.
+
 ## Related: the `pifinder-remote` Claude Code skill
 
 Not in this directory (it lives in the PiFinder checkout itself, under
