@@ -3234,6 +3234,32 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_direction":
+            # #191: preferred-direction hard filter for candidate selection -
+            # found live under real sky (direct feedback, 2026-08-10):
+            # "vom Zenith aus wandert der PiFinder sonst gerne mal in eine
+            # Region, die z.B. nicht geeignet ist" (e.g. a real obstruction
+            # in one azimuth quadrant that min_altitude alone can't model).
+            qs = parse_qs(parsed.query)
+            direction = qs.get("direction", [""])[0].strip().upper()
+            element = {
+                "ANY": "ALIGN_DIR_ANY", "N": "ALIGN_DIR_N", "E": "ALIGN_DIR_E",
+                "S": "ALIGN_DIR_S", "W": "ALIGN_DIR_W",
+            }.get(direction)
+            if element is None:
+                self._send_json({"success": False, "error": f"invalid direction '{direction}' (expected ANY/N/E/S/W)"}, status=400)
+                return
+            _mb_log(f"setting alignment preferred direction to '{direction}'...")
+            try:
+                indi_client.set_switch("PiFinder Mount Bridge", "ALIGN_DIRECTION", element)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_manual_sync":
             # Manual, immediate one-shot: syncs the mount to PiFinder's
             # current solved position right now, regardless of Coupling

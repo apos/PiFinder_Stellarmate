@@ -1,18 +1,18 @@
---- python/PiFinder/api_extensions.py.orig
-+++ python/PiFinder/api_extensions.py
-@@ -18,13 +18,29 @@
+--- a/python/PiFinder/api_extensions.py.orig
++++ python/PiFinder/api_extensions.py	2026-08-10 22:34:39.353411547 +0200
+@@ -18,13 +18,46 @@
  import io
  import json
  import logging
 +import math
-
+ 
  from flask import request, session, Response
  from PIL import Image
 +from PiFinder.types.positioning import FakeSolve
-
+ 
  logger = logging.getLogger("PiFinderAPI")
-
-
+ 
+ 
 +def _angular_separation_deg(ra1, dec1, ra2, dec2) -> float:
 +    """Great-circle separation in degrees between two J2000 RA/Dec points
 +    (both in degrees). Standard haversine form - no existing helper for
@@ -27,10 +27,27 @@
 +    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a))))
 +
 +
++# #191: 90-degree azimuth quadrants for /api/nearby_bright_stars' optional
++# `direction` filter - N straddles the 0/360 wrap, the other three don't.
++_DIRECTION_QUADRANTS = {
++    "N": (315.0, 45.0),
++    "E": (45.0, 135.0),
++    "S": (135.0, 225.0),
++    "W": (225.0, 315.0),
++}
++
++
++def _azimuth_in_direction(az: float, direction: str) -> bool:
++    lo, hi = _DIRECTION_QUADRANTS[direction]
++    if lo < hi:
++        return lo <= az < hi
++    return az >= lo or az < hi  # wraps through 0/360 (N only)
++
++
  def _json_response(data, status=200):
      """Unified JSON response format"""
      return Response(
-@@ -160,6 +176,8 @@
+@@ -160,6 +193,8 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
@@ -39,10 +56,10 @@
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -213,6 +231,162 @@
+@@ -213,6 +248,198 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
-
+ 
 +    @app.route("/api/current_target")
 +    def api_current_target():
 +        """Returns the on-device push-to target, if any - whatever object the
@@ -93,11 +110,22 @@
 +            radius: degrees, default 60.
 +            count: max results, default 4.
 +            min_altitude: degrees above horizon, default 20.
++            direction: optional, one of "N"/"E"/"S"/"W" - restricts
++                candidates to that 90-degree azimuth quadrant (N=315-45,
++                E=45-135, S=135-225, W=225-315). A HARD filter, not a
++                preference: if fewer than `count` candidates remain after
++                applying it, the request fails with 422 rather than
++                silently returning fewer/falling back to other directions -
++                the caller asked for a specific sky region (e.g. "never
++                point toward that obstruction") and a silent fallback would
++                defeat the point. Omit for the previous, direction-agnostic
++                behavior.
 +
 +        Returns {"candidates": [{"ra": deg, "dec": deg, "name": str or null,
-+        "mag": float or null, "altitude": deg}, ...]}, sorted brightest
-+        (lowest magnitude) first, already altitude-filtered - callers do
-+        not need to re-check visibility themselves.
++        "mag": float or null, "altitude": deg, "azimuth": deg}, ...]},
++        sorted brightest (lowest magnitude) first, already altitude- (and,
++        if given, direction-) filtered - callers do not need to re-check
++        visibility themselves.
 +        """
 +        try:
 +            ss = server_instance.shared_state
@@ -105,6 +133,11 @@
 +            radius = float(qs.get("radius", 60.0))
 +            count = int(qs.get("count", 4))
 +            min_altitude = float(qs.get("min_altitude", 20.0))
++            direction = qs.get("direction", "").strip().upper() or None
++            if direction is not None and direction not in _DIRECTION_QUADRANTS:
++                return _json_response(
++                    {"error": f"invalid direction '{direction}' (expected N/E/S/W)"}, 400
++                )
 +
 +            if "ra" in qs and "dec" in qs:
 +                center_ra = float(qs["ra"])
@@ -180,8 +213,10 @@
 +                ra, dec = entry["ra"], entry["dec"]
 +                if _angular_separation_deg(center_ra, center_dec, ra, dec) > radius:
 +                    continue
-+                alt, _az = sf_utils.radec_to_altaz(ra, dec, dt)
++                alt, az = sf_utils.radec_to_altaz(ra, dec, dt)
 +                if alt < min_altitude:
++                    continue
++                if direction is not None and not _azimuth_in_direction(az, direction):
 +                    continue
 +                candidates.append(
 +                    {
@@ -190,10 +225,28 @@
 +                        "name": entry["name"],
 +                        "mag": entry["mag"],
 +                        "altitude": alt,
++                        "azimuth": az,
 +                    }
 +                )
 +
 +            candidates.sort(key=lambda c: (c["mag"] is None, c["mag"]))
++            # Hard filter, not a preference (#191): the caller asked for a
++            # specific sky region on purpose (e.g. "never point toward that
++            # tree") - silently returning fewer or falling back to other
++            # directions would defeat that. Only enforced when a direction
++            # was actually given; the direction-agnostic case keeps its
++            # previous "return whatever's available" behavior.
++            if direction is not None and len(candidates) < count:
++                return _json_response(
++                    {
++                        "error": (
++                            f"only {len(candidates)} candidate(s) found in direction "
++                            f"'{direction}' (radius {radius}°, min_altitude "
++                            f"{min_altitude}°), need {count}"
++                        )
++                    },
++                    422,
++                )
 +            return _json_response({"candidates": candidates[:count]})
 +        except Exception as e:
 +            logger.error("api/nearby_bright_stars error: %s", e)
@@ -202,10 +255,10 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -750,6 +924,90 @@
+@@ -750,6 +977,90 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
-
+ 
 +    @app.route("/api/debug_solve", methods=["POST"])
 +    def api_debug_solve():
 +        """Toggle the same "debug"/test-image substitution as Tools -> Test
