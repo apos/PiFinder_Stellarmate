@@ -195,17 +195,42 @@ it too rather than maintaining two separate "teach a verified position" code pat
 
 ## 6. Installation / Test
 
-Not yet implemented — no installation/test surface exists yet. Once built, this inherits Mount
+**Update (2026-08-10): a reduced PoC exists**, `feature/191-multipoint-alignment-poc` (not
+merged) — `MULTI_POINT_ALIGN` INDI switch (Start/Stop) on Mount Bridge, a fixed 4-point set (§4.3's
+core sequence, no §4.2 catalog selection, no §4.3 median-of-N, no §4.5 KStars feed). See the header
+comment on `MultiPointAlignSP`/`m_alignPoints` in `pifinder_mount_bridge.h` for the exact scope.
+Live-verified end to end against `Telescope Simulator`.
+
+**Safety — PoC has no altitude/horizon awareness, do not run against a real mount.** Live-confirmed
+(User, 2026-08-10): the fixed points get Goto'd blindly regardless of current visibility — harmless
+against a simulator, a genuine mechanical collision risk against a real mount (cable wrap,
+counterweight/OTA into the pier or tripod), independent of and not caught by the mount's own coarse
+elevation limit (e.g. OnStep's "Slew elevation Limit", which only guards ~-10° altitude, not
+"technically above that but physically unreachable from here"). §4.2's catalog-driven,
+altitude-filtered selection is what would close this — deliberately left as a documented blocker
+rather than a partial fix for this PoC (User decision).
+
+**Waiting for a fresh solve at each point needs no special handling for real use** (User, 2026-08-10):
+the mount arrives, PiFinder's own continuous camera solve loop naturally produces a fresh solve once
+stationary, exactly as it always does — the sequence's per-point wait is correct as designed, not a
+gap to work around. This only fails to self-resolve when testing against `Telescope Simulator` +
+Injected Solve specifically (no real camera in that loop at all, so nothing ever re-solves on its
+own) — a testing-environment limitation, not something the feature itself needs to accommodate.
+Without a real solve, a point simply waits out `MAX_FRESHNESS_WAIT_TICKS` and gets skipped (§4.4's
+existing behavior); test against real sky/hardware for meaningful end-to-end verification of this
+PoC's actual alignment behavior.
+
+Once the full feature (catalog selection, median-of-N, KStars feed) is built, it inherits Mount
 Bridge's existing test surface (INDI Control Panel, `indi_getprop`/`indi_setprop`, the Control
-Center GUI, live verification under real sky) rather than introducing a new one. Given tonight's
-live-testing experience (`basic-memory/pifinder-stellarmate/00089` §7), testing methodology notes
-worth carrying forward:
+Center GUI, live verification under real sky) rather than introducing a new one. Testing methodology
+notes worth carrying forward from earlier live-testing experience
+(`basic-memory/pifinder-stellarmate/00089` §7):
 - Prefer real, continuous camera solving over synthetic `/api/fake_solve` injection when verifying
   the median-of-N-solves step — synthetic injections showed non-deterministic drift under repeated
-  rapid calls tonight, which would confound testing an aggregation step specifically designed to
-  smooth out solve noise.
+  rapid calls, which would confound testing an aggregation step specifically designed to smooth out
+  solve noise.
 - `/api/fake_solve`'s RA is in degrees, not hours — convert before any INDI property use (a real
-  ~23° mis-slew happened tonight from exactly this mistake).
+  ~23° mis-slew happened from exactly this mistake in an earlier session).
 
 ## 7. Effort / Priority
 

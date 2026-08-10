@@ -189,6 +189,23 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // flagged there as separate/research-first). Reuses the same
         // Sync-only approach the concept's own ADR (§5) settled on for a
         // first OnStep-scoped implementation - no new "Align" primitive.
+        //
+        // *** PoC ONLY - DO NOT run this against a real mount. ***
+        // m_alignPoints below has NO altitude/horizon awareness at all - it
+        // blindly Gotos each fixed point regardless of whether it's
+        // actually above the horizon right now. Live-confirmed (User,
+        // 2026-08-10, against Telescope Simulator): PiFinder's own sky-map
+        // marker sat visibly below the horizon line and the sequence
+        // started anyway. Harmless against a simulator; against a real
+        // mount this is a genuine mechanical collision risk (cable wrap,
+        // counterweight/OTA into the pier or tripod, unrelated to and not
+        // caught by the mount's own coarse elevation limit, e.g. OnStep's
+        // "Slew elevation Limit" - that only guards ~-10°, not "technically
+        // above the mount's own limit but physically unreachable from
+        // here"). §4.2's catalog-driven, altitude-filtered point selection
+        // is what would actually close this gap - explicitly out of scope
+        // for this PoC, deliberately left as documentation rather than a
+        // quick partial fix (User decision, 2026-08-10).
         ISwitchVectorProperty MultiPointAlignSP;
         ISwitch MultiPointAlignS[2];
         enum { ALIGN_START, ALIGN_STOP };
@@ -197,10 +214,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - spread across RA quadrants at a
         // moderate declination, avoiding the pole (per the concept's own
-        // "Pol und Horizont-Nähe meiden" note). No altitude/visibility
-        // filtering (§4.2's catalog-selection scope, not part of this PoC) -
-        // fine against the Simulator, would need real horizon-awareness
-        // before ever pointing at a real sky.
+        // "Pol und Horizont-Nähe meiden" note). See the safety warning on
+        // MultiPointAlignSP above - no altitude/visibility filtering here.
+        //
+        // Waiting for isPiFinderSolveFresh() at each point is correct as-is
+        // and needs no special handling for the real use case: the mount
+        // arrives, PiFinder's own continuous camera solve loop naturally
+        // produces a fresh solve once it's stationary, same as it always
+        // does - nothing here needs to poke or re-seed anything. The only
+        // place this doesn't self-resolve is testing against Telescope
+        // Simulator + Injected Solve (no real camera in the loop at all,
+        // so nothing ever re-solves on its own) - a testing-environment
+        // limitation, not a gap in this code. Without a real solve, a point
+        // simply waits out MAX_FRESHNESS_WAIT_TICKS and gets skipped
+        // (§4.4's existing skip behavior); test against real sky/hardware
+        // for meaningful end-to-end verification of this PoC.
         std::vector<std::pair<double, double>> m_alignPoints = {
             {0.0, 30.0}, {6.0, 30.0}, {12.0, 30.0}, {18.0, 30.0},
         };
