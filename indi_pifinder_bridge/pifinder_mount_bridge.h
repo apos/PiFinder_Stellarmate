@@ -192,12 +192,15 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // per point, same as everywhere else in this file), §4.5's KStars-
         // model feed (explicitly flagged there as separate/research-first).
         //
-        // Remaining safety caveat: altitude filtering rules out "below the
-        // horizon", but NOT cable-wrap/meridian-flip risk - a candidate
-        // star can be well above the horizon and still be in a mechanically
-        // awkward hour-angle/RA-wind position for a given mount's current
-        // orientation, which this does not model. Same class of gap as the
-        // still-open KStars-horizon-fencing item.
+        // Slew-path/cable-wrap risk between two altitude-safe points is a
+        // known gap (#218) but deliberately out of scope, not an oversight:
+        // a real mount normally already protects itself (OnStep's own Slew
+        // elevation Limit, most GEM/Alt-Az controllers' own axis/meridian-
+        // flip limits) - the below-horizon-mid-slew symptom seen live was
+        // specific to the Telescope Simulator, which has none of that.
+        // Modeling per-mount slew-path geometry here would duplicate the
+        // mount's own firmware and cuts against this file's generic-
+        // protocol-only philosophy (see the concept doc's own ADR).
         ISwitchVectorProperty MultiPointAlignSP;
         ISwitch MultiPointAlignS[2];
         enum { ALIGN_START, ALIGN_STOP };
