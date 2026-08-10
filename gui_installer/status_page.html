@@ -1066,6 +1066,15 @@
     background: #222;
     border: 1px solid #444;
     color: #ccc;
+    /* Measured 2026-08-10 ("Kosmetik", still ~5% taller than Bridge/
+       PiFinder/Mount after the #mb-drift-value min-height fix): .mb-node
+       sets font-size: 0.72rem for its own label text, this rule never did -
+       its "Drift" label was inheriting the page's unset/default ~1rem
+       instead, a real (not rounding-error) height difference in the label
+       line, not the icon/value line. Padding/gap/border/icon-vs-value
+       height were already identical - this was the actual remaining
+       delta. */
+    font-size: 0.72rem;
   }
   #mb-drift-value {
     font-size: 1.5rem;
