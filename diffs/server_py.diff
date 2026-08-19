@@ -75,7 +75,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -538,6 +568,48 @@
+@@ -538,6 +568,67 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -121,10 +121,29 @@
 +                }
 +            )
 +
++        @app.route("/api/keep_awake", methods=["POST"])
++        def api_keep_awake():
++            # Called repeatedly (every ~2s) by the Mount Bridge INDI driver
++            # (StellarMate integration) while GoTo-Forward mode is actively
++            # coordinating a GoTo - that mode needs full-cadence, fresh
++            # solves to Sync from and to verify arrival against, but
++            # PiFinder's own battery-friendly sleep (keypad/IMU activity
++            # only, see PowerManager in main.py) has no way to know an
++            # external caller needs it awake. A single call only buys
++            # PowerManager._EXTERNAL_ACTIVITY_GRACE_SEC worth of "activity" -
++            # callers must keep polling for as long as they need this. Same
++            # loopback-only restriction as /api/set_mount_type - machine-to-
++            # machine, not a browser session.
++            if request.remote_addr not in ("127.0.0.1", "::1"):
++                return jsonify({"error": "forbidden"}), 403
++
++            self.shared_state.register_external_activity()
++            return jsonify({"ok": True})
++
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -553,7 +625,7 @@
+@@ -553,7 +644,7 @@
  
              if new_passworda == new_passwordb:
                  if sys_utils.change_password(
@@ -133,7 +152,7 @@
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
-@@ -1230,6 +1302,15 @@
+@@ -1230,6 +1321,15 @@
          self.app = app
  
      def run(self):
@@ -149,7 +168,7 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
-@@ -1265,10 +1346,23 @@
+@@ -1265,10 +1365,23 @@
  
  
  def run_server(

@@ -1,6 +1,21 @@
 --- python/PiFinder/state.py.orig
 +++ python/PiFinder/state.py
-@@ -305,6 +305,17 @@
+@@ -273,6 +273,14 @@
+ class SharedStateObj:
+     def __init__(self) -> None:
+         self.__power_state = 1  # 0 = sleep state, 1 = awake state
++        # Timestamp of the last externally-requested "keep awake" (e.g. the
++        # Mount Bridge actively coordinating a GoTo - see
++        # register_external_activity()'s docstring). None = never requested.
++        # Separate from the main process's own PowerManager.last_activity
++        # (keypad/IMU), which an external web-server-process caller has no
++        # access to - main.py's update() loop reads this alongside its own
++        # activity timer instead.
++        self.__external_activity_ts: Optional[float] = None
+         # self.__solve_state
+         # None = No solve attempted yet
+         # True = Valid solve data from either IMU or Camera
+@@ -305,6 +313,17 @@
          self.__arch = None
          self.__camera_align = False
          self.__camera_type = "imx296"  # Default, will be set by camera process
@@ -18,7 +33,31 @@
          # Degrees the camera process rotates the solve/display image relative
          # to the stored raw frame (PIL CCW). None until the camera reports.
          self.__solve_image_rotation = None
-@@ -380,6 +391,18 @@
+@@ -350,6 +369,23 @@
+                 f"Invalid value for set_power_state: {v}. power_state not changed."
+             )
+ 
++    def external_activity_ts(self):
++        return self.__external_activity_ts
++
++    def register_external_activity(self):
++        """
++        Called from outside the main process (e.g. the web server, on behalf
++        of the Mount Bridge actively coordinating a GoTo) to request that
++        PiFinder stay awake and keep producing full-cadence solves, the same
++        as real keypad/IMU activity would. Does NOT wake the screen or
++        directly flip power_state itself - main.py's update() loop is the
++        only place that decides sleep/wake, it just also honors this
++        timestamp alongside its own last_activity. Callers must keep calling
++        this periodically (not just once) for as long as they need PiFinder
++        awake - a single call only buys until the current sleep timeout.
++        """
++        self.__external_activity_ts = time.time()
++
+     def arch(self):
+         return self.__arch
+ 
+@@ -380,6 +416,18 @@
      def set_camera_type(self, v: str):
          self.__camera_type = v
  

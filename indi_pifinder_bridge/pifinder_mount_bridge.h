@@ -55,6 +55,13 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         void syncMountTypeToPiFinder();
         std::string m_lastSyncedMountType;
 
+        // Tells PiFinder to stay awake (see PiFinder's /api/keep_awake) -
+        // called every tick from handleGotoForward() itself, so it's
+        // automatically scoped to exactly when Goto-Forward is active, never
+        // running (and never needlessly draining PiFinder's battery) in any
+        // other coupling mode. See #227 follow-up (2026-08-19).
+        void keepPiFinderAwake();
+
         std::unique_ptr<PiFinderBridgeClient> m_client;
 
         // ISGetProperties() fires once per client connection (every
@@ -137,6 +144,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // warning if it happens again). See PiFinderBridgeClient::
         // retryMissingPropertiesIfNeeded()/bindingGaveUp().
         bool m_bindingGiveUpLogged = false;
+
+        // #227 follow-up (2026-08-19, user-requested): whatever position the
+        // mount reports right after Connect() (its own idea of "where it is"
+        // from before this session, or a hardware default) is exactly as
+        // untrustworthy as the pre-Goto case syncMountToPiFinderPosition()
+        // already fixes - found live: right after a driver reconnect, drift
+        // was already >120' (over MaxSyncDriftNP), which would otherwise
+        // just sit unfixed in HOLDING forever, same deadlock as before but
+        // at connect-time instead of Goto-time. Reset to false in Connect();
+        // TimerHit() performs exactly one unconditional Sync from PiFinder's
+        // position as soon as isReady() and a fresh solve are both true, for
+        // BridgeModeS that are allowed to actively command the mount
+        // (Auto-correct, Goto-Forward) - never for Verify-Alert/Off, which
+        // must never move/Sync the mount at all.
+        bool m_didInitialSync = false;
 
         // Mode-Readiness-Check (2026-08-08, User request): runs whenever a
         // Coupling mode other than Off is (re-)selected. Verifies known
@@ -296,21 +318,49 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty MaxSyncDriftNP;
         INumber MaxSyncDriftN[1];
 
-        // Graduated slew rate for correction Gotos (2026-08-08): sending
-        // every correction at whatever rate happens to be currently
-        // selected on the mount (found live: "Half-Max") risks overshoot -
-        // real handsets have long used slower "Guide/Center" rates
-        // specifically for fine centering, only using fast rates for big
-        // slews (see basic-memory pifinder-stellarmate for the KStars/Ekos
-        // Align research this mirrors). Picks by INDEX POSITION in
-        // whatever TELESCOPE_SLEW_RATE list the mount reports (same
+        // Graduated slew rate for correction Gotos (2026-08-08, regraded
+        // 2026-08-19): sending every correction at whatever rate happens to
+        // be currently selected on the mount (found live: "Half-Max") risks
+        // overshoot - real handsets have long used slower "Guide/Center"
+        // rates specifically for fine centering, only using fast rates for
+        // big slews (see basic-memory pifinder-stellarmate for the
+        // KStars/Ekos Align research this mirrors). Picks by INDEX POSITION
+        // in whatever TELESCOPE_SLEW_RATE list the mount reports (same
         // mount-agnostic philosophy as getMountType() - never assumes a
-        // specific driver's item names/count). Deliberately fixed
-        // constants, not a GUI-configurable property, to avoid scope
-        // creep - can become tunable later if needed.
-        static constexpr double SLEW_RATE_FAR_THRESHOLD_ARCMIN = 30.0;
-        static constexpr double SLEW_RATE_CLOSE_THRESHOLD_ARCMIN = 3.0;
+        // specific driver's item names/count).
+        //
+        // Originally a fixed 3-bucket (slow/medium/fast) scheme - found live
+        // (2026-08-19, first real Goto-Forward test against a correctly-
+        // detected Alt/Az OnStep mount, see #227) that 3 buckets waste most
+        // of a mount's actual rate ladder (OnStep exposes 10 steps) and,
+        // combined with the old "no pre-Goto Sync" bug below, contributed to
+        // large, uncorrected residuals. Now interpolates LOGARITHMICALLY
+        // across the mount's *entire* available rate count between these two
+        // endpoints - drift can plausibly range from sub-arcminute (fine
+        // HOLDING correction) to several hundred degrees (an unaligned
+        // mount's very first Goto), and a log scale gives sensible
+        // resolution across that whole range instead of only at the low end.
+        static constexpr double SLEW_RATE_LOG_MIN_ARCMIN = 0.5;
+        static constexpr double SLEW_RATE_LOG_MAX_ARCMIN = 21600.0; // 360 deg
         void applySlewRateForDrift(double driftArcmin);
+
+        // Root-cause fix for #227's real-sky Goto-Forward failure
+        // (2026-08-19): every path that forwards a *new* target Goto to the
+        // mount used to send it unconditionally, trusting whatever internal
+        // model the mount already had - fine for an already-aligned mount,
+        // but the very first real Goto against a freshly-correctly-detected
+        // Alt/Az OnStep mount (no prior alignment reference at all) landed
+        // many degrees off, and MaxSyncDriftNP's outlier-solve heuristic
+        // then refused to correct it, since a residual that large looked
+        // indistinguishable from a bad solve. Fix: ALWAYS Sync the mount to
+        // PiFinder's current (not target) position immediately before
+        // computing/sending a new Goto - this corrects the mount's model
+        // from ground truth right before it computes the slew vector, so
+        // the arrival residual reflects the mount's real pointing accuracy
+        // instead of compounding an unknown, possibly huge, pre-existing
+        // model error. Returns false (and forwards nothing) if PiFinder has
+        // no fresh solve to sync from yet - never skip the sync silently.
+        bool syncMountToPiFinderPosition();
 
         // Auto-correct only fires off a position PiFinder itself reports as
         // a real, recent camera solve (via /api/status - see #79/#107 in
@@ -345,6 +395,15 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ForwardState m_forwardState = ForwardState::IDLE;
         double m_lastForwardedRA = std::nan("");
         double m_lastForwardedDec = std::nan("");
+
+        // A genuinely new target event (consumePiFinderTargetPending()) was
+        // seen, but syncMountToPiFinderPosition() couldn't run yet (no fresh
+        // PiFinder solve at that exact tick) - remember the intent and keep
+        // retrying the sync every tick, using whatever target is *currently*
+        // selected (getPiFinderTargetRADE() is non-consuming), instead of
+        // silently dropping the user's target selection because one tick
+        // was unlucky. Cleared once the sync succeeds and the Goto fires.
+        bool m_forwardAwaitingSync = false;
         int m_settleTicksRemaining = 0;
         static constexpr int SETTLE_TICKS = 3; // poll cycles to wait before even checking for a fresh solve
 

@@ -44,6 +44,40 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
     return res == CURLE_OK && httpCode == 200;
 }
 
+// #227 follow-up (2026-08-19): Goto-Forward needs full-cadence, fresh
+// PiFinder solves throughout (to Sync from before every Goto, and to verify
+// arrival), but PiFinder's own battery-friendly sleep (keypad/IMU activity
+// only) has no way to know this driver needs it awake - a real live deadlock
+// otherwise (PiFinder sleeps from inactivity, sleep throttles its solve
+// cadence, Goto-Forward can never get a fresh enough solve to act, so
+// nothing ever moves to generate real activity either). Called every tick
+// while MODE_GOTO_FORWARD is active - see PiFinder's /api/keep_awake and
+// state.py's register_external_activity() for the other side of this.
+bool httpPostKeepAwake(const std::string &url)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{}");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && httpCode == 200;
+}
+
 size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
     static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
@@ -86,6 +120,79 @@ bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource
         solveSource = solution.value("solve_source", std::string());
         const auto &lastSolveField = solution.at("last_solve_success");
         lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// Same /api/status endpoint as httpGetPiFinderSolveStatus() above, but also
+// extracts RA/Dec from the *same* JSON response instead of leaving the
+// caller to fetch position separately (e.g. via the LX200 EQUATORIAL_EOD_COORD
+// property, as getPiFinderRADE() does). That separate-channel approach is
+// fine for read-only display, but for anything that's about to Sync the
+// mount it has a real timing gap: confirming "the last solve was CAM and
+// fresh" via this endpoint, then fetching the position value via a totally
+// different call moments later, can pick up a position PiFinder has since
+// advanced past that confirmed solve via IMU interpolation - syncing the
+// mount to a position that was never actually verified. Found live
+// (2026-08-19, #227 follow-up): PiFinder "overshooting" past a target the
+// mount had genuinely reached correctly. Returns false (and leaves ra/dec
+// untouched) unless solve_source is exactly "CAM", the solve is within
+// maxAgeSeconds, and RA/Dec both parsed - the position and the freshness/
+// source guarantee always come from one atomic snapshot.
+bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSeconds, double &ra, double &dec)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &solution = parsed.at("solution");
+        const std::string solveSource = solution.value("solve_source", std::string());
+        const auto &lastSolveField = solution.at("last_solve_success");
+        const double lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+
+        if (solveSource != "CAM" || lastSolveSuccess <= 0.0)
+            return false;
+        const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
+        if (!(ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds))
+            return false;
+
+        const auto &raField = solution.at("RA");
+        const auto &decField = solution.at("Dec");
+        if (raField.is_null() || decField.is_null())
+            return false;
+
+        // CRITICAL UNIT MISMATCH (found live 2026-08-19, caused a real
+        // runaway slew): PiFinder's /api/status reports "solution.RA" in
+        // DEGREES (0-360) - unlike the LX200 EQUATORIAL_EOD_COORD property
+        // getPiFinderRADE() reads elsewhere in this driver, which is hours
+        // (0-24) per INDI convention. Every caller of this function (Sync,
+        // angularSeparationArcmin()) expects hours, matching getMountRADE()
+        // and the rest of the driver. Must convert here, once, at the
+        // source - never assume degrees-vs-hours from a bare number.
+        ra = raField.get<double>() / 15.0;
+        dec = decField.get<double>();
         return true;
     }
     catch (const nlohmann::json::exception &)
@@ -465,6 +572,7 @@ bool PiFinderMountBridge::Connect()
     }
 
     LOGF_INFO("Bridging %s -> %s.", piFinderName.c_str(), mountName.c_str());
+    m_didInitialSync = false;
     SetTimer(getCurrentPollingPeriod());
     return true;
 }
@@ -493,6 +601,17 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
         LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
         m_lastSyncedMountType = mountType;
     }
+}
+
+void PiFinderMountBridge::keepPiFinderAwake()
+{
+    // Same 80-then-8080 fallback order as syncMountTypeToPiFinder() above.
+    // Best-effort - a failed keep-awake call isn't fatal to the Goto, it
+    // just means PiFinder might go/stay asleep and the next sync-before-Goto
+    // attempt waits for its own next fresh solve, same as before this
+    // mechanism existed.
+    httpPostKeepAwake("http://127.0.0.1/api/keep_awake") ||
+        httpPostKeepAwake("http://127.0.0.1:8080/api/keep_awake");
 }
 
 void PiFinderMountBridge::syncOrientationStatus()
@@ -602,11 +721,17 @@ void PiFinderMountBridge::handleShadowSync()
     // Same freshness gate as every other automatic action here (#79) -
     // mirroring a stale/IMU-interpolated position would just teach the
     // shadow device to lie too, defeating the point of it being "truth".
-    if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
-        return;
-
+    // #227 follow-up (2026-08-19/20): position now comes from the same
+    // atomic snapshot as the freshness/source check (see
+    // httpGetPiFinderFreshCamPosition()) - the old two-call pattern here
+    // could mirror a position already advanced past the verified solve via
+    // IMU interpolation, which is exactly the Shadow device visibly
+    // drifting apart from PiFinder LX200 that was observed live.
     double piRA, piDec;
-    if (!m_client->getPiFinderRADE(piRA, piDec))
+    const bool haveFreshCamPosition =
+        httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+        httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+    if (!haveFreshCamPosition)
         return;
 
     m_client->syncShadowCoords(piRA, piDec);
@@ -846,6 +971,20 @@ void PiFinderMountBridge::TimerHit()
     }
     m_bindingGiveUpLogged = false;
 
+    // #227 follow-up (2026-08-19): before trusting/using the mount's
+    // position for anything, unconditionally Sync it once from PiFinder's
+    // position - whatever the mount reports right after Connect() (leftover
+    // from before this session, or a hardware default) is not assumed
+    // accurate. Only for the modes actually allowed to move/Sync the mount;
+    // Verify-Alert and Off must stay passive. Retries every tick (no fresh
+    // solve yet just means try again next tick) until it succeeds once.
+    if (!m_didInitialSync &&
+        (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON || BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON))
+    {
+        if (syncMountToPiFinderPosition())
+            m_didInitialSync = true;
+    }
+
     // #191 PoC - independent of Coupling mode entirely (a one-shot action,
     // not a standing coupling mode - see the concept doc's own "Abgrenzung
     // zu bestehenden Coupling-Modi"), so it ticks unconditionally here
@@ -1002,19 +1141,40 @@ void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
     if (count <= 0)
         return; // driver doesn't expose slew rates - optional enhancement, not fatal to the Goto
 
-    int index;
-    if (driftArcmin > SLEW_RATE_FAR_THRESHOLD_ARCMIN)
-        index = count - 1; // fastest available
-    else if (driftArcmin > SLEW_RATE_CLOSE_THRESHOLD_ARCMIN)
-        index = count / 2; // a middle rate
-    else
-        index = 0; // slowest/most precise available
+    const double clamped = std::clamp(driftArcmin, SLEW_RATE_LOG_MIN_ARCMIN, SLEW_RATE_LOG_MAX_ARCMIN);
+    const double t = std::log(clamped / SLEW_RATE_LOG_MIN_ARCMIN) /
+                      std::log(SLEW_RATE_LOG_MAX_ARCMIN / SLEW_RATE_LOG_MIN_ARCMIN); // 0..1
+    int index = static_cast<int>(std::lround(t * (count - 1)));
+    index = std::clamp(index, 0, count - 1);
 
     m_client->setSlewRateIndex(index);
 }
 
+bool PiFinderMountBridge::syncMountToPiFinderPosition()
+{
+    double piRA, piDec;
+    if (!(httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+          httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)))
+    {
+        LOG_WARN("No fresh PiFinder camera solve yet - deferring Goto until the mount can be Synced to a real position first.");
+        return false;
+    }
+
+    if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+    {
+        LOG_ERROR("Failed to Sync mount to PiFinder's current position before forwarding Goto.");
+        return false;
+    }
+
+    LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) before forwarding Goto.",
+              piRA, piDec);
+    return true;
+}
+
 void PiFinderMountBridge::handleGotoForward()
 {
+    keepPiFinderAwake();
+
     double targetRA, targetDec;
     const bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
 
@@ -1023,9 +1183,15 @@ void PiFinderMountBridge::handleGotoForward()
         case ForwardState::IDLE:
         {
             if (!hasTarget)
+            {
+                m_forwardAwaitingSync = false;
                 return;
+            }
 
-            if (!m_client->consumePiFinderTargetPending())
+            if (m_client->consumePiFinderTargetPending())
+                m_forwardAwaitingSync = true;
+
+            if (!m_forwardAwaitingSync)
             {
                 // No genuinely new Goto *event* since we started watching
                 // (a BridgeMode switch, or a driver restart while this mode
@@ -1055,11 +1221,21 @@ void PiFinderMountBridge::handleGotoForward()
                 return;
             }
 
+            // #227 root-cause fix (2026-08-19): always Sync the mount to
+            // PiFinder's actual current position before computing/sending
+            // the Goto - see syncMountToPiFinderPosition()'s header comment.
+            // If PiFinder has no fresh solve yet, m_forwardAwaitingSync stays
+            // true and this is retried next tick using whatever target is
+            // then current, instead of either firing blind or dropping the
+            // user's target selection.
+            if (!syncMountToPiFinderPosition())
+                break;
+
             {
                 double mountRA, mountDec;
                 applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
                                           ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
-                                          : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0); // unknown - assume far, safe default
+                                          : SLEW_RATE_LOG_MAX_ARCMIN); // unknown - assume far, safe default
             }
             if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
             {
@@ -1070,6 +1246,7 @@ void PiFinderMountBridge::handleGotoForward()
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
                 m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                m_forwardAwaitingSync = false;
                 m_forwardState = ForwardState::SLEWING;
             }
             else
@@ -1125,11 +1302,21 @@ void PiFinderMountBridge::handleGotoForward()
                 break;
             }
 
-            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            double piRA, piDec;
+            const bool haveFreshCamPosition =
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            if (!haveFreshCamPosition)
             {
                 // PiFinder hasn't produced a real camera solve since arrival
                 // yet - see the header comment on m_freshnessWaitTicksRemaining.
                 // Keep waiting rather than verifying/correcting off a guess.
+                // #227 follow-up (2026-08-19): this now also covers the case
+                // where the *last* solve was fresh-and-CAM but the position
+                // read separately (e.g. via LX200) had already moved past it
+                // via IMU interpolation by the time we read it - position and
+                // freshness/source guarantee now always come from the same
+                // atomic snapshot, see httpGetPiFinderFreshCamPosition().
                 if (--m_freshnessWaitTicksRemaining <= 0)
                 {
                     LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - resuming normal holding.");
@@ -1138,8 +1325,8 @@ void PiFinderMountBridge::handleGotoForward()
                 break;
             }
 
-            double piRA, piDec, mountRA, mountDec;
-            if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+            double mountRA, mountDec;
+            if (!m_client->getMountRADE(mountRA, mountDec))
             {
                 m_forwardState = ForwardState::IDLE;
                 break;
@@ -1216,12 +1403,23 @@ void PiFinderMountBridge::handleGotoForward()
             if (hasTarget)
             {
                 if (m_client->consumePiFinderTargetPending())
+                    m_forwardAwaitingSync = true;
+
+                if (m_forwardAwaitingSync)
                 {
+                    // Same #227 root-cause fix as IDLE above - always Sync to
+                    // PiFinder's current position before forwarding a new
+                    // target, retrying next tick (still holding the old
+                    // target in the meantime) if no fresh solve is available
+                    // yet.
+                    if (!syncMountToPiFinderPosition())
+                        break;
+
                     {
                         double mountRA, mountDec;
                         applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
                                                   ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
-                                                  : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0);
+                                                  : SLEW_RATE_LOG_MAX_ARCMIN);
                     }
                     if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
                     {
@@ -1232,6 +1430,7 @@ void PiFinderMountBridge::handleGotoForward()
                         m_lastForwardedRA = targetRA;
                         m_lastForwardedDec = targetDec;
                         m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                        m_forwardAwaitingSync = false;
                         m_forwardState = ForwardState::SLEWING;
                     }
                     else
@@ -1279,11 +1478,27 @@ void PiFinderMountBridge::handleGotoForward()
             // indefinitely instead of only right after arrival. Same
             // freshness gate as everywhere else - never correct off a
             // guessed/stale position.
-            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            //
+            // #227 follow-up (2026-08-19): this is the loop that was
+            // actually oscillating live ("PiFinder overshoots, mount pulls
+            // back and forth") - the mount had genuinely reached the real
+            // target correctly, but the *separately* fetched PiFinder
+            // position (old getPiFinderRADE(), a plain LX200 read with no
+            // freshness/source info of its own) could already reflect IMU
+            // interpolation applied *after* the last confirmed-fresh CAM
+            // solve, dragging an already-correct mount away from a real
+            // target toward an unverified guess. Now uses one atomic
+            // snapshot for both the freshness/source guarantee and the
+            // position value - see httpGetPiFinderFreshCamPosition().
+            double piRA, piDec;
+            const bool haveFreshCamPosition =
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            if (!haveFreshCamPosition)
                 break;
 
-            double piRA, piDec, mountRA, mountDec;
-            if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+            double mountRA, mountDec;
+            if (!m_client->getMountRADE(mountRA, mountDec))
                 break;
 
             const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
@@ -1500,7 +1715,7 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     double mountRA, mountDec;
     applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
                                ? angularSeparationArcmin(ra, dec, mountRA, mountDec)
-                               : SLEW_RATE_FAR_THRESHOLD_ARCMIN + 1.0);
+                               : SLEW_RATE_LOG_MAX_ARCMIN);
     if (!m_client->sendMountCoords(ra, dec, "TRACK"))
     {
         LOGF_ERROR("Multi-Point Alignment: failed to send Goto for point %zu/%zu (RA %.4fh, DEC %.4f deg).",
@@ -1818,10 +2033,22 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             if (wantSync || wantGoto)
             {
+                // #227 follow-up (2026-08-19/20): same atomic fresh-CAM-
+                // solve requirement as every automatic action - a manual
+                // trigger is still a real Sync/Goto to the mount and must
+                // not act on a stale/IMU-interpolated position just because
+                // a human clicked the button. Previously used the plain
+                // (non-atomic, no freshness/source check at all)
+                // getPiFinderRADE() - this manual path had none of the
+                // protection the automatic paths already had.
                 double piRA, piDec;
-                if (!m_client->isReady() || !m_client->getPiFinderRADE(piRA, piDec))
+                const bool haveFreshCamPosition =
+                    m_client->isReady() &&
+                    (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                     httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec));
+                if (!haveFreshCamPosition)
                 {
-                    LOG_ERROR("Not ready - PiFinder or mount device/properties not available yet.");
+                    LOG_ERROR("Not ready, or no fresh PiFinder camera solve available - not sending a manual correction off a guess.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
                 else
