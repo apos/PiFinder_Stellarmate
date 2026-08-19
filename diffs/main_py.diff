@@ -1,8 +1,6 @@
-diff --git a/python/PiFinder/main.py b/python/PiFinder/main.py
-index 6f6e2eb6..7d006111 100644
---- a/python/PiFinder/main.py
-+++ b/python/PiFinder/main.py
-@@ -84,7 +84,21 @@ def init_keypad_pwm():
+--- python/PiFinder/main.py.orig
++++ python/PiFinder/main.py
+@@ -84,7 +84,21 @@
      global hardware_platform
      if hardware_platform == "Pi":
          keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
@@ -25,7 +23,7 @@ index 6f6e2eb6..7d006111 100644
  
  
  def set_keypad_brightness(percentage: float):
-@@ -148,11 +162,19 @@ StateManager.register("NewImage", Image.new)
+@@ -148,11 +162,27 @@
  
  
  class PowerManager:
@@ -34,6 +32,14 @@ index 6f6e2eb6..7d006111 100644
 +    _PRE_SLEEP = "pre_sleep"  # 30s sleep between attempts
 +    _RETRY = "retry"        # 1-min retry window after sleep
 +    _SOLVED = "solved"      # normal operation after first solve
++
++    # How long a single register_external_activity() call (see state.py)
++    # keeps counting as "activity" - must comfortably exceed the interval an
++    # external caller polls at (Mount Bridge: every ~2s while GoTo-Forward is
++    # active) so a normal poll gap never reads as "gone idle", but short
++    # enough that PiFinder resumes its own battery-friendly sleep promptly
++    # once the caller actually stops (mode turned off, bridge disconnected).
++    _EXTERNAL_ACTIVITY_GRACE_SEC = 10
 +
      def __init__(self, cfg, shared_state, display_device):
          self.cfg = cfg
@@ -45,7 +51,7 @@ index 6f6e2eb6..7d006111 100644
  
      def register_activity(self):
          """
-@@ -186,28 +208,76 @@ class PowerManager:
+@@ -186,28 +216,93 @@
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
@@ -82,19 +88,35 @@ index 6f6e2eb6..7d006111 100644
 -            # We are awake, should we sleep?
 -            if time.time() - self.last_activity > self.get_sleep_timeout():
 -                self.go_to_sleep()
--
++        has_solve = self._has_solve()
+ 
 -        else:  # We are asleepd, should we wake up?
 -            _imu = self.shared_state.imu()
 -            if _imu:
 -                if _imu.moving:
-+        has_solve = self._has_solve()
-+
 +        if self._solve_state == self._SOLVED:
 +            if not has_solve:
 +                # Lost solve (clouds etc.) — restart warmup
 +                self._enter_state(self._WARMUP)
 +                self.wake_up()
 +                return
++
++            # External activity (e.g. Mount Bridge actively running
++            # GoTo-Forward, which needs full-cadence solves to sync/verify
++            # against - see state.py's register_external_activity()) counts
++            # the same as local keypad/IMU activity for the idle timer, and
++            # can itself trigger an immediate wake if currently asleep -
++            # found live (2026-08-19, #227 follow-up): without this,
++            # GoTo-Forward's own sync-before-Goto could never get a fresh
++            # enough solve once PiFinder's own (unrelated) idle timeout put
++            # it to sleep, since nothing was moving the scope to generate
++            # IMU activity either - a self-inflicted deadlock.
++            external_ts = self.shared_state.external_activity_ts()
++            if external_ts is not None and time.time() - external_ts < self._EXTERNAL_ACTIVITY_GRACE_SEC:
++                self.last_activity = max(self.last_activity, external_ts)
++                if self.shared_state.power_state() <= 0:
+                     self.wake_up()
+ 
 +            # Normal operation: sleep after configured timeout of inactivity
 +            if self.shared_state.power_state() > 0:
 +                if time.time() - self.last_activity > self.get_sleep_timeout():
@@ -102,8 +124,8 @@ index 6f6e2eb6..7d006111 100644
 +            else:
 +                _imu = self.shared_state.imu()
 +                if _imu and _imu.moving:
-                     self.wake_up()
- 
++                    self.wake_up()
++
 +        elif self._solve_state == self._WARMUP:
 +            if has_solve:
 +                self._enter_state(self._SOLVED)
@@ -135,7 +157,7 @@ index 6f6e2eb6..7d006111 100644
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -367,6 +437,11 @@ def main(
+@@ -367,6 +462,11 @@
      alignment_command_queue: Queue = Queue()
      alignment_response_queue: Queue = Queue()
      ui_queue: Queue = Queue()
@@ -147,7 +169,7 @@ index 6f6e2eb6..7d006111 100644
  
      # init queues for logging
      keyboard_logqueue: Queue = log_helper.get_queue()
-@@ -503,6 +578,7 @@ def main(
+@@ -503,6 +603,7 @@
                  server_logqueue,
                  verbose,
              ),
@@ -155,7 +177,7 @@ index 6f6e2eb6..7d006111 100644
          )
          server_process.start()
  
-@@ -607,6 +683,7 @@ def main(
+@@ -607,6 +708,7 @@
              kwargs={
                  "command_queue": integrator_command_queue,
                  "camera_command_queue": camera_command_queue,
@@ -163,7 +185,7 @@ index 6f6e2eb6..7d006111 100644
              },
          )
          integrator_process.start()
-@@ -725,13 +802,6 @@ def main(
+@@ -725,13 +827,6 @@
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -177,7 +199,7 @@ index 6f6e2eb6..7d006111 100644
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -808,6 +878,12 @@ def main(
+@@ -808,6 +903,12 @@
                      if catalogs.catalog_filter is not None:
                          catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -190,7 +212,7 @@ index 6f6e2eb6..7d006111 100644
                  elif ui_command == "test_mode":
                      dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1304,6 +1380,8 @@ if __name__ == "__main__":
+@@ -1304,6 +1405,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
