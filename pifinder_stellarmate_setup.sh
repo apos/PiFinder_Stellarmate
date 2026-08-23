@@ -986,22 +986,25 @@ sudo systemctl start pifinder-setup
 sudo systemctl restart pifinder
 sudo systemctl start pifinder_splash
 
-# pifinder-control-center.service is deliberately not enabled by default
-# (see comment above) - but once the user has chosen "on" (enabled), a
-# reboot would auto-start it via systemd's own persistence. This run may
-# not reboot, so honor that same already-expressed choice here too -
-# otherwise "enabled but stopped" silently persists and the user has no
-# way to see the result of this very run.
+# Always enable + start the Control Center at the end of a setup run - a
+# user who just ran this script (fresh install or otherwise) has no other
+# way to discover/reach it than the URLs this prints below, and previously
+# had to know to separately run gui_installer/launch_setup_gui.sh
+# afterwards. Enabling here also means a later reboot auto-starts it via
+# systemd's own persistence, same as any other choice made through the
+# Control Center itself.
 #
-# Only if it's currently INACTIVE - if it's already active, this run was
-# most likely started BY that very instance (the GUI's own Update button),
-# which already restarts itself after a successful run on its own. A
-# restart from here would kill that instance mid-run instead: found live
-# 2026-08-01, the setup script survives (KillMode=process), but writes to
-# the now-orphaned server.py's stdout pipe hit SIGPIPE and die silently,
-# well before this script would otherwise reach the INDI driver build.
-if systemctl is-enabled --quiet pifinder-control-center && ! systemctl is-active --quiet pifinder-control-center; then
-    echo "🔧 Starting PiFinder Control Center (was enabled but stopped) ..."
+# Only START if it's currently INACTIVE - if it's already active, this run
+# was most likely started BY that very instance (the GUI's own Update
+# button), which already restarts itself after a successful run on its
+# own. A restart from here would kill that instance mid-run instead: found
+# live 2026-08-01, the setup script survives (KillMode=process), but
+# writes to the now-orphaned server.py's stdout pipe hit SIGPIPE and die
+# silently, well before this script would otherwise reach the INDI driver
+# build. `enable` itself is idempotent and safe to run either way.
+sudo systemctl enable pifinder-control-center
+if ! systemctl is-active --quiet pifinder-control-center; then
+    echo "🔧 Starting PiFinder Control Center ..."
     sudo systemctl start pifinder-control-center
 fi
 
@@ -1075,6 +1078,38 @@ else
     echo "###REBOOT_NEEDED### false"
     echo "  ✅ No reboot needed — /boot/config.txt was already up to date."
     echo "     (Services, INDI drivers, and code were already restarted live.)"
+fi
+echo "##############################################"
+echo ""
+
+# Control Center was enabled+started above (before the INDI driver build) -
+# tell the user where to actually reach it, reusing the same /state-derived
+# IP list gui_installer/launch_setup_gui.sh prints, instead of leaving them
+# to go find/run that script themselves. A few retries: the service was
+# just started and may not have bound its port yet.
+_cc_state=""
+for _ in $(seq 1 20); do
+    _cc_state="$(curl -s -m 2 "http://localhost:8765/state" 2>/dev/null)"
+    [ -n "$_cc_state" ] && break
+    sleep 0.25
+done
+if [ -n "$_cc_state" ]; then
+    python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+port = data.get('port', 8765)
+ips = data.get('ips') or ['localhost']
+print('  Control Center reachable at:')
+for ip in ips:
+    print(f'    http://{ip}:{port}/')
+" "$_cc_state"
+    echo "  Login: any username, password = your stellarmate system password"
+else
+    echo "  ⚠️  Control Center did not respond after 5s - check:"
+    echo "     journalctl -u pifinder-control-center -n 50"
 fi
 echo "##############################################"
 rm -f "$warnings_file"
