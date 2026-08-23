@@ -1,10 +1,27 @@
---- python/PiFinder/main.py.orig
-+++ python/PiFinder/main.py
-@@ -84,7 +84,21 @@
+--- python/PiFinder/main.py.orig	2026-08-23 11:19:08.173903507 +0200
++++ python/PiFinder/main.py	2026-08-23 11:11:45.834411776 +0200
+@@ -83,8 +83,37 @@
+     global keypad_pwm
      global hardware_platform
      if hardware_platform == "Pi":
-         keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
+-        keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
 -        keypad_pwm.start(0)
++        try:
++            keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
++        except Exception as e:
++            # HardwarePWM raises HardwarePWMException when the PWM sysfs
++            # interface itself doesn't exist (e.g. a plain x86 dev/
++            # Control-host machine with no dtoverlay=pwm-2chan to begin
++            # with, see PiFinder_Stellarmate#98) - same fallback philosophy
++            # as the camera/IMU/keyboard/display above: keypad_pwm simply
++            # stays None, which set_keypad_brightness()/its other callers
++            # already guard against (`if keypad_pwm:`), so this degrades to
++            # "no keypad backlight control" instead of crashing on startup.
++            print(
++                "Keypad PWM hardware unavailable on this platform "
++                f"({e}) - keypad backlight control disabled"
++            )
++            return
 +        # Right after boot, exporting a PWM channel creates its sysfs dir
 +        # root-owned; a udev rule then asynchronously chgrp/chmod's it
 +        # group-writable. start()'s enable-file write can lose that race and
@@ -23,7 +40,7 @@
  
  
  def set_keypad_brightness(percentage: float):
-@@ -148,11 +162,27 @@
+@@ -148,11 +177,27 @@
  
  
  class PowerManager:
@@ -51,7 +68,7 @@
  
      def register_activity(self):
          """
-@@ -186,28 +216,93 @@
+@@ -186,28 +231,93 @@
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
@@ -157,7 +174,7 @@
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -367,6 +462,11 @@
+@@ -367,6 +477,11 @@
      alignment_command_queue: Queue = Queue()
      alignment_response_queue: Queue = Queue()
      ui_queue: Queue = Queue()
@@ -169,7 +186,7 @@
  
      # init queues for logging
      keyboard_logqueue: Queue = log_helper.get_queue()
-@@ -503,6 +603,7 @@
+@@ -503,6 +618,7 @@
                  server_logqueue,
                  verbose,
              ),
@@ -177,7 +194,7 @@
          )
          server_process.start()
  
-@@ -607,6 +708,7 @@
+@@ -607,6 +723,7 @@
              kwargs={
                  "command_queue": integrator_command_queue,
                  "camera_command_queue": camera_command_queue,
@@ -185,7 +202,7 @@
              },
          )
          integrator_process.start()
-@@ -725,13 +827,6 @@
+@@ -725,13 +842,6 @@
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -199,7 +216,7 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -808,6 +903,12 @@
+@@ -808,6 +918,12 @@
                      if catalogs.catalog_filter is not None:
                          catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -212,7 +229,35 @@
                  elif ui_command == "test_mode":
                      dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1304,6 +1405,8 @@
+@@ -1284,7 +1400,26 @@
+         from rpi_hardware_pwm import HardwarePWM
+ 
+         cfg = config.Config()
+-        imu = importlib.import_module("PiFinder.imu_pi")
++        try:
++            imu = importlib.import_module("PiFinder.imu_pi")
++        except Exception as e:
++            # adafruit-blinka's `board` module (imported at the top of
++            # imu_pi.py) raises NotImplementedError("Board not supported
++            # ...") on a platform it doesn't recognize as a Pi (e.g. a plain
++            # x86 dev/Control-host machine, see PiFinder_Stellarmate#98) -
++            # this happens at import time, before imu_pi.py's own code ever
++            # runs, so it can only be caught here, not inside that module.
++            # Same "run without this one piece of hardware" fallback
++            # philosophy as camera_pi.py's CameraDebug substitution
++            # (get_images()), just one level up: without this, the entire
++            # main process would die on startup rather than degrade to no
++            # IMU/motion-tracking.
++            logger.warning(
++                "IMU hardware unavailable on this platform (%s) - "
++                "falling back to imu_fake (no motion tracking)",
++                e,
++            )
++            imu = importlib.import_module("PiFinder.imu_fake")
+         integrator = importlib.import_module("PiFinder.integrator")
+ 
+         # verify and sync GPSD baud rate
+@@ -1304,6 +1439,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
@@ -221,3 +266,30 @@
          else:
              gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
  
+@@ -1327,9 +1464,24 @@
+         from PiFinder import camera_none as camera  # type: ignore[no-redef]
+ 
+     if args.keyboard.lower() == "pi":
+-        from PiFinder import keyboard_pi as keyboard
++        try:
++            from PiFinder import keyboard_pi as keyboard
+ 
+-        rlogger.info("using pi keyboard hat")
++            rlogger.info("using pi keyboard hat")
++        except Exception as e:
++            # RPi.GPIO raises RuntimeError("This module can only be run on
++            # a Raspberry Pi!") at import time on a platform it doesn't
++            # recognize (e.g. a plain x86 dev/Control-host machine, see
++            # PiFinder_Stellarmate#98) - same fallback philosophy as the
++            # camera (camera_pi.py's CameraDebug substitution) and IMU
++            # (imu_pi -> imu_fake, above): degrade to no physical keypad
++            # rather than taking the whole process down.
++            rlogger.warning(
++                "Pi keyboard hardware unavailable on this platform (%s) - "
++                "falling back to keyboard_none (no physical keypad)",
++                e,
++            )
++            from PiFinder import keyboard_none as keyboard  # type: ignore[no-redef]
+     elif args.keyboard.lower() == "local":
+         if display_hardware.startswith("pg_"):
+             from PiFinder import keyboard_none as keyboard  # type: ignore[no-redef]

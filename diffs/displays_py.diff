@@ -1,0 +1,50 @@
+--- python/PiFinder/displays.py.orig	2026-08-23 11:29:39.635750880 +0200
++++ python/PiFinder/displays.py	2026-08-23 11:09:31.953768819 +0200
+@@ -569,13 +569,44 @@
+         return DisplayPygame_320()
+ 
+     if display_hardware == "ssd1351":
+-        return DisplaySSD1351()
++        try:
++            return DisplaySSD1351()
++        except Exception as e:
++            # luma.core's SPI/bitbang backend raises UnsupportedPlatform
++            # ("GPIO access not available") on a platform it doesn't
++            # recognize as a Pi (e.g. a plain x86 dev/Control-host machine,
++            # see PiFinder_Stellarmate#98) - same fallback philosophy as
++            # camera_pi.py's CameraDebug substitution: degrade to the
++            # existing DisplayHeadless (in-memory, still servable over
++            # GET /api/screen) rather than taking the whole process down.
++            print(
++                "SSD1351 display hardware unavailable on this platform "
++                f"({e}) - falling back to DisplayHeadless (no physical "
++                "screen, still available via GET /api/screen)"
++            )
++            return DisplayHeadless()
+ 
+     if display_hardware == "ssd1333":
+-        return DisplaySSD1333()
++        try:
++            return DisplaySSD1333()
++        except Exception as e:
++            print(
++                "SSD1333 display hardware unavailable on this platform "
++                f"({e}) - falling back to DisplayHeadless176 (no physical "
++                "screen, still available via GET /api/screen)"
++            )
++            return DisplayHeadless176()
+ 
+     if display_hardware == "st7789":
+-        return DisplayST7789()
++        try:
++            return DisplayST7789()
++        except Exception as e:
++            print(
++                "ST7789 display hardware unavailable on this platform "
++                f"({e}) - falling back to DisplayHeadless320 (no physical "
++                "screen, still available via GET /api/screen)"
++            )
++            return DisplayHeadless320()
+ 
+     else:
+         print("Hardware platform not recognized")

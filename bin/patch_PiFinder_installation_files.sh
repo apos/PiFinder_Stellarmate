@@ -9,7 +9,7 @@ source "$(dirname "$0")/functions.sh"
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
 
 # Detect current Pi hardware model
-hw_model=$(tr -d '\0' < /proc/device-tree/model)
+hw_model=$(get_hw_model)
 if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
     current_pi="P5"
 elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
@@ -99,18 +99,15 @@ else
 fi
 
 
-    echo "DEBUG: current_pifinder = $current_pifinder"
-    echo "DEBUG: current_pi = $current_pi"
-    echo "DEBUG: current_os = $current_os"
-    if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
-        echo "DEBUG: should_apply_patch returned true for requirements.txt"
-    else
-        echo "DEBUG: should_apply_patch returned false for requirements.txt"
-    fi
-
 echo "------------------------------------"
 #######################################################
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+# Pi-model filter is deliberately "general", not "P4|P5": every fix below is
+# a pure Python/numpy version-compatibility issue (nothing GPIO/camera/Pi-
+# hardware specific), so it applies equally on a real Pi and on an x86
+# Control-host development machine (current_pi="unknown" there - see
+# get_hw_model() in functions.sh). Restricting this to P4|P5 previously made
+# the whole block silently skip on x86, leaving skyfield/pandas uninstalled.
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
     cp "$python_requirements" "$python_requirements.bak"
 
@@ -211,7 +208,7 @@ for service_file in "${service_files[@]}"; do
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     for cfg in "$config_default_json" "$config_json"; do
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
@@ -316,7 +313,7 @@ echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
         sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
     fi
@@ -348,7 +345,7 @@ echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
         sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
     fi
@@ -364,7 +361,7 @@ echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
         sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
     fi
@@ -380,7 +377,7 @@ echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
         sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
     fi
@@ -415,7 +412,7 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
@@ -439,7 +436,7 @@ echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     camera_insert="from picamera2 import Picamera"
     if ! grep -q "$camera_insert" "$camera_file"; then
         awk -v insert="$camera_insert" '
@@ -482,6 +479,27 @@ echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_
     apply_patch_or_warn "$main_py" "${pifinder_stellarmate_dir}/diffs/main_py.diff"
 show_diff_if_changed "$main_py"
 python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder displays.py - graceful fallback to the existing DisplayHeadless*
+# classes when the real OLED/LCD SPI/GPIO hardware isn't available (e.g. an
+# x86 dev/Control-host machine with no PiFinder hardware attached at all,
+# see PiFinder_Stellarmate#98) instead of crashing the whole process. Same
+# philosophy as camera_pi.py's existing CameraDebug fallback, general/
+# general on purpose (not P4|P5) - see basic-memory/pifinder-stellarmate/00099.
+
+echo "🔧 Updating displays.py (headless fallback) ..."
+cp "$display_py" "$display_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
+    apply_patch_or_warn "$display_py" "${pifinder_stellarmate_dir}/diffs/displays_py.diff"
+else
+    echo "⏩ Skipping displays.py headless-fallback patch: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$display_py"
+python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
 echo "------------------------------------"
 
 ##################################################
@@ -583,7 +601,7 @@ echo "🔧 Updating server.py ..."
 cp "$server_py" "$server_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     # Login/password-change username, mount-type sync, First Steps route,
     # Setup Wizard control, port tracking, etc. are all in server_py.diff now.
     # (Used to also run two sed replacements here for the login/password-
@@ -610,7 +628,7 @@ cp "$sys_utils_py" "$sys_utils_py.bak"
 cp "$sys_utils_fake_py" "$sys_utils_fake_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     apply_patch_or_warn "$sys_utils_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
     apply_patch_or_warn "$sys_utils_fake_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
 else
@@ -628,7 +646,7 @@ echo "🔧 Updating ui/status.py (all_ips) ..."
 cp "$status_py" "$status_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     apply_patch_or_warn "$status_py" "${pifinder_stellarmate_dir}/diffs/status_py.diff"
 else
     echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
@@ -673,7 +691,7 @@ echo "------------------------------------"
 echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
     apply_patch_or_warn "$menu_py" "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"
