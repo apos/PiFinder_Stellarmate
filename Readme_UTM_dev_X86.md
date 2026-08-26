@@ -276,11 +276,18 @@ from outside, not the guest OS trying to power-manage virtual hardware that does
   low-priority backlog item in
   [issue #234](https://github.com/apos/PiFinder_Stellarmate/issues/234) if a real x86_64 build is
   ever wanted.
-- **Injected Solve / PiFinder Simulator end-to-end workflow is not yet fully verified on this
-  machine.** The INDI drivers build and the Control Center reaches PiFinder's API, but a live test
-  session left `PiFinder LX200.CONNECTION` disconnected and `fake_solve_active: false` — reconnecting
-  the driver and confirming a re-seed actually activates Injected Solve is still open. Don't assume
-  this half of the setup works until it's been walked through end-to-end again.
+- **Injected Solve / PiFinder Simulator end-to-end workflow is verified working on this machine.**
+  Setting a target on the `PiFinder Simulator` INDI device and running
+  `python3 test_tools/pifinder_truth_injector.py --indi-device "PiFinder Simulator" --interval 2.0`
+  correctly drove `/api/status` to `fake_solve_active: true, solve_source: "CAM"`, and Mount Bridge's
+  `MODE_GOTO_FORWARD` coupling mode slewed the `Telescope Simulator` to within ~24' RA / ~1.5' Dec of
+  the injected target. **Caveat on the test methodology, not a bug**: leaving the injector running
+  continuously at a fixed, unchanging target causes PiFinder's own reported drift to climb over time
+  (IMU-anchor blending accumulates on repeated re-injection of an identical position) even though the
+  mount has already reached the target and stopped correctly — Mount Bridge's `MaxSyncDriftNP` safety
+  cap (default 120') correctly refuses to chase this artificial drift. For a clean test, prefer a
+  single well-timed `/api/fake_solve` call over a long-running unchanging injector loop, or use an
+  interval large enough / a target that moves slightly, as real tracked objects would.
 - **PR #233's hardware-fallback patches are unverified on real Pi hardware.** They're purely
   additive (new `except`/fallback branches around existing working code), but a real Pi4/Pi5 smoke
   test is recommended before merging past `dev` into `main`.

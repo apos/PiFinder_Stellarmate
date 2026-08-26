@@ -288,12 +288,20 @@ so gar nicht gibt.
   vorgemerkt als Backlog-Punkt niedriger Priorität in
   [Issue #234](https://github.com/apos/PiFinder_Stellarmate/issues/234), falls jemals ein echter
   x86_64-Build gewünscht wird.
-- **Injected-Solve-/PiFinder-Simulator-Workflow ist auf dieser Maschine noch nicht vollständig
-  Ende-zu-Ende verifiziert.** Die INDI-Treiber bauen, das Control Center erreicht PiFinders API,
-  aber ein Live-Test hinterließ `PiFinder LX200.CONNECTION` getrennt und `fake_solve_active: false`
-  — den Treiber neu zu verbinden und zu bestätigen, dass ein Reseed Injected Solve tatsächlich
-  aktiviert, ist noch offen. Nicht annehmen, dass diese Hälfte der Einrichtung funktioniert, bevor
-  sie nicht erneut Ende-zu-Ende durchgespielt wurde.
+- **Injected-Solve-/PiFinder-Simulator-Workflow ist auf dieser Maschine Ende-zu-Ende verifiziert.**
+  Eine Zielposition auf dem `PiFinder Simulator`-INDI-Gerät gesetzt und
+  `python3 test_tools/pifinder_truth_injector.py --indi-device "PiFinder Simulator" --interval 2.0`
+  gestartet hat `/api/status` korrekt auf `fake_solve_active: true, solve_source: "CAM"` gebracht,
+  und Mount Bridges `MODE_GOTO_FORWARD`-Kopplungsmodus hat den `Telescope Simulator` bis auf ~24'
+  RA / ~1.5' Dec an das injizierte Ziel geslewt. **Hinweis zur Testmethodik, kein Bug**: Lässt man
+  den Injector dauerhaft auf einem unveränderten Ziel laufen, wächst der von PiFinder gemeldete
+  Drift-Wert mit der Zeit (IMU-Anker-Blending akkumuliert bei wiederholter Injektion derselben
+  Position), obwohl der Mount das Ziel bereits erreicht hat und korrekt stehen geblieben ist. Mount
+  Bridges `MaxSyncDriftNP`-Sicherheitsgrenze (Standard 120') verweigert dabei korrekt, dieser
+  künstlichen Drift zu folgen. Für einen sauberen Test entweder einen einzelnen, präzise getimten
+  `/api/fake_solve`-Aufruf statt eines dauerhaften unveränderten Injector-Loops bevorzugen, oder ein
+  ausreichend großes Intervall bzw. ein sich leicht bewegendes Ziel verwenden, wie bei einem echten
+  nachgeführten Objekt.
 - **Die Hardware-Fallback-Patches aus PR #233 sind auf echter Pi-Hardware nicht verifiziert.** Sie
   sind rein additiv (neue `except`-/Fallback-Zweige um bestehenden, funktionierenden Code herum),
   aber ein echter Pi4/Pi5-Rauchtest wird vor einem Merge über `dev` hinaus nach `main` empfohlen.
