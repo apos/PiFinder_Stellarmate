@@ -288,6 +288,14 @@ from outside, not the guest OS trying to power-manage virtual hardware that does
   cap (default 120') correctly refuses to chase this artificial drift. For a clean test, prefer a
   single well-timed `/api/fake_solve` call over a long-running unchanging injector loop, or use an
   interval large enough / a target that moves slightly, as real tracked objects would.
+- **Goto-Forward/Auto-Correct require an active, fresh PiFinder solve to do anything at all.** Since
+  there's no real camera solver on x86 (see above), that solve has to come from the truth injector.
+  If the injector isn't running, Mount Bridge correctly withholds any Goto (it always Syncs to
+  PiFinder's current position before forwarding — see `syncMountToPiFinderPosition()` — and that
+  needs a fresh solve to succeed) rather than firing blind; a Goto sent while the injector is down
+  just sits pending and gets forwarded automatically the moment a fresh solve becomes available
+  again. On real Pi hardware the camera provides this continuously, so this only matters here: keep
+  the truth injector running for the whole time you're testing Goto-Forward/Auto-Correct on this VM.
 - **PR #233's hardware-fallback patches are unverified on real Pi hardware.** They're purely
   additive (new `except`/fallback branches around existing working code), but a real Pi4/Pi5 smoke
   test is recommended before merging past `dev` into `main`.

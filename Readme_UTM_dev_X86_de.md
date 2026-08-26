@@ -302,6 +302,15 @@ so gar nicht gibt.
   `/api/fake_solve`-Aufruf statt eines dauerhaften unveränderten Injector-Loops bevorzugen, oder ein
   ausreichend großes Intervall bzw. ein sich leicht bewegendes Ziel verwenden, wie bei einem echten
   nachgeführten Objekt.
+- **Goto-Forward/Auto-Correct brauchen zwingend eine aktive, frische PiFinder-Solve, um überhaupt
+  etwas zu tun.** Da es auf x86 keinen echten Kamera-Solver gibt (s.o.), muss diese Solve vom
+  Truth-Injector kommen. Läuft der Injector nicht, hält Mount Bridge jeden GOTO korrekt zurück (sie
+  synct immer erst auf PiFinders aktuelle Position, bevor sie weiterleitet — s.
+  `syncMountToPiFinderPosition()` —, und das braucht eine frische Solve), statt blind zu feuern; ein
+  GOTO, das gesendet wird während der Injector aus ist, bleibt einfach wartend liegen und wird
+  automatisch nachgeholt, sobald wieder eine frische Solve verfügbar ist. Auf echter Pi-Hardware
+  liefert die Kamera das durchgehend — hier auf dieser VM ist es wichtig: den Truth-Injector während
+  des gesamten Tests von Goto-Forward/Auto-Correct laufen lassen.
 - **Die Hardware-Fallback-Patches aus PR #233 sind auf echter Pi-Hardware nicht verifiziert.** Sie
   sind rein additiv (neue `except`-/Fallback-Zweige um bestehenden, funktionierenden Code herum),
   aber ein echter Pi4/Pi5-Rauchtest wird vor einem Merge über `dev` hinaus nach `main` empfohlen.
