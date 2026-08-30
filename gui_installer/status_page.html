@@ -1766,6 +1766,11 @@
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
+        <div id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()" style="width:100%;">Setup (start profile, connect everything)</button>
+          <div style="color:#7fc97f;font-size:0.72rem;text-align:center;margin-top:0.3rem;">Runs steps 1&ndash;6 below in one click &mdash; or do them individually for more control.</div>
+        </div>
+        <div class="mb-checklist-divider"></div>
         <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
         <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
@@ -1774,9 +1779,6 @@
           <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
-        <div class="mb-row" id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
-          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
-        </div>
         <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
           <span id="wm-kstars-link-text" class="mb-step-widget"></span>
@@ -2121,6 +2123,19 @@ let modeLogPolling = false;
 let lastHwCamera = null;
 let lastHwImu = null;
 let lastDebugSolve = null;
+// Whether PiFinder currently has ANY known positioning source at all
+// (real "CAM"/"CAM_FAILED" or IMU dead-reckoning) versus none whatsoever -
+// null specifically means PiFinder has never produced a solve since it
+// started (see PiFinder's own get_telescope_ra() in pos_server.py, #107:
+// "no response at all... a fixed placeholder was parsed as a real
+// position"). Distinct from applySolveStatus()'s own red/green judgment
+// below, which is about whether the CURRENT source is a trustworthy real
+// solve - this is the coarser "has it EVER committed to a position" signal
+// the Simulation readiness line needs (2026-08-30, direct feedback: "Der
+// User muss immer ein System vorfinden, wie erwartet" - a PiFinder Simulator
+// left at its compiled RA=0/Dec=0 default after a restart was silently
+// treated as ready by this line before this fix).
+let lastSolveSource = null;
 // pifinder.service's raw systemd state (from refreshMode()'s own poll,
 // every 5s) - read by updatePiFinderStatusAndWizardLink()'s wait overlay
 // (2026-08-09, #192) so it can say something concrete ("service is
@@ -2414,6 +2429,16 @@ function applySolveStatus(data) {
   const dotEl = document.getElementById('solve-status-dot');
   const textEl = document.getElementById('solve-status-text');
   const suffix = data.debug_solve === true ? ' (simulated image)' : '';
+  // Only a *confirmed* poll (data.solve_source present, even if that value
+  // is itself null/undefined meaning "no solve yet") updates this - an
+  // unreachable-PiFinder poll passes {} here, which must leave the last
+  // known value showing rather than flashing "never solved" on one missed
+  // request (same reasoning as lastPfReachable's own "confirmed true/false
+  // only" comment below).
+  if ('solve_source' in data) {
+    lastSolveSource = data.solve_source || null;
+    updateSimReadinessLine(); // this poll (20s) is the only place lastSolveSource changes
+  }
   // While Injected Solve is active, solve_source still reports "CAM" (the
   // injection is applied as a solve internally) or drifts to "IMU" as real
   // dead-reckoning advances it - neither is a real plate-solve, and the
@@ -6490,13 +6515,27 @@ function updateSimReadinessLine() {
   // could disagree - e.g. Ekos genuinely connected but a Connect button
   // transiently unavailable made this line say "incomplete" while step 5's
   // own checkmark was already green). Deliberately no separate "Connect"
-  // item here - 5 items, not 6, matching this line's original design.
+  // item here.
+  //
+  // "Solve" (2026-08-30): none of the 5 items above say anything about
+  // whether PiFinder itself actually has a usable position - all of them
+  // are pure INDI/Ekos plumbing, which can show fully green while PiFinder
+  // Simulator (or a real PiFinder) sits on a stale/never-set position that
+  // Mount Bridge then treats as real truth. lastSolveSource is null
+  // specifically when PiFinder has never produced any solve at all (real or
+  // fake) since it started - deliberately NOT the same judgment as
+  // applySolveStatus()'s red/green ("is the CURRENT source trustworthy"),
+  // which treats an active Injected/fake solve as "not real" - that's
+  // correct for its own real-camera-testing context but wrong here: an
+  // active fake_solve IS the expected, healthy state for a simulator
+  // session, only "never solved at all" should block readiness.
   const items = [
     ['Profile', !!wmSelectedProfile && wmServerRunning],
     ['KStars', wmKstarsLinked === true],
     ['Drivers', wmHasLx200 === true && wmHasBridge === true],
     ['Mount', !!wmActiveMount],
     ['Ekos', wmEkosConnected === true],
+    ['Solve', !!lastSolveSource],
   ];
   const allReady = items.every(([, ok]) => ok);
   el.innerHTML = items.map(([label, ok]) =>
