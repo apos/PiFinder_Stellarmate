@@ -136,6 +136,16 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         bool isShadowDeviceSafe() const;
         bool m_shadowAutoArmed = false; // guards auto-arm to once per device (re)appearance, not every tick
+        // Found live (2026-08-28): auto-arm used to force Shadow Sync back
+        // on unconditionally whenever the shadow device was present and
+        // m_shadowAutoArmed hadn't been set yet this process - which is
+        // true not only on a genuine "device just (re)appeared" but also
+        // on every plain driver restart while the device stayed present
+        // throughout, silently discarding an explicit "Disable" the user
+        // had saved to config right before that restart. Resets alongside
+        // m_shadowAutoArmed (same device-(re)appearance lifetime) so a
+        // later disable-then-restart cycle is checked fresh each time.
+        bool m_shadowSyncCheckedSavedDisable = false;
         void autoArmShadowSyncIfDevicePresent();
 
         // #159: guards the "binding never resolved" ERROR log to once per
@@ -549,6 +559,27 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // since the last reset - until then, defer entirely to the
         // existing correction logic (still backstopped by MaxSyncDriftNP).
         bool m_repositionBaselineTrusted = false;
+
+        // Rate-limits the "no trusted baseline yet" warning below (fires
+        // once per occurrence, not every tick, while the condition
+        // persists) - found live (2026-08-27): without a baseline, a large
+        // drift just sits there silently forever (correctly not auto-
+        // corrected - see m_repositionBaselineTrusted's own comment - but
+        // previously with zero explanation of why nothing was happening
+        // or what to do about it).
+        long m_lastUntrustedBaselineWarnTime = 0;
+
+        // Found live (2026-08-28): all three "drift exceeds MaxSyncDriftNP,
+        // holding instead of syncing" warnings (Goto-Forward's HOLDING,
+        // Auto-correct's plain-Sync branch, Auto-correct's Goto-refine
+        // HOLDING-equivalent) previously re-logged every single tick for as
+        // long as the condition persisted (every ~1-2s at real solve rate) -
+        // spamming the log without adding information after the first
+        // occurrence. One shared timestamp is safe across all three sites:
+        // Goto-Forward and Auto-correct are mutually exclusive modes (and
+        // Auto-correct's two actions are themselves mutually exclusive), so
+        // at most one of the three can ever fire in a given tick.
+        long m_lastMaxSyncDriftWarnTime = 0;
 
         // Fall 4 (clutch/disturbance) pending-confirmation state - a
         // ShadowSync-style low-friction Yes/No, not a full manual-Sync
