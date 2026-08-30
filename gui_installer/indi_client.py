@@ -68,6 +68,7 @@ def get_properties(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     timeout: float = DEFAULT_TIMEOUT,
+    stop_after: Optional[set] = None,
 ) -> dict:
     """
     Opens a short-lived connection to indiserver, sends getProperties for
@@ -83,6 +84,16 @@ def get_properties(
     is all this read-only status feature needs (Phase 1). It does not need
     to distinguish a fresh define from a later update (setXxxVector) since
     it never keeps the connection open long enough to see one.
+
+    `stop_after` (2026-08-30): an optional set of property names for `device`
+    - once all of them have been seen, return immediately instead of relying
+    on the general SETTLE_GAP quiet-period below. Only useful together with
+    `device`, for a caller that knows in advance it only needs a handful of
+    specific, early-defined base properties (e.g. just CONNECTION) from a
+    device that might otherwise stream continuous live updates for OTHER
+    properties (a tracking mount's coordinates) fast enough that a
+    quiet-period never naturally occurs - see mount_bridge_status()'s two
+    per-device connection-state lookups for exactly this case.
     """
     result: dict = {}
     current: dict = {}
@@ -159,21 +170,53 @@ def get_properties(
         # get_properties() call against an already-connected "Telescope
         # Simulator" hung indefinitely under the old silence-based version
         # of this function - fixed by capping total read time instead,
-        # regardless of how much traffic keeps arriving.
+        # regardless of how much traffic keeps arriving. This deadline
+        # remains the ultimate safety net below - it's what still protects
+        # against exactly that old hang.
+        #
+        # SETTLE_GAP (2026-08-30, direct feedback: "so kann man doch nicht
+        # ernsthaft ins Rennen gehen" - measured live, exact 7.01s/13.01s
+        # timings, see basic-memory pifinder-stellarmate): before this, the
+        # loop above always ran until the FULL deadline even on a completely
+        # successful, fast reply - a live device's connection never gives it
+        # a "not chunk" EOF to stop on early (indiserver keeps it open), so
+        # every single call against an actively-connected device burned its
+        # entire timeout budget for no reason. mount_bridge_status() chains
+        # up to three such calls (7s + 3s + 3s), which is exactly where the
+        # measured 13.01s came from. Over loopback, indiserver sends a
+        # device's whole defXxxVector burst in one or two TCP segments,
+        # essentially instantly - once we've received at least one complete
+        # element, a short SETTLE_GAP of genuine silence reliably means "that
+        # burst has finished," not "the device went quiet forever" (Mount
+        # Bridge/a tracking mount's *live* setXxxVector updates afterward are
+        # spaced by its own polling period, far longer than this gap). If
+        # nothing at all has arrived yet, this still waits out the full
+        # remaining deadline exactly as before - only the already-got-data
+        # case gets faster, the already-documented no-data timeout is
+        # unchanged.
+        SETTLE_GAP = 0.4
         deadline = time.monotonic() + timeout
+        got_any_element = False
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                sock.settimeout(remaining)
+                wait_for = min(remaining, SETTLE_GAP) if got_any_element else remaining
+                sock.settimeout(wait_for)
                 try:
                     chunk = sock.recv(65536)
                 except socket.timeout:
-                    break
+                    if got_any_element:
+                        break  # settled - the initial burst is done
+                    continue  # nothing at all yet - keep waiting out the full deadline
                 if not chunk:
                     break
                 parser.Parse(chunk, False)
+                if result:
+                    got_any_element = True
+                if stop_after and device and stop_after.issubset(result.get(device, {}).keys()):
+                    break  # got everything this caller asked for - no need to wait for a quiet gap at all
         except xml.parsers.expat.ExpatError as e:
             raise INDIClientError(f"Malformed INDI XML from indiserver: {e}") from e
         except OSError as e:
@@ -338,14 +381,44 @@ def mount_bridge_status(
 
     pifinder_connected = None
     if active_pifinder:
-        pf_props = get_properties(device=active_pifinder, host=host, port=port, timeout=device_timeout)
+        # stop_after: only CONNECTION is actually read below - without this,
+        # a chatty device (this is the LX200 driver, not itself usually
+        # chatty, but shares this code path with the mount lookup below)
+        # could otherwise force waiting out the full SETTLE_GAP/deadline
+        # instead of returning the moment this one early-defined base
+        # property has arrived.
+        pf_props = get_properties(
+            device=active_pifinder, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION"},
+        )
         pifinder_connected = _connection_state(pf_props.get(active_pifinder))
 
     mount_connected = None
     mount_web_ip = None
     mount_type_raw = None
     if active_mount:
-        mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
+        # stop_after: CONNECTION/CONNECTION_MODE/TELESCOPE_MOUNT_TYPE are
+        # standard INDI::Telescope base properties basically every driver
+        # defines regardless of connection type. Deliberately NOT including
+        # DEVICE_ADDRESS here even though it's also read below - unlike the
+        # other three, it's genuinely conditional (only meaningful/defined
+        # for a TCP-capable mount, see the CONNECTION_TCP check below) -
+        # requiring it would make this fast path unreachable for any
+        # serial/USB-connected mount. Picked up opportunistically instead if
+        # it happens to arrive in the same read; mount_web_ip staying None
+        # for one poll on a TCP mount is a minor, already-tolerated "not
+        # queryable yet" case, not a functional regression. Genuinely needed
+        # here at all: an actively-tracked mount continuously streams
+        # EQUATORIAL_EOD_COORD (and, mid-coupling-correction, GOTO/SYNC-
+        # triggered updates) fast enough that the general SETTLE_GAP
+        # quiet-period may never naturally occur - this exact case is what
+        # originally produced the observed 13.01s worst-case
+        # (mount_bridge_status()'s own chained timeouts) even after adding
+        # SETTLE_GAP above.
+        mt_props = get_properties(
+            device=active_mount, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION", "CONNECTION_MODE", "TELESCOPE_MOUNT_TYPE"},
+        )
         mt_device_props = mt_props.get(active_mount)
         mount_connected = _connection_state(mt_device_props)
         if mt_device_props:
