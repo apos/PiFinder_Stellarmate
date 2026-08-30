@@ -789,6 +789,34 @@
   }
   .hw-row { margin-bottom: 0.3rem; color: #ccc; }
   .hw-row .status-dot { margin-right: 0.4rem; }
+  /* Mode-selector tiles (2026-08-28, direct feedback) - "which world am I
+     testing in right now" at a glance, above the fold, replacing the old
+     hidden-until-expanded sim-quick-injector-btn. Deliberately overview +
+     one real toggle each, NOT a hard exclusivity lock (Fake Mode and the
+     INDI simulation aren't actually mutually exclusive at the backend
+     level) - clicking the currently-active tile turns it off (falling back
+     to Real Hardware, which isn't itself something you "start"); clicking
+     an inactive tile turns that one on via the exact same function its
+     detail-row button already calls (toggleTruthInjector()/toggleMode()) -
+     one source of truth, just shown/clicked in two places. */
+  .mode-tiles { display: flex; gap: 0.6rem; margin-bottom: 0.4rem; }
+  .mode-tile {
+    flex: 1;
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    color: #888;
+  }
+  .mode-tile:hover { border-color: #444; }
+  .mode-tile.tile-on { background: #1c2a1c; border-color: #4caf50; color: #eee; }
+  .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
+  .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
+  .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
+  .mode-tile-sub { font-size: 0.68rem; color: #777; margin-left: 1.05rem; }
+  #sim-readiness-line { color: #999; font-size: 0.76rem; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .hw-keyboard { color: #888; font-style: italic; }
   .hw-keyboard code { font-size: 0.75rem; }
   .hw-keyboard-cmd {
@@ -1808,40 +1836,48 @@
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
-          <span>Simulation and testing<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a><button id="sim-quick-injector-btn" class="ql-small-btn ql-small-btn-white" onclick="event.stopPropagation(); toggleTruthInjector();" title="Quick access to the Synthetic Solve toggle below (no need to expand this section first) - button color is the status: white=off, yellow=starting/stopping, green=running, red=died/watchdog recovering.">Injected Solve</button></span>
-          <span id="sim-testing-chevron">&#9660; show</span>
+        <div class="mode-tiles">
+          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
+            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
+            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
+            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
+          </div>
         </div>
-        <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
-          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
-            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
-            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-          </div>
-          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
-            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
-            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
-          </div>
-          <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
-               alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
-               Toggle. Synthetic solve läuft oder läuft nicht. Und beides
-               zuverlässig."). ONE row, one dot, one button - the Truth
-               Injector's own start/stop (backed by the server-side
-               watchdog, so "zuverlässig" is a real property of this
-               control, not just a label) IS the toggle. The pre-existing
-               manual one-shot RA/Dec seed (#106/#205) still exists (real,
-               separately useful capability) but is demoted to its own
-               collapsed Advanced sub-section below, entirely out of the
-               primary flow - it is NOT reflected in this dot, on purpose,
-               to keep this one signal simple and trustworthy. -->
-          <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic - continuously fed from &quot;Telescope Simulator&quot;'s own position via test_tools/pifinder_truth_injector.py, kept alive by a background watchdog - rather than a real camera plate-solve. Simulator testing only, no real sky.">
-            <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
-            <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
-          </div>
-          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
-            <span>Advanced: manual one-shot seed</span>
-            <span id="fake-solve-advanced-chevron">&#9660; show</span>
-          </div>
-          <div id="fake-solve-advanced" style="display:none;">
+        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
+        <div class="group-label">Synthetic Solve<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help">i</a></div>
+        <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
+             alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
+             Toggle. Synthetic solve läuft oder läuft nicht. Und beides
+             zuverlässig."). ONE row, one dot, one button - the Truth
+             Injector's own start/stop (backed by the server-side
+             watchdog, so "zuverlässig" is a real property of this
+             control, not just a label) IS the toggle. The pre-existing
+             manual one-shot RA/Dec seed (#106/#205) still exists (real,
+             separately useful capability) but is demoted to its own
+             collapsed Advanced sub-section below, entirely out of the
+             primary flow - it is NOT reflected in this dot, on purpose,
+             to keep this one signal simple and trustworthy.
+             2026-08-28: no longer behind an extra "Simulation and testing"
+             collapse either - direct feedback that hiding the very control
+             the tiles above were just built to promote defeated the point
+             of promoting it. Only the legacy built-in tools below still
+             collapse by default. -->
+        <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic - continuously fed from &quot;Telescope Simulator&quot;'s own position via test_tools/pifinder_truth_injector.py, kept alive by a background watchdog - rather than a real camera plate-solve. Simulator testing only, no real sky.">
+          <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
+          <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
+          <span>Advanced: manual one-shot seed</span>
+          <span id="fake-solve-advanced-chevron">&#9660; show</span>
+        </div>
+        <div id="fake-solve-advanced" style="display:none;">
             <!-- Re-grouped 2026-08-10 (direct feedback: "Das wirkt alles
                  sehr unaufgeräumt" - re-read basic-memory/basic-memory/
                  00017_bm-ui-design-anforderung-klar-einheitlich.md's own
@@ -1873,6 +1909,19 @@
               <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem; margin-left:0.3rem;">
               <span id="fake-solve-manual-status" style="margin-left:0.5rem;"></span>
             </div>
+          </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('legacy-builtin-details', 'legacy-builtin-chevron')">
+          <span>PiFinder built-in test tools (legacy)</span>
+          <span id="legacy-builtin-chevron">&#9656; show</span>
+        </div>
+        <div id="legacy-builtin-details" style="display:none;">
+          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
+            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
+            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
+            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -2511,19 +2560,52 @@ function applyFakeSolveStatus(data) {
 let truthInjectorToggleInFlight = false;
 let lastTruthInjectorDesired = null;
 
-// #191/#217: quick-access duplicate of the Toggle button, in the
-// "Simulation and testing" heading row itself (direct feedback, 2026-08-10:
-// "Das ist das meist benutzte hier" - reaching it shouldn't require
-// expanding the section first). No status text on this one, deliberately -
-// the button's own background color IS the status (white/yellow/green/red,
-// same 4 states as the dot below), same "info via button coloring alone"
-// request as elsewhere. Stays in sync via the exact same two functions,
-// just touching one more element.
-function applyQuickInjectorButtonState(stateClass) {
-  const btn = document.getElementById('sim-quick-injector-btn');
-  if (!btn) return;
-  btn.classList.remove('ql-small-btn-white', 'ql-small-btn-yellow', 'ql-small-btn-green', 'ql-small-btn-red');
-  btn.classList.add(stateClass);
+// #191/#217, re-homed 2026-08-28 (direct feedback): was a quick-access
+// duplicate button in the "Simulation and testing" heading row ("Das ist
+// das meist benutzte hier" - reaching it shouldn't require expanding the
+// section first); now the same status/action lives in the always-visible
+// "Full Simulation" tile above instead, replacing that button rather than
+// duplicating it. Same white/yellow/green/red vocabulary, now shown via the
+// tile's own dot + subtext instead of a button's background color alone.
+function applySimTileState(dotClass, subText) {
+  const tile = document.getElementById('mode-tile-sim');
+  const dotEl = document.getElementById('mode-tile-sim-dot');
+  const subEl = document.getElementById('mode-tile-sim-sub');
+  if (!tile) return;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
+  subEl.textContent = subText;
+  tile.classList.toggle('tile-on', dotClass === 'dot-green');
+  updateRealHardwareTile();
+}
+
+// Same idea, for the "PiFinder-only Fake Mode" tile - mirrors refreshMode()'s
+// existing mode-status-dot/-text exactly, just also shown up in the tile row.
+function applyFakeModeTileState(dotClass, subText) {
+  const tile = document.getElementById('mode-tile-fake');
+  const dotEl = document.getElementById('mode-tile-fake-dot');
+  const subEl = document.getElementById('mode-tile-fake-sub');
+  if (!tile) return;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
+  subEl.textContent = subText;
+  tile.classList.toggle('tile-on', dotClass === 'dot-green');
+  updateRealHardwareTile();
+}
+
+// "Real Hardware" isn't its own process to start/stop - it's just the
+// neutral state whenever neither Full Simulation nor whole-device Fake Mode
+// is currently on. Not clickable itself (see mode-tile-real's own title);
+// recomputed from the two tiles it depends on whenever either changes.
+function updateRealHardwareTile() {
+  const tile = document.getElementById('mode-tile-real');
+  const dotEl = document.getElementById('mode-tile-real-dot');
+  const subEl = document.getElementById('mode-tile-real-sub');
+  if (!tile) return;
+  const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
+  const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
+  const active = !simOn && !fakeOn;
+  tile.classList.toggle('tile-on', active);
+  setHwDot(dotEl, 'status-dot ' + (active ? 'dot-green' : 'dot-white'));
+  subEl.textContent = active ? 'current mode' : 'inactive while a simulation mode is on';
 }
 
 // Single place that renders a confirmed (desired, alive) pair OR an
@@ -2537,22 +2619,21 @@ function applyTruthInjectorState(desired, alive, errorText) {
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
-  const quickBtn = document.getElementById('sim-quick-injector-btn');
   if (errorText) {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = errorText;
-    applyQuickInjectorButtonState('ql-small-btn-red');
+    applySimTileState('dot-red', errorText);
     return;
   }
   btn.textContent = desired ? 'Turn off' : 'Toggle';
   if (!desired) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'off';
-    applyQuickInjectorButtonState('ql-small-btn-white');
+    applySimTileState('dot-white', 'off');
   } else if (alive) {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'running';
-    applyQuickInjectorButtonState('ql-small-btn-green');
+    applySimTileState('dot-green', 'running — click to stop');
   } else {
     // Desired on, but the process isn't alive right now - the server's own
     // watchdog will restart it within a few seconds; shown as red (not
@@ -2560,9 +2641,8 @@ function applyTruthInjectorState(desired, alive, errorText) {
     // a fresh solve right now", not just an in-flight click.
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
-    applyQuickInjectorButtonState('ql-small-btn-red');
+    applySimTileState('dot-red', 'restarting… (watchdog recovering it)');
   }
-  if (quickBtn) quickBtn.disabled = false;
 }
 
 async function refreshTruthInjectorStatus() {
@@ -2608,10 +2688,8 @@ async function toggleTruthInjector() {
   const turningOff = lastTruthInjectorDesired === true;
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
-  const quickBtn = document.getElementById('sim-quick-injector-btn');
-  if (quickBtn) quickBtn.disabled = true;
   setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');
-  applyQuickInjectorButtonState('ql-small-btn-yellow');
+  applySimTileState('dot-yellow dot-unconfirmed', turningOff ? 'stopping…' : 'starting…');
   document.getElementById('truth-injector-text').textContent = turningOff ? 'stopping…' : 'starting…';
 
   let toggleError = null;
@@ -2635,7 +2713,6 @@ async function toggleTruthInjector() {
     applyTruthInjectorState(lastTruthInjectorDesired, false, `failed to ${turningOff ? 'stop' : 'start'}: ${toggleError}`);
     truthInjectorToggleInFlight = false;
     btn.disabled = false;
-    if (quickBtn) quickBtn.disabled = false;
     return;
   }
 
@@ -2669,7 +2746,6 @@ async function toggleTruthInjector() {
     );
   }
   btn.disabled = false;
-  if (quickBtn) quickBtn.disabled = false;
   await refreshDebugSolve();
 }
 
@@ -4055,6 +4131,7 @@ async function refreshMode() {
       textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Fake Mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
+      applyFakeModeTileState('dot-yellow dot-unconfirmed', data.target === 'real' ? 'switching to real…' : 'switching to fake…');
       if (!modeLogPolling) { modeLogPolling = true; pollModeLog(); }
       return;
     }
@@ -4067,12 +4144,14 @@ async function refreshMode() {
       textEl.textContent = data.error;
       btn.textContent = data.target === 'real' ? 'Back to Fake Mode' : 'Back to Real Mode';
       btn.disabled = false;
+      applyFakeModeTileState('dot-red', data.error);
       return;
     }
     if (data.mode === 'fake') {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'Fake Mode (no hardware, fake hardware)';
       btn.textContent = 'Switch to Real Mode';
+      applyFakeModeTileState('dot-green', 'running — click to stop');
     } else if (data.mode === 'real') {
       // systemd/the process being "active" doesn't mean PiFinder can
       // actually do its job - a real instance with no camera or IMU keeps
@@ -4088,10 +4167,12 @@ async function refreshMode() {
         textEl.textContent = 'Real Mode (hardware)';
       }
       btn.textContent = 'Switch to Fake Mode';
+      applyFakeModeTileState('dot-white', 'off');
     } else {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'Neither mode running';
       btn.textContent = 'Switch to Fake Mode';
+      applyFakeModeTileState('dot-white', 'off');
     }
     btn.disabled = false;
   } catch (e) {
@@ -4099,6 +4180,7 @@ async function refreshMode() {
     textEl.textContent = 'Could not check mode';
     btn.disabled = true;
     btn.textContent = 'Unavailable';
+    applyFakeModeTileState('dot-red', 'could not check mode');
   }
 }
 
@@ -4281,7 +4363,7 @@ function toggleCollapsibleSection(contentId, chevronId, openDisplay) {
 function restoreCollapsibleSections() {
   const sections = [
     ['ql-links', 'ql-links-chevron', 'block'],
-    ['sim-testing-details', 'sim-testing-chevron', 'block'],
+    ['legacy-builtin-details', 'legacy-builtin-chevron', 'block'],
     ['fake-solve-advanced', 'fake-solve-advanced-chevron', 'block'],
     ['hw-details', 'hw-details-chevron', 'block'],
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
@@ -6391,6 +6473,35 @@ function updateStepIndicators() {
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
   updateProfileRoleLine();
+  updateSimReadinessLine();
+}
+
+// Compact mirror of the Setup checklist's own 5 config-vs-live steps, shown
+// right above the mode tiles so a user never has to open the other card to
+// see why "Full Simulation" won't start (2026-08-28, direct feedback) -
+// reads the exact same booleans updateStepIndicators() just computed above,
+// not a second source of truth.
+function updateSimReadinessLine() {
+  const el = document.getElementById('sim-readiness-line');
+  if (!el) return;
+  // Each condition here must match its corresponding wm-stepN-label check in
+  // updateStepIndicators() above exactly (2026-08-28, found live: this used
+  // to fold step 6's "Connect" condition into "Ekos" as well, so the two
+  // could disagree - e.g. Ekos genuinely connected but a Connect button
+  // transiently unavailable made this line say "incomplete" while step 5's
+  // own checkmark was already green). Deliberately no separate "Connect"
+  // item here - 5 items, not 6, matching this line's original design.
+  const items = [
+    ['Profile', !!wmSelectedProfile && wmServerRunning],
+    ['KStars', wmKstarsLinked === true],
+    ['Drivers', wmHasLx200 === true && wmHasBridge === true],
+    ['Mount', !!wmActiveMount],
+    ['Ekos', wmEkosConnected === true],
+  ];
+  const allReady = items.every(([, ok]) => ok);
+  el.innerHTML = items.map(([label, ok]) =>
+    `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
+  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist below');
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
