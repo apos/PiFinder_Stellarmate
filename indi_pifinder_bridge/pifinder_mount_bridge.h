@@ -610,6 +610,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         enum { TARGET_SOURCE_PIFINDER, TARGET_SOURCE_MOUNT };
         void setTargetSource(int index);
 
+        // Seconds since TargetSourceSP last actually changed - added
+        // 2026-08-31 (basic-memory pifinder-stellarmate/00103) for the
+        // Control Center's drift-guidance banner: a large PiFinder-vs-mount
+        // drift right after a fresh PiFinder push-to (Fall 1) is expected
+        // ("the user is still physically moving the scope to match"), not a
+        // real mismatch - unlike TargetSourceSP itself, which stays on
+        // "PiFinder" indefinitely once set and so can't distinguish "just
+        // now" from "days ago" on its own. 0 (m_lastTargetSourceChangeTime
+        // unset) means no change has ever been observed this run - reported
+        // as a large/"ancient" age, never as "fresh".
+        long m_lastTargetSourceChangeTime = 0;
+        INumberVectorProperty TargetSourceAgeNP;
+        INumber TargetSourceAgeN[1];
+
         // Read-only, GUI-visible warning distinct from DriftStatusNP - see
         // the initProperties() comment. Empty message + IPS_OK/IDLE while
         // clear, driver's own refusal text + IPS_ALERT while active.

@@ -31,6 +31,12 @@ bool PiFinderSimulator::initProperties()
     PushToTargetNP[1].fill("DEC", "DEC (deg)", "%.6f", -90, 90, 0, 0);
     PushToTargetNP.fill(getDeviceName(), "SIMULATE_PUSH_TO", "Simulate push-to", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
 
+    // Base class defaults EQUATORIAL_EOD_COORD to IPS_OK on construction -
+    // wrong here specifically, since m_hasPosition starts false (see its own
+    // comment). IPS_IDLE means "not yet confirmed", the same signal a real
+    // PiFinder's own solve_state=false gives before its first solve.
+    EqNP.setState(IPS_IDLE);
+
     return true;
 }
 
@@ -64,7 +70,30 @@ bool PiFinderSimulator::ReadScopeStatus()
     // see the header comment: this device holds still exactly where it was
     // put, so a test session always knows precisely what "sky truth" it's
     // currently feeding PiFinder.
-    NewRaDec(m_currentRA, m_currentDEC);
+    //
+    // Skipped entirely until m_hasPosition is true (2026-08-30, see its own
+    // comment) - NewRaDec() alone does not touch state, which would leave
+    // the meaningless 0/0 default sitting at whatever state
+    // initProperties()/the base class left it in - exactly the bug this
+    // exists to prevent. Leaving EqNP untouched keeps it at the IPS_IDLE
+    // initProperties() set it to.
+    //
+    // Once set, force IPS_OK on every poll, not just once inside Goto()/
+    // Sync() - found live: the base class's own TRACK-mode dispatch resets
+    // EqNP back to IPS_BUSY right after Goto() returns (normal "still
+    // slewing" convention for a real telescope), overriding an IPS_OK set
+    // from inside Goto() itself. This device has no simulated slew time
+    // (see the class comment) - it always "arrives" instantly, so every
+    // tick after the first should show OK, not stay stuck on Busy forever.
+    if (m_hasPosition)
+    {
+        NewRaDec(m_currentRA, m_currentDEC);
+        if (EqNP.getState() != IPS_OK)
+        {
+            EqNP.setState(IPS_OK);
+            EqNP.apply();
+        }
+    }
     return true;
 }
 
@@ -76,9 +105,18 @@ bool PiFinderSimulator::Goto(double ra, double dec)
     // (the real Telescope Simulator already covers that for the mount side).
     m_currentRA = ra;
     m_currentDEC = dec;
+    m_hasPosition = true;
     TrackState = SCOPE_TRACKING;
     LOGF_INFO("Goto: RA %.4fh, DEC %.4f deg.", ra, dec);
+    // Found live (2026-08-30): the base class's own dispatch already marks
+    // EqNP IPS_BUSY before calling Goto() (normal "slewing" convention), and
+    // NewRaDec() only updates the value, not the state - left uncorrected,
+    // it stayed stuck on Busy forever, since this driver has no simulated
+    // slew time to eventually finish. Set OK explicitly: this device always
+    // "arrives" the instant Goto()/Sync() is called (see the class comment).
     NewRaDec(m_currentRA, m_currentDEC);
+    EqNP.setState(IPS_OK);
+    EqNP.apply();
     return true;
 }
 
@@ -86,9 +124,12 @@ bool PiFinderSimulator::Sync(double ra, double dec)
 {
     m_currentRA = ra;
     m_currentDEC = dec;
+    m_hasPosition = true;
     TrackState = SCOPE_TRACKING;
     LOGF_INFO("Sync: RA %.4fh, DEC %.4f deg.", ra, dec);
     NewRaDec(m_currentRA, m_currentDEC);
+    EqNP.setState(IPS_OK);
+    EqNP.apply();
     return true;
 }
 

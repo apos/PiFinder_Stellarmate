@@ -68,6 +68,7 @@ def get_properties(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     timeout: float = DEFAULT_TIMEOUT,
+    stop_after: Optional[set] = None,
 ) -> dict:
     """
     Opens a short-lived connection to indiserver, sends getProperties for
@@ -83,6 +84,16 @@ def get_properties(
     is all this read-only status feature needs (Phase 1). It does not need
     to distinguish a fresh define from a later update (setXxxVector) since
     it never keeps the connection open long enough to see one.
+
+    `stop_after` (2026-08-30): an optional set of property names for `device`
+    - once all of them have been seen, return immediately instead of relying
+    on the general SETTLE_GAP quiet-period below. Only useful together with
+    `device`, for a caller that knows in advance it only needs a handful of
+    specific, early-defined base properties (e.g. just CONNECTION) from a
+    device that might otherwise stream continuous live updates for OTHER
+    properties (a tracking mount's coordinates) fast enough that a
+    quiet-period never naturally occurs - see mount_bridge_status()'s two
+    per-device connection-state lookups for exactly this case.
     """
     result: dict = {}
     current: dict = {}
@@ -159,21 +170,53 @@ def get_properties(
         # get_properties() call against an already-connected "Telescope
         # Simulator" hung indefinitely under the old silence-based version
         # of this function - fixed by capping total read time instead,
-        # regardless of how much traffic keeps arriving.
+        # regardless of how much traffic keeps arriving. This deadline
+        # remains the ultimate safety net below - it's what still protects
+        # against exactly that old hang.
+        #
+        # SETTLE_GAP (2026-08-30, direct feedback: "so kann man doch nicht
+        # ernsthaft ins Rennen gehen" - measured live, exact 7.01s/13.01s
+        # timings, see basic-memory pifinder-stellarmate): before this, the
+        # loop above always ran until the FULL deadline even on a completely
+        # successful, fast reply - a live device's connection never gives it
+        # a "not chunk" EOF to stop on early (indiserver keeps it open), so
+        # every single call against an actively-connected device burned its
+        # entire timeout budget for no reason. mount_bridge_status() chains
+        # up to three such calls (7s + 3s + 3s), which is exactly where the
+        # measured 13.01s came from. Over loopback, indiserver sends a
+        # device's whole defXxxVector burst in one or two TCP segments,
+        # essentially instantly - once we've received at least one complete
+        # element, a short SETTLE_GAP of genuine silence reliably means "that
+        # burst has finished," not "the device went quiet forever" (Mount
+        # Bridge/a tracking mount's *live* setXxxVector updates afterward are
+        # spaced by its own polling period, far longer than this gap). If
+        # nothing at all has arrived yet, this still waits out the full
+        # remaining deadline exactly as before - only the already-got-data
+        # case gets faster, the already-documented no-data timeout is
+        # unchanged.
+        SETTLE_GAP = 0.4
         deadline = time.monotonic() + timeout
+        got_any_element = False
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                sock.settimeout(remaining)
+                wait_for = min(remaining, SETTLE_GAP) if got_any_element else remaining
+                sock.settimeout(wait_for)
                 try:
                     chunk = sock.recv(65536)
                 except socket.timeout:
-                    break
+                    if got_any_element:
+                        break  # settled - the initial burst is done
+                    continue  # nothing at all yet - keep waiting out the full deadline
                 if not chunk:
                     break
                 parser.Parse(chunk, False)
+                if result:
+                    got_any_element = True
+                if stop_after and device and stop_after.issubset(result.get(device, {}).keys()):
+                    break  # got everything this caller asked for - no need to wait for a quiet gap at all
         except xml.parsers.expat.ExpatError as e:
             raise INDIClientError(f"Malformed INDI XML from indiserver: {e}") from e
         except OSError as e:
@@ -231,6 +274,12 @@ def mount_bridge_status(
         stale value that a later coupling-preset click would then push,
         silently overwriting a real, different threshold the driver
         already had.
+      - "target_source_age_sec": float or None - seconds since TARGET_SOURCE
+        last actually changed (see pifinder_mount_bridge.h's own comment) -
+        added 2026-08-31 for the Control Center's drift-guidance banner.
+      - "solve_freshness_max_age_sec": float or None - the driver's own
+        SOLVE_FRESHNESS max-age setting, i.e. what isPiFinderSolveFresh()
+        itself compares against - added 2026-08-31, same purpose.
       - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
         own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
         indiserver is - not necessarily this function's own host/port args
@@ -275,6 +324,8 @@ def mount_bridge_status(
             "settings_port": None,
             "settings_correct": False,
             "target_source": None,
+            "target_source_age_sec": None,
+            "solve_freshness_max_age_sec": None,
             "mount_reject_active": False,
             "mount_reject_message": None,
             "mount_web_ip": None,
@@ -312,6 +363,20 @@ def mount_bridge_status(
     target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
     target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
     target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
+    # See TARGET_SOURCE_AGE's own comment in pifinder_mount_bridge.h/.cpp -
+    # how long target_source has held its current value, so a client can
+    # tell "just now" (still mid a manual PushTo, expect drift) from "days
+    # ago" (a stale badge, drift is drift). None until the driver has ever
+    # actually changed it this run.
+    target_source_age_elements = device_props.get("TARGET_SOURCE_AGE", {}).get("elements", {})
+    target_source_age_raw = target_source_age_elements.get("AGE_SEC")
+    # Same idea as isPiFinderSolveFresh() in pifinder_mount_bridge.cpp - the
+    # driver's own configured SOLVE_FRESHNESS max-age, read back so the
+    # Control Center can apply the exact same freshness gate the driver
+    # itself uses for auto-correct, instead of guessing a second constant
+    # that could silently drift out of sync with it.
+    solve_freshness_elements = device_props.get("SOLVE_FRESHNESS", {}).get("elements", {})
+    solve_freshness_max_age_raw = solve_freshness_elements.get("MAX_AGE_SEC")
     # Mount refused a Goto/Sync outright (elevation/cable-wrap/axis limit) -
     # distinct from ordinary drift, see MOUNT_REJECT's own comment in
     # pifinder_mount_bridge.cpp. IPS_ALERT means still active.
@@ -338,14 +403,44 @@ def mount_bridge_status(
 
     pifinder_connected = None
     if active_pifinder:
-        pf_props = get_properties(device=active_pifinder, host=host, port=port, timeout=device_timeout)
+        # stop_after: only CONNECTION is actually read below - without this,
+        # a chatty device (this is the LX200 driver, not itself usually
+        # chatty, but shares this code path with the mount lookup below)
+        # could otherwise force waiting out the full SETTLE_GAP/deadline
+        # instead of returning the moment this one early-defined base
+        # property has arrived.
+        pf_props = get_properties(
+            device=active_pifinder, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION"},
+        )
         pifinder_connected = _connection_state(pf_props.get(active_pifinder))
 
     mount_connected = None
     mount_web_ip = None
     mount_type_raw = None
     if active_mount:
-        mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
+        # stop_after: CONNECTION/CONNECTION_MODE/TELESCOPE_MOUNT_TYPE are
+        # standard INDI::Telescope base properties basically every driver
+        # defines regardless of connection type. Deliberately NOT including
+        # DEVICE_ADDRESS here even though it's also read below - unlike the
+        # other three, it's genuinely conditional (only meaningful/defined
+        # for a TCP-capable mount, see the CONNECTION_TCP check below) -
+        # requiring it would make this fast path unreachable for any
+        # serial/USB-connected mount. Picked up opportunistically instead if
+        # it happens to arrive in the same read; mount_web_ip staying None
+        # for one poll on a TCP mount is a minor, already-tolerated "not
+        # queryable yet" case, not a functional regression. Genuinely needed
+        # here at all: an actively-tracked mount continuously streams
+        # EQUATORIAL_EOD_COORD (and, mid-coupling-correction, GOTO/SYNC-
+        # triggered updates) fast enough that the general SETTLE_GAP
+        # quiet-period may never naturally occur - this exact case is what
+        # originally produced the observed 13.01s worst-case
+        # (mount_bridge_status()'s own chained timeouts) even after adding
+        # SETTLE_GAP above.
+        mt_props = get_properties(
+            device=active_mount, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION", "CONNECTION_MODE", "TELESCOPE_MOUNT_TYPE"},
+        )
         mt_device_props = mt_props.get(active_mount)
         mount_connected = _connection_state(mt_device_props)
         if mt_device_props:
@@ -382,6 +477,8 @@ def mount_bridge_status(
         "settings_port": settings_port,
         "settings_correct": settings_correct,
         "target_source": target_source,
+        "target_source_age_sec": float(target_source_age_raw) if target_source_age_raw not in (None, "") else None,
+        "solve_freshness_max_age_sec": float(solve_freshness_max_age_raw) if solve_freshness_max_age_raw not in (None, "") else None,
         "mount_reject_active": mount_reject_active,
         "mount_reject_message": mount_reject_message,
         "mount_web_ip": mount_web_ip,

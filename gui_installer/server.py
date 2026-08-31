@@ -994,19 +994,51 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
-# #191/#217: PiFinder Truth Injector toggle - feeds "Telescope Simulator"'s
-# own position into PiFinder's /api/fake_solve on an interval (see
-# test_tools/pifinder_truth_injector.py), so Multi-Point Alignment's
-# solve-freshness gate can be exercised end-to-end against the Simulator
-# without real sky. Deliberately a tracked subprocess.Popen, NOT a systemd
-# unit like KEYBOARD_BRIDGE_SERVICE above: that one is meant to survive
-# reboots (its whole point), this one must NOT - it's test-only and would
-# silently corrupt a real observing session if it ever auto-started outside
-# an explicit simulator test. Scoped to this Control Center process's own
+# #191/#217, corrected 2026-08-30 (direct feedback: "wie kann denn der
+# Solve-Injector einen Wert liefern, wenn der PiFinder Simulator nichts
+# liefert. Dafür haben wir Ihn doch!!!!"): PiFinder Truth Injector toggle -
+# feeds a device's own position into PiFinder's /api/fake_solve on an
+# interval (see test_tools/pifinder_truth_injector.py). WHICH device matters
+# a great deal and is not interchangeable:
+#   - "PiFinder Simulator" (the default here) - an INDEPENDENT simulated
+#     truth for where PiFinder itself is physically pointed, unrelated to
+#     the mount. This is what General Mount-Bridge coupling testing
+#     (Auto-Correct/Goto-Forward - the "Full Simulation" tile's whole point)
+#     needs: without an independent PiFinder position, there is nothing for
+#     Mount Bridge to meaningfully detect/correct drift against - the
+#     "drift" would just be artificial round-trip noise from mirroring the
+#     mount back into itself.
+#   - The COUPLED MOUNT (mount_bridge_status()'s own "active_mount" -
+#     "Telescope Simulator" only while that happens to be what's configured
+#     for testing, exactly as any other real mount driver name would be in
+#     production) - deliberately used ONLY for Multi-Point Alignment's
+#     solve-freshness-gate testing (#191/#217), which genuinely wants
+#     PiFinder to mirror wherever the mount currently points (see
+#     mount_bridge_multistar_alignment.md) - pass that device name
+#     explicitly via the toggle endpoint's own query param for that specific
+#     case; it is NOT the general-purpose default, and it must never be a
+#     literal "Telescope Simulator" hardcoded anywhere - this has to work
+#     with any INDI mount, the simulator is just one test case among many,
+#     not a special-cased target (direct feedback, 2026-08-30).
+# Found live (2026-08-30): this constant was still "Telescope Simulator"
+# when the "Full Simulation" tile was built to reuse this same toggle -
+# that made "Full Simulation" mirror the mount into itself instead of
+# testing real coupling against an independent truth, which is almost
+# certainly what produced that session's "TelSim jumps away then instantly
+# snaps back to a near-identical position" pattern (see basic-memory
+# pifinder-stellarmate) - a feedback loop chasing its own tail, not real
+# drift-correction being exercised.
+#
+# Deliberately a tracked subprocess.Popen, NOT a systemd unit like
+# KEYBOARD_BRIDGE_SERVICE above: that one is meant to survive reboots (its
+# whole point), this one must NOT - it's test-only and would silently
+# corrupt a real observing session if it ever auto-started outside an
+# explicit simulator test. Scoped to this Control Center process's own
 # lifetime; a Control Center restart always starts back OFF.
 TRUTH_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_truth_injector.py"
-TRUTH_INJECTOR_DEVICE = "Telescope Simulator"
+TRUTH_INJECTOR_DEFAULT_DEVICE = "PiFinder Simulator"
 _truth_injector_proc = None  # subprocess.Popen or None
+_truth_injector_device = None  # the device the currently-running (or last-run) injector actually targets
 _truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
 _truth_injector_lock = threading.Lock()
 
@@ -1015,10 +1047,11 @@ def _truth_injector_alive() -> bool:
     return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
 
 
-def _truth_injector_start():
-    global _truth_injector_proc
+def _truth_injector_start(device: str):
+    global _truth_injector_proc, _truth_injector_device
+    _truth_injector_device = device
     _truth_injector_proc = subprocess.Popen(
-        ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", TRUTH_INJECTOR_DEVICE, "--interval", "2.0"],
+        ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", device, "--interval", "2.0"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
@@ -1038,14 +1071,17 @@ def _truth_injector_watchdog(interval=5):
     """'Muss dann zuverlässig laufen' (direct feedback, 2026-08-10): once
     toggled on, the injector must not silently stay dead if its process
     exits for any reason - same reliability bar as
-    _pifinder_lx200_reconnect_watchdog() above, same reasoning."""
+    _pifinder_lx200_reconnect_watchdog() above, same reasoning. Restarts
+    against whichever device it was last running against
+    (_truth_injector_device), not a fixed constant - see that variable's own
+    comment for why the device matters."""
     while True:
         time.sleep(interval)
         with _truth_injector_lock:
             if _truth_injector_desired and not _truth_injector_alive():
-                _mb_log("PiFinder Truth Injector died unexpectedly - restarting...")
+                _mb_log(f"PiFinder Truth Injector died unexpectedly - restarting (device: '{_truth_injector_device}')...")
                 try:
-                    _truth_injector_start()
+                    _truth_injector_start(_truth_injector_device)
                 except Exception as e:  # a watchdog thread must never die silently
                     _mb_log(f"  failed to restart: {e}")
 
@@ -2341,8 +2377,18 @@ class Handler(BaseHTTPRequestHandler):
             # actually, currently alive right now, so the GUI can show
             # "should be on but died" (red) distinctly from "on and
             # confirmed alive" (green), not just a single on/off bit.
+            # "device" (2026-08-30): which device it's actually feeding from
+            # right now - None until first started this process lifetime.
+            # Surfacing this was the missing piece that would have caught
+            # live that "Full Simulation" was mirroring the mount instead of
+            # using an independent PiFinder truth, instead of that only
+            # being found by tracing server logs after the fact.
             with _truth_injector_lock:
-                self._send_json({"desired": _truth_injector_desired, "alive": _truth_injector_alive()})
+                self._send_json({
+                    "desired": _truth_injector_desired,
+                    "alive": _truth_injector_alive(),
+                    "device": _truth_injector_device,
+                })
             return
 
         if parsed.path == "/api/webmanager/profiles":
@@ -3342,6 +3388,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/truth_injector_toggle":
             global _truth_injector_desired
+            # device: optional override, see TRUTH_INJECTOR_DEFAULT_DEVICE's
+            # own comment - "PiFinder Simulator" (independent truth) unless
+            # a caller explicitly asks for "Telescope Simulator" (Multi-Point
+            # Alignment's mount-mirroring case).
+            requested_device = parse_qs(parsed.query).get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
             with _truth_injector_lock:
                 if _truth_injector_desired:
                     _truth_injector_desired = False
@@ -3355,10 +3406,10 @@ class Handler(BaseHTTPRequestHandler):
                     _mb_log("  done.")
                 else:
                     _truth_injector_desired = True
-                    _mb_log(f"starting PiFinder Truth Injector (feeding '{TRUTH_INJECTOR_DEVICE}''s "
+                    _mb_log(f"starting PiFinder Truth Injector (feeding '{requested_device}''s "
                              "position into PiFinder's /api/fake_solve, simulator testing only)...")
                     try:
-                        _truth_injector_start()
+                        _truth_injector_start(requested_device)
                     except Exception as e:
                         _truth_injector_desired = False
                         _mb_log(f"  failed: {e}")

@@ -789,6 +789,34 @@
   }
   .hw-row { margin-bottom: 0.3rem; color: #ccc; }
   .hw-row .status-dot { margin-right: 0.4rem; }
+  /* Mode-selector tiles (2026-08-28, direct feedback) - "which world am I
+     testing in right now" at a glance, above the fold, replacing the old
+     hidden-until-expanded sim-quick-injector-btn. Deliberately overview +
+     one real toggle each, NOT a hard exclusivity lock (Fake Mode and the
+     INDI simulation aren't actually mutually exclusive at the backend
+     level) - clicking the currently-active tile turns it off (falling back
+     to Real Hardware, which isn't itself something you "start"); clicking
+     an inactive tile turns that one on via the exact same function its
+     detail-row button already calls (toggleTruthInjector()/toggleMode()) -
+     one source of truth, just shown/clicked in two places. */
+  .mode-tiles { display: flex; gap: 0.6rem; margin-bottom: 0.4rem; }
+  .mode-tile {
+    flex: 1;
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    color: #888;
+  }
+  .mode-tile:hover { border-color: #444; }
+  .mode-tile.tile-on { background: #1c2a1c; border-color: #4caf50; color: #eee; }
+  .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
+  .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
+  .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
+  .mode-tile-sub { font-size: 0.68rem; color: #777; margin-left: 1.05rem; }
+  #sim-readiness-line { color: #999; font-size: 0.76rem; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .hw-keyboard { color: #888; font-style: italic; }
   .hw-keyboard code { font-size: 0.75rem; }
   .hw-keyboard-cmd {
@@ -1023,6 +1051,37 @@
   #mb-diagram.mb-diagram-unconfirmed {
     opacity: 0.5;
   }
+  /* Drift-guidance banner (2026-08-31, basic-memory pifinder-stellarmate/
+     00103) - shown above the diagram only when a large PiFinder-vs-mount
+     drift exists AND nothing is currently correcting it (Coupling Off or
+     Verify/Alert) AND it isn't explained by an in-progress deliberate
+     PushTo - see updateDriftGuidanceBanner()'s own comment for the exact
+     conditions. Same red-alert language as .mb-abort-btn/#mb-drift-red,
+     not a new color. */
+  #mb-drift-banner {
+    display: none;
+    gap: 0.7rem;
+    align-items: flex-start;
+    background: #2a1414;
+    border: 1px solid #e53935;
+    border-radius: 7px;
+    padding: 0.7rem 0.8rem;
+    margin-bottom: 0.7rem;
+  }
+  #mb-drift-banner svg { flex-shrink: 0; width: 20px; height: 20px; color: #e53935; margin-top: 0.1rem; }
+  #mb-drift-banner .mb-drift-banner-body { flex: 1; min-width: 0; }
+  #mb-drift-banner-title { color: #ff8a80; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
+  #mb-drift-banner-text { color: #ddb0b0; font-size: 0.76rem; line-height: 1.45; margin-bottom: 0.55rem; }
+  #mb-drift-banner-text b { color: #fff; }
+  #mb-drift-banner .mb-drift-banner-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  #mb-drift-banner .mb-drift-banner-btn {
+    border-radius: 5px; padding: 0.4rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid #444; text-align: center; cursor: pointer;
+  }
+  #mb-drift-banner .mb-drift-banner-btn-primary { background: #e53935; color: #fff; border-color: #e53935; }
+  #mb-drift-banner .mb-drift-banner-btn-primary:hover { filter: brightness(1.15); }
+  #mb-drift-banner .mb-drift-banner-btn-secondary { background: #222; color: #ddd; border-color: #555; }
+  #mb-drift-banner .mb-drift-banner-btn-secondary:hover { border-color: #777; }
   .mb-node {
     border: 1px solid #444;
     border-radius: 6px;
@@ -1543,6 +1602,17 @@
         <span>Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
         <div id="mb-action-status"></div>
       </div>
+      <div id="mb-drift-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        <div class="mb-drift-banner-body">
+          <div id="mb-drift-banner-title"></div>
+          <div id="mb-drift-banner-text"></div>
+          <div class="mb-drift-banner-actions">
+            <button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="triggerManualSync()">Sync mount from PiFinder</button>
+            <button class="mb-drift-banner-btn mb-drift-banner-btn-secondary" onclick="onCouplingPresetClick('auto_correct_sync')">Enable Auto-correct</button>
+          </div>
+        </div>
+      </div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
           <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
@@ -1738,6 +1808,11 @@
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
+        <div id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()" style="width:100%;">Setup (start profile, connect everything)</button>
+          <div style="color:#7fc97f;font-size:0.72rem;text-align:center;margin-top:0.3rem;">Runs steps 1&ndash;6 below in one click &mdash; or do them individually for more control.</div>
+        </div>
+        <div class="mb-checklist-divider"></div>
         <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
         <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
@@ -1746,9 +1821,6 @@
           <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
-        <div class="mb-row" id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
-          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()">Setup (start profile, connect everything)</button>
-        </div>
         <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
           <span id="wm-kstars-link-text" class="mb-step-widget"></span>
@@ -1808,40 +1880,48 @@
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('sim-testing-details', 'sim-testing-chevron')">
-          <span>Simulation and testing<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a><button id="sim-quick-injector-btn" class="ql-small-btn ql-small-btn-white" onclick="event.stopPropagation(); toggleTruthInjector();" title="Quick access to the Synthetic Solve toggle below (no need to expand this section first) - button color is the status: white=off, yellow=starting/stopping, green=running, red=died/watchdog recovering.">Injected Solve</button></span>
-          <span id="sim-testing-chevron">&#9660; show</span>
+        <div class="mode-tiles">
+          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
+            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
+            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
+            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
+          </div>
         </div>
-        <div id="sim-testing-details" style="display:none;" title="Three independent levels, each replacing a different piece while everything else stays real - see the Help link above for details.">
-          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
-            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
-            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
-          </div>
-          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
-            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
-            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
-          </div>
-          <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
-               alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
-               Toggle. Synthetic solve läuft oder läuft nicht. Und beides
-               zuverlässig."). ONE row, one dot, one button - the Truth
-               Injector's own start/stop (backed by the server-side
-               watchdog, so "zuverlässig" is a real property of this
-               control, not just a label) IS the toggle. The pre-existing
-               manual one-shot RA/Dec seed (#106/#205) still exists (real,
-               separately useful capability) but is demoted to its own
-               collapsed Advanced sub-section below, entirely out of the
-               primary flow - it is NOT reflected in this dot, on purpose,
-               to keep this one signal simple and trustworthy. -->
-          <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic - continuously fed from &quot;Telescope Simulator&quot;'s own position via test_tools/pifinder_truth_injector.py, kept alive by a background watchdog - rather than a real camera plate-solve. Simulator testing only, no real sky.">
-            <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
-            <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
-          </div>
-          <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
-            <span>Advanced: manual one-shot seed</span>
-            <span id="fake-solve-advanced-chevron">&#9660; show</span>
-          </div>
-          <div id="fake-solve-advanced" style="display:none;">
+        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
+        <div class="group-label">Synthetic Solve<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help">i</a></div>
+        <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
+             alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
+             Toggle. Synthetic solve läuft oder läuft nicht. Und beides
+             zuverlässig."). ONE row, one dot, one button - the Truth
+             Injector's own start/stop (backed by the server-side
+             watchdog, so "zuverlässig" is a real property of this
+             control, not just a label) IS the toggle. The pre-existing
+             manual one-shot RA/Dec seed (#106/#205) still exists (real,
+             separately useful capability) but is demoted to its own
+             collapsed Advanced sub-section below, entirely out of the
+             primary flow - it is NOT reflected in this dot, on purpose,
+             to keep this one signal simple and trustworthy.
+             2026-08-28: no longer behind an extra "Simulation and testing"
+             collapse either - direct feedback that hiding the very control
+             the tiles above were just built to promote defeated the point
+             of promoting it. Only the legacy built-in tools below still
+             collapse by default. -->
+        <div class="hw-row" id="synth-solve-status-row" title="Whether PiFinder's currently-reported solve is synthetic - continuously fed from &quot;Telescope Simulator&quot;'s own position via test_tools/pifinder_truth_injector.py, kept alive by a background watchdog - rather than a real camera plate-solve. Simulator testing only, no real sky.">
+          <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
+          <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
+        </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
+          <span>Advanced: manual one-shot seed</span>
+          <span id="fake-solve-advanced-chevron">&#9660; show</span>
+        </div>
+        <div id="fake-solve-advanced" style="display:none;">
             <!-- Re-grouped 2026-08-10 (direct feedback: "Das wirkt alles
                  sehr unaufgeräumt" - re-read basic-memory/basic-memory/
                  00017_bm-ui-design-anforderung-klar-einheitlich.md's own
@@ -1873,6 +1953,19 @@
               <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem; margin-left:0.3rem;">
               <span id="fake-solve-manual-status" style="margin-left:0.5rem;"></span>
             </div>
+          </div>
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('legacy-builtin-details', 'legacy-builtin-chevron')">
+          <span>PiFinder built-in test tools (legacy)</span>
+          <span id="legacy-builtin-chevron">&#9656; show</span>
+        </div>
+        <div id="legacy-builtin-details" style="display:none;">
+          <div class="hw-row" title="Real Mode uses actual PiFinder hardware (camera/IMU/GPS). Fake Mode runs a separate headless instance with everything simulated, for testing without hardware.">
+            <span class="status-dot dot-unconfirmed" id="mode-status-dot"></span>Whole device: <span id="mode-status-text">Checking mode&hellip;</span>
+            <button id="mode-toggle-btn" class="ql-small-btn" onclick="toggleMode()" disabled>Checking&hellip;</button>
+          </div>
+          <div class="hw-row" title="PiFinder's own &quot;Tools -> Test Mode&quot; feature - substitutes canned test images for the camera so plate-solving can be exercised without sky access, while IMU/keyboard/GPS stay live. Not the same as Whole device above (which runs a completely separate instance with no hardware at all).">
+            <span class="status-dot dot-unconfirmed" id="debug-solve-dot"></span>Solve Simulation (PiFinder built-in): <span id="debug-solve-text">unknown</span>
+            <button id="debug-solve-btn" class="ql-small-btn" onclick="toggleDebugSolve()" disabled>Toggle</button>
           </div>
         </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('hw-details', 'hw-details-chevron')">
@@ -2072,6 +2165,25 @@ let modeLogPolling = false;
 let lastHwCamera = null;
 let lastHwImu = null;
 let lastDebugSolve = null;
+// Whether PiFinder currently has ANY known positioning source at all
+// (real "CAM"/"CAM_FAILED" or IMU dead-reckoning) versus none whatsoever -
+// null specifically means PiFinder has never produced a solve since it
+// started (see PiFinder's own get_telescope_ra() in pos_server.py, #107:
+// "no response at all... a fixed placeholder was parsed as a real
+// position"). Distinct from applySolveStatus()'s own red/green judgment
+// below, which is about whether the CURRENT source is a trustworthy real
+// solve - this is the coarser "has it EVER committed to a position" signal
+// the Simulation readiness line needs (2026-08-30, direct feedback: "Der
+// User muss immer ein System vorfinden, wie erwartet" - a PiFinder Simulator
+// left at its compiled RA=0/Dec=0 default after a restart was silently
+// treated as ready by this line before this fix).
+let lastSolveSource = null;
+// Epoch seconds of the last real (solve_source="CAM") successful solve, from
+// the same poll as lastSolveSource above - needed alongside it by
+// updateDriftGuidanceBanner() to apply the driver's own solve-freshness gate
+// (isPiFinderSolveFresh() in pifinder_mount_bridge.cpp) rather than just
+// "has ever solved". null until the first confirmed poll.
+let lastSolveSuccessTime = null;
 // pifinder.service's raw systemd state (from refreshMode()'s own poll,
 // every 5s) - read by updatePiFinderStatusAndWizardLink()'s wait overlay
 // (2026-08-09, #192) so it can say something concrete ("service is
@@ -2365,6 +2477,17 @@ function applySolveStatus(data) {
   const dotEl = document.getElementById('solve-status-dot');
   const textEl = document.getElementById('solve-status-text');
   const suffix = data.debug_solve === true ? ' (simulated image)' : '';
+  // Only a *confirmed* poll (data.solve_source present, even if that value
+  // is itself null/undefined meaning "no solve yet") updates this - an
+  // unreachable-PiFinder poll passes {} here, which must leave the last
+  // known value showing rather than flashing "never solved" on one missed
+  // request (same reasoning as lastPfReachable's own "confirmed true/false
+  // only" comment below).
+  if ('solve_source' in data) {
+    lastSolveSource = data.solve_source || null;
+    if (typeof data.last_solve_success === 'number') lastSolveSuccessTime = data.last_solve_success;
+    updateSimReadinessLine(); // this poll (20s) is the only place lastSolveSource changes
+  }
   // While Injected Solve is active, solve_source still reports "CAM" (the
   // injection is applied as a solve internally) or drifts to "IMU" as real
   // dead-reckoning advances it - neither is a real plate-solve, and the
@@ -2511,19 +2634,52 @@ function applyFakeSolveStatus(data) {
 let truthInjectorToggleInFlight = false;
 let lastTruthInjectorDesired = null;
 
-// #191/#217: quick-access duplicate of the Toggle button, in the
-// "Simulation and testing" heading row itself (direct feedback, 2026-08-10:
-// "Das ist das meist benutzte hier" - reaching it shouldn't require
-// expanding the section first). No status text on this one, deliberately -
-// the button's own background color IS the status (white/yellow/green/red,
-// same 4 states as the dot below), same "info via button coloring alone"
-// request as elsewhere. Stays in sync via the exact same two functions,
-// just touching one more element.
-function applyQuickInjectorButtonState(stateClass) {
-  const btn = document.getElementById('sim-quick-injector-btn');
-  if (!btn) return;
-  btn.classList.remove('ql-small-btn-white', 'ql-small-btn-yellow', 'ql-small-btn-green', 'ql-small-btn-red');
-  btn.classList.add(stateClass);
+// #191/#217, re-homed 2026-08-28 (direct feedback): was a quick-access
+// duplicate button in the "Simulation and testing" heading row ("Das ist
+// das meist benutzte hier" - reaching it shouldn't require expanding the
+// section first); now the same status/action lives in the always-visible
+// "Full Simulation" tile above instead, replacing that button rather than
+// duplicating it. Same white/yellow/green/red vocabulary, now shown via the
+// tile's own dot + subtext instead of a button's background color alone.
+function applySimTileState(dotClass, subText) {
+  const tile = document.getElementById('mode-tile-sim');
+  const dotEl = document.getElementById('mode-tile-sim-dot');
+  const subEl = document.getElementById('mode-tile-sim-sub');
+  if (!tile) return;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
+  subEl.textContent = subText;
+  tile.classList.toggle('tile-on', dotClass === 'dot-green');
+  updateRealHardwareTile();
+}
+
+// Same idea, for the "PiFinder-only Fake Mode" tile - mirrors refreshMode()'s
+// existing mode-status-dot/-text exactly, just also shown up in the tile row.
+function applyFakeModeTileState(dotClass, subText) {
+  const tile = document.getElementById('mode-tile-fake');
+  const dotEl = document.getElementById('mode-tile-fake-dot');
+  const subEl = document.getElementById('mode-tile-fake-sub');
+  if (!tile) return;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
+  subEl.textContent = subText;
+  tile.classList.toggle('tile-on', dotClass === 'dot-green');
+  updateRealHardwareTile();
+}
+
+// "Real Hardware" isn't its own process to start/stop - it's just the
+// neutral state whenever neither Full Simulation nor whole-device Fake Mode
+// is currently on. Not clickable itself (see mode-tile-real's own title);
+// recomputed from the two tiles it depends on whenever either changes.
+function updateRealHardwareTile() {
+  const tile = document.getElementById('mode-tile-real');
+  const dotEl = document.getElementById('mode-tile-real-dot');
+  const subEl = document.getElementById('mode-tile-real-sub');
+  if (!tile) return;
+  const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
+  const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
+  const active = !simOn && !fakeOn;
+  tile.classList.toggle('tile-on', active);
+  setHwDot(dotEl, 'status-dot ' + (active ? 'dot-green' : 'dot-white'));
+  subEl.textContent = active ? 'current mode' : 'inactive while a simulation mode is on';
 }
 
 // Single place that renders a confirmed (desired, alive) pair OR an
@@ -2537,22 +2693,21 @@ function applyTruthInjectorState(desired, alive, errorText) {
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
-  const quickBtn = document.getElementById('sim-quick-injector-btn');
   if (errorText) {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = errorText;
-    applyQuickInjectorButtonState('ql-small-btn-red');
+    applySimTileState('dot-red', errorText);
     return;
   }
   btn.textContent = desired ? 'Turn off' : 'Toggle';
   if (!desired) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'off';
-    applyQuickInjectorButtonState('ql-small-btn-white');
+    applySimTileState('dot-white', 'off');
   } else if (alive) {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'running';
-    applyQuickInjectorButtonState('ql-small-btn-green');
+    applySimTileState('dot-green', 'running — click to stop');
   } else {
     // Desired on, but the process isn't alive right now - the server's own
     // watchdog will restart it within a few seconds; shown as red (not
@@ -2560,9 +2715,8 @@ function applyTruthInjectorState(desired, alive, errorText) {
     // a fresh solve right now", not just an in-flight click.
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'restarting… (died unexpectedly, watchdog is recovering it)';
-    applyQuickInjectorButtonState('ql-small-btn-red');
+    applySimTileState('dot-red', 'restarting… (watchdog recovering it)');
   }
-  if (quickBtn) quickBtn.disabled = false;
 }
 
 async function refreshTruthInjectorStatus() {
@@ -2608,10 +2762,8 @@ async function toggleTruthInjector() {
   const turningOff = lastTruthInjectorDesired === true;
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
-  const quickBtn = document.getElementById('sim-quick-injector-btn');
-  if (quickBtn) quickBtn.disabled = true;
   setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');
-  applyQuickInjectorButtonState('ql-small-btn-yellow');
+  applySimTileState('dot-yellow dot-unconfirmed', turningOff ? 'stopping…' : 'starting…');
   document.getElementById('truth-injector-text').textContent = turningOff ? 'stopping…' : 'starting…';
 
   let toggleError = null;
@@ -2635,7 +2787,6 @@ async function toggleTruthInjector() {
     applyTruthInjectorState(lastTruthInjectorDesired, false, `failed to ${turningOff ? 'stop' : 'start'}: ${toggleError}`);
     truthInjectorToggleInFlight = false;
     btn.disabled = false;
-    if (quickBtn) quickBtn.disabled = false;
     return;
   }
 
@@ -2669,7 +2820,6 @@ async function toggleTruthInjector() {
     );
   }
   btn.disabled = false;
-  if (quickBtn) quickBtn.disabled = false;
   await refreshDebugSolve();
 }
 
@@ -4055,6 +4205,7 @@ async function refreshMode() {
       textEl.textContent = data.target === 'real' ? 'Starting Real Mode…' : 'Starting Fake Mode…';
       btn.disabled = true;
       btn.textContent = 'Switching…';
+      applyFakeModeTileState('dot-yellow dot-unconfirmed', data.target === 'real' ? 'switching to real…' : 'switching to fake…');
       if (!modeLogPolling) { modeLogPolling = true; pollModeLog(); }
       return;
     }
@@ -4067,12 +4218,14 @@ async function refreshMode() {
       textEl.textContent = data.error;
       btn.textContent = data.target === 'real' ? 'Back to Fake Mode' : 'Back to Real Mode';
       btn.disabled = false;
+      applyFakeModeTileState('dot-red', data.error);
       return;
     }
     if (data.mode === 'fake') {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = 'Fake Mode (no hardware, fake hardware)';
       btn.textContent = 'Switch to Real Mode';
+      applyFakeModeTileState('dot-green', 'running — click to stop');
     } else if (data.mode === 'real') {
       // systemd/the process being "active" doesn't mean PiFinder can
       // actually do its job - a real instance with no camera or IMU keeps
@@ -4088,10 +4241,12 @@ async function refreshMode() {
         textEl.textContent = 'Real Mode (hardware)';
       }
       btn.textContent = 'Switch to Fake Mode';
+      applyFakeModeTileState('dot-white', 'off');
     } else {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'Neither mode running';
       btn.textContent = 'Switch to Fake Mode';
+      applyFakeModeTileState('dot-white', 'off');
     }
     btn.disabled = false;
   } catch (e) {
@@ -4099,6 +4254,7 @@ async function refreshMode() {
     textEl.textContent = 'Could not check mode';
     btn.disabled = true;
     btn.textContent = 'Unavailable';
+    applyFakeModeTileState('dot-red', 'could not check mode');
   }
 }
 
@@ -4281,7 +4437,7 @@ function toggleCollapsibleSection(contentId, chevronId, openDisplay) {
 function restoreCollapsibleSections() {
   const sections = [
     ['ql-links', 'ql-links-chevron', 'block'],
-    ['sim-testing-details', 'sim-testing-chevron', 'block'],
+    ['legacy-builtin-details', 'legacy-builtin-chevron', 'block'],
     ['fake-solve-advanced', 'fake-solve-advanced-chevron', 'block'],
     ['hw-details', 'hw-details-chevron', 'block'],
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
@@ -4621,6 +4777,88 @@ function updateMbDiagram(data) {
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
   updateOrientationBadges(data);
+  updateDriftGuidanceBanner(data);
+}
+
+// Drift-guidance banner (2026-08-31, basic-memory pifinder-stellarmate/00103)
+// - the actionable counterpart to the plain red #mb-drift-badge number.
+// Coupling Off/Verify-Alert never correct large drift on their own (that's
+// their whole point), which otherwise leaves the user staring at a red
+// number with no indication of what it means or what to do about it -
+// direct feedback: "wie gehen wir jetzt damit um, das der User mit so
+// einem Bild konfrontiert ist und holen den User ab."
+//
+// Shown only when ALL of:
+//  - Bridge and Mount are both actually connected (otherwise the drift
+//    reading itself isn't trustworthy).
+//  - Coupling is Off or Verify/Alert (Auto-correct/Goto-Forward already
+//    handle this themselves - no banner needed while they're working).
+//  - Drift is past the same "red" threshold #mb-drift-badge already uses.
+//  - PiFinder has EVER produced a solve this run (no solve at all is a
+//    different, unrelated problem - not this banner's job).
+//  - The drift isn't explained by an in-progress, deliberate PushTo:
+//    TARGET_SOURCE_AGE_SEC (new INDI property, see pifinder_mount_bridge.h)
+//    reports how long ago Mount Bridge's own Fall-1 push-to detection last
+//    flipped TARGET_SOURCE to PiFinder - within PUSHTO_EXPLAIN_WINDOW_SEC of
+//    that, a large gap to the mount is expected ("the user is still
+//    physically moving the scope to match"), not a real mismatch. Direct
+//    feedback: "wenn avisiertes (PushTo) Ziel und PiFinder sich zu sehr
+//    unterscheiden... dann weiss man ja: PushTo!"
+//
+// Confidence/wording then splits three ways:
+//  - Sim/Fake Mode active (mode-tile-sim/-fake "tile-on"): nothing here is
+//    real hardware, so the softer CAM/IMU distinction below doesn't matter -
+//    always the confident phrasing, direct feedback: "sind wir im Sim-Mode
+//    (alles ist heilbar)".
+//  - Real mode, PiFinder's last solve is a CAM solve still inside the
+//    driver's own SOLVE_FRESHNESS window (isPiFinderSolveFresh() - reusing
+//    its exact logic via solve_freshness_max_age_sec, not a second guessed
+//    constant): the confident phrasing - PiFinder is verifiably right, so
+//    the mount is the one that's off.
+//  - Real mode, anything else (stale CAM, or IMU dead-reckoning): a real
+//    solve exists but is less certain by itself - softer phrasing that
+//    still names the mount as the likely cause without overstating it.
+const DRIFT_BANNER_UNCORRECTED_MODES = ['MODE_OFF', 'MODE_VERIFY_ALERT'];
+const PUSHTO_EXPLAIN_WINDOW_SEC = 60; // rough time to physically re-aim by hand
+
+function updateDriftGuidanceBanner(data) {
+  const banner = document.getElementById('mb-drift-banner');
+  if (!banner) return;
+
+  const driftArcmin = data.drift_arcmin;
+  const couplingMode = data.coupling_mode;
+  const bridgeUp = data.bridge_connected === true;
+  const mountUp = data.mount_connected === true;
+  const uncorrected = !couplingMode || DRIFT_BANNER_UNCORRECTED_MODES.includes(couplingMode);
+  const large = typeof driftArcmin === 'number' && driftArcmin >= MB_FOV_LIMIT_ARCMIN;
+  const explainedByPushTo = data.target_source === 'pifinder' &&
+    typeof data.target_source_age_sec === 'number' &&
+    data.target_source_age_sec <= PUSHTO_EXPLAIN_WINDOW_SEC;
+
+  if (!bridgeUp || !mountUp || !uncorrected || !large || !lastSolveSource || explainedByPushTo) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const nonReal = document.getElementById('mode-tile-sim')?.classList.contains('tile-on') ||
+                  document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
+  const maxAge = typeof data.solve_freshness_max_age_sec === 'number' ? data.solve_freshness_max_age_sec : 5;
+  const solveAgeSec = typeof lastSolveSuccessTime === 'number' ? (Date.now() / 1000 - lastSolveSuccessTime) : null;
+  const camFresh = lastSolveSource === 'CAM' && solveAgeSec !== null && solveAgeSec >= 0 && solveAgeSec <= maxAge;
+
+  const mountName = data.active_mount || 'the mount';
+  banner.style.display = '';
+  document.getElementById('mb-drift-banner-title').textContent =
+    `${mountName} is ${formatDrift(driftArcmin)} off from PiFinder — Coupling isn't correcting this`;
+
+  const textEl = document.getElementById('mb-drift-banner-text');
+  if (nonReal) {
+    textEl.innerHTML = `Simulation/test mode — nothing at risk. Use <b>Sync mount from PiFinder</b> for a one-time fix, or turn on Auto-correct to keep it corrected going forward.`;
+  } else if (camFresh) {
+    textEl.innerHTML = `PiFinder has a fresh, verified solve — <b>${mountName}</b> is most likely the one that's misaligned.`;
+  } else {
+    textEl.innerHTML = `PiFinder's position is currently based on IMU estimation, not a fresh camera solve — less certain, but <b>${mountName}</b> still shows a large gap.`;
+  }
 }
 
 // PiFinder Type labels match menu_structure.py's own "PiFinder Type" items
@@ -6391,6 +6629,49 @@ function updateStepIndicators() {
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
   updateProfileRoleLine();
+  updateSimReadinessLine();
+}
+
+// Compact mirror of the Setup checklist's own 5 config-vs-live steps, shown
+// right above the mode tiles so a user never has to open the other card to
+// see why "Full Simulation" won't start (2026-08-28, direct feedback) -
+// reads the exact same booleans updateStepIndicators() just computed above,
+// not a second source of truth.
+function updateSimReadinessLine() {
+  const el = document.getElementById('sim-readiness-line');
+  if (!el) return;
+  // Each condition here must match its corresponding wm-stepN-label check in
+  // updateStepIndicators() above exactly (2026-08-28, found live: this used
+  // to fold step 6's "Connect" condition into "Ekos" as well, so the two
+  // could disagree - e.g. Ekos genuinely connected but a Connect button
+  // transiently unavailable made this line say "incomplete" while step 5's
+  // own checkmark was already green). Deliberately no separate "Connect"
+  // item here.
+  //
+  // "Solve" (2026-08-30): none of the 5 items above say anything about
+  // whether PiFinder itself actually has a usable position - all of them
+  // are pure INDI/Ekos plumbing, which can show fully green while PiFinder
+  // Simulator (or a real PiFinder) sits on a stale/never-set position that
+  // Mount Bridge then treats as real truth. lastSolveSource is null
+  // specifically when PiFinder has never produced any solve at all (real or
+  // fake) since it started - deliberately NOT the same judgment as
+  // applySolveStatus()'s red/green ("is the CURRENT source trustworthy"),
+  // which treats an active Injected/fake solve as "not real" - that's
+  // correct for its own real-camera-testing context but wrong here: an
+  // active fake_solve IS the expected, healthy state for a simulator
+  // session, only "never solved at all" should block readiness.
+  const items = [
+    ['Profile', !!wmSelectedProfile && wmServerRunning],
+    ['KStars', wmKstarsLinked === true],
+    ['Drivers', wmHasLx200 === true && wmHasBridge === true],
+    ['Mount', !!wmActiveMount],
+    ['Ekos', wmEkosConnected === true],
+    ['Solve', !!lastSolveSource],
+  ];
+  const allReady = items.every(([, ok]) => ok);
+  el.innerHTML = items.map(([label, ok]) =>
+    `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
+  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist below');
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -

@@ -438,6 +438,12 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&TargetSourceSP, TargetSourceS, 2, getDeviceName(), "TARGET_SOURCE",
                        "Following", "Main Control", IP_RO, ISR_1OFMANY, 0, IPS_IDLE);
 
+    // See the header comment - starts at a large/"ancient" value; only ever
+    // reset to 0 by an actual TargetSourceSP change in setTargetSource().
+    IUFillNumber(&TargetSourceAgeN[0], "AGE_SEC", "Seconds since Following changed", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&TargetSourceAgeNP, TargetSourceAgeN, 1, getDeviceName(), "TARGET_SOURCE_AGE",
+                       "Following age", "Main Control", IP_RO, 60, IPS_IDLE);
+
     IUFillNumber(&DriftThresholdN[0], "THRESHOLD_ARCMIN", "Threshold (arcmin)", "%.1f", 0.1, 600, 0.5, 5);
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -513,6 +519,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ShadowSyncSP);
         defineProperty(&RepositionConfirmSP);
         defineProperty(&TargetSourceSP);
+        defineProperty(&TargetSourceAgeNP);
 
         // Restore the saved Coupling mode/threshold/etc. now that their
         // properties actually exist - see m_connectedConfigLoaded's
@@ -544,6 +551,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ShadowSyncSP.name);
         deleteProperty(RepositionConfirmSP.name);
         deleteProperty(TargetSourceSP.name);
+        deleteProperty(TargetSourceAgeNP.name);
     }
 
     return true;
@@ -1063,6 +1071,17 @@ void PiFinderMountBridge::TimerHit()
         DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
     }
 
+    // Published every tick alongside drift, same reasoning as DriftStatusNP
+    // just above - both describe the current moment, not just mode-specific
+    // events. Left at its large initial default (never published as
+    // "fresh") until the first real TargetSourceSP change this run.
+    if (m_lastTargetSourceChangeTime > 0)
+    {
+        TargetSourceAgeN[0].value =
+            static_cast<double>(static_cast<long>(time(nullptr)) - m_lastTargetSourceChangeTime);
+        IDSetNumber(&TargetSourceAgeNP, nullptr);
+    }
+
     // Reposition Detection (#178) only applies to the two "held target"
     // Goto-based modes (Goto-Forward, Auto-correct's Goto action) - it
     // needs a held-target concept to adopt into, which Verify/Alert (never
@@ -1188,6 +1207,10 @@ void PiFinderMountBridge::setTargetSource(int index)
     TargetSourceS[index].s = ISS_ON;
     TargetSourceSP.s = IPS_OK;
     IDSetSwitch(&TargetSourceSP, nullptr);
+
+    // See TargetSourceAgeNP's header comment - only an actual change resets
+    // the clock, not every tick that happens to re-affirm the same source.
+    m_lastTargetSourceChangeTime = static_cast<long>(time(nullptr));
 }
 
 void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
