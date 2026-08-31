@@ -211,6 +211,22 @@ check_user_exists() {
 
 
 ############################################################
+# Returns the Raspberry Pi model string (e.g. "Raspberry Pi 5 Model B Rev 1.0"),
+# or an empty string on non-Pi systems - /proc/device-tree/model is a Pi
+# firmware/kernel concept and simply doesn't exist on an x86 Control-host
+# development machine (see docs/concepts/setup_indi_only_install_mode.md and
+# basic-memory/pifinder-stellarmate/00098). Centralized here so every caller
+# gets the same non-fatal, quiet behavior instead of each one hitting a raw
+# "No such file or directory" from the redirect.
+get_hw_model() {
+  if [ -r /proc/device-tree/model ]; then
+    tr -d '\0' < /proc/device-tree/model 2>/dev/null
+  else
+    echo ""
+  fi
+}
+
+############################################################
 is_venv_active() {
   local venv_path="$1"
 
