@@ -274,6 +274,12 @@ def mount_bridge_status(
         stale value that a later coupling-preset click would then push,
         silently overwriting a real, different threshold the driver
         already had.
+      - "target_source_age_sec": float or None - seconds since TARGET_SOURCE
+        last actually changed (see pifinder_mount_bridge.h's own comment) -
+        added 2026-08-31 for the Control Center's drift-guidance banner.
+      - "solve_freshness_max_age_sec": float or None - the driver's own
+        SOLVE_FRESHNESS max-age setting, i.e. what isPiFinderSolveFresh()
+        itself compares against - added 2026-08-31, same purpose.
       - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
         own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
         indiserver is - not necessarily this function's own host/port args
@@ -318,6 +324,8 @@ def mount_bridge_status(
             "settings_port": None,
             "settings_correct": False,
             "target_source": None,
+            "target_source_age_sec": None,
+            "solve_freshness_max_age_sec": None,
             "mount_reject_active": False,
             "mount_reject_message": None,
             "mount_web_ip": None,
@@ -355,6 +363,20 @@ def mount_bridge_status(
     target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
     target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
     target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
+    # See TARGET_SOURCE_AGE's own comment in pifinder_mount_bridge.h/.cpp -
+    # how long target_source has held its current value, so a client can
+    # tell "just now" (still mid a manual PushTo, expect drift) from "days
+    # ago" (a stale badge, drift is drift). None until the driver has ever
+    # actually changed it this run.
+    target_source_age_elements = device_props.get("TARGET_SOURCE_AGE", {}).get("elements", {})
+    target_source_age_raw = target_source_age_elements.get("AGE_SEC")
+    # Same idea as isPiFinderSolveFresh() in pifinder_mount_bridge.cpp - the
+    # driver's own configured SOLVE_FRESHNESS max-age, read back so the
+    # Control Center can apply the exact same freshness gate the driver
+    # itself uses for auto-correct, instead of guessing a second constant
+    # that could silently drift out of sync with it.
+    solve_freshness_elements = device_props.get("SOLVE_FRESHNESS", {}).get("elements", {})
+    solve_freshness_max_age_raw = solve_freshness_elements.get("MAX_AGE_SEC")
     # Mount refused a Goto/Sync outright (elevation/cable-wrap/axis limit) -
     # distinct from ordinary drift, see MOUNT_REJECT's own comment in
     # pifinder_mount_bridge.cpp. IPS_ALERT means still active.
@@ -455,6 +477,8 @@ def mount_bridge_status(
         "settings_port": settings_port,
         "settings_correct": settings_correct,
         "target_source": target_source,
+        "target_source_age_sec": float(target_source_age_raw) if target_source_age_raw not in (None, "") else None,
+        "solve_freshness_max_age_sec": float(solve_freshness_max_age_raw) if solve_freshness_max_age_raw not in (None, "") else None,
         "mount_reject_active": mount_reject_active,
         "mount_reject_message": mount_reject_message,
         "mount_web_ip": mount_web_ip,

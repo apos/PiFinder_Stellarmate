@@ -1051,6 +1051,37 @@
   #mb-diagram.mb-diagram-unconfirmed {
     opacity: 0.5;
   }
+  /* Drift-guidance banner (2026-08-31, basic-memory pifinder-stellarmate/
+     00103) - shown above the diagram only when a large PiFinder-vs-mount
+     drift exists AND nothing is currently correcting it (Coupling Off or
+     Verify/Alert) AND it isn't explained by an in-progress deliberate
+     PushTo - see updateDriftGuidanceBanner()'s own comment for the exact
+     conditions. Same red-alert language as .mb-abort-btn/#mb-drift-red,
+     not a new color. */
+  #mb-drift-banner {
+    display: none;
+    gap: 0.7rem;
+    align-items: flex-start;
+    background: #2a1414;
+    border: 1px solid #e53935;
+    border-radius: 7px;
+    padding: 0.7rem 0.8rem;
+    margin-bottom: 0.7rem;
+  }
+  #mb-drift-banner svg { flex-shrink: 0; width: 20px; height: 20px; color: #e53935; margin-top: 0.1rem; }
+  #mb-drift-banner .mb-drift-banner-body { flex: 1; min-width: 0; }
+  #mb-drift-banner-title { color: #ff8a80; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
+  #mb-drift-banner-text { color: #ddb0b0; font-size: 0.76rem; line-height: 1.45; margin-bottom: 0.55rem; }
+  #mb-drift-banner-text b { color: #fff; }
+  #mb-drift-banner .mb-drift-banner-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  #mb-drift-banner .mb-drift-banner-btn {
+    border-radius: 5px; padding: 0.4rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid #444; text-align: center; cursor: pointer;
+  }
+  #mb-drift-banner .mb-drift-banner-btn-primary { background: #e53935; color: #fff; border-color: #e53935; }
+  #mb-drift-banner .mb-drift-banner-btn-primary:hover { filter: brightness(1.15); }
+  #mb-drift-banner .mb-drift-banner-btn-secondary { background: #222; color: #ddd; border-color: #555; }
+  #mb-drift-banner .mb-drift-banner-btn-secondary:hover { border-color: #777; }
   .mb-node {
     border: 1px solid #444;
     border-radius: 6px;
@@ -1570,6 +1601,17 @@
       <div class="group-label" id="mb-diagram-heading-row">
         <span>Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
         <div id="mb-action-status"></div>
+      </div>
+      <div id="mb-drift-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        <div class="mb-drift-banner-body">
+          <div id="mb-drift-banner-title"></div>
+          <div id="mb-drift-banner-text"></div>
+          <div class="mb-drift-banner-actions">
+            <button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="triggerManualSync()">Sync mount from PiFinder</button>
+            <button class="mb-drift-banner-btn mb-drift-banner-btn-secondary" onclick="onCouplingPresetClick('auto_correct_sync')">Enable Auto-correct</button>
+          </div>
+        </div>
       </div>
       <div id="mb-diagram">
         <div class="mb-node" id="mb-node-lx200" title="PiFinder">
@@ -2136,6 +2178,12 @@ let lastDebugSolve = null;
 // left at its compiled RA=0/Dec=0 default after a restart was silently
 // treated as ready by this line before this fix).
 let lastSolveSource = null;
+// Epoch seconds of the last real (solve_source="CAM") successful solve, from
+// the same poll as lastSolveSource above - needed alongside it by
+// updateDriftGuidanceBanner() to apply the driver's own solve-freshness gate
+// (isPiFinderSolveFresh() in pifinder_mount_bridge.cpp) rather than just
+// "has ever solved". null until the first confirmed poll.
+let lastSolveSuccessTime = null;
 // pifinder.service's raw systemd state (from refreshMode()'s own poll,
 // every 5s) - read by updatePiFinderStatusAndWizardLink()'s wait overlay
 // (2026-08-09, #192) so it can say something concrete ("service is
@@ -2437,6 +2485,7 @@ function applySolveStatus(data) {
   // only" comment below).
   if ('solve_source' in data) {
     lastSolveSource = data.solve_source || null;
+    if (typeof data.last_solve_success === 'number') lastSolveSuccessTime = data.last_solve_success;
     updateSimReadinessLine(); // this poll (20s) is the only place lastSolveSource changes
   }
   // While Injected Solve is active, solve_source still reports "CAM" (the
@@ -4728,6 +4777,88 @@ function updateMbDiagram(data) {
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
   updateOrientationBadges(data);
+  updateDriftGuidanceBanner(data);
+}
+
+// Drift-guidance banner (2026-08-31, basic-memory pifinder-stellarmate/00103)
+// - the actionable counterpart to the plain red #mb-drift-badge number.
+// Coupling Off/Verify-Alert never correct large drift on their own (that's
+// their whole point), which otherwise leaves the user staring at a red
+// number with no indication of what it means or what to do about it -
+// direct feedback: "wie gehen wir jetzt damit um, das der User mit so
+// einem Bild konfrontiert ist und holen den User ab."
+//
+// Shown only when ALL of:
+//  - Bridge and Mount are both actually connected (otherwise the drift
+//    reading itself isn't trustworthy).
+//  - Coupling is Off or Verify/Alert (Auto-correct/Goto-Forward already
+//    handle this themselves - no banner needed while they're working).
+//  - Drift is past the same "red" threshold #mb-drift-badge already uses.
+//  - PiFinder has EVER produced a solve this run (no solve at all is a
+//    different, unrelated problem - not this banner's job).
+//  - The drift isn't explained by an in-progress, deliberate PushTo:
+//    TARGET_SOURCE_AGE_SEC (new INDI property, see pifinder_mount_bridge.h)
+//    reports how long ago Mount Bridge's own Fall-1 push-to detection last
+//    flipped TARGET_SOURCE to PiFinder - within PUSHTO_EXPLAIN_WINDOW_SEC of
+//    that, a large gap to the mount is expected ("the user is still
+//    physically moving the scope to match"), not a real mismatch. Direct
+//    feedback: "wenn avisiertes (PushTo) Ziel und PiFinder sich zu sehr
+//    unterscheiden... dann weiss man ja: PushTo!"
+//
+// Confidence/wording then splits three ways:
+//  - Sim/Fake Mode active (mode-tile-sim/-fake "tile-on"): nothing here is
+//    real hardware, so the softer CAM/IMU distinction below doesn't matter -
+//    always the confident phrasing, direct feedback: "sind wir im Sim-Mode
+//    (alles ist heilbar)".
+//  - Real mode, PiFinder's last solve is a CAM solve still inside the
+//    driver's own SOLVE_FRESHNESS window (isPiFinderSolveFresh() - reusing
+//    its exact logic via solve_freshness_max_age_sec, not a second guessed
+//    constant): the confident phrasing - PiFinder is verifiably right, so
+//    the mount is the one that's off.
+//  - Real mode, anything else (stale CAM, or IMU dead-reckoning): a real
+//    solve exists but is less certain by itself - softer phrasing that
+//    still names the mount as the likely cause without overstating it.
+const DRIFT_BANNER_UNCORRECTED_MODES = ['MODE_OFF', 'MODE_VERIFY_ALERT'];
+const PUSHTO_EXPLAIN_WINDOW_SEC = 60; // rough time to physically re-aim by hand
+
+function updateDriftGuidanceBanner(data) {
+  const banner = document.getElementById('mb-drift-banner');
+  if (!banner) return;
+
+  const driftArcmin = data.drift_arcmin;
+  const couplingMode = data.coupling_mode;
+  const bridgeUp = data.bridge_connected === true;
+  const mountUp = data.mount_connected === true;
+  const uncorrected = !couplingMode || DRIFT_BANNER_UNCORRECTED_MODES.includes(couplingMode);
+  const large = typeof driftArcmin === 'number' && driftArcmin >= MB_FOV_LIMIT_ARCMIN;
+  const explainedByPushTo = data.target_source === 'pifinder' &&
+    typeof data.target_source_age_sec === 'number' &&
+    data.target_source_age_sec <= PUSHTO_EXPLAIN_WINDOW_SEC;
+
+  if (!bridgeUp || !mountUp || !uncorrected || !large || !lastSolveSource || explainedByPushTo) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const nonReal = document.getElementById('mode-tile-sim')?.classList.contains('tile-on') ||
+                  document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
+  const maxAge = typeof data.solve_freshness_max_age_sec === 'number' ? data.solve_freshness_max_age_sec : 5;
+  const solveAgeSec = typeof lastSolveSuccessTime === 'number' ? (Date.now() / 1000 - lastSolveSuccessTime) : null;
+  const camFresh = lastSolveSource === 'CAM' && solveAgeSec !== null && solveAgeSec >= 0 && solveAgeSec <= maxAge;
+
+  const mountName = data.active_mount || 'the mount';
+  banner.style.display = '';
+  document.getElementById('mb-drift-banner-title').textContent =
+    `${mountName} is ${formatDrift(driftArcmin)} off from PiFinder — Coupling isn't correcting this`;
+
+  const textEl = document.getElementById('mb-drift-banner-text');
+  if (nonReal) {
+    textEl.innerHTML = `Simulation/test mode — nothing at risk. Use <b>Sync mount from PiFinder</b> for a one-time fix, or turn on Auto-correct to keep it corrected going forward.`;
+  } else if (camFresh) {
+    textEl.innerHTML = `PiFinder has a fresh, verified solve — <b>${mountName}</b> is most likely the one that's misaligned.`;
+  } else {
+    textEl.innerHTML = `PiFinder's position is currently based on IMU estimation, not a fresh camera solve — less certain, but <b>${mountName}</b> still shows a large gap.`;
+  }
 }
 
 // PiFinder Type labels match menu_structure.py's own "PiFinder Type" items
