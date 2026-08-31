@@ -683,6 +683,7 @@ void PiFinderMountBridge::autoArmShadowSyncIfDevicePresent()
     if (!m_client->isShadowReady() || !isShadowDeviceSafe())
     {
         m_shadowAutoArmed = false;
+        m_shadowSyncCheckedSavedDisable = false;
         return;
     }
 
@@ -690,6 +691,31 @@ void PiFinderMountBridge::autoArmShadowSyncIfDevicePresent()
     {
         m_shadowAutoArmed = true;
         return;
+    }
+
+    // Found live (2026-08-28): reaching here on a plain driver restart
+    // (device was present the whole time, only this process restarted)
+    // looks identical to a genuine first-ever appearance - m_shadowAutoArmed
+    // is always false right after construction either way. Without this
+    // check, an explicit "Disable" the user saved to config right before
+    // the restart got silently overridden back to enabled every time.
+    // IUGetConfigSwitch reads the on-disk config directly rather than the
+    // in-memory switch, since the latter's current value doesn't carry the
+    // "was this ever actually saved" distinction on its own. Checked once
+    // per device (re)appearance (see m_shadowSyncCheckedSavedDisable), not
+    // every tick - it's a file read, not free.
+    if (!m_shadowSyncCheckedSavedDisable)
+    {
+        m_shadowSyncCheckedSavedDisable = true;
+        ISState savedDisable;
+        if (IUGetConfigSwitch(getDeviceName(), ShadowSyncSP.name, ShadowSyncS[SHADOW_SYNC_DISABLE].name, &savedDisable) == 0
+            && savedDisable == ISS_ON)
+        {
+            LOG_INFO("Shadow Sync was explicitly disabled and saved before this restart - leaving it off "
+                      "(re-enable it manually if that's no longer wanted).");
+            m_shadowAutoArmed = true; // treat as settled - don't re-check every tick
+            return;
+        }
     }
 
     IUResetSwitch(&ShadowSyncSP);
@@ -918,6 +944,27 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         // implausible jump. Defer entirely to the existing HOLDING/Auto-
         // correct logic (still backstopped by MaxSyncDriftNP) until a real
         // baseline has actually been established.
+        //
+        // Found live (2026-08-27): this silently returning false leaves a
+        // large drift just sitting there - DriftStatusNP goes IPS_ALERT
+        // (computed unconditionally above, in TimerHit), but nothing ever
+        // explains *why* no automatic action is happening or what to do
+        // about it. Deliberately not auto-correcting here (a large,
+        // unbaselined drift is exactly the case Fall 4/MaxSyncDriftNP exist
+        // to NOT act on blindly - see their own comments) - just make the
+        // situation legible instead. Rate-limited to once per
+        // REPOSITION_CONFIRM_TIMEOUT_SEC so this doesn't spam every tick
+        // while the condition persists.
+        const long now = time(nullptr);
+        if (now - m_lastUntrustedBaselineWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+        {
+            m_lastUntrustedBaselineWarnTime = now;
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin, but no confirmed-good baseline has been "
+                      "observed since the last restart/mode-switch - not auto-correcting a possibly-stale "
+                      "backlog. Toggle this Coupling mode off and on to force an immediate re-sync from "
+                      "PiFinder's current position, or send a fresh Goto/push-to.",
+                      drift);
+        }
         return false;
     }
 
@@ -1088,9 +1135,17 @@ void PiFinderMountBridge::TimerHit()
         else if (exceeded && drift > MaxSyncDriftN[0].value)
         {
             DriftStatusNP.s = IPS_ALERT;
-            LOGF_WARN("Drift %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - skipping Sync to "
-                      "avoid corrupting the mount's model off a possibly bad solve.",
-                      drift, MaxSyncDriftN[0].value);
+            // Rate-limited - see m_lastMaxSyncDriftWarnTime's own comment;
+            // this branch re-evaluates every fresh solve and would otherwise
+            // spam the log for as long as the condition persists.
+            const long now = time(nullptr);
+            if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+            {
+                m_lastMaxSyncDriftWarnTime = now;
+                LOGF_WARN("Drift %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - skipping Sync to "
+                          "avoid corrupting the mount's model off a possibly bad solve.",
+                          drift, MaxSyncDriftN[0].value);
+            }
         }
         else if (exceeded)
         {
@@ -1517,9 +1572,18 @@ void PiFinderMountBridge::handleGotoForward()
             {
                 // See MaxSyncDriftNP's header comment - stay in HOLDING and
                 // keep watching rather than syncing off a likely-bad solve.
-                LOGF_WARN("Held target drifted %.1f arcmin, exceeding the auto-Sync sanity limit (%.1f) -"
-                          " not syncing, will re-check on the next fresh solve.",
-                          drift, MaxSyncDriftN[0].value);
+                // Rate-limited (see m_lastMaxSyncDriftWarnTime's own comment) -
+                // this re-evaluates every fresh solve, which would otherwise
+                // spam the log every ~1-2s for as long as the condition
+                // persists without adding new information.
+                const long now = time(nullptr);
+                if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                {
+                    m_lastMaxSyncDriftWarnTime = now;
+                    LOGF_WARN("Held target drifted %.1f arcmin, exceeding the auto-Sync sanity limit (%.1f) -"
+                              " not syncing, will re-check on the next fresh solve.",
+                              drift, MaxSyncDriftN[0].value);
+                }
                 break;
             }
 
