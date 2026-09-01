@@ -19,14 +19,21 @@ include(GNUInstallDirs)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(INDI REQUIRED libindi)
+# 2026-09-01: for picking a real, currently-above-horizon default position
+# via PiFinder's own /api/nearby_bright_stars at Connect() time - see that
+# function's own comment in pifinder_simulator.cpp for why a compiled-in
+# fixed default was unsafe.
+pkg_check_modules(CURL REQUIRED libcurl)
+pkg_check_modules(NLOHMANN_JSON REQUIRED nlohmann_json)
 
 add_executable(indi_pifinder_simulator pifinder_simulator.cpp)
 
-target_include_directories(indi_pifinder_simulator PRIVATE ${INDI_INCLUDE_DIRS})
+target_include_directories(indi_pifinder_simulator PRIVATE ${INDI_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} ${NLOHMANN_JSON_INCLUDE_DIRS})
 target_compile_definitions(indi_pifinder_simulator PRIVATE _XOPEN_SOURCE=700)
 
 target_link_libraries(indi_pifinder_simulator
     indidriver
+    ${CURL_LIBRARIES}
 )
 
 configure_file(indi_pifinder_simulator_driver.xml.in indi_pifinder_simulator_driver.xml @ONLY)
