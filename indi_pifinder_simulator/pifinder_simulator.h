@@ -53,30 +53,39 @@ class PiFinderSimulator : public INDI::Telescope
         bool Sync(double ra, double dec) override;
         bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
 
-    private:
-        // Wherever it was last Sync'd/GoTo'd to - meaningless (0h/0deg) until
-        // m_hasPosition below is true.
-        double m_currentRA = 0.0;
-        double m_currentDEC = 0.0;
+        // Simple, explicit poll loop - see Connect()'s own comment for why
+        // this exists (the real bug was Connect() never calling SetTimer()
+        // at all, not anything TimerHit()-specific) - kept as our own
+        // override anyway so the loop's behavior doesn't depend on
+        // undocumented INDI::Telescope::TimerHit() internals (source
+        // unavailable on this system, headers only).
+        void TimerHit() override;
 
-        // Found live (2026-08-30, direct feedback after a VM restart left
-        // this device silently reporting a stale/never-set RA=0/Dec=0 that
-        // downstream (PiFinder's fake_solve, Mount Bridge, the Control
-        // Center's readiness line) treated as a real, actionable position -
-        // "Der User muss immer ein System vorfinden, wie erwartet"). This
-        // property never changing on its own (see ReadScopeStatus()'s own
-        // comment) means a real value and "never been set since this driver
-        // started" were indistinguishable at the wire level - a 0/0
-        // coordinate is syntactically valid, so nothing downstream had any
-        // reason to doubt it. Follows the exact same principle already
-        // established in PiFinder/pos_server.py's own get_telescope_ra()
-        // (#107, "no response at all (not a fake coordinate)... a fixed
-        // placeholder was parsed as a real position downstream, causing huge
-        // false drift and slews toward RA=0/Dec=0") - here expressed via
-        // EQUATORIAL_EOD_COORD's own IPS_IDLE state (never published as
-        // IPS_OK) rather than withholding a response entirely, since INDI
-        // properties always carry some value once defined.
-        bool m_hasPosition = false;
+    private:
+        // Wherever it was last Sync'd/GoTo'd to - starts at a fixed, sensible
+        // above-the-horizon default (see m_hasPosition below), not 0h/0deg.
+        double m_currentRA = 5.5;
+        double m_currentDEC = 20.0;
+
+        // Direct reversal, 2026-09-01, of an earlier same-session fix that
+        // started this device with NO position (m_hasPosition=false,
+        // EqNP left at IPS_IDLE - see git history) - modeled after
+        // PiFinder/pos_server.py's own #107 "never fake a placeholder
+        // position" principle, which is right for that file (a REAL
+        // PiFinder's actual GPS/solve state) but wrong here: this is a
+        // Full-Simulation TEST fixture, not real hardware, and starting it
+        // "empty" just meant every single restart needed a manual re-seed
+        // before Full Simulation was usable at all - the truth-injector
+        // faithfully forwarded that "no position yet" through to PiFinder
+        // LX200, producing an obviously-bogus 0/0 mismatch against the
+        // mount that looked exactly like a real bug. Direct feedback: "Er
+        // muss einen sinnvollen Wert über dem Horizont einnehmen... Alles
+        // andere ist nicht akzeptabel" - this device must always be
+        // immediately usable. TelSim (the mount) staying wherever it was is
+        // fine and expected on its own - the user decides whether/how to
+        // correct that (Coupling presets, manual Sync) - this field is only
+        // about PiFinder's own side always being ready.
+        bool m_hasPosition = true;
 
         // Distinct from Sync()/Goto() above, which move the simulated "sky
         // truth" position itself (m_currentRA/DEC, what a test session feeds
