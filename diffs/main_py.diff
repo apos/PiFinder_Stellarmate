@@ -1,5 +1,5 @@
---- python/PiFinder/main.py.orig	2026-08-23 11:19:08.173903507 +0200
-+++ python/PiFinder/main.py	2026-08-23 11:11:45.834411776 +0200
+--- python/PiFinder/main.py.orig	2026-09-01 22:04:24.368892021 +0200
++++ python/PiFinder/main.py	2026-09-01 21:49:03.827633414 +0200
 @@ -83,8 +83,37 @@
      global keypad_pwm
      global hardware_platform
@@ -174,7 +174,7 @@
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -367,6 +477,11 @@
+@@ -367,6 +477,16 @@
      alignment_command_queue: Queue = Queue()
      alignment_response_queue: Queue = Queue()
      ui_queue: Queue = Queue()
@@ -183,18 +183,34 @@
 +    # and the solver process, so existing align_command_queue consumers are
 +    # never affected.
 +    fake_solve_command_queue: Queue = Queue()
++    # 2026-09-01, docs/concepts/full_simulation_imu_dead_reckoning.md
++    # (PiFinder_Stellarmate): same reasoning as fake_solve_command_queue
++    # above - own dedicated queue, read by the fake-IMU fallback in
++    # imu_fake.py, written by the /api/fake_imu web handler.
++    fake_imu_command_queue: Queue = Queue()
  
      # init queues for logging
      keyboard_logqueue: Queue = log_helper.get_queue()
-@@ -503,6 +618,7 @@
+@@ -503,6 +623,10 @@
                  server_logqueue,
                  verbose,
              ),
-+            kwargs={"fake_solve_command_queue": fake_solve_command_queue},
++            kwargs={
++                "fake_solve_command_queue": fake_solve_command_queue,
++                "fake_imu_command_queue": fake_imu_command_queue,
++            },
          )
          server_process.start()
  
-@@ -607,6 +723,7 @@
+@@ -532,6 +656,7 @@
+             name="IMU",
+             target=imu.imu_monitor,
+             args=(shared_state, console_queue, imu_logqueue),
++            kwargs={"fake_imu_command_queue": fake_imu_command_queue},
+         )
+         imu_process.start()
+ 
+@@ -607,6 +732,7 @@
              kwargs={
                  "command_queue": integrator_command_queue,
                  "camera_command_queue": camera_command_queue,
@@ -202,7 +218,7 @@
              },
          )
          integrator_process.start()
-@@ -725,13 +842,6 @@
+@@ -725,13 +851,6 @@
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -216,7 +232,7 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -808,6 +918,12 @@
+@@ -808,6 +927,12 @@
                      if catalogs.catalog_filter is not None:
                          catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -229,7 +245,7 @@
                  elif ui_command == "test_mode":
                      dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1284,7 +1400,26 @@
+@@ -1284,7 +1409,26 @@
          from rpi_hardware_pwm import HardwarePWM
  
          cfg = config.Config()
@@ -257,7 +273,7 @@
          integrator = importlib.import_module("PiFinder.integrator")
  
          # verify and sync GPSD baud rate
-@@ -1304,6 +1439,8 @@
+@@ -1304,6 +1448,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
@@ -266,7 +282,7 @@
          else:
              gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
  
-@@ -1327,9 +1464,24 @@
+@@ -1327,9 +1473,24 @@
          from PiFinder import camera_none as camera  # type: ignore[no-redef]
  
      if args.keyboard.lower() == "pi":

@@ -26,36 +26,14 @@ dependency-free tool.
 
 import argparse
 import json
-import subprocess
 import time
 import urllib.error
 import urllib.request
 
+from pifinder_indi_polling import read_ra_dec
+
 DEFAULT_DEVICE = "PiFinder Simulator"
 DEFAULT_INTERVAL = 2.0
-
-
-def read_ra_dec(host: str, port: int, device: str, timeout: float) -> tuple[float, float] | None:
-    """Returns (ra_hours, dec_deg) or None if the device isn't connected/available."""
-    try:
-        out = subprocess.run(
-            ["indi_getprop", "-h", host, "-p", str(port), "-t", str(timeout),
-             f"{device}.EQUATORIAL_EOD_COORD.RA", f"{device}.EQUATORIAL_EOD_COORD.DEC"],
-            capture_output=True, text=True, timeout=timeout + 2,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(f"indi_getprop failed: {e}")
-        return None
-
-    ra = dec = None
-    for line in out.stdout.splitlines():
-        if line.endswith(".RA") or ".RA=" in line:
-            ra = float(line.rsplit("=", 1)[1])
-        elif ".DEC=" in line:
-            dec = float(line.rsplit("=", 1)[1])
-    if ra is None or dec is None:
-        return None
-    return ra, dec
 
 
 def inject_fake_solve(host: str, port: int, ra_deg: float, dec_deg: float, timeout: float) -> bool:

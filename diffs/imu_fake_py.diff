@@ -1,0 +1,143 @@
+--- python/PiFinder/imu_fake.py.orig	2026-09-01 22:04:24.558889649 +0200
++++ python/PiFinder/imu_fake.py	2026-09-01 21:50:08.683412829 +0200
+@@ -5,32 +5,63 @@
+ 
+ """
+ 
++import queue
+ import time
+ 
++import quaternion  # Numpy quaternion
++
+ from PiFinder.multiproclogging import MultiprocLogging
++from PiFinder.types.positioning import ImuSample
+ 
+ 
+ QUEUE_LEN = 50
+ AVG_LEN = 2
+ MOVE_CHECK_LEN = 10
+ 
++# 2026-09-01, docs/concepts/full_simulation_imu_dead_reckoning.md (PiFinder_Stellarmate):
++# how long since the last FakeImuSample before this class reports "stopped
++# moving" again - a real IMU-equipped session would see the telescope
++# genuinely settle; here, the external feeder (Full Simulation's fake IMU
++# injector) simply stops POSTing once the simulated mount stops slewing, so
++# a short silence is the only "stopped" signal available. Must exceed the
++# feeder's own polling interval by a comfortable margin so an ordinary gap
++# between samples doesn't flap moving() on/off - not tied to any real IMU
++# sample rate, this is purely about tolerating feeder jitter.
++FAKE_MOVING_TIMEOUT_SEC = 0.5
++
+ 
+ class Imu:
+     """A fake IMU class for testing without hardware
+     This class mimics the interface of the real IMU class, but does not read from actual hardware.
+     It _is_ used in the real IMU class, in case the physical IMU is not available.
++
++    2026-09-01: extended to optionally drive avg_quat/moving() from externally
++    injected FakeImuSample messages (Full Simulation's IMU dead-reckoning -
++    see docs/concepts/full_simulation_imu_dead_reckoning.md in
++    PiFinder_Stellarmate) instead of the permanently-frozen identity
++    quaternion this class used to report. Without a queue, behaves exactly
++    as before (never moving, identity orientation) - existing callers that
++    construct Imu() with no arguments are unaffected.
+     """
+ 
+-    def __init__(self):
++    def __init__(self, fake_imu_command_queue=None):
+         self._moving = False
+         self._flip = False
+         # Attributes imu_pi.imu_monitor reads when this class is used as
+-        # the hardware-fallback: never calibrated, never any readings.
+-        self.calibration = 0
++        # the hardware-fallback. calibration=3 ("fully calibrated") from the
++        # start - there is no real calibration procedure for a synthetic IMU
++        # to go through, so "already calibrated" is the correct simulated
++        # state, not something to fix separately (found live: imu_monitor()
++        # gates shared_state.set_imu() on this reaching 3, so leaving it at 0
++        # meant NO sample was ever published in Full Simulation, not merely a
++        # stale one).
++        self.calibration = 3
+         self.avg_quat = (1.0, 0.0, 0.0, 0.0)
+         self.gyro = None
+         self.accel = None
+         self.last_read_time = 0.0
++        self._fake_imu_command_queue = fake_imu_command_queue
++        self._last_fake_sample_time = 0.0
+ 
+     def moving(self):
+         """
+@@ -50,11 +81,68 @@
+     def update(self):
+         # Sleep to not comsume too much CPU, this also needs to be done, as the real IMU needs time to get new readings
+         time.sleep(0.1)
+-        pass
+-
+-
+-def imu_monitor(shared_state, console_queue, log_queue):
++        if self._fake_imu_command_queue is None:
++            return
++        # Drain every pending sample, not just one - a burst of injections
++        # between two update() calls (0.1s apart) must not silently pile up
++        # and get processed one per iteration, behind real time.
++        got_sample = False
++        while True:
++            try:
++                sample = self._fake_imu_command_queue.get_nowait()
++            except queue.Empty:
++                break
++            self.avg_quat = (sample.w, sample.x, sample.y, sample.z)
++            got_sample = True
++        now = time.time()
++        if got_sample:
++            self._last_fake_sample_time = now
++        self._moving = (now - self._last_fake_sample_time) < FAKE_MOVING_TIMEOUT_SEC
++        self.last_read_time = now
++
++
++def imu_monitor(shared_state, console_queue, log_queue, fake_imu_command_queue=None):
++    """Entry point used directly (not via imu_pi.py's runtime fallback) on
++    platforms where imu_pi.py fails to *import* at all - adafruit-blinka's
++    `board` module raises at import time on anything main.py doesn't
++    recognize as a Pi (e.g. a plain x86 dev/Control-host machine, see
++    PiFinder_Stellarmate#98) - main.py catches that and imports this module
++    directly instead (see its own `-fh`/`--fakehardware` and IMU-import
++    fallback paths). 2026-09-01: this used to just spin Imu.update() forever
++    without ever publishing anything - see
++    docs/concepts/full_simulation_imu_dead_reckoning.md
++    (PiFinder_Stellarmate) - now mirrors imu_pi.py's own publish loop
++    (calibration-gated shared_state.set_imu()) so Full Simulation's fake IMU
++    behaves the same way regardless of which of the two entry points
++    resolved it.
++    """
+     MultiprocLogging.configurer(log_queue)
+-    imu = Imu()
++    imu = Imu(fake_imu_command_queue=fake_imu_command_queue)
++    imu_calibrated = False
++    imu_sample = ImuSample(
++        quat=quaternion.quaternion(0, 0, 0, 0),
++        timestamp=0.0,
++        status=0,
++        moving=False,
++    )
+     while True:
+         imu.update()
++        imu_sample.status = imu.calibration
++        imu_sample.gyro = imu.gyro
++        imu_sample.accel = imu.accel
++        if imu.last_read_time:
++            imu_sample.timestamp = imu.last_read_time
++
++        if imu.moving():
++            imu_sample.moving = True
++            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
++        elif imu_sample.moving:
++            imu_sample.moving = False
++            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
++
++        if not imu_calibrated and imu_sample.status == 3:
++            imu_calibrated = True
++            console_queue.put("IMU: NDOF Calibrated!")
++
++        if shared_state is not None and imu_calibrated:
++            shared_state.set_imu(imu_sample)
