@@ -899,6 +899,63 @@ def trigger_manual_sync(
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)
 
 
+# 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
+# still-not-root-caused "process alive but unresponsive to any INDI query"
+# hang (#238) - live-verified by hand many times this same session
+# (indiFIFO stop/start reliably recovers it). Restarts only Mount Bridge
+# itself via indiserver's own FIFO control channel, the same mechanism
+# StellarMate's Web Manager uses to add/remove drivers - much smaller blast
+# radius than restarting the whole profile (webmanager_client.stop_server()/
+# start_server()), since PiFinder/mount drivers are left untouched.
+MOUNT_BRIDGE_FIFO_PATH = "/tmp/indiFIFO"
+
+
+def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_sec: float = 2.0) -> None:
+    """Stop/start "PiFinder Mount Bridge" via the indiFIFO control channel.
+    Purely a driver-process bounce - callers are responsible for reconnecting
+    and re-linking afterwards (see server.py's readiness watchdog, which does
+    both as separate, independently-retried checks)."""
+    with open(fifo_path, "w") as f:
+        f.write('stop indi_pifinder_mount_bridge "PiFinder Mount Bridge"\n')
+    time.sleep(settle_sec)
+    with open(fifo_path, "w") as f:
+        f.write('start indi_pifinder_mount_bridge -n "PiFinder Mount Bridge"\n')
+
+
+def set_pifinder_simulator_follow_mount(
+    mount_device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets "PiFinder Simulator"'s FOLLOW_MOUNT_DEVICE (PR #239) - while
+    named, it dead-reckon-follows that mount's real slews instead of staying
+    a fixed pin. `mount_device` empty turns following off. Only meaningful
+    while Full Simulation's truth-injector targets "PiFinder Simulator"
+    itself (server.py's readiness watchdog is the only caller, gated
+    accordingly)."""
+    set_text(
+        "PiFinder Simulator", "FOLLOW_MOUNT_DEVICE",
+        {"MOUNT_DEVICE": mount_device},
+        host, port, timeout,
+    )
+
+
+def get_pifinder_simulator_follow_mount(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> Optional[str]:
+    """Current FOLLOW_MOUNT_DEVICE value, or None if "PiFinder Simulator"
+    isn't currently loaded/reachable at all (distinct from "" - loaded but
+    deliberately not following anything)."""
+    props = get_properties(device="PiFinder Simulator", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder Simulator")
+    if not device_props:
+        return None
+    return device_props.get("FOLLOW_MOUNT_DEVICE", {}).get("elements", {}).get("MOUNT_DEVICE", "")
+
+
 def trigger_abort_mount(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,

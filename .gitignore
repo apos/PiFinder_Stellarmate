@@ -12,4 +12,5 @@
 /.setup_warnings
 /.resume_from_venv
 /gui_installer/.welcome_red_cache.png
+/.mount_bridge_desired_state.json
 __pycache__/
