@@ -1635,11 +1635,27 @@ void PiFinderMountBridge::handleGotoForward()
                 LOG_ERROR("Failed to send verification sync to mount while holding.");
                 break;
             }
-            if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            // Found live (2026-09-01, basic-memory pifinder-stellarmate/00106):
+            // this used to re-issue TRACK to the stale m_lastForwardedRA/Dec
+            // (the target as it stood whenever it was first adopted) right
+            // after just Syncing the mount to the FRESH piRA/piDec above -
+            // whenever those two had drifted apart even slightly (routine
+            // once PiFinder is allowed to track a real mount slew, see PR
+            // #239 - a real slew rarely lands on an exactly-precise RA/Dec),
+            // this told the mount "you are HERE" immediately followed by "now
+            // go THERE", forever: every tick undid the Sync with a Goto back
+            // toward the old target, so drift never actually converged -
+            // confirmed live, TelSim visibly oscillating between the two
+            // values every few seconds instead of settling. Track the same,
+            // just-verified position the Sync above used, and adopt it as
+            // the held target going forward so the two never fight again.
+            if (!m_client->sendMountCoords(piRA, piDec, "TRACK"))
             {
                 LOG_ERROR("Failed to re-issue Goto to mount while holding.");
                 break;
             }
+            m_lastForwardedRA = piRA;
+            m_lastForwardedDec = piDec;
             // Deliberately stays in HOLDING (no SLEWING/SETTLING detour) -
             // the isMountSlewing() check above on the next tick is the only
             // gate needed; retrying indefinitely every tick drift still
