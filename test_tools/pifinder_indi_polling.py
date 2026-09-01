@@ -4,7 +4,10 @@ plain functions around the indi_getprop CLI, same reasoning as each script's
 own docstring: no full INDI client library needed for what these do.
 """
 
+import json
 import subprocess
+import urllib.error
+import urllib.request
 
 
 def read_ra_dec(host: str, port: int, device: str, timeout: float) -> tuple[float, float] | None:
@@ -52,3 +55,35 @@ def is_mount_busy(host: str, port: int, device: str, timeout: float) -> bool | N
     if state is None:
         return None
     return state == "Busy"
+
+
+def pick_safe_target(pifinder_host: str, pifinder_port: int, min_altitude: float = 20.0,
+                      timeout: float = 5.0) -> tuple[float, float, str] | None:
+    """Pick a real, currently-above-horizon bright star via PiFinder's own
+    /api/nearby_bright_stars (already altitude-filtered server-side using
+    PiFinder's own GPS location/time - the same endpoint Mount Bridge's own
+    Multi-Point Alignment uses, see mount_bridge_multistar_alignment.md §4.2
+    and pifinder_mount_bridge.cpp's httpGetNearbyBrightStars()).
+
+    Direct user feedback (2026-09-01): test/simulation coordinates picked by
+    hand (or a fixed compiled-in default) can land below the horizon - real
+    hardware would try to slew there regardless, risking the mount or OTA.
+    Any test tool or simulated device picking a target - including this
+    directory's own scripts - must go through this instead of inventing a
+    coordinate.
+
+    Returns (ra_hours, dec_deg, name) for the brightest candidate, or None if
+    none are currently above min_altitude or the request failed.
+    """
+    url = f"http://{pifinder_host}:{pifinder_port}/api/nearby_bright_stars?radius=180&count=1&min_altitude={min_altitude}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, json.JSONDecodeError) as e:
+        print(f"pick_safe_target: /api/nearby_bright_stars failed: {e}")
+        return None
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return None
+    c = candidates[0]
+    return c["ra"] / 15.0, c["dec"], c.get("name", "?")

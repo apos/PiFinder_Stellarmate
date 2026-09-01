@@ -106,6 +106,17 @@ class PiFinderSimulator : public INDI::Telescope
         // about PiFinder's own side always being ready.
         bool m_hasPosition = true;
 
+        // 2026-09-01: a *fixed* compiled-in RA/Dec (whatever it's set to)
+        // can never actually guarantee "above the horizon" - it depends on
+        // time and location, and this test rig's own GPS/time genuinely put
+        // 5.5h/20deg below the horizon live (see Connect()'s own comment
+        // and pickSafeDefaultPosition() in the .cpp) - direct user feedback:
+        // sending a real mount there would be unsafe. Connect() replaces the
+        // compiled-in value with a real, currently-visible star exactly
+        // once per process lifetime (not on every reconnect, and never once
+        // a real Sync()/Goto() has already set something deliberate).
+        bool m_startupDefaultReplaced = false;
+
         // Distinct from Sync()/Goto() above, which move the simulated "sky
         // truth" position itself (m_currentRA/DEC, what a test session feeds
         // PiFinder via fake_solve). This instead only updates the inherited

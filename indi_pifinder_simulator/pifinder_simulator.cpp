@@ -1,6 +1,79 @@
 #include "pifinder_simulator.h"
 
 #include <cstring>
+#include <string>
+
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
+namespace
+{
+
+size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+// Found live (2026-09-01): this device's position used to default to a
+// fixed, compiled-in RA/Dec (5.5h/20 deg) regardless of actual time/location
+// - on a real mount, Connect()ing and then Goto-Forward syncing to that
+// default could send the OTA below the horizon, risking the mount or the
+// scope. Mount Bridge's own Multi-Point Alignment already solves exactly
+// this via PiFinder's /api/nearby_bright_stars (altitude-filtered
+// server-side using PiFinder's own GPS location/time - see
+// httpGetNearbyBrightStars() in pifinder_mount_bridge.cpp and
+// docs/concepts/mount_bridge_multistar_alignment.md §4.2) - reused here
+// rather than inventing a second altitude-safety mechanism. Returns false
+// (leaving the caller's own fallback in place) if PiFinder's web server
+// isn't reachable yet or has no candidate above minAltitude.
+bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName)
+{
+    for (const char *url : {"http://127.0.0.1/api/nearby_bright_stars", "http://127.0.0.1:8080/api/nearby_bright_stars"})
+    {
+        CURL *curl = curl_easy_init();
+        if (curl == nullptr)
+            continue;
+
+        char fullUrl[192];
+        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=180&count=1&min_altitude=%.1f", url, minAltitude);
+
+        std::string body;
+        curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+        const CURLcode res = curl_easy_perform(curl);
+        long httpCode = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK || httpCode != 200)
+            continue;
+
+        try
+        {
+            const auto parsed = nlohmann::json::parse(body);
+            const auto &candidates = parsed.at("candidates");
+            if (candidates.empty())
+                continue;
+            const auto &c = candidates.front();
+            outRA = c.at("ra").get<double>() / 15.0;
+            outDec = c.at("dec").get<double>();
+            outName = c.value("name", std::string("?"));
+            return true;
+        }
+        catch (const nlohmann::json::exception &)
+        {
+            continue;
+        }
+    }
+    return false;
+}
+
+} // namespace
 
 static std::unique_ptr<PiFinderSimulator> pifinder_simulator(new PiFinderSimulator());
 
@@ -107,6 +180,27 @@ bool PiFinderSimulator::saveConfigItems(FILE *fp)
 bool PiFinderSimulator::Connect()
 {
     LOG_INFO("PiFinder Simulator connected.");
+    // Runs exactly once per process lifetime, before any client could
+    // realistically have issued a Sync()/Goto() yet (those need this
+    // Connect() to have already succeeded) - see pickSafeDefaultPosition()'s
+    // own comment for why the compiled-in default alone isn't safe.
+    if (!m_startupDefaultReplaced)
+    {
+        double safeRA, safeDec;
+        std::string safeName;
+        if (pickSafeDefaultPosition(20.0, safeRA, safeDec, safeName))
+        {
+            m_currentRA = safeRA;
+            m_currentDEC = safeDec;
+            LOGF_INFO("Defaulting to a real, currently-visible star (%s, RA %.4fh, DEC %.4f deg) instead of the fixed compiled-in default.",
+                      safeName.c_str(), safeRA, safeDec);
+        }
+        else
+        {
+            LOG_WARN("Could not fetch a safe default position from PiFinder's own /api/nearby_bright_stars (not reachable yet?) - keeping the compiled-in default. Sync/Goto to a real target before relying on this device's position.");
+        }
+        m_startupDefaultReplaced = true;
+    }
     // Found live (2026-09-01): nothing ever started the poll loop on
     // Connect() - TimerHit()/ReadScopeStatus() genuinely never ran even
     // once without this (confirmed with a throwaway counter property, not
