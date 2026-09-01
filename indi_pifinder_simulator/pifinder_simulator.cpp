@@ -8,6 +8,12 @@ PiFinderSimulator::PiFinderSimulator()
 {
     setVersion(1, 0);
     SetTelescopeCapability(TELESCOPE_CAN_GOTO | TELESCOPE_CAN_SYNC | TELESCOPE_CAN_ABORT, 1);
+
+    // Matches what Goto()/Sync() already set - this device has a real,
+    // usable position from construction (see m_hasPosition's header
+    // comment), so its TrackState should say so from the start too, not
+    // just after the first client command.
+    TrackState = SCOPE_TRACKING;
 }
 
 const char *PiFinderSimulator::getDefaultName()
@@ -31,11 +37,10 @@ bool PiFinderSimulator::initProperties()
     PushToTargetNP[1].fill("DEC", "DEC (deg)", "%.6f", -90, 90, 0, 0);
     PushToTargetNP.fill(getDeviceName(), "SIMULATE_PUSH_TO", "Simulate push-to", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
 
-    // Base class defaults EQUATORIAL_EOD_COORD to IPS_OK on construction -
-    // wrong here specifically, since m_hasPosition starts false (see its own
-    // comment). IPS_IDLE means "not yet confirmed", the same signal a real
-    // PiFinder's own solve_state=false gives before its first solve.
-    EqNP.setState(IPS_IDLE);
+    // Base class already defaults EQUATORIAL_EOD_COORD to IPS_OK on
+    // construction, which is what we want here (see m_hasPosition's own
+    // comment, 2026-09-01: this device starts with a real, usable
+    // above-the-horizon position, not an empty one) - no override needed.
 
     return true;
 }
@@ -55,6 +60,15 @@ bool PiFinderSimulator::updateProperties()
 bool PiFinderSimulator::Connect()
 {
     LOG_INFO("PiFinder Simulator connected.");
+    // Found live (2026-09-01): nothing ever started the poll loop on
+    // Connect() - TimerHit()/ReadScopeStatus() genuinely never ran even
+    // once without this (confirmed with a throwaway counter property, not
+    // just inference), no matter what m_hasPosition/TrackState defaulted
+    // to. Sync()/Goto() worked regardless since they're plain client-
+    // triggered calls, independent of polling - that's what made this
+    // driver look like it "worked" all along. Same pattern already used by
+    // pifinder_mount_bridge.cpp's own Connect().
+    SetTimer(getCurrentPollingPeriod());
     return true;
 }
 
@@ -64,21 +78,26 @@ bool PiFinderSimulator::Disconnect()
     return true;
 }
 
+void PiFinderSimulator::TimerHit()
+{
+    if (!isConnected())
+        return;
+    ReadScopeStatus();
+    SetTimer(getCurrentPollingPeriod());
+}
+
 bool PiFinderSimulator::ReadScopeStatus()
 {
     // Deliberately never changes on its own between Sync()/Goto() calls -
     // see the header comment: this device holds still exactly where it was
-    // put, so a test session always knows precisely what "sky truth" it's
-    // currently feeding PiFinder.
+    // put (starting at its own fixed above-the-horizon default, see
+    // m_hasPosition's header comment), so a test session always knows
+    // precisely what "sky truth" it's currently feeding PiFinder.
     //
-    // Skipped entirely until m_hasPosition is true (2026-08-30, see its own
-    // comment) - NewRaDec() alone does not touch state, which would leave
-    // the meaningless 0/0 default sitting at whatever state
-    // initProperties()/the base class left it in - exactly the bug this
-    // exists to prevent. Leaving EqNP untouched keeps it at the IPS_IDLE
-    // initProperties() set it to.
+    // m_hasPosition is always true from construction now, but the guard
+    // stays (cheap, and self-documenting) rather than assuming so silently.
     //
-    // Once set, force IPS_OK on every poll, not just once inside Goto()/
+    // Force IPS_OK on every poll, not just once inside Goto()/
     // Sync() - found live: the base class's own TRACK-mode dispatch resets
     // EqNP back to IPS_BUSY right after Goto() returns (normal "still
     // slewing" convention for a real telescope), overriding an IPS_OK set
