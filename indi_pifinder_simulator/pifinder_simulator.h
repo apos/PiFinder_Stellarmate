@@ -135,4 +135,26 @@ class PiFinderSimulator : public INDI::Telescope
         INumberVectorProperty MountEqNP;
         INumber MountEqN[2];
         enum { MOUNT_AXIS_RA, MOUNT_AXIS_DE };
+
+        // Found live (2026-09-01, basic-memory pifinder-stellarmate/00105):
+        // naively following every mount Busy episode also follows Mount
+        // Bridge's OWN corrective re-syncs (Auto-correct, Goto-Forward's
+        // HOLDING re-sync) - this device then ends up chasing the mount's
+        // own imperfect corrected landing spot instead of staying anchored,
+        // a feedback loop that silently defeats drift detection entirely
+        // (confirmed live: PiFinder and mount walked steadily off together,
+        // never actually converging). Fix: snoop Mount Bridge's own
+        // CORRECTION_AGE (see its header comment in pifinder_mount_bridge.h)
+        // - unlike MountDeviceTP, this is a fixed, singular device name
+        // (Mount Bridge is never renamed/swapped the way a mount driver is),
+        // so hardcoding it here is correct, not a repeat of the
+        // never-hardcode-the-mount lesson above. Only follow a Busy episode
+        // when Mount Bridge's own age comfortably exceeds this - i.e. the
+        // Busy state is NOT explained by something Mount Bridge itself just
+        // sent.
+        static constexpr const char *MOUNT_BRIDGE_DEVICE_NAME = "PiFinder Mount Bridge";
+        static constexpr double CORRECTION_GRACE_SEC = 4.0;
+        double m_mountBridgeCorrectionAge = 1e9;
+        INumberVectorProperty MountBridgeCorrectionAgeNP;
+        INumber MountBridgeCorrectionAgeN[1];
 };

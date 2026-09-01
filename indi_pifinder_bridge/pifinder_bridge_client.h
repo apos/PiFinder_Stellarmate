@@ -97,6 +97,21 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
+        // Seconds since the last successful sendMountCoords() call - the one
+        // choke point every self-initiated correction (Auto-correct Sync/
+        // Goto, Goto-Forward's HOLDING re-sync, Multi-Point Alignment, the
+        // manual "Sync mount from PiFinder" trigger, ...) already funnels
+        // through, so this needs no per-call-site bookkeeping. Published via
+        // PiFinderMountBridge's own CORRECTION_AGE property (2026-09-01,
+        // basic-memory pifinder-stellarmate/00105/#239's follow-up) so
+        // indi_pifinder_simulator can tell "the mount is Busy because WE
+        // just told it to move" apart from "the mount is Busy because
+        // something external commanded it" - without this, a simulated
+        // PiFinder that naively follows any mount Busy state ends up
+        // chasing its own driver's corrections instead of detecting them.
+        // A very large value (never set this run) until the first call.
+        double secondsSinceLastMountCommand() const;
+
         // True (once) if, since the last sendMountCoords() call, the mount's
         // own EQUATORIAL_EOD_COORD reported IPS_ALERT - every INDI telescope
         // driver's native way of saying it refused or could not complete a
@@ -173,6 +188,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         mutable std::mutex m_mountRejectMutex;
         bool m_mountRejectedLastCoords = false;
         std::string m_mountRejectMessage;
+
+        // 0 = never sent this run - secondsSinceLastMountCommand() reports a
+        // large sentinel in that case, see its own comment.
+        long m_lastMountCommandTime = 0;
 
         // Guards m_piFinderTargetPending - same cross-thread reasoning as
         // m_mountRejectMutex above (written from updateProperty()'s I/O

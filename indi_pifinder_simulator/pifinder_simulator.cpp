@@ -51,6 +51,14 @@ bool PiFinderSimulator::initProperties()
     IUFillNumberVector(&MountEqNP, MountEqN, 2, "", "EQUATORIAL_EOD_COORD", "Eq. Coordinates",
                         "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // Fixed, singular device (see the header comment) - snoop registration
+    // never needs to change, so it happens once here rather than through
+    // ISNewText() like MountDeviceTP above.
+    IUFillNumber(&MountBridgeCorrectionAgeN[0], "AGE_SEC", "Mount Bridge correction age", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&MountBridgeCorrectionAgeNP, MountBridgeCorrectionAgeN, 1, MOUNT_BRIDGE_DEVICE_NAME,
+                        "CORRECTION_AGE", "Correction age", "Main Control", IP_RO, 60, IPS_IDLE);
+    IDSnoopDevice(MOUNT_BRIDGE_DEVICE_NAME, "CORRECTION_AGE");
+
     // Base class already defaults EQUATORIAL_EOD_COORD to IPS_OK on
     // construction, which is what we want here (see m_hasPosition's own
     // comment, 2026-09-01: this device starts with a real, usable
@@ -230,6 +238,14 @@ bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts
 bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
 {
     const char *deviceName = findXMLAttValu(root, "device");
+
+    if (deviceName && strcmp(deviceName, MOUNT_BRIDGE_DEVICE_NAME) == 0)
+    {
+        if (IUSnoopNumber(root, &MountBridgeCorrectionAgeNP) == 0)
+            m_mountBridgeCorrectionAge = MountBridgeCorrectionAgeN[0].value;
+        return true;
+    }
+
     if (deviceName && !m_snoopedMountDevice.empty() && m_snoopedMountDevice == deviceName)
     {
         if (IUSnoopNumber(root, &MountEqNP) == 0)
@@ -241,7 +257,18 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
             // mount-model drift once it's back to idle/tracking must NOT
             // keep dragging this device along, or there would be nothing
             // left for Verify/Alert or Auto-correct to ever detect.
-            if (MountEqNP.s == IPS_BUSY)
+            //
+            // Found live (2026-09-01): that alone isn't enough - Mount
+            // Bridge's OWN corrective re-syncs (Auto-correct, Goto-Forward's
+            // HOLDING re-sync) also set the mount Busy while they run. Left
+            // unguarded, this device ends up chasing the mount's own
+            // imperfect corrected landing spot in a feedback loop, silently
+            // defeating drift detection (confirmed live: PiFinder and mount
+            // walked steadily off together, never converging). Only follow
+            // when Mount Bridge's own CORRECTION_AGE says this Busy episode
+            // is NOT explained by something it just sent itself.
+            const bool mountBridgeIsCorrectingRightNow = m_mountBridgeCorrectionAge < CORRECTION_GRACE_SEC;
+            if (MountEqNP.s == IPS_BUSY && !mountBridgeIsCorrectingRightNow)
             {
                 m_currentRA = MountEqN[MOUNT_AXIS_RA].value;
                 m_currentDEC = MountEqN[MOUNT_AXIS_DE].value;
@@ -254,10 +281,12 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
                     EqNP.apply();
                 }
             }
-            // else: mount idle/tracking again - simply stop reacting further;
-            // m_currentRA/DEC already holds wherever the slew last left it,
-            // exactly the same "hold independently" behavior Sync()/Goto()
-            // already give this device everywhere else.
+            // else: mount idle/tracking again, or its current Busy episode
+            // is Mount Bridge's own correction - simply stop reacting
+            // further; m_currentRA/DEC already holds wherever it last
+            // legitimately followed to, exactly the same "hold
+            // independently" behavior Sync()/Goto() already give this
+            // device everywhere else.
         }
         return true;
     }
