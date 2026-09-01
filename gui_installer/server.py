@@ -74,6 +74,18 @@ LOG_FILE = REPO_ROOT / ".gui_setup.log"
 RESULT_FILE = REPO_ROOT / ".gui_setup.result"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
+# 2026-09-01, basic-memory pifinder-stellarmate/00106, issue #240: unlike
+# RESULT_FILE (deliberately NOT meant to survive - see its own comment) or
+# the Truth Injector's own "always starts back OFF" guarantee (main(), the
+# pkill next to _truth_injector_watchdog's start), Mount Bridge's desired
+# state (link, coupling mode, connect-intent - see _mb_desired_mount's own
+# comment block) has no such "must reset" reason behind it: it's just
+# in-memory bookkeeping for the readiness watchdog that happened to not
+# survive a restart. Found live: a Control Center restart (this project's
+# own redeploy workflow, but equally a StellarMate reboot or a future OTA
+# update) silently discarded it, so the very watchdog meant to catch
+# "doesn't match what was asked for" had nothing left to compare against.
+MOUNT_BRIDGE_DESIRED_STATE_FILE = REPO_ROOT / ".mount_bridge_desired_state.json"
 
 
 def _page_version() -> str:
@@ -1362,6 +1374,52 @@ _mb_desired_coupling_action = None
 # equivalent "deliberately wanted it broken" case for them).
 _mb_desired_connected = None
 _mb_readiness_retrier = _BackgroundRetrier()
+
+
+def _save_mount_bridge_desired_state():
+    """Best-effort atomic write (temp file + os.replace, same pattern as
+    _write_result_file()) - a save failure here must not fail the API call
+    that triggered it, since the live change already took effect either
+    way; only the restart-survival gets lost."""
+    try:
+        tmp = MOUNT_BRIDGE_DESIRED_STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({
+            "mb_desired_mount": _mb_desired_mount,
+            "mb_desired_coupling_mode": _mb_desired_coupling_mode,
+            "mb_desired_coupling_threshold": _mb_desired_coupling_threshold,
+            "mb_desired_coupling_action": _mb_desired_coupling_action,
+            "mb_desired_connected": _mb_desired_connected,
+        }))
+        os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
+    except Exception as e:
+        _mb_log(f"warning: could not persist Mount Bridge desired state: {e}")
+
+
+def _load_mount_bridge_desired_state():
+    """Called once at startup, before the readiness watchdog starts - restores
+    what _save_mount_bridge_desired_state() wrote, so a Control Center
+    restart doesn't leave the watchdog with nothing to compare against (see
+    MOUNT_BRIDGE_DESIRED_STATE_FILE's own comment). Missing/corrupt file
+    just means "nothing configured yet", the same as a fresh install."""
+    global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
+    global _mb_desired_coupling_action, _mb_desired_connected
+    if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
+        return
+    try:
+        data = json.loads(MOUNT_BRIDGE_DESIRED_STATE_FILE.read_text())
+    except Exception as e:
+        _mb_log(f"warning: could not load persisted Mount Bridge desired state: {e}")
+        return
+    _mb_desired_mount = data.get("mb_desired_mount")
+    _mb_desired_coupling_mode = data.get("mb_desired_coupling_mode")
+    _mb_desired_coupling_threshold = data.get("mb_desired_coupling_threshold")
+    _mb_desired_coupling_action = data.get("mb_desired_coupling_action")
+    _mb_desired_connected = data.get("mb_desired_connected")
+    _mb_log(
+        "restored Mount Bridge desired state from before the last restart "
+        f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
+        f"connected={_mb_desired_connected!r})."
+    )
 
 # Restart-storm guard for check 1 (unresponsive driver) - see the concept
 # doc's own "Restart storms" open question. If restarting genuinely doesn't
@@ -3202,6 +3260,7 @@ class Handler(BaseHTTPRequestHandler):
             _mb_log(f"  done.")
             global _mb_desired_mount
             _mb_desired_mount = None if unlink else mount
+            _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
 
@@ -3247,6 +3306,7 @@ class Handler(BaseHTTPRequestHandler):
                     # _mb_desired_connected's own comment.
                     global _mb_desired_connected
                     _mb_desired_connected = False
+                    _save_mount_bridge_desired_state()
                 self._send_json({"success": True})
                 return
 
@@ -3335,6 +3395,7 @@ class Handler(BaseHTTPRequestHandler):
                 if device == "PiFinder Mount Bridge":
                     global _mb_desired_connected
                     _mb_desired_connected = True
+                    _save_mount_bridge_desired_state()
 
             _mb_log(f"connecting '{device}'...")
             try:
@@ -3417,6 +3478,7 @@ class Handler(BaseHTTPRequestHandler):
             _mb_desired_coupling_mode = mode_map[mode_arg]
             _mb_desired_coupling_threshold = threshold
             _mb_desired_coupling_action = action_arg or None
+            _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
 
@@ -3663,7 +3725,11 @@ def main():
         _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
     threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
     # #240: readiness + self-healing for Mount Bridge itself - see its own
-    # comment for the full rationale.
+    # comment for the full rationale. Restore what was desired before the
+    # last restart (MOUNT_BRIDGE_DESIRED_STATE_FILE) BEFORE starting the
+    # watchdog, so its very first tick already has something to compare
+    # against instead of a blank slate.
+    _load_mount_bridge_desired_state()
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
