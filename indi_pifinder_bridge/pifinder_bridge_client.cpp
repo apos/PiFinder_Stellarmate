@@ -1,5 +1,7 @@
 #include "pifinder_bridge_client.h"
 
+#include <ctime>
+
 PiFinderBridgeClient::PiFinderBridgeClient()
 {
 }
@@ -313,7 +315,16 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     m_mountEqNP->setState(IPS_BUSY);
     sendNewNumber(m_mountEqNP);
 
+    m_lastMountCommandTime = static_cast<long>(time(nullptr));
+
     return true;
+}
+
+double PiFinderBridgeClient::secondsSinceLastMountCommand() const
+{
+    if (m_lastMountCommandTime == 0)
+        return 1e9;
+    return static_cast<double>(static_cast<long>(time(nullptr)) - m_lastMountCommandTime);
 }
 
 bool PiFinderBridgeClient::mountRejectedLastCoords(std::string &outMessage)

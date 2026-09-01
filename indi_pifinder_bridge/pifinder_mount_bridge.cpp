@@ -444,6 +444,11 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&TargetSourceAgeNP, TargetSourceAgeN, 1, getDeviceName(), "TARGET_SOURCE_AGE",
                        "Following age", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // See the header comment.
+    IUFillNumber(&CorrectionAgeN[0], "AGE_SEC", "Seconds since last self-sent mount command", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&CorrectionAgeNP, CorrectionAgeN, 1, getDeviceName(), "CORRECTION_AGE",
+                       "Correction age", "Main Control", IP_RO, 60, IPS_IDLE);
+
     IUFillNumber(&DriftThresholdN[0], "THRESHOLD_ARCMIN", "Threshold (arcmin)", "%.1f", 0.1, 600, 0.5, 5);
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -520,6 +525,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&RepositionConfirmSP);
         defineProperty(&TargetSourceSP);
         defineProperty(&TargetSourceAgeNP);
+        defineProperty(&CorrectionAgeNP);
 
         // Restore the saved Coupling mode/threshold/etc. now that their
         // properties actually exist - see m_connectedConfigLoaded's
@@ -552,6 +558,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(RepositionConfirmSP.name);
         deleteProperty(TargetSourceSP.name);
         deleteProperty(TargetSourceAgeNP.name);
+        deleteProperty(CorrectionAgeNP.name);
     }
 
     return true;
@@ -1181,6 +1188,18 @@ void PiFinderMountBridge::TimerHit()
 
     if (havePositions)
         IDSetNumber(&DriftStatusNP, nullptr);
+
+    // Deliberately published here, AFTER handleGotoForward()/
+    // handleAutoCorrectGoto()/the plain-Sync branch above have all had a
+    // chance to run and possibly call sendMountCoords() - found live
+    // (2026-09-01): publishing this earlier in the tick (before dispatch)
+    // meant a correction sent THIS tick wasn't reflected until the NEXT
+    // tick, a real race indi_pifinder_simulator's mount-follow gate hit in
+    // practice (it would briefly still follow a self-correction before the
+    // fresh age caught up). See CorrectionAgeNP's own header comment.
+    CorrectionAgeN[0].value = m_client->secondsSinceLastMountCommand();
+    IDSetNumber(&CorrectionAgeNP, nullptr);
+
     SetTimer(getCurrentPollingPeriod());
 }
 
@@ -1616,11 +1635,27 @@ void PiFinderMountBridge::handleGotoForward()
                 LOG_ERROR("Failed to send verification sync to mount while holding.");
                 break;
             }
-            if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            // Found live (2026-09-01, basic-memory pifinder-stellarmate/00106):
+            // this used to re-issue TRACK to the stale m_lastForwardedRA/Dec
+            // (the target as it stood whenever it was first adopted) right
+            // after just Syncing the mount to the FRESH piRA/piDec above -
+            // whenever those two had drifted apart even slightly (routine
+            // once PiFinder is allowed to track a real mount slew, see PR
+            // #239 - a real slew rarely lands on an exactly-precise RA/Dec),
+            // this told the mount "you are HERE" immediately followed by "now
+            // go THERE", forever: every tick undid the Sync with a Goto back
+            // toward the old target, so drift never actually converged -
+            // confirmed live, TelSim visibly oscillating between the two
+            // values every few seconds instead of settling. Track the same,
+            // just-verified position the Sync above used, and adopt it as
+            // the held target going forward so the two never fight again.
+            if (!m_client->sendMountCoords(piRA, piDec, "TRACK"))
             {
                 LOG_ERROR("Failed to re-issue Goto to mount while holding.");
                 break;
             }
+            m_lastForwardedRA = piRA;
+            m_lastForwardedDec = piDec;
             // Deliberately stays in HOLDING (no SLEWING/SETTLING detour) -
             // the isMountSlewing() check above on the next tick is the only
             // gate needed; retrying indefinitely every tick drift still

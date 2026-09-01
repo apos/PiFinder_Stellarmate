@@ -175,3 +175,96 @@ threshold, caption correctly said "Correcting the mount now," but the mount was 
 observed to move/sync back. Root cause not yet investigated - user explicitly asked to defer this
 until the sky-truth-simulator concept above is settled, rather than debug further against a stop-gap
 setup that may not be the right thing to keep debugging.
+
+## 9. 2026-09-01 revision: §8's two-mode split is itself incomplete - three independent movement sources, not two mutually-exclusive modes
+
+§8's B recommendation was built (`indi_pifinder_simulator`, Option B - see [[00092]]/[[00164]]) and
+correctly gave PiFinder its own independent, self-sufficient sky-truth ("PiFinder Simulator" mode).
+Live-tested again 2026-09-01 (GoTo-Forward against `Telescope Simulator`, both PushTo-triggered and
+mount-side-GoTo-triggered - basic-memory pifinder-stellarmate/00105) exposed that **this still isn't
+a complete simulation** - not a regression of §8's fix, but a gap §8 itself didn't yet cover.
+
+**The physical model, stated precisely (User, 2026-09-01):** PiFinder is rigidly bolted to the OTA.
+Wherever the telescope *actually, physically* points, PiFinder points too - that's mechanics, not a
+design choice. What makes PiFinder's reported position independent of the mount is **not** "it never
+moves" - it's that PiFinder verifies the true pointing direction itself (camera solve, or IMU dead-
+reckoning between solves), rather than trusting the mount's own internal belief about where it points.
+The drift Verify/Alert and Auto-correct exist to catch is specifically: *the mount's reported position
+diverges from the true physical pointing, without the telescope having actually, physically moved*
+(bad polar alignment, backlash, thermal effects, a stale internal model - not a commanded slew).
+
+**Why neither existing mode alone is a correct simulation:**
+
+- **"PiFinder Simulator" (§8's fix)**: correctly holds an independent truth so mount-model drift can
+  be detected - but incorrectly *also* ignores a **real, physical mount movement** (a genuine GoTo).
+  In reality PiFinder would follow along (rigid mount), so Goto-Forward-style tests run against this
+  mode see PiFinder "left behind," which isn't physically accurate. Confirmed live 2026-09-01: a
+  Telescope-Simulator GoTo to Capella succeeded correctly (Mount Bridge's Fall-2 detection worked,
+  `TARGET_SOURCE=MOUNT` set correctly), but `PiFinder Simulator` stayed frozen at its old position -
+  this is [[00105]]/#238/#177's finding, not a Mount Bridge bug.
+- **"Mount is source" (§3/§7)**: correctly follows real mount movement, but blindly mirrors
+  *everything* the mount reports, including a wrong/drifted model with no real movement behind it -
+  exactly §8's original finding, still true, unchanged by this revision.
+
+**Third, so-far entirely unsimulated case (User, 2026-09-01): PiFinder/the OTA itself is moved
+manually** (e.g. the real-world manual PushTo-guiding walk, or simply someone repositioning the
+scope by hand). PiFinder's own truth changes correctly (it re-solves the new position) - but the
+**mount's own reported position does not**, since its encoders/steppers never registered the manual
+movement. This is a *third* realistic divergence trigger, structurally different from both of the
+above: unlike mode-drift (§8, mount wrong, nothing moved) and mount-GoTo (this section, mount right,
+telescope moved because mount drove it), here PiFinder is right (it moved and knows it), the mount is
+now wrong (didn't move, doesn't know PiFinder/the OTA moved), and nothing has synced them yet - the
+classic real-world "manual correction/bump, mount needs re-sync" scenario. Manually Sync()'ing/GoTo-
+ing `PiFinder Simulator` directly (already possible today, unchanged) technically produces this same
+data shape (PiFinder's own position changes, mount's doesn't) - open question below is whether that
+existing mechanism is sufficient as-is, or whether this deserves its own explicit, animated/first-
+class control mirroring how mount-movement (below) is meant to work, rather than an instant jump.
+
+**Proposed direction - collapse into one "Full Simulation" mode with independently-triggerable
+stimuli**, rather than mutually-exclusive modes for different purposes:
+
+1. `PiFinder Simulator` stays the sole independent truth, self-sufficient (§8, unchanged).
+2. New: detect the *active mount's* real slewing (e.g. its `EQUATORIAL_EOD_COORD` state going
+   `Busy` during a commanded GoTo - available on both the stock Telescope Simulator and real mount
+   drivers). While detected, `PiFinder Simulator`'s truth interpolates/follows the mount's live
+   position (dead-reckoning through the slew, physically accurate - PiFinder is rigidly attached).
+   Once the mount's status returns to idle/tracking, `PiFinder Simulator` holds its now-updated
+   position independently again - it does **not** keep following any further mount-side drift after
+   the slew completes, preserving §8's mode-drift-detection property. This is [[00177]]'s originally-
+   proposed direction, still the right one, now scoped precisely against the physical model above
+   instead of as a vague "optional following."
+3. Moving PiFinder/the OTA directly (manual Sync/Goto on `PiFinder Simulator`) already exists and
+   needs no new mechanism for the underlying data shape - open question is only whether it deserves
+   a more explicit/animated first-class control for realism, or whether the existing manual
+   Sync/Goto is sufficient as the simulated stand-in for "someone moved the scope by hand."
+
+**Where this lives**: most naturally inside `indi_pifinder_simulator` itself (it already snoops
+nothing today - would need to watch the profile's Active Mount device, similar to how Mount Bridge
+already watches both PiFinder and mount), or inside `test_tools/pifinder_truth_injector.py` if
+keeping the driver itself dependency-free of mount-awareness is preferred. Not yet decided - the
+driver location is probably preferable since it avoids adding a third moving part (the injector
+would then need to *also* poll the mount, not just read-and-forward PiFinder Simulator) and keeps
+"is a real GoTo in progress" as a single source of truth inside the one process that owns the
+simulated PiFinder state.
+
+**Open questions for the actual implementation pass:**
+
+- Exact slew-detection signal to key off - `EQUATORIAL_EOD_COORD` state `Busy`, or something more
+  specific (`TELESCOPE_STATUS` if a driver exposes it)? Needs checking against both the stock
+  Telescope Simulator and whatever real mount driver is active, since not all INDI mount drivers
+  necessarily use `Busy` the same way.
+- Interpolation during the slew: mimic the mount's actual live position tick-by-tick (simplest,
+  matches §7's still-open "mimic slew rate" question by just reusing whatever rate the mount itself
+  reports), vs. a fixed/idealized rate - recommend the former, since it needs no separate
+  slew-speed model of its own.
+- Should PiFinder Simulator continue holding through an *aborted* slew the same way it does after a
+  *completed* one, or does an abort need different handling?
+- §8's "which mode is currently active" GUI language (mode tiles from the 2026-08-30/31 Full-
+  Simulation rework, see basic-memory pifinder-stellarmate/00102/00103) will need revisiting once
+  this lands - "PiFinder Simulator" stops being a single fixed-truth mode and becomes "independent
+  truth that also physically follows real mount movement," which may no longer need presenting as a
+  separate concept from "Mount is source" at all. Not designed yet - flag only.
+
+Refs: [[00105]] (live 2026-09-01 test that surfaced this), issues #177 (original proposal, now
+scoped precisely) and #238 (superseded framing - corrected in a follow-up comment, this section is
+the authoritative version going forward).

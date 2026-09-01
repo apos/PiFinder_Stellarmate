@@ -624,6 +624,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty TargetSourceAgeNP;
         INumber TargetSourceAgeN[1];
 
+        // Seconds since this driver last itself sent the mount a coordinate
+        // change (any correction: Auto-correct Sync/Goto, Goto-Forward's
+        // HOLDING re-sync, Multi-Point Alignment, manual "Sync mount from
+        // PiFinder") - see PiFinderBridgeClient::secondsSinceLastMountCommand()'s
+        // own comment for why this exists (2026-09-01, basic-memory
+        // pifinder-stellarmate/00105/#239's follow-up): without it,
+        // indi_pifinder_simulator's mount-follow feature couldn't tell "the
+        // mount is Busy because I told it to" apart from "the mount is Busy
+        // because something external moved it", and ended up chasing its
+        // own corrections in a feedback loop. Read-only mirror of the
+        // client's own value, not independently tracked here.
+        INumberVectorProperty CorrectionAgeNP;
+        INumber CorrectionAgeN[1];
+
         // Read-only, GUI-visible warning distinct from DriftStatusNP - see
         // the initProperties() comment. Empty message + IPS_OK/IDLE while
         // clear, driver's own refusal text + IPS_ALERT while active.
