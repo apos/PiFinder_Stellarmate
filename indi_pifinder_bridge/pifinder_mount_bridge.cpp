@@ -1064,9 +1064,17 @@ void PiFinderMountBridge::TimerHit()
     // exclusive to that one preset. Coupling mode still gates the *action*
     // (warn log, correction, forwarding) - Off stays inert there, just not
     // blind.
+    // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: piRA/piDec must come from
+    // the same HTTP-backed, freshness-checked source every other consequential read in this file
+    // already uses (httpGetPiFinderFreshCamPosition()), not the separate, laggier INDI mirror
+    // (getPiFinderRADE(), via "PiFinder LX200") - the two could silently disagree by double-digit
+    // arcminutes whenever PiFinder's real position was actively changing, which this driver's own
+    // top-level drift readout (the value everything else reacts to) was still exposed to.
     double piRA, piDec, mountRA, mountDec;
     const bool havePositions =
-        m_client->getPiFinderRADE(piRA, piDec) && m_client->getMountRADE(mountRA, mountDec);
+        (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+         httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)) &&
+        m_client->getMountRADE(mountRA, mountDec);
     double drift = 0.0;
     bool exceeded = false;
     if (havePositions)
@@ -1979,7 +1987,15 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 break;
             }
 
-            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+            // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: one atomic
+            // HTTP-backed read instead of a separate isPiFinderSolveFresh() check (HTTP) followed
+            // by getPiFinderRADE() (INDI) for the value - the two could disagree on which position
+            // was actually the fresh one.
+            double piRA, piDec;
+            const bool haveFreshPosition =
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            if (!haveFreshPosition)
             {
                 if (--m_alignFreshnessWaitTicksRemaining <= 0)
                 {
@@ -1991,8 +2007,7 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 break;
             }
 
-            double piRA, piDec;
-            if (m_client->getPiFinderRADE(piRA, piDec) && m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
             {
                 LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
                           "DEC %.4f deg (fresh PiFinder solve).",
@@ -2091,8 +2106,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // relaxing this check.
             if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
             {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
+                // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.
                 double piRA, piDec;
-                if (m_client->getPiFinderRADE(piRA, piDec) && isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value))
+                if (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
                         LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
@@ -2263,8 +2281,13 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             }
             else if (RepositionConfirmS[REPOSITION_CONFIRM_YES].s == ISS_ON)
             {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
+                // HTTP-backed read - adopting a position as the new held target must be at least
+                // as trustworthy as every other adoption path in this file, not read from the
+                // separate, laggier INDI mirror.
                 double piRA, piDec;
-                if (m_client->getPiFinderRADE(piRA, piDec))
+                if (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     m_lastForwardedRA = piRA;
                     m_lastForwardedDec = piDec;
@@ -2287,8 +2310,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             }
             else if (RepositionConfirmS[REPOSITION_CONFIRM_NO].s == ISS_ON)
             {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: same atomic
+                // HTTP-backed read as the Yes branch above.
                 double piRA, piDec;
-                if (m_client->getPiFinderRADE(piRA, piDec))
+                if (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     // Same fix as the timeout path above (see its comment) -
                     // route through the normal SLEWING state so the existing

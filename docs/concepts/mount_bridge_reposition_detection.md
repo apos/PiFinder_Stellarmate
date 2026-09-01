@@ -223,6 +223,67 @@ own step 1 - corrected here rather than left as an undisclosed gap). Real, subst
 once, shared by both concepts, rather than implementing this concept's UC2/UC4 adoption logic in a
 way that would need to be redone once the cloud-tracking concept is eventually tackled too.
 
+## 9. Found late (2026-09-01): two independent PiFinder-position sources, migration never completed
+
+Root-caused via `stellarmate-utm` live testing (see
+`basic-memory/pifinder-stellarmate/00105_simulation-alignment-luecke-und-mount-bridge-hang-2026-09-01.md`
+§10) the recurring "PiFinder and mount disagree by N arcmin, but no confirmed-good baseline has been
+observed since the last restart/mode-switch" symptom, and a live-observed drift value that flickered
+between two very different readings from tick to tick.
+
+**What's actually happening**: `pifinder_mount_bridge.cpp` has *two* independent ways of asking
+"what is PiFinder's current position":
+
+- `m_client->getPiFinderRADE()` - reads the INDI `EQUATORIAL_EOD_COORD` property of the "PiFinder
+  LX200" device, via `PiFinderBridgeClient`'s own subscription (`pos_server.py` → INDI push →
+  `PiFinderBridgeClient`'s receive thread).
+- `httpGetPiFinderFreshCamPosition()` - calls PiFinder's own `/api/status` HTTP endpoint directly,
+  bypassing INDI entirely, and additionally validates `solve_source=="CAM"` + solve age.
+
+These are genuinely different pipelines with different latency, not two views onto the same
+already-fresh value. The code comments (lines 90, 134, 189, 1583, 1589, 2179) already document a
+*partial* migration: several call sites were fixed one at a time over past sessions (each its own
+past bug - the SETTLING/HOLDING oscillation, the Fall-3/4 redesign) by switching from
+`getPiFinderRADE()` to `httpGetPiFinderFreshCamPosition()`. That migration was never finished -
+`getPiFinderRADE()` position-reads still remain at the single most consequential call site (the
+top-of-tick `drift`/`DriftStatusN` computation, line ~1069 - the value literally every other
+decision in this file reacts to) plus the manual Sync trigger (~2010), the Goto-Forward entry Sync
+(~2110), and both `REPOSITION_CONFIRM` Yes/No handlers (~2282, ~2306). Whenever PiFinder's real
+position is actively changing (exactly the Full-Simulation test scenario), these two pipelines can
+disagree by double-digit arcminutes at any given instant - which is what both the log's recurring
+warning and the live-flickering `DRIFT_STATUS.DRIFT_ARCMIN` were actually showing: not a real sky
+disagreement, but two different answers to the same question, read a fraction of a second apart, by
+different code paths that each believed they had "PiFinder's current position."
+
+### 9.1 Decision
+
+Finish the migration already in progress rather than starting a new mechanism: retire
+`getPiFinderRADE()` as a *position* source everywhere in this file, use
+`httpGetPiFinderFreshCamPosition()` uniformly for every place that needs "PiFinder's current
+position" for a decision (drift computation, Sync-before-Goto, RepositionConfirm adoption/revert).
+One canonical source, one freshness guarantee, everywhere - not one canonical source in some places
+and a second, laggier one in others. `getPiFinderRADE()` itself is not removed from
+`PiFinderBridgeClient` (still structurally available), but no remaining call site in
+`pifinder_mount_bridge.cpp` should use it for a position value driving a decision after this.
+
+**Why not the reverse** (standardize on the INDI path instead): the HTTP path already carries the
+freshness/solve-source guarantee every one of these call sites needs anyway (`isPiFinderSolveFresh()`
+duplicates that same HTTP call today, awkwardly, as a *separate* validity check bolted onto the INDI
+value) - unifying on HTTP collapses "get the value" and "is it trustworthy" into the one already-
+atomic call `httpGetPiFinderFreshCamPosition()` provides, exactly the fix already applied to the
+SETTLING/HOLDING call sites for the same reason (see their own comments).
+
+**Consequences**:
+- Positive: eliminates an entire class of "disagree by N arcmin" false positives without touching
+  any of this document's UC1-4 classification logic (§3.2) - those stay correct once fed a single,
+  consistent position value instead of two disagreeing ones.
+- Negative: every migrated call site now makes an HTTP round-trip instead of a local property read -
+  already true for the sites migrated earlier this project without an observed performance issue, so
+  not expected to be new here.
+- `isPiFinderSolveFresh()` becomes redundant everywhere `httpGetPiFinderFreshCamPosition()` is used
+  directly (it already validates freshness/source internally) - worth a follow-up cleanup once the
+  migration is complete, not bundled into this fix to keep it reviewable.
+
 ## Related
 
 - [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178)
