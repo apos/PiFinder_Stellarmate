@@ -35,6 +35,8 @@
 
 #include "inditelescope.h"
 
+#include <string>
+
 class PiFinderSimulator : public INDI::Telescope
 {
     public:
@@ -52,6 +54,22 @@ class PiFinderSimulator : public INDI::Telescope
         bool Goto(double ra, double dec) override;
         bool Sync(double ra, double dec) override;
         bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
+        bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n) override;
+
+        // §9, docs/concepts/complete_position_simulator.md (2026-09-01): while
+        // MountDeviceTP names a real device and it reports EQUATORIAL_EOD_COORD
+        // state Busy (an actual slew in progress), this device's own position
+        // follows it live - physically accurate, since a real PiFinder is
+        // rigidly bolted to the OTA and moves with any real mount movement.
+        // Once the mount goes idle again, this device holds its own
+        // now-updated position independently, same as always - it does NOT
+        // keep following further mount-side drift after the slew ends, which
+        // would defeat the whole point of having an independent truth (see
+        // the class comment and 00092/00164/#177 in basic-memory
+        // pifinder-stellarmate). Falls through to the base class for
+        // INDI::Telescope's own GPS/Dome snooping (addAuxControls()) on
+        // anything that isn't our watched mount device.
+        bool ISSnoopDevice(XMLEle *root) override;
 
         // Simple, explicit poll loop - see Connect()'s own comment for why
         // this exists (the real bug was Connect() never calling SetTimer()
@@ -97,4 +115,24 @@ class PiFinderSimulator : public INDI::Telescope
         // Lets a test session simulate a PiFinder push-to without needing
         // real PiFinder hardware/software running - see #186.
         INDI::PropertyNumber PushToTargetNP {2};
+
+        // Which real/simulated mount device to watch for real slewing (see
+        // ISSnoopDevice's own comment) - deliberately a configurable text
+        // property, never hardcoded to "Telescope Simulator" (basic-memory
+        // pifinder-stellarmate/00102's explicit lesson: this must work with
+        // ANY mount, TelSim is only one special case). Empty by default -
+        // following is off until a test session actually names a device.
+        ITextVectorProperty MountDeviceTP;
+        IText MountDeviceT[1] {};
+        enum { MOUNT_DEVICE };
+        std::string m_snoopedMountDevice;
+
+        // Snoop target for IUSnoopNumber() - shape must match the watched
+        // device's own EQUATORIAL_EOD_COORD (name + RA/DEC element names)
+        // for the name-matching inside IUSnoopNumber() to succeed. Never
+        // defineProperty()'d - purely an internal decode buffer, not a
+        // property this device itself publishes.
+        INumberVectorProperty MountEqNP;
+        INumber MountEqN[2];
+        enum { MOUNT_AXIS_RA, MOUNT_AXIS_DE };
 };

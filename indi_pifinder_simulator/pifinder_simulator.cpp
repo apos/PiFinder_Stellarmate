@@ -37,6 +37,20 @@ bool PiFinderSimulator::initProperties()
     PushToTargetNP[1].fill("DEC", "DEC (deg)", "%.6f", -90, 90, 0, 0);
     PushToTargetNP.fill(getDeviceName(), "SIMULATE_PUSH_TO", "Simulate push-to", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
 
+    // §9, docs/concepts/complete_position_simulator.md - see ISSnoopDevice()'s
+    // own comment. Empty by default (following off) - never hardcoded.
+    IUFillText(&MountDeviceT[MOUNT_DEVICE], "MOUNT_DEVICE", "Follow mount while slewing", "");
+    IUFillTextVector(&MountDeviceTP, MountDeviceT, 1, getDeviceName(), "FOLLOW_MOUNT_DEVICE",
+                      "Follow mount", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    // Snoop decode target - name/element names must match the real
+    // EQUATORIAL_EOD_COORD shape for IUSnoopNumber() to recognize it.
+    // "device" filled in once a mount is actually named (see ISNewText()).
+    IUFillNumber(&MountEqN[MOUNT_AXIS_RA], "RA", "RA", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&MountEqN[MOUNT_AXIS_DE], "DEC", "DEC", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountEqNP, MountEqN, 2, "", "EQUATORIAL_EOD_COORD", "Eq. Coordinates",
+                        "Main Control", IP_RO, 60, IPS_IDLE);
+
     // Base class already defaults EQUATORIAL_EOD_COORD to IPS_OK on
     // construction, which is what we want here (see m_hasPosition's own
     // comment, 2026-09-01: this device starts with a real, usable
@@ -50,9 +64,15 @@ bool PiFinderSimulator::updateProperties()
     INDI::Telescope::updateProperties();
 
     if (isConnected())
+    {
         defineProperty(PushToTargetNP);
+        defineProperty(&MountDeviceTP);
+    }
     else
+    {
         deleteProperty(PushToTargetNP);
+        deleteProperty(MountDeviceTP.name);
+    }
 
     return true;
 }
@@ -175,4 +195,72 @@ bool PiFinderSimulator::ISNewNumber(const char *dev, const char *name, double va
     }
 
     return INDI::Telescope::ISNewNumber(dev, name, values, names, n);
+}
+
+bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
+{
+    if (dev != nullptr && !strcmp(dev, getDeviceName()) && !strcmp(name, MountDeviceTP.name))
+    {
+        IUUpdateText(&MountDeviceTP, texts, names, n);
+        MountDeviceTP.s = IPS_OK;
+        IDSetText(&MountDeviceTP, nullptr);
+
+        const std::string newDevice = MountDeviceT[MOUNT_DEVICE].text ? MountDeviceT[MOUNT_DEVICE].text : "";
+        if (newDevice != m_snoopedMountDevice)
+        {
+            m_snoopedMountDevice = newDevice;
+            strncpy(MountEqNP.device, newDevice.c_str(), MAXINDIDEVICE - 1);
+            MountEqNP.device[MAXINDIDEVICE - 1] = '\0';
+            // See ISSnoopDevice()'s own comment - re-registering is harmless
+            // (indiserver just keeps the latest registration for this
+            // property/device pair); an empty name effectively means
+            // "nothing named yet", not "watch nothing" - indiserver simply
+            // never sees a device with an empty name, so no snoop events
+            // arrive, same net effect.
+            if (!newDevice.empty())
+                IDSnoopDevice(newDevice.c_str(), "EQUATORIAL_EOD_COORD");
+            LOGF_INFO("Following mount device for real slews: %s", newDevice.empty() ? "(none)" : newDevice.c_str());
+        }
+        return true;
+    }
+
+    return INDI::Telescope::ISNewText(dev, name, texts, names, n);
+}
+
+bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
+{
+    const char *deviceName = findXMLAttValu(root, "device");
+    if (deviceName && !m_snoopedMountDevice.empty() && m_snoopedMountDevice == deviceName)
+    {
+        if (IUSnoopNumber(root, &MountEqNP) == 0)
+        {
+            // Only while the watched mount is actually, physically slewing
+            // (IPS_BUSY on its own EQUATORIAL_EOD_COORD) does this device's
+            // truth follow it - see the header comment for why: PiFinder is
+            // rigidly attached, so a real slew moves it too, but ordinary
+            // mount-model drift once it's back to idle/tracking must NOT
+            // keep dragging this device along, or there would be nothing
+            // left for Verify/Alert or Auto-correct to ever detect.
+            if (MountEqNP.s == IPS_BUSY)
+            {
+                m_currentRA = MountEqN[MOUNT_AXIS_RA].value;
+                m_currentDEC = MountEqN[MOUNT_AXIS_DE].value;
+                m_hasPosition = true;
+                TrackState = SCOPE_TRACKING;
+                NewRaDec(m_currentRA, m_currentDEC);
+                if (EqNP.getState() != IPS_OK)
+                {
+                    EqNP.setState(IPS_OK);
+                    EqNP.apply();
+                }
+            }
+            // else: mount idle/tracking again - simply stop reacting further;
+            // m_currentRA/DEC already holds wherever the slew last left it,
+            // exactly the same "hold independently" behavior Sync()/Goto()
+            // already give this device everywhere else.
+        }
+        return true;
+    }
+
+    return INDI::Telescope::ISSnoopDevice(root);
 }
