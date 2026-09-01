@@ -1656,6 +1656,21 @@ void PiFinderMountBridge::handleGotoForward()
             }
             m_lastForwardedRA = piRA;
             m_lastForwardedDec = piDec;
+            // Found live (2026-09-01, basic-memory pifinder-stellarmate/00105):
+            // the Sync just above moves the mount's own reported position -
+            // without this, handleRepositionDetection()'s Fall-2 onset check
+            // (which runs BEFORE this function every tick, comparing the
+            // mount's current position against m_lastPolledMountRA/Dec from
+            // the previous tick) reads the post-Sync jump on the *next* tick,
+            // sees a change that looks exactly like an unexplained external
+            // move (since weCommandedIt only covers SLEWING, and this path
+            // deliberately stays in HOLDING), and misclassifies our own
+            // correction as "external control detected" - a self-inflicted
+            // false positive, not real drift. Updating the baseline here to
+            // the position we just synced to closes that gap.
+            m_lastPolledMountRA = piRA;
+            m_lastPolledMountDec = piDec;
+            m_lastPolledMountTime = time(nullptr);
             // Deliberately stays in HOLDING (no SLEWING/SETTLING detour) -
             // the isMountSlewing() check above on the next tick is the only
             // gate needed; retrying indefinitely every tick drift still
