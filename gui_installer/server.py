@@ -1339,6 +1339,185 @@ def _pifinder_lx200_reconnect_watchdog(interval=20):
             _mb_log(f"auto-reconnect watchdog raised unexpectedly: {e}")
 
 
+# 2026-09-01, basic-memory pifinder-stellarmate/00106, issue #240, docs/
+# concepts/mount_bridge_readiness_and_self_healing.md: "So ein 'Readiness'
+# und 'Self-Healing' Prozess sollte nach jeder Benutzerinteraktion
+# stattfinden" - direct user feedback after a session full of Mount Bridge
+# flapping/hangs and reconnect actions racing ahead of the driver actually
+# being ready. Tracks what the user most recently, explicitly asked for
+# (set by the /api/mount_bridge_active_devices and /api/mount_bridge_coupling
+# handlers above on success) so a watchdog can tell "this doesn't match what
+# was asked for" apart from "nothing has been configured yet this session" -
+# None in either case means the latter, not "should be Off/unlinked".
+_mb_desired_mount = None
+_mb_desired_coupling_mode = None
+_mb_desired_coupling_threshold = None
+_mb_desired_coupling_action = None
+# None until the user has explicitly connected/disconnected Mount Bridge
+# itself via /api/mount_bridge_connect this session - True/False afterwards.
+# Direct user feedback, 2026-09-01: "was ist, wenn jemand bewusst einen
+# Disconnect macht (kann ja notwendig sein)" - check 2 below must respect an
+# explicit False and NOT fight it, unlike every other check here (which only
+# ever restore something the user themselves asked for, so there's no
+# equivalent "deliberately wanted it broken" case for them).
+_mb_desired_connected = None
+_mb_readiness_retrier = _BackgroundRetrier()
+
+# Restart-storm guard for check 1 (unresponsive driver) - see the concept
+# doc's own "Restart storms" open question. If restarting genuinely doesn't
+# help (root cause of #238 still unknown), this stops trying after a
+# handful of attempts within one cooldown window and logs loudly instead of
+# retrying forever every tick.
+_MB_READINESS_MAX_RESTARTS_PER_WINDOW = 3
+_MB_READINESS_RESTART_WINDOW_SEC = 120
+_mb_readiness_restart_times: list = []
+_mb_readiness_gave_up = False
+
+
+def _mount_bridge_readiness_self_heal(status: dict) -> None:
+    """One evaluation pass, called every _mount_bridge_readiness_watchdog()
+    tick. Checks are ordered per the concept doc's table and this only ever
+    acts on the FIRST mismatch found - a driver restart (check 1) makes
+    every later check meaningless for this same tick anyway (nothing is
+    connected/linked immediately after), and piling up several repairs at
+    once makes a failure harder to attribute to any one of them."""
+    global _mb_readiness_gave_up
+
+    # --- Check 1: responsive at all -------------------------------------
+    # mount_bridge_status() itself can't distinguish "driver never started"
+    # from "driver alive but unresponsive" (issue #238) - both look
+    # identical from here (no properties came back in time), and both get
+    # the same self-heal (start/restart is a safe no-op-if-already-fine
+    # operation either way). Only acts once the user has actually asked for
+    # Mount Bridge to do something this session - otherwise a system that
+    # simply doesn't use Mount Bridge at all would get "restarted" for no
+    # reason on every tick.
+    if not status.get("running"):
+        if _mb_desired_mount is None and _mb_desired_coupling_mode is None:
+            return
+        now = time.monotonic()
+        recent = [t for t in _mb_readiness_restart_times if now - t < _MB_READINESS_RESTART_WINDOW_SEC]
+        _mb_readiness_restart_times[:] = recent
+        if len(recent) >= _MB_READINESS_MAX_RESTARTS_PER_WINDOW:
+            if not _mb_readiness_gave_up:
+                _mb_readiness_gave_up = True
+                _mb_log(
+                    f"Mount Bridge self-heal: gave up after {_MB_READINESS_MAX_RESTARTS_PER_WINDOW} driver "
+                    f"restarts within {_MB_READINESS_RESTART_WINDOW_SEC}s - still unresponsive. Not retrying "
+                    "again automatically (see issue #238) - a manual look is needed."
+                )
+            return
+
+        def _do_restart():
+            try:
+                indi_client.restart_mount_bridge_driver()
+                _mb_log("Mount Bridge self-heal: driver was unresponsive - restarted it.")
+            except OSError as e:
+                _mb_log(f"Mount Bridge self-heal: restart attempt failed: {e}")
+
+        if _mb_readiness_retrier.trigger(_do_restart):
+            _mb_readiness_restart_times.append(now)
+        return
+    _mb_readiness_gave_up = False
+
+    # --- Check 2: connected ----------------------------------------------
+    if not status.get("bridge_connected") and _mb_desired_connected is not False:
+        def _do_connect():
+            try:
+                indi_client.connect_device("PiFinder Mount Bridge")
+                _mb_log("Mount Bridge self-heal: was disconnected - reconnected.")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"Mount Bridge self-heal: reconnect attempt failed: {e}")
+
+        _mb_readiness_retrier.trigger(_do_connect)
+        return
+    if not status.get("bridge_connected"):
+        # Either still not connected (self-heal above just fired and needs
+        # a tick to land), or the user deliberately disconnected
+        # (_mb_desired_connected is False) - either way, checks 3/4/6 below
+        # all need a connected Mount Bridge to mean anything and would just
+        # fail/no-op against a disconnected one.
+        return
+
+    # --- Check 3: linked to the desired mount, both devices connected ----
+    if _mb_desired_mount:
+        mismatched = status.get("active_mount") != _mb_desired_mount
+        not_connected = status.get("mount_connected") is not True or status.get("pifinder_connected") is not True
+        if mismatched or not_connected:
+            def _do_link():
+                try:
+                    indi_client.set_mount_bridge_active_devices("PiFinder LX200", _mb_desired_mount)
+                    _mb_log(f"Mount Bridge self-heal: re-linked to '{_mb_desired_mount}'.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: re-link attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_link)
+            return
+
+    # --- Check 4: coupling mode matches what was last actually chosen ----
+    if _mb_desired_coupling_mode and status.get("coupling_mode") != _mb_desired_coupling_mode:
+        def _do_coupling():
+            try:
+                indi_client.set_coupling_mode(
+                    _mb_desired_coupling_mode,
+                    drift_threshold=_mb_desired_coupling_threshold,
+                    correction_action=_mb_desired_coupling_action,
+                )
+                _mb_log(f"Mount Bridge self-heal: re-applied coupling mode {_mb_desired_coupling_mode}.")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"Mount Bridge self-heal: re-apply coupling mode failed: {e}")
+
+        _mb_readiness_retrier.trigger(_do_coupling)
+        return
+
+    # --- Check 6: PiFinder Simulator's mount-follow (PR #239) stays in
+    # lockstep with whichever mount is actually linked - no manual
+    # configuration should ever be needed for this. Only relevant while
+    # Full Simulation's truth-injector targets "PiFinder Simulator" itself
+    # (not the Multi-Point-Alignment mount-mirroring case).
+    if _truth_injector_desired and _truth_injector_device == "PiFinder Simulator" and status.get("active_mount"):
+        try:
+            current = indi_client.get_pifinder_simulator_follow_mount()
+        except indi_client.INDIClientError:
+            current = None
+        if current is not None and current != status["active_mount"]:
+            def _do_follow():
+                try:
+                    indi_client.set_pifinder_simulator_follow_mount(status["active_mount"])
+                    _mb_log(f"Mount Bridge self-heal: set PiFinder Simulator to follow '{status['active_mount']}'.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: setting follow-mount failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_follow)
+
+
+def _mount_bridge_readiness_watchdog(interval=5):
+    """Same shape/cadence as _truth_injector_watchdog() above, extended to
+    cover Mount Bridge itself - see docs/concepts/
+    mount_bridge_readiness_and_self_healing.md for the full design and
+    per-check rationale. Deliberately checks only ONE thing wrong per tick
+    (see _mount_bridge_readiness_self_heal()'s own comment) and lets the
+    next tick discover whatever still doesn't match, rather than trying to
+    fix everything in one pass."""
+    while True:
+        time.sleep(interval)
+        try:
+            status = indi_client.mount_bridge_status(
+                timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
+            )
+        except indi_client.INDIClientError:
+            # No response at all from indiserver itself (not just Mount
+            # Bridge) - nothing this watchdog can usefully act on
+            # (indiserver itself is the Web Manager's concern, not this
+            # one's).
+            continue
+        try:
+            _mount_bridge_readiness_self_heal(status)
+        except Exception as e:  # a watchdog thread must never die silently
+            _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
+
+
 def _run_hardware_test():
     """Runs all three checks in sequence and stores the combined result.
     Camera/IMU/GPS are deliberately sequential, not parallel: the camera
@@ -3021,6 +3200,8 @@ class Handler(BaseHTTPRequestHandler):
             except indi_client.INDIClientError as e:
                 _mb_log(f"  warning: active-devices selection applied but not saved to disk: {e}")
             _mb_log(f"  done.")
+            global _mb_desired_mount
+            _mb_desired_mount = None if unlink else mount
             self._send_json({"success": True})
             return
 
@@ -3058,6 +3239,14 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
                 _mb_log(f"  done.")
+                if device == "PiFinder Mount Bridge":
+                    # A deliberate disconnect (2026-09-01, direct user
+                    # feedback: "was ist, wenn jemand bewusst einen
+                    # Disconnect macht - kann ja notwendig sein") must NOT
+                    # be fought by the readiness watchdog's check 2 - see
+                    # _mb_desired_connected's own comment.
+                    global _mb_desired_connected
+                    _mb_desired_connected = False
                 self._send_json({"success": True})
                 return
 
@@ -3142,10 +3331,16 @@ class Handler(BaseHTTPRequestHandler):
                     if not restart_and_retry(indi_client.ensure_pifinder_lx200_tcp):
                         return  # restart_and_retry() already sent the error response
 
+            def _mark_mount_bridge_connect_desired():
+                if device == "PiFinder Mount Bridge":
+                    global _mb_desired_connected
+                    _mb_desired_connected = True
+
             _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)
                 _mb_log(f"  done.")
+                _mark_mount_bridge_connect_desired()
                 self._send_json({"success": True})
                 return
             except indi_client.INDIClientError as e:
@@ -3156,6 +3351,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if not restart_and_retry(lambda: indi_client.connect_device(device)):
                 return  # restart_and_retry() already sent the error response
+            _mark_mount_bridge_connect_desired()
             self._send_json({"success": True})
             return
 
@@ -3217,6 +3413,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
+            global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+            _mb_desired_coupling_mode = mode_map[mode_arg]
+            _mb_desired_coupling_threshold = threshold
+            _mb_desired_coupling_action = action_arg or None
             self._send_json({"success": True})
             return
 
@@ -3462,6 +3662,9 @@ def main():
     if killed:
         _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
     threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
+    # #240: readiness + self-healing for Mount Bridge itself - see its own
+    # comment for the full rationale.
+    threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
     # an Update run from before the setup script's start->restart fix, or a
