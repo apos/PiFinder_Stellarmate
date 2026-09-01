@@ -284,6 +284,79 @@ SETTLING/HOLDING call sites for the same reason (see their own comments).
   directly (it already validates freshness/source internally) - worth a follow-up cleanup once the
   migration is complete, not bundled into this fix to keep it reviewable.
 
+## 10. Found live (2026-09-01): Fall-4 revert never restores agreement - permanent livelock
+
+Root-caused via `stellarmate-utm` testing, immediately after §9's fix landed - live-observed the
+mount "going back to the last Goto" repeatedly and never actually following a fresh reposition, via
+KStars/Ekos file logging (`basic-memory/pifinder-stellarmate/00084`). Direct user question that
+pinned the mechanism precisely: *"warum dauert es 45 Sekunden, wenn PiFinder in 0,5s einen Solve
+liefern kann?"* - the answer turned out to explain both symptoms with one root cause.
+
+**Observed pattern** (real log excerpt):
+```
+21:22:19  Mount moved ... external control detected
+21:22:26  External reposition confirmed by a fresh PiFinder solve - adopted   (Fall 2, ~7s, automatic)
+  ... several more Fall-2 cycles, all resolving in single-digit seconds ...
+21:23:14  Drift 17.4' exceeds what passive sky motion could produce - Confirm within 45s   (Fall 4)
+21:23:59  Reposition confirmation timed out - reverting to the held target
+21:24:01  Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival
+21:24:03  Mount moved 452.6' ... external control detected                     (right back into Fall 2...)
+21:24:09  External reposition confirmed - adopted
+21:24:12  Drift 20.2' exceeds ... Confirm within 45s                            (...and back into Fall 4)
+21:24:57  Reposition confirmation timed out - reverting to the held target
+21:25:03  Drift 959.5' exceeds what passive sky motion could produce in 54s (max plausible 18.9')
+21:25:48  timed out - reverting            (repeats identically, max-plausible growing each cycle)
+```
+
+**Root cause**: Fall 4's revert (timeout or explicit "No") issues a real `sendMountCoords()`
+Sync+Track back to the held target - a genuine, multi-second physical slew, going through
+`ForwardState::SLEWING` just like any other Goto. But `sendMountCoords()` is the single choke point
+that also updates `PiFinderBridgeClient::m_lastMountCommandTime` (→ `CORRECTION_AGE`, see
+`complete_position_simulator.md` and `basic-memory/pifinder-stellarmate/00105` §§6-9), which "PiFinder
+Simulator"'s dead-reckoning-follow deliberately uses to *ignore* any mount Busy episode Mount Bridge
+itself just caused (`mountBridgeIsCorrectingRightNow = CORRECTION_AGE < CORRECTION_GRACE_SEC`) - built
+specifically to stop PiFinder from chasing Mount Bridge's own small HOLDING residual nudges in a
+feedback loop (§9 of that document's own history). The revert slew trips that same suppression, so
+PiFinder never follows the mount back - it keeps reporting wherever it last legitimately followed to
+(the *un*confirmed new position), permanently disagreeing with the reverted mount.
+
+That has two consequences, not one:
+1. PiFinder shows the wrong position indefinitely - the mount never actually "wins."
+2. **Fall 2 (the fast, ~2-7s automatic path) can never fire again**, because its onset trigger is the
+   *mount's own tick-to-tick position changing* - and after the revert the mount is stationary again.
+   Every subsequent disagreement therefore falls through to Fall 4's slow, 45s-manual-confirm path
+   instead of Fall 2's fast automatic one - exactly what the log shows, and exactly why the same
+   underlying gap explains both "wrong position forever" and "why does this take 45s when PiFinder
+   solves in 0.5s."
+
+### 10.1 Decision
+
+`CORRECTION_AGE`-suppression was built for one specific case - small, iterative residual nudges
+where letting PiFinder chase the mount's own imperfect landing would defeat independent verification
+entirely (see that mechanism's own history). A Fall-4 revert is categorically different: it is Mount
+Bridge deliberately re-asserting a *known-good, previously-confirmed* target across a real distance,
+not refining a residual guess. PiFinder, being rigidly mounted, genuinely does move back with it -
+suppressing that from being observed doesn't protect verification, it just breaks it.
+
+**Fix**: give `sendMountCoords()` an explicit way to mark a call as "this is a deliberate
+known-good reassertion, let PiFinder follow the resulting physical slew" - skip updating
+`m_lastMountCommandTime` for that call only. Both `sendMountCoords()` invocations in a Fall-4 revert
+(the Sync *and* the Track/Goto - CORRECTION_AGE must stay stale through the whole sequence, not just
+the second call) opt in; every other call site (HOLDING's routine nudge, Auto-correct, Multi-Point
+Alignment, manual triggers) keeps today's behavior unchanged by default.
+
+**Consequences**:
+- Positive: closes the livelock at its source - once PiFinder is allowed to see the revert-slew, it
+  converges on the same position the mount reverted to, drift drops back within threshold,
+  `m_lastConfirmedGoodTime` refreshes, and no further Fall-4 cycle fires at all (not just a shorter
+  one). Also indirectly restores Fall 2's fast path for the *next* genuine external reposition,
+  since the mount is free to be observed moving again instead of permanently out of sync.
+- Negative: none identified - the suppression this removes was never protecting anything for this
+  specific call pattern (a revert-to-known-good, not a residual refinement).
+- Scope check: HOLDING's own routine correction (§ elsewhere in this file, PR #242's fix) must keep
+  suppressing - it's still the small-residual case CORRECTION_AGE exists for. Only Fall-4's
+  timeout/No revert path opts out.
+
 ## Related
 
 - [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178)
