@@ -482,6 +482,41 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 echo "------------------------------------"
 
 ##################################################
+# PiFinder imu_pi.py / imu_fake.py - Full Simulation IMU dead-reckoning
+# (docs/concepts/full_simulation_imu_dead_reckoning.md): lets the fake-IMU
+# fallback (used whenever real IMU hardware isn't found, e.g. this x86 dev/
+# Control-host machine, see PiFinder_Stellarmate#98 - same "general/general"
+# reasoning as displays.py just below) be driven by externally injected
+# orientation samples via the new /api/fake_imu endpoint, instead of a
+# permanently-frozen identity quaternion that never published at all.
+
+echo "🔧 Updating imu_pi.py ..."
+cp "$imu_pi_py" "$imu_pi_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
+    apply_patch_or_warn "$imu_pi_py" "${pifinder_stellarmate_dir}/diffs/imu_pi_py.diff"
+else
+    echo "⏩ Skipping patch for imu_pi.py: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$imu_pi_py"
+python3 -m py_compile "$imu_pi_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+echo "🔧 Updating imu_fake.py ..."
+cp "$imu_fake_py" "$imu_fake_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1" "general" "general"; then
+    apply_patch_or_warn "$imu_fake_py" "${pifinder_stellarmate_dir}/diffs/imu_fake_py.diff"
+else
+    echo "⏩ Skipping patch for imu_fake.py: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$imu_fake_py"
+python3 -m py_compile "$imu_fake_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder displays.py - graceful fallback to the existing DisplayHeadless*
 # classes when the real OLED/LCD SPI/GPIO hardware isn't available (e.g. an
 # x86 dev/Control-host machine with no PiFinder hardware attached at all,

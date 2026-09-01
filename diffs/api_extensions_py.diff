@@ -1,5 +1,5 @@
---- a/python/PiFinder/api_extensions.py.orig
-+++ python/PiFinder/api_extensions.py	2026-08-10 22:34:39.353411547 +0200
+--- python/PiFinder/api_extensions.py.orig	2026-09-01 22:04:24.251893482 +0200
++++ python/PiFinder/api_extensions.py	2026-09-01 21:51:08.023348270 +0200
 @@ -18,13 +18,46 @@
  import io
  import json
@@ -8,7 +8,7 @@
  
  from flask import request, session, Response
  from PIL import Image
-+from PiFinder.types.positioning import FakeSolve
++from PiFinder.types.positioning import FakeSolve, FakeImuSample
  
  logger = logging.getLogger("PiFinderAPI")
  
@@ -255,7 +255,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -750,6 +977,90 @@
+@@ -750,6 +977,128 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -341,6 +341,44 @@
 +            return _json_response({"success": True})
 +        except Exception as e:
 +            logger.error("api/fake_solve DELETE error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_imu", methods=["POST"])
++    def api_fake_imu():
++        """Inject one synthetic IMU orientation sample (q_x2imu, scalar-first
++        w/x/y/z) into the fake-IMU fallback (PiFinder.imu_fake.Imu), for
++        driving ImuDeadReckoning between /api/fake_solve injections without
++        real IMU hardware - see PiFinder_Stellarmate's
++        docs/concepts/full_simulation_imu_dead_reckoning.md for the full
++        design and the RA/Dec-to-quaternion derivation callers are expected
++        to use. JSON body: {"w": <float>, "x": <float>, "y": <float>,
++        "z": <float>}. Each call marks "observed moving at send time" - the
++        fake IMU's own debounce (no new sample for a short window, see
++        FAKE_MOVING_TIMEOUT_SEC in imu_fake.py) is what reports "stopped",
++        not a separate stop message - callers should simply stop POSTing
++        once the simulated telescope stops moving.
++
++        No-op (503) when the real IMU is in use - real hardware never reads
++        from this queue, so injecting here would silently do nothing rather
++        than the clear "wrong mode" this responds with instead.
++        """
++        try:
++            if server_instance.fake_imu_command_queue is None:
++                return _json_response(
++                    {"error": "fake_imu_command_queue not available (standalone/test mode)"},
++                    503,
++                )
++            body = request.get_json(silent=True)
++            if not body or not all(k in body for k in ("w", "x", "y", "z")):
++                return _json_response({"error": "Missing 'w'/'x'/'y'/'z' field"}, 400)
++            w, x, y, z = (float(body[k]) for k in ("w", "x", "y", "z"))
++            magnitude = math.sqrt(w * w + x * x + y * y + z * z)
++            if magnitude < 1e-6 or any(math.isnan(v) for v in (w, x, y, z)):
++                return _json_response({"error": "Degenerate quaternion (NaN or near-zero magnitude)"}, 400)
++            server_instance.fake_imu_command_queue.put(FakeImuSample(w=w, x=x, y=y, z=z))
++            return _json_response({"success": True})
++        except Exception as e:
++            logger.error("api/fake_imu error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
 +
      @app.route("/api/key", methods=["POST"])
