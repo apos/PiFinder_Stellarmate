@@ -48,6 +48,7 @@ class PiFinderSimulator : public INDI::Telescope
     protected:
         bool initProperties() override;
         bool updateProperties() override;
+        bool saveConfigItems(FILE *fp) override;
         bool Connect() override;
         bool Disconnect() override;
         bool ReadScopeStatus() override;
@@ -126,6 +127,16 @@ class PiFinderSimulator : public INDI::Telescope
         IText MountDeviceT[1] {};
         enum { MOUNT_DEVICE };
         std::string m_snoopedMountDevice;
+
+        // Found live (2026-09-01): MountDeviceTP is only defined once
+        // connected (see updateProperties()), so it has nothing to load
+        // into until then - same reasoning, and same guard pattern, as
+        // pifinder_mount_bridge.cpp's own m_connectedConfigLoaded. Without
+        // this, a fresh Ekos/profile restart silently reset the mount-follow
+        // feature back to "off" every time - discovered live when a
+        // previously-working setup stopped following after a restart with
+        // no config change at all.
+        bool m_connectedConfigLoaded = false;
 
         // Snoop target for IUSnoopNumber() - shape must match the watched
         // device's own EQUATORIAL_EOD_COORD (name + RA/DEC element names)

@@ -75,6 +75,18 @@ bool PiFinderSimulator::updateProperties()
     {
         defineProperty(PushToTargetNP);
         defineProperty(&MountDeviceTP);
+
+        // See m_connectedConfigLoaded's own comment - MountDeviceTP has
+        // nothing to load into until just now. loadConfig() re-delivers any
+        // saved value through our own ISNewText() (same "config replay"
+        // mechanism pifinder_mount_bridge.cpp's ActiveDeviceTP already
+        // relies on - see its own comment), which is what actually performs
+        // the IDSnoopDevice() registration - no separate call needed here.
+        if (!m_connectedConfigLoaded)
+        {
+            loadConfig(true, MountDeviceTP.name);
+            m_connectedConfigLoaded = true;
+        }
     }
     else
     {
@@ -82,6 +94,13 @@ bool PiFinderSimulator::updateProperties()
         deleteProperty(MountDeviceTP.name);
     }
 
+    return true;
+}
+
+bool PiFinderSimulator::saveConfigItems(FILE *fp)
+{
+    INDI::Telescope::saveConfigItems(fp);
+    IUSaveConfigText(fp, &MountDeviceTP);
     return true;
 }
 
@@ -228,6 +247,11 @@ bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts
             if (!newDevice.empty())
                 IDSnoopDevice(newDevice.c_str(), "EQUATORIAL_EOD_COORD");
             LOGF_INFO("Following mount device for real slews: %s", newDevice.empty() ? "(none)" : newDevice.c_str());
+            // Persist across restarts - see m_connectedConfigLoaded's own
+            // comment for why this was missing before (found live 2026-09-01,
+            // "Full Sim / Goto mount -> Dead reckoning geht nicht": a fresh
+            // profile restart silently reset this back to empty/off).
+            saveConfig(true, MountDeviceTP.name);
         }
         return true;
     }
