@@ -1,5 +1,5 @@
---- python/PiFinder/imu_fake.py.orig	2026-09-01 22:04:24.558889649 +0200
-+++ python/PiFinder/imu_fake.py	2026-09-01 21:50:08.683412829 +0200
+--- python/PiFinder/imu_fake.py.orig	2026-09-01 22:47:00.159368383 +0200
++++ python/PiFinder/imu_fake.py	2026-09-01 22:42:37.017276159 +0200
 @@ -5,32 +5,63 @@
  
  """
@@ -67,7 +67,7 @@
  
      def moving(self):
          """
-@@ -50,11 +81,68 @@
+@@ -50,11 +81,75 @@
      def update(self):
          # Sleep to not comsume too much CPU, this also needs to be done, as the real IMU needs time to get new readings
          time.sleep(0.1)
@@ -128,12 +128,19 @@
 +        if imu.last_read_time:
 +            imu_sample.timestamp = imu.last_read_time
 +
-+        if imu.moving():
-+            imu_sample.moving = True
-+            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
-+        elif imu_sample.moving:
-+            imu_sample.moving = False
-+            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
++        # Found live (2026-09-01): imu_pi.py's own equivalent only copies
++        # avg_quat into the published quat while moving() (or on the
++        # just-stopped transition) - fine for real hardware, where a genuine
++        # sensor reading already exists before first motion. For this fake
++        # IMU, imu_sample.quat otherwise stays at its degenerate all-zero
++        # __init__ default forever whenever nothing has ever "moved" yet
++        # (e.g. a stationary Full Simulation session) - _valid_imu_anchor()
++        # then always rejects it (magnitude 0), and every /api/fake_solve
++        # injection silently fails to get a usable IMU anchor no matter how
++        # many times it's retried. A synthetic IMU has no such "hasn't
++        # sampled yet" gap to model - always publish the current avg_quat.
++        imu_sample.moving = imu.moving()
++        imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
 +
 +        if not imu_calibrated and imu_sample.status == 3:
 +            imu_calibrated = True
