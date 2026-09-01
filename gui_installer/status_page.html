@@ -1481,9 +1481,11 @@
              persisted in localStorage - see setKeypadStyle(). -->
         <div id="pf-keypad-a" class="pf-keypad">
           <div class="pf-keypad-a-grid">
-            <button class="pf-key" style="grid-column:2;" onclick="pfSendKey('UP', this)"><svg class="pf-arrow" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" style="grid-column:1; grid-row:1;" onclick="pfSendKey('MINUS', this)" title="Minus">&minus;</button>
+            <button class="pf-key" style="grid-column:2; grid-row:1;" onclick="pfSendKey('UP', this)"><svg class="pf-arrow" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" style="grid-column:3; grid-row:1;" onclick="pfSendKey('PLUS', this)" title="Plus">+</button>
             <button class="pf-key" style="grid-column:1; grid-row:2;" onclick="pfSendKey('LEFT', this)"><svg class="pf-arrow" style="transform:rotate(-90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
-            <button class="pf-key pf-key-enter" style="grid-column:2; grid-row:2;" onclick="pfSendKey('SQUARE', this)">&#9632;</button>
+            <button class="pf-key pf-key-enter" style="grid-column:2; grid-row:2;" onclick="pfSendKey('SQUARE', this)" title="Enter">&#9632;</button>
             <button class="pf-key" style="grid-column:3; grid-row:2;" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
             <button class="pf-key" style="grid-column:2; grid-row:3;" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
           </div>
@@ -1495,8 +1497,10 @@
             <button class="pf-key" onclick="pfSendKey('UP', this)"><svg class="pf-arrow" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
             <button class="pf-key" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
             <button class="pf-key" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button class="pf-key" onclick="pfSendKey('MINUS', this)" title="Minus">&minus;</button>
             <button id="pf-key-long-b" class="pf-key pf-key-long" style="grid-column:span 2;" onclick="pfToggleLong(this)">LONG</button>
-            <button class="pf-key pf-key-enter" style="grid-column:span 2;" onclick="pfSendKey('SQUARE', this)">&#9632; ENTER</button>
+            <button class="pf-key" onclick="pfSendKey('PLUS', this)" title="Plus">+</button>
+            <button class="pf-key pf-key-enter" style="grid-column:span 4;" onclick="pfSendKey('SQUARE', this)">&#9632; ENTER</button>
           </div>
         </div>
         <!-- Layout C: not a keypad at all - one rectangular button per
@@ -2152,6 +2156,21 @@ sudo systemctl start pifinder</pre>
 </div>
 
 <script>
+// Direct user feedback (2026-09-01): the static "PiFinder on Stellarmate
+// Control Center" title made it impossible to tell multiple open browser
+// tabs/windows for different PiFinder units apart. Append the host's last
+// IPv4 octet (e.g. "...103") when reachable via a plain IPv4 address - falls
+// back to the full hostname (e.g. a mDNS/.local name) otherwise, so the tab
+// is always at least distinguishable, not just in the common IP case.
+(function()
+{
+    const host = window.location.hostname;
+    const ipMatch = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    const suffix = ipMatch ? ipMatch[4] : host;
+    if (suffix)
+        document.title = document.title + " (" + suffix + ")";
+})();
+
 let logPosition = 0;
 let polling = false;
 let phaseLabels = [];
