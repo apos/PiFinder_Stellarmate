@@ -1,6 +1,8 @@
 #include "pifinder_simulator.h"
 
+#include <cmath>
 #include <cstring>
+#include <ctime>
 #include <string>
 
 #include <curl/curl.h>
@@ -122,6 +124,15 @@ bool PiFinderSimulator::initProperties()
     IUFillNumber(&MountEqN[MOUNT_AXIS_RA], "RA", "RA", "%.6f", 0, 24, 0, 0);
     IUFillNumber(&MountEqN[MOUNT_AXIS_DE], "DEC", "DEC", "%.6f", -90, 90, 0, 0);
     IUFillNumberVector(&MountEqNP, MountEqN, 2, "", "EQUATORIAL_EOD_COORD", "Eq. Coordinates",
+                        "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Second snoop decode target on the same mount device: its slew target
+    // (see the header comment on MountTargetNP - used to tell a genuine new
+    // forwarded GoTo apart from a HOLDING re-sync). "device" filled in
+    // alongside MountEqNP in ISNewText().
+    IUFillNumber(&MountTargetN[MOUNT_TGT_RA], "RA", "RA", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&MountTargetN[MOUNT_TGT_DE], "DEC", "DEC", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountTargetNP, MountTargetN, 2, "", "TARGET_EOD_COORD", "Slew Target",
                         "Main Control", IP_RO, 60, IPS_IDLE);
 
     // Fixed, singular device (see the header comment) - snoop registration
@@ -332,6 +343,10 @@ bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts
             m_snoopedMountDevice = newDevice;
             strncpy(MountEqNP.device, newDevice.c_str(), MAXINDIDEVICE - 1);
             MountEqNP.device[MAXINDIDEVICE - 1] = '\0';
+            strncpy(MountTargetNP.device, newDevice.c_str(), MAXINDIDEVICE - 1);
+            MountTargetNP.device[MAXINDIDEVICE - 1] = '\0';
+            m_haveLastMountTarget = false;
+            m_followActive = false;
             // See ISSnoopDevice()'s own comment - re-registering is harmless
             // (indiserver just keeps the latest registration for this
             // property/device pair); an empty name effectively means
@@ -339,7 +354,10 @@ bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts
             // never sees a device with an empty name, so no snoop events
             // arrive, same net effect.
             if (!newDevice.empty())
+            {
                 IDSnoopDevice(newDevice.c_str(), "EQUATORIAL_EOD_COORD");
+                IDSnoopDevice(newDevice.c_str(), "TARGET_EOD_COORD");
+            }
             LOGF_INFO("Following mount device for real slews: %s", newDevice.empty() ? "(none)" : newDevice.c_str());
             // Persist across restarts - see m_connectedConfigLoaded's own
             // comment for why this was missing before (found live 2026-09-01,
@@ -366,27 +384,61 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
 
     if (deviceName && !m_snoopedMountDevice.empty() && m_snoopedMountDevice == deviceName)
     {
+        // The mount's slew target changed -> a genuine new GoTo to a new
+        // place is starting. Follow the mount through to it, regardless of
+        // Mount Bridge's CORRECTION_AGE (a forwarded user GoTo goes out via
+        // sendMountCoords() too, so the age can't tell it apart from a
+        // correction - the target change can). A HOLDING re-sync re-issues
+        // the *same* target, so TARGET_EOD_COORD does not change and this
+        // does not trip.
+        if (IUSnoopNumber(root, &MountTargetNP) == 0)
+        {
+            const double tgtRA = MountTargetN[MOUNT_TGT_RA].value;
+            const double tgtDEC = MountTargetN[MOUNT_TGT_DE].value;
+            const bool changed = !m_haveLastMountTarget ||
+                                 separationArcmin(m_lastMountTargetRA, m_lastMountTargetDEC, tgtRA, tgtDEC)
+                                     > MOUNT_TARGET_CHANGE_EPS_DEG * 60.0;
+            if (m_haveLastMountTarget && changed)
+            {
+                m_followActive = true;
+                m_followTargetRA = tgtRA;
+                m_followTargetDEC = tgtDEC;
+                m_followDeadline = static_cast<long>(time(nullptr)) + FOLLOW_TIMEOUT_SEC;
+                LOGF_INFO("Mount slew target changed (RA %.4fh DEC %.4f) - following it through the slew.",
+                          tgtRA, tgtDEC);
+            }
+            m_lastMountTargetRA = tgtRA;
+            m_lastMountTargetDEC = tgtDEC;
+            m_haveLastMountTarget = true;
+            return true;
+        }
+
         if (IUSnoopNumber(root, &MountEqNP) == 0)
         {
-            // Only while the watched mount is actually, physically slewing
-            // (IPS_BUSY on its own EQUATORIAL_EOD_COORD) does this device's
-            // truth follow it - see the header comment for why: PiFinder is
-            // rigidly attached, so a real slew moves it too, but ordinary
-            // mount-model drift once it's back to idle/tracking must NOT
-            // keep dragging this device along, or there would be nothing
-            // left for Verify/Alert or Auto-correct to ever detect.
-            //
-            // Found live (2026-09-01): that alone isn't enough - Mount
-            // Bridge's OWN corrective re-syncs (Auto-correct, Goto-Forward's
-            // HOLDING re-sync) also set the mount Busy while they run. Left
-            // unguarded, this device ends up chasing the mount's own
-            // imperfect corrected landing spot in a feedback loop, silently
-            // defeating drift detection (confirmed live: PiFinder and mount
-            // walked steadily off together, never converging). Only follow
-            // when Mount Bridge's own CORRECTION_AGE says this Busy episode
-            // is NOT explained by something it just sent itself.
-            const bool mountBridgeIsCorrectingRightNow = m_mountBridgeCorrectionAge < CORRECTION_GRACE_SEC;
-            if (MountEqNP.s == IPS_BUSY && !mountBridgeIsCorrectingRightNow)
+            // PiFinder is rigidly attached to the OTA, so a real slew moves
+            // it too - but ordinary mount-model drift once the mount is back
+            // to idle/tracking must NOT keep dragging this device along, or
+            // there is nothing left for Verify/Alert or Auto-correct to
+            // detect. Two things get followed:
+            //   1. m_followActive - a forwarded new GoTo (target changed
+            //      above); follow the mount verbatim until it settles on the
+            //      new target (or a safety timeout).
+            //   2. a Busy episode NOT explained by Mount Bridge itself
+            //      (CORRECTION_AGE old) - e.g. a hand-paddle / external slew.
+            // Mount Bridge's own small HOLDING/auto-correct re-syncs match
+            // neither (same target, fresh CORRECTION_AGE) and stay unfollowed
+            // - the feedback loop that used to walk PiFinder and mount off
+            // together (2026-09-01) does not form.
+            if (m_followActive && static_cast<long>(time(nullptr)) > m_followDeadline)
+            {
+                m_followActive = false;
+                LOG_INFO("Mount-follow timed out (mount never settled on the new target) - holding here.");
+            }
+
+            const bool externalSlew = MountEqNP.s == IPS_BUSY &&
+                                      m_mountBridgeCorrectionAge >= CORRECTION_GRACE_SEC;
+
+            if (m_followActive || externalSlew)
             {
                 m_currentRA = MountEqN[MOUNT_AXIS_RA].value;
                 m_currentDEC = MountEqN[MOUNT_AXIS_DE].value;
@@ -399,15 +451,29 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
                     EqNP.apply();
                 }
             }
-            // else: mount idle/tracking again, or its current Busy episode
-            // is Mount Bridge's own correction - simply stop reacting
-            // further; m_currentRA/DEC already holds wherever it last
-            // legitimately followed to, exactly the same "hold
-            // independently" behavior Sync()/Goto() already give this
-            // device everywhere else.
+
+            // Stop following once the mount has settled (state OK) close to
+            // the new target - the exact settled position was just copied
+            // above, so this device ends up precisely where the mount is.
+            if (m_followActive && MountEqNP.s == IPS_OK &&
+                separationArcmin(m_currentRA, m_currentDEC, m_followTargetRA, m_followTargetDEC)
+                    < FOLLOW_ARRIVED_ARCMIN)
+            {
+                m_followActive = false;
+            }
         }
         return true;
     }
 
     return INDI::Telescope::ISSnoopDevice(root);
+}
+
+double PiFinderSimulator::separationArcmin(double ra1_h, double dec1_d, double ra2_h, double dec2_d)
+{
+    const double d2r = M_PI / 180.0;
+    const double ra1 = ra1_h * 15.0 * d2r, ra2 = ra2_h * 15.0 * d2r;
+    const double dec1 = dec1_d * d2r, dec2 = dec2_d * d2r;
+    double c = std::sin(dec1) * std::sin(dec2) + std::cos(dec1) * std::cos(dec2) * std::cos(ra1 - ra2);
+    c = std::max(-1.0, std::min(1.0, c));
+    return std::acos(c) / d2r * 60.0;
 }
