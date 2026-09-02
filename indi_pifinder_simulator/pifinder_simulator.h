@@ -179,4 +179,41 @@ class PiFinderSimulator : public INDI::Telescope
         double m_mountBridgeCorrectionAge = 1e9;
         INumberVectorProperty MountBridgeCorrectionAgeNP;
         INumber MountBridgeCorrectionAgeN[1];
+
+        // Forwarded-GoTo follow (2026-09-01, issue #177 / #232 follow-up):
+        // the CORRECTION_AGE gate above correctly suppresses following Mount
+        // Bridge's small HOLDING/auto-correct re-sync nudges, but in
+        // Goto-Forward it *also* suppressed following the genuine forwarded
+        // user GoTo (that too goes out via sendMountCoords(), bumping the
+        // age) - so after a "GoTo Vega" the mount slewed to Vega while this
+        // device stayed frozen at the old position, leaving a permanent
+        // residual. Fix: also snoop the mount's own TARGET_EOD_COORD (the
+        // standard INDI::Telescope property the base class populates on every
+        // real Goto). A *change* of that target means a new slew to a new
+        // place is starting - follow the mount through to it. A HOLDING
+        // re-sync re-issues the *same* held target, so it does not change
+        // TARGET_EOD_COORD and is still (correctly) not followed.
+        INumberVectorProperty MountTargetNP;
+        INumber MountTargetN[2];
+        enum { MOUNT_TGT_RA, MOUNT_TGT_DE };
+        // A real new target differs from the last one by far more than this;
+        // a re-issued identical Goto differs by 0. ~1.2 arcmin of slack for
+        // floating-point / rounding noise only.
+        static constexpr double MOUNT_TARGET_CHANGE_EPS_DEG = 0.02;
+        // Stop following once the mount has settled (EQ state OK) within this
+        // of the new target - the exact settled position is still copied
+        // verbatim, this only decides *when* to let go.
+        static constexpr double FOLLOW_ARRIVED_ARCMIN = 3.0;
+        // Safety net: never follow indefinitely if the mount never actually
+        // slews (target set to where it already points) or never reports OK.
+        static constexpr long FOLLOW_TIMEOUT_SEC = 120;
+        bool m_followActive = false;
+        bool m_haveLastMountTarget = false;
+        double m_lastMountTargetRA = 0.0;   // hours
+        double m_lastMountTargetDEC = 0.0;  // degrees
+        double m_followTargetRA = 0.0;
+        double m_followTargetDEC = 0.0;
+        long m_followDeadline = 0;
+
+        static double separationArcmin(double ra1_h, double dec1_d, double ra2_h, double dec2_d);
 };

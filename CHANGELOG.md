@@ -248,6 +248,22 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **PiFinder Simulator now follows a forwarded GoTo (#177 / #232 follow-up)**: the
+  `CORRECTION_AGE` gate added with `FOLLOW_MOUNT_DEVICE` correctly stopped this device
+  chasing Mount Bridge's small HOLDING/auto-correct re-sync nudges, but in Goto-Forward
+  it *also* stopped it following the genuine forwarded user GoTo (that too goes out via
+  `sendMountCoords()`, so the age can't tell them apart). Result: after "GoTo Vega" the
+  mount slewed to Vega while this device stayed frozen at the old position, leaving a
+  permanent residual the coupling could never close. Now also snoops the mount's own
+  `TARGET_EOD_COORD`: a *change* of that target means a new slew to a new place - follow
+  the mount through to it; a HOLDING re-sync re-issues the *same* target and is still
+  (correctly) not followed. Verified end-to-end on the x86 simulator: GoTo-Forward to a
+  new target now converges to <1' residual ("Arrival verified ... residual 0.7 arcmin").
+- **Coordinate pipeline reference** (`docs/concepts/coordinate_pipeline_reference.md`): new
+  document mapping the epoch/unit/frame representation of every hop between PiFinder (J2000)
+  and the mount (JNow), for both the real-hardware and full-simulation scenarios - the
+  cross-cutting contract that #160, #232 and the "never pinpoint" symptom each violated
+  in a different place.
 - **picamera2/drm_preview.py patch drift**: `diffs/drm_preview_smos.diff` (makes the optional `pykms`
   import gracefully absent on Arch/SMOS) failed to apply against picamera2 0.3.37 - found live on a
   fresh Pi5 install, `pip install picamera2` pulled 0.3.37 (a newer release than this Pi4's existing
