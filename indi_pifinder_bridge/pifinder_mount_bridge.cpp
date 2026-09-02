@@ -10,6 +10,7 @@
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include <libastro.h>
 
 static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBridge());
 
@@ -191,8 +192,26 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
         // angularSeparationArcmin()) expects hours, matching getMountRADE()
         // and the rest of the driver. Must convert here, once, at the
         // source - never assume degrees-vs-hours from a bare number.
-        ra = raField.get<double>() / 15.0;
-        dec = decField.get<double>();
+        const double raJ2000Hours = raField.get<double>() / 15.0;
+        const double decJ2000Deg  = decField.get<double>();
+
+        // EPOCH MISMATCH (found live 2026-09-01, issue #232): PiFinder's
+        // /api/status solution is J2000 - PiFinder is J2000 throughout (see
+        // /api/fake_solve's and /api/current_target's own docstrings). Every
+        // caller of this function compares/syncs the value against the mount's
+        // EQUATORIAL_EOD_COORD, which is epoch-of-date (JNow). Without
+        // precessing here the bridge reads a fixed precession-sized offset
+        // (~12' in 2026, growing) as perpetual "drift" and can never hold a
+        // target within threshold. Precess once, at the source - mirrors
+        // lx200_pifinder.cpp::pollCurrentTarget() doing the same for the other
+        // PiFinder->mount coordinate path.
+        INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+        INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+        INDI::J2000toObserved(&j2000, jd, &jnow);
+
+        ra = jnow.rightascension;
+        dec = jnow.declination;
         return true;
     }
     catch (const nlohmann::json::exception &)

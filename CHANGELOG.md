@@ -248,6 +248,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge: PiFinder solve position not precessed to JNow (#232)**: `httpGetPiFinderFreshCamPosition()`
+  returned PiFinder's `/api/status` solution coordinates unchanged. PiFinder is J2000 throughout, but
+  every caller compares/syncs that value against the mount's `EQUATORIAL_EOD_COORD` (epoch-of-date).
+  The bridge therefore read the full J2000→JNow precession (~13' in RA in 2026, growing) as a
+  permanent "drift", perpetually re-syncing the mount off-target and never holding within threshold.
+  Now precesses once at the source via `INDI::J2000toObserved`, mirroring
+  `lx200_pifinder.cpp::pollCurrentTarget()`. Verified on the x86 simulator: a Goto that previously
+  gave up after 3 refine attempts at ~19' residual now converges to 0'.
 - **PiFinder Simulator now follows a forwarded GoTo (#177 / #232 follow-up)**: the
   `CORRECTION_AGE` gate added with `FOLLOW_MOUNT_DEVICE` correctly stopped this device
   chasing Mount Bridge's small HOLDING/auto-correct re-sync nudges, but in Goto-Forward
