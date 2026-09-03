@@ -27,6 +27,7 @@ with a strict incremental XML parser; verified live against a real
 property and 25 others) before being written here as this module.
 """
 import socket
+import subprocess
 import time
 import xml.parsers.expat
 from typing import Optional
@@ -910,14 +911,58 @@ def trigger_manual_sync(
 MOUNT_BRIDGE_FIFO_PATH = "/tmp/indiFIFO"
 
 
+MOUNT_BRIDGE_PROCESS_NAME = "indi_pifinder_mount_bridge"
+# How long to wait for the old process to actually exit before giving up and
+# starting a new one anyway - see restart_mount_bridge_driver()'s own comment
+# for why this wait exists at all.
+_MOUNT_BRIDGE_STOP_WAIT_SEC = 5.0
+_MOUNT_BRIDGE_STOP_POLL_INTERVAL_SEC = 0.2
+
+
+def _mount_bridge_pids() -> list:
+    try:
+        out = subprocess.run(["pgrep", "-f", MOUNT_BRIDGE_PROCESS_NAME],
+                              capture_output=True, text=True, timeout=3)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+    return [line for line in out.stdout.split() if line]
+
+
 def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_sec: float = 2.0) -> None:
     """Stop/start "PiFinder Mount Bridge" via the indiFIFO control channel.
     Purely a driver-process bounce - callers are responsible for reconnecting
     and re-linking afterwards (see server.py's readiness watchdog, which does
-    both as separate, independently-retried checks)."""
+    both as separate, independently-retried checks).
+
+    Found live (2026-09-03): indiserver's FIFO "start" has no idempotency of
+    its own - it blindly launches another instance regardless of whether one
+    under the same device name is already running or still mid-shutdown.
+    The original stop-then-sleep(settle_sec)-then-start here assumed that
+    fixed delay was always enough for the old process to actually exit, but
+    a manual stop/start race (or this function being invoked again before
+    the previous call's process had fully gone) left TWO
+    indi_pifinder_mount_bridge processes both claiming "PiFinder Mount
+    Bridge" at once - a genuinely broken, double-answering device, not just
+    wasted resources. Now actively confirms the old process is gone (or
+    force-kills any that linger past the wait) before ever sending "start",
+    so this function always leaves exactly one instance running - a real
+    singleton guarantee, not a hopeful delay."""
     with open(fifo_path, "w") as f:
         f.write('stop indi_pifinder_mount_bridge "PiFinder Mount Bridge"\n')
-    time.sleep(settle_sec)
+
+    deadline = time.monotonic() + max(settle_sec, _MOUNT_BRIDGE_STOP_WAIT_SEC)
+    while time.monotonic() < deadline and _mount_bridge_pids():
+        time.sleep(_MOUNT_BRIDGE_STOP_POLL_INTERVAL_SEC)
+
+    # Belt and suspenders: whatever's still there after the wait (indiFIFO's
+    # own stop not landing, or a stray instance from outside this function
+    # entirely) gets force-killed by process name - not by the PID(s) seen
+    # above, since a new one could have raced in during the wait.
+    remaining = _mount_bridge_pids()
+    if remaining:
+        subprocess.run(["pkill", "-9", "-f", MOUNT_BRIDGE_PROCESS_NAME], capture_output=True)
+        time.sleep(0.5)
+
     with open(fifo_path, "w") as f:
         f.write('start indi_pifinder_mount_bridge -n "PiFinder Mount Bridge"\n')
 
