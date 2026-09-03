@@ -129,7 +129,40 @@ behavior is untouched.
 instance in parallel with a real one (e.g. for dev/testing, exactly why this project needed it — see
 `test_tools/fake_mode.sh`), without needing to patch the source to do it.
 
-### 1.6 Not proposed, flagged for awareness: GPS-location update condition removed
+### 1.6 LX200 "no position yet" placeholder (`pos_server.py`)
+
+**File**: `diffs/pos_server_py.diff`.
+
+`get_telescope_ra()`/`get_telescope_dec()` (the `:GR#`/`:GD#` LX200 handlers) returned a fixed
+`"+00*00'01"` placeholder whenever PiFinder had no valid pointing yet, instead of signaling "no
+position available" - a syntactically valid, near-zero coordinate that any LX200 consumer (this
+project's own Mount Bridge, LX200 OnStep, SkySafari) could parse as a real position and act on,
+including slewing a mount there. `get_telescope_ra()`'s placeholder was additionally the wrong format
+entirely (a Dec-style `+DD*MM'SS` string returned from an RA handler expected to produce `HH:MM:SS`).
+Now returns `None`, which `handle_client()` already turns into "send nothing back" - a genuine
+communication-failure signal a well-behaved LX200 client already handles correctly, rather than a
+fake coordinate.
+
+**Why upstream-relevant**: a real, reproducible bug affecting any LX200-speaking consumer, not a
+StellarMate-specific concern - see PR 8 in `docs/upstream_pr_templates.md`.
+
+**Second, independent fix in the same file/diff (2026-09-03)**: `parse_sd_command()`'s `sr_result` is
+a module-level global, set by `parse_sr_command()` (`:Sr`, RA) and read by `parse_sd_command()` (`:Sd`,
+Dec) to pair the two into a GoTo - but never scoped per-connection and never cleared after use. A
+`:Sr` from one transaction (a dropped connection, an interleaved client, or one that just never sends
+a matching `:Sd`) stayed set indefinitely, ready to be silently paired with a LATER, unrelated `:Sd`'s
+Dec into a GoTo neither call ever asked for together. Now consumed exactly once (`ra_result, sr_result
+= sr_result, None`) regardless of whether the pairing succeeds. Found auditing this file for the
+RA0/Dec0 root-cause investigation (00107/00108) after the user asked specifically whether a
+KStars/SkySafari-originated PushTo goes through this same server (yes).
+
+Found and traced back to this fix (already correctly committed as `diffs/pos_server_py.diff`, applied
+unconditionally right after `integrator_py.diff`) while root-causing a recurring "mount lands at
+RA0/Dec0" incident - see basic-memory `pifinder-stellarmate/00107`/`00108`. (A first pass mistakenly
+concluded this diff file was missing from the repo entirely - it was not; a broad `find` command's
+truncated output was misread. Corrected before anything was committed on that false premise.)
+
+### 1.7 Not proposed, flagged for awareness: GPS-location update condition removed
 
 **File**: `diffs/main_py.diff` (the hunk removing the `location.error_in_m == 0 or
 float(gps_content["error_in_m"]) < float(location.error_in_m)` condition).

@@ -372,6 +372,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // no fresh solve to sync from yet - never skip the sync silently.
         bool syncMountToPiFinderPosition();
 
+        // Records a genuinely new target (JNow, same convention as piRA/
+        // piDec everywhere else in this file) as OriginalTargetNP - converts
+        // to J2000 once and stores that, publishing the property. Call only
+        // from the actual "this is a new target, not an ordinary correction
+        // re-anchor" sites - see OriginalTargetNP's own header comment for
+        // which those are.
+        void setOriginalTarget(double jnowRA, double jnowDec);
+
+        // Horizon safety net - see its own definition/comment in the .cpp
+        // for the full rationale. isAboveHorizon() is also exposed on its
+        // own (not just via sendMountCoordsSafe()) in case a future caller
+        // needs to check without necessarily sending anything.
+        bool isAboveHorizon(double ra, double dec, double &outAltitude);
+        bool sendMountCoordsSafe(double ra, double dec, const char *coordSetName);
+
         // Auto-correct only fires off a position PiFinder itself reports as
         // a real, recent camera solve (via /api/status - see #79/#107 in
         // basic-memory pifinder-stellarmate: LX200 has no room to carry this,
@@ -384,6 +399,46 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // the VERIFY_ALERT mode and general visibility.
         INumberVectorProperty DriftStatusNP;
         INumber DriftStatusN[1];
+
+        // Distinct from DriftStatusNP (mount vs PiFinder agreement) and
+        // m_lastForwardedRA/Dec below (the tactical "held target", which
+        // legitimately gets re-anchored by every ordinary correction - see
+        // HOLDING's own Sync+re-Goto). This is the FIXED J2000 coordinate of
+        // the last genuinely new target (a real forwarded Goto, or a
+        // confirmed external reposition) - never updated by an ordinary
+        // drift correction. Found live (2026-09-03): DriftStatusNP alone
+        // cannot see a slow "random walk" away from what the user actually
+        // asked for, since every correction re-anchors to PiFinder's own
+        // latest reading - if that reading drifts even a little each cycle,
+        // mount and PiFinder stay in perfect agreement with EACH OTHER
+        // while both wander from the true original target. Stored in J2000
+        // (not JNow, unlike m_lastForwardedRA/Dec) because JNow itself keeps
+        // changing with time - a JNow value captured once and compared
+        // against a later JNow reading would show spurious "drift" that is
+        // really just precession accumulating over the elapsed time. See
+        // docs/concepts/coordinate_pipeline_reference.md.
+        INumberVectorProperty OriginalTargetNP;
+        INumber OriginalTargetN[2];
+        enum { ORIGINAL_TARGET_RA, ORIGINAL_TARGET_DE };
+        bool m_haveOriginalTarget = false;
+        double m_originalTargetRA_J2000 = std::nan("");
+        double m_originalTargetDec_J2000 = std::nan("");
+
+        // Read-only: current separation between PiFinder's live position and
+        // OriginalTargetNP above (re-precessed to current JNow each tick for
+        // a fair comparison) - the actual "hold the GoTo'd target" metric,
+        // distinct from DriftStatusNP's "mount agrees with PiFinder" metric.
+        // Diagnostic only - deliberately does NOT trigger its own
+        // correction (see its own TimerHit()-site comment for why): the
+        // existing HOLDING/Fall-4 machinery already keeps mount and PiFinder
+        // converged on whatever PiFinder itself currently, freshly reports,
+        // which is this system's whole trust model (a real camera solve
+        // outranks a mount's own tracking model) - this metric exists to
+        // make a legitimate multi-correction wander *visible*, not to fight
+        // the trust model with a second, competing corrector.
+        INumberVectorProperty OriginalTargetDriftNP;
+        INumber OriginalTargetDriftN[1];
+        long m_lastOriginalTargetDriftWarnTime = 0;
 
         // MODE_GOTO_FORWARD state machine: forwards a *new* push-to target
         // to the mount immediately (event-driven, unlike the drift-polling

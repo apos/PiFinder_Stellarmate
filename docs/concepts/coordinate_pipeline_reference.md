@@ -113,8 +113,38 @@ for slew *smoothness* only - the steady-state position after a GoTo comes from
 the fake-solve path above, not this one. Its own residual accuracy is a
 separate concern from the epoch pipeline (see `full_simulation_imu_dead_reckoning.md`).
 
+## A third hop this doc missed: manual/test-harness coordinate injection
+
+Found live (2026-09-03), after an extended live test session repeatedly "found" a ~13-14′ RA / ~1-2′ Dec
+residual between the mount, PiFinder, and a target's catalog coordinates, that looked exactly like a new bug in
+`pifinder_truth_injector.py` or `/api/fake_solve` (a direct POST of a target's exact catalog RA/Dec to
+`/api/fake_solve` came back ~13.6′ off in the response itself). It was not a code bug anywhere - it was this
+document's own rule being skipped **by hand**, live, in the shell:
+
+`Telescope Simulator.EQUATORIAL_EOD_COORD` and `PiFinder Simulator.EQUATORIAL_EOD_COORD` are epoch **JNow**
+(same as any INDI mount - see the pipeline table above). A star's catalog RA/Dec (e.g. from
+`pick_safe_target()`, or any "Vega is at 18.6167h/38.7833°" reference value) is **J2000**. Syncing/GoTo'ing
+either simulator device directly via `indi_setprop`/`ISNewNumber` with a raw catalog value - skipping the
+J2000→JNow precession every other hop in this pipeline already applies - reproduces this document's own
+Axis-1 bug class exactly: a fixed, ~13′-RA/~1-2′-Dec (2026) offset between "where the simulator says it is"
+and "where the target actually is", propagating downstream through `truth_injector.py` (JNow passthrough,
+correct) → `/api/fake_solve` (JNow→J2000, correct) → `/api/status` (correct J2000) → still off by the
+precession amount, because the *input* to the whole chain was already wrong.
+
+**Verified**: computing Vega's current JNow position via skyfield (`position_of_radec(..., epoch=ts.J2000)`
+→ `.radec(epoch=ts.now())`) gives a 13.64′ RA / 1.24′ Dec offset from its J2000 catalog value - matching the
+live-observed discrepancy almost to the arcsecond.
+
+**Rule for any manual/scripted test that syncs or GoTos `Telescope Simulator` or `PiFinder Simulator`
+directly**: precess the catalog (J2000) target to JNow first (same conversion Mount Bridge's
+`httpGetPiFinderFreshCamPosition()` and `/api/fake_solve` already do), same as every other hop in this
+pipeline. Never write a bare catalog RA/Dec into either simulator's `EQUATORIAL_EOD_COORD`/`ON_COORD_SET`.
+
 ## Checklist before touching any coordinate hop
 
+0. **Manually syncing/GoTo-ing `Telescope Simulator` or `PiFinder Simulator` for a test?** They are JNow -
+   precess the catalog (J2000) target first (see the section above). This is the single most common way to
+   accidentally reintroduce this document's own bug class while testing, not while coding.
 1. Which scenario(s) does this code run in - sim, real, or both?
 2. What epoch is the value on the way in? On the way out? Is there exactly one
    precession between the PiFinder (J2000) world and the mount (JNow) world?

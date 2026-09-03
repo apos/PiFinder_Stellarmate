@@ -16,6 +16,10 @@ pkg_check_modules(INDI REQUIRED libindi)
 pkg_check_modules(CURL REQUIRED libcurl)
 pkg_check_modules(NLOHMANN_JSON REQUIRED nlohmann_json)
 
+# No libnova.pc shipped on this system (headers under /usr/include/libnova,
+# only the raw .so present) - link directly instead of via pkg-config.
+find_library(NOVA_LIBRARIES NAMES nova REQUIRED)
+
 add_executable(indi_pifinder_mount_bridge
     pifinder_mount_bridge.cpp
     pifinder_bridge_client.cpp
@@ -28,6 +32,7 @@ target_link_libraries(indi_pifinder_mount_bridge
     indidriver
     indiclient
     ${CURL_LIBRARIES}
+    ${NOVA_LIBRARIES}
 )
 
 configure_file(indi_pifinder_mount_bridge_driver.xml.in indi_pifinder_mount_bridge_driver.xml @ONLY)
