@@ -111,10 +111,10 @@ def _jnow_to_j2000(ra_h, dec_d):
 
 TARGETS = [
     ("Vega", 279.2250 / 15, 38.7833),
-    ("Arcturus", 213.9000 / 15, 19.1667),
+    ("Altair", 297.6750 / 15, 8.8667),
+    ("Deneb", 310.3500 / 15, 45.2667),
     ("Alioth", 193.5000 / 15, 55.9500),
-    ("Regulus", 152.0750 / 15, 11.9667),
-    ("Kochab", 222.6750 / 15, 74.1500),
+    ("Alkaid", 206.8750 / 15, 49.3000),
 ]
 
 def wait_for_settle(target_ra_j2000_h=None, target_dec_j2000_d=None, max_wait_sec=60,
