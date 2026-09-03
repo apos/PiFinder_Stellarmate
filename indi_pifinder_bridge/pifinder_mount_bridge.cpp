@@ -1611,6 +1611,21 @@ void PiFinderMountBridge::handleGotoForward()
                 // a subsequent genuinely new target still fires immediately.
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
+                // Found live (2026-09-03): this recovery path left
+                // OriginalTargetNP unset (still its 0/0 INDI default) across
+                // a restart, because setOriginalTarget() was only called at
+                // genuinely-new-target sites - not here. Every later "Held
+                // target drifted - synced and re-issued" cycle then re-
+                // anchored m_lastForwardedRA/Dec to PiFinder's own noisy
+                // solve with nothing left comparing against a fixed true
+                // target, so a real slow walk-off (confirmed visually in
+                // Stellarium the same session) went completely undetected by
+                // ORIGINAL_TARGET_DRIFT. Same "best available baseline"
+                // reasoning as the Fall-4 NaN-guard above (line ~984) -
+                // guarded so a legitimately already-tracked original target
+                // from before the restart is never clobbered.
+                if (std::isnan(m_originalTargetRA_J2000) || std::isnan(m_originalTargetDec_J2000))
+                    setOriginalTarget(targetRA, targetDec);
                 m_forwardState = ForwardState::HOLDING;
                 return;
             }
