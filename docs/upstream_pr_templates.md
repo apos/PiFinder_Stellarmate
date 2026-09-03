@@ -312,6 +312,76 @@ post-solve sleep policy.
 
 ---
 
+## PR 8 — Bugfix: `pos_server.py` returns a wrong-format placeholder instead of "no position yet"
+
+**Depends on**: nothing. **Priority: high** — this is a real, reproducible cause of a mount slewing to
+RA0h/Dec0deg on any LX200-speaking consumer (this project's own Mount Bridge, LX200 OnStep, and
+presumably any other software driving a mount off PiFinder's LX200-emulated position).
+
+Found while root-causing a recurring "mount lands at RA0/Dec0" incident (basic-memory
+`pifinder-stellarmate/00107`/`00108`) that this project's own `diffs/pos_server_py.diff` already
+fixes. Re-verify the exact line numbers/context still match current `main` before filing (this
+project's copy was last checked against a live checkout at commit `beb34519`, not necessarily the
+current tip).
+
+### Suggested title
+`Fix: get_telescope_ra/get_telescope_dec return a malformed placeholder instead of signaling "no position yet"`
+
+### Suggested body
+
+> ## What's broken
+>
+> `pos_server.py`'s `get_telescope_ra()`/`get_telescope_dec()` (the LX200 `:GR#`/`:GD#` handlers) both
+> return the literal string `"+00*00'01"` whenever `solution.has_pointing()` is False (no valid
+> pointing yet - e.g. right after startup, before the first solve lands). Two problems with this:
+>
+> 1. It's a syntactically valid, near-zero coordinate rather than a genuine "no position" signal - any
+>    downstream LX200 client (a real mount driver, an app like SkySafari, this project's own INDI
+>    Mount Bridge integration) parses it as PiFinder actually pointing near RA=0h/Dec=0deg, and can act
+>    on it as if it were real - including slewing a mount there.
+> 2. It's the wrong format for `get_telescope_ra()` specifically - `"+00*00'01"` is a declination-style
+>    string (`+DD*MM'SS`), not the `HH:MM:SS` format an RA response is supposed to be in. A client
+>    parsing this as RA gets something even more nonsensical than a plain zero.
+>
+> ## How I found it
+>
+> Chasing a live, reproducible incident where a simulated mount repeatedly slewed to RA0/Dec0 whenever
+> PiFinder briefly had no fresh solve (e.g. right after a restart). Traced it to this placeholder being
+> read by an LX200 consumer and treated as a real, if stale, position.
+>
+> ## The fix
+>
+> Return `None` instead in both functions - `handle_client()` already treats a falsy return as "send
+> nothing back", which a well-behaved LX200 client (this project's own `LX200_PIFINDER::ReadScopeStatus()`,
+> for instance) already handles as a read/communication failure rather than a real coordinate, since the
+> expected trailing `#` terminator never arrives.
+>
+> ```python
+> def get_telescope_ra(shared_state, _):
+>     solution = shared_state.solution()
+>     dt = shared_state.datetime()
+>     if not solution or not dt or not solution.has_pointing():
+>         return None
+>     ...
+>
+> def get_telescope_dec(shared_state, _):
+>     solution = shared_state.solution()
+>     dt = shared_state.datetime()
+>     if not solution or not dt or not solution.has_pointing():
+>         return None
+>     ...
+> ```
+>
+> ## Open questions for maintainers
+>
+> - Is there an existing convention elsewhere in `pos_server.py` for "no data yet" LX200 responses that
+>   this should follow instead of a bare `None`?
+> - Should SkySafari (this server's primary documented client, per the module docstring) be specifically
+>   tested against this change - does it handle a dropped/no-terminator response gracefully, or does it
+>   need something more RFC-compliant for "unknown position"?
+
+---
+
 ## Not templated: generic-username login support
 
 Noted in the inventory doc (§2) as a lighter-weight alternative to this project's SMOS-specific
