@@ -11,6 +11,8 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <libastro.h>
+#include <libnova/julian_day.h>
+#include <libnova/transform.h>
 
 static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBridge());
 
@@ -184,6 +186,38 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
         if (raField.is_null() || decField.is_null())
             return false;
 
+        // Found live (2026-09-03), root-caused via LOGF_WARN instrumentation
+        // at the one place that actually USES an adopted target
+        // (handleRepositionDetection()'s Fall-4 revert): a plain, non-null,
+        // numerically valid RA=0/Dec=0 reading from PiFinder passed every
+        // check above (fresh, CAM-sourced, non-null) and got silently
+        // adopted as a real held target by an ordinary adoption site (Fall-2
+        // confirm, or HOLDING's own periodic re-sync - neither validates
+        // what it adopts). It then sat there, unremarkable-looking (0.0 is
+        // not NaN), until a LATER, unrelated Fall-4 timeout used it to
+        // revert the mount for real - the actual entry point for this
+        // project's whole run of RA0/Dec0 incidents was HERE, not at any of
+        // the several revert/adoption sites already patched one at a time.
+        // Reject at the source instead: PiFinder's actual solved position is
+        // never genuinely this close to 0/0 in any of this project's test
+        // scenarios, and a real observer targeting that exact point would
+        // cross it in seconds, not sit there - a solve landing within a
+        // couple of arcminutes of it this reliably is far more likely a
+        // transient bad read (e.g. during the periodic indiserver/PiFinder
+        // slowness this project has already documented) than a genuine
+        // position.
+        if (std::abs(raField.get<double>()) < 0.05 && std::abs(decField.get<double>()) < 0.05)
+        {
+            // Free function, no getDeviceName() in scope - DEBUGFDEVICE takes
+            // the device name explicitly instead (see LOGF_WARN's own
+            // definition in indilogger.h).
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_WARNING,
+                         "PiFinder reported a solve suspiciously close to RA0/Dec0 (RA=%.4f, DEC=%.4f deg) - "
+                         "treating as untrustworthy rather than adopting it as a real position.",
+                         raField.get<double>(), decField.get<double>());
+            return false;
+        }
+
         // CRITICAL UNIT MISMATCH (found live 2026-08-19, caused a real
         // runaway slew): PiFinder's /api/status reports "solution.RA" in
         // DEGREES (0-360) - unlike the LX200 EQUATORIAL_EOD_COORD property
@@ -257,6 +291,55 @@ bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, 
         const auto parsed = nlohmann::json::parse(body);
         mountType = parsed.value("mount_type", std::string());
         screenDirection = parsed.value("screen_direction", std::string());
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// Fetches PiFinder's own GPS/site location (/api/status "location": lat/lon,
+// degrees) - same JSON endpoint every other httpGetPiFinder*() function
+// here already polls, just a different field. Used by the horizon-safety
+// check below (see sendMountCoordsSafe()'s own comment for why that exists)
+// - PiFinder already knows where it physically is (real GPS, or the sim
+// rig's configured location), no separate site-location tracking needed in
+// this driver. Returns false (leaving lat/lon untouched) on any request/
+// parse failure or if PiFinder doesn't have a location lock yet.
+bool httpGetPiFinderLocation(const std::string &url, double &lat, double &lon)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &location = parsed.at("location");
+        if (!location.value("lock", false))
+            return false;
+        const auto &latField = location.at("lat");
+        const auto &lonField = location.at("lon");
+        if (latField.is_null() || lonField.is_null())
+            return false;
+        lat = latField.get<double>();
+        lon = lonField.get<double>();
         return true;
     }
     catch (const nlohmann::json::exception &)
@@ -484,6 +567,17 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // See the header comment - the fixed J2000 coordinate of the last
+    // genuinely new target, distinct from the tactical (JNow) held target.
+    IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_DE], "DEC", "DEC (J2000, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&OriginalTargetNP, OriginalTargetN, 2, getDeviceName(), "ORIGINAL_TARGET",
+                       "Original GoTo target (J2000)", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillNumber(&OriginalTargetDriftN[0], "DRIFT_ARCMIN", "Drift from original target (arcmin)", "%.2f", 0, 10000, 0, 0);
+    IUFillNumberVector(&OriginalTargetDriftNP, OriginalTargetDriftN, 1, getDeviceName(), "ORIGINAL_TARGET_DRIFT",
+                       "Original target drift", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // Distinct from DriftStatusNP - that one means "the mount is tracking a
     // bit imprecisely, will self-correct". This means the mount refused a
     // Goto/Sync outright (e.g. an elevation or cable-wrap/axis limit), which
@@ -538,6 +632,8 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&OriginalTargetNP);
+        defineProperty(&OriginalTargetDriftNP);
         defineProperty(&MountRejectTP);
         defineProperty(&PiFinderOrientationTP);
         defineProperty(&ShadowSyncSP);
@@ -571,6 +667,8 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(OriginalTargetNP.name);
+        deleteProperty(OriginalTargetDriftNP.name);
         deleteProperty(MountRejectTP.name);
         deleteProperty(PiFinderOrientationTP.name);
         deleteProperty(ShadowSyncSP.name);
@@ -864,9 +962,44 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
             // instead of declaring success ourselves. m_lastConfirmedGoodTime
             // is deliberately NOT touched here - it only updates once drift
             // is actually observed back within Threshold, same as normal.
+            // Found live (2026-09-03): m_lastForwardedRA/Dec default to NaN
+            // (see the header) and are only ever set by a genuine forwarded
+            // Goto or a confirmed external reposition - NOT by the plain
+            // Sync this mode does "on entering Goto-Forward" after every
+            // driver restart. A restart landing shortly before this timeout
+            // fires (e.g. the Control Center's readiness watchdog restarting
+            // an only-momentarily-slow driver) left them still NaN here -
+            // sendMountCoords() forwarded that through INDI to the mount
+            // unchecked, and the mount silently coerced NaN to 0/0, sending
+            // it there for real. There is no genuine "held target" yet to
+            // revert to in that case - fall back to PiFinder's own current
+            // fresh position (piRA/piDec, already verified fresh above) and
+            // adopt it as the new held target, exactly like the Fall-2
+            // "external reposition confirmed" branch above already does.
+            if (std::isnan(m_lastForwardedRA) || std::isnan(m_lastForwardedDec))
+            {
+                LOG_WARN("No held target since the last restart - adopting PiFinder's current position instead of reverting to an unset one.");
+                m_lastForwardedRA = piRA;
+                m_lastForwardedDec = piDec;
+                setOriginalTarget(piRA, piDec); // same reasoning as Fall-2 above - best available baseline
+            }
+            // Diagnostic instrumentation added live (2026-09-03) chasing a
+            // recurrence of the mount landing at/near RA0/Dec0 via exactly
+            // this revert path, with m_lastForwardedRA/Dec NOT NaN this
+            // time (the guard above did not fire) - meaning whatever value
+            // was actually used here was itself already bad, from a source
+            // this comment's own earlier fix didn't anticipate. An external
+            // log watcher missed the moment (disconnected during the same
+            // system slowness this project has already documented), so
+            // this prints directly through INDI's own message channel -
+            // immune to any external tool's own connection gaps - to
+            // finally pin down the exact value on the next occurrence.
+            LOGF_WARN("Reposition revert about to send: piRA=%.6f piDec=%.6f (SYNC), then m_lastForwardedRA=%.6f "
+                      "m_lastForwardedDec=%.6f (TRACK).",
+                      piRA, piDec, m_lastForwardedRA, m_lastForwardedDec);
             applySlewRateForDrift(drift);
-            if (m_client->sendMountCoords(piRA, piDec, "SYNC") &&
-                m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC") &&
+                sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
             {
                 if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
                 {
@@ -934,6 +1067,7 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         m_lastForwardedDec = piDec;
         m_correctTargetRA = piRA;
         m_correctTargetDec = piDec;
+        setOriginalTarget(piRA, piDec); // genuinely new target - a confirmed external reposition
         m_lastConfirmedGoodTime = time(nullptr);
         m_forwardState = ForwardState::HOLDING;
         m_correctState = CorrectState::IDLE;
@@ -1103,6 +1237,45 @@ void PiFinderMountBridge::TimerHit()
         const double threshold = DriftThresholdN[0].value;
         exceeded = drift > threshold;
         DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
+
+        // See OriginalTargetNP's own header comment - this is the "did we
+        // hold what the user actually asked for" metric, separate from
+        // DriftStatusNP above ("does the mount currently agree with
+        // PiFinder"). Re-precess the fixed J2000 original target to
+        // CURRENT JNow every tick before comparing - JNow itself keeps
+        // changing with time, so comparing a stale JNow snapshot against a
+        // fresh one would show spurious drift that's really just
+        // precession, not a real change in pointing.
+        if (m_haveOriginalTarget)
+        {
+            INDI::IEquatorialCoordinates j2000 { m_originalTargetRA_J2000, m_originalTargetDec_J2000 };
+            INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+            const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+            INDI::J2000toObserved(&j2000, jd, &jnow);
+
+            const double originalTargetDrift = angularSeparationArcmin(piRA, piDec, jnow.rightascension, jnow.declination);
+            OriginalTargetDriftN[0].value = originalTargetDrift;
+            const bool originalTargetExceeded = originalTargetDrift > threshold;
+            OriginalTargetDriftNP.s = originalTargetExceeded ? IPS_ALERT : IPS_OK;
+            IDSetNumber(&OriginalTargetDriftNP, nullptr);
+
+            // Diagnostic only (see the header comment for why this doesn't
+            // self-correct) - rate-limited the same way MaxSyncDriftNP's own
+            // warning is, so a sustained wander doesn't spam the log every
+            // tick without adding new information.
+            if (originalTargetExceeded)
+            {
+                const long now = time(nullptr);
+                if (now - m_lastOriginalTargetDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                {
+                    m_lastOriginalTargetDriftWarnTime = now;
+                    LOGF_WARN("PiFinder has drifted %.1f arcmin from the original GoTo target (threshold %.1f) - "
+                              "mount and PiFinder still agree with each other, but both have wandered from what "
+                              "was actually requested. Send a fresh Goto/push-to to re-anchor.",
+                              originalTargetDrift, threshold);
+                }
+            }
+        }
     }
 
     // Published every tick alongside drift, same reasoning as DriftStatusNP
@@ -1204,7 +1377,7 @@ void PiFinderMountBridge::TimerHit()
         {
             // Sync path: instantaneous, no physical motion to verify/refine.
             DriftStatusNP.s = IPS_BUSY;
-            if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
                 LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent SYNC to mount.", drift);
             else
                 LOG_ERROR("Failed to send correction to mount.");
@@ -1274,6 +1447,88 @@ void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
     m_client->setSlewRateIndex(index);
 }
 
+void PiFinderMountBridge::setOriginalTarget(double jnowRA, double jnowDec)
+{
+    INDI::IEquatorialCoordinates jnow { jnowRA, jnowDec };
+    INDI::IEquatorialCoordinates j2000 { 0.0, 0.0 };
+    const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+    INDI::ObservedToJ2000(&jnow, jd, &j2000);
+
+    m_originalTargetRA_J2000 = j2000.rightascension;
+    m_originalTargetDec_J2000 = j2000.declination;
+    m_haveOriginalTarget = true;
+
+    OriginalTargetN[ORIGINAL_TARGET_RA].value = m_originalTargetRA_J2000;
+    OriginalTargetN[ORIGINAL_TARGET_DE].value = m_originalTargetDec_J2000;
+    OriginalTargetNP.s = IPS_OK;
+    IDSetNumber(&OriginalTargetNP, nullptr);
+}
+
+// Found live (2026-09-03): a corrupted/stale coordinate reaching this far -
+// from any of several sources this project has already chased down one at
+// a time (a NaN'd never-set held target, a rapid tracking on/off stress
+// test racing Fall-2's external-reposition detection, or a not-yet-found
+// cause still under investigation) - got forwarded as a real Sync+Track
+// command and the mount genuinely slewed there. Rather than keep chasing
+// each individual source of a bad value one at a time, this is a single,
+// central safety net every mount-affecting command in this driver now
+// passes through: refuse to send ANY coordinate whose altitude, right now,
+// at this site, is below the safety margin - a real telescope slewing
+// there risks a physical collision with its own mount/tripod. This is
+// deliberately NOT a "reject exactly RA0/Dec0" special case (0h/0deg can be
+// a perfectly legitimate real target close to the celestial equator/
+// equinox) - altitude is the only thing that actually matters for mount
+// safety, and it depends on time and site location like any other object's
+// altitude does.
+//
+// -5 degrees, not 0: direct user feedback (2026-09-03) - a site at real
+// elevation (e.g. on a mountain) can have a geometric horizon depressed
+// somewhat below the ideal sea-level 0 degrees; -5 degrees is a
+// conservative allowance for that without opening the door to a genuine
+// below-local-horizon slew.
+static constexpr double HORIZON_SAFETY_MARGIN_DEG = -5.0;
+
+bool PiFinderMountBridge::isAboveHorizon(double ra, double dec, double &outAltitude)
+{
+    double lat, lon;
+    const bool haveLocation =
+        httpGetPiFinderLocation("http://127.0.0.1/api/status", lat, lon) ||
+        httpGetPiFinderLocation("http://127.0.0.1:8080/api/status", lat, lon);
+    if (!haveLocation)
+    {
+        // No location lock yet (e.g. very early startup) - nothing to
+        // check against. Fail OPEN here deliberately: refusing every
+        // command until a GPS lock exists would make the whole bridge
+        // unusable before one is acquired, and every caller of
+        // sendMountCoordsSafe() already has its own freshness/sanity gates
+        // upstream of this - this is defense in depth, not the only check.
+        outAltitude = 90.0;
+        return true;
+    }
+
+    struct ln_lnlat_posn observer { lon, lat };
+    struct ln_equ_posn object { ra * 15.0, dec }; // libnova wants RA in degrees
+    struct ln_hrz_posn horizontal;
+    const double jd = ln_get_julian_from_sys();
+    ln_get_hrz_from_equ(&object, &observer, jd, &horizontal);
+
+    outAltitude = horizontal.alt;
+    return horizontal.alt >= HORIZON_SAFETY_MARGIN_DEG;
+}
+
+bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char *coordSetName)
+{
+    double altitude = 90.0;
+    if (!isAboveHorizon(ra, dec, altitude))
+    {
+        LOGF_ERROR("Refusing to send RA %.4fh / DEC %.4f deg (%s) to the mount - %.1f degrees below the "
+                   "horizon safety margin (%.1f). This coordinate is not being forwarded.",
+                   ra, dec, coordSetName, altitude, HORIZON_SAFETY_MARGIN_DEG);
+        return false;
+    }
+    return m_client->sendMountCoords(ra, dec, coordSetName);
+}
+
 bool PiFinderMountBridge::syncMountToPiFinderPosition()
 {
     double piRA, piDec;
@@ -1284,7 +1539,7 @@ bool PiFinderMountBridge::syncMountToPiFinderPosition()
         return false;
     }
 
-    if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+    if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
     {
         LOG_ERROR("Failed to Sync mount to PiFinder's current position before forwarding Goto.");
         return false;
@@ -1300,7 +1555,22 @@ void PiFinderMountBridge::handleGotoForward()
     keepPiFinderAwake();
 
     double targetRA, targetDec;
-    const bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
+    bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
+
+    // Same reasoning and threshold as httpGetPiFinderFreshCamPosition()'s
+    // own guard above (see its comment) - this is a second, independent
+    // path (PiFinder's own TARGET_EOD_COORD mirror, not /api/status) that
+    // can also feed a genuinely-new-target adoption unchecked. A stale
+    // RA0/Dec0 sitting in that property from well before this run (e.g. an
+    // old, never-pushed-to default) getting misread as a fresh push-to
+    // event would otherwise forward it exactly like a real one.
+    if (hasTarget && std::abs(targetRA) < 0.05 && std::abs(targetDec) < 0.05)
+    {
+        LOGF_WARN("PiFinder's target is suspiciously close to RA0/Dec0 (RA=%.4fh, DEC=%.4f deg) - "
+                  "treating as no genuine target rather than forwarding it.",
+                  targetRA, targetDec);
+        hasTarget = false;
+    }
 
     switch (m_forwardState)
     {
@@ -1361,7 +1631,7 @@ void PiFinderMountBridge::handleGotoForward()
                                           ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
                                           : SLEW_RATE_LOG_MAX_ARCMIN); // unknown - assume far, safe default
             }
-            if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
+            if (sendMountCoordsSafe(targetRA, targetDec, "TRACK"))
             {
                 LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
                           targetRA, targetDec);
@@ -1369,6 +1639,7 @@ void PiFinderMountBridge::handleGotoForward()
                 setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
+                setOriginalTarget(targetRA, targetDec); // genuinely new target - a real forwarded Goto
                 m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
                 m_forwardAwaitingSync = false;
                 m_forwardState = ForwardState::SLEWING;
@@ -1485,14 +1756,14 @@ void PiFinderMountBridge::handleGotoForward()
                 // retries would chase solve noise forever if the residual
                 // never actually clears.
                 --m_settleRetriesRemaining;
-                if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
                 {
                     LOG_ERROR("Failed to send verification sync to mount.");
                     m_forwardState = ForwardState::IDLE;
                     break;
                 }
                 applySlewRateForDrift(drift);
-                if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                if (!sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
                 {
                     LOG_ERROR("Failed to re-issue Goto to mount after sync.");
                     m_forwardState = ForwardState::IDLE;
@@ -1545,7 +1816,7 @@ void PiFinderMountBridge::handleGotoForward()
                                                   ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
                                                   : SLEW_RATE_LOG_MAX_ARCMIN);
                     }
-                    if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
+                    if (sendMountCoordsSafe(targetRA, targetDec, "TRACK"))
                     {
                         LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
                                   targetRA, targetDec);
@@ -1553,6 +1824,7 @@ void PiFinderMountBridge::handleGotoForward()
                         setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
                         m_lastForwardedRA = targetRA;
                         m_lastForwardedDec = targetDec;
+                        setOriginalTarget(targetRA, targetDec); // genuinely new target - a real forwarded Goto
                         m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
                         m_forwardAwaitingSync = false;
                         m_forwardState = ForwardState::SLEWING;
@@ -1657,7 +1929,7 @@ void PiFinderMountBridge::handleGotoForward()
             }
 
             applySlewRateForDrift(drift);
-            if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
             {
                 LOG_ERROR("Failed to send verification sync to mount while holding.");
                 break;
@@ -1676,7 +1948,7 @@ void PiFinderMountBridge::handleGotoForward()
             // values every few seconds instead of settling. Track the same,
             // just-verified position the Sync above used, and adopt it as
             // the held target going forward so the two never fight again.
-            if (!m_client->sendMountCoords(piRA, piDec, "TRACK"))
+            if (!sendMountCoordsSafe(piRA, piDec, "TRACK"))
             {
                 LOG_ERROR("Failed to re-issue Goto to mount while holding.");
                 break;
@@ -1733,7 +2005,7 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
 
             DriftStatusNP.s = IPS_BUSY;
             applySlewRateForDrift(drift);
-            if (m_client->sendMountCoords(piRA, piDec, "TRACK"))
+            if (sendMountCoordsSafe(piRA, piDec, "TRACK"))
             {
                 LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent Goto to mount.", drift);
                 m_correctTargetRA = piRA;
@@ -1833,14 +2105,14 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
                 // the corrected model. Bounded so a genuinely noisy solve
                 // can't loop forever chasing it.
                 --m_correctSettleRetriesRemaining;
-                if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
                 {
                     LOG_ERROR("Failed to send verification sync to mount.");
                     m_correctState = CorrectState::IDLE;
                     break;
                 }
                 applySlewRateForDrift(drift);
-                if (!m_client->sendMountCoords(m_correctTargetRA, m_correctTargetDec, "TRACK"))
+                if (!sendMountCoordsSafe(m_correctTargetRA, m_correctTargetDec, "TRACK"))
                 {
                     LOG_ERROR("Failed to re-issue Goto to mount after sync.");
                     m_correctState = CorrectState::IDLE;
@@ -1880,7 +2152,7 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
                                ? angularSeparationArcmin(ra, dec, mountRA, mountDec)
                                : SLEW_RATE_LOG_MAX_ARCMIN);
-    if (!m_client->sendMountCoords(ra, dec, "TRACK"))
+    if (!sendMountCoordsSafe(ra, dec, "TRACK"))
     {
         LOGF_ERROR("Multi-Point Alignment: failed to send Goto for point %zu/%zu (RA %.4fh, DEC %.4f deg).",
                    index + 1, m_alignPoints.size(), ra, dec);
@@ -2041,7 +2313,7 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 break;
             }
 
-            if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
             {
                 LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
                           "DEC %.4f deg (fresh PiFinder solve).",
@@ -2146,7 +2418,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 if (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
                     httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
-                    if (m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
                         LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
                                   piRA, piDec);
                     else
@@ -2228,7 +2500,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 else
                 {
                     const char *coordSet = wantGoto ? "TRACK" : "SYNC";
-                    if (m_client->sendMountCoords(piRA, piDec, coordSet))
+                    if (sendMountCoordsSafe(piRA, piDec, coordSet))
                     {
                         LOGF_INFO("Manual %s sent to mount.", coordSet);
                         ManualTriggerSP.s = IPS_OK;
@@ -2327,6 +2599,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     m_lastForwardedDec = piDec;
                     m_correctTargetRA = piRA;
                     m_correctTargetDec = piDec;
+                    setOriginalTarget(piRA, piDec); // genuinely new target - explicit user confirmation
                     m_forwardState = ForwardState::HOLDING;
                     m_correctState = CorrectState::IDLE;
                     m_lastConfirmedGoodTime = time(nullptr);
@@ -2355,8 +2628,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     // SETTLING logic verifies real convergence, instead of
                     // declaring success immediately.
                     applySlewRateForDrift(angularSeparationArcmin(piRA, piDec, m_lastForwardedRA, m_lastForwardedDec));
-                    if (m_client->sendMountCoords(piRA, piDec, "SYNC") &&
-                        m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC") &&
+                        sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
                     {
                         if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
                         {
