@@ -1061,6 +1061,18 @@ def _truth_injector_alive() -> bool:
 
 def _truth_injector_start(device: str):
     global _truth_injector_proc, _truth_injector_device
+    # The one-time pkill in main() only guards against an orphan that
+    # already existed when THIS Control Center instance started - it does
+    # nothing for a stray instance that appears later in the same instance's
+    # lifetime (e.g. one launched by hand for a live test, as happened live
+    # 2026-09-03: an old orphaned injector kept running after a fresh one was
+    # started by toggling Full Simulation back on, and both fed PiFinder
+    # duplicate/racing fake_solve POSTs every 2s at once - a real, confusing
+    # source of jitter in a drift-correction-timing investigation). Every
+    # caller of this function only reaches here when _truth_injector_proc is
+    # already None/dead (see _truth_injector_alive()'s callers), so this can
+    # never kill an instance we're still tracking - only a genuine stray one.
+    subprocess.run(["pkill", "-f", str(TRUTH_INJECTOR_SCRIPT)], capture_output=True)
     _truth_injector_device = device
     _truth_injector_proc = subprocess.Popen(
         ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", device, "--interval", "2.0"],
@@ -1431,6 +1443,27 @@ _MB_READINESS_RESTART_WINDOW_SEC = 120
 _mb_readiness_restart_times: list = []
 _mb_readiness_gave_up = False
 
+# Debounce for check 1 - found live 2026-09-03 chasing the "vierter Fund"-
+# style symptoms (very late/no drift correction, a mount jump to RA0/Dec0):
+# gdb-attaching BOTH indiserver and Mount Bridge at the exact instant a
+# status poll timed out showed both processes cleanly idle (indiserver in
+# libev's ev_run()/epoll_wait(), Mount Bridge's two threads in select()) -
+# no deadlock, no stuck code path anywhere. On a resource-constrained VM
+# (UTM/Apple Silicon) running KStars+EKOS+several INDI drivers+test tooling
+# at once, a single momentary scheduling stall past mount_bridge_status()'s
+# own 7s/3s timeouts is plausible and harmless on its own - but check 1
+# used to act on ONE such poll immediately, restarting a driver that was
+# never actually broken. Every restart wipes ALL of Mount Bridge's
+# in-memory tracking state (trusted drift baseline, last-forwarded target,
+# reposition-detection history) and forces a cold Sync+re-forward Goto from
+# scratch - repeated every few minutes, that alone plausibly explains both
+# the "reacts far slower than PiFinder's own solve rate" complaint and is a
+# strong contributing factor to the RA0/Dec0 jumps. Now requires this many
+# CONSECUTIVE not-running ticks (5s apart) before concluding the driver is
+# actually stuck rather than just momentarily slow to answer.
+_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
+_mb_readiness_consecutive_fails = 0
+
 
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
@@ -1439,7 +1472,7 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     every later check meaningless for this same tick anyway (nothing is
     connected/linked immediately after), and piling up several repairs at
     once makes a failure harder to attribute to any one of them."""
-    global _mb_readiness_gave_up
+    global _mb_readiness_gave_up, _mb_readiness_consecutive_fails
 
     # --- Check 1: responsive at all -------------------------------------
     # mount_bridge_status() itself can't distinguish "driver never started"
@@ -1452,6 +1485,13 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     # reason on every tick.
     if not status.get("running"):
         if _mb_desired_mount is None and _mb_desired_coupling_mode is None:
+            _mb_readiness_consecutive_fails = 0
+            return
+        _mb_readiness_consecutive_fails += 1
+        if _mb_readiness_consecutive_fails < _MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART:
+            # See _MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART's own
+            # comment - a single slow poll isn't trusted as "actually stuck"
+            # yet, the next tick(s) will confirm or clear it.
             return
         now = time.monotonic()
         recent = [t for t in _mb_readiness_restart_times if now - t < _MB_READINESS_RESTART_WINDOW_SEC]
@@ -1475,8 +1515,10 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
 
         if _mb_readiness_retrier.trigger(_do_restart):
             _mb_readiness_restart_times.append(now)
+            _mb_readiness_consecutive_fails = 0
         return
     _mb_readiness_gave_up = False
+    _mb_readiness_consecutive_fails = 0
 
     # --- Check 2: connected ----------------------------------------------
     if not status.get("bridge_connected") and _mb_desired_connected is not False:
@@ -1832,7 +1874,13 @@ def _pifinder_toggle_debug_solve(port: str) -> bool:
 # PiFinder through the identical, already-battle-tested code path instead of
 # inventing a second key-mapping convention.
 _ALLOWED_PIFINDER_KEY_CODES = {
-    "LEFT", "UP", "DOWN", "RIGHT", "SQUARE",
+    # PLUS/MINUS deliberately have no LNG_ counterpart here: PiFinder's own
+    # server.py button_dict only defines ALT_PLUS/ALT_MINUS, never
+    # LNG_PLUS/LNG_MINUS (checked live in PiFinder/python/PiFinder/server.py,
+    # 2026-09-03) - forwarding an LNG_PLUS/LNG_MINUS code would just hit an
+    # unmapped int("LNG_PLUS") on PiFinder's side and 500. Plain PLUS/MINUS
+    # (this keypad's only +/- affordance, no Long combo) are fully supported.
+    "LEFT", "UP", "DOWN", "RIGHT", "SQUARE", "PLUS", "MINUS",
     "LNG_LEFT", "LNG_UP", "LNG_DOWN", "LNG_RIGHT", "LNG_SQUARE",
 }
 
