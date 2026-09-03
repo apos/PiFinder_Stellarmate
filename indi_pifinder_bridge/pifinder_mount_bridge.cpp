@@ -1246,14 +1246,10 @@ void PiFinderMountBridge::TimerHit()
         // changing with time, so comparing a stale JNow snapshot against a
         // fresh one would show spurious drift that's really just
         // precession, not a real change in pointing.
-        if (m_haveOriginalTarget)
+        double originalTargetJNowRA, originalTargetJNowDec;
+        if (getOriginalTargetJNow(originalTargetJNowRA, originalTargetJNowDec))
         {
-            INDI::IEquatorialCoordinates j2000 { m_originalTargetRA_J2000, m_originalTargetDec_J2000 };
-            INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
-            const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
-            INDI::J2000toObserved(&j2000, jd, &jnow);
-
-            const double originalTargetDrift = angularSeparationArcmin(piRA, piDec, jnow.rightascension, jnow.declination);
+            const double originalTargetDrift = angularSeparationArcmin(piRA, piDec, originalTargetJNowRA, originalTargetJNowDec);
             OriginalTargetDriftN[0].value = originalTargetDrift;
             const bool originalTargetExceeded = originalTargetDrift > threshold;
             OriginalTargetDriftNP.s = originalTargetExceeded ? IPS_ALERT : IPS_OK;
@@ -1462,6 +1458,19 @@ void PiFinderMountBridge::setOriginalTarget(double jnowRA, double jnowDec)
     OriginalTargetN[ORIGINAL_TARGET_DE].value = m_originalTargetDec_J2000;
     OriginalTargetNP.s = IPS_OK;
     IDSetNumber(&OriginalTargetNP, nullptr);
+}
+
+bool PiFinderMountBridge::getOriginalTargetJNow(double &ra, double &dec)
+{
+    if (!m_haveOriginalTarget)
+        return false;
+    INDI::IEquatorialCoordinates j2000 { m_originalTargetRA_J2000, m_originalTargetDec_J2000 };
+    INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+    const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+    INDI::J2000toObserved(&j2000, jd, &jnow);
+    ra = jnow.rightascension;
+    dec = jnow.declination;
+    return true;
 }
 
 // Found live (2026-09-03): a corrupted/stale coordinate reaching this far -
@@ -1918,7 +1927,30 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift <= threshold)
+            // Found live (2026-09-03): `drift` above only catches the mount
+            // and PiFinder *disagreeing* with each other - it stays small
+            // when both have quietly wandered from the actually-requested
+            // object together (this file's own correction below re-anchored
+            // to piRA/piDec every cycle, so mount and PiFinder always agreed
+            // with EACH OTHER even as they drifted from the true target -
+            // see ORIGINAL_TARGET_DRIFT's own header comment). Checking that
+            // too - not just tactical `drift` - is what makes this the
+            // "hold the object, no matter what" correction the user actually
+            // wants, not just an internal mount/PiFinder consistency check.
+            // Safe to auto-correct on this signal alone, unlike a tactical
+            // mount/PiFinder disagreement: any *external* reposition already
+            // shows up as tactical `drift` first and is intercepted by
+            // handleRepositionDetection()'s Fall-4 (REPOSITION_CONFIRM)
+            // before this function ever runs, so by construction, reaching
+            // here with mount/PiFinder still agreeing is always OUR OWN
+            // accumulated correction noise, never someone else's move.
+            double heldRA = piRA, heldDec = piDec;
+            const bool haveOriginalTarget = getOriginalTargetJNow(heldRA, heldDec);
+            const double originalTargetDrift = haveOriginalTarget
+                ? angularSeparationArcmin(piRA, piDec, heldRA, heldDec)
+                : 0.0;
+
+            if (drift <= threshold && originalTargetDrift <= threshold)
             {
                 setMountRejectWarning(false, "");
                 break;
@@ -1950,26 +1982,41 @@ void PiFinderMountBridge::handleGotoForward()
                 break;
             }
             // Found live (2026-09-01, basic-memory pifinder-stellarmate/00106):
-            // this used to re-issue TRACK to the stale m_lastForwardedRA/Dec
-            // (the target as it stood whenever it was first adopted) right
-            // after just Syncing the mount to the FRESH piRA/piDec above -
-            // whenever those two had drifted apart even slightly (routine
-            // once PiFinder is allowed to track a real mount slew, see PR
-            // #239 - a real slew rarely lands on an exactly-precise RA/Dec),
-            // this told the mount "you are HERE" immediately followed by "now
-            // go THERE", forever: every tick undid the Sync with a Goto back
-            // toward the old target, so drift never actually converged -
-            // confirmed live, TelSim visibly oscillating between the two
-            // values every few seconds instead of settling. Track the same,
-            // just-verified position the Sync above used, and adopt it as
-            // the held target going forward so the two never fight again.
-            if (!sendMountCoordsSafe(piRA, piDec, "TRACK"))
+            // this used to Track back to piRA/piDec - the position just
+            // Synced to - which is a no-op (Sync says "you are HERE", Track
+            // to the same value says "go HERE"). That was a deliberate fix
+            // at the time for a real oscillation bug (git history), but it
+            // means this "correction" never actually moves anything back
+            // toward the requested object. Confirmed live 2026-09-03: over a
+            // 17-minute stress run this let the true target visibly walk out
+            // of the eyepiece/camera center - PiFinder's optical axis is
+            // physically aligned with it, see docs/concepts/
+            // coordinate_pipeline_reference.md - because every cycle
+            // re-anchored "the target" to wherever it had already drifted
+            // to, instead of pulling it back.
+            //
+            // Now re-precesses the fixed OriginalTargetNP (getOriginalTargetJNow())
+            // and Tracks back to *that*, routed through the same bounded-
+            // retry SLEWING/SETTLING convergence machinery a fresh Goto
+            // already uses below (m_settleRetriesRemaining caps the attempts,
+            // and SETTLING only retries after isMountSlewing()==false plus a
+            // fresh solve). That gating - not avoiding an exact target value -
+            // is what actually prevents the old oscillation: a real mount
+            // rarely lands on an exactly-precise RA/Dec, so chasing one with
+            // no settle-gate and no retry budget re-triggered every tick
+            // forever. Falls back to piRA/piDec (the old behavior) if no
+            // original target has been recorded yet - should not happen
+            // after the OriginalTargetNP restart-recovery fix, but a safe
+            // default rather than tracking uninitialized fields. heldRA/
+            // heldDec were already computed above, alongside
+            // originalTargetDrift.
+            if (!sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
             {
                 LOG_ERROR("Failed to re-issue Goto to mount while holding.");
                 break;
             }
-            m_lastForwardedRA = piRA;
-            m_lastForwardedDec = piDec;
+            m_lastForwardedRA = heldRA;
+            m_lastForwardedDec = heldDec;
             // Found live (2026-09-01, basic-memory pifinder-stellarmate/00105):
             // the Sync just above moves the mount's own reported position -
             // without this, handleRepositionDetection()'s Fall-2 onset check
@@ -1977,23 +2024,18 @@ void PiFinderMountBridge::handleGotoForward()
             // mount's current position against m_lastPolledMountRA/Dec from
             // the previous tick) reads the post-Sync jump on the *next* tick,
             // sees a change that looks exactly like an unexplained external
-            // move (since weCommandedIt only covers SLEWING, and this path
-            // deliberately stays in HOLDING), and misclassifies our own
-            // correction as "external control detected" - a self-inflicted
-            // false positive, not real drift. Updating the baseline here to
-            // the position we just synced to closes that gap.
+            // move, and misclassifies our own correction as "external
+            // control detected" - a self-inflicted false positive, not real
+            // drift. Updating the baseline here to the position we just
+            // synced to closes that gap.
             m_lastPolledMountRA = piRA;
             m_lastPolledMountDec = piDec;
             m_lastPolledMountTime = time(nullptr);
-            // Deliberately stays in HOLDING (no SLEWING/SETTLING detour) -
-            // the isMountSlewing() check above on the next tick is the only
-            // gate needed; retrying indefinitely every tick drift still
-            // exceeds threshold is the intended "hold" behavior, not a
-            // bounded settle attempt to give up on.
-            DriftStatusNP.s = IPS_BUSY;
-            IDSetNumber(&DriftStatusNP, nullptr);
-            LOGF_INFO("Held target drifted %.1f arcmin past threshold %.1f - synced and re-issued Goto to hold it.",
-                      drift, threshold);
+            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+            m_forwardState = ForwardState::SLEWING;
+            LOGF_INFO("Held target drifted (mount/PiFinder %.1f', original-target %.1f' - threshold %.1f) -"
+                      " synced and re-issued Goto back to the true original target to recenter it.",
+                      drift, originalTargetDrift, threshold);
             break;
         }
     }
