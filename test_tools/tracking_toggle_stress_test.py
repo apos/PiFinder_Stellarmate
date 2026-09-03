@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 
-MSG_LOG = "/tmp/claude-1000/-home-stellarmate/4395e939-5e43-4a6d-aa71-a40f6119ea5a/scratchpad/mount_bridge_messages_run3.log"
+MSG_LOG = "/tmp/claude-1000/-home-stellarmate/4395e939-5e43-4a6d-aa71-a40f6119ea5a/scratchpad/mount_bridge_messages_run4.log"
 
 
 def indi_get(prop: str) -> str:
