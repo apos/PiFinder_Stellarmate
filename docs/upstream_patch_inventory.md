@@ -146,6 +146,16 @@ fake coordinate.
 **Why upstream-relevant**: a real, reproducible bug affecting any LX200-speaking consumer, not a
 StellarMate-specific concern - see PR 8 in `docs/upstream_pr_templates.md`.
 
+**Second, independent fix in the same file/diff (2026-09-03)**: `parse_sd_command()`'s `sr_result` is
+a module-level global, set by `parse_sr_command()` (`:Sr`, RA) and read by `parse_sd_command()` (`:Sd`,
+Dec) to pair the two into a GoTo - but never scoped per-connection and never cleared after use. A
+`:Sr` from one transaction (a dropped connection, an interleaved client, or one that just never sends
+a matching `:Sd`) stayed set indefinitely, ready to be silently paired with a LATER, unrelated `:Sd`'s
+Dec into a GoTo neither call ever asked for together. Now consumed exactly once (`ra_result, sr_result
+= sr_result, None`) regardless of whether the pairing succeeds. Found auditing this file for the
+RA0/Dec0 root-cause investigation (00107/00108) after the user asked specifically whether a
+KStars/SkySafari-originated PushTo goes through this same server (yes).
+
 Found and traced back to this fix (already correctly committed as `diffs/pos_server_py.diff`, applied
 unconditionally right after `integrator_py.diff`) while root-causing a recurring "mount lands at
 RA0/Dec0" incident - see basic-memory `pifinder-stellarmate/00107`/`00108`. (A first pass mistakenly

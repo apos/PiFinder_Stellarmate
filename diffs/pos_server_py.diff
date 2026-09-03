@@ -1,5 +1,5 @@
 diff --git a/python/PiFinder/pos_server.py b/python/PiFinder/pos_server.py
-index 07f84d52..f4180f2b 100644
+index 07f84d52..bdd2e27e 100644
 --- a/python/PiFinder/pos_server.py
 +++ b/python/PiFinder/pos_server.py
 @@ -41,7 +41,15 @@ def get_telescope_ra(shared_state, _):
@@ -29,3 +29,23 @@ index 07f84d52..f4180f2b 100644
  
      aligned = solution.pointing.aligned.estimate
      # Convert from J2000 to now epoch
+@@ -171,8 +180,17 @@ def parse_sd_command(shared_state, input_str: str):
+     pattern = r":Sd([-+]?\d{2})\*(\d{2}):(\d{2})#"
+     match = _match_to_hms(pattern, input_str)
+     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
+-    if match and sr_result:
+-        return handle_goto_command(shared_state, sr_result, match)
++    # sr_result is a module-level global with no per-connection scope and
++    # was never cleared after use - a :Sr from one transaction (a dropped
++    # connection, an interleaved client, or just a client that never sends
++    # a matching :Sd) stayed set indefinitely, ready to be silently paired
++    # with a LATER, completely unrelated :Sd's Dec into a GoTo neither call
++    # ever asked for together. Consume-once instead: clear it here
++    # regardless of whether this specific pairing succeeds, so a stale RA
++    # can never outlive the :Sd that should have consumed it.
++    ra_result, sr_result = sr_result, None
++    if match and ra_result:
++        return handle_goto_command(shared_state, ra_result, match)
+     else:
+         return "0"
+ 
