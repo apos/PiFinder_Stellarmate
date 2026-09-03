@@ -380,6 +380,14 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // which those are.
         void setOriginalTarget(double jnowRA, double jnowDec);
 
+        // Re-precesses the fixed J2000 OriginalTargetNP to current JNow -
+        // same computation ORIGINAL_TARGET_DRIFT's own readout already does
+        // (TimerHit()), factored out so the Fall-3 passive-drift correction
+        // below can Goto back to the same true target instead of duplicating
+        // the precession math. Returns false (leaves ra/dec untouched) if no
+        // original target has been recorded yet - see m_haveOriginalTarget.
+        bool getOriginalTargetJNow(double &ra, double &dec);
+
         // Horizon safety net - see its own definition/comment in the .cpp
         // for the full rationale. isAboveHorizon() is also exposed on its
         // own (not just via sendMountCoordsSafe()) in case a future caller
