@@ -513,17 +513,31 @@ if ! pacman -Q libcamera &>/dev/null || ! pacman -Q libcamera-ipa &>/dev/null; t
 else
     echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base)"
 fi
-# Prefer pinned package from repo, fall back to pacman cache
-PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
-[ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
-if [ -n "$PYLIBCAM_PKG" ]; then
-    echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
-    sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
-    PYLIBCAM_METHOD="pinned 0.7.0 from $(basename $PYLIBCAM_PKG)"
+# Prefer pinned package from repo, fall back to pacman cache.
+# The cached package is aarch64-only (built for Pi) - on x86 it's still found
+# by the ls glob (same git checkout), but `pacman -U` on it can never work
+# and used to fail silently: no add_warning, and the summary below claimed
+# "pinned" regardless of the pacman error, leaving python-libcamera not
+# installed at all with "No critical warnings" shown to the user.
+if [ "$(uname -m)" = "x86_64" ]; then
+    echo "ℹ️  x86_64 host — skipping aarch64 python-libcamera pin (not applicable; no real camera hardware here anyway)."
+    PYLIBCAM_METHOD="skipped (x86_64 host, aarch64-only pin not applicable)"
 else
-    add_warning "python-libcamera 0.7.0 not found — installed current version. Camera may fail (smart_holder)!"
-    sudo pacman -S --noconfirm --needed python-libcamera
-    PYLIBCAM_METHOD="current version (UNPINNED — may cause smart_holder error!)"
+    PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
+    [ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
+    if [ -n "$PYLIBCAM_PKG" ]; then
+        echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
+        if sudo pacman -U --noconfirm "$PYLIBCAM_PKG"; then
+            PYLIBCAM_METHOD="pinned 0.7.0 from $(basename $PYLIBCAM_PKG)"
+        else
+            add_warning "python-libcamera 0.7.0 cached package failed to install (see log above) - camera may fail (smart_holder)!"
+            PYLIBCAM_METHOD="FAILED to pin 0.7.0 (see warnings above)"
+        fi
+    else
+        add_warning "python-libcamera 0.7.0 not found — installed current version. Camera may fail (smart_holder)!"
+        sudo pacman -S --noconfirm --needed python-libcamera
+        PYLIBCAM_METHOD="current version (UNPINNED — may cause smart_holder error!)"
+    fi
 fi
 grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
