@@ -44,6 +44,12 @@ REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
+# Installed by pifinder_stellarmate_setup.sh's "Configuring hardware &
+# services" phase - existing is a sharper "was setup ever completed far
+# enough to run PiFinder" signal than PIFINDER_DIR alone (see
+# _startup_hardware_test()'s own comment: the checkout can exist while a
+# run still died before ever reaching this phase).
+PIFINDER_SERVICE_UNIT = Path("/etc/systemd/system/pifinder.service")
 GPSD_PORT = 2947
 # Thumbnails, not the full-resolution originals used elsewhere (e.g. the
 # README) - these are only ever shown small on this page (128px/78px tall),
@@ -1694,16 +1700,28 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
     staying stale forever after a slow-but-real boot) is worse than a few
     more harmless checks."""
     # Found live 2026-09-04 on stellarmate-utm: on a device with no
-    # ~/PiFinder at all yet (never installed, or between Uninstall and the
-    # next install), this poll loop burned its full `timeout` (2 minutes)
-    # every single time before falling through to the fast "not running"
-    # result - PiFinder can never answer if it was never installed, so
-    # waiting for it to isn't "give it a moment to boot", it's a guaranteed,
-    # pointless full-timeout stall. Skip straight to the real test in that
-    # case; the polling loop still applies once an installation exists
-    # (the actual "is it up yet after a service (re)start" question this
-    # was written for).
-    if PIFINDER_DIR.exists():
+    # ~/PiFinder at all yet (never installed, between Uninstall and the next
+    # install, or a setup run that died before reaching "Configuring
+    # hardware & services" - never installing pifinder.service at all), this
+    # poll loop burned its full `timeout` (2 minutes) every single time
+    # before falling through to the fast "not running" result. Neither case
+    # can ever make PiFinder answer, so waiting for it isn't "give it a
+    # moment to boot", it's a guaranteed, pointless full-timeout stall.
+    #
+    # Checking the systemd unit's own existence (not just the checkout
+    # directory) is the sharper signal a partially-failed install needs:
+    # ~/PiFinder can exist (cloned, patched) while the run still died before
+    # ever installing pifinder.service - directory presence alone would have
+    # kept waiting the full timeout in exactly that case too.
+    #
+    # Deliberately NOT also bailing early on _real_service_failed() inside
+    # the loop below: pifinder.service runs with Restart=on-failure (the
+    # PWM-sysfs boot race fix, see 00087) - a "failed" reading can be
+    # transient, self-healing moments later via systemd's own restart, and
+    # bailing on the first sighting of it would abandon a real recovery in
+    # progress. The unit-existence check above is a safe, permanent "can
+    # this ever come up" signal; mid-flight ActiveState readings are not.
+    if PIFINDER_DIR.exists() and PIFINDER_SERVICE_UNIT.exists():
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
