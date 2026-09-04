@@ -289,14 +289,22 @@
   .pf-num-input::-webkit-outer-spin-button {
     filter: invert(0.7);
   }
+  /* Same compact sizing as .power-btn/.ql-small-btn (Reset/Reboot/Shutdown/
+     Uninstall) - found live 2026-09-04: this group's own primary action
+     button was noticeably larger than every sibling button on the page,
+     including Reset right next to it, for no functional reason (just never
+     updated when the smaller shared sizing was established elsewhere). Kept
+     as its own rule (not just reusing .power-btn) because Reinstall/Update
+     render two of these side by side via .choice-btn's own margin, and the
+     :disabled/.danger variants below are specific to this group. */
   #choices button, #start-fresh {
     background: #8a2e24;
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 0.6rem 1.1rem;
+    border-radius: 5px;
+    padding: 0.15rem 0.6rem;
     margin-right: 0.6rem;
-    font-size: 0.95rem;
+    font-size: 0.78rem;
     cursor: pointer;
   }
   #choices button.danger { background: #a33; }
@@ -2096,9 +2104,6 @@ sudo systemctl start pifinder</pre>
       <div class="mode-power-group">
         <div class="group-label">PiFinder<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></div>
         <div id="choices" style="display:none;"></div>
-        <div class="mode-power-group-buttons">
-          <button id="install-reset-btn" class="ql-small-btn" onclick="installAction('reset')" style="margin-left:0;" title="Briefly stops PiFinder's core services, then wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Use this to get a clean slate for a fresh setup run without losing anything else.">Reset</button>
-        </div>
       </div>
       <div class="vgroup-divider"></div>
       <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - stops and removes everything this project installed: systemd services, INDI drivers, ~/PiFinder, and this ~/PiFinder_Stellarmate checkout itself. Cannot be undone from here.">
@@ -3357,6 +3362,13 @@ function showChoices(existingInstall) {
   lastExistingInstall = existingInstall;
   const el = document.getElementById('choices');
   el.style.display = 'block';
+  // Reset lives in this same template (not separate static HTML) so it
+  // always renders in the same flex row as whichever primary action(s) this
+  // function shows, in every branch below - found live 2026-09-04: as a
+  // separate row underneath, it was easy to miss the size mismatch (this
+  // group's own primary button was noticeably larger than every sibling
+  // button on the page) until Reset sat right next to it instead.
+  const resetBtn = '<button id="install-reset-btn" class="ql-small-btn" onclick="installAction(\'reset\')" title="Briefly stops PiFinder\'s core services, then wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Use this to get a clean slate for a fresh setup run without losing anything else.">Reset</button>';
   if (indiOnlyMode) {
     el.innerHTML = `
       <p>Use this if this machine has <strong>no PiFinder hardware attached at all</strong> - for example a separate StellarMate/Astroberry
@@ -3365,7 +3377,10 @@ function showChoices(existingInstall) {
       get installed here. Your existing <code>~/PiFinder</code> installation, if any, is left completely untouched: no clone or patch,
       no Python virtual environment, no star catalog download, no GPIO/udev hardware setup - none of that applies when there's
       no PiFinder hardware for this machine to actually run.</p>
-      <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
+      <div class="mode-power-group-buttons">
+        <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
+        ${resetBtn}
+      </div>
     `;
     return;
   }
@@ -3383,14 +3398,20 @@ function showChoices(existingInstall) {
   if (existingInstall) {
     el.innerHTML = `
       <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
-      <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
-      <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
+      <div class="mode-power-group-buttons">
+        <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
+        <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
+        ${resetBtn}
+      </div>
     `;
   } else {
     el.innerHTML = `
       <p>No existing installation found. Clones PiFinder from the official <code>release</code> branch into
          ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
-      <button id="start-fresh" onclick="start('fresh')">Start Install</button>
+      <div class="mode-power-group-buttons">
+        <button id="start-fresh" onclick="start('fresh')">Start Install</button>
+        ${resetBtn}
+      </div>
     `;
   }
 }
@@ -3763,10 +3784,15 @@ async function installAction(kind) {
     ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
     : 'Reset PiFinder? This briefly stops PiFinder\'s core services, then wipes the Python venv/build state. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Ready for a fresh setup run afterward.';
   if (!confirm(message)) return;
+  // install-reset-btn is rendered by showChoices() now (2026-09-04, so it
+  // always sits in the same button row as Reinstall/Update/Start Install -
+  // see that function's own comment), not static HTML - null-guarded here
+  // since it could theoretically not exist yet if Uninstall is clicked in
+  // the brief window before the first showChoices() call resolves.
   const resetBtn = document.getElementById('install-reset-btn');
   const uninstallBtn = document.getElementById('install-uninstall-btn');
   const btn = isUninstall ? uninstallBtn : resetBtn;
-  resetBtn.disabled = true;
+  if (resetBtn) resetBtn.disabled = true;
   uninstallBtn.disabled = true;
   btn.textContent = isUninstall ? 'Uninstalling…' : 'Resetting…';
   try {
@@ -3774,7 +3800,7 @@ async function installAction(kind) {
     const data = await resp.json();
     if (isUninstall) {
       if (!data.uninstalling) {
-        resetBtn.disabled = false;
+        if (resetBtn) resetBtn.disabled = false;
         uninstallBtn.disabled = false;
         btn.textContent = 'Uninstall';
         alert('Could not start uninstall: ' + (data.error || 'unknown error'));
@@ -6905,6 +6931,15 @@ async function pollHwTestLog() {
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
   if (data.running) {
+    // Reuses this existing 500ms poll instead of a separate client-side
+    // timer - elapsed_seconds is computed server-side (see
+    // /api/hardware_test_log), so this also reads correctly for a run this
+    // tab didn't itself start (e.g. picked up already-running via
+    // checkHwTestOnLoad() after the startup auto-run following a
+    // post-install Control Center restart).
+    const secs = data.elapsed_seconds;
+    document.getElementById('hwtest-status-text').textContent =
+      'Running…' + (secs != null ? ' (' + secs + 's)' : '');
     setTimeout(pollHwTestLog, 500);
   } else {
     hwTestPolling = false;
@@ -6929,7 +6964,23 @@ async function checkHwTestOnLoad() {
   }
   if (data.running) {
     document.getElementById('hwtest-btn').disabled = true;
-    document.getElementById('hwtest-status-text').textContent = 'Running…';
+    document.getElementById('hwtest-status-text').textContent =
+      'Running…' + (data.elapsed_seconds != null ? ' (' + data.elapsed_seconds + 's)' : '');
+    // Found live 2026-09-04: "Hardware test and details" defaults to
+    // collapsed, and this path (an already-running test discovered on page
+    // load) fires every time right after a post-install Control Center
+    // restart (main()'s unconditional startup auto-run, see server.py) -
+    // exactly the moment someone expects to see their just-finished install
+    // succeed, not a silently running, mutex-blocking test hidden behind a
+    // section they'd only find "by accident". Force it open for THIS load
+    // without touching the user's stored collapse preference (see
+    // restoreCollapsibleSections()) - collapsing it again once the test
+    // finishes is still their own choice on the next reload.
+    const hwDetails = document.getElementById('hw-details');
+    if (hwDetails.style.display === 'none') {
+      hwDetails.style.display = 'block';
+      document.getElementById('hw-details-chevron').innerHTML = '&#9650; hide';
+    }
     const logEl = document.getElementById('log');
     logEl.classList.remove('log-placeholder');
     logEl.style.display = 'block';

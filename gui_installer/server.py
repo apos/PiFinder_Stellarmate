@@ -828,6 +828,15 @@ def _gps_status_snapshot(log):
 _hwtest_running = False  # True while a Test Hardware run is in flight
 _hwtest_lines = []  # progress log, shown in the shared Terminal tile
 _hwtest_result = {"camera": None, "imu": None, "gps": None}
+# Set at the start of every run (manual click, page-load pickup, and the
+# startup auto-run) so /api/hardware_test_log can report elapsed_seconds -
+# found live 2026-09-04: with no timing feedback at all, a run stuck behind
+# the camera/IMU probes' own worst-case timeouts (each up to ~25-40s
+# sequentially - see _camera_hardware_present()/_imu_hardware_present()'s own
+# comments) just shows a static "Running…" with no way to tell it apart from
+# being stuck, especially confusing right after the startup auto-run fires
+# on its own following a post-install Control Center restart (see main()).
+_hwtest_started_at = None
 
 _reset_running = False  # True while a Reset run is in flight
 _reset_lines = []  # progress log, shown in the shared Terminal tile
@@ -1633,10 +1642,11 @@ def _run_hardware_test():
     # until the whole service is restarted, and the startup auto-run (see
     # _startup_hardware_test() below) can then hit the exact same failure
     # again on the very next start.
-    global _hwtest_running, _hwtest_result
+    global _hwtest_running, _hwtest_result, _hwtest_started_at
     with _lock:
         _hwtest_lines.clear()
         _hwtest_result = {"camera": None, "imu": None, "gps": None}
+        _hwtest_started_at = time.monotonic()
     try:
         _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
         camera_result = _camera_functional_test(_hwtest_log)
@@ -1683,11 +1693,22 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
     giving up after some arbitrary window - the alternative (silently
     staying stale forever after a slow-but-real boot) is worse than a few
     more harmless checks."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
-            break
-        time.sleep(interval)
+    # Found live 2026-09-04 on stellarmate-utm: on a device with no
+    # ~/PiFinder at all yet (never installed, or between Uninstall and the
+    # next install), this poll loop burned its full `timeout` (2 minutes)
+    # every single time before falling through to the fast "not running"
+    # result - PiFinder can never answer if it was never installed, so
+    # waiting for it to isn't "give it a moment to boot", it's a guaranteed,
+    # pointless full-timeout stall. Skip straight to the real test in that
+    # case; the polling loop still applies once an installation exists
+    # (the actual "is it up yet after a service (re)start" question this
+    # was written for).
+    if PIFINDER_DIR.exists():
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
+                break
+            time.sleep(interval)
     _run_hardware_test()
 
     while True:
@@ -2777,8 +2798,22 @@ class Handler(BaseHTTPRequestHandler):
                 new_position = len(_hwtest_lines)
                 running = _hwtest_running
                 result = _hwtest_result
+                started_at = _hwtest_started_at
+            # Computed server-side (monotonic clock) rather than sending a
+            # raw timestamp for the client to diff against its own clock -
+            # avoids any client/server clock-skew edge case, and works
+            # identically whether this client started the run itself or is
+            # just picking up an already-running one on page load (e.g. the
+            # startup auto-run after a post-install Control Center restart).
+            elapsed_seconds = round(time.monotonic() - started_at) if (running and started_at is not None) else None
             self._send_json(
-                {"lines": new_lines, "position": new_position, "running": running, "result": result}
+                {
+                    "lines": new_lines,
+                    "position": new_position,
+                    "running": running,
+                    "result": result,
+                    "elapsed_seconds": elapsed_seconds,
+                }
             )
             return
 
