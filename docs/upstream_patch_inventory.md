@@ -422,3 +422,31 @@ python-libinput than upstream uses at all.
 attempt at the GPS-menu-option change that `diffs/menu_structure_py.diff` now handles correctly
 (the old file's hunk has mismatched/duplicated brace lines and wouldn't apply cleanly even if it
 were wired in). Safe to delete as a cleanup item; not otherwise blocking anything.
+
+---
+
+## 5. Upstream capabilities we don't yet use
+
+Not a patch category - the four above are exhaustive for those. This is the reverse case: a new
+upstream PiFinder capability, noticed while integrating a version bump on the `alpha` branch (see
+`CONTRIBUTING.md`'s branch model), that this project doesn't touch or depend on yet but could be
+relevant to a future Mount Bridge/Control Center feature. Logged here so the next person integrating
+an upstream bump doesn't have to rediscover it from the diff.
+
+### 5.1 Optical Train FOV gating (`solver.py`, PiFinder 2.6.3)
+
+**Where**: `python/PiFinder/solver.py`, `PiFinder.optics.OpticalTrainResolver`.
+
+Upstream 2.6.3 (unchanged in 2.6.1) replaced the solver's hardcoded FOV gate
+(`fov_estimate=12.0°, fov_max_error=4.0°`) with one derived per-frame from an "optical train" -
+the resolved camera + lens combination (`shared_state.camera_type()` /
+`shared_state.camera_lens()`), read live so a lens change from the menu takes effect on the next
+frame rather than the next boot. Falls back to solving with no FOV gate at all when the train isn't
+yet confirmed to match the frames actually arriving (`optical_train_known()`), rather than gating on
+a guess.
+
+**Why noted, not acted on**: none of this project's patches touch this code region, and nothing in
+Mount Bridge currently reads FOV/optical-train state. Worth knowing about if Mount Bridge or the
+Control Center ever wants to reason about PiFinder's actual field of view (e.g. sizing an alignment
+search radius, or surfacing the resolved lens/FOV in a status badge) - `OpticalTrainResolver` would
+be the source of truth to read from, not something to reimplement.

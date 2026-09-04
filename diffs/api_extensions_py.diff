@@ -1,6 +1,6 @@
---- python/PiFinder/api_extensions.py.orig	2026-09-01 22:04:24.251893482 +0200
-+++ python/PiFinder/api_extensions.py	2026-09-01 21:51:08.023348270 +0200
-@@ -18,13 +18,46 @@
+--- python/PiFinder/api_extensions.py.orig
++++ python/PiFinder/api_extensions.py
+@@ -18,9 +18,11 @@
  import io
  import json
  import logging
@@ -10,7 +10,10 @@
  from PIL import Image
 +from PiFinder.types.positioning import FakeSolve, FakeImuSample
  
- logger = logging.getLogger("PiFinderAPI")
+ from PiFinder.optics import OpticalTrainResolver
+ 
+@@ -31,6 +33,37 @@
+ _API_OPTICAL_TRAIN = OpticalTrainResolver()
  
  
 +def _angular_separation_deg(ra1, dec1, ra2, dec2) -> float:
@@ -47,7 +50,7 @@
  def _json_response(data, status=200):
      """Unified JSON response format"""
      return Response(
-@@ -160,6 +193,8 @@
+@@ -166,6 +199,8 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
@@ -56,7 +59,7 @@
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -213,6 +248,198 @@
+@@ -219,6 +254,198 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
  
@@ -255,7 +258,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -750,6 +977,128 @@
+@@ -770,6 +997,128 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
