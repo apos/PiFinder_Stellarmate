@@ -446,8 +446,35 @@ fi
 
 phase "Installing system packages"
 
-# Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot)
-grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
+# Temporarily disable StellarMate's Atomic Updates protection (official
+# mechanism) if it's currently active, reusing the same pacman/apt/nix
+# abstraction layer (bin/os_detect.sh) that os_install_packages() already
+# uses for --mode=indi_only above, rather than a second, ad-hoc lock/unlock
+# here. No-op on a device where it's already unlocked (e.g. the Pi4/Pi5 dev
+# units, unlocked in an earlier session) - this only actually engages on a
+# freshly provisioned system (e.g. stellarmate-utm right after a clean SMOS
+# install), which is also the only place the raw `pacman -S` calls below were
+# ever observed to fail ("target not found" / core+extra+alarm unreachable,
+# only StellarMate's own [smos] repo active).
+relock_atomic_updates=0
+if os_pacman_has_atomic_updates_script && os_pacman_check_atomic_updates; then
+    echo "ℹ️  Temporarily disabling StellarMate's Atomic Updates protection (official mechanism) to reach core/extra/alarm ..."
+    if os_pacman_atomic_updates_disable; then
+        relock_atomic_updates=1
+    else
+        add_warning "Could not disable StellarMate's Atomic Updates protection - system package installs below may fail."
+    fi
+fi
+
+# Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot).
+# aarch64-only fallback - archlinuxarm.org has no x86_64 packages. On
+# stellarmate-utm (x86_64) the unlock above already leaves [core]/[extra]
+# wired to the correct arch-native mirror (via StellarMate's own script,
+# which reads /etc/pacman.d/mirrorlist), so this would 404 unconditionally
+# if it ever ran there instead.
+if [ "$(uname -m)" != "x86_64" ]; then
+    grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
+fi
 sudo pacman -Sy --noconfirm
 
 # Install system package requirements (Arch/SMOS)
@@ -487,6 +514,11 @@ if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
     add_warning "libcamera $LIBCAM_VER detected — python-libcamera 0.7.0 may be incompatible! Update packages/ in SM repo if camera fails."
 else
     echo "ℹ️  libcamera version $LIBCAM_VER — compatible with python-libcamera 0.7.0"
+fi
+
+if [ "${relock_atomic_updates}" = "1" ]; then
+    echo "ℹ️  Restoring StellarMate's Atomic Updates protection ..."
+    os_pacman_atomic_updates_enable
 fi
 
 
