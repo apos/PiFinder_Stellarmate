@@ -10,7 +10,7 @@ pifinder_stellarmate_version_stable="2.6.3"
 pifinder_stellarmate_version_testing="2.6.1"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
-smos_version_stable="2.2.1"
+smos_version_stable="2.3.0"
 smos_version_testing="2.2.1"
 
 
