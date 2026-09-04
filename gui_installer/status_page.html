@@ -3566,6 +3566,13 @@ async function start(action) {
   const data = await resp.json();
   if (!data.started) {
     setStatus('Failed to start: ' + (data.error || 'unknown error'), 'status-failed');
+    // Bug fixed live 2026-09-04: the display='none' above ran unconditionally
+    // before this rejection was known (e.g. server 409s with "a hardware test
+    // is in progress"), and nothing on this path ever restored it - the
+    // Start Install/Reinstall/Update buttons stayed permanently gone until a
+    // full page reload, even after the blocking run finished. Re-render the
+    // same choice the user was already looking at instead.
+    showChoices(lastExistingInstall);
     return;
   }
   // Server resets its log buffer for every new run — reset our read position
