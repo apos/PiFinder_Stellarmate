@@ -69,52 +69,42 @@ This gives the VM a real presence on your LAN (for reaching an actual PiFinder d
 just for normal internet/package-manager access) while keeping the original SSH connection alive
 throughout.
 
-## 2. Fix the package manager (device-local, not part of this repo)
+## 2. Package manager access (handled automatically since PR #257)
 
-The StellarMate OS x86 image this was tested against ships `/etc/pacman.conf` with `[core]`/
-`[extra]`/`[alarm]` hardcoded to an **ARM-only** mirror
-(`http://mirror.archlinuxarm.org/aarch64/...`) — presumably inherited from the Pi image build
-process. On a real x86_64 machine this makes every `pacman -S` fail with *"package architecture is
-not valid"*.
+On a freshly provisioned image, StellarMate's own "Atomic Updates" protection is active by default -
+only its `[smos]` repo is reachable, `[core]`/`[extra]` stay commented out in `/etc/pacman.conf`
+until unlocked. `pifinder_stellarmate_setup.sh`'s "Installing system packages" phase now detects this
+(via the same `bin/os_detect.sh` abstraction the `--mode=indi_only` path already used) and
+temporarily disables/re-enables it around its own `pacman -S` calls automatically - no manual step
+needed here anymore.
 
-**Fix**: point `[core]`/`[extra]` at the already-present, correctly-generated
-`/etc/pacman.d/mirrorlist` instead, and drop `[alarm]` entirely (Arch Linux ARM-only, no x86_64
-equivalent):
+**Root cause of the previously-unexplained "pacman.conf reverts to an ARM-only mirror on its own"
+mystery** (this section used to describe a manual fix for exactly that, with the cause listed as
+unknown): it was never the base x86 image, `pifinder_pre_start.sh`, or an external process. It was
+this same phase's *own* `[core]`/`[extra]`/`[alarm]` → `mirror.archlinuxarm.org/aarch64/...` fallback
+block (meant for real ARM Pi hardware, where StellarMate's Atomic Updates lock has typically already
+been disabled in an earlier session and never re-locked) - re-triggering every time the lock was
+re-enabled (which re-comments `[core]`/`[extra]` back out, satisfying that fallback's own "add it if
+missing" condition) and re-appending an **ARM** mirror on this **x86_64** machine. [PR
+#257](https://github.com/apos/PiFinder_Stellarmate/pull/257) guards that fallback to `uname -m !=
+x86_64`, so it can no longer fire here at all.
+
+If you still see `pacman -S` fail with *"package architecture is not valid"* despite this (e.g. a
+stray block left over from a `dev` checkout predating this fix), check for and remove any
+`archlinuxarm.org` line in `/etc/pacman.conf`:
 
 ```bash
-sudo python3 - <<'EOF'
-p = "/etc/pacman.conf"
-s = open(p, encoding="utf-8").read()
-s = s.replace(
-    '# [core]\n# Include = /etc/pacman.d/mirrorlist',
-    '[core]\nInclude = /etc/pacman.d/mirrorlist',
-)
-s = s.replace(
-    '# [extra]\n# Include = /etc/pacman.d/mirrorlist',
-    '[extra]\nInclude = /etc/pacman.d/mirrorlist',
-)
-import re
-s = re.sub(
-    r"\n\[core\]\nSigLevel = Optional TrustAll\nServer = http://mirror\.archlinuxarm\.org/aarch64/core\n"
-    r"\n\[extra\]\nSigLevel = Optional TrustAll\nServer = http://mirror\.archlinuxarm\.org/aarch64/extra\n"
-    r"\n\[alarm\]\nSigLevel = Optional TrustAll\nServer = http://mirror\.archlinuxarm\.org/aarch64/alarm\n",
-    "\n", s,
-)
-open(p, "w", encoding="utf-8").write(s)
-EOF
-sudo pacman -Syy
+grep -n archlinuxarm /etc/pacman.conf
 ```
 
-Verify with `grep -n archlinuxarm /etc/pacman.conf` — it should print nothing.
+It should print nothing on a clean, current `dev` checkout.
 
-**Known open issue**: this file reverted to the broken state at least once during initial setup, for
-a reason not yet root-caused (neither `pifinder_stellarmate_setup.sh` nor `pifinder_pre_start.sh`
-touch it, and no `.pacsave` was involved). If package installs suddenly start failing with
-*"architecture is not valid"* again after this was already fixed, re-check and re-apply this step.
+## 3. Pacman keyring
 
-## 3. Initialize the pacman keyring
-
-Also commonly missing on a fresh image:
+Not observed as necessary on a fresh SMOS 2.3.0 x86 image (2026-09) - both the `pacman-key --init`
+step and the `[smos]` signing key were already fine out of the box, and the "Installing system
+packages" phase's automatic unlock (previous section) synced `smos`/`core`/`extra`/`alarm` without
+issue. Keep this handy in case you hit a keyring error on a different image build:
 
 ```bash
 sudo pacman-key --init
