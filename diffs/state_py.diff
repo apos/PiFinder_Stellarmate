@@ -15,7 +15,7 @@
          # self.__solve_state
          # None = No solve attempted yet
          # True = Valid solve data from either IMU or Camera
-@@ -305,6 +313,17 @@
+@@ -306,6 +314,17 @@
          self.__arch = None
          self.__camera_align = False
          self.__camera_type = "imx296"  # Default, will be set by camera process
@@ -30,10 +30,10 @@
 +        # detection) - distinct from debug_solve, which fakes the camera
 +        # image, not the position pipeline.
 +        self.__fake_solve_active: bool = False
-         # Degrees the camera process rotates the solve/display image relative
-         # to the stored raw frame (PIL CCW). None until the camera reports.
-         self.__solve_image_rotation = None
-@@ -350,6 +369,23 @@
+         # Configured lens, the half of the optical train nothing can detect.
+         # None means "not stated", which resolves to the sensor's shipped lens
+         # -- that is what lets installs predating this setting keep working.
+@@ -360,6 +379,23 @@
                  f"Invalid value for set_power_state: {v}. power_state not changed."
              )
  
@@ -57,9 +57,9 @@
      def arch(self):
          return self.__arch
  
-@@ -380,6 +416,18 @@
-     def set_camera_type(self, v: str):
-         self.__camera_type = v
+@@ -414,6 +450,18 @@
+     def set_optical_train_known(self, v: bool):
+         self.__optical_train_known = bool(v)
  
 +    def debug_solve(self) -> bool:
 +        return self.__debug_solve
