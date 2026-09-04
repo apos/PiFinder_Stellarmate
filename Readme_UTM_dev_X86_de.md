@@ -144,21 +144,15 @@ cd PiFinder_Stellarmate
 git checkout dev
 ```
 
-**Stand dieses Dokuments**: Die unten beschriebenen x86-Kompatibilitätsfixes liegen auf
-[PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233) (Branch
-`fix/x86-non-pi-setup-compat`), noch nicht nach `dev` gemergt. Bis dahin stattdessen diesen Branch
-auschecken:
+`dev` enthält bereits alles, worauf diese Anleitung aufbaut, inklusive der im nächsten Abschnitt
+beschriebenen x86-Kompatibilitätsbehandlung.
 
-```bash
-git checkout fix/x86-non-pi-setup-compat
-```
+## 5. Warum das Setup-Skript auf x86 funktioniert (Hintergrund, keine Aktion nötig)
 
-Sobald #233 gemergt ist, enthält `dev` das alles bereits.
-
-## 5. Was PR #233 tatsächlich behebt (Hintergrund, keine Aktion nötig, sobald ausgecheckt)
-
-`pifinder_stellarmate_setup.sh --mode=full` unverändert auf x86 laufen zu lassen, trifft an mehreren
-Stellen auf Annahmen, die echte Raspberry-Pi-Hardware voraussetzen:
+`pifinder_stellarmate_setup.sh --mode=full` ohne eigene Kompatibilitätsbehandlung auf x86 laufen zu
+lassen, würde an mehreren Stellen auf Annahmen treffen, die echte Raspberry-Pi-Hardware voraussetzen
+— behoben in
+[PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233):
 
 - Das Skript brach mit `exit 1` ab, wenn weder `/boot/firmware/config.txt` noch `/boot/config.txt`
   existiert (auf x86 nie der Fall) — der gesamte Rest des Skripts (INDI-Build, Services) lief nie.
@@ -177,8 +171,8 @@ Stellen auf Annahmen, die echte Raspberry-Pi-Hardware voraussetzen:
 - Das Setup-Skript ließ das Control Center nach einer Frischinstallation deaktiviert/gestoppt
   zurück, ohne Hinweis, wo es erreichbar wäre.
 
-Nichts davon braucht eigenes Zutun, sobald der gefixte Branch ausgecheckt ist — das ist Hintergrund
-für den Fall, dass später ein ähnlich aussehendes x86-Problem auftaucht.
+Nichts davon braucht eigenes Zutun — das ist Hintergrund für den Fall, dass später ein ähnlich
+aussehendes x86-Problem auftaucht.
 
 ## 6. Setup-Skript ausführen
 
@@ -187,8 +181,8 @@ bash pifinder_stellarmate_setup.sh
 ```
 
 Das klont PiFinder selbst, wendet alle Patches an, baut die venv, baut und installiert alle drei
-INDI-Treiber (PiFinder LX200, PiFinder Mount Bridge, PiFinder Simulator) und — seit PR #233—
-aktiviert und startet automatisch das Control Center, mit Ausgabe aller erreichbaren URLs am Ende:
+INDI-Treiber (PiFinder LX200, PiFinder Mount Bridge, PiFinder Simulator) und aktiviert und startet
+automatisch das Control Center, mit Ausgabe aller erreichbaren URLs am Ende:
 
 ```
   Control Center reachable at:
@@ -197,10 +191,19 @@ aktiviert und startet automatisch das Control Center, mit Ausgabe aller erreichb
   Login: any username, password = your stellarmate system password
 ```
 
-Das Skript führt sich nach der venv-Erstellung automatisch selbst innerhalb der venv erneut aus
-(kein manuelles `source .../activate` nötig). Auf x86 zeigt die Abschluss-Zusammenfassung
-erwartungsgemäß `Hardware: Not a Pi (e.g. x86 Control host)` und
-`✅ No critical warnings — setup completed cleanly.`
+**Bei einer frischen venv stoppt sich das Skript nach deren Erstellung selbst** und gibt den
+genauen Aktivierungsbefehl aus — ein `source` innerhalb der eigenen Subshell des Skripts kann die
+äußere Shell nicht beeinflussen, dieser eine manuelle Schritt lässt sich nicht automatisieren. Den
+ausgegebenen Befehl ausführen, dann `bash pifinder_stellarmate_setup.sh` in der jetzt aktivierten
+venv erneut ausführen, um fortzufahren:
+
+```bash
+source ~/PiFinder/python/.venv/bin/activate
+bash pifinder_stellarmate_setup.sh
+```
+
+Auf x86 zeigt die Abschluss-Zusammenfassung erwartungsgemäß `Hardware: Not a Pi (e.g. x86 Control
+host)` und `✅ No critical warnings — setup completed cleanly.`
 
 Für `--action=reinstall`/`--action=update` (nicht-interaktiv, z. B. von den "Install or
 Update"-Buttons des Control Centers) siehe den entsprechenden Kommentar-Header im Skript selbst.
@@ -311,9 +314,12 @@ so gar nicht gibt.
   automatisch nachgeholt, sobald wieder eine frische Solve verfügbar ist. Auf echter Pi-Hardware
   liefert die Kamera das durchgehend — hier auf dieser VM ist es wichtig: den Truth-Injector während
   des gesamten Tests von Goto-Forward/Auto-Correct laufen lassen.
-- **Die Hardware-Fallback-Patches aus PR #233 sind auf echter Pi-Hardware nicht verifiziert.** Sie
-  sind rein additiv (neue `except`-/Fallback-Zweige um bestehenden, funktionierenden Code herum),
-  aber ein echter Pi4/Pi5-Rauchtest wird vor einem Merge über `dev` hinaus nach `main` empfohlen.
+- **Die x86-/Nicht-Pi-Hardware-Fallback-Patches** (`imu_pi.py`/`keyboard_pi.py`/`displays.py`
+  degradieren statt abzustürzen, wenn ihr Hardware-Backend nicht verfügbar ist — s.
+  [PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233)) **sind rein additiv** (neue
+  `except`-/Fallback-Zweige um bestehenden, funktionierenden Code herum), aber auf echter
+  Pi-Hardware nicht verifiziert — ein echter Pi4/Pi5-Rauchtest wird empfohlen, bevor ein `dev`-Stand
+  mit diesen Änderungen nach `main` befördert wird.
 
 ## Bezug
 
