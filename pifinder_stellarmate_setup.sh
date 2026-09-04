@@ -209,11 +209,29 @@ elif version_eq "$current_smos_version" "$smos_version_stable"; then
 elif version_gt "$current_smos_version" "$smos_version_stable"; then
     echo "⚠️  SMOS $current_smos_version is NEWER than tested version ($smos_version_stable)."
     echo "⚠️  Arch is rolling release — package versions may differ. Proceed with caution."
-    read -p "⚠️⚠️⚠️  Continue anyway? (yes/no): " confirm_smos
-    confirm_smos="${confirm_smos//[$'\r\n']}"
-    if [[ "$confirm_smos" != "yes" ]]; then
-        echo "ℹ️  Installation cancelled by user."
-        exit 0
+    # Same interactive-vs-scripted distinction the reinstall/update menu
+    # above already uses (empty $ACTION = a human running this directly in
+    # a terminal; the Control Center GUI always passes --action=...).
+    # Found live 2026-09-04 on stellarmate-utm (SMOS 2.3.0 vs. the
+    # 2.2.1 pin): every GUI-triggered run silently hit "Installation
+    # cancelled by user" here, every single time, with no way to answer
+    # this prompt - the GUI spawns this script as a systemd service's
+    # subprocess (stdin inherited from pifinder-control-center.service,
+    # i.e. /dev/null), so `read` sees immediate EOF, `confirm_smos` comes
+    # back empty, and the "not yes" branch always fires. A confirmation
+    # prompt nobody running through the GUI can ever answer isn't a safety
+    # gate, it's a silent, permanent block - so a scripted run just gets
+    # the same warning already printed above and proceeds, exactly like the
+    # OLDER-than-tested branch below already does unconditionally.
+    if [ -z "$ACTION" ]; then
+        read -p "⚠️⚠️⚠️  Continue anyway? (yes/no): " confirm_smos
+        confirm_smos="${confirm_smos//[$'\r\n']}"
+        if [[ "$confirm_smos" != "yes" ]]; then
+            echo "ℹ️  Installation cancelled by user."
+            exit 0
+        fi
+    else
+        echo "ℹ️  Running non-interactively (--action=$ACTION) - proceeding despite the newer SMOS version."
     fi
 else
     echo "⚠️  SMOS $current_smos_version is OLDER than tested version ($smos_version_stable). Proceeding anyway."
