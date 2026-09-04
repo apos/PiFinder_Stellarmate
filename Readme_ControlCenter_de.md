@@ -162,8 +162,8 @@ sie gebaut wurden — jede sitzt neben der/den anderen Aktion(en), die dasselbe 
   damit das Löschen des eigenen Quellbaums den laufenden Prozess nicht mitten im Uninstall killt;
   eine bewusste kleine Pause zwischen jedem systemd-Unit-Stop gibt der Poll-Schleife des Frontends
   (`GET /api/uninstall_log`, 200ms) eine echte Chance, jeden Schritt zu zeigen, bevor die
-  Verbindung abreißt (live bei einer Testausführung gefunden: 6 Unit-Stops laufen sonst in unter
-  einer Sekunde komplett durch).
+  Verbindung abreißt (ohne die Pause laufen 6 Unit-Stops in unter einer Sekunde komplett durch -
+  zu schnell, um jeden Schritt zu zeigen).
 
 Beide Bestätigungsdialoge nennen den genauen Wirkungsbereich, bevor gehandelt wird — siehe
 [help.html#install-update](gui_installer/help.html) (Reset) und
@@ -321,7 +321,7 @@ nicht destruktiv — stoppt nur diesen GUI-Server) offen bleiben, damit derselbe
 funktioniert. `/api/uninstall_log` überspringt den PAM-Check in `_require_auth()` gezielt aus
 Latenzgründen: dieser Server stoppt seinen eigenen systemd-Unit mitten in einem Uninstall-Lauf,
 weshalb ein langsameres, authentifiziertes Polling eine schlechtere Chance hat, überhaupt
-durchzukommen, bevor die Verbindung abreißt (live gefunden am 2026-08-01).
+durchzukommen, bevor die Verbindung abreißt.
 
 ---
 
@@ -355,8 +355,8 @@ Numpad-Bridge).
   dem Pi selbst irgendetwas Destruktives antun.
 - Fehlgeschlagene Logins werden pro Client-IP rate-limitiert: 5 *bestätigt falsche* Passwortversuche
   innerhalb von 30 Sekunden sperren diese IP, bis das Zeitfenster abläuft, zusätzlich begrenzt ein
-  Semaphore gleichzeitige PAM-Aufrufe unabhängig vom Ergebnis auf 2 (live gefunden: die ~15
-  gleichzeitigen Polls dieser Seite beim Laden konnten sonst den GIL mit Passwort-Hashing
+  Semaphore gleichzeitige PAM-Aufrufe unabhängig vom Ergebnis auf 2 (die ~15
+  gleichzeitigen Polls dieser Seite beim Laden könnten sonst den GIL mit Passwort-Hashing
   aushungern, oder das Lockout rein durch die entstehende Race auslösen — beides keine echten
   Angriffe). Das ist ein einfacher Schutz gegen beiläufiges Brute-Forcing, kein Ersatz dafür, den
   Server von einem nicht-vertrauenswürdigen Netzwerk fernzuhalten.

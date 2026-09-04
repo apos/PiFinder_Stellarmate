@@ -7,6 +7,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **PiFinder Simulator: mount-following (`FOLLOW_MOUNT_DEVICE`)**
+  ([#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)): a new text property on the
+  "PiFinder Simulator" INDI device - set it to a mount's device name and the simulator's position
+  dead-reckons along with that mount's own slews, the way a real, rigidly-mounted PiFinder's IMU
+  would; left empty (the default), the simulator keeps its prior "independent fixed truth" behavior
+  needed for Verify/Alert and Auto-correct-Sync misalignment testing. Persists across driver
+  restarts.
 - **PiFinder/Mount orientation status**: a new always-visible "PiFinder" ampel badge shows PiFinder's
   own Mount Type + PiFinder Type settings (its own device icon, `gui_installer/status_page.html`) -
   amber while first checking, green once PiFinder is confirmed running, white/grey if it isn't, red

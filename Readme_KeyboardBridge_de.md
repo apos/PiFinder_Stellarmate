@@ -90,10 +90,9 @@ Die Bridge ist bewusst **von PiFinders eigenem Prozess und Code entkoppelt**:
 
 ## Tastenbelegung
 
-Abgestimmt auf ein reines Nummernblock-Gerät ohne eigene Pfeiltasten. Seit 2026-07-19 ist die
-Belegung **komplett unabhängig vom NumLock-Zustand** — ein bewusstes Redesign (s.
-[Bekannte Einschränkungen](#bekannte-einschränkungen--fehlerbehebung) für das frühere,
-NumLock-abhängige Design und warum es ersetzt wurde):
+Abgestimmt auf ein reines Nummernblock-Gerät ohne eigene Pfeiltasten. Die Belegung ist **komplett
+unabhängig vom NumLock-Zustand** — wichtig für einen kabellosen Nummernblock, bei dem es keine
+verlässliche Möglichkeit gibt, dessen NumLock-LED remote zu lesen oder zu setzen:
 
 | Physische Taste | PiFinder-Aktion |
 |---|---|
@@ -272,17 +271,6 @@ Zwei unabhängige Probleme, zwei unabhängige Fixes:
   stdout/Journal aus — läuft weder Real noch Fake Mode, werden Tastendrücke stillschweigend
   verworfen (mit Log-Zeile), bis eine Instanz erscheint. `journalctl -u
   pifinder-numpad-bridge.service -f` prüfen, wenn Tasten scheinbar nichts tun.
-- **Historisches Design (abgelöst, hier zur Einordnung dokumentiert):** eine frühere Version
-  trackte den NumLock-Zustand selbst (beim Start aus der LED des Geräts geseedet, bei jedem
-  NumLock-Druck umgeschaltet), um `4/8/6/2` je nach NumLock eine doppelte Ziffern-/Navigations-Bedeutung
-  zu geben. Verworfen, weil ein Wireless-Dongle keine verlässliche Möglichkeit bietet, diese LED
-  remote zu lesen oder zu setzen — die aktuelle feste Belegung (s. [Tastenbelegung](#tastenbelegung))
-  beseitigt die gesamte Fehlerklasse, statt sie zu umgehen.
-- **Zusammen mit dem LCD-Autostart gebündelt war ein früher Design-Fehler**, inzwischen behoben: die
-  Bridge startete ursprünglich nur zusammen mit dem Fake-Mode-Autostart des Waveshare-LCDs, obwohl
-  sie keine eigene GPIO-/Overlay-Abhängigkeit hat und auch mit echtem OLED+HAT im Real Mode
-  problemlos läuft. In einen eigenständigen Toggle aufgeteilt
-  (`basic-memory/pifinder-stellarmate/00031`).
 - **Braucht bereits laufendes PiFinder.** Der "Turn Numpad On"-Button im Control Center weigert sich
   explizit, die Bridge zu starten, wenn weder Fake noch Real Mode gerade laufen (es gäbe nichts, an
   das gesendet werden könnte) — erst PiFinder starten.
@@ -311,9 +299,7 @@ TODO-Tabelle (s. [[bm-github-project-schema-todo-format]] für das Schema selbst
 | P3 (noch nicht getrackt) | S | Automatisierter Smoke-Test: synthetische evdev-Events durch `classify()`/die Event-Loop schicken, ohne echte Hardware, erwartete `/api/key`-Aufrufe verifizieren (bräuchte ein Mock-HTTP-Ziel — aktuell keinerlei Testabdeckung für dieses Skript). |
 | P3 (noch nicht getrackt) | M | Kleiner On-Screen-/Journal-Statusindikator erwägen, sichtbar ohne SSH-Zugriff, wenn keine PiFinder-Instanz erreichbar ist, statt nur einer Log-Zeile. |
 
-Aktuell sind keine offenen Bugs zu dieser Komponente getrackt — ihr jüngstes Redesign
-(NumLock-unabhängige Belegung, systemd-Persistenz, Selbstheilung) hat jedes zuvor bekannte Problem
-gelöst.
+Aktuell sind keine offenen Bugs zu dieser Komponente getrackt.
 
 ---
 

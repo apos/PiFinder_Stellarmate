@@ -86,10 +86,9 @@ The bridge is intentionally **decoupled from PiFinder's own process and code**:
 
 ## Key Mapping
 
-Tuned for a numpad-only device with no dedicated arrow keys. As of 2026-07-19, the mapping is
-**entirely independent of NumLock state** — a deliberate redesign (see
-[Known Limitations](#known-limitations--troubleshooting) for the earlier, NumLock-dependent design
-and why it was replaced):
+Tuned for a numpad-only device with no dedicated arrow keys. The mapping is **entirely independent
+of NumLock state** - important for a wireless numpad, where there's no reliable way to see or set
+its NumLock LED remotely:
 
 | Physical key | PiFinder action |
 |---|---|
@@ -261,15 +260,6 @@ Two independent problems, two independent fixes:
   only — if neither Real nor Fake Mode is running, keypresses are silently dropped (with a log line)
   until an instance appears. Check `journalctl -u pifinder-numpad-bridge.service -f` if keys seem to
   do nothing.
-- **Historical design (superseded, documented for context):** an earlier version tracked NumLock
-  state itself (seeded from the device's LED at startup, toggled on every NumLock press) to give
-  `4/8/6/2` dual digit/navigation meaning depending on NumLock. Abandoned because a wireless dongle
-  gives no reliable way to read or set that LED remotely — the current fixed mapping (see
-  [Key Mapping](#key-mapping)) removes the entire failure class instead of working around it.
-- **Bundled-with-LCD-autostart was an early design mistake**, since fixed: the bridge originally
-  only started alongside the Waveshare LCD's Fake Mode autostart, even though it has no GPIO/overlay
-  dependency of its own and works fine with the real OLED+HAT in Real Mode too. Split into its own
-  independent toggle (`basic-memory/pifinder-stellarmate/00031`).
 - **Requires PiFinder already running.** The Control Center's "Turn Numpad On" button explicitly
   refuses to start the bridge if neither Fake nor Real Mode is currently up (there'd be nothing to
   send to) — start PiFinder first.
@@ -298,8 +288,7 @@ Prioritized per `basic-memory/pifinder-stellarmate/00001`'s GitHub-Projects-sche
 | P3 (not yet tracked) | S | Automated smoke test: feed synthetic evdev events through `classify()`/the event loop without real hardware, verify expected `/api/key` calls (would need a mock HTTP target — currently zero test coverage for this script). |
 | P3 (not yet tracked) | M | Consider a small on-screen/journal status indicator visible without SSH access when no PiFinder instance is reachable, rather than only a log line. |
 
-No open bugs are currently tracked against this component — its most recent redesign (NumLock-independent
-mapping, systemd persistence, self-healing) resolved every previously known issue.
+No open bugs are currently tracked against this component.
 
 ---
 

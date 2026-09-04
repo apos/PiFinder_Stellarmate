@@ -471,7 +471,7 @@ StellarMate device):
 - **Binary size**: 13.5 MB → **80 KB**
 - **Build time**: full INDI tree → **seconds** (only one `.cpp` file)
 - **No `indi-source` dependency** — only system headers/libs (`pkg-config libindi`)
-- **No conflict with `pacman`** — no longer overwrites `/usr/bin/indi_lx200generic`, which belongs
+- **No conflict with `pacman`** — does not overwrite `/usr/bin/indi_lx200generic`, which belongs
   to the system package
 
 This required the modern `LX200Telescope` base class's API to be nearly identical to the old

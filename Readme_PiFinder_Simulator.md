@@ -155,6 +155,16 @@ See [Readme_ControlCenter.md](Readme_ControlCenter.md) for what each mode is sup
 | `EQUATORIAL_EOD_COORD` | Number (RA hours, DEC degrees) | Current held position |
 | `ON_COORD_SET` | Switch (`SYNC`/`SLEW`/`TRACK`) | All three behave identically - see below |
 | `TELESCOPE_ABORT_MOTION` | Switch | Inherited from `INDI::Telescope`, effectively a no-op (nothing is ever moving) |
+| `FOLLOW_MOUNT_DEVICE` | Text | INDI device name to dead-reckon from, or empty - see below |
+
+### Mount-following (`FOLLOW_MOUNT_DEVICE`)
+
+`FOLLOW_MOUNT_DEVICE` set to a mount's INDI device name dead-reckons the simulator's position along
+with that mount's own slews, the way a real, rigidly-mounted PiFinder's IMU would. Left empty (the
+default), the simulator's position only ever changes when explicitly Synced/GoTo'd - independent of
+any mount - which is what Verify/Alert and Auto-correct-Sync deliberate-misalignment testing need: a
+mount-initiated GoTo does not get followed, and Auto-correct pulls the mount back toward the fixed
+position instead of refining a small residual, exactly the disagreement those modes exist to catch.
 
 ### Why Sync and Goto behave identically
 
@@ -227,15 +237,6 @@ Auto-correct Sync, Verify/Alert, both Goto-capable modes) live-verified against 
 alongside a real mount - see the linked issues below for individual results.
 
 ## Known Limitations & Troubleshooting
-
-**Dead-reckoning / mount-following is now supported** via `FOLLOW_MOUNT_DEVICE`
-([#239](https://github.com/apos/PiFinder_Stellarmate/pull/239), merged) - point it at a mount
-device name and the simulator's position dead-reckons along with that mount's own slews, the way a
-real, rigidly-mounted PiFinder's IMU would. Leave it empty (the default) for the original
-"independent fixed truth" behavior this doc otherwise describes (Verify/Alert, Auto-correct-Sync
-deliberate-misalignment testing) - a mount-initiated GoTo during a test will then *not* be tracked
-by the simulator, and Auto-correct will "pull the mount back" toward the old fixed position instead
-of refining a small residual, which is exactly what those two modes need to test.
 
 **"PiFinder Simulator" won't appear as a Mount candidate in the Control Center**, by design -
 excluded the same way "PiFinder LX200" already is (both implement `INDI::Telescope`, neither is

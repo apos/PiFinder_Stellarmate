@@ -153,7 +153,7 @@ each sits next to the other action(s) that touch the same thing:
   itself to `/tmp` first so the deletion of its own source tree doesn't kill the running process
   mid-uninstall; a deliberate small pause between each systemd unit stop gives the frontend's poll
   loop (`GET /api/uninstall_log`, 200ms) a real chance to show each step before the connection drops
-  (found live during test execution: 6 unit stops otherwise complete in under a second).
+  (without it, 6 unit stops complete in under a second - too fast to show each step).
 
 Both confirm dialogs spell out the exact scope before acting - see
 [help.html#install-update](gui_installer/help.html) (Reset) and
@@ -308,7 +308,7 @@ Auth credentials anyway, so `/shutdown` (non-destructive to the Pi itself — it
 server) has to stay open for that same cross-origin button to work. `/api/uninstall_log` specifically
 skips the PAM check inside `_require_auth()` for latency reasons: this server stops its own systemd
 unit partway through an Uninstall run, so a slower, authenticated poll has a worse chance of
-completing at all before the connection drops (found live 2026-08-01).
+completing at all before the connection drops.
 
 ---
 
@@ -341,7 +341,7 @@ code) and `00035` (the numpad bridge's original design).
   can do anything destructive to the Pi itself.
 - Failed logins are rate-limited per client IP: 5 *confirmed wrong-password* attempts within 30
   seconds locks that IP out until the window elapses, and a semaphore caps concurrent PAM calls at
-  2 regardless of outcome (found live: this page's own ~15 concurrent polls on load could otherwise
+  2 regardless of outcome (this page's own ~15 concurrent polls on load could otherwise
   starve the GIL with password-hashing work, or trip the lockout purely from the resulting race —
   neither is a real attack). This is a basic guard against casual brute-forcing, not a substitute
   for keeping the server off an untrusted network.
