@@ -101,10 +101,15 @@ It should print nothing on a clean, current `dev` checkout.
 
 ## 3. Pacman keyring
 
-Not observed as necessary on a fresh SMOS 2.3.0 x86 image (2026-09) - both the `pacman-key --init`
-step and the `[smos]` signing key were already fine out of the box, and the "Installing system
-packages" phase's automatic unlock (previous section) synced `smos`/`core`/`extra`/`alarm` without
-issue. Keep this handy in case you hit a keyring error on a different image build:
+**Correction (2026-09-04, later the same day)**: an earlier revision of this section claimed this
+wasn't needed on a fresh SMOS 2.3.0 image - that was premature. It genuinely wasn't needed for the
+very first `pacman -S` calls that day, but resurfaced later the same session as `error: smos: key
+"...F4" is unknown` / `database 'smos' is not valid` on every `pacman -Ss`/`-Qi` query, tracked down
+to a plain **user error, not a device quirk**: a later, unrelated manual `sudo pacman-key --init`
+call (while chasing a different problem) re-initialized the keyring from a state where the `smos`
+key was already trusted some other way, discarding that trust - `--init` is not purely idempotent to
+re-run once a keyring already exists and works. Whether a genuinely fresh image needs this step at
+all before its first `pacman -S` remains unconfirmed either way; keep it handy regardless:
 
 ```bash
 sudo pacman-key --init
@@ -115,7 +120,10 @@ sudo pacman-key --lsign-key 320758E60CC6CF30A2B69EA1856A39ADD7E519F4
 
 The `recv-keys`/`lsign-key` step imports and trusts the `smos` repo's own signing key (StellarMate's
 custom package repo) — without it, `smos` package lookups fail with *"key ... is unknown"* even
-after the keyring itself is initialized.
+after the keyring itself is initialized. Also remember `sudo` for read-only queries like `pacman -Ss`/
+`-Qi` too, not just for installs - `/etc/pacman.d/gnupg` is `0700 root:root`, so a plain-user query
+fails with the confusingly unrelated-sounding *"Public keyring not found"* / *"keyring is not
+writable"*, easy to mistake for the actual missing-key problem above.
 
 ## 4. Clone PiFinder_Stellarmate — `dev`, not `main`
 
