@@ -107,11 +107,17 @@ Sollte auf einem sauberen, aktuellen `dev`-Checkout nichts ausgeben.
 
 ## 3. Pacman-Keyring
 
-Auf einem frischen SMOS-2.3.0-x86-Image (2026-09) nicht als notwendig beobachtet — sowohl der
-`pacman-key --init`-Schritt als auch der `smos`-Signierschlüssel waren bereits von Haus aus in
-Ordnung, und die automatische Entsperrung der vorherigen Sektion hat `smos`/`core`/`extra`/`alarm`
-ohne Probleme synchronisiert. Trotzdem hier griffbereit, falls bei einem anderen Image-Build ein
-Keyring-Fehler auftritt:
+**Korrektur (2026-09-04, später am selben Tag)**: eine frühere Fassung dieses Abschnitts behauptete,
+das sei auf einem frischen SMOS-2.3.0-Image nicht nötig — das war voreilig. Für die allerersten
+`pacman -S`-Aufrufe an diesem Tag stimmte das noch, tauchte aber später in derselben Session erneut
+auf (`error: smos: key "...F4" is unknown` / `database 'smos' is not valid` bei jeder
+`pacman -Ss`/`-Qi`-Abfrage) — zurückverfolgt auf einen reinen **Bedienfehler, keine Geräte-Eigenheit**:
+ein späterer, unabhängiger manueller `sudo pacman-key --init`-Aufruf (beim Verfolgen eines anderen
+Problems) hat den Keyring aus einem Zustand heraus neu initialisiert, in dem der `smos`-Schlüssel
+bereits auf anderem Weg vertraut war — dieses Vertrauen ging dabei verloren. `--init` ist also nicht
+uneingeschränkt idempotent, wenn bereits ein funktionierender Keyring existiert. Ob ein wirklich
+frisches Image diesen Schritt vor dem allerersten `pacman -S` überhaupt braucht, bleibt offen —
+trotzdem hier griffbereit:
 
 ```bash
 sudo pacman-key --init
@@ -122,7 +128,10 @@ sudo pacman-key --lsign-key 320758E60CC6CF30A2B69EA1856A39ADD7E519F4
 
 Der `recv-keys`/`lsign-key`-Schritt importiert und vertraut dem eigenen Signierschlüssel des
 `smos`-Repos (StellarMates eigenes Paket-Repo) — ohne ihn schlagen `smos`-Paketabfragen mit "key ...
-is unknown" fehl, auch nachdem der Keyring selbst initialisiert wurde.
+is unknown" fehl, auch nachdem der Keyring selbst initialisiert wurde. Auch bei reinen Lese-Abfragen
+wie `pacman -Ss`/`-Qi` an `sudo` denken — `/etc/pacman.d/gnupg` ist `0700 root:root`, ein Aufruf als
+normaler User schlägt daher mit dem verwirrend unpassenden *"Public keyring not found"* /
+*"keyring is not writable"* fehl, leicht zu verwechseln mit dem eigentlichen Schlüssel-Problem oben.
 
 ## 4. PiFinder_Stellarmate klonen — `dev`, nicht `main`
 
