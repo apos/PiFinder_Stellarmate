@@ -1,5 +1,27 @@
 # PiFinder Simulator - Testing Mount Bridge Without a Real Mount or Clear Sky
 
+## Quickstart
+
+**Was er kann:**
+- Simuliert PiFinders Position exakt und deterministisch - kein echter Himmel, keine echte PiFinder-Hardware nötig.
+- Injiziert diese Position als echten Solve in PiFinder (`/api/fake_solve`), sodass Mount Bridge exakt wie im Realbetrieb reagiert.
+- Kann optional automatisch dem Mount folgen (`FOLLOW_MOUNT_DEVICE`, [#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)) - simuliert damit ein starr am Teleskop montiertes PiFinder inklusive Dead-Reckoning bei Slews.
+- Läuft gegen die stock INDI Telescope Simulator als Mount-Gegenstück - keine reale Montierung nötig.
+
+**Was er nicht kann:**
+- Kein echtes Kamera-Solving, keine Sichtfeld-/Optik-Simulation.
+- Kein Rauschen/keine realistische Solve-Latenz von sich aus - die kommt höchstens vom Truth-Injector-Intervall, nicht vom Simulator selbst.
+- Erscheint absichtlich NICHT als Mount-Kandidat im Control Center (wie "PiFinder LX200" auch nicht).
+- Kein Setup-Komfort (manuelles Sync/RA-Dec-Eintippen nötig) - siehe [#176](https://github.com/apos/PiFinder_Stellarmate/issues/176).
+
+**Use Cases:**
+- Root-Cause-Debugging von Mount-Bridge-Logik ohne klaren Himmel.
+- Reposition-Detection (Fall 1-4) gezielt mit exakten, reproduzierbaren Werten triggern.
+- Stresstests (schnelles Tracking-Toggle, wiederholte PushTos) unabhängig von Wetter/Tageszeit.
+- Regressionstest vor jedem Fix-Deploy, bevor mit echter Hardware getestet wird.
+
+See [Installation & Illustrated Guide](#installation--illustrated-guide) below to actually set it up.
+
 ## Table of Contents
 
 - [Basic Functionality (Overview)](#basic-functionality-overview)
@@ -206,13 +228,14 @@ alongside a real mount - see the linked issues below for individual results.
 
 ## Known Limitations & Troubleshooting
 
-**No dead-reckoning / mount-following mode.** The simulator's position only ever changes when
-explicitly Synced/GoTo'd - it never follows a mount's own motion the way a real, rigidly-mounted
-PiFinder would (via its real IMU). This is correct for testing "independent fixed truth" scenarios
-(Verify/Alert, Auto-correct-Sync deliberate-misalignment testing) but means a mount-initiated GoTo
-during a test will *not* be tracked by the simulator, and Auto-correct will "pull the mount back"
-toward the old fixed position instead of refining a small residual - see
-[#177](https://github.com/apos/PiFinder_Stellarmate/issues/177) for the tracked follow-up.
+**Dead-reckoning / mount-following is now supported** via `FOLLOW_MOUNT_DEVICE`
+([#239](https://github.com/apos/PiFinder_Stellarmate/pull/239), merged) - point it at a mount
+device name and the simulator's position dead-reckons along with that mount's own slews, the way a
+real, rigidly-mounted PiFinder's IMU would. Leave it empty (the default) for the original
+"independent fixed truth" behavior this doc otherwise describes (Verify/Alert, Auto-correct-Sync
+deliberate-misalignment testing) - a mount-initiated GoTo during a test will then *not* be tracked
+by the simulator, and Auto-correct will "pull the mount back" toward the old fixed position instead
+of refining a small residual, which is exactly what those two modes need to test.
 
 **"PiFinder Simulator" won't appear as a Mount candidate in the Control Center**, by design -
 excluded the same way "PiFinder LX200" already is (both implement `INDI::Telescope`, neither is
