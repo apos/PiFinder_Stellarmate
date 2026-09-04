@@ -498,9 +498,12 @@ sudo pacman -Sy --noconfirm
 # Install system package requirements (Arch/SMOS)
 # libcamera 0.7.1+ uses pybind11 smart_holder — incompatible with picamera2 from pip.
 # python-libcamera must stay at 0.7.0 — use cached package if available, then pin.
+# nlohmann-json: header-only C++ JSON lib the INDI drivers' CMakeLists.txt
+# require (pkg_check_modules 'nlohmann_json') - was missing from this list,
+# so all three driver builds failed with "package 'nlohmann_json' not found".
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
-    openexr
+    openexr nlohmann-json
 # libcamera + libcamera-ipa are pre-installed by SMOS — only install if missing.
 # Never upgrade: repo may carry a newer pkgrel with incompatible soname (SMOS packaging bug:
 # libcamera 0.7.1-64 breaks libcamera-ipa 0.7.1-1 soname dependency).

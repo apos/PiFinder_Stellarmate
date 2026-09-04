@@ -255,6 +255,11 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Missing `nlohmann-json` package breaks all three INDI driver builds on a fresh install**: found
+  live on a fresh x86 SMOS 2.3.0 reinstall - `bin/build_indi_driver.sh`, `build_indi_bridge.sh` and
+  `build_indi_simulator.sh` all failed with `CMake Error: package 'nlohmann_json' not found`, since
+  `pifinder_stellarmate_setup.sh`'s package list never actually installed it. Added
+  `nlohmann-json` (Arch: `extra/nlohmann-json`) alongside the other system packages.
 - **Mount Bridge: PiFinder solve position not precessed to JNow (#232)**: `httpGetPiFinderFreshCamPosition()`
   returned PiFinder's `/api/status` solution coordinates unchanged. PiFinder is J2000 throughout, but
   every caller compares/syncs that value against the mount's `EQUATORIAL_EOD_COORD` (epoch-of-date).
