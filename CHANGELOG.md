@@ -360,6 +360,13 @@ All notable changes to this project are documented in this file. Format loosely 
   or an external process, it was *this same phase's own* `archlinuxarm.org` fallback block
   re-triggering every time the lock re-commented `[core]`/`[extra]` back out - now guarded to
   `uname -m != x86_64`.
+- **Control Center: Start Install/Reinstall/Update buttons vanished permanently after a rejected
+  start**: `start()` hid the `#choices` container unconditionally before knowing whether the server
+  would accept the request - if it didn't (409, e.g. a hardware test/mode switch/reset/uninstall
+  already in progress), only the status text showed an error and nothing restored the buttons
+  afterward, even once whatever was blocking it finished. Found live: clicking "Start Install" while
+  a Test Hardware run was in flight correctly showed the rejection, but left no way back to the
+  install buttons short of reloading the page. Now re-renders the same choice screen on rejection.
 
 ## [1.4.0] - 2026-08-02
 
