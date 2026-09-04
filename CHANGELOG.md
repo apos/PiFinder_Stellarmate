@@ -347,6 +347,19 @@ All notable changes to this project are documented in this file. Format loosely 
   IMU reader polling the same device at ~30Hz, so a single scan attempt could occasionally race a
   concurrent transaction and come back empty. Now retries up to 3 times, 0.3s apart, before
   concluding the IMU is actually missing.
+- **x86: "Installing system packages" phase failed with `target not found` on a freshly
+  provisioned device** ([#257](https://github.com/apos/PiFinder_Stellarmate/pull/257)): unlike the
+  `--mode=indi_only` path just above it, this phase called raw `pacman -S` directly instead of going
+  through `os_install_packages()` (`bin/os_detect.sh`) - on a device where StellarMate's Atomic
+  Updates lock is still active (the default right after a clean SMOS install), only the `[smos]` repo
+  is reachable and every install here failed. Never hit on the Pi4/Pi5 dev units, where the lock was
+  already disabled from an earlier session. Now wraps the phase with the same
+  disable/install/re-enable sequence `os_install_packages()` already uses (no-op wherever the lock is
+  already off). Also root-causes and fixes the previously unexplained "pacman.conf reverts to an
+  ARM-only mirror on its own" mystery noted in `Readme_UTM_dev_X86.md`: it wasn't the base x86 image
+  or an external process, it was *this same phase's own* `archlinuxarm.org` fallback block
+  re-triggering every time the lock re-commented `[core]`/`[extra]` back out - now guarded to
+  `uname -m != x86_64`.
 
 ## [1.4.0] - 2026-08-02
 
