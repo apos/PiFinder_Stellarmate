@@ -255,6 +255,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **x86: `python-libcamera` pin silently fails and lies about it**: the aarch64-only cached
+  `python-libcamera-0.7.0-*-aarch64.pkg.tar.xz` pin was attempted on x86 hosts too (the file is
+  found regardless of host arch, same git checkout) - `pacman -U` always failed there
+  ("package architecture is not valid", plus confusing keyring noise from the aborted
+  transaction), but the script never checked the exit code: no warning was raised and the
+  summary claimed `[pinned 0.7.0 ...]` under "No critical warnings — setup completed cleanly"
+  while `python-libcamera` was, in fact, not installed at all. Now skips the pin outright on
+  x86_64 (no real camera hardware to protect there anyway) and checks the exit code on
+  aarch64 so a real failure is reported honestly instead of silently.
 - **Missing `nlohmann-json` package breaks all three INDI driver builds on a fresh install**: found
   live on a fresh x86 SMOS 2.3.0 reinstall - `bin/build_indi_driver.sh`, `build_indi_bridge.sh` and
   `build_indi_simulator.sh` all failed with `CMake Error: package 'nlohmann_json' not found`, since
