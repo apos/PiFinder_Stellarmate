@@ -284,6 +284,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Status dots turn egg-shaped ("Ostereier") on window resize**: `.status-dot` had no
+  `flex-shrink: 0` - inside a tight flex row (e.g. the mode cards' icon+label, a long label like
+  "PiFinder-only Fake Mode (legacy)" competing for space as the window narrows) the flex algorithm
+  could shrink the dot's width while its fixed height (0.6rem) stayed put, deforming the circle
+  into an oval. Found live resizing the browser window right after moving the mode cards into the
+  Mount Bridge tile (#267) - pre-existing on every other `.status-dot` use on the page too, just
+  not previously narrow enough to trigger it visibly.
 - **`/etc/group`/`/etc/passwd` missing trailing newline silently breaks `spi`/`gpio` group
   creation, PiFinder never starts**: a missing trailing newline on either file's last line makes
   shadow-utils misreport `groupadd`/`usermod` failures as "Non-text file" / "cannot open ...:
