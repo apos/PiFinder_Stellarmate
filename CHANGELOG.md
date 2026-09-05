@@ -284,6 +284,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`camera_pi.py`: "Align (Day)" rendered fully white/clipped**: with the camera's native
+  auto-exposure active (used by "Align (Day)"), the raw capture sometimes arrived in an unexpected
+  16-bit container (~65535 max) instead of the profile's expected bit-depth scale (~1023 max for
+  10-bit), overflowing the bias/gain-rescale math into pure white. Added a scale-mismatch guard in
+  `capture()` (patched via `diffs/camera_pi_py.diff`) that rescales by /64 only when the raw max
+  exceeds the profile's expected range - a correctly scaled capture is never affected. Verified via
+  an isolated picamera2 test script: mean=252 (clipped) before, mean=54 (normal) after.
 - **Pi5: OLED display goes completely dark (falls back to `DisplayHeadless`), keyboard/GPIO users
   affected too**: `pifinder_stellarmate_setup.sh` installs the real `RPi.GPIO` package (from
   `bin/requirements_additional.txt`, pulled in via the main `requirements.txt`) and, later,
