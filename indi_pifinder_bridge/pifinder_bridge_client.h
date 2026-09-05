@@ -205,4 +205,33 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool m_shadowOnline = false;
         INDI::PropertyViewNumber *m_shadowEqNP = nullptr;
         INDI::PropertyViewSwitch *m_shadowOnCoordSetSP = nullptr;
+
+        // Root-cause fix (2026-09-05, same incident/reasoning as
+        // indi_pifinder_simulator's own isUsableCoordinate() - see that
+        // file's header comment for the full incident writeup: a real
+        // OnStep mount at Dec 90/NCP published a NaN EQUATORIAL_EOD_COORD
+        // with no other explanation found live; indilib/indi#2167
+        // documents an independent, still-unresolved OnStep crash under
+        // the same "sync near NCP" condition). getPiFinderRADE()/
+        // getMountRADE()/getPiFinderTargetRADE() below used to return
+        // whatever the snooped INDI value currently held with NO
+        // finiteness/range check - a NaN mount reading would have flowed
+        // straight into pifinder_mount_bridge.cpp's drift calculation,
+        // slew-rate selection and reposition-detection baseline, which
+        // actually commands the REAL mount (a much bigger blast radius
+        // than the Simulator's own display-only position). Every existing
+        // caller already treats a `false` return (no data snooped yet, the
+        // normal case right after startup) as "skip this tick, do nothing"
+        // - a rejected bad reading now reuses that exact same, already
+        // safe code path instead of a new one, so a bad reading can never
+        // reach sendMountCoords()/the real mount. Rate-limited: a
+        // persistently misbehaving mount driver logs the condition
+        // periodically via stderr (this class has no LOGF_WARN - it is an
+        // INDI::BaseClient, not an INDI::DefaultDevice - but indiserver
+        // captures driver stderr the same way IDLog() output already is,
+        // see basic-memory's INDI-debugging note on that), not once per
+        // TimerHit() tick.
+        static constexpr long BAD_COORD_WARN_INTERVAL_SEC = 45;
+        mutable long m_lastBadCoordWarnTime = 0;
+        bool isUsableCoordinateForWarn(const char *sourceLabel, double ra, double dec) const;
 };
