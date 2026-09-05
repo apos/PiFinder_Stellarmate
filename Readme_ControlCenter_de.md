@@ -9,6 +9,11 @@
 >   Web-Abhängigkeit
 > * Live durchgehend getestet: Neuinstallation, Reinstall, Update, Reboot-Persistenz,
 >   Fake/Real-Mode-Wechsel, alle Hardware-Toggles
+> * **Hinweis (2026-09-04)**: das Projekt pinnt inzwischen **PiFinder 2.6.3 / StellarMate OS 2.3.0**;
+>   Installationsablauf für diesen Pin erneut verifiziert (x86 Dev-/Control-Host), Pi4/Pi5-
+>   Hardware-Retest steht noch aus — siehe Versionskompatibilität unten. Wie dort erklärt, hat das
+>   Control Center selbst keinen PiFinder-versionsspezifischen Code, das betrifft also
+>   hauptsächlich die zugrundeliegende Install-/SMOS-Kombination.
 
 Dieses Dokument beschreibt das **PiFinder Stellarmate Control Center** (`gui_installer/`) — die
 lokale Webanwendung, die diese Projekts PiFinder-Integration installiert, aktualisiert, überwacht
@@ -426,6 +431,7 @@ sind beide behoben, s. `basic-memory/pifinder-stellarmate/00033`).
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
+| 2.6.3 | 2.3.0 | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi4-Hardware-Retest ausstehend | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi5-Hardware-Retest ausstehend |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ vollständig getestet |
 | 2.5.1 | 2.1.1 | ✅ getestet | — |
 

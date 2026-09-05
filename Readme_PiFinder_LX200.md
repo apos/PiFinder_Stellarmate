@@ -11,6 +11,11 @@
 >
 > If you're on different versions, the concepts below still apply, but property names/behavior of
 > third-party mount drivers (like OnStep) may differ slightly between libindi releases.
+>
+> **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0** (see main
+> [README.md](README.md)); the install flow itself is re-verified for that pin, but this document's
+> real-Mount-Bridge-hardware numbers above still reflect the last combo actually re-tested against
+> a physical mount — retest with the new pin is pending.
 
 > ### ⚠️ Mandatory: this only works through the StellarMate Web Manager
 >

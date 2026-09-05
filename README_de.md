@@ -14,11 +14,11 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 > * Die Nutzung dieser Skripte erfolgt auf eigenes Risiko. Der Autor haftet nicht für Schäden an Hardware oder Software.
 > * Dieser Ablauf wurde mit der in `version.txt` angegebenen PiFinder-Version getestet.
 
-> ### ✅ **Aktuelle Version — v2.0.0**
+> ### ✅ **Aktuell gepinnte Versionen**
 >
-> * Gebaut und verifiziert für **PiFinder-Software 2.6.1** auf **StellarMate OS 2.2.1** (Arch Linux) — PiFinder ist fest auf diesen Release-Tag gepinnt (siehe `version.txt`), nicht auf den beweglichen HEAD des upstream `release`-Branches, für reproduzierbare Installationen.
-> * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12).
-> * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅. (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
+> * Gepinnt auf **PiFinder-Software 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) — siehe `version.txt`/`pifinder_stellarmate_setup.sh`, nicht auf den beweglichen HEAD des upstream `release`-Branches, für reproduzierbare Installationen. Installationsablauf Ende-zu-Ende erneut verifiziert auf SMOS 2.3.0 (x86 Dev-/Control-Host, 2026-09-04); Pi4/Pi5-Hardware-Reverifikation für genau diese Pin-Kombination läuft gerade — aktueller Pro-Pi-Status in der Versionskompatibilitätstabelle unten.
+> * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12, gegen den zu diesem Zeitpunkt aktuellen Pin).
+> * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅ (gegen den zum Testzeitpunkt aktuellen Pin). (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
 > * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung, alle vier Coupling-Presets — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
 > * **Control Center**: die PiFinder-Kachel bietet "Quick keys" — ein kompaktes Tastenfeld direkt auf der Seite (Pfeile, Long, Enter, zwei wählbare Layouts), um PiFinders OLED-Menü zu bedienen, ohne auf die separate Remote-Seite zu wechseln. Mount Bridge, PiFinder Mode/Test/Power und Install or Update sind einklappbar, die Wahl bleibt über Reloads hinweg gespeichert. Ein Night-Mode-Umschalter stellt den gesamten Seitentext in leuchtendem Rot dar. PiFinder-Installationen/Updates zielen auf einen gepinnten Release-Tag statt auf den beweglichen HEAD des upstream `release`-Branches. Ein "PiFinder"-Badge zeigt PiFinders eigene Mount-Type- + PiFinder-Type-Einstellungen auf einen Blick (grün solange PiFinder läuft, rot bei Nichtübereinstimmung mit der verbundenen Montierung), und das Montierungssymbol im Mount-Bridge-Diagramm zeigt zusätzlich den eigenen Mount Type der Montierung. Siehe [CHANGELOG.md](CHANGELOG.md) für die vollständige Historie.
 
@@ -102,7 +102,7 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
 ### Voraussetzungen
 
 *   Ein Raspberry Pi 4 oder Pi 5 mit PiFinder-Hardware (Hat, Display, Kamera usw.).
-*   Stellarmate OS 2.1.1 (Arch Linux) installiert und laufend.
+*   Stellarmate OS 2.3.0 (Arch Linux) installiert und laufend — das Setup-Skript warnt (fährt aber fort), falls deine SMOS-Version von diesem getesteten Pin abweicht.
 *   Grundlegende Vertrautheit mit der Linux-Kommandozeile.
 
 ### Einrichtungsschritte
@@ -300,6 +300,7 @@ bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
+| 2.6.3 | 2.3.0 | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi4-Hardware-Retest läuft | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi5-Hardware-Retest ausstehend |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend |
 | 2.6.0 | 2.1.1 | ✅ getestet | ⚠️ seit dem OLED-Fix nicht erneut verifiziert (hardwarebasiert, sollte also übertragbar sein — siehe Zeile 2.2.1) |
 | 2.5.1 | 2.1.1 | ✅ getestet | — |
