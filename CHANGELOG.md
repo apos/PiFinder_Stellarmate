@@ -295,6 +295,14 @@ All notable changes to this project are documented in this file. Format loosely 
   other live-coordinate ingestion point in this codebase. New `isUsableCoordinate()` (finite + Dec in
   [-90,90]) now gates both ingestion points; a bad reading is dropped (rate-limited warning) instead
   of corrupting the device's position.
+- **PiFinder Mount Bridge: same unvalidated snooped-coordinate gap as the Simulator above, but
+  feeding real mount-commanding logic**: `PiFinderBridgeClient::getPiFinderRADE()`/`getMountRADE()`/
+  `getPiFinderTargetRADE()` returned whatever the snooped INDI value currently held with no
+  finiteness/range check - a bad reading here has a much bigger blast radius than the Simulator's
+  display-only position, since it flows into the drift calculation and slew-rate selection that
+  actually commands the real mount. New `isUsableCoordinateForWarn()` gates all three getters,
+  reusing the existing "no data snooped yet" `false` return that every call site already treats as
+  "skip this tick" - no call-site changes needed.
 - **x86: `python-libcamera` pin silently fails and lies about it**: the aarch64-only cached
   `python-libcamera-0.7.0-*-aarch64.pkg.tar.xz` pin was attempted on x86 hosts too (the file is
   found regardless of host arch, same git checkout) - `pacman -U` always failed there
