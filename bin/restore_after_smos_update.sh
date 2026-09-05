@@ -48,14 +48,18 @@ PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
     openexr rclone wireguard-tools jq
-# libcamera + libcamera-ipa are pre-installed by SMOS — only install if missing.
-# Never upgrade: repo may carry a newer pkgrel with incompatible soname (SMOS packaging bug:
-# libcamera 0.7.1-64 breaks libcamera-ipa 0.7.1-1 soname dependency).
-if ! pacman -Q libcamera &>/dev/null || ! pacman -Q libcamera-ipa &>/dev/null; then
-    sudo pacman -S --noconfirm libcamera libcamera-ipa
+# libcamera is pre-installed by SMOS base. The smos `libcamera` package BUNDLES
+# the IPA modules (/usr/lib/libcamera/ipa/ipa_rpi_{pisp,vc4}.so) — SMOS has NO
+# separate `libcamera-ipa` package (that is an Arch Linux ARM split-package
+# concept). Never pull extra/libcamera-ipa: it hard-requires libcamera.so=0.7-64
+# / libcamera-base.so=0.7-64, which the smos libcamera package does not declare
+# (Provides: None), so pacman cannot prepare the transaction and the whole
+# restore aborts via `set -e`.
+if ! pacman -Q libcamera &>/dev/null; then
+    sudo pacman -S --noconfirm libcamera
     echo "  ✅ libcamera installed"
 else
-    echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base)"
+    echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base, IPA bundled)"
 fi
 if [ -n "$PYLIBCAM_PKG" ]; then
     echo "  ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
