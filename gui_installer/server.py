@@ -60,6 +60,10 @@ AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
 # Negative/for-dark-background variant - matches this page's own #111 body background.
 PROJECT_LOGO = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png"
+# Just the round penguin mark, cropped from PROJECT_LOGO and pre-shrunk to
+# 96x96 (#268: sticky header icon, shown at ~22px - only needs enough
+# resolution for retina, not the full wordmark's 950x179).
+PROJECT_ICON = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_icon_negativ_fuer-dunklen-hg.png"
 # PiFinder's own splash bitmap (shown by pifinder_splash.service before the
 # main app is up) - only exists once PiFinder has actually been installed.
 PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
@@ -2157,6 +2161,24 @@ def _run_fake_mode_action_inner(action):
     # finally block, not here - see its comment.
 
 
+def _get_device_type():
+    """Coarse device classification for the header's device icon (#268) -
+    same source and classification as bin/functions.sh's get_hw_model()
+    (/proc/device-tree/model, empty on x86 which has no device tree), kept
+    in sync with that shell function rather than reinventing detection."""
+    try:
+        model = Path("/proc/device-tree/model").read_text(errors="ignore").strip("\x00").strip()
+    except Exception:
+        model = ""
+    if "Raspberry Pi 5" in model:
+        return "pi5"
+    if "Raspberry Pi 4" in model:
+        return "pi4"
+    if model:
+        return "pi_other"
+    return "x86"
+
+
 def _get_all_ips():
     """Every non-loopback IPv4 address on this machine, for the remote-access links."""
     try:
@@ -2584,6 +2606,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(PROJECT_LOGO, "image/png")
             return
 
+        if parsed.path == "/project_icon.png":
+            self._send_file(PROJECT_ICON, "image/png")
+            return
+
         if parsed.path == "/pifinder_welcome.png":
             self._send_file(_pifinder_welcome_image_red() or PIFINDER_WELCOME_IMAGE, "image/png")
             return
@@ -2613,6 +2639,11 @@ class Handler(BaseHTTPRequestHandler):
                     "setup_script_path": str(SETUP_SCRIPT),
                     "ips": _get_all_ips(),
                     "port": PORT,
+                    # #268: shown prominently in the sticky header - lets
+                    # multiple open tabs/devices be told apart at a glance,
+                    # not just by IP in the URL bar.
+                    "hostname": socket.gethostname(),
+                    "device_type": _get_device_type(),
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
