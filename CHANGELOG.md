@@ -255,6 +255,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`/etc/group`/`/etc/passwd` missing trailing newline silently breaks `spi`/`gpio` group
+  creation, PiFinder never starts**: a missing trailing newline on either file's last line makes
+  shadow-utils misreport `groupadd`/`usermod` failures as "Non-text file" / "cannot open ...:
+  Cannot allocate memory" (not a real ENOMEM - verified via `strace`, no syscall actually fails)
+  and silently no-op instead of creating the group/updating the user. The setup script's
+  `groupadd`/`usermod` calls never checked the result, so the install could "complete" while
+  `pifinder.service` was permanently unable to start (systemd exit `216/GROUP` -
+  `SupplementaryGroups=` couldn't resolve `gpio`/`spi`). Found live on a fresh SMOS 2.3.0 x86
+  image. Now ensures both files are newline-terminated before `groupadd`/`usermod` (a correctness
+  precondition, not a defensive workaround) and hard-aborts (`exit 1`) if group creation or the
+  user's group membership still isn't actually correct afterward, instead of continuing silently.
 - **Stale version banners across README.md/_de, Readme_PiFinder_LX200.md/_de,
   Readme_ControlCenter.md/_de, Readme_KeyboardBridge.md/_de**: all still referenced PiFinder
   2.6.0/2.6.1 on SMOS 2.1.1/2.2.1, disconnected from the actual pins in `version.txt`/

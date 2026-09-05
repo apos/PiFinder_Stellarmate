@@ -242,13 +242,45 @@ phase "Setting up hardware access"
 
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
-# Create hardware groups if missing (Arch/SMOS does not create these by default)
+# groupadd/usermod require /etc/group and /etc/passwd to be well-formed,
+# newline-terminated files. A missing trailing newline on the last line makes
+# shadow-utils misreport "Non-text file" / "cannot open ...: Cannot allocate
+# memory" (not a real ENOMEM - verified via strace, no syscall actually
+# fails) and silently no-op instead of creating the group/updating the user.
+# Found live on a fresh SMOS 2.3.0 x86 image (2026-09-05): both files were
+# missing it, spi/gpio were never created, and pifinder.service could never
+# start (systemd exit 216/GROUP - SupplementaryGroups= couldn't resolve
+# gpio/spi). Ensuring this here is a correctness precondition for the calls
+# below, not a defensive workaround.
+for f in /etc/group /etc/passwd; do
+    if [ -n "$(sudo tail -c 1 "$f")" ]; then
+        echo "⚠️  $f is missing its trailing newline - fixing before groupadd/usermod."
+        sudo bash -c "printf '\n' >> '$f'"
+    fi
+done
+
+# Create hardware groups if missing (Arch/SMOS does not create these by default).
+# PiFinder cannot start at all without these (pifinder.service's
+# SupplementaryGroups=), so a failure here must hard-abort the script, not
+# just warn and continue.
 for grp in spi gpio i2c kmem input; do
-    getent group "$grp" > /dev/null 2>&1 || sudo groupadd "$grp"
+    if ! getent group "$grp" > /dev/null 2>&1; then
+        sudo groupadd "$grp"
+        if ! getent group "$grp" > /dev/null 2>&1; then
+            echo "❌ FATAL: groupadd '$grp' failed - PiFinder cannot start without it (see pifinder.service's SupplementaryGroups=)."
+            exit 1
+        fi
+    fi
 done
 
 # Add rights accessing hardware to user
 sudo usermod -a -G spi,gpio,i2c,video,kmem,input ${USER}
+for grp in spi gpio i2c video kmem input; do
+    if ! id -nG "${USER}" | tr ' ' '\n' | grep -qx "$grp"; then
+        echo "❌ FATAL: user '${USER}' is not in group '$grp' after usermod - PiFinder cannot access the required hardware."
+        exit 1
+    fi
+done
 
 # udev rule for /dev/gpiomem access (Arch Linux). Pi5's RP1 chip exposes
 # several numbered nodes (/dev/gpiomem0..4), each its OWN subsystem
