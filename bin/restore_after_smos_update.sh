@@ -32,8 +32,28 @@ echo "🔧 [1/8] Restoring pacman repos ..."
 grep -q "^\[core\]" /etc/pacman.conf || \
     printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' \
     | sudo tee -a /etc/pacman.conf > /dev/null
+
+# Reset pacman's keyring + sync databases before the actual sync below - the
+# same remedy StellarMate's own factory-reset tooling uses
+# (reset_pacman_keys() in /usr/share/smoscore/scripts/common/
+# reset-factory-common.sh), not a workaround invented here (same reasoning
+# already applied to the core/extra/alarm install path in
+# bin/os_detect.sh's os_pacman_install_arch()). Found live (2026-09-05,
+# real SMOS 2.2.1->2.3.0 update, Pi4): a SMOS update can leave the local
+# keyring/sync-db state corrupted ("Public keyring not found", "database
+# ... is not valid (invalid or corrupted database (PGP signature))"),
+# which then makes EVERY subsequent `pacman -S` in this script fail with
+# "target not found" - not just for packages actually affected by the
+# update, but for anything already installed too (confirmed live: `pacman -S
+# --needed jq` failed even though jq was already present). Safe to run
+# unconditionally: a no-op if the keyring/sync-db state is already fine,
+# and this only restores pacman's own trust database to its default state
+# (never touches installed packages).
+sudo rm -rf /var/lib/pacman/sync/*
+sudo pacman-key --init
+sudo pacman-key --populate
 sudo pacman -Sy --noconfirm
-echo "  ✅ Repos added and synced"
+echo "  ✅ Repos added, keyring reset, and synced"
 
 # -------------------------------------------------------
 # 2. System packages
