@@ -1097,6 +1097,20 @@
      the label column. Rows 3/5 have no such widget (button right after
      the label) so naturally start at this same x anyway. */
   .mb-step-widget { min-width: 13rem; }
+  /* #267: Profile (1) and Mount (4) are the two steps most important to get
+     right first - visually distinguished from the rest of the checklist.
+     Only a static box/icon, deliberately NOT overriding the label's own
+     color - .mb-step-done/.mb-step-busy (more specific selectors) still
+     win once a step actually completes/runs, so the done/busy signal isn't
+     fought by this. */
+  .mb-step-row-key {
+    background: #1c1a12;
+    border: 1px solid #4a3f20;
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+  }
+  .mb-step-key { color: #fff; font-weight: 600; }
+  .mb-step-key-star { flex-shrink: 0; }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
      directly beside the Bridge icon rather than off in a corner - per live
@@ -1833,6 +1847,33 @@
 
       <div class="hgroup-divider"></div>
 
+      <!-- Moved here from "Simulation, Test and Power" (#267, 2026-09-05):
+           these mode cards + the readiness line depend on exactly the
+           setup state the checklist right below tracks - they belong next
+           to it, not mirrored in an unrelated tile. Wrapped so
+           setModeTileVisible() can hide this alongside the rest of the
+           Mode tile while an install/reinstall run is active (that hiding
+           previously came for free from living inside #mode-tile itself). -->
+      <div id="mb-mode-cards-block">
+        <div class="mode-tiles">
+          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
+            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
+            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
+            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
+          </div>
+        </div>
+        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
+      </div>
+
+      <div class="hgroup-divider"></div>
+
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
         <span id="mb-details-chevron">&#9660; show</span>
@@ -1845,8 +1886,8 @@
         <div class="mb-checklist-divider"></div>
         <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
-        <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+        <div class="mb-row mb-step-row mb-step-row-key" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
           <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
           <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
         </div>
@@ -1866,8 +1907,8 @@
              Bridge, no mount here) - wrapper for the same reason as
              #mb-operate-rows above. -->
         <div id="mb-steps-4-6">
-        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+        <div class="mb-row mb-step-row mb-step-row-key" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
           <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
           <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
         </div>
@@ -1970,21 +2011,6 @@
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
-        <div class="mode-tiles">
-          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
-            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
-          </div>
-          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
-            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
-          </div>
-          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
-            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
-          </div>
-        </div>
-        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <div class="group-label">Synthetic Solve<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help">i</a></div>
         <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
              alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
@@ -2330,6 +2356,12 @@ function setStatus(text, cls) {
 // see pollLog()'s data.running branch.
 function setModeTileVisible(visible) {
   document.getElementById('mode-tile').style.display = visible ? '' : 'none';
+  // #267: mode cards + readiness line now live in the Mount Bridge tile,
+  // not inside #mode-tile itself - hide them the same way while an
+  // install/reinstall run is active, or Full Simulation/Fake Mode could be
+  // toggled mid-run.
+  const modeCardsBlock = document.getElementById('mb-mode-cards-block');
+  if (modeCardsBlock) modeCardsBlock.style.display = visible ? '' : 'none';
 }
 
 function updateProgress(phaseIndex, phaseTotal, phaseLabel) {
