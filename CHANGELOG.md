@@ -274,6 +274,18 @@ All notable changes to this project are documented in this file. Format loosely 
   Version banners and Version Compatibility tables now reflect the current 2.6.3/2.3.0 pin, with
   Pi4/Pi5 hardware re-verification for that exact pin marked as pending rather than falsely
   claiming "tested".
+- **Setup never rebuilt the "PiFinder Simulator" INDI driver, letting it silently go stale**: unlike
+  `indi_pifinder_lx200`/`indi_pifinder_mount_bridge`, `indi_pifinder_simulator` was only ever built by
+  running `bin/build_indi_simulator.sh` by hand - a normal install/reinstall/update never touched it.
+  Found live on a real Pi4: the installed binary predated `FOLLOW_MOUNT_DEVICE` (added 2026-09-01) by
+  almost a month, so the Mount Bridge readiness self-heal watchdog's check for it read the property
+  as permanently absent and retried "set PiFinder Simulator to follow '...'" every 5s forever,
+  spamming the Mount Bridge log panel without ever converging. Fixed at both ends: (1)
+  `bin/build_and_install_indi_drivers.sh` now builds/installs all three INDI drivers together, so
+  Simulator - a first-class, GUI-surfaced "Full Simulation" feature, not just a dev tool - can no
+  longer drift out of sync with the other two; (2) the self-heal check now gives up with a single
+  clear log line after 3 consecutive failed attempts for the same target mount instead of retrying
+  indefinitely, and retries fresh if the desired mount later changes.
 - **x86: `python-libcamera` pin silently fails and lies about it**: the aarch64-only cached
   `python-libcamera-0.7.0-*-aarch64.pkg.tar.xz` pin was attempted on x86 hosts too (the file is
   found regardless of host arch, same git checkout) - `pacman -U` always failed there

@@ -1479,6 +1479,25 @@ _mb_readiness_gave_up = False
 _MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
 _mb_readiness_consecutive_fails = 0
 
+# Debounce for check 6 - found live 2026-09-05: an "PiFinder Simulator" INDI
+# driver build that predates FOLLOW_MOUNT_DEVICE (introduced afafbf0,
+# 2026-09-01) reports the device as present but the property as permanently
+# absent (get_pifinder_simulator_follow_mount() returns "" instead of the
+# desired mount, since it's reading a property the old binary never
+# defines) - the write in _do_follow() below is then a silent no-op against
+# that same missing property. Without a limit, check 6 retried this
+# unwinnable action every single 5s tick forever, filling the Mount Bridge
+# log panel with "set PiFinder Simulator to follow ..." lines that never
+# actually change anything. This mirrors check 1's give-up pattern above,
+# but keyed on the specific mount name rather than a time window: a build
+# that's simply stale for THIS mount stays quiet after the first warning,
+# while a genuinely new target (user re-links to a different mount) gets a
+# fresh set of attempts rather than staying silenced by an unrelated
+# earlier give-up.
+_MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING = 3
+_mb_readiness_follow_mount_consecutive_fails = 0
+_mb_readiness_follow_mount_gave_up_target = None
+
 
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
@@ -1488,6 +1507,7 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     connected/linked immediately after), and piling up several repairs at
     once makes a failure harder to attribute to any one of them."""
     global _mb_readiness_gave_up, _mb_readiness_consecutive_fails
+    global _mb_readiness_follow_mount_consecutive_fails, _mb_readiness_follow_mount_gave_up_target
 
     # --- Check 1: responsive at all -------------------------------------
     # mount_bridge_status() itself can't distinguish "driver never started"
@@ -1591,19 +1611,41 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     # Full Simulation's truth-injector targets "PiFinder Simulator" itself
     # (not the Multi-Point-Alignment mount-mirroring case).
     if _truth_injector_desired and _truth_injector_device == "PiFinder Simulator" and status.get("active_mount"):
+        target = status["active_mount"]
         try:
             current = indi_client.get_pifinder_simulator_follow_mount()
         except indi_client.INDIClientError:
             current = None
-        if current is not None and current != status["active_mount"]:
+        if current is not None and current != target:
+            if target != _mb_readiness_follow_mount_gave_up_target:
+                # Either the first mismatch ever seen, or the desired mount
+                # changed since we last gave up on a *different* one -
+                # either way this is a fresh situation, retry it properly.
+                _mb_readiness_follow_mount_gave_up_target = None
+                _mb_readiness_follow_mount_consecutive_fails = 0
+            _mb_readiness_follow_mount_consecutive_fails += 1
+            if _mb_readiness_follow_mount_consecutive_fails >= _MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING:
+                if _mb_readiness_follow_mount_gave_up_target != target:
+                    _mb_readiness_follow_mount_gave_up_target = target
+                    _mb_log(
+                        "Mount Bridge self-heal: PiFinder Simulator still won't follow "
+                        f"'{target}' after {_MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING} attempts - "
+                        "FOLLOW_MOUNT_DEVICE may be missing on this driver build (rebuild via "
+                        "bin/build_indi_simulator.sh). Not retrying again automatically for this mount."
+                    )
+                return
+
             def _do_follow():
                 try:
-                    indi_client.set_pifinder_simulator_follow_mount(status["active_mount"])
-                    _mb_log(f"Mount Bridge self-heal: set PiFinder Simulator to follow '{status['active_mount']}'.")
+                    indi_client.set_pifinder_simulator_follow_mount(target)
+                    _mb_log(f"Mount Bridge self-heal: set PiFinder Simulator to follow '{target}'.")
                 except indi_client.INDIClientError as e:
                     _mb_log(f"Mount Bridge self-heal: setting follow-mount failed: {e}")
 
             _mb_readiness_retrier.trigger(_do_follow)
+            return
+        _mb_readiness_follow_mount_consecutive_fails = 0
+        _mb_readiness_follow_mount_gave_up_target = None
 
 
 def _mount_bridge_readiness_watchdog(interval=5):
