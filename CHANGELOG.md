@@ -7,6 +7,16 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Sticky, hostname-aware page header (#268)**: `#page-title-row` is now `position: sticky` -
+  always visible while scrolling the tiles below, instead of scrolling away with the rest of the
+  page. Shows the current device's hostname next to the title (new `hostname` field on `/state`,
+  `socket.gethostname()`), with a small device-type icon (Pi chip vs. monitor for x86/VM, from a
+  new `device_type` field classified the same way as `bin/functions.sh`'s `get_hw_model()`) - lets
+  multiple open tabs/devices be told apart at a glance instead of only by the browser tab's IP
+  suffix. On narrow (phone) widths the title shortens to "Control Center" (a small icon, cropped
+  from the existing wordmark logo, stands in for the "PiFinder on Stellarmate" prefix) and the
+  Night Mode button drops its text label (icon-only, still a >=44px tap target) so the whole bar
+  stays a single compact line instead of wrapping and eating vertical space.
 - **PiFinder Simulator: mount-following (`FOLLOW_MOUNT_DEVICE`)**
   ([#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)): a new text property on the
   "PiFinder Simulator" INDI device - set it to a mount's device name and the simulator's position
@@ -242,6 +252,10 @@ All notable changes to this project are documented in this file. Format loosely 
   per live feedback that it was oversized/too far away.
 
 ### Changed
+
+- **Mount Bridge tile: Multi-Point Alignment moved below Setup checklist & diagnostics (#266)**:
+  pure reordering - checklist is the prerequisite/foundational step, alignment is a subsequent,
+  more advanced action that only makes sense once setup is confirmed working. No content changed.
 
 - Timeout values used for the various background INDI polls (`gui_installer/indi_client.py`) are
   now named tiers (`TIMEOUT_BACKGROUND_POLL`, `TIMEOUT_FAST_POLL`, `TIMEOUT_QUICK_RETRY`, ...)
