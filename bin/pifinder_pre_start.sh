@@ -3,6 +3,23 @@
 # Runs as ExecStartPre in pifinder.service (as root)
 # Ensures all groups, permissions, and overlays are present
 
+# groupadd/usermod require /etc/group and /etc/passwd to be well-formed,
+# newline-terminated files. A missing trailing newline on the last line makes
+# shadow-utils misreport "Non-text file" / "cannot open ...: Cannot allocate
+# memory" (not a real ENOMEM) and silently no-op instead of creating the
+# group/updating the user. Already fixed in pifinder_stellarmate_setup.sh
+# (#270) and restore_after_smos_update.sh (#276) - this script runs the
+# identical groupadd/usermod calls at every single boot (ExecStartPre) and
+# had the same gap, reproduced live on a real Pi5 reboot (2026-09-05):
+# spi/gpio groups silently never got (re)created, pifinder.service
+# crash-looped forever with systemd's own "216/GROUP" exit code.
+for f in /etc/group /etc/passwd; do
+    if [ -n "$(tail -c 1 "$f")" ]; then
+        echo "⚠️  $f is missing its trailing newline - fixing before groupadd/usermod."
+        printf '\n' >> "$f"
+    fi
+done
+
 # Create groups if they don't exist
 getent group spi  > /dev/null 2>&1 || groupadd spi
 getent group gpio > /dev/null 2>&1 || groupadd gpio
