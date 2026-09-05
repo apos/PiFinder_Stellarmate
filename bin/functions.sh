@@ -336,6 +336,16 @@ apply_patch_or_warn() {
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."
+  # Found live (2026-09-05, SMOS 2.3.0/aarch64): Arch Linux ARM's own Python
+  # package has CXX=/usr/lib/distcc/bin/g++ baked into sysconfig (a build-farm
+  # artifact from however upstream compiled it - distcc isn't installed or
+  # configured on an actual device). Any pip package that compiles a C++
+  # extension and falls back to sysconfig's CXX for its compiler (e.g.
+  # OpenEXR's scikit-build-core, a picamera2 dependency) fails outright, which
+  # aborts pip's ENTIRE requirements install - not just that one package (see
+  # the identical pandas-on-2.6.3 class of failure, basic-memory
+  # pifinder-stellarmate/00109). Override with the real, present compiler.
+  export CXX=g++ CC=gcc
   # nice -n 15: reduce CPU priority to prevent system overload during compilation
   # ionice -c 3: idle I/O class so system stays responsive during long builds
   nice -n 15 ionice -c 3 pip install -r "${requirements_file}"
