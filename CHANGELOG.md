@@ -284,6 +284,22 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`pos_server.py` (PiFinder's LX200 protocol server, port 4030) served only one client at a
+  time**: found live testing Mount Bridge tonight with SkySafari, Stellarium and KStars (via the
+  `PiFinder LX200` INDI driver) all needing concurrent access - the server's accept loop called
+  `handle_client()` inline, so a second client got no response at all (not even a communication
+  error) until the first disconnected. Fixed with one thread per connection
+  (`docs/concepts/pos_server_multi_client_architecture.md` has the full design, live-tested
+  concurrency-safety analysis, and eventuality list): every module-global that used to hold
+  per-connection state (`is_stellarium`, `stellarium_latitude`/`longitude`, `sr_result`) is now
+  thread-local instead - this also closes the remaining, connection-unscoped part of the
+  `sr_result` cross-client contamination risk (the consume-once part was already fixed by #107).
+  A `sequence` counter feeding pushed-object IDs is now lock-protected. A per-IP/global connection
+  cap guards against a misbehaving client in a reconnect loop growing threads/sockets without
+  bound (live-tested: 6 rapid connections from one IP → exactly 3 served, per the cap). The
+  earlier same-session `shared_state` bounded-timeout fix (a `ThreadPoolExecutor`) is replaced by
+  a per-call ephemeral thread - a shared, size-tuned pool would have been its own new capacity
+  risk once every client already has its own thread.
 - **Status dots turn egg-shaped ("Ostereier") on window resize**: `.status-dot` had no
   `flex-shrink: 0` - inside a tight flex row (e.g. the mode cards' icon+label, a long label like
   "PiFinder-only Fake Mode (legacy)" competing for space as the window narrows) the flex algorithm

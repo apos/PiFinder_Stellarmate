@@ -59,7 +59,7 @@ augenfälligen Fälle:
 | # | Eventualität | Tritt heute (Single-Client) wie auf? | Mit dem Fix in §5-§7 |
 |---|---|---|---|
 | 1 | 3 verschiedene Client-Typen gleichzeitig verbunden (SkySafari + Stellarium + KStars via `PiFinder LX200`) | nur der zuerst verbundene wird bedient, alle anderen bekommen keine Antwort (s. §4 live-Beleg) | alle drei parallel bedient, siehe §4.3 |
-| 2 | **Derselbe** Client reconnected, ohne die alte Verbindung sauber zu schließen (App-Neustart, WLAN-Aussetzer) — die alte Verbindung hängt bis zu 60s im Socket-Timeout | die neue Verbindung wird bis zu 60s lang gar nicht bedient, obwohl es "nur" ein Client ist, keine drei | neue Verbindung bekommt sofort einen eigenen Thread — UND wird von der Entprellung in §5.2 als "derselbe Client, wahrscheinlich Reconnect" erkannt |
+| 2 | **Derselbe** Client reconnected, ohne die alte Verbindung sauber zu schließen (App-Neustart, WLAN-Aussetzer) — die alte Verbindung hängt bis zu 60s im Socket-Timeout | die neue Verbindung wird bis zu 60s lang gar nicht bedient, obwohl es "nur" ein Client ist, keine drei | neue Verbindung bekommt sofort einen eigenen Thread (unabhängig davon, ob die alte noch ausläuft); die verwaiste alte räumt sich wie bisher über RST/Timeout selbst auf, begrenzt durch die Obergrenze aus §5.2 statt aktiv geschlossen zu werden (s. dortige Korrektur nach Testfund) |
 | 3 | Zwei Clients senden **gleichzeitig einen Goto** (`:Sr#`+`:Sd#`) | nicht möglich (nur einer ist überhaupt verbunden) — aber sobald mehrere verbunden sein können, ist das ohne Fix der exakte Mechanismus aus [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]] (RA von Client A + Dec von Client B verschmelzen) — s. §2 zur Korrektur, was an 00108 bereits gefixt ist und was nicht | pro Verbindung isolierter `sr_result` (thread-local) — kann nicht mehr passieren |
 | 4 | Ein Client ist Stellarium (ACK gesendet), ein anderer zeitgleich verbunden ist es nicht | nicht möglich (Single-Client) — mit einfachem `threading` ohne weitere Vorkehrung würde der zweite Client fälschlich `is_stellarium=True` sehen | thread-local `is_stellarium`, jede Verbindung sieht nur ihren eigenen Wert |
 | 5 | Zwei Clients pushen gleichzeitig ein Ziel (`handle_goto_command`) — `sequence`-Zähler für die `object_id` | nicht möglich (Single-Client) | `threading.Lock()` um Inkrement+Read; `ra`/`dec`/`comp_ra`/`comp_dec` sind Stack-lokale Variablen je Aufruf, ohnehin nie geteilt — kein zusätzlicher Schutz nötig |
@@ -143,30 +143,39 @@ def _reset_session_state():
     _session.sr_result = None
 ```
 
-### 5.2 Entprellung + Plausibilitätscheck vor dem Thread-Start (User: "das ist kritisch")
+### 5.2 Plausibilitätscheck vor dem Thread-Start (User: "das ist kritisch")
 
 Reines "ein Thread pro `accept()`" wäre naiv — ein fehlerhafter Client in einer Reconnect-Schleife
-(Eventualität 6, §3) würde unbegrenzt Threads/Sockets/Manager-Verbindungen erzeugen. Zwei
-zusammenwirkende Schutzmechanismen, BEVOR ein neuer Thread gestartet wird:
+(Eventualität 6, §3) würde unbegrenzt Threads/Sockets/Manager-Verbindungen erzeugen.
 
-1. **Debounce pro Remote-IP**: eine Map `{ip: letzte_annahme_zeit}`. Kommt von derselben IP
-   innerhalb von `RECONNECT_DEBOUNCE_SEC` (Vorschlag: 2s — deutlich kürzer als das normale
-   1-2s-Polling-Intervall eines legitimen Clients auf EINER bestehenden Verbindung, aber lang genug,
-   um einen echten Reconnect-Sturm von einer zufälligen zweiten, echten Verbindung von derselben
-   Adresse zu unterscheiden) eine weitere neue Verbindung, UND ist die vorherige Verbindung von
-   dieser IP noch offen: das deutet auf denselben Client, der hastig neu verbindet, ohne die alte
-   Verbindung geschlossen zu haben (Eventualität 2) — die **alte** Verbindung wird aktiv geschlossen
-   (der Client hat sie erkennbar selbst aufgegeben), die neue normal bedient. Kein Ablehnen der
-   neuen Verbindung — nur Aufräumen der wahrscheinlich verwaisten alten.
-2. **Plausibilitäts-/Obergrenzen-Check**: zwei Zähler, je mit Log-Zeile (rate-limited, gleiches
-   Muster wie die `BAD_COORD_WARN_INTERVAL_SEC`-Rate-Limits von heute Nacht):
-   - **Pro-IP-Obergrenze** (Vorschlag: 3 gleichzeitig offene Verbindungen je Remote-IP) — mehr als
-     das ist kein plausibles "3 verschiedene Apps", sondern mit hoher Wahrscheinlichkeit ein
-     fehlerhafter/schleifender Client. Über der Grenze: neue Verbindung von dieser IP wird sofort
-     wieder geschlossen (kein Thread gestartet), mit einer geloggten Warnung.
-   - **Globale Obergrenze** (Vorschlag: 8 gleichzeitig offene Verbindungen insgesamt — großzügig
-     über den heute bekannten ~3-4 realistischen Clients, s. §1) als zweiter, harter Deckel gegen
-     jedes unvorhergesehene Szenario, unabhängig von der Quelladresse.
+**Korrektur nach echtem Test (2026-09-05)**: die erste Fassung dieses Abschnitts sah zusätzlich
+eine aktive Entprellung vor — eine neue Verbindung von einer IP, die bereits eine offene hat,
+innerhalb eines kurzen Fensters sollte die ALTE Verbindung aktiv schließen (Annahme: derselbe
+Client reconnected). Ein echter Test mit zwei unabhängigen lokalen Clients (beide von `127.0.0.1`
+— genau so verbindet sich `indi_pifinder_lx200` selbst, und ein plausibles Setup, falls z. B.
+auch Stellarium auf demselben Host läuft) zeigte sofort, warum diese Annahme falsch ist: mehrere
+echte, unabhängige Clients KÖNNEN sich dieselbe IP teilen, und eine von ihnen aktiv zu schließen,
+um Platz für die andere zu machen, ist eine echte Regression, keine Schutzfunktion. **Entfernt.**
+Übrig bleibt eine rein passive Obergrenze — sie schließt nie eine bestehende Verbindung, sondern
+lehnt nur eine NEUE ab, sobald ein Limit bereits erreicht ist. Eine wirklich verwaiste Verbindung
+(Client hat reconnected, ohne den alten Socket zu schließen) räumt sich wie bisher von selbst auf:
+entweder sendet der Client-TCP-Stack ein RST (führt zu `ConnectionResetError`, bereits behandelt),
+oder der bestehende 60s-Socket-Timeout greift.
+
+**Plausibilitäts-/Obergrenzen-Check**: zwei Zähler, je mit Log-Zeile (rate-limited, gleiches
+Muster wie die `BAD_COORD_WARN_INTERVAL_SEC`-Rate-Limits von heute Nacht):
+- **Pro-IP-Obergrenze** (3 gleichzeitig offene Verbindungen je Remote-IP) — mehr als das ist kein
+  plausibles "3 verschiedene Apps", sondern mit hoher Wahrscheinlichkeit ein
+  fehlerhafter/schleifender Client. Über der Grenze: neue Verbindung von dieser IP wird sofort
+  wieder geschlossen (kein Thread gestartet), mit einer geloggten Warnung.
+- **Globale Obergrenze** (8 gleichzeitig offene Verbindungen insgesamt — großzügig über den heute
+  bekannten ~3-4 realistischen Clients, s. §1) als zweiter, harter Deckel gegen jedes
+  unvorhergesehene Szenario, unabhängig von der Quelladresse.
+
+**Live-getestet** (`test_pos_server_multiclient.py`, isoliert gegen einen Test-Port, echter
+`run_server()` mit Fake-`shared_state`): 6 rasche Verbindungen von derselben IP → exakt 3 bedient,
+3 abgelehnt, genau wie die Pro-IP-Obergrenze vorsieht — keine der beiden bereits bestehenden
+Verbindungen wurde dabei angetastet.
 
    Beide Grenzen sind bewusst konfigurierbare Konstanten, keine hartkodierten Magic Numbers ohne
    Namen — und bewusst **kein** ausgefeilter Rate-Limiter (Token-Bucket o. ä.): das wäre mehr
@@ -241,7 +250,7 @@ Timeout-Fix in dieser Session bereits eingefordert wurde):
 | `ui_queue` (`multiprocessing.Queue`) | geteilt | **Nein** — für genau diesen Zweck gebaut, intern threadsicher | keine Änderung nötig |
 | `shared_state` (Manager-Proxy) | geteilt, ein Objekt für alle Aufrufer | **Nein** — `multiprocessing.managers.BaseProxy` hält pro aufrufendem Thread automatisch eine eigene Verbindung zum Manager-Prozess (`self._tls`, CPython-intern) | keine Änderung nötig, Anzahl der Verbindungen aber durch §5.2 gedeckelt |
 | `_call_with_timeout()` (überarbeitet, §5.3) | kein geteilter Pool mehr | **Nein** — je ein eigener, kurzlebiger Daemon-Thread pro Aufruf | keine Poolgröße mehr zu pflegen |
-| Verbindungs-/IP-Zähler aus §5.2 | neu, geteilt über alle Accept-Aufrufe | **Ja, wenn ungeschützt** — der Accept-Loop selbst ist aber weiterhin einsträngig (nur `run_server()`s Haupt-Thread ruft `accept()` auf und wertet die Zähler aus), Schreibzugriff aus den Client-Threads selbst nur beim Schließen (Dekrement) — braucht ein einfaches `threading.Lock()` um die beiden Zähler-Dicts | `threading.Lock()` um die Debounce-/Zähler-Struktur aus §5.2 |
+| Verbindungs-/IP-Zähler aus §5.2 | neu, geteilt über alle Accept-Aufrufe | **Ja, wenn ungeschützt** — der Accept-Loop selbst ist aber weiterhin einsträngig (nur `run_server()`s Haupt-Thread ruft `accept()` auf), Schreibzugriff aus den Client-Threads selbst nur beim Schließen (Dekrement, s. `_release_connection()`) | `threading.Lock()` um die Zähler-Struktur aus §5.2 |
 | `client_socket` je Verbindung | lokal, ein Objekt pro `handle_client()`-Aufruf | **Nein**, bereits pro Verbindung isoliert | keine Änderung |
 | `logger`/`logging` | geteilt | **Nein** — Python-`logging` ist intern threadsicher | keine Änderung — zusätzlich Thread-/Client-Kennung ins Log-Format aufnehmen (User: "ja"), s. §7 |
 
@@ -334,11 +343,16 @@ Kein automatisierter Test existiert aktuell für `pos_server.py` (`python/tests/
    Traceback über `logger.exception(...)` samt Thread-Namen (Client-Adresse erkennbar, §7), der
    andere Client bleibt unbeeinträchtigt verbunden.
 
-### Automatisiert (Vorschlag, nicht Teil dieses Konzepts' unmittelbarem Scope)
+### Automatisiert — tatsächlich gebaut und ausgeführt (2026-09-05)
 
-Ein `python/tests/test_pos_server.py` mit `pytest -m integration`, das `run_server()` mit einem
-Fake-`shared_state` in einem Hintergrund-Thread startet und Schritte 2-5 oben als echte
-Assertions nachbildet — sinnvoller Folgeauftrag, da dieses Modul aktuell komplett ungetestet ist.
+`test_pos_server_multiclient.py` (Scratch-Skript, gegen einen Test-Port statt 4030, um den
+laufenden Live-Dienst nicht zu berühren): startet `run_server()` mit einem Fake-`shared_state` in
+einem Hintergrund-Thread und bildet die Schritte 2-5 oben als echte Assertions nach. **Ergebnis:
+alle vier Tests bestanden** — inklusive dem Fund, der §5.2 korrigiert hat (s. dort): der erste
+Testlauf deckte auf, dass eine ursprünglich geplante aktive Entprellung fälschlich eine legitime
+zweite Verbindung von derselben IP geschlossen hätte. Als eigenständige, dauerhafte
+`python/tests/test_pos_server.py` (`pytest -m integration`) noch nicht ins Repo übernommen —
+sinnvoller Folgeauftrag (§11), da dieses Modul sonst weiterhin ungetestet bliebe.
 
 ## 10. Risiken / offene Fragen
 
