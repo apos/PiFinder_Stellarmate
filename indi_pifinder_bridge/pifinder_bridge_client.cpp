@@ -1,5 +1,7 @@
 #include "pifinder_bridge_client.h"
 
+#include <cmath>
+#include <cstdio>
 #include <ctime>
 
 PiFinderBridgeClient::PiFinderBridgeClient()
@@ -208,6 +210,30 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_shadowOnCoordSetSP = nullptr;
 }
 
+// See the header comment on m_lastBadCoordWarnTime for the incident this
+// guards against. `ra`/`dec` are only used for the rate-limited warning
+// message here - the actual accept/reject decision is the same finite +
+// Dec-in-[-90,90] check used by indi_pifinder_simulator's own
+// isUsableCoordinate(), duplicated rather than shared across the two
+// separate driver binaries (same "standalone build, no shared library
+// between drivers" pattern this project already uses throughout).
+bool PiFinderBridgeClient::isUsableCoordinateForWarn(const char *sourceLabel, double ra, double dec) const
+{
+    if (std::isfinite(ra) && std::isfinite(dec) && dec >= -90.0 && dec <= 90.0)
+        return true;
+
+    const long now = static_cast<long>(time(nullptr));
+    if (now - m_lastBadCoordWarnTime >= BAD_COORD_WARN_INTERVAL_SEC)
+    {
+        m_lastBadCoordWarnTime = now;
+        fprintf(stderr, "PiFinderBridgeClient: rejecting unusable %s coordinate (RA %.4fh DEC %.4f - "
+                "not finite or Dec out of [-90,90]); treating as no-data-yet.\n",
+                sourceLabel, ra, dec);
+        fflush(stderr);
+    }
+    return false;
+}
+
 bool PiFinderBridgeClient::getPiFinderRADE(double &ra, double &dec) const
 {
     if (m_piFinderEqNP == nullptr)
@@ -215,7 +241,7 @@ bool PiFinderBridgeClient::getPiFinderRADE(double &ra, double &dec) const
 
     ra = m_piFinderEqNP->at(0)->getValue();
     dec = m_piFinderEqNP->at(1)->getValue();
-    return true;
+    return isUsableCoordinateForWarn("PiFinder", ra, dec);
 }
 
 bool PiFinderBridgeClient::getMountRADE(double &ra, double &dec) const
@@ -225,7 +251,7 @@ bool PiFinderBridgeClient::getMountRADE(double &ra, double &dec) const
 
     ra = m_mountEqNP->at(0)->getValue();
     dec = m_mountEqNP->at(1)->getValue();
-    return true;
+    return isUsableCoordinateForWarn("mount", ra, dec);
 }
 
 bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
@@ -235,7 +261,7 @@ bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
 
     ra = m_piFinderTargetNP->at(0)->getValue();
     dec = m_piFinderTargetNP->at(1)->getValue();
-    return true;
+    return isUsableCoordinateForWarn("PiFinder target", ra, dec);
 }
 
 bool PiFinderBridgeClient::consumePiFinderTargetPending()
