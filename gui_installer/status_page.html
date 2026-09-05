@@ -6809,7 +6809,7 @@ function updateSimReadinessLine() {
   const allReady = items.every(([, ok]) => ok);
   el.innerHTML = items.map(([label, ok]) =>
     `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
-  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist below');
+  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist in the Mount Bridge tile');
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
