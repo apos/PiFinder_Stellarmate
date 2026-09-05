@@ -1,10 +1,189 @@
 diff --git a/python/PiFinder/pos_server.py b/python/PiFinder/pos_server.py
-index 07f84d52..bdd2e27e 100644
+index 30e09d53..3281e7ef 100644
 --- a/python/PiFinder/pos_server.py
 +++ b/python/PiFinder/pos_server.py
-@@ -41,7 +41,15 @@ def get_telescope_ra(shared_state, _):
-     solution = shared_state.solution()
-     dt = shared_state.datetime()
+@@ -14,6 +14,7 @@ observing list.
+ import socket
+ import logging
+ import re
++import threading
+ from multiprocessing import Queue
+ from typing import List, Optional, Tuple, Union
+ from PiFinder.calc_utils import ra_to_deg, dec_to_deg, dec_to_dms_exact, sf_utils
+@@ -25,22 +26,152 @@ import time
+ 
+ logger = logging.getLogger("PosServer")
+ 
+-sr_result = None
+ sequence = 0
++_sequence_lock = threading.Lock()
+ ui_queue: Queue
+ 
+-# Set when a client sends the LX200 ACK byte on connect.  Stellarium does;
+-# SkySafari never has, which is why this doubles as "the client is Stellarium".
+-# It selects the input epoch, the :D# reply and the :Q# reply, so a client that
+-# tripped it by accident would misbehave in several ways at once.
+-is_stellarium = False
+-
+-# Stellarium will not push a target while it believes the scope's site differs
+-# from its own, so it sets the site with :St#/:Sg# and expects to read the same
+-# values back.  PiFinder takes its real site from GPS and ignores these for
+-# positioning -- they are stored only to echo.  Cleared per connection.
+-stellarium_latitude = ""
+-stellarium_longitude = ""
++# Found live (2026-09-05, PiFinder_Stellarmate Mount Bridge testing): this
++# server was single-threaded and single-client (see run_server() below) - a
++# shared_state.solution()/.datetime() call is a multiprocessing.Manager
++# proxy round-trip to whichever process actually hosts SharedStateObj, and
++# that call has no timeout of its own. If that process is briefly slow to
++# service it, the call here used to block the ONE server thread for however
++# long that took, with nothing else able to connect or be served meanwhile.
++#
++# Fixed properly (2026-09-05, docs/concepts/pos_server_multi_client_
++# architecture.md in PiFinder_Stellarmate, following live testing with
++# SkySafari/Stellarium/KStars all needing concurrent access): run_server()
++# now spawns one thread per accepted connection (see handle_client()/
++# run_server() below) instead of serving inline, so a slow response to one
++# client no longer blocks any other client. Every module-level global that
++# used to hold per-connection state (is_stellarium, stellarium_latitude/
++# longitude, sr_result) is now thread-local (_session below) instead - a
++# second connected client would otherwise silently see the first client's
++# ACK-detected flag, echoed site, or in-flight :Sr#/:Sd# pairing.
++_session = threading.local()
++
++
++def _reset_session_state():
++    """Initializes this thread's per-connection state - called once at the
++    start of handle_client(), so every new connection's thread starts clean.
++    Replaces the old module-global reset in handle_client() 1:1 in its reset
++    semantics ("everything the last client taught us dies with its
++    connection") - just scoped per thread now instead of per process, since
++    each connection has its own thread."""
++    _session.is_stellarium = False
++    _session.stellarium_latitude = ""
++    _session.stellarium_longitude = ""
++    _session.sr_result = None
++
++
++STATE_CALL_TIMEOUT_SEC = 2.0
++
++
++def _call_with_timeout(fn, timeout: float = STATE_CALL_TIMEOUT_SEC):
++    """Calls a zero-arg shared_state accessor with a bounded timeout instead
++    of the default unbounded block. On timeout, returns None: the exact same
++    "nothing to report yet" value get_telescope_ra()/get_telescope_dec()
++    already return when there is no solution, which handle_client() already
++    sends nothing back for (a genuine communication failure to the client,
++    not a fake coordinate - see get_telescope_ra()'s own #107 comment) - no
++    new response type, just an additional, already-safe trigger for it.
++    Deliberately NOT a shared ThreadPoolExecutor (an earlier version of this
++    fix used one, sized max_workers=2..8) - with each client already on its
++    own thread (see module comment above), a shared pool just adds a second,
++    independently-sized capacity limit that can itself become a bottleneck.
++    A fresh daemon thread per call needs no sizing: the number of
++    concurrently in-flight calls is already bounded by the connection caps
++    in _admit_connection() below. The abandoned call keeps running in its
++    own thread if it times out; its eventual result is simply discarded."""
++    result: dict = {}
++
++    def _run():
++        try:
++            result["value"] = fn()
++        except Exception:
++            logger.exception("shared_state call raised")
++
++    call_thread = threading.Thread(target=_run, daemon=True)
++    call_thread.start()
++    call_thread.join(timeout)
++    if call_thread.is_alive():
++        logger.warning(
++            "shared_state call timed out after %.1fs - reporting no data for this request.",
++            timeout,
++        )
++        return None
++    return result.get("value")
++
++
++# Connection-admission guard for run_server()'s accept loop (2026-09-05, same
++# concept doc as above) - found live that a naive "thread per accept()" would
++# turn a misbehaving client stuck in a reconnect loop (app relaunch, flaky
++# wifi) into unbounded thread/socket/shared_state-Manager-connection growth.
++#
++# Live-tested (2026-09-05) and deliberately simplified from an earlier draft:
++# that draft ALSO proactively closed an "old" connection from the same IP
++# arriving within a short debounce window, on the assumption that meant the
++# same client reconnecting. A real test with two independent local clients
++# (both from 127.0.0.1 - exactly how `indi_pifinder_lx200` itself connects,
++# and a plausible setup if e.g. Stellarium also runs on the same host)
++# immediately showed why that assumption is wrong: multiple genuinely
++# distinct clients CAN share one IP, and closing one of them to make room
++# for the other is a real regression, not a safety feature. Removed. What's
++# left is a purely passive cap - it never closes an existing connection,
++# only refuses a NEW one once a limit is already reached. A stale connection
++# from a client that reconnected without closing its old socket cleans
++# itself up the same way it always did: the client's own TCP stack usually
++# sends a RST (handled already, s. ConnectionResetError below), and failing
++# that, the existing 60s socket timeout.
++MAX_CONNECTIONS_PER_IP = 3
++MAX_TOTAL_CONNECTIONS = 8
++CONNECTION_LIMIT_WARN_INTERVAL_SEC = 45
++
++_connections_lock = threading.Lock()
++_open_sockets_by_ip: dict = {}  # ip -> list[socket.socket]
++_last_limit_warn_time = 0.0
++
++
++def _admit_connection(client_socket: socket.socket, address) -> bool:
++    """Runs in run_server()'s accept thread, before a client thread is
++    started. Returns True if client_socket should be served (a thread
++    started for it); on False, the caller must close client_socket itself -
++    this function never closes a socket other than the one it was asked
++    about."""
++    global _last_limit_warn_time
++    ip = address[0]
++
++    with _connections_lock:
++        per_ip = _open_sockets_by_ip.setdefault(ip, [])
++        total_open = sum(len(v) for v in _open_sockets_by_ip.values())
++        if len(per_ip) >= MAX_CONNECTIONS_PER_IP or total_open >= MAX_TOTAL_CONNECTIONS:
++            now = time.monotonic()
++            if (now - _last_limit_warn_time) >= CONNECTION_LIMIT_WARN_INTERVAL_SEC:
++                _last_limit_warn_time = now
++                logger.warning(
++                    "Refusing connection from %s: %d/%d per-IP or %d/%d total connections already open.",
++                    ip,
++                    len(per_ip),
++                    MAX_CONNECTIONS_PER_IP,
++                    total_open,
++                    MAX_TOTAL_CONNECTIONS,
++                )
++            return False
++
++        per_ip.append(client_socket)
++        return True
++
++
++def _release_connection(client_socket: socket.socket, address) -> None:
++    """Companion to _admit_connection() - called from handle_client()'s
++    finally block so a closed connection's slot is freed for the caps above."""
++    ip = address[0]
++    with _connections_lock:
++        per_ip = _open_sockets_by_ip.get(ip)
++        if per_ip and client_socket in per_ip:
++            per_ip.remove(client_socket)
++        if per_ip is not None and not per_ip:
++            del _open_sockets_by_ip[ip]
+ 
+ # shortcut for skyfield timescale
+ ts = sf_utils.ts
+@@ -52,10 +183,18 @@ def get_telescope_ra(shared_state, _):
+     format for LX200 protocol
+     RA = HH:MM:SS
+     """
+-    solution = shared_state.solution()
+-    dt = shared_state.datetime()
++    solution = _call_with_timeout(shared_state.solution)
++    dt = _call_with_timeout(shared_state.datetime)
      if not solution or not dt or not solution.has_pointing():
 -        return "+00*00'01"
 +        # No response at all (not a fake coordinate) - handle_client() sends
@@ -19,9 +198,14 @@ index 07f84d52..bdd2e27e 100644
  
      aligned = solution.pointing.aligned.estimate
      # Convert from J2000 to now epoch
-@@ -75,7 +83,8 @@ def get_telescope_dec(shared_state, _):
-     solution = shared_state.solution()
-     dt = shared_state.datetime()
+@@ -86,10 +225,11 @@ def get_telescope_dec(shared_state, _):
+     format for LX200 protocol
+     DEC = +/- DD*MM'SS
+     """
+-    solution = shared_state.solution()
+-    dt = shared_state.datetime()
++    solution = _call_with_timeout(shared_state.solution)
++    dt = _call_with_timeout(shared_state.datetime)
      if not solution or not dt or not solution.has_pointing():
 -        return "+00*00'01"
 +        # See get_telescope_ra() - no response, not a fake coordinate.
@@ -29,23 +213,289 @@ index 07f84d52..bdd2e27e 100644
  
      aligned = solution.pointing.aligned.estimate
      # Convert from J2000 to now epoch
-@@ -171,8 +180,17 @@ def parse_sd_command(shared_state, input_str: str):
-     pattern = r":Sd([-+]?\d{2})\*(\d{2}):(\d{2})#"
-     match = _match_to_hms(pattern, input_str)
-     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
+@@ -121,7 +261,7 @@ def get_distance_bars(_shared_state, _input_str) -> str:
+     # slewing, so report the slew complete.  PiFinder never slews at all, so
+     # this is the honest answer either way; SkySafari keeps the single bar it
+     # has always been sent.
+-    if is_stellarium:
++    if _session.is_stellarium:
+         return ""
+     return "\x7f"
+ 
+@@ -171,7 +311,7 @@ def abort_slew(_shared_state, _input_str) -> Optional[str]:
+     an unsolicited byte can desync SkySafari's response parser, so answer only
+     the client that identified itself with an ACK.
+     """
+-    return "1" if is_stellarium else None
++    return "1" if _session.is_stellarium else None
+ 
+ 
+ def _match_to_hms(pattern: str, input_str: str) -> Union[Tuple[int, int, int], None]:
+@@ -196,31 +336,38 @@ _SD_PATTERN = r"#?:Sd([-+]?\d{2})[*:](\d{2}):(\d{2})#"
+ 
+ 
+ def parse_sr_command(_shared_state, input_str: str) -> str:
+-    global sr_result
+     match = _match_to_hms(_SR_PATTERN, input_str)
+     logger.debug("Parsing sr command, match: %s", match)
+     if match:
+-        sr_result = match
++        _session.sr_result = match
+         return "1"
+     else:
+         return "0"
+ 
+ 
+ def parse_sd_command(shared_state, input_str: str) -> str:
+-    global sr_result
+     match = _match_to_hms(_SD_PATTERN, input_str)
+-    logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
 -    if match and sr_result:
 -        return handle_goto_command(shared_state, sr_result, match)
-+    # sr_result is a module-level global with no per-connection scope and
-+    # was never cleared after use - a :Sr from one transaction (a dropped
-+    # connection, an interleaved client, or just a client that never sends
-+    # a matching :Sd) stayed set indefinitely, ready to be silently paired
-+    # with a LATER, completely unrelated :Sd's Dec into a GoTo neither call
-+    # ever asked for together. Consume-once instead: clear it here
-+    # regardless of whether this specific pairing succeeds, so a stale RA
-+    # can never outlive the :Sd that should have consumed it.
-+    ra_result, sr_result = sr_result, None
++    logger.debug("Parsing sd command, match: %s, sr_result: %s", match, _session.sr_result)
++    # sr_result used to be a module-level global shared by every connection -
++    # a :Sr from one client could silently pair with a LATER, unrelated :Sd
++    # from a completely different client into a GoTo neither ever asked for
++    # together (docs/concepts/pos_server_multi_client_architecture.md).
++    # Thread-local now: each connection's thread has its own sr_result, so
++    # this can no longer cross connections. Still consume-once regardless of
++    # whether this specific pairing succeeds, so a stale RA can never outlive
++    # the :Sd that should have consumed it.
++    ra_result, _session.sr_result = _session.sr_result, None
 +    if match and ra_result:
 +        return handle_goto_command(shared_state, ra_result, match)
      else:
          return "0"
  
+ 
+ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
+-    global sequence, ui_queue, is_stellarium
++    global sequence, ui_queue
+     ra = ra_to_deg(*ra_parsed)
+     dec = dec_to_deg(*dec_parsed)
+-    if is_stellarium:
++    if _session.is_stellarium:
+         comp_ra, comp_dec = ra, dec
+     else:
+         logger.debug("handle_goto_command: ra,dec in deg, JNOW: %s, %s", ra, dec)
+@@ -228,13 +375,19 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
+         ra_h, dec_d, _ = _p.radec(epoch=ts.J2000)
+         comp_ra = float(ra_h._degrees)
+         comp_dec = float(dec_d.degrees)
+-    sequence += 1
++    # sequence is shared across every connection's thread (it feeds the
++    # pushed object's id) - two clients pushing a Goto at the same instant
++    # would otherwise race on the += (not atomic despite the GIL: LOAD/ADD/
++    # STORE are separate bytecodes). Lock is only around the counter itself.
++    with _sequence_lock:
++        sequence += 1
++        seq = sequence
+     logger.debug("Goto ra,dec in deg, J2000: %s, %s", comp_ra, comp_dec)
+     constellation = sf_utils.radec_to_constellation(comp_ra, comp_dec)
+     obj = CompositeObject.from_dict(
+         {
+             "id": -1,
+-            "object_id": sys.maxsize - sequence,
++            "object_id": sys.maxsize - seq,
+             "obj_type": "",
+             "ra": comp_ra,
+             "dec": comp_dec,
+@@ -242,9 +395,9 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
+             "size": SizeObject([]),
+             "mag": MagnitudeObject([]),
+             "catalog_code": "PUSH",
+-            "sequence": sequence,
++            "sequence": seq,
+             # Either planetarium app can push, so don't name one of them here.
+-            "description": f"Pushed object nr {sequence}",
++            "description": f"Pushed object nr {seq}",
+         }
+     )
+     logger.debug("handle_goto_command: Pushing object: %s", obj)
+@@ -325,25 +478,23 @@ _SITE_LON_PATTERN = r"#?:Sg([-+]?)(\d{1,3})\*(\d{2})"
+ 
+ def set_latitude(_shared_state, input_str: str) -> str:
+     """:StsDD*MM# -- remember the client's site latitude for :Gt# to echo."""
+-    global stellarium_latitude
+     match = re.search(_SITE_LAT_PATTERN, input_str)
+     if not match:
+         logger.debug("set_latitude: no match in %s", input_str)
+         return "0"
+     sign, degrees, minutes = match.groups()
+-    stellarium_latitude = f"{sign or '+'}{int(degrees):02d}*{minutes}"
++    _session.stellarium_latitude = f"{sign or '+'}{int(degrees):02d}*{minutes}"
+     return "1"
+ 
+ 
+ def set_longitude(_shared_state, input_str: str) -> str:
+     """:SgDDD*MM# -- remember the client's site longitude for :Gg# to echo."""
+-    global stellarium_longitude
+     match = re.search(_SITE_LON_PATTERN, input_str)
+     if not match:
+         logger.debug("set_longitude: no match in %s", input_str)
+         return "0"
+     sign, degrees, minutes = match.groups()
+-    stellarium_longitude = f"{sign}{int(degrees):03d}*{minutes}"
++    _session.stellarium_longitude = f"{sign}{int(degrees):03d}*{minutes}"
+     return "1"
+ 
+ 
+@@ -374,15 +525,15 @@ def _lon_to_meade_dm(value: float) -> str:
+ 
+ def get_latitude(shared_state, _input_str) -> str:
+     """:Gt# -- current site latitude as sDD*MM."""
+-    if stellarium_latitude:
+-        return stellarium_latitude
++    if _session.stellarium_latitude:
++        return _session.stellarium_latitude
+     return _deg_to_dm(shared_state.location().lat, 2)
+ 
+ 
+ def get_longitude(shared_state, _input_str) -> str:
+     """:Gg# -- current site longitude as DDD*MM."""
+-    if stellarium_longitude:
+-        return stellarium_longitude
++    if _session.stellarium_longitude:
++        return _session.stellarium_longitude
+     return _lon_to_meade_dm(shared_state.location().lon)
+ 
+ 
+@@ -429,7 +580,11 @@ def setup_server_socket():
+     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+     server_socket.bind(("", 4030))
+-    server_socket.listen(1)
++    # Was listen(1): with handle_client() now running in its own thread per
++    # connection (see run_server()), accept() returns almost immediately, so
++    # this backlog only needs to absorb brief bursts, not a queue of clients
++    # waiting on one busy connection.
++    server_socket.listen(5)
+     return server_socket
+ 
+ 
+@@ -459,8 +614,6 @@ def split_frames(data: str) -> List[str]:
+ 
+ def handle_frame(frame: str, shared_state) -> Optional[str]:
+     """Dispatch one command frame, returning the reply to send, if any."""
+-    global is_stellarium
+-
+     command = extract_command(frame)
+     if command:
+         command_handler = lx_command_dict.get(command, not_implemented)
+@@ -477,7 +630,7 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
+     # Special case for the ACK command in the LX200 protocol sent by Stellarium
+     # No leading : for the ACK command but Stellarium leads all commands with #
+     if frame.endswith("\x06"):
+-        is_stellarium = True
++        _session.is_stellarium = True
+         # "P" claims a polar mount.  PiFinder is alt-az and :GW# still says so,
+         # but Stellarium will not push a target to a scope that answers "A"
+         # here.  Only a client that sent an ACK ever reads this byte, and so
+@@ -487,36 +640,55 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
+     return None
+ 
+ 
+-def handle_client(client_socket, shared_state):
+-    global is_stellarium, stellarium_latitude, stellarium_longitude
++def handle_client(client_socket, shared_state, address):
++    # One thread per connection (see run_server() below). Sets this thread's
++    # name for introspection (e.g. a thread dump); the log lines below
++    # additionally spell the address out explicitly, since the shared,
++    # project-wide MultiprocLogging formatter doesn't include %(threadName)s
++    # and changing that global default just for this one module would be
++    # exactly the speculative-shared-code-change this project avoids
++    # (docs/concepts/pos_server_multi_client_architecture.md §7).
++    threading.current_thread().name = f"pos_server-{address[0]}:{address[1]}"
++    # Everything the last client taught us dies with its connection - was a
++    # module-global reset (see the historical comment removed here), now a
++    # thread-local reset since each connection has its own thread.
++    _reset_session_state()
+     client_socket.settimeout(60)
+     client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+-    # Everything the last client taught us dies with its connection, so a
+-    # SkySafari session following a Stellarium one inherits neither the flag
+-    # nor the echoed site.
+-    is_stellarium = False
+-    stellarium_latitude = ""
+-    stellarium_longitude = ""
+ 
+-    while True:
+-        try:
+-            in_data = client_socket.recv(1024).decode()
+-            if not in_data:
++    try:
++        while True:
++            try:
++                in_data = client_socket.recv(1024).decode()
++                if not in_data:
++                    break
++
++                logging.debug("Received from client %s: %s", address, in_data)
++                for frame in split_frames(in_data):
++                    response = handle_frame(frame, shared_state)
++                    if response is not None:
++                        client_socket.send(response.encode())
++            except socket.timeout:
++                logging.warning("Connection from %s timed out.", address)
+                 break
+-
+-            logging.debug("Received from client: %s", in_data)
+-            for frame in split_frames(in_data):
+-                response = handle_frame(frame, shared_state)
+-                if response is not None:
+-                    client_socket.send(response.encode())
+-        except socket.timeout:
+-            logging.warning("Connection timed out.")
+-            break
+-        except ConnectionResetError:
+-            logging.warning("Client disconnected unexpectedly.")
+-            break
+-
+-    client_socket.close()
++            except ConnectionResetError:
++                logging.warning("Client %s disconnected unexpectedly.", address)
++                break
++    except Exception:
++        # Previously, an exception here (anything other than the two caught
++        # above) propagated out of the single server loop and took down ALL
++        # connections (run_server()'s outer try/except restarted the whole
++        # listening socket). With one thread per connection, only this one
++        # connection needs to end - but without this catch, the socket would
++        # leak (never reach the close() below) and the traceback would only
++        # go to Python's default per-thread excepthook, not this logger.
++        logger.exception(
++            "Unexpected error handling client %s - closing this connection only.",
++            address,
++        )
++    finally:
++        client_socket.close()
++        _release_connection(client_socket, address)
+ 
+ 
+ def run_server(shared_state, p_ui_queue, log_queue):
+@@ -532,7 +704,24 @@ def run_server(shared_state, p_ui_queue, log_queue):
+                 while True:
+                     client_socket, address = server_socket.accept()
+                     logger.debug("New connection from %s", address)
+-                    handle_client(client_socket, shared_state)
++                    # Fixed 2026-09-05 (docs/concepts/pos_server_multi_client_
++                    # architecture.md): used to call handle_client() inline
++                    # here, blocking this same accept() loop for as long as
++                    # that one client stayed connected - every other client
++                    # (SkySafari/Stellarium/KStars all needing concurrent
++                    # access) got no response at all until it disconnected.
++                    # One thread per connection, gated by _admit_connection()
++                    # so a misbehaving reconnect-looping client can't grow
++                    # threads/sockets/shared_state-Manager-connections
++                    # without bound.
++                    if not _admit_connection(client_socket, address):
++                        client_socket.close()
++                        continue
++                    threading.Thread(
++                        target=handle_client,
++                        args=(client_socket, shared_state, address),
++                        daemon=True,
++                    ).start()
+         except Exception:
+             logger.exception("Unexpected server error")
+             logger.info("Attempting to restart server in 5 seconds...")
