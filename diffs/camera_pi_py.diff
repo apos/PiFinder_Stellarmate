@@ -1,6 +1,26 @@
 --- python/PiFinder/camera_pi.py.orig
 +++ python/PiFinder/camera_pi.py
-@@ -262,6 +262,17 @@
+@@ -138,6 +138,19 @@
+         # covert to 32 bit int to avoid overflow
+         raw_capture = raw_capture.astype(np.float32)
+
++        # Scale-mismatch guard: with the camera's native auto-exposure
++        # active (e.g. during "Align (Day)"), the raw stream sometimes
++        # arrives in an unexpected 16-bit container (~65535 max) instead of
++        # this profile's expected bit_depth scale (~1023 max for 10-bit) -
++        # found live (2026-09-05) where this made "Align (Day)" render
++        # fully white (clipped). Verified via an isolated picamera2 test
++        # script: mean=252 (clipped) before this guard, mean=54 (normal)
++        # after. Only ever fires on the mis-scaled case - a correctly
++        # scaled capture never exceeds its own bit depth.
++        max_expected = 2**self.profile.bit_depth - 1
++        if raw_capture.max() > max_expected:
++            raw_capture /= 64.0
++
+         # sensor offset (bias pedestal from camera profile)
+         raw_capture -= self.profile.bias_offset
+
+@@ -314,6 +327,17 @@
      """
      Instantiates the camera hardware
      then calls the universal image loop
@@ -17,11 +37,11 @@
 +    Kamera-Prozess nicht retten") and 00034.
      """
      MultiprocLogging.configurer(log_queue)
- 
-@@ -272,7 +283,26 @@
+
+@@ -324,7 +348,26 @@
      if exposure_time == "auto":
          exposure_time = 400000  # Start with default 400ms
- 
+
 -    camera_hardware = CameraPI(exposure_time)
 +    fell_back = False
 +    try:
