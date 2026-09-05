@@ -7,6 +7,10 @@
 > * **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux), Raspberry Pi 4 and Pi 5
 > * Test device: **LogiLink ID0120** (2.4GHz USB-dongle numpad, no dedicated arrow keys)
 > * Python **evdev** package, any Linux kernel with `/dev/input/eventN` nodes (no X11 required)
+> * **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0**; install
+>   flow re-verified for that pin (x86 dev/control host), Pi4/Pi5 hardware re-test pending — see
+>   Version Compatibility below. This bridge depends only on PiFinder's stable Remote API (see
+>   below), so it isn't expected to be affected either way.
 
 This document covers the **Keyboard Bridge** (`test_tools/fb_keyboard_bridge.py`) — a small,
 PiFinder-code-independent process that turns any plain USB/2.4GHz-dongle numeric keypad into a
@@ -296,6 +300,7 @@ No open bugs are currently tracked against this component.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
+| 2.6.3 | 2.3.0 | ⚠️ install-flow x86-verified (2026-09-04), Pi4 hardware re-test pending | ⚠️ install-flow x86-verified (2026-09-04), Pi5 hardware re-test pending |
 | 2.6.0 | 2.2.1 | ✅ tested | ✅ tested |
 | 2.5.1 | 2.1.1 | ✅ tested (earlier mapping) | — |
 

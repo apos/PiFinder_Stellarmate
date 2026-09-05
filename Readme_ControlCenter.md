@@ -8,6 +8,10 @@
 > * Pure Python **stdlib** (`http.server`) backend — no framework, no external web dependency
 > * Live-tested end-to-end: fresh install, reinstall, update, reboot-persistence, Fake/Real Mode
 >   switching, all hardware toggles
+> * **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0**; install
+>   flow re-verified for that pin (x86 dev/control host), Pi4/Pi5 hardware re-test pending — see
+>   Version Compatibility below. As noted there, the Control Center itself has no
+>   PiFinder-version-specific code, so this mainly tracks the underlying install/SMOS combo.
 
 This document covers the **PiFinder Stellarmate Control Center** (`gui_installer/`) — the local web
 application that installs, updates, monitors, and controls this project's PiFinder integration. It
@@ -406,6 +410,7 @@ resolved, see `basic-memory/pifinder-stellarmate/00033`).
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
+| 2.6.3 | 2.3.0 | ⚠️ install-flow x86-verified (2026-09-04), Pi4 hardware re-test pending | ⚠️ install-flow x86-verified (2026-09-04), Pi5 hardware re-test pending |
 | 2.6.0 | 2.2.1 | ✅ fully tested | ✅ fully tested |
 | 2.5.1 | 2.1.1 | ✅ tested | — |
 
