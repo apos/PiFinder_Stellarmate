@@ -286,6 +286,15 @@ All notable changes to this project are documented in this file. Format loosely 
   longer drift out of sync with the other two; (2) the self-heal check now gives up with a single
   clear log line after 3 consecutive failed attempts for the same target mount instead of retrying
   indefinitely, and retries fresh if the desired mount later changes.
+- **PiFinder Simulator: unvalidated snooped mount coordinates could produce a NaN position**: found
+  live pointing a real mount (OnStep) at Dec 90 (NCP) - `EQUATORIAL_EOD_COORD` ended up `RA=0/DEC=nan`
+  with no `Sync()`/`Goto()`/client write anywhere in the log to explain it (ruled out with evidence:
+  OnStep's raw `:GD#` responses stayed clean `+90*00:00`, no websocket traffic sent `nan`). The actual
+  gap: `ISSnoopDevice()` copied the snooped mount's coordinates straight into
+  `m_currentRA`/`DEC`/`m_followTargetRA`/`DEC` with no finiteness/range check at all, unlike every
+  other live-coordinate ingestion point in this codebase. New `isUsableCoordinate()` (finite + Dec in
+  [-90,90]) now gates both ingestion points; a bad reading is dropped (rate-limited warning) instead
+  of corrupting the device's position.
 - **x86: `python-libcamera` pin silently fails and lies about it**: the aarch64-only cached
   `python-libcamera-0.7.0-*-aarch64.pkg.tar.xz` pin was attempted on x86 hosts too (the file is
   found regardless of host arch, same git checkout) - `pacman -U` always failed there
