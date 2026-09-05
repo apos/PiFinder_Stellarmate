@@ -255,6 +255,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Stale version banners across README.md/_de, Readme_PiFinder_LX200.md/_de,
+  Readme_ControlCenter.md/_de, Readme_KeyboardBridge.md/_de**: all still referenced PiFinder
+  2.6.0/2.6.1 on SMOS 2.1.1/2.2.1, disconnected from the actual pins in `version.txt`/
+  `pifinder_stellarmate_setup.sh` (2.6.3/2.3.0). Removed the untracked "Current Version — v2.0.0"
+  label from README.md/_de (no matching git tag or CHANGELOG release entry ever existed for it).
+  Version banners and Version Compatibility tables now reflect the current 2.6.3/2.3.0 pin, with
+  Pi4/Pi5 hardware re-verification for that exact pin marked as pending rather than falsely
+  claiming "tested".
 - **x86: `python-libcamera` pin silently fails and lies about it**: the aarch64-only cached
   `python-libcamera-0.7.0-*-aarch64.pkg.tar.xz` pin was attempted on x86 hosts too (the file is
   found regardless of host arch, same git checkout) - `pacman -U` always failed there

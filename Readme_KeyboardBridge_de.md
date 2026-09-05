@@ -7,6 +7,10 @@
 > * **PiFinder-Software 2.6.0** auf **StellarMate OS 2.2.1** (Arch Linux), Raspberry Pi 4 und Pi 5
 > * Testgerät: **LogiLink ID0120** (2,4-GHz-USB-Dongle-Nummernblock, keine eigenen Pfeiltasten)
 > * Python-Paket **evdev**, jeder Linux-Kernel mit `/dev/input/eventN`-Nodes (kein X11 nötig)
+> * **Hinweis (2026-09-04)**: das Projekt pinnt inzwischen **PiFinder 2.6.3 / StellarMate OS 2.3.0**;
+>   Installationsablauf für diesen Pin erneut verifiziert (x86 Dev-/Control-Host), Pi4/Pi5-
+>   Hardware-Retest steht noch aus — siehe Versionskompatibilität unten. Diese Bridge hängt nur von
+>   PiFinders stabiler Remote-API ab (siehe unten), sollte davon also unberührt sein.
 
 Dieses Dokument beschreibt die **Keyboard Bridge** (`test_tools/fb_keyboard_bridge.py`) — einen
 kleinen, von PiFinders eigenem Code unabhängigen Prozess, der aus einem beliebigen
@@ -307,6 +311,7 @@ Aktuell sind keine offenen Bugs zu dieser Komponente getrackt.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 |
 |---|---|---|---|
+| 2.6.3 | 2.3.0 | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi4-Hardware-Retest ausstehend | ⚠️ Installationsablauf x86-verifiziert (2026-09-04), Pi5-Hardware-Retest ausstehend |
 | 2.6.0 | 2.2.1 | ✅ getestet | ✅ getestet |
 | 2.5.1 | 2.1.1 | ✅ getestet (frühere Belegung) | — |
 
