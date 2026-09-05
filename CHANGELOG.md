@@ -284,6 +284,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`pifinder_pre_start.sh`: `pifinder.service` crash-loops forever after a reboot (systemd
+  `216/GROUP`)**: the same `/etc/group`/`/etc/passwd` missing-trailing-newline gap already fixed in
+  `pifinder_stellarmate_setup.sh` (#270) and `restore_after_smos_update.sh` (#276) was still present
+  here - and this script runs the identical `groupadd`/`usermod` calls at every single boot
+  (`ExecStartPre`), not just during setup/update. Reproduced live on a real Pi5 reboot (2026-09-05):
+  `spi`/`gpio` groups silently never got (re)created (`groupadd: cannot open /etc/group: Cannot
+  allocate memory` - a misleading error, not a real ENOMEM), so `SupplementaryGroups=` in
+  `pifinder.service` couldn't resolve and the service crash-looped indefinitely. Added the same
+  newline-guard used in the other two scripts.
 - **`restore_after_smos_update.sh`/`pifinder_stellarmate_setup.sh`: `pacman -S libcamera libcamera-ipa`
   always failed on SMOS, aborting the whole run at step 2/8**: the guard `! pacman -Q libcamera-ipa`
   was always true because SMOS has no `libcamera-ipa` package at all - it's an Arch Linux ARM
