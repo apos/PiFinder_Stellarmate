@@ -1,186 +1,270 @@
 # First-Time Setup Wizard — Concept
 
-Companion to the main [README.md](../../README.md) and
-[Readme_ControlCenter.md](../../Readme_ControlCenter.md). Covers GitHub issue
-[#265](https://github.com/apos/PiFinder_Stellarmate/issues/265) at the depth standard in
-`basic-memory/basic-memory/00021_bm-documentation-depth-standard.md` — this is a **concept
-document only** (per `basic-memory/basic-memory/00020_bm-cpt-command-system.md`'s cpt gate): it
-proposes an architecture and a phased implementation, but no code changes ship from this document
-alone.
+> **Status: concept — Phase 1 not started.** Written via this project's `cpt` (concept)
+> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
+> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> [GitHub issue #265](https://github.com/apos/PiFinder_Stellarmate/issues/265) on
+> [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
+> promoted, revised, or dropped.
+>
+> **Revised 2026-09-05** after the first Phase-1 mockup was rejected: a read-only panel that only
+> mirrored the existing readiness line added little, and — the substantive gap — it silently assumed
+> the user already had a working Ekos equipment profile. The real first-time cliff is *getting that
+> profile*, which none of the 6 checklist steps help with. See §2.1 and §8.
+>
+> Companion to the main [README.md](../../README.md) and
+> [Readme_ControlCenter.md](../../Readme_ControlCenter.md). Read
+> [`mount_bridge_web_integration.md`](mount_bridge_web_integration.md) first — it owns the
+> profile/driver/coupling workflow this wizard sequences, and explicitly puts *profile creation* and
+> *the user's own mount-driver connection parameters* out of scope (its §1 non-goal, UC1/UC8). This
+> wizard does not change that boundary; it makes the boundary visible to a first-time user instead of
+> letting them fall off it (§2.1).
 
 ## 1. Basic Functionality (Overview)
 
-The Control Center already exposes every control a working Mount-Bridge setup needs — Role choice,
-a 6-step Setup checklist, four Coupling presets, Multi-Point Alignment — but no *guided path*
-through them. A first-time user has to discover the right order themselves, and the page's own
-visual order doesn't match the order the code actually requires (see §3.1). The First-Time Wizard
-is a thin guidance layer on top of the existing controls — it doesn't replace or duplicate any of
-them, it sequences and highlights the ones a given user, in their current state, actually needs
-next.
+The Control Center already exposes every control a working Mount-Bridge setup needs — Role choice, a
+6-step Setup checklist, four Coupling presets, Multi-Point Alignment — but no *guided path* through
+them, and **no acknowledgement of the one prerequisite that sits before all of them**: a working
+Ekos equipment profile.
+
+A first-time user faces two problems, in order:
+
+1. **Before the checklist can mean anything** they need an Ekos profile in KStars that contains at
+   least a mount driver (a Telescope Simulator, or their real mount) *and* connects to it. That
+   profile is built in KStars' Profile Editor or the StellarMate App — not anywhere in this tile.
+   Checklist step 1 ("Profile") only *selects* an already-existing profile and starts its
+   `indiserver`; it does nothing for a user who has no profile, or a profile with no mount.
+2. **Once a usable profile exists**, the 6 checklist steps have to be done in an order the page's own
+   visual layout contradicts (see §3.1 — Role sits above the checklist but the code requires step 1
+   first).
+
+The wizard is a thin guidance layer over the existing controls. It does not replace or duplicate any
+of them and it does not build profile creation. It **detects which of these two problems the user is
+in** and points at the single next thing to do — including "go to KStars / the StellarMate App and
+add a mount to your profile", when that is the next thing.
 
 ## 2. Use Cases
 
-Per the issue, two starting situations, made concrete against what's actually on the page today:
+### 2.1 The prerequisite (new — the reason for this revision)
 
-1. **Fresh install** — a user has just run Install/Update for the first time. Nothing is
-   configured: no Web Manager profile (or only the read-only "Simulators" default), no Role chosen,
-   no mount linked, no Coupling preset applied. Goal: get to "PiFinder is talking to my mount" (or,
-   for a PiFinder-only/Control-host role, to the equivalent end state for that role) in as few
-   manual steps as possible.
-2. **Returning user** — setup already exists, but something changed: a StellarMate/SMOS update
-   reset `/etc` state (see README's "SMOS Updates" section), a driver got manually removed in Web
-   Manager, hardware was swapped (new mount, new PiFinder unit), or a reboot left Ekos not yet
-   connected. Goal: quickly identify *which* of the 6 checklist items regressed, without re-doing
-   the ones that didn't.
+| # | Starting state | What the wizard should do | Detectable from |
+|---|---|---|---|
+| UC0a | No equipment profile of the user's own exists (only the read-only `Simulators` default) | Explain that setup needs a profile with at least a mount driver — sim or real — and point to KStars Profile Editor / the StellarMate App to create one. Do **not** start the checklist. | `/api/webmanager/profiles` → own-profile count `0` (already drives `#wm-no-profile-hint`) |
+| UC0b | A profile exists but contains no Telescope-family driver | Same guidance, narrowed: "profile *X* has no mount — add a Telescope Simulator (for testing) or your mount driver to it". | **`GET /api/webmanager/other_drivers?profile=X` already** — returns `{drivers: [{label, is_telescope}]}` for any profile, and its server handler (`server.py`) does **not** gate on a running profile (only the client's `refreshWmConnectRow()` does). `drivers.some(d => d.is_telescope)` = has a mount. No new endpoint. |
+| UC0c | Profile has a mount driver but it never connects (wrong serial port / TCP host / mount off) | Point at the mount's own connection in the INDI Control Panel — this wizard does not configure mount-driver parameters (out of scope, per the web-integration concept's §1). Name it as a real blocker rather than showing a generic "step 6 not done". | mount driver present in profile, but its `CONNECTION` never reaches `CONNECT` after step 6 |
 
-Both scenarios read the exact same underlying state (§4) — the wizard's only job is presenting it
-as "what to do next" instead of "here are six independent status rows and four unrelated tiles".
+UC0c is the seam with [`mount_bridge_web_integration.md`](mount_bridge_web_integration.md)'s explicit
+non-goal. The wizard's job there is to *name the blocker accurately and send the user to the right
+tool*, not to solve it.
+
+### 2.2 The two situations from the issue (unchanged, but now downstream of §2.1)
+
+1. **Fresh install** — Install/Update has been run once; nothing is configured. If §2.1 is satisfied
+   (a profile with a mount exists), the goal is "PiFinder is talking to my mount" (or, for a
+   PiFinder-only / Control-host role, that role's equivalent end state) in as few manual steps as
+   possible. If §2.1 is *not* satisfied, that is the first thing the wizard addresses.
+2. **Returning user** — setup existed but something regressed: an SMOS update reset `/etc` state
+   (README "SMOS Updates"), a driver was removed in Web Manager, hardware was swapped, or a reboot
+   left Ekos not connected. Goal: identify *which* checklist item regressed without re-doing the
+   others.
+
+Both 2.2 scenarios read the same underlying state (§4) and are the same flow at different starting
+points. §2.1 is the gate in front of that flow.
 
 ## 3. Architecture
 
 ### 3.1 Context: why a wizard, not just better ordering
 
-Investigated live while writing this document — the actual current control flow has a real
-ordering inversion, not just a discoverability gap:
+Two real ordering problems, not just a discoverability gap:
+
+**A. The prerequisite is invisible.** Nothing on the page says "you need a working profile with a
+mount before any of this". `#wm-no-profile-hint` and `#wm-no-mount-hint` exist but are small,
+static, and buried inside the collapsed "Setup checklist & diagnostics" section — a first-time user
+never sees them until they have already gone looking in the right place.
+
+**B. Role-before-Profile inversion.** Investigated live:
 
 - **On screen**, the Mount Bridge tile shows, top to bottom: Role cards → Mode cards/readiness line
-  → Setup checklist & diagnostics (1. Profile → 2. KStars Link → 3. Drivers → 4. Mount → 5. Ekos →
-  6. Connect) → Multi-Point Alignment.
-- **In code**, `onRoleCardClick()` (`gui_installer/status_page.html`) hard-requires step 1 to be
-  done first: `if (!wmSelectedProfile) { alert('Pick a profile in step 1 first.'); return; }` — a
-  Role card click before that is a dead end (an alert, no progress).
+  → Setup checklist (1. Profile … 6. Connect) → Multi-Point Alignment.
+- **In code**, `onRoleCardClick()` (`gui_installer/status_page.html`) hard-requires step 1:
+  `if (!wmSelectedProfile) { alert('Pick a profile in step 1 first.'); return; }` — a Role click
+  before that is a dead end (an alert, no progress).
 
 So the two things closest to "step 0" on the page are in the wrong relative order for a first-time
-user who reads top-to-bottom. A wizard doesn't need to reorder the static page (Role stays the
-primary navigation once things are set up, per the original design rationale still in the code
-comments) — it needs to present the *correct* first action regardless of where that control happens
-to live spatially.
+user reading top-to-bottom. The wizard does not reorder the static page (Role stays the primary
+navigation once things are set up, per the design rationale in the code comments) — it presents the
+*correct* next action regardless of where that control lives spatially, and it makes the prerequisite
+explicit before either.
 
 ### 3.2 Building blocks (existing, reused — no new state machine)
 
 The wizard is a **read layer + a "next action" pointer**, not a new source of truth:
 
-| Existing signal | Where it already lives | What it tells the wizard |
+| Signal | Where it already lives | Tells the wizard |
 |---|---|---|
-| `existing_install` | `/state` | Fresh install vs. returning device (coarse) |
-| `wmSelectedProfile`, `wmServerRunning` | `status_page.html` JS state (from Web Manager polling) | Step 1 done? |
+| own-profile count | `/api/webmanager/profiles` (already excludes the read-only `Simulators`) | **UC0a**: is there any profile to work with at all? |
+| Telescope-family driver in profile | `/api/webmanager/other_drivers?profile=X` — **exists today**, works on a stopped profile, returns `is_telescope` per driver | **UC0b**: does the profile have a mount? |
+| `existing_install` | `/state` (`PIFINDER_DIR.is_dir()`) | Coarse "PiFinder installed on this device" — role-dependent, not "setup done" |
+| `wmSelectedProfile`, `wmServerRunning` | `status_page.html` JS (Web Manager polling) | Step 1 done? |
 | `wmKstarsLinked` | same | Step 2 done? |
-| `wmHasLx200`, `wmHasBridge` | same | Step 3 done? (and which Role that implies) |
+| `wmHasLx200`, `wmHasBridge`, `wmLx200Remote` | same | Step 3 done? — and, via `deriveProfileRole()`, which Role this implies (`aio` / `host` / `ctrl` / …) |
 | `wmActiveMount` | same | Step 4 done? |
 | `wmEkosConnected` | same | Step 5 done? |
-| (Step 6, Connect) | `mb-connect-*` button states | Step 6 done? |
-| `lastSolveSource` | same | "Solve" health (already tracked in `updateSimReadinessLine()`) |
-| Active Coupling mode | `mb-preset-*` button active state | Whether a preset has ever been applied |
+| per-device `CONNECTION` | `mb-connect-*` button states / `_availableConnectTargets()` | Step 6 done? (and UC0c: mount present but never connects) |
+| `lastSolveSource` | same | "Solve" health — shown by `updateSimReadinessLine()` today |
+| active Coupling mode | `mb-preset-*` active state | Has a preset ever been applied? |
 
-`updateSimReadinessLine()` (`gui_installer/status_page.html`, already shipped for #268/#267's
-readiness line) already computes a 6-item `[label, ok]` array from exactly these signals. The
-wizard's "what's left" list is the same computation, reframed as ordered steps with a "do this
-next" affordance instead of a flat status line.
+`updateStepIndicators()` already computes steps 1–6 done/not-done, and `updateSimReadinessLine()`
+already renders a 6-item status line from them (its 6th item is "Solve"; the checklist's 6th is
+"Connect" — the wizard tracks the checklist's six and treats Solve as a separate health note, matching
+the existing readiness line's own comment about not conflating the two). The wizard adds one thing
+upstream of all of that: the §2.1 prerequisite check.
 
 ### 3.3 Proposed flow
 
 ```mermaid
 flowchart TD
-    Start([User opens Control Center]) --> CheckInstall{existing_install?}
-    CheckInstall -->|No| InstallStep[Guide: Install/Update tile]
-    CheckInstall -->|Yes| CheckReady{All 6 checklist<br/>items green?}
+    Start([User opens Control Center]) --> HasProfile{Own profile exists?}
+    HasProfile -->|No| P0a["Wizard: create a profile in KStars / StellarMate App (needs a mount: sim or real)"]
+    HasProfile -->|Yes| HasMount{Profile has a Telescope-family driver?}
+    HasMount -->|No| P0b["Wizard: add a mount to the profile (Telescope Simulator for testing, or the real mount)"]
+    HasMount -->|Yes| CheckInstall{existing_install?}
+
+    P0a --> HasProfile
+    P0b --> HasMount
+
+    CheckInstall -->|No| InstallStep["Wizard: run Install/Update first"]
+    CheckInstall -->|Yes| CheckReady{All 6 checklist items green?}
     InstallStep --> CheckReady
 
-    CheckReady -->|No, one or more red/amber| Diagnose[Wizard panel:<br/>first red/amber item,<br/>highlighted + scrolled to]
-    Diagnose --> ActOnStep[User completes that step<br/>via its existing control]
+    CheckReady -->|No| Diagnose["Wizard: first red/amber step, named with where its control is"]
+    Diagnose --> MountConnects{Mount driver actually connects?}
+    MountConnects -->|No| P0c["Wizard: mount won't connect - check its parameters in the INDI Control Panel (out of scope here)"]
+    MountConnects -->|Yes| ActOnStep["User completes that step via its existing control"]
     ActOnStep --> CheckReady
+    P0c --> CheckReady
 
-    CheckReady -->|Yes, all 6 green| CheckCoupling{Coupling preset<br/>ever applied?}
-    CheckCoupling -->|No| SuggestCoupling[Wizard panel:<br/>suggest a Coupling preset<br/>based on Role]
-    CheckCoupling -->|Yes| Done([Wizard: "Setup complete" —<br/>panel collapses/hides])
+    CheckReady -->|Yes| CheckCoupling{Coupling preset ever applied?}
+    CheckCoupling -->|No| SuggestCoupling["Wizard: suggest a Coupling preset for this Role"]
+    CheckCoupling -->|Yes| Done(["Wizard: Setup complete - panel collapses/hides"])
     SuggestCoupling --> Done
 ```
 
-Scenario detection (fresh vs. returning) falls out of the same state, not a separate branch: a
-fresh install starts at "0 of 6 green", a returning device with one regressed item starts partway
-through the same loop. No separate code path needed for the two use cases in §2 — they're the same
-flow at different starting points, which is also why no "skip this if returning" logic is required.
+Scenario detection (fresh vs. returning, §2.2) still falls out of the same state at different
+starting points. The new part is the `HasProfile` / `HasMount` gate in front, and the
+`MountConnects` check that turns a bare "step 6 not done" into an accurate UC0c message.
 
 ### 3.4 Where it lives on the page
 
-A new, dismissible panel (`#setup-wizard`) at the **top** of the Mount Bridge tile, above the Role
-cards — the one place both "Role" and "Setup checklist" are visible without scrolling, so the
-wizard can literally point at ("↓ start here") whichever control the user needs next regardless of
-which existing section it lives in. Collapses automatically once §3.3's `Done` state is reached
-(explicit user setups that never want it should be able to dismiss it manually too — a
-`localStorage` flag, same pattern already used elsewhere on this page for collapsed-state memory,
-e.g. `toggleCollapsibleSection`).
+A new, dismissible panel (`#setup-wizard`) at the **top** of the Mount Bridge tile body, above the
+Role cards — the one place Role and the checklist are both reachable, so the wizard can point at the
+control the user needs next regardless of which section it lives in, and can show the §2.1
+prerequisite message *before* the user ever expands the collapsed checklist. Collapses automatically
+once §3.3's `Done` state is reached; a manual dismiss (`localStorage` flag, same pattern as
+`toggleCollapsibleSection`) is Phase 3.
+
+Visual language: reuses the existing `.status-dot` vocabulary (`dot-white` / `dot-green` /
+`dot-yellow`) and `.group-label` / role-card styling — no new status system (per
+`basic-memory/basic-memory/00017_bm-ui-design-anforderung-klar-einheitlich.md`).
 
 ## 4. Design Principles
 
 Per `basic-memory/basic-memory/00017_bm-ui-design-anforderung-klar-einheitlich.md`, already
-established for this page and followed here, not reinvented:
+established for this page:
 
-- **No decorative emoji, traffic-light dots only.** The wizard's "done"/"next"/"not yet" states
-  reuse the existing `.status-dot` (`dot-white`/`dot-green`/`dot-yellow`) vocabulary — a 7th status
-  system would violate "same status logic, same visual language everywhere".
-- **Label the visible thing, not the mechanism.** The wizard step text names the actual control
-  ("Pick a profile below", not "Configure `wmSelectedProfile`").
+- **No decorative emoji, traffic-light dots only.** Wizard "done" / "next" / "not yet" reuse
+  `.status-dot` (`dot-green` / `dot-yellow` / `dot-white`).
+- **Label the visible control, not the mechanism.** "Add a mount to your profile", not "no
+  Telescope-family driver in `get_profile_labels`".
+- **Name the real blocker.** UC0a/UC0b/UC0c each get a specific message — never a generic
+  "something's not set up".
 - **Tooltips for the technical detail**, keeping the primary wizard text short.
-- **Visible feedback on every action** — clicking "Take me there" scrolls to and briefly highlights
-  the relevant existing control (a short outline-flash, not a new modal/dialog) rather than
-  performing the action itself; the wizard points, the existing control still does the work. This
-  also sidesteps building a second, parallel action path that could drift out of sync with the
-  existing one (see #204/#216's ACTIVE_DEVICES-drift class of bug — a lesson from building a second
-  code path that disagreed with the first).
-- **Functional grouping**: the wizard is its own panel, not squeezed into an existing tile's
-  unrelated content, since it's a cross-cutting layer over multiple tiles (Role + checklist +
-  Coupling), not a peer of any one of them.
+- **The wizard points; the existing control does the work.** Phase 2's "Take me there" scrolls to
+  and briefly highlights an existing control — it never performs the action itself, avoiding a
+  second action path that could drift from the first (cf. #204/#216's ACTIVE_DEVICES-drift class of
+  bug).
+- **Functional grouping**: the wizard is its own panel — a cross-cutting layer over Role + checklist
+  + Coupling, not a peer of any one tile section.
 
 ## 5. Technical Reference
 
-No new backend state or endpoints — `/state`, the Web Manager polling already backing
-`wmSelectedProfile`/etc., and `updateSimReadinessLine()`'s existing computation are sufficient. New
-client-side surface only:
+**No new backend surface.** Both §2.1 signals already have endpoints:
+
+- **UC0a**: `GET /api/webmanager/profiles` → own-profile count.
+- **UC0b**: `GET /api/webmanager/other_drivers?profile=<name>` → `{drivers: [{label, is_telescope}]}`.
+  Verified in `server.py`: the handler calls `webmanager_client.other_profile_drivers()` directly
+  with no running-profile check — the "profile must be running" gate is client-side only
+  (`refreshWmConnectRow()` needs live connect state for its *own* dropdown; the wizard's has-a-mount
+  question doesn't). `is_telescope` = Web Manager driver-catalog family `"Telescopes"`, minus the
+  three PiFinder labels; see [`mount_bridge_web_integration.md`](mount_bridge_web_integration.md) §4
+  and `other_profile_drivers()`'s docstring for the residual cases it can't resolve.
+
+New client-side surface only:
 
 | Function (proposed) | Responsibility |
 |---|---|
-| `computeWizardStep()` | Same inputs as `updateSimReadinessLine()`; returns the single next incomplete step (or `null` = done) instead of the full 6-item list |
-| `renderWizardPanel(step)` | Shows/hides `#setup-wizard`, sets its text + "Take me there" target from `step` |
-| `scrollToAndHighlight(elementId)` | Generic helper - scroll + brief outline flash. Reusable outside the wizard too (e.g. a future "jump to failing check" link elsewhere) |
+| `computeWizardStep()` | Returns the single next actionable item as a tagged union: `{kind: "need_profile"}` \| `{kind: "need_mount", profile}` \| `{kind: "install"}` \| `{kind: "checklist", step: 1..6}` \| `{kind: "mount_wont_connect"}` \| `{kind: "suggest_coupling", role}` \| `null` (done). Same inputs as `updateSimReadinessLine()` plus the two §2.1 signals above. |
+| `renderWizardPanel(next)` | Shows/hides `#setup-wizard`; sets its text and (Phase 2) "Take me there" target from `next`. |
+| `scrollToAndHighlight(elementId)` (**Phase 2**) | Generic scroll + outline-flash helper. Reusable beyond the wizard. |
+
+`/state`, the existing Web Manager polling, and `updateSimReadinessLine()`'s computation cover
+everything else.
 
 ## 6. Test Strategy
 
-- **Automated**: none currently planned — this whole page has no existing test harness beyond
-  manual QA (consistent with the rest of `gui_installer/`).
-- **Manual, both use cases from §2**:
-  1. Fresh install (`bin/simulate_fresh_install.sh --mode=fresh` or a real reinstall) — confirm the
-     wizard starts at step 1 and correctly advances through all 6 as each is completed.
-  2. Simulated regression on an already-configured device — manually remove a driver in Web
-     Manager, or disconnect Ekos — confirm the wizard correctly identifies *that* item, not a
-     generic "something's wrong".
-  3. Role-before-Profile dead end (§3.1) — confirm the wizard never suggests clicking a Role card
-     before step 1 is done, closing the exact gap that motivated this document.
+- **Automated**: none currently — this page has no test harness beyond manual QA (consistent with
+  the rest of `gui_installer/`). `computeWizardStep()` is pure enough to unit-test in isolation
+  (inputs → tagged-union output) and worth a first small JS test with Phase 1.
+- **Manual**:
+  1. **No profile** (`Simulators` only) — wizard shows UC0a, does not show a checklist step.
+  2. **Profile without a mount** — add an empty own profile in Web Manager; wizard shows UC0b naming
+     that profile.
+  3. **Profile with Telescope Simulator** (`bin/simulate_fresh_install.sh --mode=fresh` or a real
+     reinstall + a sim profile) — wizard advances through steps 1–6 as each completes.
+  4. **Mount present, won't connect** — point the mount driver at a bogus port; wizard shows UC0c,
+     not a bare "step 6".
+  5. **Regression on a configured device** — remove a driver / disconnect Ekos; wizard names *that*
+     item.
+  6. **Role-before-Profile** (§3.1B) — wizard never suggests a Role card before step 1 is possible.
 
 ## 7. Effort / Priority
 
-T-shirt size **M** (per `basic-memory/basic-memory/00019_bm-github-project-schema-todo-format`) —
-no new backend, no new state machine, but touches the Mount Bridge tile's most-used code paths and
-needs careful live verification against both use cases. Priority **P1**: raised directly from live
-Pi4 testing as a real onboarding friction point, but not a correctness bug — nothing is broken
-today, first-time setup is just harder than it needs to be.
+T-shirt size **S–M** (per `basic-memory/basic-memory/00019_bm-github-project-schema-todo-format`) —
+no new state machine and no new backend endpoint; the work is the §2.1 detection logic, the panel,
+and careful live verification across UC0a–UC0c and both §2.2 scenarios. Priority **P1**: raised from
+live Pi4 testing as real onboarding
+friction; not a correctness bug (nothing is broken), but first-time setup is materially harder than
+it needs to be, and the prerequisite gap means a fresh user can get stuck before step 1.
 
 ## 8. Strategic Roadmap (dependencies made explicit)
 
-1. **`computeWizardStep()` + read-only wizard panel** (no "Take me there" yet) — proves the step
-   detection logic against both use cases in §6 before adding any interaction. Depends on nothing
-   new; pure read of existing state.
-2. **`scrollToAndHighlight()` + wired-up "Take me there"** — depends on (1) being verified correct;
-   adding navigation on top of a wrong step-detection would just guide users to the wrong place
-   faster.
-3. **Dismiss/auto-collapse behavior** (`localStorage` persistence) — depends on (1)+(2) existing;
-   premature before the panel's content is trustworthy.
-4. **Coupling-preset suggestion step** (§3.3's `SuggestCoupling`) — deliberately last: the first
-   three steps alone already close the concrete gap from #265 (getting through the checklist); a
-   suggested Coupling preset is a smaller, separable enhancement on top, not a blocker for the core
-   wizard to ship.
+Ordered; each numbered item is sized to become its own GitHub sub-issue once implementation is
+approved (mirroring `pifinder_fake_solve_simulation.md`'s ordered sub-issue precedent) — not created
+yet, per the cpt gate.
 
-Each numbered step above is sized to become its own GitHub sub-issue (mirroring
-`docs/concepts/pifinder_fake_solve_simulation.md`'s precedent of ordered, linked sub-issues) once
-implementation is approved — not created yet, per the cpt gate: this document is the concept pass
-requested in #265, actual code needs a separate go-ahead.
+1. **Prerequisite detection + guidance** (`computeWizardStep()` covering `need_profile` /
+   `need_mount` / `install`, plus the read-only panel). This is the genuinely additive core: it
+   addresses UC0a/UC0b, which nothing on the page does today. Depends on nothing new — both signals
+   already have endpoints (§5). **This replaces the rejected "read-only status mirror" as Phase 1.**
+2. **Checklist step pointer + Role-before-Profile fix** (`computeWizardStep()` covering
+   `checklist: 1..6`, and making the wizard's first post-prerequisite message "do step 1, then pick a
+   Role"). Depends on (1). Absorbs what little value the original read-only panel had, in service of
+   §3.1B.
+3. **`mount_wont_connect` (UC0c) detection** — distinguish "step 6 not done" from "mount driver
+   present but never connects". Depends on (2); needs the step-6 signal wired first.
+4. **`scrollToAndHighlight()` + "Take me there"** — navigation on top of verified-correct step
+   detection. Depends on (1)–(3) being right; guiding users faster to the wrong place is worse than
+   no navigation.
+5. **Dismiss / auto-collapse** (`localStorage`) — depends on the panel content being trustworthy
+   (1)–(4).
+6. **Coupling-preset suggestion** (§3.3 `SuggestCoupling`) — deliberately last: a separable
+   enhancement, not a blocker for the core wizard.
+
+## 9. RAID (Risks, Assumptions, Issues, Dependencies)
+
+| Type | Item |
+|---|---|
+| Assumption | Profile creation and mount-driver connection parameters stay out of scope (inherited from [`mount_bridge_web_integration.md`](mount_bridge_web_integration.md) §1). Open decision if the user wants the wizard to eventually *embed* profile/mount creation rather than point outward — that is a much larger scope and a separate concept. |
+| Risk | `is_telescope` is only as good as each driver's self-declared INDI family (`other_profile_drivers()` docstring, residual cases a & b). A profile with a mislabeled mount driver would read as UC0b incorrectly. Mitigation: the guidance text is soft ("looks like no mount — if you have one, check its driver family"), never a hard block. |
+| Issue | `existing_install` is `PIFINDER_DIR.is_dir()` — meaningless for the Control-host role (no local PiFinder). The `install` branch of `computeWizardStep()` must be role-gated. |
+| Dependency | The has-a-mount read must work on a stopped profile (a first-time user's profile is typically not running). Confirmed OK: `/api/webmanager/other_drivers`'s HTTP handler does not gate on a running profile — only the client's `refreshWmConnectRow()` does, for its own reasons. `computeWizardStep()` calls the endpoint independently of `wmServerRunning`. |
