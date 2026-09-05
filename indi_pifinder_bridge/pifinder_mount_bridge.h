@@ -196,8 +196,8 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         // Manual, immediate one-shot trigger (works regardless of BridgeModeSP)
         ISwitchVectorProperty ManualTriggerSP;
-        ISwitch ManualTriggerS[2];
-        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW };
+        ISwitch ManualTriggerS[3];
+        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW, TRIGGER_GOTO_HELD };
 
         // Emergency stop - sends TELESCOPE_ABORT_MOTION to the active mount
         // immediately, independent of Coupling mode or any in-progress
