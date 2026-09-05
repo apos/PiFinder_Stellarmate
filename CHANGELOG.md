@@ -284,6 +284,23 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Pi5: OLED display goes completely dark (falls back to `DisplayHeadless`), keyboard/GPIO users
+  affected too**: `pifinder_stellarmate_setup.sh` installs the real `RPi.GPIO` package (from
+  `bin/requirements_additional.txt`, pulled in via the main `requirements.txt`) and, later,
+  `rpi-lgpio` (a Pi5-compatible drop-in providing the same `RPi.GPIO` import path) - whichever pip
+  install physically writes last wins on disk, but pip tracks the two as independent packages. If
+  `rpi-lgpio` was already recorded as "installed" from an earlier run and the real package then
+  overwrote its files, a plain `pip install rpi-lgpio` here saw "Requirement already satisfied" and
+  did nothing, silently leaving the real (Pi5-incompatible - it doesn't know the RP1 GPIO chip)
+  package in place. `import RPi.GPIO` alone can't tell the two apart either (both import fine; the
+  real package only fails later, at `GPIO.setup()` time, with `RuntimeError: Cannot determine SOC
+  peripheral base address`) - so `bin/pifinder_pre_start.sh`'s boot-time check for this exact
+  situation approved it as `OK` every time too. Found live (2026-09-05, Pi5) after a fresh install:
+  `pifinder.service` ran, but with a fully dark OLED. Fixed in both places: explicitly
+  `pip uninstall RPi.GPIO` before `--force-reinstall`-ing `rpi-lgpio`/`lgpio`, so the outcome never
+  depends on prior pip state; and swapped the import-only check for `hasattr(RPi.GPIO, 'lgpio')`
+  (rpi-lgpio uniquely exposes this on the module itself, no hardware access needed to check it) so
+  the pre-start guard can actually detect and self-heal this case going forward.
 - **`restore_after_smos_update.sh`/`pifinder_stellarmate_setup.sh`: `pacman -S libcamera libcamera-ipa`
   always failed on SMOS, aborting the whole run at step 2/8**: the guard `! pacman -Q libcamera-ipa`
   was always true because SMOS has no `libcamera-ipa` package at all - it's an Arch Linux ARM
