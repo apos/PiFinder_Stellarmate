@@ -3759,6 +3759,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_goto_held":
+            # Manual, immediate one-shot: sends the mount to the held
+            # ORIGINAL_TARGET, not PiFinder's current live position (see
+            # trigger_goto_held()'s own docstring) - the recovery action for
+            # when the mount was physically disturbed (bumped, a
+            # friction-clutch slip, overbalance) and PiFinder's own live
+            # solve reflects that same disturbance, not the original intent.
+            _mb_log("sending mount back to the held target...")
+            try:
+                indi_client.trigger_goto_held()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_abort":
             # Emergency stop - see #179. Two steps, in this order:
             # 1. ABORT_MOUNT stops the mount's *current* physical motion

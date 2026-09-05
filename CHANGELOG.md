@@ -15,7 +15,10 @@ All notable changes to this project are documented in this file. Format loosely 
   `ORIGINAL_TARGET` (the same value the automatic `HOLDING` correction already tracks back to) -
   "go back to what I actually meant to point at," independent of where the tube has since ended up.
   Needs no fresh camera solve (unlike Sync/Goto Now), since it doesn't read PiFinder's live position
-  at all. Found live (2026-09-05) during a real observing session on a friction-clutch mount.
+  at all. Found live (2026-09-05) during a real observing session on a friction-clutch mount. Also
+  wired into the Control Center's own Mount Bridge panel (`/api/mount_bridge_goto_held`, next to
+  "Sync mount from PiFinder") - the INDI Control Panel alone isn't the actual usage surface for this
+  project.
 - **Setup checklist: Profile (1) and Mount (4) steps visually emphasized (#267)**: the two most
   important steps to get right first for a working Mount-Bridge setup now get a subtle box/border
   and a star icon, distinguishing them from the rest of the checklist. Deliberately doesn't

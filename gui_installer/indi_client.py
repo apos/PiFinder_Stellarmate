@@ -900,6 +900,20 @@ def trigger_manual_sync(
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)
 
 
+def trigger_goto_held(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: sends the mount back to the held ORIGINAL_TARGET
+    (MANUAL_TRIGGER's TRIGGER_GOTO_HELD element) - unlike trigger_manual_sync
+    above, this does NOT read PiFinder's current live position at all, so it
+    still works when that position is itself the problem (mount bumped,
+    friction-clutch slip, overbalance - PiFinder is rigidly mounted to the
+    OTA and moves with any of those)."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_GOTO_HELD", host, port, timeout)
+
+
 # 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
 # still-not-root-caused "process alive but unresponsive to any INDI query"
 # hang (#238) - live-verified by hand many times this same session
