@@ -498,7 +498,16 @@ bool PiFinderMountBridge::initProperties()
 
     IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_NOW], "TRIGGER_SYNC_NOW", "Sync Now", ISS_OFF);
     IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_NOW], "TRIGGER_GOTO_NOW", "Goto Now", ISS_OFF);
-    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 2, getDeviceName(), "MANUAL_TRIGGER",
+    // Goto Now (above) sends the mount to wherever PiFinder is CURRENTLY
+    // pointed - useless for recovering from a physical disturbance (bumped
+    // mount, slipped clutch, overbalance) since PiFinder is rigidly mounted
+    // to the OTA and moves with it, so its live solve reflects the
+    // disturbance too. This button instead re-precesses and re-sends the
+    // held ORIGINAL_TARGET (the same value HOLDING's own automatic
+    // correction tracks back to) - "go back to what I actually meant to
+    // point at," independent of where the optical tube has since ended up.
+    IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_HELD], "TRIGGER_GOTO_HELD", "Goto Held Target", ISS_OFF);
+    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 3, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
 
     IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
@@ -2533,8 +2542,38 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IUUpdateSwitch(&ManualTriggerSP, states, names, n);
             const bool wantSync = ManualTriggerS[TRIGGER_SYNC_NOW].s == ISS_ON;
             const bool wantGoto = ManualTriggerS[TRIGGER_GOTO_NOW].s == ISS_ON;
+            const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
 
-            if (wantSync || wantGoto)
+            if (wantGotoHeld)
+            {
+                // Deliberately does NOT read PiFinder's current live
+                // position at all (unlike Sync/Goto Now above) - the whole
+                // point is recovering from a case where that current
+                // position is itself the disturbance (mount bumped, clutch
+                // slipped, overbalance) and no longer represents where the
+                // user actually wants to point. Uses the same fixed,
+                // re-precessed ORIGINAL_TARGET that HOLDING's own automatic
+                // correction tracks back to, so no fresh camera solve is
+                // required here.
+                double heldRA, heldDec;
+                if (!getOriginalTargetJNow(heldRA, heldDec))
+                {
+                    LOG_ERROR("No held target recorded yet - push-to or Goto a target first.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+                else if (sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
+                {
+                    LOGF_INFO("Manual Goto to held target (RA %.4fh, DEC %.4f deg) sent to mount.",
+                              heldRA, heldDec);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send Goto-held-target correction to mount.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantSync || wantGoto)
             {
                 // #227 follow-up (2026-08-19/20): same atomic fresh-CAM-
                 // solve requirement as every automatic action - a manual
