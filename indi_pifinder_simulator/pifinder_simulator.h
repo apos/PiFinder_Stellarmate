@@ -214,6 +214,32 @@ class PiFinderSimulator : public INDI::Telescope
         double m_followTargetRA = 0.0;
         double m_followTargetDEC = 0.0;
         long m_followDeadline = 0;
+        // Rate limit for the "rejected unusable snooped mount coordinate"
+        // warning below - a persistently misbehaving upstream mount/driver
+        // would otherwise spam this every ISSnoopDevice() call (same
+        // reasoning/interval as pifinder_mount_bridge.cpp's own rate-limited
+        // warnings, see its m_lastMaxSyncDriftWarnTime).
+        static constexpr long BAD_MOUNT_COORD_WARN_INTERVAL_SEC = 45;
+        long m_lastBadMountCoordWarnTime = 0;
 
         static double separationArcmin(double ra1_h, double dec1_d, double ra2_h, double dec2_d);
+        // Root-cause fix (2026-09-05): found live pointing a real mount at
+        // Dec 90 (NCP) - this device's EQUATORIAL_EOD_COORD ended up NaN
+        // with no Sync()/Goto()/client write anywhere in the log to explain
+        // it. The only remaining path is ISSnoopDevice() copying the
+        // snooped mount's MountEqN/MountTargetN values straight into
+        // m_currentRA/DEC (and separationArcmin() feeding them to acos())
+        // with no validation at all - unlike every other place in this
+        // codebase that ingests a live mount/PiFinder coordinate (see
+        // pifinder_mount_bridge.cpp's httpGetPiFinderFreshCamPosition()
+        // 0.05h/0.05deg plausibility gate, and its sendMountCoordsSafe()
+        // horizon check). Whether the NaN itself originates from OnStep's
+        // own alignment-subsystem math at the exact pole, a transient
+        // read glitch, or something else upstream was NOT pinned down live
+        // (the raw :GD# wire responses sampled afterward were clean) - but
+        // this device has no business trusting external live-hardware data
+        // unvalidated regardless of the exact upstream cause, so the
+        // ingestion points themselves are hardened rather than guessing at
+        // and patching one specific upstream trigger.
+        static bool isUsableCoordinate(double ra_h, double dec_d);
 };

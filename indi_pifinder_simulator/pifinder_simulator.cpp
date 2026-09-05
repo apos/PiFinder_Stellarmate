@@ -395,6 +395,24 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
         {
             const double tgtRA = MountTargetN[MOUNT_TGT_RA].value;
             const double tgtDEC = MountTargetN[MOUNT_TGT_DE].value;
+            if (!isUsableCoordinate(tgtRA, tgtDEC))
+            {
+                // Do NOT touch m_lastMountTargetRA/DEC/m_haveLastMountTarget
+                // here - accepting a bad reading as the new "last known
+                // target" would make the NEXT genuinely good reading look
+                // like a false "target changed" (or silently suppress a
+                // real one), and would hand a NaN/out-of-range value to
+                // separationArcmin() on the very next call.
+                const long now = static_cast<long>(time(nullptr));
+                if (now - m_lastBadMountCoordWarnTime >= BAD_MOUNT_COORD_WARN_INTERVAL_SEC)
+                {
+                    m_lastBadMountCoordWarnTime = now;
+                    LOGF_WARN("Ignoring unusable slew target from '%s' (RA %.4fh DEC %.4f - not finite or "
+                              "Dec out of [-90,90]). Not following until a usable target is seen.",
+                              deviceName, tgtRA, tgtDEC);
+                }
+                return true;
+            }
             const bool changed = !m_haveLastMountTarget ||
                                  separationArcmin(m_lastMountTargetRA, m_lastMountTargetDEC, tgtRA, tgtDEC)
                                      > MOUNT_TARGET_CHANGE_EPS_DEG * 60.0;
@@ -440,15 +458,38 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
 
             if (m_followActive || externalSlew)
             {
-                m_currentRA = MountEqN[MOUNT_AXIS_RA].value;
-                m_currentDEC = MountEqN[MOUNT_AXIS_DE].value;
-                m_hasPosition = true;
-                TrackState = SCOPE_TRACKING;
-                NewRaDec(m_currentRA, m_currentDEC);
-                if (EqNP.getState() != IPS_OK)
+                const double mountRA = MountEqN[MOUNT_AXIS_RA].value;
+                const double mountDEC = MountEqN[MOUNT_AXIS_DE].value;
+                if (!isUsableCoordinate(mountRA, mountDEC))
                 {
-                    EqNP.setState(IPS_OK);
-                    EqNP.apply();
+                    // Leave m_currentRA/DEC exactly where they were - this is
+                    // the actual root cause of the 2026-09-05 incident (a
+                    // real mount at Dec 90/NCP ended up publishing a NaN
+                    // here at some point, silently copied straight through
+                    // with no check at all). Skip this tick rather than
+                    // publish/track a bad value; the follow/arrival logic
+                    // below still runs against the last GOOD m_currentRA/DEC.
+                    const long now = static_cast<long>(time(nullptr));
+                    if (now - m_lastBadMountCoordWarnTime >= BAD_MOUNT_COORD_WARN_INTERVAL_SEC)
+                    {
+                        m_lastBadMountCoordWarnTime = now;
+                        LOGF_WARN("Ignoring unusable position from '%s' while following (RA %.4fh DEC %.4f - "
+                                  "not finite or Dec out of [-90,90]). Holding last known-good position.",
+                                  m_snoopedMountDevice.c_str(), mountRA, mountDEC);
+                    }
+                }
+                else
+                {
+                    m_currentRA = mountRA;
+                    m_currentDEC = mountDEC;
+                    m_hasPosition = true;
+                    TrackState = SCOPE_TRACKING;
+                    NewRaDec(m_currentRA, m_currentDEC);
+                    if (EqNP.getState() != IPS_OK)
+                    {
+                        EqNP.setState(IPS_OK);
+                        EqNP.apply();
+                    }
                 }
             }
 
@@ -466,6 +507,19 @@ bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
     }
 
     return INDI::Telescope::ISSnoopDevice(root);
+}
+
+bool PiFinderSimulator::isUsableCoordinate(double ra_h, double dec_d)
+{
+    // See the header comment on this declaration for the incident that
+    // motivated it. Deliberately independent of separationArcmin()'s own
+    // acos() clamp below (which was already correct before this fix, not
+    // the actual gap) - this guards the INGESTION of a snooped coordinate
+    // before it ever becomes m_currentRA/DEC/m_followTargetRA/DEC, so a
+    // single bad reading can neither corrupt this device's own published
+    // position nor get fed into separationArcmin() (or anything else) in
+    // the first place.
+    return std::isfinite(ra_h) && std::isfinite(dec_d) && dec_d >= -90.0 && dec_d <= 90.0;
 }
 
 double PiFinderSimulator::separationArcmin(double ra1_h, double dec1_d, double ra2_h, double dec2_d)
