@@ -121,12 +121,24 @@ if echo "$HW_MODEL" | grep -q "Raspberry Pi 5"; then
         echo ">> [Pi5] liblgpio.so: OK"
     fi
 
-    # Install rpi-lgpio into the venv if it isn't importable
-    # Installed from local packages/ - no internet needed
+    # Install rpi-lgpio into the venv if it's missing OR if the real
+    # RPi.GPIO package (from requirements_additional.txt, installed via the
+    # main requirements.txt) has silently overwritten it - both packages
+    # provide files under site-packages/RPi/GPIO/, so `import RPi.GPIO`
+    # alone always succeeds either way and can't tell them apart. The real
+    # package doesn't know the Pi5 SoC (RP1) and raises "Cannot determine
+    # SOC peripheral base address" only later, at GPIO.setup() time - not at
+    # import time - so it silently passes an import-only check. rpi-lgpio
+    # uniquely exposes a `lgpio` attribute on the GPIO module itself; check
+    # that instead of just importability. No hardware access here (no pin
+    # claimed), so this is safe to run on every service start. Found live
+    # (2026-09-05, Pi5): pifinder.service fell back to DisplayHeadless (dark
+    # OLED) for hours because this check only ever looked at importability.
     if [ -f "${PIFINDER_VENV}/bin/python" ]; then
-        if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO" &>/dev/null; then
-            echo ">> [Pi5] rpi-lgpio missing - installing from packages/..."
-            if "${PIFINDER_VENV}/bin/pip" install --quiet \
+        if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO as G; assert hasattr(G, 'lgpio')" &>/dev/null; then
+            echo ">> [Pi5] rpi-lgpio missing/overwritten by real RPi.GPIO - reinstalling from packages/..."
+            "${PIFINDER_VENV}/bin/pip" uninstall --quiet -y RPi.GPIO 2>/dev/null
+            if "${PIFINDER_VENV}/bin/pip" install --quiet --force-reinstall \
                 --no-index --find-links="${PIFINDER_SM_DIR}/packages/" \
                 rpi-lgpio lgpio; then
                 echo ">> [Pi5] rpi-lgpio: installed."

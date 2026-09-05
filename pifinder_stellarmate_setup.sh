@@ -849,17 +849,30 @@ else
             echo "  ✅ liblgpio.so: already installed."
         fi
 
-        # rpi-lgpio + lgpio aus lokalem packages/ installieren
+        # rpi-lgpio + lgpio aus lokalem packages/ installieren.
+        # Real RPi.GPIO (from requirements_additional.txt, installed earlier
+        # via the main requirements.txt) and rpi-lgpio both provide files
+        # under site-packages/RPi/GPIO/ - whichever pip install runs LAST
+        # physically wins on disk, but pip tracks them as two independent
+        # packages. If a previous run already installed rpi-lgpio and real
+        # RPi.GPIO overwrote its files afterwards, a plain `pip install
+        # rpi-lgpio` here sees "Requirement already satisfied" (per pip's own
+        # bookkeeping) and does NOTHING - the broken RPi.GPIO stays in place
+        # silently. Found live (2026-09-05, Pi5): pifinder.service fell back
+        # to DisplayHeadless (dark OLED) because of exactly this. Explicitly
+        # remove real RPi.GPIO first, then --force-reinstall rpi-lgpio/lgpio
+        # so the outcome never depends on prior pip state.
         echo "  Installing rpi-lgpio + lgpio ..."
+        pip uninstall --quiet -y RPi.GPIO 2>/dev/null
         LGPIO_WHL=$(ls "${pifinder_stellarmate_dir}/packages/lgpio-"*.whl 2>/dev/null | head -1)
         if [ -n "$LGPIO_WHL" ]; then
-            pip install --quiet --no-index \
+            pip install --quiet --force-reinstall --no-index \
                 --find-links="${pifinder_stellarmate_dir}/packages/" \
                 rpi-lgpio lgpio \
                 && echo "  ✅ rpi-lgpio installed from packages/." \
                 || add_warning "[Pi5] rpi-lgpio install from packages/ failed."
         else
-            pip install --quiet rpi-lgpio \
+            pip install --quiet --force-reinstall rpi-lgpio \
                 && echo "  ✅ rpi-lgpio installed from PyPI." \
                 || add_warning "[Pi5] rpi-lgpio install failed — GPIO will not work!"
         fi
