@@ -284,6 +284,24 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`restore_after_smos_update.sh`/`pifinder_stellarmate_setup.sh`: `pacman -S libcamera libcamera-ipa`
+  always failed on SMOS, aborting the whole run at step 2/8**: the guard `! pacman -Q libcamera-ipa`
+  was always true because SMOS has no `libcamera-ipa` package at all - it's an Arch Linux ARM
+  split-package concept, and the SMOS `libcamera` package already bundles the IPA modules
+  (`/usr/lib/libcamera/ipa/ipa_rpi_{pisp,vc4}.so`). Pacman resolved the install to SMOS `libcamera` +
+  `extra/libcamera-ipa`, which hard-requires a `libcamera.so`/`libcamera-base.so` soname the SMOS
+  package doesn't provide - "failed to prepare transaction", whole restore aborts via `set -e`. Found
+  live on a real SMOS 2.2.1→2.3.0 update (Pi4). Drop `libcamera-ipa` entirely from both the check and
+  the install in both scripts; only ensure the SMOS-provided, IPA-bundled `libcamera` is present.
+- **`restore_after_smos_update.sh` had the same `/etc/group`/`/etc/passwd` missing-trailing-newline
+  gap already fixed in `pifinder_stellarmate_setup.sh` (PR #270)** - reproduced live on a real SMOS
+  2.2.1→2.3.0 update the same night PR #270 landed. Ported the identical newline-guard plus the
+  hard-abort-on-failure checks for `groupadd`/`usermod` into this script too.
+- **`restore_after_smos_update.sh`: `gh` (GitHub CLI) found entirely missing after a SMOS update**
+  (package gone, not just off PATH) - added a best-effort (non-fatal) reinstall step, since it's dev
+  tooling, not a PiFinder runtime dependency, and must never abort the rest of the restore if it fails
+  (e.g. while the pacman keyring itself is broken - a separate, pre-existing issue this script does
+  not attempt to fix).
 - **`pos_server.py` (PiFinder's LX200 protocol server, port 4030) served only one client at a
   time**: found live testing Mount Bridge tonight with SkySafari, Stellarium and KStars (via the
   `PiFinder LX200` INDI driver) all needing concurrent access - the server's accept loop called
