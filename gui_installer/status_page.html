@@ -64,12 +64,56 @@
     }
   }
   h1 { font-size: 1.3rem; margin: 0; }
+  /* #268: sticky bar (always visible while scrolling the tiles below) - the
+     negative margin cancels body's own padding on this side so the bar
+     spans edge-to-edge and sticks flush with the real viewport top, instead
+     of floating inset within body's padding box. */
   #page-title-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #111;
+    margin: -1.5rem -1.5rem 1rem;
+    padding: 0.6rem 1.5rem;
+    border-bottom: 1px solid #292929;
+  }
+  @media (max-width: 767px) {
+    #page-title-row { margin: -0.8rem -0.8rem 1rem; padding: 0.5rem 0.8rem; }
+  }
+  #cc-title-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    min-width: 0;
+    row-gap: 0.2rem;
+  }
+  #cc-header-icon { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
+  h1 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
+  #cc-title-short { display: none; }
+  /* #268: hostname next to the title - lets multiple open tabs/devices be
+     told apart at a glance. Device-type icon (Pi chip vs. monitor for
+     x86/VM) picked in JS from /state's device_type field. */
+  #cc-hostname {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: #888;
+    font-size: 0.8rem;
+    font-weight: normal;
+    white-space: nowrap;
+  }
+  #cc-hostname svg { flex-shrink: 0; }
+  @media (max-width: 767px) {
+    h1 { font-size: 1.05rem; }
+    #cc-header-icon { width: 22px; height: 22px; }
+    #cc-title-full { display: none; }
+    #cc-title-short { display: inline; }
+    #cc-hostname { font-size: 0.75rem; }
   }
   #night-mode-toggle {
     background: #232323;
@@ -80,6 +124,19 @@
     font-size: 0.85rem;
     cursor: pointer;
     flex-shrink: 0;
+  }
+  @media (max-width: 767px) {
+    /* Full label would crowd the shortened title + hostname on a phone
+       width - icon-only still keeps a >=44px tap target via padding. */
+    #night-mode-toggle {
+      padding: 0.5rem;
+      min-width: 40px;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #night-mode-toggle .nm-label { display: none; }
   }
   #night-mode-toggle.active { background: #4a0d0d; border-color: #ff2b2b; color: #ff6b6b; }
   /* Minimal first pass, per direct feedback (2026-08-04): every bit of text
@@ -480,6 +537,7 @@
     display: inline-block;
     width: 0.6rem;
     height: 0.6rem;
+    flex-shrink: 0;
     border-radius: 50%;
     margin-right: 0.45rem;
     vertical-align: middle;
@@ -1040,6 +1098,20 @@
      the label column. Rows 3/5 have no such widget (button right after
      the label) so naturally start at this same x anyway. */
   .mb-step-widget { min-width: 13rem; }
+  /* #267: Profile (1) and Mount (4) are the two steps most important to get
+     right first - visually distinguished from the rest of the checklist.
+     Only a static box/icon, deliberately NOT overriding the label's own
+     color - .mb-step-done/.mb-step-busy (more specific selectors) still
+     win once a step actually completes/runs, so the done/busy signal isn't
+     fought by this. */
+  .mb-step-row-key {
+    background: #1c1a12;
+    border: 1px solid #4a3f20;
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+  }
+  .mb-step-key { color: #fff; font-weight: 600; }
+  .mb-step-key-star { flex-shrink: 0; }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
      directly beside the Bridge icon rather than off in a corner - per live
@@ -1444,8 +1516,28 @@
 <body>
 
 <div id="page-title-row">
-  <h1>PiFinder on Stellarmate Control Center</h1>
-  <button id="night-mode-toggle" onclick="toggleNightMode()" title="Night mode - all text glowing red, easier on dark-adapted eyes">&#9789; Night mode</button>
+  <div id="cc-title-group">
+    <img id="cc-header-icon" src="/project_icon.png" alt="">
+    <h1>
+      <span id="cc-title-full">PiFinder on Stellarmate Control Center</span>
+      <span id="cc-title-short">Control Center</span>
+    </h1>
+    <span id="cc-hostname" title="This device's hostname - tells multiple open tabs/devices apart">
+      <svg id="cc-device-icon-pi" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+        <rect x="6" y="6" width="12" height="12" rx="1"/>
+        <line x1="9" y1="2" x2="9" y2="6"/><line x1="15" y1="2" x2="15" y2="6"/>
+        <line x1="9" y1="18" x2="9" y2="22"/><line x1="15" y1="18" x2="15" y2="22"/>
+        <line x1="2" y1="9" x2="6" y2="9"/><line x1="2" y1="15" x2="6" y2="15"/>
+        <line x1="18" y1="9" x2="22" y2="9"/><line x1="18" y1="15" x2="22" y2="15"/>
+      </svg>
+      <svg id="cc-device-icon-x86" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+        <rect x="2" y="4" width="20" height="13" rx="1.5"/>
+        <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      <span id="cc-hostname-text"></span>
+    </span>
+  </div>
+  <button id="night-mode-toggle" onclick="toggleNightMode()" title="Night mode - all text glowing red, easier on dark-adapted eyes"><span class="nm-icon">&#9789;</span><span class="nm-label"> Night mode</span></button>
 </div>
 
 <div id="conn-lost-banner" style="display:none;"></div>
@@ -1756,12 +1848,110 @@
 
       <div class="hgroup-divider"></div>
 
+      <!-- Moved here from "Simulation, Test and Power" (#267, 2026-09-05):
+           these mode cards + the readiness line depend on exactly the
+           setup state the checklist right below tracks - they belong next
+           to it, not mirrored in an unrelated tile. Wrapped so
+           setModeTileVisible() can hide this alongside the rest of the
+           Mode tile while an install/reinstall run is active (that hiding
+           previously came for free from living inside #mode-tile itself). -->
+      <div id="mb-mode-cards-block">
+        <div class="mode-tiles">
+          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
+            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
+            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
+          </div>
+          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
+            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
+          </div>
+        </div>
+        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
+      </div>
+
+      <div class="hgroup-divider"></div>
+
+      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
+        <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+        <span id="mb-details-chevron">&#9660; show</span>
+      </div>
+      <div id="mb-details" style="display:none;">
+        <div id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()" style="width:100%;">Setup (start profile, connect everything)</button>
+          <div style="color:#7fc97f;font-size:0.72rem;text-align:center;margin-top:0.3rem;">Runs steps 1&ndash;6 below in one click &mdash; or do them individually for more control.</div>
+        </div>
+        <div class="mb-checklist-divider"></div>
+        <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
+
+        <div class="mb-row mb-step-row mb-step-row-key" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+          <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+          <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+        </div>
+        <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
+        <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
+          <span id="wm-kstars-link-text" class="mb-step-widget"></span>
+          <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+        </div>
+
+        <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
+          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
+        </div>
+        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
+             Bridge, no mount here) - wrapper for the same reason as
+             #mb-operate-rows above. -->
+        <div id="mb-steps-4-6">
+        <div class="mb-row mb-step-row mb-step-row-key" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+          <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
+          <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+        </div>
+        <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+        <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+
+        <!-- Steps 1-4 above are all configuration facts (profile/driver/
+             mount-name selections) - they persist across reboots and stay
+             green regardless of whether anything is actually connected
+             right now. Only 5-6 below read live state (Ekos's own D-Bus
+             indiStatus, real CONNECTION properties) - found live (2026-08-05,
+             #133-adjacent): right after a cold reboot, before Setup was ever
+             clicked, 1-4 already showed done while nothing was connected,
+             easy to misread as "everything's fine". Badges make the
+             config-vs-live distinction explicit instead of six visually
+             identical checkmarks. -->
+        <div class="mb-checklist-divider"></div>
+        <div class="group-label">Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
+
+        <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos:</span></span>
+          <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
+        </div>
+        <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
+          <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+          <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+          <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+          <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+        </div>
+        </div>
+
+        <div id="mb-log" title="What this tile has been doing, in order."></div>
+      </div>
+
       <!-- #191/#217: own collapsible section, not squeezed into
            #mb-operate-rows above (direct feedback, 2026-08-10: pushed the
            Threshold field down, and this is a distinct enough feature to
            deserve its own "wie gewohnt" collapsible like Setup checklist
-           below, not another inline row). Positioned above Setup checklist
-           & diagnostics, same tier of collapsible section. -->
+           above). Positioned below Setup checklist & diagnostics (#266,
+           2026-09-05): checklist is the prerequisite/foundational step,
+           this is a subsequent, more advanced action. -->
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')">
         <span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
         <span id="mb-multialign-chevron">&#9660; show</span>
@@ -1814,76 +2004,6 @@
           <button class="ql-small-btn" id="mb-align-dir-w-btn" onclick="setAlignDirection('W')">W</button>
         </div>
       </div>
-
-      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
-        <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-        <span id="mb-details-chevron">&#9660; show</span>
-      </div>
-      <div id="mb-details" style="display:none;">
-        <div id="mb-setup-btn-row" title="Runs steps 1-4/6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
-          <button id="mb-setup-btn" class="mb-coupling-btn" onclick="onSetupButtonClick()" style="width:100%;">Setup (start profile, connect everything)</button>
-          <div style="color:#7fc97f;font-size:0.72rem;text-align:center;margin-top:0.3rem;">Runs steps 1&ndash;6 below in one click &mdash; or do them individually for more control.</div>
-        </div>
-        <div class="mb-checklist-divider"></div>
-        <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
-
-        <div class="mb-row mb-step-row" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
-          <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
-          <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
-        </div>
-        <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
-        <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
-          <span id="wm-kstars-link-text" class="mb-step-widget"></span>
-          <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
-        </div>
-
-        <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
-        </div>
-        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
-             Bridge, no mount here) - wrapper for the same reason as
-             #mb-operate-rows above. -->
-        <div id="mb-steps-4-6">
-        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-          <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
-          <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
-        </div>
-        <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
-        <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
-
-        <!-- Steps 1-4 above are all configuration facts (profile/driver/
-             mount-name selections) - they persist across reboots and stay
-             green regardless of whether anything is actually connected
-             right now. Only 5-6 below read live state (Ekos's own D-Bus
-             indiStatus, real CONNECTION properties) - found live (2026-08-05,
-             #133-adjacent): right after a cold reboot, before Setup was ever
-             clicked, 1-4 already showed done while nothing was connected,
-             easy to misread as "everything's fine". Badges make the
-             config-vs-live distinction explicit instead of six visually
-             identical checkmarks. -->
-        <div class="mb-checklist-divider"></div>
-        <div class="group-label">Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
-
-        <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos:</span></span>
-          <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
-        </div>
-        <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
-          <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
-          <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-          <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-        </div>
-        </div>
-
-        <div id="mb-log" title="What this tile has been doing, in order."></div>
-      </div>
       </div>
     </div>
     <div id="mode-tile">
@@ -1892,21 +2012,6 @@
           <span class="tile-chevron" id="mode-tile-chevron">&#9650;</span>
         </div>
         <div id="mode-tile-body">
-        <div class="mode-tiles">
-          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
-            <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
-          </div>
-          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span>Full Simulation (INDI/Mount Bridge)</div>
-            <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
-          </div>
-          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
-            <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
-          </div>
-        </div>
-        <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <div class="group-label">Synthetic Solve<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help">i</a></div>
         <!-- Radically simplified 2026-08-10 (direct feedback: "Das ist
              alles viel zu kompliziert!!! Was der Nutzer will: EINEN (!!!)
@@ -2252,6 +2357,12 @@ function setStatus(text, cls) {
 // see pollLog()'s data.running branch.
 function setModeTileVisible(visible) {
   document.getElementById('mode-tile').style.display = visible ? '' : 'none';
+  // #267: mode cards + readiness line now live in the Mount Bridge tile,
+  // not inside #mode-tile itself - hide them the same way while an
+  // install/reinstall run is active, or Full Simulation/Fake Mode could be
+  // toggled mid-run.
+  const modeCardsBlock = document.getElementById('mb-mode-cards-block');
+  if (modeCardsBlock) modeCardsBlock.style.display = visible ? '' : 'none';
 }
 
 function updateProgress(phaseIndex, phaseTotal, phaseLabel) {
@@ -4194,6 +4305,14 @@ async function init() {
   if (data.setup_script_path) {
     document.getElementById('subtitle').textContent = data.setup_script_path + ' — live status';
   }
+  // #268: hostname + device-type icon in the sticky header - a fixed fact
+  // about this instance, so populated once here rather than every poll.
+  if (data.hostname) {
+    document.getElementById('cc-hostname-text').textContent = data.hostname;
+  }
+  const isPiDevice = (data.device_type || '').startsWith('pi');
+  document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
+  document.getElementById('cc-device-icon-x86').style.display = isPiDevice ? 'none' : '';
   knownIps = data.ips || [];
   existingInstallKnown = data.existing_install;
   renderRemoteLinks(data.ips, data.port);
@@ -6723,7 +6842,7 @@ function updateSimReadinessLine() {
   const allReady = items.every(([, ok]) => ok);
   el.innerHTML = items.map(([label, ok]) =>
     `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
-  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist below');
+  ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist in the Mount Bridge tile');
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -

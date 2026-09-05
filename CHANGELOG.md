@@ -7,6 +7,22 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Setup checklist: Profile (1) and Mount (4) steps visually emphasized (#267)**: the two most
+  important steps to get right first for a working Mount-Bridge setup now get a subtle box/border
+  and a star icon, distinguishing them from the rest of the checklist. Deliberately doesn't
+  override the label's own done/busy color logic - those (more specific) states still win once a
+  step actually completes or runs.
+
+- **Sticky, hostname-aware page header (#268)**: `#page-title-row` is now `position: sticky` -
+  always visible while scrolling the tiles below, instead of scrolling away with the rest of the
+  page. Shows the current device's hostname next to the title (new `hostname` field on `/state`,
+  `socket.gethostname()`), with a small device-type icon (Pi chip vs. monitor for x86/VM, from a
+  new `device_type` field classified the same way as `bin/functions.sh`'s `get_hw_model()`) - lets
+  multiple open tabs/devices be told apart at a glance instead of only by the browser tab's IP
+  suffix. On narrow (phone) widths the title shortens to "Control Center" (a small icon, cropped
+  from the existing wordmark logo, stands in for the "PiFinder on Stellarmate" prefix) and the
+  Night Mode button drops its text label (icon-only, still a >=44px tap target) so the whole bar
+  stays a single compact line instead of wrapping and eating vertical space.
 - **PiFinder Simulator: mount-following (`FOLLOW_MOUNT_DEVICE`)**
   ([#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)): a new text property on the
   "PiFinder Simulator" INDI device - set it to a mount's device name and the simulator's position
@@ -243,6 +259,19 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- **Mode cards + readiness line moved into the Mount Bridge tile, between Role and Setup checklist
+  (#267)**: previously mirrored in the unrelated "Simulation, Test and Power" tile "so a user never
+  has to open the other card" - direct feedback that they actually belong right next to the Setup
+  checklist they depend on and report on, not duplicated elsewhere. `setModeTileVisible()` now also
+  hides this relocated block while an install/reinstall run is active (previously came for free
+  from living inside the Mode tile itself) so Full Simulation/Fake Mode can't be toggled mid-run.
+  The "Simulation, Test and Power" tile keeps everything else (Synthetic Solve, Advanced seed,
+  legacy test tools, Hardware test and details).
+
+- **Mount Bridge tile: Multi-Point Alignment moved below Setup checklist & diagnostics (#266)**:
+  pure reordering - checklist is the prerequisite/foundational step, alignment is a subsequent,
+  more advanced action that only makes sense once setup is confirmed working. No content changed.
+
 - Timeout values used for the various background INDI polls (`gui_installer/indi_client.py`) are
   now named tiers (`TIMEOUT_BACKGROUND_POLL`, `TIMEOUT_FAST_POLL`, `TIMEOUT_QUICK_RETRY`, ...)
   instead of bare literals scattered across `server.py`/`indi_client.py` - no behavior change, just
@@ -271,6 +300,13 @@ All notable changes to this project are documented in this file. Format loosely 
   earlier same-session `shared_state` bounded-timeout fix (a `ThreadPoolExecutor`) is replaced by
   a per-call ephemeral thread - a shared, size-tuned pool would have been its own new capacity
   risk once every client already has its own thread.
+- **Status dots turn egg-shaped ("Ostereier") on window resize**: `.status-dot` had no
+  `flex-shrink: 0` - inside a tight flex row (e.g. the mode cards' icon+label, a long label like
+  "PiFinder-only Fake Mode (legacy)" competing for space as the window narrows) the flex algorithm
+  could shrink the dot's width while its fixed height (0.6rem) stayed put, deforming the circle
+  into an oval. Found live resizing the browser window right after moving the mode cards into the
+  Mount Bridge tile (#267) - pre-existing on every other `.status-dot` use on the page too, just
+  not previously narrow enough to trigger it visibly.
 - **`/etc/group`/`/etc/passwd` missing trailing newline silently breaks `spi`/`gpio` group
   creation, PiFinder never starts**: a missing trailing newline on either file's last line makes
   shadow-utils misreport `groupadd`/`usermod` failures as "Non-text file" / "cannot open ...:
