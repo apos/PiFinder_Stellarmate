@@ -305,6 +305,19 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`test_tools/pifinder_truth_injector.py`: silently stopped reactivating `fake_solve_active` after
+  a PiFinder restart**: hardcoded to PiFinder's historical default port 8080, but PiFinder's own web
+  server prefers port 80 and only falls back to 8080 if 80 is taken - every POST during the affected
+  session went to a closed port and failed outright, with no automatic retry on a different port.
+  Compounded by a second, independent issue found live on the Pi5 (2026-09-06): the script's
+  `--pifinder-host` default of `"localhost"` can resolve to `::1` first, where StellarMate's own
+  nginx also listens on port 80 - a request there gets a connection reset from the wrong service
+  instead of a clean refusal from PiFinder (which only ever binds IPv4). Fixed by auto-detecting the
+  right port via an `/api/status` probe (mirroring `gui_installer/server.py`'s
+  `_pifinder_status_snapshot()` and `status_page.html`'s `piFinderProbeUrls()`, including their same
+  `127.0.0.1` host choice), re-probing automatically whenever the current port stops answering, and
+  verifying each injection by reading `fake_solve_active` back afterward instead of trusting an HTTP
+  200 alone.
 - **Mount Bridge: `MaxSyncDriftN` sanity cap only checked mount-vs-PiFinder disagreement, never
   PiFinder-vs-held-target disagreement** ([#282](https://github.com/apos/PiFinder_Stellarmate/issues/282),
   HIGH PRIORITY/SAFETY): mount and PiFinder can honestly agree with each other while both are
