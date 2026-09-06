@@ -27,7 +27,9 @@ All notable changes to this project are documented in this file. Format loosely 
   `PiFinderBridgeClient::sendPiFinderCoords()`, via `ON_COORD_SET`/`EQUATORIAL_EOD_COORD` on
   "PiFinder LX200" - exactly like an external LX200 client's push-to), closing that gap. The mount
   side is deliberately left to the existing automatic `HOLDING` correction rather than duplicated
-  here.
+  here. Also wired into the Control Center's own Mount Bridge panel
+  (`/api/mount_bridge_align_held`, next to "Goto Held Target") - shipped driver-only at first, GUI
+  wiring followed once the button's usage surface was actually exercised.
 - **Setup checklist: Profile (1) and Mount (4) steps visually emphasized (#267)**: the two most
   important steps to get right first for a working Mount-Bridge setup now get a subtle box/border
   and a star icon, distinguishing them from the rest of the checklist. Deliberately doesn't

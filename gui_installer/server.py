@@ -3791,6 +3791,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_held":
+            # Manual, immediate one-shot: sends the held ORIGINAL_TARGET to
+            # PiFinder itself (see trigger_align_held()'s own docstring) -
+            # unlike goto_held above, this corrects PiFinder's own belief
+            # about "what am I pushed-to" rather than the mount, so a later
+            # Mount Bridge restart doesn't re-read PiFinder's still-wrong
+            # target as its recovery baseline and slew the mount right back.
+            _mb_log("sending held target to PiFinder...")
+            try:
+                indi_client.trigger_align_held()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_abort":
             # Emergency stop - see #179. Two steps, in this order:
             # 1. ABORT_MOUNT stops the mount's *current* physical motion
