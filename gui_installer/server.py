@@ -2866,11 +2866,25 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/hardware_status":
+            # gps deliberately does NOT use _gps_hardware_present() here (a
+            # direct gpsd query for physical serial/USB GPS hardware) unlike
+            # camera/imu above - PFSM devices normally have no physical GPS
+            # chip at all and get their location from StellarMate/KStars
+            # instead (see _gps_status_snapshot()'s own docstring: "don't
+            # reimplement what PiFinder already does"). Using the physical
+            # check here made this passive ~20s poll flip the Control
+            # Center's GPS row to a misleading "not detected" on every page
+            # load - even while PiFinder itself, fed via the KStars bridge,
+            # was reporting a real lock - until the user clicked "Test
+            # Hardware" by hand to get the correct, PiFinder-sourced result
+            # (found live 2026-09-06). Reusing _gps_status_snapshot() here
+            # makes the passive poll and the Test Hardware button agree
+            # always, not just after an explicit click.
             self._send_json(
                 {
                     "camera": _camera_hardware_present(),
                     "imu": _imu_hardware_present(),
-                    "gps": _gps_hardware_present(),
+                    "gps": _gps_status_snapshot(lambda *_a: None),
                 }
             )
             return
