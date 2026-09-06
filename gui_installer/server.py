@@ -3315,14 +3315,14 @@ class Handler(BaseHTTPRequestHandler):
             valid = (
                 profile
                 and (
-                    (driver in ("lx200", "bridge") and action in ("add", "remove"))
+                    (driver in ("lx200", "bridge", "simulator") and action in ("add", "remove"))
                     or (driver == "lx200" and action == "add_remote")
                 )
             )
             if not valid:
                 self._send_json(
                     {"success": False,
-                     "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"
+                     "error": "expected ?profile=<name>&driver=lx200|bridge|simulator&action=add|remove"
                               " (or driver=lx200&action=add_remote&remote=<host[:port]>)"},
                     status=400,
                 )
@@ -3345,9 +3345,12 @@ class Handler(BaseHTTPRequestHandler):
                 lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
                 def setter(prof, _present):
                     webmanager_client.set_pifinder_lx200_state(prof, lx200_state, remote=remote_spec)
-            else:
+            elif driver == "bridge":
                 setter = webmanager_client.set_pifinder_bridge
-            driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
+            else:
+                setter = webmanager_client.set_pifinder_simulator
+            driver_label = {"lx200": "PiFinder LX200", "bridge": "PiFinder Mount Bridge",
+                             "simulator": "PiFinder Simulator"}[driver]
             if action == "add_remote":
                 driver_label = f"PiFinder LX200 (remote {remote_spec})"
 
