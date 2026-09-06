@@ -914,6 +914,21 @@ def trigger_goto_held(
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_GOTO_HELD", host, port, timeout)
 
 
+def trigger_align_held(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: sends the held ORIGINAL_TARGET to PiFinder itself
+    (MANUAL_TRIGGER's TRIGGER_ALIGN_HELD element, via
+    PiFinderBridgeClient::sendPiFinderCoords()) - unlike trigger_goto_held
+    above, this corrects PiFinder's own belief about "what am I pushed-to"
+    rather than the mount, closing the gap where a later Mount Bridge
+    restart would otherwise re-read PiFinder's still-wrong target as its
+    recovery baseline and slew the mount right back to it."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_ALIGN_HELD", host, port, timeout)
+
+
 # 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
 # still-not-root-caused "process alive but unresponsive to any INDI query"
 # hang (#238) - live-verified by hand many times this same session
