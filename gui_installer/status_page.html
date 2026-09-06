@@ -8,6 +8,7 @@
   body {
     background: #111;
     color: #ddd;
+    color-scheme: dark;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     padding: 1.5rem;
@@ -16,6 +17,23 @@
   @media (max-width: 767px) {
     body { padding: 0.8rem; }
   }
+  /* Dropdowns (2026-09-06, direct feedback): with no explicit styling these
+     fall back to a light native control, jarring against everything else on
+     the page - dark background/white text everywhere, matching the small
+     inputs/buttons around them. color-scheme: dark above already asks the
+     browser for a dark native popup list where it respects that hint; this
+     covers the closed control's own box for browsers that don't. */
+  select {
+    background: #2a2a2a;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 5px;
+    padding: 0.2rem 0.4rem;
+    font-family: inherit;
+    font-size: inherit;
+  }
+  select:disabled { background: #1a1a1a; color: #666; border-color: #333; }
+  select option { background: #2a2a2a; color: #ddd; }
   /* Grid layout (2026-08-09, direct feedback): PiFinder + Mode/Test/Power
      stack in one column, Mount Bridge stands alone in the other (it's the
      tile that most benefits from extra vertical room - the diagram/status/
@@ -706,6 +724,13 @@
   .ql-small-btn-yellow { border-color: #f5a623; background: #3a2f10; color: #f5a623; animation: mb-status-pulse 1.1s ease-in-out infinite; }
   .ql-small-btn-green { border-color: #4caf50; background: #1c2a1c; color: #4caf50; }
   .ql-small-btn-red { border-color: #e53935; background: #3a1414; color: #ff8a80; }
+  /* Distinct from -yellow (in-flight) and -red (hard failure elsewhere) -
+     this one specifically means "the last link/unlink attempt failed",
+     same amber used for a warning/incomplete state throughout this page
+     (e.g. the readiness checklist's own #e0a030). Replaces the star-icon
+     Mount-step highlight (2026-09-06, direct feedback: "es reicht, wenn
+     der Button bei einem Fehler orange ist"). */
+  .ql-small-btn-orange { border-color: #e0a030; background: #3a2f10; color: #e0a030; }
   /* Browsers only let one window.open() through per click by default and
      silently block the rest (2026-08-09, found live: "Open all links" only
      ever opened the first tab, PiFinder Remote) - openAllQuickLinks() below
@@ -1917,7 +1942,7 @@
              #mb-operate-rows above. -->
         <div id="mb-steps-4-6">
         <div class="mb-row mb-step-row mb-step-row-key" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
           <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
           <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
         </div>
@@ -6566,8 +6591,20 @@ async function setWmActiveDevices() {
     const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
     const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
     const data = await resp.json();
-    btn.textContent = data.success ? (unlinking ? 'Unlinked ✓' : (switching ? 'Switched ✓' : 'Linked ✓')) : (data.error || 'failed');
+    if (data.success) {
+      btn.classList.remove('ql-small-btn-orange');
+      btn.textContent = unlinking ? 'Unlinked ✓' : (switching ? 'Switched ✓' : 'Linked ✓');
+    } else {
+      // Stays orange even after refreshWmActiveButton() below resyncs the
+      // text/mb-btn-active state - it doesn't touch this class, so the
+      // error stays visible until the next attempt actually succeeds
+      // (2026-09-06, direct feedback - replaces the old star-icon
+      // highlight on the Mount step with a plain color signal here instead).
+      btn.classList.add('ql-small-btn-orange');
+      btn.textContent = data.error || 'failed';
+    }
   } catch (e) {
+    btn.classList.add('ql-small-btn-orange');
     btn.textContent = 'failed';
   }
   pollMbLog();
