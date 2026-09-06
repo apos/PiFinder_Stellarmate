@@ -6095,11 +6095,24 @@ async function startAutoconnect(mode) {
     autoconnectMode = null;
     return;
   }
-  setAutoconnectStatus('Autoconnect: starting profile and adding drivers…');
-  if (!wmServerRunning) await toggleWmServer();
+  // Drivers added BEFORE starting the server, on purpose (2026-09-06,
+  // direct feedback + live-observed: "Ekos profile started, then indiserver
+  // stopped"): /api/webmanager/pifinder_drivers stops+restarts indiserver
+  // itself whenever a driver is added while the profile is already
+  // running (needed so the change actually takes effect - indiserver only
+  // reads the driver list at its own startup). Starting the server first
+  // meant every one of the three driver-add calls below triggered its own
+  // full stop/restart cycle back to back, and if Ekos's own start() landed
+  // on one of the short-lived intermediate instances, the very next
+  // restart yanked it out from under Ekos a few seconds later. Adding to
+  // the still-stopped profile costs nothing (no restart needed when
+  // nothing's running yet) and leaves exactly one clean start for Ekos to
+  // connect to.
+  setAutoconnectStatus('Autoconnect: adding drivers…');
   if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
   if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
   if (wmHasSimulator === false) await ensureSimulatorDriver();
+  if (!wmServerRunning) await toggleWmServer();
 
   // user clicked a different preset meanwhile, or this run's own
   // waitForCondition() below already gave up - let that one own it now
