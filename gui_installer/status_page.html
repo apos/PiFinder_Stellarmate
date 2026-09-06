@@ -6066,6 +6066,7 @@ async function startAutoconnect(mode) {
   if (!wmServerRunning) await toggleWmServer();
   if (wmHasLx200 === false) await toggleWmDriver('lx200', 'wm-lx200-btn');
   if (wmHasBridge === false) await toggleWmDriver('bridge', 'wm-bridge-btn');
+  if (wmHasSimulator === false) await ensureSimulatorDriver();
 
   // user clicked a different preset meanwhile, or this run's own
   // waitForCondition() below already gave up - let that one own it now
@@ -6073,7 +6074,7 @@ async function startAutoconnect(mode) {
 
   if (!wmActiveMount) {
     setAutoconnectStatus('⏳ Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
-    waitForCondition(mode, generation, () => !!wmActiveMount, () => proceedPastMountLink(mode, generation));
+    waitForCondition(mode, generation, () => !!wmActiveMount, () => proceedPastMountLink(mode, generation), refreshMountBridgeStatus);
     return;
   }
   proceedPastMountLink(mode, generation);
@@ -6104,7 +6105,7 @@ async function proceedPastMountLink(mode, generation) {
     if (!started) {
       setAutoconnectStatus('⏳ Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
     }
-    waitForCondition(mode, generation, () => wmEkosConnected === true, () => finishAutoconnect(mode, generation));
+    waitForCondition(mode, generation, () => wmEkosConnected === true, () => finishAutoconnect(mode, generation), checkEkosStatus);
     return;
   }
   finishAutoconnect(mode, generation);
@@ -6121,15 +6122,28 @@ async function proceedPastMountLink(mode, generation) {
 // string every run, so `autoconnectMode !== mode` alone can't tell a
 // long-abandoned run from the current one - see autoconnectGeneration's
 // own comment for the failure this caused.
-function waitForCondition(mode, generation, isDone, onDone) {
-  const pollId = setInterval(() => {
+//
+// `refresh` (2026-09-06, direct feedback - the "Setup needs two clicks"
+// bug): both wmEkosConnected and wmActiveMount are otherwise only kept
+// current by their own slow, passive 20s background polls
+// (checkEkosStatus()/refreshMountBridgeStatus()). Verified live that the
+// underlying D-Bus start actually succeeds within ~1s - the two-click
+// experience was purely this loop reading a stale variable for up to 19
+// more seconds until that background timer happened to tick, which a
+// second click "fixed" only by accident (whatever time had passed by
+// then). This loop now actively re-fetches on every 1.5s tick instead of
+// waiting on that timer, so the real state is what gets checked.
+function waitForCondition(mode, generation, isDone, onDone, refresh) {
+  const pollId = setInterval(async () => {
     if (autoconnectMode !== mode || autoconnectGeneration !== generation) {
       clearInterval(pollId);
       return;
     }
+    if (refresh) await refresh();
     if (isDone()) {
       clearInterval(pollId);
       onDone();
+      return;
     }
   }, 1500);
 }
@@ -6166,6 +6180,10 @@ let wmHasLx200 = null;
 // wmHasLx200 alone can't tell the two apart.
 let wmLx200Remote = null;
 let wmHasBridge = null;
+// No dedicated checklist button for this one (unlike lx200/bridge) - only
+// consulted by startAutoconnect()/ensureSimulatorDriver() to make sure Full
+// Simulation testing has its independent PiFinder-side truth device.
+let wmHasSimulator = null;
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
 let wmLastRunning = false;
@@ -6917,11 +6935,36 @@ async function refreshWmDriverButtons() {
     wmLx200Remote = data.lx200_remote || null;
     setWmDriverButton('lx200', data.has_lx200);
     setWmDriverButton('bridge', data.has_bridge);
+    wmHasSimulator = data.has_simulator;
   } catch (e) {
     wmLx200Remote = null;
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
+    wmHasSimulator = null;
   }
+}
+
+async function ensureSimulatorDriver() {
+  // "Full Simulation" needs an independent PiFinder Simulator device in the
+  // profile (see TRUTH_INJECTOR_DEFAULT_DEVICE's own comment in server.py) -
+  // Setup didn't add it automatically before, which silently left any later
+  // Full Simulation attempt with nothing to inject a truth from (direct
+  // feedback, 2026-09-06). No dedicated button for this exists in the
+  // checklist, unlike lx200/bridge, so this is a plain POST rather than
+  // reusing toggleWmDriver() (which expects a real button to update).
+  setMbActionStatus('⏳ Adding PiFinder Simulator driver…');
+  try {
+    const resp = await fetch(`/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=simulator&action=add`, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - refreshWmDriverButtons() below reflects whatever
+    // actually happened, same pattern as toggleWmDriver().
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
 }
 
 async function toggleWmDriver(driver, clickedBtnId) {

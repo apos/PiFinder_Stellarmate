@@ -257,6 +257,15 @@ def set_pifinder_bridge(
     _set_driver_membership(profile, PIFINDER_BRIDGE_LABEL, present, host, port, timeout)
 
 
+def set_pifinder_simulator(
+    profile: str, present: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> None:
+    """Adds/removes only 'PiFinder Simulator' - every other driver in the profile is left untouched.
+    See TRUTH_INJECTOR_DEFAULT_DEVICE's own comment in server.py for why Full Simulation testing
+    needs this device present (an independent PiFinder-side truth, not the mount)."""
+    _set_driver_membership(profile, PIFINDER_SIMULATOR_LABEL, present, host, port, timeout)
+
+
 def server_status(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """{"running": bool, "active_profile": str}."""
     result = _request("GET", "/api/server/status", host, port, timeout) or []
@@ -289,6 +298,10 @@ def pifinder_driver_status(
     - lx200_remote: "host:port" if it's a remote entry, None if local/absent
       (labels alone can't tell - see get_remote_drivers())
     - has_bridge: PiFinder Mount Bridge in the profile (always local)
+    - has_simulator: PiFinder Simulator in the profile (always local) - the
+      independent PiFinder-side truth device Full Simulation testing needs,
+      not the mount (see other_profile_drivers()'s own comment on why it's
+      excluded there)
     """
     labels = get_profile_labels(profile, host, port, timeout)
     remote_specs = get_remote_drivers(profile, host, port, timeout)
@@ -299,6 +312,7 @@ def pifinder_driver_status(
         "has_lx200": PIFINDER_LX200_LABEL in labels or lx200_remote is not None,
         "lx200_remote": lx200_remote,
         "has_bridge": PIFINDER_BRIDGE_LABEL in labels,
+        "has_simulator": PIFINDER_SIMULATOR_LABEL in labels,
     }
 
 
