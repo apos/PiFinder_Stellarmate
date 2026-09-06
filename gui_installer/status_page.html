@@ -1296,7 +1296,13 @@
   }
   #mb-decouple-btn:hover { background: #2a2a2a; color: #fff; }
   #mb-decouple-btn:disabled { opacity: 0.5; cursor: default; }
-  #mb-threshold-manual-row { display: flex; align-items: center; gap: 1rem; }
+  #mb-threshold-manual-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  /* Autoconnect status text (2026-09-06, direct feedback: used to sit on
+     its own line between the Coupling and big-action button rows, which
+     read as oddly wedged between two unrelated things) - lives here now,
+     next to Threshold/Decouple, since it's driven by the same Coupling
+     row above (clicking a preset or Setup INDI can both trigger it). */
+  #mb-autoconnect-status { flex: 1 1 auto; min-width: 12rem; }
   #mb-threshold-manual-sep { width: 1px; height: 1rem; background: #333; }
   /* Shared collapsible-section header, reused wherever a tile has a
      "matters every time" part and a "one-time setup / rarely touched"
@@ -1755,14 +1761,16 @@
           <span id="mb-node-mount-name">Mount</span>
         </div>
       </div>
-      <div id="mb-mode-caption-row">
-        <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
-        <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+      <div id="mb-caption-status-row" style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">
+        <div id="mb-mode-caption-row">
+          <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
+          <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+        </div>
+        <div id="mb-status-row">
+          <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
+        </div>
       </div>
       <div id="mb-mode-details" style="display:none;"></div>
-      <div id="mb-status-row">
-        <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
-      </div>
       <div id="mb-reject-warning-details" style="display:none;"><span id="mb-reject-warning-text"></span></div>
       </div>
     <div id="mount-bridge-tile">
@@ -1785,21 +1793,20 @@
       <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
         <div id="mb-coupling-groups">
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
+            <div class="group-label mb-coupling-label"><span>Coupling Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
               <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
             </div>
           </div>
           <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>GoTo</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
+            <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
             <div class="mb-coupling-group-buttons">
               <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
             </div>
           </div>
         </div>
       </div>
-      <div id="mb-autoconnect-status" class="mb-hint" style="display:none;"></div>
       <!-- Big, equal-weight action row (2026-08-09, direct feedback): Sync
            and Stop are frequent, important, mode-independent actions - they
            don't belong squeezed in as small text-labelled buttons next to
@@ -1818,6 +1825,7 @@
         </span>
         <span id="mb-threshold-manual-sep"></span>
         <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
+        <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -6073,7 +6081,7 @@ async function startAutoconnect(mode) {
   if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
 
   if (!wmActiveMount) {
-    setAutoconnectStatus('⏳ Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
+    setAutoconnectStatus('Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
     waitForCondition(mode, generation, () => !!wmActiveMount, () => proceedPastMountLink(mode, generation), refreshMountBridgeStatus);
     return;
   }
@@ -6092,7 +6100,7 @@ async function proceedPastMountLink(mode, generation) {
   // original manual instructions if that's not possible for any reason
   // (KStars not running, profile name mismatch, D-Bus unreachable, ...).
   if (wmEkosConnected !== true) {
-    setAutoconnectStatus('⏳ Autoconnect: starting the Ekos profile…');
+    setAutoconnectStatus('Autoconnect: starting the Ekos profile…');
     let started = false;
     try {
       const resp = await fetch(`/api/ekos_start_profile?profile=${encodeURIComponent(wmSelectedProfile)}`, { method: 'POST' });
@@ -6103,7 +6111,7 @@ async function proceedPastMountLink(mode, generation) {
     }
     if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
     if (!started) {
-      setAutoconnectStatus('⏳ Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
+      setAutoconnectStatus('Autoconnect: in KStars\' Ekos, start the profile and click "Connect" under Connect & Disconnect Devices - this continues on its own once that\'s done.');
     }
     waitForCondition(mode, generation, () => wmEkosConnected === true, () => finishAutoconnect(mode, generation), checkEkosStatus);
     return;
