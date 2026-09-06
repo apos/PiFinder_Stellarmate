@@ -1761,6 +1761,12 @@ void PiFinderMountBridge::handleGotoForward()
                     LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - resuming normal holding.");
                     m_forwardState = ForwardState::HOLDING;
                 }
+                // Same reasoning as HOLDING's own freshness gate below - don't
+                // leave DriftStatusNP silently at whatever it last was (e.g. a
+                // BUSY left over from the SLEWING state just before this) while
+                // arrival still can't be verified.
+                DriftStatusNP.s = IPS_IDLE;
+                IDSetNumber(&DriftStatusNP, nullptr);
                 break;
             }
 
@@ -1935,7 +1941,22 @@ void PiFinderMountBridge::handleGotoForward()
                 httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
                 httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
             if (!haveFreshCamPosition)
+            {
+                // Found live 2026-09-06: this used to just break here, leaving
+                // DriftStatusNP at whatever it last was (e.g. IPS_OK, drift
+                // 0.0') - once PiFinder's own solve feed stopped updating (see
+                // test_tools/pifinder_truth_injector.py's port-detection bug,
+                // basic-memory pifinder-stellarmate/00089 sec. 8), the GUI kept
+                // showing "Holding target - drift 0.0' within 5'" indefinitely,
+                // looking converged when nothing had been verified in minutes.
+                // IPS_IDLE is otherwise unused for DriftStatusNP here (OK/ALERT
+                // are a verified reading, BUSY an in-flight correction) -
+                // republished every tick while stale so it's never left
+                // silently unpublished, same as every other state below.
+                DriftStatusNP.s = IPS_IDLE;
+                IDSetNumber(&DriftStatusNP, nullptr);
                 break;
+            }
 
             double mountRA, mountDec;
             if (!m_client->getMountRADE(mountRA, mountDec))
