@@ -1002,6 +1002,10 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
                 m_lastForwardedRA = piRA;
                 m_lastForwardedDec = piDec;
                 setOriginalTarget(piRA, piDec); // same reasoning as Fall-2 above - best available baseline
+                // Low-value (PiFinder is already at piRA/piDec - this is its
+                // own reported position), kept for consistency with the two
+                // sites below - see docs/concepts/mount_bridge_reposition_notifies_pifinder.md UC3.
+                notifyPiFinderOfReposition(piRA, piDec);
             }
             // Diagnostic instrumentation added live (2026-09-03) chasing a
             // recurrence of the mount landing at/near RA0/Dec0 via exactly
@@ -1042,15 +1046,16 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     // --- Fall 2: mount moved without either of our own state machines having commanded it. ---
     const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING;
 
-    // Onset detection: compare the mount's own position against the last
-    // tick's, rather than watching isMountSlewing() (see m_lastPolledMountRA's
-    // own comment in the header - a real external move can complete without
-    // ever reporting IPS_BUSY at all). Skipped while we already know about
-    // an in-progress external move (avoids re-triggering the log/settle
-    // countdown every tick while it's still settling) and while we
-    // commanded the current motion ourselves (that's a real, large,
-    // expected delta - not Fall 2).
-    if (!std::isnan(m_lastPolledMountRA) && !weCommandedIt && !m_externalSlewInProgress)
+    // Onset/still-moving detection: compare the mount's own position against
+    // the last tick's, rather than watching isMountSlewing() (see
+    // m_lastPolledMountRA's own comment in the header - a real external move
+    // can complete without ever reporting IPS_BUSY at all). Skipped while we
+    // commanded the current motion ourselves (that's a real, large, expected
+    // delta - not Fall 2) - but, unlike before, NOT skipped just because
+    // m_externalSlewInProgress is already true, so a still-moving mount can
+    // be recognized as such throughout the whole settle window, not just at
+    // its very first tick.
+    if (!std::isnan(m_lastPolledMountRA) && !weCommandedIt)
     {
         const double mountDeltaArcmin =
             angularSeparationArcmin(mountRA, mountDec, m_lastPolledMountRA, m_lastPolledMountDec);
@@ -1059,12 +1064,33 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
 
         if (mountDeltaArcmin > maxPlausiblePassiveDrift)
         {
-            LOGF_INFO("Mount moved %.1f arcmin since the last check (~%.0fs ago, more than the %.1f' passive sky "
-                      "motion could plausibly produce) without a command from Mount Bridge itself - external "
-                      "control detected (hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will "
-                      "adopt the new position once settled and confirmed by a fresh PiFinder solve.",
-                      mountDeltaArcmin, elapsedSec, maxPlausiblePassiveDrift);
-            m_externalSlewInProgress = true;
+            if (!m_externalSlewInProgress)
+            {
+                LOGF_INFO("Mount moved %.1f arcmin since the last check (~%.0fs ago, more than the %.1f' passive sky "
+                          "motion could plausibly produce) without a command from Mount Bridge itself - external "
+                          "control detected (hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will "
+                          "adopt the new position once settled and confirmed by a fresh PiFinder solve.",
+                          mountDeltaArcmin, elapsedSec, maxPlausiblePassiveDrift);
+                m_externalSlewInProgress = true;
+            }
+            else
+            {
+                // Found live (2026-09-07): a fixed SETTLE_TICKS countdown
+                // alone doesn't verify the mount actually STOPPED - it just
+                // waits N ticks and then trusts it's done. Any slew slower
+                // than SETTLE_TICKS * the polling period (true for most real
+                // GoTos of any real distance) let this adopt an intermediate,
+                // still-in-flight position as if it were final, once per
+                // settle window, repeatedly - each one visible externally
+                // once notifyPiFinderOfReposition() started pushing it to
+                // PiFinder (see docs/concepts/mount_bridge_reposition_notifies_pifinder.md).
+                // Restarting the countdown here instead means it only
+                // reaches zero after SETTLE_TICKS CONSECUTIVE ticks with no
+                // further motion - a real "has it actually stopped" check,
+                // not just elapsed time.
+                LOGF_DEBUG("Mount still moving mid-slew (%.1f arcmin since last check) - resetting the settle wait.",
+                           mountDeltaArcmin);
+            }
             m_externalSettleTicksRemaining = SETTLE_TICKS;
         }
     }
@@ -1088,6 +1114,7 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         m_correctTargetRA = piRA;
         m_correctTargetDec = piDec;
         setOriginalTarget(piRA, piDec); // genuinely new target - a confirmed external reposition
+        notifyPiFinderOfReposition(piRA, piDec);
         m_lastConfirmedGoodTime = time(nullptr);
         m_forwardState = ForwardState::HOLDING;
         m_correctState = CorrectState::IDLE;
@@ -1579,6 +1606,47 @@ bool PiFinderMountBridge::syncMountToPiFinderPosition()
     return true;
 }
 
+bool PiFinderMountBridge::consumeGenuinePiFinderTargetPending(double targetRA, double targetDec)
+{
+    if (!m_client->consumePiFinderTargetPending())
+        return false;
+
+    if (!std::isnan(m_lastNotifiedPiFinderRA) && !std::isnan(m_lastNotifiedPiFinderDec) &&
+        angularSeparationArcmin(targetRA, targetDec, m_lastNotifiedPiFinderRA, m_lastNotifiedPiFinderDec) <
+            ECHO_MATCH_THRESHOLD_ARCMIN)
+    {
+        // Our own echo (see m_lastNotifiedPiFinderRA/Dec's header comment) -
+        // not a genuine new push-to from a human or another client. Clear it
+        // so it only suppresses this one expected event, not any later
+        // genuinely new push-to that happens to land on the same
+        // coordinates.
+        LOGF_DEBUG("PiFinder target-changed event matches what Mount Bridge itself just pushed "
+                   "(RA %.4fh, DEC %.4f deg) - echo, not a genuine new push-to, ignoring.",
+                   targetRA, targetDec);
+        m_lastNotifiedPiFinderRA = std::nan("");
+        m_lastNotifiedPiFinderDec = std::nan("");
+        return false;
+    }
+
+    return true;
+}
+
+void PiFinderMountBridge::notifyPiFinderOfReposition(double ra, double dec)
+{
+    if (m_client->sendPiFinderCoords(ra, dec, "TRACK"))
+    {
+        m_lastNotifiedPiFinderRA = ra;
+        m_lastNotifiedPiFinderDec = dec;
+        LOGF_INFO("Confirmed external reposition (RA %.4fh, DEC %.4f deg) pushed to PiFinder itself.",
+                  ra, dec);
+    }
+    else
+    {
+        LOG_WARN("Failed to push confirmed external reposition to PiFinder - its own push-to display "
+                 "may now be stale until the next reposition or a manual 'Align to Held Target'.");
+    }
+}
+
 void PiFinderMountBridge::handleGotoForward()
 {
     keepPiFinderAwake();
@@ -1611,7 +1679,7 @@ void PiFinderMountBridge::handleGotoForward()
                 return;
             }
 
-            if (m_client->consumePiFinderTargetPending())
+            if (consumeGenuinePiFinderTargetPending(targetRA, targetDec))
                 m_forwardAwaitingSync = true;
 
             if (!m_forwardAwaitingSync)
@@ -1847,7 +1915,7 @@ void PiFinderMountBridge::handleGotoForward()
             // consumePiFinderTargetPending()'s header comment).
             if (hasTarget)
             {
-                if (m_client->consumePiFinderTargetPending())
+                if (consumeGenuinePiFinderTargetPending(targetRA, targetDec))
                     m_forwardAwaitingSync = true;
 
                 if (m_forwardAwaitingSync)
@@ -2788,6 +2856,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     m_correctTargetRA = piRA;
                     m_correctTargetDec = piDec;
                     setOriginalTarget(piRA, piDec); // genuinely new target - explicit user confirmation
+                    notifyPiFinderOfReposition(piRA, piDec);
                     m_forwardState = ForwardState::HOLDING;
                     m_correctState = CorrectState::IDLE;
                     m_lastConfirmedGoodTime = time(nullptr);
