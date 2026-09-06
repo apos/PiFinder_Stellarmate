@@ -320,6 +320,22 @@ All notable changes to this project are documented in this file. Format loosely 
   `127.0.0.1` host choice), re-probing automatically whenever the current port stops answering, and
   verifying each injection by reading `fake_solve_active` back afterward instead of trusting an HTTP
   200 alone.
+- **`test_tools/pifinder_truth_injector.py`: port auto-detect above could still lock onto nginx**:
+  it only checked for an HTTP 200 from `/api/status`, but StellarMate's own nginx answers every
+  unmatched path (including `/api/status`) with 200 + its dashboard's SPA HTML - on this UTM, where
+  nginx owns port 80 and PiFinder is actually on 8080, the probe kept reporting port 80 as PiFinder.
+  Found live via a real GoTo-Forward test: PiFinder LX200 stood still instead of following the
+  mount, nginx's access log showed continuous 404s on `/api/fake_solve`, PiFinder's own log showed
+  none. Fixed by also requiring the parsed JSON body to contain `fake_solve_active`, a key PiFinder's
+  `api_status()` always includes and nginx's HTML never would.
+- **Mount Bridge: Goto-Forward's drift readout silently froze instead of admitting it couldn't
+  verify**: `HOLDING`/`SETTLING`'s freshness check (`if (!haveFreshCamPosition) break;`) left
+  `DriftStatusNP` entirely unpublished whenever PiFinder's solve feed went stale, so the Control
+  Center kept showing the last real reading (e.g. "Holding target - drift 0.0' within 5'")
+  indefinitely - looking converged when nothing had actually been checked in minutes. Surfaced by
+  the truth-injector bug above. Fixed by publishing `IPS_IDLE` (otherwise unused on this property)
+  on every tick the check fails, and updating the GUI to render that as "Position unverified"
+  (amber) instead of falling through to its stale-number-driven "Holding target"/"exceeded" logic.
 - **Mount Bridge: `MaxSyncDriftN` sanity cap only checked mount-vs-PiFinder disagreement, never
   PiFinder-vs-held-target disagreement** ([#282](https://github.com/apos/PiFinder_Stellarmate/issues/282),
   HIGH PRIORITY/SAFETY): mount and PiFinder can honestly agree with each other while both are
