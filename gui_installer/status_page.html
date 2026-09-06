@@ -4511,17 +4511,19 @@ async function pollModeLog() {
 // the button has been clicked at least once). Once a row has a real
 // classified result, the passive 20s presence poll below stops overwriting
 // it with a bare "present"/"not detected" - except a hardware disappearing
-// entirely, which always wins immediately.
+// entirely, which always wins immediately. GPS is exempt from this whole
+// mechanism (see applyGpsRow()): both the passive poll and the Test
+// Hardware button now read the exact same PiFinder-sourced location dict
+// (server.py's _gps_status_snapshot()), so there's nothing "richer" to
+// protect and no risk of one overwriting the other with worse information.
 let lastHwTestResult = { camera: null, imu: null, gps: null };
 
 function setHwRow(key, present) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
-  if (key !== 'gps') {
-    const tested = lastHwTestResult[key];
-    if (tested && tested.status !== 'absent' && present !== false) {
-      return; // keep showing the richer, already-classified Test Hardware result
-    }
+  const tested = lastHwTestResult[key];
+  if (tested && tested.status !== 'absent' && present !== false) {
+    return; // keep showing the richer, already-classified Test Hardware result
   }
   if (present === true) {
     dotEl.className = 'status-dot dot-green';
@@ -4543,17 +4545,13 @@ async function refreshHardwareStatus() {
     const data = await resp.json();
     setHwRow('camera', data.camera);
     setHwRow('imu', data.imu);
-    if (!lastHwTestResult.gps) {
-      setHwRow('gps', data.gps);
-    }
+    applyGpsRow(data.gps);
     lastHwCamera = data.camera;
     lastHwImu = data.imu;
   } catch (e) {
     setHwRow('camera', null);
     setHwRow('imu', null);
-    if (!lastHwTestResult.gps) {
-      setHwRow('gps', null);
-    }
+    applyGpsRow(null);
     lastHwCamera = null;
     lastHwImu = null;
   }
@@ -6992,25 +6990,33 @@ function formatGpsDetail(location) {
   return parts.join(', ');
 }
 
-function applyHwTestResult(result) {
-  if (!result) return;
-  lastHwTestResult = result;
-  applyHwTestRow('camera', result.camera);
-  applyHwTestRow('imu', result.imu);
+// Shared by the Test Hardware button (applyHwTestResult) and the passive
+// ~20s poll (refreshHardwareStatus) - both now read the same PiFinder-
+// sourced location dict (server.py's _gps_status_snapshot()), so there's
+// exactly one GPS rendering path instead of two disagreeing ones.
+function applyGpsRow(location) {
   const gpsDot = document.getElementById('hw-gps-dot');
   const gpsText = document.getElementById('hw-gps-text');
   const gpsDetail = document.getElementById('hw-gps-detail');
-  if (result.gps && result.gps.lock) {
+  if (location && location.lock) {
     setHwDot(gpsDot, 'status-dot dot-green');
     gpsText.textContent = 'locked';
-  } else if (result.gps) {
+  } else if (location) {
     setHwDot(gpsDot, 'status-dot dot-yellow');
     gpsText.textContent = 'no fix yet';
   } else {
     setHwDot(gpsDot, 'status-dot dot-white');
     gpsText.textContent = 'not reachable';
   }
-  gpsDetail.textContent = formatGpsDetail(result.gps);
+  gpsDetail.textContent = formatGpsDetail(location);
+}
+
+function applyHwTestResult(result) {
+  if (!result) return;
+  lastHwTestResult = result;
+  applyHwTestRow('camera', result.camera);
+  applyHwTestRow('imu', result.imu);
+  applyGpsRow(result.gps);
 }
 
 async function runHardwareTest() {
