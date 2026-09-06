@@ -6195,7 +6195,12 @@ function waitForCondition(mode, generation, isDone, onDone, refresh) {
 
 async function finishAutoconnect(mode, generation) {
   if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
-  setAutoconnectStatus('Autoconnect: connecting devices…');
+  // No setAutoconnectStatus() text here on purpose (2026-09-06, direct
+  // feedback): connectAllUnconnected() below drives _setDeviceConnection()
+  // per device, which already shows "Connecting <device>…" in the
+  // top-right #mb-action-status banner - a second, more generic "connecting
+  // devices…" line here duplicated that same information right next to it.
+  setAutoconnectStatus(null);
   connectAllUnconnected();
   // connectAllUnconnected() fires its connects without waiting for them -
   // poll briefly for them to actually finish before applying the coupling
