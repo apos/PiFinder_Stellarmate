@@ -55,11 +55,22 @@ CANDIDATE_PORTS = (80, 8080, 8081)
 
 def resolve_pifinder_port(host: str, candidates=CANDIDATE_PORTS, timeout: float = 3.0) -> int | None:
     """Probes PiFinder's own /api/status on each candidate port in order,
-    returns the first one that answers, or None if none do."""
+    returns the first one whose response is genuinely PiFinder's, or None if
+    none is. An HTTP 200 alone isn't enough: StellarMate's own nginx answers
+    every unmatched path (including /api/status) with 200 + its dashboard's
+    HTML (SPA fallback), so a status-code-only check can silently lock onto
+    nginx on port 80 instead of falling through to PiFinder's real port -
+    found live (basic-memory pifinder-stellarmate/00089 sec. 8) via nginx's
+    access log showing continuous 404s on /api/fake_solve while this
+    function kept reporting port 80 as PiFinder. fake_solve_active is a
+    top-level key PiFinder/python/PiFinder/api_extensions.py's api_status()
+    always includes on its 200 success path - checking for it distinguishes
+    PiFinder's real JSON from nginx's HTML."""
     for port in candidates:
         try:
-            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=timeout):
-                return port
+            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=timeout) as resp:
+                if "fake_solve_active" in json.loads(resp.read()):
+                    return port
         except Exception:
             continue
     return None
