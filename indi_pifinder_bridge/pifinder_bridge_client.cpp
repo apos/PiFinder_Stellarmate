@@ -68,6 +68,8 @@ bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
         watchProperty(m_mountName.c_str(), "EQUATORIAL_EOD_COORD");
     if (!m_mountOnCoordSetSP)
         watchProperty(m_mountName.c_str(), "ON_COORD_SET");
+    if (!m_piFinderOnCoordSetSP)
+        watchProperty(m_piFinderName.c_str(), "ON_COORD_SET");
 
     ++m_bindingRetryAttempts;
     m_bindingRetryCooldownTicks = BINDING_RETRY_INTERVAL_TICKS;
@@ -144,6 +146,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
         m_piFinderTargetNP = property.getNumber();
+    else if (fromPiFinder && property.isNameMatch("ON_COORD_SET"))
+        m_piFinderOnCoordSetSP = property.getSwitch();
     else if (fromShadow && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_shadowEqNP = property.getNumber();
     else if (fromShadow && property.isNameMatch("ON_COORD_SET"))
@@ -198,6 +202,8 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountEqNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
+    else if (property.getSwitch() == m_piFinderOnCoordSetSP)
+        m_piFinderOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountMountTypeSP)
         m_mountMountTypeSP = nullptr;
     else if (property.getSwitch() == m_mountAbortSP)
@@ -342,6 +348,26 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     sendNewNumber(m_mountEqNP);
 
     m_lastMountCommandTime = static_cast<long>(time(nullptr));
+
+    return true;
+}
+
+bool PiFinderBridgeClient::sendPiFinderCoords(double ra, double dec, const char *coordSetName)
+{
+    if (!isReady() || m_piFinderOnCoordSetSP == nullptr)
+        return false;
+
+    auto coordSetSwitch = m_piFinderOnCoordSetSP->findWidgetByName(coordSetName);
+    if (coordSetSwitch == nullptr)
+        return false;
+
+    m_piFinderOnCoordSetSP->reset();
+    coordSetSwitch->setState(ISS_ON);
+    sendNewSwitch(m_piFinderOnCoordSetSP);
+
+    m_piFinderEqNP->at(0)->setValue(ra);
+    m_piFinderEqNP->at(1)->setValue(dec);
+    sendNewNumber(m_piFinderEqNP);
 
     return true;
 }

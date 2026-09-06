@@ -507,7 +507,18 @@ bool PiFinderMountBridge::initProperties()
     // correction tracks back to) - "go back to what I actually meant to
     // point at," independent of where the optical tube has since ended up.
     IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_HELD], "TRIGGER_GOTO_HELD", "Goto Held Target", ISS_OFF);
-    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 3, getDeviceName(), "MANUAL_TRIGGER",
+    // Goto Held Target (above) only corrects the mount - PiFinder's own
+    // belief about "what am I pushed-to" (TARGET_EOD_COORD) is untouched,
+    // so a later Mount Bridge restart can re-read PiFinder's still-wrong
+    // target as its recovery baseline and slew the mount right back to it
+    // - reproduced live (2026-09-05/06). This button re-sends the held
+    // target to PiFinder itself too (via sendPiFinderCoords()), exactly
+    // like an external LX200 client's push-to - PiFinder's own on-device
+    // UI/arrows re-target to it, closing that gap. The mount side is left
+    // to the existing automatic correction (HOLDING) rather than duplicated
+    // here.
+    IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align to Held Target", ISS_OFF);
+    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 4, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
 
     IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
@@ -1965,7 +1976,23 @@ void PiFinderMountBridge::handleGotoForward()
                 break;
             }
 
-            if (drift > MaxSyncDriftN[0].value)
+            // Found live (2026-09-05/06): this sanity cap only ever checked
+            // `drift` (mount vs PiFinder disagreement) - but mount and
+            // PiFinder can perfectly agree with EACH OTHER while both are
+            // correctly, currently pointed somewhere completely different
+            // from a stale/wrong ORIGINAL_TARGET (e.g. inherited across a
+            // driver restart from PiFinder's own not-yet-corrected
+            // TARGET_EOD_COORD, or an earlier accidental push-to). That
+            // case has `drift` near zero but `originalTargetDrift` in the
+            // thousands of arcmin, sailed straight through this check, and
+            // the driver then genuinely slewed the mount there with zero
+            // warning or refusal - reproduced live, twice, the same night.
+            // Guard on whichever of the two is larger - the sanity cap's
+            // whole point is "never re-point this far without a human
+            // confirming it," and that applies exactly as much to a bad
+            // held target as to raw mount/PiFinder disagreement.
+            const double worstDrift = std::max(drift, originalTargetDrift);
+            if (worstDrift > MaxSyncDriftN[0].value)
             {
                 // See MaxSyncDriftNP's header comment - stay in HOLDING and
                 // keep watching rather than syncing off a likely-bad solve.
@@ -1977,9 +2004,9 @@ void PiFinderMountBridge::handleGotoForward()
                 if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
                 {
                     m_lastMaxSyncDriftWarnTime = now;
-                    LOGF_WARN("Held target drifted %.1f arcmin, exceeding the auto-Sync sanity limit (%.1f) -"
-                              " not syncing, will re-check on the next fresh solve.",
-                              drift, MaxSyncDriftN[0].value);
+                    LOGF_WARN("Held target drifted %.1f arcmin (tactical %.1f, from-original %.1f), exceeding the"
+                              " auto-Sync sanity limit (%.1f) - not syncing, will re-check on the next fresh solve.",
+                              worstDrift, drift, originalTargetDrift, MaxSyncDriftN[0].value);
                 }
                 break;
             }
@@ -2543,8 +2570,36 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             const bool wantSync = ManualTriggerS[TRIGGER_SYNC_NOW].s == ISS_ON;
             const bool wantGoto = ManualTriggerS[TRIGGER_GOTO_NOW].s == ISS_ON;
             const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
+            const bool wantAlignHeld = ManualTriggerS[TRIGGER_ALIGN_HELD].s == ISS_ON;
 
-            if (wantGotoHeld)
+            if (wantAlignHeld)
+            {
+                // Re-sends the held target to PiFinder itself - see this
+                // switch's own IUFillSwitch comment above for why Goto Held
+                // Target alone isn't enough. Deliberately does NOT also
+                // re-command the mount here: HOLDING's own automatic
+                // correction already reacts once PiFinder's target/position
+                // agree again, and duplicating that command risks a race
+                // against it (two independent Gotos to the same target).
+                double heldRA, heldDec;
+                if (!getOriginalTargetJNow(heldRA, heldDec))
+                {
+                    LOG_ERROR("No held target recorded yet - push-to or Goto a target first.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+                else if (m_client->sendPiFinderCoords(heldRA, heldDec, "TRACK"))
+                {
+                    LOGF_INFO("Held target (RA %.4fh, DEC %.4f deg) re-sent to PiFinder itself.",
+                              heldRA, heldDec);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send held target to PiFinder.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantGotoHeld)
             {
                 // Deliberately does NOT read PiFinder's current live
                 // position at all (unlike Sync/Goto Now above) - the whole
@@ -2561,16 +2616,32 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     LOG_ERROR("No held target recorded yet - push-to or Goto a target first.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
-                else if (sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
-                {
-                    LOGF_INFO("Manual Goto to held target (RA %.4fh, DEC %.4f deg) sent to mount.",
-                              heldRA, heldDec);
-                    ManualTriggerSP.s = IPS_OK;
-                }
                 else
                 {
-                    LOG_ERROR("Failed to send Goto-held-target correction to mount.");
-                    ManualTriggerSP.s = IPS_ALERT;
+                    // Found live (2026-09-05/06): missing here entirely -
+                    // every other Goto call site sets an appropriate slew
+                    // rate for the actual distance before sending. Without
+                    // it, this button silently inherited whatever rate a
+                    // previous *small* correction had last set (e.g. 0.25x)
+                    // and made the mount crawl to what can be an arbitrarily
+                    // large distance - "felt like it took forever," live
+                    // user report the same night this button was added.
+                    double mountRA, mountDec;
+                    applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                              ? angularSeparationArcmin(heldRA, heldDec, mountRA, mountDec)
+                                              : SLEW_RATE_LOG_MAX_ARCMIN);
+
+                    if (sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
+                    {
+                        LOGF_INFO("Manual Goto to held target (RA %.4fh, DEC %.4f deg) sent to mount.",
+                                  heldRA, heldDec);
+                        ManualTriggerSP.s = IPS_OK;
+                    }
+                    else
+                    {
+                        LOG_ERROR("Failed to send Goto-held-target correction to mount.");
+                        ManualTriggerSP.s = IPS_ALERT;
+                    }
                 }
             }
             else if (wantSync || wantGoto)

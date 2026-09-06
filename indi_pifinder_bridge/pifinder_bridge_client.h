@@ -97,6 +97,16 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
+        // Sends a Goto to the PiFinder LX200 device itself, not the mount -
+        // exactly what an external LX200 client (KStars, SkySafari, the
+        // on-device menu) already does for a push-to, so PiFinder treats it
+        // identically: a new PUSH-catalog entry, its own on-device
+        // arrows/UI re-targeting to it. Needed because correcting the
+        // mount alone (sendMountCoords()) leaves PiFinder's own belief
+        // about "what am I pushed-to" untouched - see "Align to Held
+        // Target"'s own header comment in pifinder_mount_bridge.cpp.
+        bool sendPiFinderCoords(double ra, double dec, const char *coordSetName);
+
         // Seconds since the last successful sendMountCoords() call - the one
         // choke point every self-initiated correction (Auto-correct Sync/
         // Goto, Goto-Forward's HOLDING re-sync, Multi-Point Alignment, the
@@ -166,6 +176,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_piFinderTargetNP = nullptr;
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
+        INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;
         INDI::PropertyViewSwitch *m_mountSlewRateSP = nullptr;

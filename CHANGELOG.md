@@ -19,6 +19,15 @@ All notable changes to this project are documented in this file. Format loosely 
   wired into the Control Center's own Mount Bridge panel (`/api/mount_bridge_goto_held`, next to
   "Sync mount from PiFinder") - the INDI Control Panel alone isn't the actual usage surface for this
   project.
+- **Mount Bridge: "Align to Held Target" manual button**: "Goto Held Target" above only corrects the
+  mount - PiFinder's own belief about "what am I pushed-to" (`TARGET_EOD_COORD`) stays untouched, so
+  a later Mount Bridge restart can re-read PiFinder's still-wrong target as its recovery baseline and
+  slew the mount right back to it, fully automatically - reproduced live the same night. This new
+  fourth `MANUAL_TRIGGER` button instead re-sends the held target to PiFinder itself (new
+  `PiFinderBridgeClient::sendPiFinderCoords()`, via `ON_COORD_SET`/`EQUATORIAL_EOD_COORD` on
+  "PiFinder LX200" - exactly like an external LX200 client's push-to), closing that gap. The mount
+  side is deliberately left to the existing automatic `HOLDING` correction rather than duplicated
+  here.
 - **Setup checklist: Profile (1) and Mount (4) steps visually emphasized (#267)**: the two most
   important steps to get right first for a working Mount-Bridge setup now get a subtle box/border
   and a star icon, distinguishing them from the rest of the checklist. Deliberately doesn't
@@ -296,6 +305,20 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge: `MaxSyncDriftN` sanity cap only checked mount-vs-PiFinder disagreement, never
+  PiFinder-vs-held-target disagreement** ([#282](https://github.com/apos/PiFinder_Stellarmate/issues/282),
+  HIGH PRIORITY/SAFETY): mount and PiFinder can honestly agree with each other while both are
+  correctly pointed somewhere completely different from a stale/wrong `ORIGINAL_TARGET` (inherited
+  across a driver restart from PiFinder's own not-yet-corrected `TARGET_EOD_COORD`, or an earlier
+  accidental push-to). That case sailed straight through the cap with `drift` near zero, and the
+  driver genuinely slewed the mount there with zero warning or refusal - reproduced live, twice, the
+  same night on a real Pi5 + real OnStep mount, both times caught only by the user's own emergency
+  stop. Now gates on `std::max(drift, originalTargetDrift)`.
+- **Mount Bridge: "Goto Held Target" could crawl at an inherited, arbitrarily slow rate**: unlike
+  every other Goto call site, this manual trigger never called `applySlewRateForDrift()` before
+  sending - it silently kept whatever rate a previous small correction had last set (e.g. 0.25x),
+  making a large correction feel like it took forever. Now sets an appropriate rate for the actual
+  distance first.
 - **`pifinder_pre_start.sh`: `pifinder.service` crash-loops forever after a reboot (systemd
   `216/GROUP`)**: the same `/etc/group`/`/etc/passwd` missing-trailing-newline gap already fixed in
   `pifinder_stellarmate_setup.sh` (#270) and `restore_after_smos_update.sh` (#276) was still present
