@@ -82,6 +82,29 @@ _mask_user_unit "pipewire.socket"
 _mask_user_unit "pipewire-pulse.socket"
 chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "${SYSTEMD_USER_DIR}"
 
+# Baloo (KDE's file indexer): disable permanently. Found live (2026-09-06,
+# Pi4) chewing CPU right after login/boot on a device that already has OOM
+# headroom problems (see indi_pifinder_mount_bridge build OOM-kills,
+# 00116) - nothing on this astro computer benefits from desktop file-content
+# search. `balooctl6 disable` must run as the real user (it writes to their
+# own $HOME/.config/baloofilerc), not root, hence the sudo -u below even
+# though this whole script otherwise runs as root. Config lives under
+# /home, so it already survives a BTRFS reset on its own - this check is
+# just to also cover a first boot after a fresh SMOS install/user, where
+# the file doesn't exist yet and Baloo defaults to enabled.
+if command -v balooctl6 &>/dev/null; then
+    BALOO_RC="/home/${PIFINDER_USER}/.config/baloofilerc"
+    if [ -f "${BALOO_RC}" ] && grep -q '^Indexing-Enabled=false$' "${BALOO_RC}"; then
+        echo "✅ Baloo file indexer already disabled - OK"
+    else
+        sudo -u "${PIFINDER_USER}" balooctl6 disable &>/dev/null \
+            && echo "✅ Baloo file indexer disabled" \
+            || echo "⚠️  Could not disable Baloo file indexer"
+    fi
+else
+    echo "✅ balooctl6 not present - OK"
+fi
+
 # Remove pipewire-libcamera - it accesses the camera directly, bypassing WirePlumber
 if pacman -Q pipewire-libcamera &>/dev/null; then
     pacman -R --noconfirm pipewire-libcamera 2>/dev/null \
