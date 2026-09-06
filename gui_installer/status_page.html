@@ -4949,12 +4949,23 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     // same signal Auto-correct already had, see pifinder_mount_bridge.cpp.
     const exceeded = driftArcmin !== null && driftArcmin > threshold;
     const busy = driftState === 'Busy';
+    // Idle = driver couldn't get a fresh PiFinder solve this tick at all (see
+    // pifinder_mount_bridge.cpp's HOLDING/SETTLING freshness checks) -
+    // distinct from "Ok"/"Alert", which both mean drift WAS just verified.
+    // Found live 2026-09-06: without this, a stale feed left driftArcmin/
+    // driftState frozen at their last real reading (e.g. 0.0'/Ok), and this
+    // caption kept claiming "Holding target" - looking converged - for as
+    // long as the feed stayed broken, instead of admitting nothing had
+    // actually been checked.
+    const unverified = driftState === 'Idle';
     setMbArrow('mb-arrow-right', busy ? 'write' : 'goto');
     setMbCaption(
-      busy ? 'dot-yellow' : exceeded ? 'dot-unconfirmed' : 'dot-green',
-      busy ? 'Correcting now' : exceeded ? 'Waiting on fresh solve' : 'Holding target',
+      busy ? 'dot-yellow' : unverified ? 'dot-unconfirmed' : exceeded ? 'dot-unconfirmed' : 'dot-green',
+      busy ? 'Correcting now' : unverified ? 'Position unverified' : exceeded ? 'Waiting on fresh solve' : 'Holding target',
       busy
         ? `Correcting the mount now - drift ${formatDrift(driftArcmin)} exceeds ${threshold}'`
+        : unverified
+        ? "PiFinder hasn't produced a fresh solve recently - can't confirm the mount is still on the held target"
         : exceeded
         ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting (the Solve badge above can still show green here - it has no age limit of its own, see its tooltip)`
         : `Holding target - drift ${driftArcmin !== null ? formatDrift(driftArcmin) : '0.0\''} within ${threshold}'`
@@ -5582,7 +5593,13 @@ async function refreshMountBridgeStatus() {
     // (actively correcting, which is the system working as intended).
     let dotColor = 'dot-yellow';
     if (isActiveCoupling) {
-      dotColor = data.drift_state === 'Alert' ? 'dot-red' : 'dot-green';
+      // Idle (2026-09-06, Goto-Forward's HOLDING/SETTLING freshness gate):
+      // no fresh solve to check against, not a confirmed "Ok" - would
+      // otherwise fall through to green here same as a real Ok, same false
+      // "converged" look this whole fix addresses in applyMbDriftAndMode().
+      dotColor = data.drift_state === 'Alert' ? 'dot-red'
+        : data.drift_state === 'Idle' ? 'dot-unconfirmed'
+        : 'dot-green';
     }
     dotEl.className = 'status-dot ' + dotColor;
     if (!isActiveCoupling) {
