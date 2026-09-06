@@ -469,6 +469,33 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_lastForwardedRA = std::nan("");
         double m_lastForwardedDec = std::nan("");
 
+        // Set right before pushing a confirmed external mount reposition to
+        // PiFinder itself (see handleRepositionDetection()'s three adoption
+        // sites and docs/concepts/mount_bridge_reposition_notifies_pifinder.md)
+        // - that push changes PiFinder's own TARGET_EOD_COORD, which
+        // consumePiFinderTargetPending() would otherwise see as "a human just
+        // pushed-to a new target" and forward straight back to the mount as a
+        // redundant Goto (the mount is already there - that's the whole
+        // point of the push). consumeGenuinePiFinderTargetPending() compares
+        // against this to recognize and skip exactly that one echo, then
+        // clears it back to NaN so it can't suppress any later, genuinely new
+        // push-to that happens to land on the same coordinates.
+        double m_lastNotifiedPiFinderRA = std::nan("");
+        double m_lastNotifiedPiFinderDec = std::nan("");
+        // Found live (2026-09-07): 0.1 was too tight and let one real echo
+        // through as a "genuinely new" target, triggering exactly the
+        // redundant bounce-back Goto this guard exists to prevent. Root
+        // cause verified in lx200_pifinder.cpp's own :Sr#/:Sd# push-to
+        // commands (lines ~372/380): RA is sent as whole seconds-of-time
+        // (":Sr%02d:%02d:%02d#", 1s = 15" = 0.25' of RA-degrees before
+        // cos(dec) compression), Dec as whole arcseconds - a round trip
+        // through this text protocol can lose up to ~0.125' at the
+        // celestial equator (less at higher Dec) even with no genuine
+        // change at all. 1.0 gives a wide safety margin over that
+        // quantization noise while staying far tighter than any real
+        // distance between two actually-different sky objects.
+        static constexpr double ECHO_MATCH_THRESHOLD_ARCMIN = 1.0;
+
         // A genuinely new target event (consumePiFinderTargetPending()) was
         // seen, but syncMountToPiFinderPosition() couldn't run yet (no fresh
         // PiFinder solve at that exact tick) - remember the intent and keep
@@ -502,6 +529,27 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         static constexpr int MAX_SETTLE_RETRIES = 3;
 
         void handleGotoForward();
+
+        // Wraps m_client->consumePiFinderTargetPending() with the echo check
+        // above (m_lastNotifiedPiFinderRA/Dec) - both of handleGotoForward()'s
+        // consumePiFinderTargetPending() call sites (IDLE, HOLDING) need the
+        // exact same "is this our own echo?" logic, so it lives here once
+        // rather than duplicated at each. targetRA/targetDec are
+        // getPiFinderTargetRADE()'s already-current-tick values (non-
+        // consuming), passed in rather than re-read, since the caller
+        // already has them.
+        bool consumeGenuinePiFinderTargetPending(double targetRA, double targetDec);
+
+        // Pushes a confirmed external mount reposition to PiFinder itself
+        // (same primitive the manual "Align to Held Target" button already
+        // uses) and records it in m_lastNotifiedPiFinderRA/Dec so the
+        // resulting echo is recognized and skipped (see
+        // consumeGenuinePiFinderTargetPending() above and
+        // docs/concepts/mount_bridge_reposition_notifies_pifinder.md).
+        // Failure is logged only - PiFinder not receiving this is not a
+        // reason to fail the reposition adoption itself, whose correctness
+        // doesn't depend on it.
+        void notifyPiFinderOfReposition(double ra, double dec);
 
         // MODE_AUTO_CORRECT with CorrectionActionS[ACTION_GOTO]: mirrors
         // handleGotoForward()'s arrival-verify-and-refine pattern (#170 -

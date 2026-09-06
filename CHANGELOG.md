@@ -7,6 +7,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Mount Bridge: pushes confirmed external mount repositions to PiFinder itself (#300)**: when a
+  mount GoTo happens directly on the mount (hand paddle, SkySafari, KStars talking straight to the
+  mount driver) while Goto-Forward/Auto-correct-Goto is active, `handleRepositionDetection()`
+  already correctly adopted the new position as its own held target - but never told PiFinder, so
+  its own push-to display kept showing a stale, unrelated earlier target. Now also pushes the
+  confirmed position to PiFinder via the same primitive the manual "Align to Held Target" button
+  uses, with an echo-suppression guard so the resulting PiFinder target-change doesn't bounce a
+  redundant Goto back to the mount. See `docs/concepts/mount_bridge_reposition_notifies_pifinder.md`.
 - **Mount Bridge: "Goto Held Target" manual button**: the existing "Sync Now"/"Goto Now" manual
   triggers both act on PiFinder's *current* live position - useless for recovering from a physical
   disturbance (bumped mount, slipped clutch on a friction-clutch mount, overbalance), since PiFinder
@@ -307,6 +315,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge: `handleRepositionDetection()` could adopt a still-in-flight mount position as
+  final**: its settle countdown was a fixed 3-tick timer that trusted the mount had stopped without
+  re-checking - any slew slower than ~6s (most real GoTos) could get one or more intermediate
+  positions adopted, once per settle window, before the real arrival (reproduced live: 4 separate
+  adoptions during one ~20s slew). Now restarts the countdown whenever the mount is still measurably
+  moving, so it only fires once genuinely stationary for 3 consecutive ticks. Pre-existing gap in
+  shared detection logic, surfaced while verifying the reposition-notifies-PiFinder feature above.
+- **Mount Bridge: a PiFinder-echo could slip past the new reposition-notification guard and trigger
+  a redundant Goto back to the mount**: the echo-match threshold (0.1 arcmin) was tighter than
+  PiFinder's own `:Sr#`/`:Sd#` push-to protocol's precision (whole seconds-of-time RA / whole
+  arcseconds Dec), which can lose up to ~0.125' on a round trip even with no genuine change. Widened
+  to 1.0'.
 - **`test_tools/pifinder_truth_injector.py`: silently stopped reactivating `fake_solve_active` after
   a PiFinder restart**: hardcoded to PiFinder's historical default port 8080, but PiFinder's own web
   server prefers port 80 and only falls back to 8080 if 80 is taken - every POST during the affected
