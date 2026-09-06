@@ -25,6 +25,22 @@ echo " PiFinder — Restore after SMOS Update"
 echo "======================================================"
 echo ""
 
+# Pi-only, by construction: step 1 below adds Arch Linux ARM's own
+# aarch64 mirrors (mirror.archlinuxarm.org/aarch64/...) to /etc/pacman.conf,
+# which is simply wrong on an x86 Control-host (StellarMate x86 already
+# ships correct native repos - see get_hw_model()'s own header comment).
+# Found live (2026-09-06, stellarmate-utm): running this unmodified would
+# have corrupted a working x86 pacman.conf with unusable ARM repo entries.
+# get_hw_model() returns an empty string on non-Pi systems (no
+# /proc/device-tree/model at all) - hard-fail here rather than silently
+# doing the wrong thing to package management.
+if [ -z "$(get_hw_model)" ]; then
+    echo "❌ This script restores Pi4/Pi5-specific state (ARM package repos, GPIO"
+    echo "   groups, /boot/config.txt overlays, camera hardware patches) and must"
+    echo "   not run on a non-Pi (x86) system - no /proc/device-tree/model found."
+    exit 1
+fi
+
 # -------------------------------------------------------
 # 1. pacman repos
 # -------------------------------------------------------
