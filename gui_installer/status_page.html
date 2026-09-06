@@ -6157,8 +6157,8 @@ async function proceedPastMountLink(mode, generation) {
 // own comment for the failure this caused.
 //
 // `refresh` (2026-09-06, direct feedback - the "Setup needs two clicks"
-// bug): both wmEkosConnected and wmActiveMount are otherwise only kept
-// current by their own slow, passive 20s background polls
+// bug, part 1): both wmEkosConnected and wmActiveMount are otherwise only
+// kept current by their own slow, passive 20s background polls
 // (checkEkosStatus()/refreshMountBridgeStatus()). Verified live that the
 // underlying D-Bus start actually succeeds within ~1s - the two-click
 // experience was purely this loop reading a stale variable for up to 19
@@ -6166,7 +6166,17 @@ async function proceedPastMountLink(mode, generation) {
 // second click "fixed" only by accident (whatever time had passed by
 // then). This loop now actively re-fetches on every 1.5s tick instead of
 // waiting on that timer, so the real state is what gets checked.
+//
+// Two-consecutive-ticks debounce (2026-09-06, part 2 - live-tested after
+// deploying part 1 above, which turned out not to be the whole story):
+// Ekos's own indiStatus can genuinely FLAP right after a profile restart
+// with a freshly changed driver set - observed live going Success ->
+// Pending -> Success again over ~7s. A single "true" read right after
+// restarting isn't reliable confirmation the session has actually
+// stabilized; requiring it twice in a row (~3s apart) filters that out
+// without meaningfully slowing down the already-stable case.
 function waitForCondition(mode, generation, isDone, onDone, refresh) {
+  let consecutiveDone = 0;
   const pollId = setInterval(async () => {
     if (autoconnectMode !== mode || autoconnectGeneration !== generation) {
       clearInterval(pollId);
@@ -6174,10 +6184,12 @@ function waitForCondition(mode, generation, isDone, onDone, refresh) {
     }
     if (refresh) await refresh();
     if (isDone()) {
+      if (++consecutiveDone < 2) return;
       clearInterval(pollId);
       onDone();
       return;
     }
+    consecutiveDone = 0;
   }, 1500);
 }
 
