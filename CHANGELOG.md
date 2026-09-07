@@ -352,6 +352,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge GUI: collapsed hardware-mode summary row showed a plain/white dot for "Real
+  Hardware" even while it was the active mode**, unlike the green dot the same row correctly shows
+  for an active Full Simulation or Fake Mode - `updateModeSummaryLine()`'s Real Hardware branch had
+  `dotClass` hardcoded to `'dot-white'` instead of `'dot-green'`. The tile grid's own per-tile dot
+  (`updateRealHardwareTile()`) already handled this correctly; only the collapsed one-line summary
+  above it (the "▲ hide"/"▼ show" row) was wrong. Found live (2026-09-07) via screenshot.
 - **`bin/build_indi_bridge.sh` was never executable** (tracked as mode 644 since the very first commit
   that added it, unlike its `build_indi_driver.sh`/`build_indi_simulator.sh` siblings) - invisible to
   shell tab-completion (which only lists executables in command position) and would fail with
