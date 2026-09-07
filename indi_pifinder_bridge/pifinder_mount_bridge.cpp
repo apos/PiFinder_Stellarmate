@@ -484,8 +484,16 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&ShadowSyncSP, ShadowSyncS, 2, getDeviceName(), "SHADOW_SYNC", "Mirror to shadow device",
                        "Shadow Sync", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
 
-    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
-    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
+    // Default ISS_ON is Verify/Alert only, not Off (2026-09-07, direct
+    // feedback) - only matters for a genuinely fresh install with no saved
+    // config yet (loadConfig() overrides this immediately once a config
+    // file exists), but that first-run moment is exactly what every new
+    // user hits, and Coupling being silently Off with no visible reason is
+    // a worse first impression than a passive, safe default (Verify/Alert
+    // never touches the mount, just warns) that requires no setup step of
+    // its own.
+    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_OFF);
+    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
     IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
