@@ -12,10 +12,28 @@ All notable changes to this project are documented in this file. Format loosely 
   silently right after Full Simulation/Real Hardware startup - the everyday action buttons (Sync,
   Align to Held Target, Goto Held Target, Stop movement, Threshold, Decouple) were merged into the
   same block as the Coupling mode picker, and had no Coupling-state gating at all. Now two separate
-  boxed groups, with the four big action buttons disabled whenever Coupling is Off. Role/hardware
-  mode/setup checklist grouped under one plain "Settings" label.
+  boxed groups, with the four big action buttons disabled whenever Coupling is Off, and a hint line
+  explaining why (several different things can cause it - never set up, Mount Bridge not yet
+  connected, explicitly Decoupled - none of which a user watching greyed-out buttons can be expected
+  to guess). Role and hardware mode (Real Hardware/Full Simulation/Fake Mode) now collapse into
+  one-line summaries under a plain "Settings" label, same as the pre-existing Setup checklist
+  collapse - the hardware-mode summary's status dot mirrors whichever tile is active and turns
+  yellow (not green) if the setup checklist has any warning (e.g. Mount still incomplete) even while
+  the process itself is genuinely running.
 - **Mount Bridge: default Coupling is Verify/Alert only, not Off**, on a genuinely fresh install
-  with no saved config yet - a safer, more informative first-run default than a silent Off.
+  with no saved config yet - a safer, more informative first-run default than a silent Off. Backed
+  by a self-healing check on every connect: if `BRIDGE_MODE` is ever found with no switch active at
+  all (a stale/corrupted saved config, not just the fresh-install case the compile-time default
+  covers), the driver forces Verify/Alert on and re-saves immediately, rather than leaving Coupling
+  silently inactive for any reason.
+- **Mount Bridge GUI: self-heals a disconnected Ekos session instead of just reporting it**: the
+  setup checklist's Ekos step used to just display "go start the profile and click Connect in
+  KStars yourself" whenever Ekos's own INDI client session was down (a separate thing from the
+  Control Center's own connection checks, which reconnect on their own) - found live right after an
+  indiserver restart severed Ekos's session while every other checklist item had already recovered.
+  Now calls the same `_ekos_start_profile()` Autoconnect already relies on automatically, bounded to
+  a few attempts with a cooldown between them so a genuinely broken KStars/profile doesn't get
+  hammered forever - falls back to the manual instructions only once that budget is exhausted.
 - **Mount Bridge: pushes confirmed external mount repositions to PiFinder itself (#300)**: when a
   mount GoTo happens directly on the mount (hand paddle, SkySafari, KStars talking straight to the
   mount driver) while Goto-Forward/Auto-correct-Goto is active, `handleRepositionDetection()`
@@ -324,6 +342,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge GUI: "Link telescope mount"'s error text vanished within 1.5s regardless of
+  whether the underlying problem was actually resolved**: the button's re-enabling `setTimeout`
+  called `refreshWmActiveButton()` unconditionally, which defeats its own "don't overwrite while
+  busy" guard the instant `disabled` flips back to `false` in the same callback - silently
+  overwriting messages like "Could not connect to indiserver..." even while that condition was
+  still ongoing. Now only refreshed on an actual success; a failure leaves the error and its orange
+  styling in place until a real retry.
 - **Mount Bridge: `handleRepositionDetection()` could adopt a still-in-flight mount position as
   final**: its settle countdown was a fixed 3-tick timer that trusted the mount had stopped without
   re-checking - any slew slower than ~6s (most real GoTos) could get one or more intermediate
