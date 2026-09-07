@@ -302,6 +302,11 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         bool fetchAlignmentCandidates();
 
         void handleMultiPointAlignment();
+        // #313: Sync the mount to a confirmed PiFinder Align, independent of
+        // Coupling mode (Off excluded). Called unconditionally from
+        // TimerHit() - see its definition's header comment and
+        // docs/concepts/mount_bridge_sync_on_pifinder_align.md.
+        void handlePiFinderAlignSync();
         void startMultiPointAlignment();
         void stopMultiPointAlignment(const char *reason);
         bool gotoAlignPoint(size_t index);
@@ -495,6 +500,20 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // quantization noise while staying far tighter than any real
         // distance between two actually-different sky objects.
         static constexpr double ECHO_MATCH_THRESHOLD_ARCMIN = 1.0;
+
+        // #313: last PiFinder Align (/api/status "last_align_time" epoch) this
+        // driver has already acted on. NaN = none seen yet this connection;
+        // the first sighting is adopted silently (a pre-existing Align must
+        // not fire a Sync on every reconnect), every later increase triggers
+        // one sendMountCoordsSafe(..., "SYNC"). m_alignSyncPendingSince (0 =
+        // nothing pending) bounds the retry when a new Align can't be actioned
+        // immediately (mount slewing, Multi-Point run active, Sync failing).
+        double m_lastAlignSyncTime = std::nan("");
+        long m_alignSyncPendingSince = 0;
+        // How long handlePiFinderAlignSync() keeps retrying a pending Align
+        // Sync (mount slewing / Multi-Point run active / Sync failing) before
+        // giving up on that one event with a warning.
+        static constexpr int ALIGN_SYNC_RETRY_MAX_SEC = 45;
 
         // A genuinely new target event (consumePiFinderTargetPending()) was
         // seen, but syncMountToPiFinderPosition() couldn't run yet (no fresh

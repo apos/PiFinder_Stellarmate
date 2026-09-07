@@ -1,0 +1,15 @@
+--- python/PiFinder/ui/align.py.orig
++++ python/PiFinder/ui/align.py
+@@ -65,6 +65,12 @@
+     command_queues["console"].put(_("Alignment Set"))
+     shared_state.set_target_pixel(target_pixel)
+     config_object.set_option("target_pixel", target_pixel)
++    # Record the confirmed align for external consumers (PiFinder_Stellarmate's
++    # Mount Bridge syncs the mount to this on a change - the scope hasn't
++    # moved, only our calibration). ra/dec are the J2000 catalog coords the
++    # user centered in the eyepiece. Only here, not the reset-to-center path
++    # (UIAlign.key_number(1)) or the manual daytime align (align_daytime.py).
++    shared_state.set_last_align(ra, dec)
+     return True
+ 
+ 

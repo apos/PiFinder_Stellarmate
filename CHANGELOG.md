@@ -7,6 +7,28 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Mount Bridge: Sync the mount on a confirmed PiFinder Align, regardless of Coupling mode (#313)**:
+  a PiFinder Align (the on-device finder-to-scope calibration the user triggers from PiFinder's own
+  menu) leaves PiFinder's solved position accurate again while the telescope itself never moved - the
+  obviously-correct mount reaction is a plain Sync. Found live on `stellarmate-pi5` (2026-09-07):
+  under Coupling = "GoTo" an Align produced no mount reaction at all (GoTo only follows target
+  changes), so the mount's own readout stayed wrong until a manual "Sync mount from PiFinder". This
+  is now automatic and cross-cutting - it runs above the Coupling-mode dispatch, since a stale mount
+  self-belief corrupts every mode's drift math. **PiFinder side** (via `diffs/`, never a direct
+  `~/PiFinder` commit): `SharedStateObj` gains `last_align_time` / `last_align_ra` / `last_align_dec`,
+  stamped only in `ui/align.py::align_on_radec()` on success (so both real entry points - the Align
+  screen and "align on this object" from the object list - are covered, while the blind
+  "reset reticle to center" path and the manual daytime align, which have no confirmed sky position,
+  are not), and surfaced in `GET /api/status`. **Mount Bridge side**: `handlePiFinderAlignSync()`
+  polls the new field alongside the routine `/api/status` read, dedups on the timestamp
+  (`m_lastAlignSyncTime`, first sighting adopted silently so a pre-existing Align doesn't fire on
+  every reconnect), converts degrees/J2000 -> hours/JNow the same way `httpGetPiFinderFreshCamPosition()`
+  does, and on a genuine new Align calls `sendMountCoordsSafe(..., "SYNC")`. Only Coupling = Off is
+  excluded (explicitly decoupled); Verify/Alert only *does* sync here (a deliberate user calibration,
+  not automation reacting to noise) and says so in its log. Deferred while the mount is slewing or a
+  Multi-Point Alignment run is active, with a 45 s give-up. Concept:
+  `docs/concepts/mount_bridge_sync_on_pifinder_align.md`. Isolated test tool:
+  `test_tools/align_sync_test.py`.
 - **Mount Bridge: singleton guard against duplicate driver instances (#303)**: `indiserver`'s FIFO
   `start` has no dedup of its own, and this device's own driver supervision was found live sending
   it twice in quick succession - two genuinely separate processes both registering as "PiFinder

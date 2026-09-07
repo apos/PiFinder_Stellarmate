@@ -137,6 +137,72 @@ bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource
     }
 }
 
+// Same /api/status endpoint again - reads the "last confirmed PiFinder
+// Align" fields (see PiFinder state.SharedStateObj.set_last_align and
+// docs/concepts/mount_bridge_sync_on_pifinder_align.md). last_align_time is
+// an epoch float the caller dedups on; last_align_ra/dec are where the user
+// centred the object in the eyepiece - the position the mount should be
+// Synced to.
+//
+// UNIT + EPOCH: /api/status reports these in DEGREES, J2000 - exactly like
+// solution.RA/Dec (see httpGetPiFinderFreshCamPosition()'s own CRITICAL
+// comments). Callers Sync/compare against the mount's EQUATORIAL_EOD_COORD,
+// which is HOURS, JNow. Convert here, once, at the source: RA /15 to hours,
+// then precess both to epoch-of-date - identical to that function.
+//
+// Returns false (leaving all outputs untouched) on any request/parse
+// failure or a null/absent last_align_time (no Align yet this PiFinder
+// session, or an older PiFinder without the field).
+bool httpGetPiFinderAlignEvent(const std::string &url, double &alignTime, double &alignRA, double &alignDec)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto timeIt = parsed.find("last_align_time");
+        if (timeIt == parsed.end() || timeIt->is_null())
+            return false;
+        const auto raIt = parsed.find("last_align_ra");
+        const auto decIt = parsed.find("last_align_dec");
+        if (raIt == parsed.end() || raIt->is_null() || decIt == parsed.end() || decIt->is_null())
+            return false;
+
+        const double raJ2000Hours = raIt->get<double>() / 15.0;
+        const double decJ2000Deg = decIt->get<double>();
+        INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+        INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+        INDI::J2000toObserved(&j2000, jd, &jnow);
+
+        alignTime = timeIt->get<double>();
+        alignRA = jnow.rightascension;
+        alignDec = jnow.declination;
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
 // Same /api/status endpoint as httpGetPiFinderSolveStatus() above, but also
 // extracts RA/Dec from the *same* JSON response instead of leaving the
 // caller to fetch position separately (e.g. via the LX200 EQUATORIAL_EOD_COORD
@@ -1300,6 +1366,111 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     return true;
 }
 
+// #313 - a confirmed solve-based PiFinder Align (the finder-to-scope optical
+// calibration the user triggers from PiFinder's own on-device menu) means
+// PiFinder's solved position now accurately reflects where the telescope is
+// truly pointed - but the telescope has NOT moved, only PiFinder's own
+// calibration improved. The correct mount reaction is a plain Sync, and it
+// is cross-cutting: a stale mount self-belief silently corrupts every
+// Coupling mode's own piRA-vs-mountRA drift math, so this belongs above the
+// mode dispatch, not as a mode-specific behaviour or a fifth mode. See
+// docs/concepts/mount_bridge_sync_on_pifinder_align.md.
+//
+// Runs unconditionally from TimerHit() (like handleMultiPointAlignment()),
+// returns immediately when there is nothing to do.
+void PiFinderMountBridge::handlePiFinderAlignSync()
+{
+    // Off is the ONLY Coupling mode excluded here (explicitly decoupled -
+    // stay completely passive, same as everywhere else). Verify/Alert DOES
+    // Sync on an Align (owner decision, 2026-09-08): the trigger is a
+    // deliberate user calibration, not automation reacting to poll noise,
+    // and a Sync corrects exactly the mount self-knowledge that mode's own
+    // drift alerts depend on being accurate - but it is surfaced as a
+    // visible INFO line there, matching that mode's "tell me, don't act
+    // silently" character.
+    if (BridgeModeS[MODE_OFF].s == ISS_ON)
+        return;
+
+    double alignTime = 0.0, alignRA = 0.0, alignDec = 0.0;
+    const bool haveAlign =
+        httpGetPiFinderAlignEvent("http://127.0.0.1/api/status", alignTime, alignRA, alignDec) ||
+        httpGetPiFinderAlignEvent("http://127.0.0.1:8080/api/status", alignTime, alignRA, alignDec);
+    if (!haveAlign)
+        return;
+
+    // Dedup on the timestamp, mirroring the "track what we last acted on"
+    // pattern used throughout this file (m_lastForwardedRA/Dec etc.).
+    if (!std::isnan(m_lastAlignSyncTime) && alignTime <= m_lastAlignSyncTime)
+        return;
+
+    // First sighting this connection: adopt silently so a pre-existing Align
+    // from an earlier PiFinder session doesn't fire a Sync on every reconnect.
+    if (std::isnan(m_lastAlignSyncTime))
+    {
+        m_lastAlignSyncTime = alignTime;
+        return;
+    }
+
+    // From here a genuinely new Align is pending. Track when we first saw it
+    // so a persistently un-actionable one (mount stuck slewing, Sync keeps
+    // failing) doesn't retry forever - give up with a warning after a bound.
+    if (m_alignSyncPendingSince == 0)
+        m_alignSyncPendingSince = static_cast<long>(time(nullptr));
+    const bool giveUp =
+        static_cast<long>(time(nullptr)) - m_alignSyncPendingSince > ALIGN_SYNC_RETRY_MAX_SEC;
+
+    // Don't Sync mid-slew: a SYNC during motion is rejected or unsafe on many
+    // mounts, and if the user Aligned then immediately slewed, the in-flight
+    // GoTo establishes position anyway. Retry next tick (do NOT advance
+    // m_lastAlignSyncTime) unless we've hit the give-up bound.
+    if (m_client->isMountSlewing() && !giveUp)
+    {
+        LOG_DEBUG("PiFinder Align seen, but the mount is slewing - will retry next tick.");
+        return;
+    }
+
+    // Don't interfere with the bridge's own Multi-Point Alignment run - it
+    // manages its own per-point syncs, and an extra one mid-sequence could
+    // inject a stray point into the mount's alignment model.
+    if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE && !giveUp)
+    {
+        LOG_DEBUG("PiFinder Align seen, but a Multi-Point Alignment run is active - deferring.");
+        return;
+    }
+
+    if (giveUp)
+    {
+        LOGF_WARN("PiFinder Align was confirmed ~%lds ago but the mount could not be Synced (still "
+                  "slewing, a Multi-Point Alignment run outlasted the wait, or the Sync kept failing) "
+                  "- giving up on this one. Re-run the Align, or Sync manually.",
+                  static_cast<long>(time(nullptr)) - m_alignSyncPendingSince);
+        m_lastAlignSyncTime = alignTime;
+        m_alignSyncPendingSince = 0;
+        return;
+    }
+
+    // Sync to what the user asserted - the position they centred in the
+    // eyepiece (httpGetPiFinderAlignEvent() already converted it to
+    // hours/JNow) - not PiFinder's subsequent solved position: no dependence
+    // on a fresh /api/status solve still being available now (a cloud right
+    // after the Align), no sidereal drift across the poll gap.
+    if (sendMountCoordsSafe(alignRA, alignDec, "SYNC"))
+    {
+        m_lastAlignSyncTime = alignTime;
+        m_alignSyncPendingSince = 0;
+        if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
+            LOGF_INFO("PiFinder Align confirmed - Synced mount to %.5f / %.5f. (Verify/Alert normally "
+                      "never writes the mount; a deliberate Align is the one exception.)",
+                      alignRA, alignDec);
+        else
+            LOGF_INFO("PiFinder Align confirmed - Synced mount to %.5f / %.5f.", alignRA, alignDec);
+    }
+    else
+    {
+        LOG_ERROR("PiFinder Align confirmed, but sending SYNC to the mount failed - will retry next tick.");
+    }
+}
+
 void PiFinderMountBridge::TimerHit()
 {
     if (!isConnected())
@@ -1351,6 +1522,11 @@ void PiFinderMountBridge::TimerHit()
     // rather than through the BridgeModeSP dispatch below. Own state
     // machine, no-ops immediately when IDLE/DONE.
     handleMultiPointAlignment();
+
+    // #313 - Sync the mount on a confirmed PiFinder Align, independent of
+    // Coupling mode (Off excluded). Cross-cutting, above the mode dispatch -
+    // see the function's own header comment.
+    handlePiFinderAlignSync();
 
     // Drift is computed and published whenever the bridge is ready
     // (PiFinder solving, mount connected), regardless of Coupling mode -
