@@ -322,6 +322,34 @@ stop_fake_mode_if_running() {
   echo "✅ Fake Mode stopped."
 }
 
+# Kills a specific INDI driver process (if running) and waits, with a
+# timeout, until it's actually gone - so the caller's `sudo cp` to /usr/bin
+# doesn't fail with "Text file busy". Must run immediately before each
+# individual build_indi_*.sh script's own cp step, not just once up front
+# in build_and_install_indi_drivers() before all three builds - the
+# cmake configure+build in between takes long enough for StellarMate Web
+# Manager to notice the killed driver and auto-relaunch it if a profile is
+# actively connected. Reproduced live (2026-09-07): the LX200 driver (built
+# first, right after the initial kill) installed fine, but Mount Bridge and
+# Simulator (built afterwards) both failed with "Text file busy" despite
+# the same kill having run moments earlier for all three.
+stop_indi_driver_and_wait() {
+  local process_name="$1"
+  local max_wait_seconds="${2:-5}"
+
+  pkill -f "${process_name}" 2>/dev/null || true
+
+  local elapsed=0
+  while pgrep -f "${process_name}" &>/dev/null && (( elapsed < max_wait_seconds * 2 )); do
+    sleep 0.5
+    elapsed=$((elapsed + 1))
+  done
+
+  if pgrep -f "${process_name}" &>/dev/null; then
+    echo "⚠️  ${process_name} still running after ${max_wait_seconds}s - install may fail with 'Text file busy'."
+  fi
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"

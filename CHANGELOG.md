@@ -350,6 +350,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`bin/build_indi_bridge.sh` / `bin/build_indi_simulator.sh` / `bin/build_indi_driver.sh`: could
+  fail with `cp: ... Text file busy` even though the caller already stopped the running INDI stack
+  first**: `build_and_install_indi_drivers()` stops everything once, up front, then runs all three
+  builds sequentially - each build's own `cmake` configure+build step takes long enough for the
+  StellarMate Web Manager (if a GUI/VNC session still has a profile like "Simulation PFSM" open) to
+  notice the killed driver and auto-relaunch it before that build's own `cp` runs. Reproduced live
+  (2026-09-07): the LX200 driver, built first right after the initial kill, installed fine; Mount
+  Bridge and Simulator, built afterwards, both failed - live-confirmed the respawn by rebuilding the
+  Simulator driver alone and observing a brand-new PID holding the binary open again within seconds
+  of the kill. Each build script now calls a new `stop_indi_driver_and_wait()` helper immediately
+  before its own `cp`, independent of whatever the caller did earlier - closes the race and also
+  makes each script safe to run standalone (as their own trailing hint text already suggested).
 - **Mount Bridge GUI: "Link telescope mount"'s error text vanished within 1.5s regardless of
   whether the underlying problem was actually resolved**: the button's re-enabling `setTimeout`
   called `refreshWmActiveButton()` unconditionally, which defeats its own "don't overwrite while
