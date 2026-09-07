@@ -6535,6 +6535,21 @@ async function checkKstarsLink() {
 // may never open KStars and drive everything from the StellarMate App
 // directly, so there's nothing useful to say in that case (this tile has
 // no way to tell those two situations apart from here).
+// Self-heal (2026-09-07, direct feedback): "system must recognize something
+// is wrong and fix it" - not just report the gap and wait for the human to
+// go click Start/Connect in KStars themselves. Reuses the exact same
+// _ekos_start_profile() Autoconnect already relies on for this - this is
+// its documented purpose (its own docstring: driving Ekos's GUI here is
+// deliberate, found live 2026-08-04 that requiring a manual click was a
+// hard blocker). Bounded (EKOS_AUTO_HEAL_MAX_ATTEMPTS, a cooldown between
+// tries) so a genuinely broken KStars/profile doesn't get hammered every
+// 20s poll forever - same "retry, but not unboundedly" principle as
+// MAX_SETTLE_RETRIES/MAX_FRESHNESS_WAIT_TICKS on the driver side.
+let wmEkosAutoHealAttempts = 0;
+let wmEkosAutoHealCooldownUntil = 0;
+const EKOS_AUTO_HEAL_MAX_ATTEMPTS = 3;
+const EKOS_AUTO_HEAL_COOLDOWN_MS = 15000;
+
 async function checkEkosStatus() {
   const row = document.getElementById('mb-ekos-status-row');
   const el = document.getElementById('mb-ekos-status');
@@ -6550,6 +6565,7 @@ async function checkEkosStatus() {
     wmEkosConnected = !!data.connected;
     row.style.display = '';
     if (data.connected) {
+      wmEkosAutoHealAttempts = 0;  // genuinely healthy again - a future gap gets a fresh budget
       el.className = 'mb-step-widget mb-hint mb-hint-ok';
       // wmSelectedProfile is step 1's own dropdown value - if steps 1-4/6
       // are actually connected (the specific PiFinder LX200/Mount
@@ -6560,6 +6576,22 @@ async function checkEkosStatus() {
         ? `✓ Ekos is connected in KStars (considered profile "${wmSelectedProfile}").`
         : '✓ Ekos is connected in KStars.';
     } else {
+      const canAutoHeal = !!wmSelectedProfile &&
+        Date.now() > wmEkosAutoHealCooldownUntil &&
+        wmEkosAutoHealAttempts < EKOS_AUTO_HEAL_MAX_ATTEMPTS;
+      if (canAutoHeal) {
+        wmEkosAutoHealAttempts++;
+        wmEkosAutoHealCooldownUntil = Date.now() + EKOS_AUTO_HEAL_COOLDOWN_MS;
+        el.className = 'mb-step-widget mb-hint';
+        el.textContent = `⏳ Ekos isn't connected - reconnecting profile "${wmSelectedProfile}" automatically…`;
+        try {
+          await fetch(`/api/ekos_start_profile?profile=${encodeURIComponent(wmSelectedProfile)}`, { method: 'POST' });
+        } catch (e) {
+          // best-effort - the next poll cycle re-checks and, within budget,
+          // tries again
+        }
+        return;
+      }
       el.className = 'mb-step-widget mb-hint';
       el.textContent = wmSelectedProfile
         ? `⚠ Ekos isn't connected yet - in KStars' Ekos, start the profile "${wmSelectedProfile}" and click "Connect" under Connect & Disconnect Devices.`
