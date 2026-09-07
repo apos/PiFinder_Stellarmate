@@ -352,6 +352,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **`bin/build_indi_bridge.sh` was never executable** (tracked as mode 644 since the very first commit
+  that added it, unlike its `build_indi_driver.sh`/`build_indi_simulator.sh` siblings) - invisible to
+  shell tab-completion (which only lists executables in command position) and would fail with
+  "Permission denied" if run directly as `bin/build_indi_bridge.sh` rather than `bash
+  bin/build_indi_bridge.sh`, exactly what the setup script's own `add_warning()` text tells you to do
+  after a failed install. Found live (2026-09-07) after a user couldn't find the script the warning
+  named. `chmod +x`.
 - **`bin/build_indi_bridge.sh` / `bin/build_indi_simulator.sh` / `bin/build_indi_driver.sh`: could
   fail with `cp: ... Text file busy` even though the caller already stopped the running INDI stack
   first**: `build_and_install_indi_drivers()` stops everything once, up front, then runs all three
