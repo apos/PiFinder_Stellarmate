@@ -679,6 +679,28 @@ bool PiFinderMountBridge::updateProperties()
         {
             loadConfig(true);
             m_connectedConfigLoaded = true;
+
+            // Self-healing guarantee (2026-09-07, direct feedback): "some
+            // Coupling mode is always active, defaulting to Verify/Alert if
+            // none was ever explicitly chosen" must hold regardless of WHY
+            // it might not - a stale/corrupted saved config with every
+            // switch written Off, a partially-written config file, or any
+            // other way BridgeModeSP could end up with none of its
+            // ISR_1OFMANY switches actually On. Not something to diagnose
+            // case-by-case - just verify the invariant directly and fix it
+            // on the spot if it doesn't hold, exactly like the RA0/Dec0
+            // guards elsewhere in this file don't ask why a bad value
+            // arrived before rejecting it.
+            if (!IUFindOnSwitch(&BridgeModeSP))
+            {
+                LOG_WARN("BRIDGE_MODE had no active switch after loading its saved config - "
+                         "defaulting to Verify/Alert only and re-saving.");
+                IUResetSwitch(&BridgeModeSP);
+                BridgeModeS[MODE_VERIFY_ALERT].s = ISS_ON;
+                BridgeModeSP.s = IPS_OK;
+                IDSetSwitch(&BridgeModeSP, nullptr);
+                saveConfig(true, BridgeModeSP.name);
+            }
         }
     }
     else
