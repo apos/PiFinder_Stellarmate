@@ -352,6 +352,16 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **Mount Bridge: Multi-Point Alignment's own GoTos misclassified as external repositions (#309)**:
+  `gotoAlignPoint()` only ever set `m_alignState`, never `m_forwardState`/`m_correctState`, so
+  `handleRepositionDetection()`'s own-command check (`weCommandedIt`) didn't recognize alignment's own
+  commanded motion - live-reproduced with Coupling=Goto-Forward active, causing a spurious
+  `notifyPiFinderOfReposition()` push and an extra unwanted GoTo cycle after every alignment point.
+  `weCommandedIt` now covers the whole active alignment run (SLEWING through SETTLING), not just
+  SLEWING - `handleMultiPointAlignment()` runs before `handleRepositionDetection()` each tick, so a
+  SLEWING-only check still missed exactly the tick a point's slew completes. Live-verified via
+  `test_tools/multipoint_alignment_trace.py`: a full 4-point sequence now completes with zero
+  reposition-detection messages, where every single point boundary triggered one before.
 - **`bin/build_indi_bridge.sh` / `bin/build_indi_simulator.sh` / `bin/build_indi_driver.sh`: could
   fail with `cp: ... Text file busy` even though the caller already stopped the running INDI stack
   first**: `build_and_install_indi_drivers()` stops everything once, up front, then runs all three
