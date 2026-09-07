@@ -7,7 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
-- **Mount Bridge: singleton guard against duplicate driver instances**: `indiserver`'s FIFO
+- **Mount Bridge: singleton guard against duplicate driver instances (#303)**: `indiserver`'s FIFO
   `start` has no dedup of its own, and this device's own driver supervision was found live sending
   it twice in quick succession - two genuinely separate processes both registering as "PiFinder
   Mount Bridge" with the same indiserver at once. Now uses an `flock()`-based lock (not a PID file,
@@ -15,8 +15,10 @@ All notable changes to this project are documented in this file. Format loosely 
   process, so a genuine duplicate under the same indiserver is refused immediately while two
   separate indiserver instances (e.g. a real profile alongside a Fake-Mode test instance) can still
   each run their own single Mount Bridge.
+- **Extending the singleton guard to `LX200_PIFINDER` and `PiFinderSimulator` is tracked separately
+  as a high-priority follow-up (#306)** - same structural shape, no live symptom yet, drop-in fix.
 - **Mount Bridge GUI: "Quick Actions" as its own group, separate from Coupling; gated on active
-  mode**: found live investigating why reseed-from-mount and Sync-mount-from-PiFinder both fail
+  mode (#305)**: found live investigating why reseed-from-mount and Sync-mount-from-PiFinder both fail
   silently right after Full Simulation/Real Hardware startup - the everyday action buttons (Sync,
   Align to Held Target, Goto Held Target, Stop movement, Threshold, Decouple) were merged into the
   same block as the Coupling mode picker, and had no Coupling-state gating at all. Now two separate
