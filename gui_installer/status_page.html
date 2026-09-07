@@ -1874,6 +1874,13 @@
           <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
           <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
         </div>
+        <!-- 2026-09-07, direct feedback: the four action buttons above go
+             quietly disabled with no visible reason otherwise - several
+             different things can put Coupling in that state (never set up,
+             Mount Bridge not yet connected, explicitly Decoupled, ...), none
+             of which the user watching greyed-out buttons can be expected to
+             guess. See updateActionButtonsCouplingGate(). -->
+        <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
       </div>
       <div class="mb-group-box">
         <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
@@ -1949,7 +1956,7 @@
            just moved into the collapsible #mb-mode-cards-block. -->
       <div class="mb-collapsed-summary" onclick="toggleCollapsibleSection('mb-mode-cards-block', 'mb-mode-summary-chevron', 'block')">
         <div>
-          <div class="mb-collapsed-summary-title" id="mb-mode-summary-title">Hardware mode</div>
+          <div class="mb-collapsed-summary-title"><span class="status-dot dot-white" id="mb-mode-summary-dot"></span><span id="mb-mode-summary-title">Hardware mode</span></div>
           <div class="mb-collapsed-summary-sub" id="mb-mode-summary-sub">checking&hellip;</div>
         </div>
         <span class="mb-collapsed-summary-chevron" id="mb-mode-summary-chevron">&#9660; show</span>
@@ -2942,23 +2949,37 @@ function updateRealHardwareTile() {
 // (updateRealHardwareTile() above already knows this, and is the one place
 // all three tiles' state settles through) rather than tracking its own
 // separate state.
+// Set by updateSimReadinessLine() - the one place that already knows
+// whether every Full-Simulation checklist item (Profile/KStars/Drivers/
+// Mount/Ekos/Solve) is actually OK, not just "the process is running".
+let wmSimAllReady = true;
+
 function updateModeSummaryLine() {
   const titleEl = document.getElementById('mb-mode-summary-title');
   const subEl = document.getElementById('mb-mode-summary-sub');
-  if (!titleEl || !subEl) return;
-  let nameEl, subText;
+  const dotEl = document.getElementById('mb-mode-summary-dot');
+  if (!titleEl || !subEl || !dotEl) return;
+  let nameEl, subText, dotClass;
   if (document.getElementById('mode-tile-sim')?.classList.contains('tile-on')) {
     nameEl = 'Full Simulation (INDI/Mount Bridge)';
     subText = document.getElementById('mode-tile-sim-sub')?.textContent || '';
+    // One warning item (e.g. Mount still incomplete) is enough to call this
+    // yellow, even while the process itself is genuinely running - "running"
+    // and "actually fully set up" are different questions (2026-09-07,
+    // direct feedback).
+    dotClass = wmSimAllReady ? 'dot-green' : 'dot-yellow';
   } else if (document.getElementById('mode-tile-fake')?.classList.contains('tile-on')) {
     nameEl = 'PiFinder-only Fake Mode (legacy)';
     subText = document.getElementById('mode-tile-fake-sub')?.textContent || '';
+    dotClass = 'dot-green';
   } else {
     nameEl = 'Real Hardware';
     subText = document.getElementById('mode-tile-real-sub')?.textContent || '';
+    dotClass = 'dot-white';
   }
   titleEl.textContent = nameEl;
   subEl.textContent = subText;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
 }
 
 // Single place that renders a confirmed (desired, alive) pair OR an
@@ -4974,6 +4995,8 @@ function updateActionButtonsCouplingGate(couplingMode) {
   ['mb-manual-sync-btn', 'mb-align-held-btn', 'mb-goto-held-btn', 'mb-abort-btn'].forEach((id) => {
     document.getElementById(id).disabled = !coupled;
   });
+  const hint = document.getElementById('mb-quick-actions-hint');
+  if (hint) hint.style.display = coupled ? 'none' : '';
 }
 
 // European keyboards/locales often produce a comma decimal separator (e.g.
@@ -6760,19 +6783,27 @@ async function setWmActiveDevices() {
   const originalText = btn.textContent;
   btn.textContent = unlinking ? 'unlinking…' : (switching ? 'switching…' : 'linking…');
   document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
+  let succeeded = false;
   try {
     const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
     const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
     const data = await resp.json();
     if (data.success) {
+      succeeded = true;
       btn.classList.remove('ql-small-btn-orange');
       btn.textContent = unlinking ? 'Unlinked ✓' : (switching ? 'Switched ✓' : 'Linked ✓');
     } else {
-      // Stays orange even after refreshWmActiveButton() below resyncs the
-      // text/mb-btn-active state - it doesn't touch this class, so the
-      // error stays visible until the next attempt actually succeeds
-      // (2026-09-06, direct feedback - replaces the old star-icon
-      // highlight on the Mount step with a plain color signal here instead).
+      // Stays orange AND keeps showing the actual error - this used to say
+      // "until the next attempt actually succeeds" but the re-enabling
+      // setTimeout below called refreshWmActiveButton() unconditionally,
+      // which defeats its own "if (btn.disabled) return" guard the instant
+      // disabled flips back to false in the same callback - the error text
+      // was getting silently overwritten within 1.5s regardless of whether
+      // the underlying problem (e.g. indiserver unresponsive) was actually
+      // resolved (found live, 2026-09-07, direct feedback: "sie sollte aber
+      // bestehen, solange der Fehler da ist"). Now only refreshed on an
+      // actual success below - a real retry (a fresh click) still resets
+      // everything itself, same as it always did.
       btn.classList.add('ql-small-btn-orange');
       btn.textContent = data.error || 'failed';
     }
@@ -6782,7 +6813,11 @@ async function setWmActiveDevices() {
   }
   pollMbLog();
   await refreshMountBridgeStatus();
-  setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  if (succeeded) {
+    setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  } else {
+    btn.disabled = false;
+  }
   mbActionInFlight = false;
   clearMbActionStatus();
   setStepBusy(4, false);
@@ -7125,6 +7160,13 @@ function updateSimReadinessLine() {
   el.innerHTML = items.map(([label, ok]) =>
     `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
   ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist in the Mount Bridge tile');
+  // Feeds the Hardware-mode collapsed summary's dot (2026-09-07, direct
+  // feedback: it stayed a plain "running" green even with Mount showing a
+  // warning here - one warning item is enough to call the whole thing
+  // yellow, not a clean green). This is the one place that already knows
+  // whether every checklist item is actually OK, not just "process running".
+  wmSimAllReady = allReady;
+  updateModeSummaryLine();
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
