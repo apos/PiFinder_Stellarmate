@@ -872,6 +872,34 @@
     .mb-coupling-group { flex-basis: 100%; }
     .mb-coupling-btn { min-height: 3rem; padding: 0.8rem 0.6rem; font-size: 0.9rem; }
   }
+  /* Two separate, visually distinct groups (2026-09-07, direct feedback):
+     the everyday interactive actions (Quick Actions) and the Coupling mode
+     picker are used for genuinely different purposes - the former during
+     every session, the latter to configure how the two above sync. A
+     shared box outline (not a background fill, #mount-bridge-tile is
+     already the innermost dark layer) keeps each one visually self-
+     contained without adding another background layer. */
+  .mb-group-box {
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem 0.9rem;
+    margin-bottom: 0.7rem;
+  }
+  .mb-group-box .group-label { margin-bottom: 0.6rem; }
+  .mb-collapsed-summary {
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    background: #161616;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
+  }
+  .mb-collapsed-summary:hover { border-color: #3a3a3a; }
+  .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
+  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -1815,42 +1843,50 @@
            wrapper lets updateProfileRoleLine() hide the whole block at once
            without fighting the inner rows' own show/hide logic. -->
       <div id="mb-operate-rows">
-      <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
-        <div id="mb-coupling-groups">
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Coupling Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
-              <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+      <!-- Quick Actions (2026-09-07, direct feedback): the everyday
+           interactive controls, used constantly once Coupling is set up -
+           moved to the top and boxed as their own group, separate from the
+           Coupling picker below (previously merged into one undifferentiated
+           block, making it unclear which controls are "set once" vs. "use
+           every session"). Disabled together whenever Coupling is Off - see
+           updateActionButtonsCouplingGate() - since none of these one-shot
+           actions mean anything without an active Coupling relationship. -->
+      <div class="mb-group-box">
+        <div class="group-label">Quick Actions</div>
+        <div class="mb-row" id="mb-big-actions-row">
+          <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" disabled title="One-shot: syncs the mount to PiFinder's current solved position right now. Useful after moving the mount by hand - none of the Coupling presets react to that on their own. Needs an active Coupling mode.">Sync mount from PiFinder</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
+          <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
+        </div>
+        <div class="mb-row" id="mb-threshold-manual-row">
+          <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
+            <span class="mb-row-label">Threshold:</span>
+            <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
+          </span>
+          <span id="mb-threshold-manual-sep"></span>
+          <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
+          <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
+        </div>
+      </div>
+      <div class="mb-group-box">
+        <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
+          <div id="mb-coupling-groups">
+            <div class="mb-coupling-group">
+              <div class="group-label mb-coupling-label"><span>Coupling Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
+              <div class="mb-coupling-group-buttons">
+                <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
+                <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+              </div>
             </div>
-          </div>
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
+            <div class="mb-coupling-group">
+              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
+              <div class="mb-coupling-group-buttons">
+                <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <!-- Big, equal-weight action row (2026-08-09, direct feedback): Sync
-           and Stop are frequent, important, mode-independent actions - they
-           don't belong squeezed in as small text-labelled buttons next to
-           Threshold, they need the same visual weight as the coupling
-           presets above. -->
-      <div class="mb-row" id="mb-big-actions-row">
-        <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
-        <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it.">Align to Held Target</button>
-        <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at.">Goto Held Target</button>
-        <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
-      </div>
-      <div class="mb-row" id="mb-threshold-manual-row">
-        <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
-          <span class="mb-row-label">Threshold:</span>
-          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
-        </span>
-        <span id="mb-threshold-manual-sep"></span>
-        <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
-        <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -1860,6 +1896,13 @@
            everyday control, not a setup-time diagnostic, and stays visible
            (and usable to switch OUT of "PiFinder host" mode) even when
            #mb-operate-rows itself is hidden in that mode. -->
+      <!-- "Settings" umbrella label (2026-09-07, direct feedback): Role,
+           hardware mode, and the setup checklist below are all one-time-
+           per-session configuration, distinct from Quick Actions/Coupling
+           above - no per-item explanatory subtext needed, the grouping
+           itself already says that (see basic-memory bm/00017's "no
+           label that only narrates that something works as designed"). -->
+      <div class="group-label" id="mb-settings-label">Settings</div>
       <div class="group-label" id="mb-role-intro" title="Three setup variants for integrating your PiFinder with INDI - pick the one matching this device's job.">Role<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
       <div id="mb-role-cards">
         <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
@@ -4851,6 +4894,18 @@ function updateThresholdInputRelevance(couplingMode) {
     : 'Not used while Coupling is Off.';
 }
 
+// Quick Actions (2026-09-07, direct feedback): none of these one-shot
+// actions mean anything without an active Coupling relationship (nothing
+// held, nothing to sync/align/stop) - disable the whole row together while
+// Coupling is Off, same MODE_OFF gate updateThresholdInputRelevance() above
+// already uses for the Threshold input.
+function updateActionButtonsCouplingGate(couplingMode) {
+  const coupled = !!couplingMode && couplingMode !== 'MODE_OFF';
+  ['mb-manual-sync-btn', 'mb-align-held-btn', 'mb-goto-held-btn', 'mb-abort-btn'].forEach((id) => {
+    document.getElementById(id).disabled = !coupled;
+  });
+}
+
 // European keyboards/locales often produce a comma decimal separator (e.g.
 // typing "0,5") - parseFloat() and the server's Python float() both only
 // accept a period, so a comma either silently parses as a truncated integer
@@ -4887,6 +4942,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
+  updateActionButtonsCouplingGate(couplingMode);
 
   // Disabled (not hidden) while there's nothing to decouple from - per
   // live feedback (2026-08-05), hiding interface elements outright makes a
