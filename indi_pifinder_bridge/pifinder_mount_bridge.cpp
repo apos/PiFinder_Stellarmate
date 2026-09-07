@@ -484,8 +484,16 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&ShadowSyncSP, ShadowSyncS, 2, getDeviceName(), "SHADOW_SYNC", "Mirror to shadow device",
                        "Shadow Sync", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
 
-    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
-    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
+    // Default ISS_ON is Verify/Alert only, not Off (2026-09-07, direct
+    // feedback) - only matters for a genuinely fresh install with no saved
+    // config yet (loadConfig() overrides this immediately once a config
+    // file exists), but that first-run moment is exactly what every new
+    // user hits, and Coupling being silently Off with no visible reason is
+    // a worse first impression than a passive, safe default (Verify/Alert
+    // never touches the mount, just warns) that requires no setup step of
+    // its own.
+    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_OFF);
+    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
     IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
@@ -671,6 +679,28 @@ bool PiFinderMountBridge::updateProperties()
         {
             loadConfig(true);
             m_connectedConfigLoaded = true;
+
+            // Self-healing guarantee (2026-09-07, direct feedback): "some
+            // Coupling mode is always active, defaulting to Verify/Alert if
+            // none was ever explicitly chosen" must hold regardless of WHY
+            // it might not - a stale/corrupted saved config with every
+            // switch written Off, a partially-written config file, or any
+            // other way BridgeModeSP could end up with none of its
+            // ISR_1OFMANY switches actually On. Not something to diagnose
+            // case-by-case - just verify the invariant directly and fix it
+            // on the spot if it doesn't hold, exactly like the RA0/Dec0
+            // guards elsewhere in this file don't ask why a bad value
+            // arrived before rejecting it.
+            if (!IUFindOnSwitch(&BridgeModeSP))
+            {
+                LOG_WARN("BRIDGE_MODE had no active switch after loading its saved config - "
+                         "defaulting to Verify/Alert only and re-saving.");
+                IUResetSwitch(&BridgeModeSP);
+                BridgeModeS[MODE_VERIFY_ALERT].s = ISS_ON;
+                BridgeModeSP.s = IPS_OK;
+                IDSetSwitch(&BridgeModeSP, nullptr);
+                saveConfig(true, BridgeModeSP.name);
+            }
         }
     }
     else

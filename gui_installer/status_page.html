@@ -872,6 +872,40 @@
     .mb-coupling-group { flex-basis: 100%; }
     .mb-coupling-btn { min-height: 3rem; padding: 0.8rem 0.6rem; font-size: 0.9rem; }
   }
+  /* Two separate, visually distinct groups (2026-09-07, direct feedback):
+     the everyday interactive actions (Quick Actions) and the Coupling mode
+     picker are used for genuinely different purposes - the former during
+     every session, the latter to configure how the two above sync. A
+     shared box outline (not a background fill, #mount-bridge-tile is
+     already the innermost dark layer) keeps each one visually self-
+     contained without adding another background layer. */
+  .mb-group-box {
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem 0.9rem;
+    margin-bottom: 0.7rem;
+  }
+  .mb-group-box .group-label { margin-bottom: 0.6rem; }
+  .mb-collapsed-summary {
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    background: #161616;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
+  }
+  .mb-collapsed-summary:hover { border-color: #3a3a3a; }
+  .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
+  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; flex-shrink: 0; }
+  .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
+  .mb-collapsed-summary-sub { font-size: 0.75rem; color: #888; margin-top: 0.15rem; }
+  /* #mb-role-line already has its own margin (see its base rule above) meant
+     for sitting alone in the flow - inside .mb-collapsed-summary's flex row
+     it needs to stop claiming vertical space around itself instead. */
+  .mb-collapsed-summary #mb-role-line { margin: 0; }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -1815,42 +1849,57 @@
            wrapper lets updateProfileRoleLine() hide the whole block at once
            without fighting the inner rows' own show/hide logic. -->
       <div id="mb-operate-rows">
-      <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
-        <div id="mb-coupling-groups">
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Coupling Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
-              <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+      <!-- Quick Actions (2026-09-07, direct feedback): the everyday
+           interactive controls, used constantly once Coupling is set up -
+           moved to the top and boxed as their own group, separate from the
+           Coupling picker below (previously merged into one undifferentiated
+           block, making it unclear which controls are "set once" vs. "use
+           every session"). Disabled together whenever Coupling is Off - see
+           updateActionButtonsCouplingGate() - since none of these one-shot
+           actions mean anything without an active Coupling relationship. -->
+      <div class="mb-group-box">
+        <div class="group-label">Quick Actions</div>
+        <div class="mb-row" id="mb-big-actions-row">
+          <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" disabled title="One-shot: syncs the mount to PiFinder's current solved position right now. Useful after moving the mount by hand - none of the Coupling presets react to that on their own. Needs an active Coupling mode.">Sync mount from PiFinder</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
+          <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
+        </div>
+        <div class="mb-row" id="mb-threshold-manual-row">
+          <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
+            <span class="mb-row-label">Threshold:</span>
+            <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
+          </span>
+          <span id="mb-threshold-manual-sep"></span>
+          <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
+          <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
+        </div>
+        <!-- 2026-09-07, direct feedback: the four action buttons above go
+             quietly disabled with no visible reason otherwise - several
+             different things can put Coupling in that state (never set up,
+             Mount Bridge not yet connected, explicitly Decoupled, ...), none
+             of which the user watching greyed-out buttons can be expected to
+             guess. See updateActionButtonsCouplingGate(). -->
+        <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
+      </div>
+      <div class="mb-group-box">
+        <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
+          <div id="mb-coupling-groups">
+            <div class="mb-coupling-group">
+              <div class="group-label mb-coupling-label"><span>Coupling Visual</span><a class="help-link" href="/help.html#coupling-visual" target="_blank" rel="noopener" title="Help">i</a></div>
+              <div class="mb-coupling-group-buttons">
+                <button id="wm-preset-verify-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('verify_alert')" disabled>Verify/Alert only</button>
+                <button id="wm-preset-auto-sync-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('auto_correct_sync')" disabled title="Corrects by syncing the mount to PiFinder's solved position once drift exceeds the threshold - an instant position update, no slewing, works on any mount.">Auto-correct (Sync)</button>
+              </div>
             </div>
-          </div>
-          <div class="mb-coupling-group">
-            <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
-            <div class="mb-coupling-group-buttons">
-              <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
+            <div class="mb-coupling-group">
+              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
+              <div class="mb-coupling-group-buttons">
+                <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <!-- Big, equal-weight action row (2026-08-09, direct feedback): Sync
-           and Stop are frequent, important, mode-independent actions - they
-           don't belong squeezed in as small text-labelled buttons next to
-           Threshold, they need the same visual weight as the coupling
-           presets above. -->
-      <div class="mb-row" id="mb-big-actions-row">
-        <button id="mb-manual-sync-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerManualSync()" title="One-shot: syncs the mount to PiFinder's current solved position right now, regardless of Coupling mode. Useful after moving the mount by hand - none of the Coupling presets react to that on their own.">Sync mount from PiFinder</button>
-        <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it.">Align to Held Target</button>
-        <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at.">Goto Held Target</button>
-        <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable.">Stop movement</button>
-      </div>
-      <div class="mb-row" id="mb-threshold-manual-row">
-        <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
-          <span class="mb-row-label">Threshold:</span>
-          <input type="number" id="wm-threshold-input" class="pf-num-input" value="5" min="0.1" max="600" step="0.5" style="width:4em;" onchange="applyThresholdChange()" oninput="scheduleThresholdChange()"> arcmin
-        </span>
-        <span id="mb-threshold-manual-sep"></span>
-        <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
-        <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
       </div>
       <div class="hgroup-divider"></div>
       </div>
@@ -1860,29 +1909,58 @@
            everyday control, not a setup-time diagnostic, and stays visible
            (and usable to switch OUT of "PiFinder host" mode) even when
            #mb-operate-rows itself is hidden in that mode. -->
-      <div class="group-label" id="mb-role-intro" title="Three setup variants for integrating your PiFinder with INDI - pick the one matching this device's job.">Role<a class="help-link" href="/help.html#pifinder-host-setup" target="_blank" rel="noopener" title="Help">i</a></div>
-      <div id="mb-role-cards">
-        <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
-          <div class="mb-role-card-title">All-in-one</div>
-          <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
+      <!-- "Settings" umbrella label (2026-09-07, direct feedback): Role,
+           hardware mode, and the setup checklist below are all one-time-
+           per-session configuration, distinct from Quick Actions/Coupling
+           above - no per-item explanatory subtext needed, the grouping
+           itself already says that (see basic-memory bm/00017's "no
+           label that only narrates that something works as designed"). -->
+      <div class="group-label" id="mb-settings-label">Settings</div>
+
+      <!-- Role: the always-visible summary row (#mb-role-line, unchanged
+           logic - updateProfileRoleLine() still owns its inner content,
+           cleared/rebuilt as before) now doubles as the collapsed-section
+           toggle; the role-picker cards collapse into #mb-role-details,
+           default hidden, same toggleCollapsibleSection() every other
+           collapsible section on this page already uses. -->
+      <div class="mb-collapsed-summary" onclick="toggleCollapsibleSection('mb-role-details', 'mb-role-chevron')">
+        <div id="mb-role-line" style="display:none;" title="What the selected profile makes this device do - derived live from which drivers the profile actually contains. Click to change the role."></div>
+        <span class="mb-collapsed-summary-chevron" id="mb-role-chevron">&#9660; show</span>
+      </div>
+      <div id="mb-role-details" style="display:none;">
+        <div id="mb-role-cards">
+          <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
+            <div class="mb-role-card-title">All-in-one</div>
+            <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
+          </div>
+          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
+            <div class="mb-role-card-title">PiFinder host</div>
+            <div class="mb-role-card-sub">PiFinder only, no mount.</div>
+          </div>
+          <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
+            <div class="mb-role-card-title">Control host</div>
+            <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
+          </div>
         </div>
-        <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
-          <div class="mb-role-card-title">PiFinder host</div>
-          <div class="mb-role-card-sub">PiFinder only, no mount.</div>
-        </div>
-        <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
-          <div class="mb-role-card-title">Control host</div>
-          <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
+        <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
+          <span class="mb-row-label">This device's IP:</span>
+          <span id="pfhost-ip">checking&hellip;</span>
         </div>
       </div>
-      <div id="mb-role-line" style="display:none;" title="What the selected profile makes this device do - derived live from which drivers the profile actually contains. Change it by picking a different role card above."></div>
-      <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
-        <span class="mb-row-label">This device's IP:</span>
-        <span id="pfhost-ip">checking&hellip;</span>
+
+      <!-- Hardware mode: same collapsed-summary/detail split as Role above.
+           #mb-mode-summary-title/-sub are populated by updateModeSummaryLine()
+           (called from updateRealHardwareTile(), the single place that
+           already knows which of the three tiles is currently active) -
+           the tiles/readiness line/setup button themselves are unchanged,
+           just moved into the collapsible #mb-mode-cards-block. -->
+      <div class="mb-collapsed-summary" onclick="toggleCollapsibleSection('mb-mode-cards-block', 'mb-mode-summary-chevron', 'block')">
+        <div>
+          <div class="mb-collapsed-summary-title"><span class="status-dot dot-white" id="mb-mode-summary-dot"></span><span id="mb-mode-summary-title">Hardware mode</span></div>
+          <div class="mb-collapsed-summary-sub" id="mb-mode-summary-sub">checking&hellip;</div>
+        </div>
+        <span class="mb-collapsed-summary-chevron" id="mb-mode-summary-chevron">&#9660; show</span>
       </div>
-
-      <div class="hgroup-divider"></div>
-
       <!-- Moved here from "Simulation, Test and Power" (#267, 2026-09-05):
            these mode cards + the readiness line depend on exactly the
            setup state the checklist right below tracks - they belong next
@@ -1890,7 +1968,7 @@
            setModeTileVisible() can hide this alongside the rest of the
            Mode tile while an install/reinstall run is active (that hiding
            previously came for free from living inside #mode-tile itself). -->
-      <div id="mb-mode-cards-block">
+      <div id="mb-mode-cards-block" style="display:none;">
         <div class="mode-tiles">
           <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
@@ -1907,8 +1985,8 @@
         </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <div id="mb-setup-btn-row" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
-          <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
           <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">Setup INDI</button>
+          <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       </div>
@@ -2395,7 +2473,22 @@ function setModeTileVisible(visible) {
   // install/reinstall run is active, or Full Simulation/Fake Mode could be
   // toggled mid-run.
   const modeCardsBlock = document.getElementById('mb-mode-cards-block');
-  if (modeCardsBlock) modeCardsBlock.style.display = visible ? '' : 'none';
+  if (!modeCardsBlock) return;
+  if (!visible) {
+    modeCardsBlock.style.display = 'none';
+    return;
+  }
+  // 2026-09-07: this block now collapses independently under its own
+  // summary row (toggleCollapsibleSection('mb-mode-cards-block', ...)) -
+  // becoming visible again must restore whatever collapse state the user
+  // last had, not force it open every time an install run finishes.
+  let saved = null;
+  try {
+    saved = localStorage.getItem('collapsible-mb-mode-cards-block');
+  } catch (e) {
+    // localStorage unavailable - fall through to the collapsed default
+  }
+  modeCardsBlock.style.display = saved === 'open' ? '' : 'none';
 }
 
 function updateProgress(phaseIndex, phaseTotal, phaseLabel) {
@@ -2848,6 +2941,45 @@ function updateRealHardwareTile() {
   tile.classList.toggle('tile-on', active);
   setHwDot(dotEl, 'status-dot ' + (active ? 'dot-green' : 'dot-white'));
   subEl.textContent = active ? 'current mode' : 'inactive while a simulation mode is on';
+  updateModeSummaryLine();
+}
+
+// Collapsed-summary row for the hardware-mode picker (2026-09-07, direct
+// feedback) - mirrors whichever of the three tiles is currently active
+// (updateRealHardwareTile() above already knows this, and is the one place
+// all three tiles' state settles through) rather than tracking its own
+// separate state.
+// Set by updateSimReadinessLine() - the one place that already knows
+// whether every Full-Simulation checklist item (Profile/KStars/Drivers/
+// Mount/Ekos/Solve) is actually OK, not just "the process is running".
+let wmSimAllReady = true;
+
+function updateModeSummaryLine() {
+  const titleEl = document.getElementById('mb-mode-summary-title');
+  const subEl = document.getElementById('mb-mode-summary-sub');
+  const dotEl = document.getElementById('mb-mode-summary-dot');
+  if (!titleEl || !subEl || !dotEl) return;
+  let nameEl, subText, dotClass;
+  if (document.getElementById('mode-tile-sim')?.classList.contains('tile-on')) {
+    nameEl = 'Full Simulation (INDI/Mount Bridge)';
+    subText = document.getElementById('mode-tile-sim-sub')?.textContent || '';
+    // One warning item (e.g. Mount still incomplete) is enough to call this
+    // yellow, even while the process itself is genuinely running - "running"
+    // and "actually fully set up" are different questions (2026-09-07,
+    // direct feedback).
+    dotClass = wmSimAllReady ? 'dot-green' : 'dot-yellow';
+  } else if (document.getElementById('mode-tile-fake')?.classList.contains('tile-on')) {
+    nameEl = 'PiFinder-only Fake Mode (legacy)';
+    subText = document.getElementById('mode-tile-fake-sub')?.textContent || '';
+    dotClass = 'dot-green';
+  } else {
+    nameEl = 'Real Hardware';
+    subText = document.getElementById('mode-tile-real-sub')?.textContent || '';
+    dotClass = 'dot-white';
+  }
+  titleEl.textContent = nameEl;
+  subEl.textContent = subText;
+  setHwDot(dotEl, 'status-dot ' + dotClass);
 }
 
 // Single place that renders a confirmed (desired, alive) pair OR an
@@ -4645,6 +4777,8 @@ function restoreCollapsibleSections() {
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
     ['mode-power-groups', 'mode-power-chevron', 'flex'],
     ['mb-multialign-details', 'mb-multialign-chevron', 'block'],
+    ['mb-role-details', 'mb-role-chevron', 'block'],
+    ['mb-mode-cards-block', 'mb-mode-summary-chevron', 'block'],
     ['mb-details', 'mb-details-chevron', 'block'],
     ['mb-mode-details', 'mb-mode-details-chevron', 'block'],
     ['mb-reject-warning-details', 'mb-reject-warning-chevron', 'block'],
@@ -4851,6 +4985,20 @@ function updateThresholdInputRelevance(couplingMode) {
     : 'Not used while Coupling is Off.';
 }
 
+// Quick Actions (2026-09-07, direct feedback): none of these one-shot
+// actions mean anything without an active Coupling relationship (nothing
+// held, nothing to sync/align/stop) - disable the whole row together while
+// Coupling is Off, same MODE_OFF gate updateThresholdInputRelevance() above
+// already uses for the Threshold input.
+function updateActionButtonsCouplingGate(couplingMode) {
+  const coupled = !!couplingMode && couplingMode !== 'MODE_OFF';
+  ['mb-manual-sync-btn', 'mb-align-held-btn', 'mb-goto-held-btn', 'mb-abort-btn'].forEach((id) => {
+    document.getElementById(id).disabled = !coupled;
+  });
+  const hint = document.getElementById('mb-quick-actions-hint');
+  if (hint) hint.style.display = coupled ? 'none' : '';
+}
+
 // European keyboards/locales often produce a comma decimal separator (e.g.
 // typing "0,5") - parseFloat() and the server's Python float() both only
 // accept a period, so a comma either silently parses as a truncated integer
@@ -4887,6 +5035,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   updateDriftBadge(driftArcmin, threshold);
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
+  updateActionButtonsCouplingGate(couplingMode);
 
   // Disabled (not hidden) while there's nothing to decouple from - per
   // live feedback (2026-08-05), hiding interface elements outright makes a
@@ -6386,6 +6535,21 @@ async function checkKstarsLink() {
 // may never open KStars and drive everything from the StellarMate App
 // directly, so there's nothing useful to say in that case (this tile has
 // no way to tell those two situations apart from here).
+// Self-heal (2026-09-07, direct feedback): "system must recognize something
+// is wrong and fix it" - not just report the gap and wait for the human to
+// go click Start/Connect in KStars themselves. Reuses the exact same
+// _ekos_start_profile() Autoconnect already relies on for this - this is
+// its documented purpose (its own docstring: driving Ekos's GUI here is
+// deliberate, found live 2026-08-04 that requiring a manual click was a
+// hard blocker). Bounded (EKOS_AUTO_HEAL_MAX_ATTEMPTS, a cooldown between
+// tries) so a genuinely broken KStars/profile doesn't get hammered every
+// 20s poll forever - same "retry, but not unboundedly" principle as
+// MAX_SETTLE_RETRIES/MAX_FRESHNESS_WAIT_TICKS on the driver side.
+let wmEkosAutoHealAttempts = 0;
+let wmEkosAutoHealCooldownUntil = 0;
+const EKOS_AUTO_HEAL_MAX_ATTEMPTS = 3;
+const EKOS_AUTO_HEAL_COOLDOWN_MS = 15000;
+
 async function checkEkosStatus() {
   const row = document.getElementById('mb-ekos-status-row');
   const el = document.getElementById('mb-ekos-status');
@@ -6401,6 +6565,7 @@ async function checkEkosStatus() {
     wmEkosConnected = !!data.connected;
     row.style.display = '';
     if (data.connected) {
+      wmEkosAutoHealAttempts = 0;  // genuinely healthy again - a future gap gets a fresh budget
       el.className = 'mb-step-widget mb-hint mb-hint-ok';
       // wmSelectedProfile is step 1's own dropdown value - if steps 1-4/6
       // are actually connected (the specific PiFinder LX200/Mount
@@ -6411,6 +6576,22 @@ async function checkEkosStatus() {
         ? `✓ Ekos is connected in KStars (considered profile "${wmSelectedProfile}").`
         : '✓ Ekos is connected in KStars.';
     } else {
+      const canAutoHeal = !!wmSelectedProfile &&
+        Date.now() > wmEkosAutoHealCooldownUntil &&
+        wmEkosAutoHealAttempts < EKOS_AUTO_HEAL_MAX_ATTEMPTS;
+      if (canAutoHeal) {
+        wmEkosAutoHealAttempts++;
+        wmEkosAutoHealCooldownUntil = Date.now() + EKOS_AUTO_HEAL_COOLDOWN_MS;
+        el.className = 'mb-step-widget mb-hint';
+        el.textContent = `⏳ Ekos isn't connected - reconnecting profile "${wmSelectedProfile}" automatically…`;
+        try {
+          await fetch(`/api/ekos_start_profile?profile=${encodeURIComponent(wmSelectedProfile)}`, { method: 'POST' });
+        } catch (e) {
+          // best-effort - the next poll cycle re-checks and, within budget,
+          // tries again
+        }
+        return;
+      }
       el.className = 'mb-step-widget mb-hint';
       el.textContent = wmSelectedProfile
         ? `⚠ Ekos isn't connected yet - in KStars' Ekos, start the profile "${wmSelectedProfile}" and click "Connect" under Connect & Disconnect Devices.`
@@ -6634,19 +6815,27 @@ async function setWmActiveDevices() {
   const originalText = btn.textContent;
   btn.textContent = unlinking ? 'unlinking…' : (switching ? 'switching…' : 'linking…');
   document.getElementById('mount-bridge-dot').classList.add('dot-unconfirmed');
+  let succeeded = false;
   try {
     const params = unlinking ? 'action=unlink' : `mount=${encodeURIComponent(mount)}`;
     const resp = await fetch(`/api/mount_bridge_active_devices?${params}`, { method: 'POST' });
     const data = await resp.json();
     if (data.success) {
+      succeeded = true;
       btn.classList.remove('ql-small-btn-orange');
       btn.textContent = unlinking ? 'Unlinked ✓' : (switching ? 'Switched ✓' : 'Linked ✓');
     } else {
-      // Stays orange even after refreshWmActiveButton() below resyncs the
-      // text/mb-btn-active state - it doesn't touch this class, so the
-      // error stays visible until the next attempt actually succeeds
-      // (2026-09-06, direct feedback - replaces the old star-icon
-      // highlight on the Mount step with a plain color signal here instead).
+      // Stays orange AND keeps showing the actual error - this used to say
+      // "until the next attempt actually succeeds" but the re-enabling
+      // setTimeout below called refreshWmActiveButton() unconditionally,
+      // which defeats its own "if (btn.disabled) return" guard the instant
+      // disabled flips back to false in the same callback - the error text
+      // was getting silently overwritten within 1.5s regardless of whether
+      // the underlying problem (e.g. indiserver unresponsive) was actually
+      // resolved (found live, 2026-09-07, direct feedback: "sie sollte aber
+      // bestehen, solange der Fehler da ist"). Now only refreshed on an
+      // actual success below - a real retry (a fresh click) still resets
+      // everything itself, same as it always did.
       btn.classList.add('ql-small-btn-orange');
       btn.textContent = data.error || 'failed';
     }
@@ -6656,7 +6845,11 @@ async function setWmActiveDevices() {
   }
   pollMbLog();
   await refreshMountBridgeStatus();
-  setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  if (succeeded) {
+    setTimeout(() => { btn.disabled = false; refreshWmActiveButton(); }, 1500);
+  } else {
+    btn.disabled = false;
+  }
   mbActionInFlight = false;
   clearMbActionStatus();
   setStepBusy(4, false);
@@ -6999,6 +7192,13 @@ function updateSimReadinessLine() {
   el.innerHTML = items.map(([label, ok]) =>
     `<span style="color:${ok ? '#4caf50' : '#e0a030'}">${ok ? '&#10003;' : '&#9888;'} ${label}</span>`
   ).join(' &middot; ') + (allReady ? ' &mdash; all set' : ' &mdash; incomplete, see Setup checklist in the Mount Bridge tile');
+  // Feeds the Hardware-mode collapsed summary's dot (2026-09-07, direct
+  // feedback: it stayed a plain "running" green even with Mount showing a
+  // warning here - one warning item is enough to call the whole thing
+  // yellow, not a clean green). This is the one place that already knows
+  // whether every checklist item is actually OK, not just "process running".
+  wmSimAllReady = allReady;
+  updateModeSummaryLine();
 }
 
 // Yellow + spinning symbol while a step's own action is actually running -
