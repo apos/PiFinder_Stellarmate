@@ -1129,7 +1129,20 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         return false;
 
     // --- Fall 2: mount moved without either of our own state machines having commanded it. ---
-    const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING;
+    // A whole Multi-Point Alignment run (SLEWING through SETTLING, one point after another) is just
+    // as much "commanded by us" as ForwardState/CorrectState::SLEWING - found live (2026-09-07, #309):
+    // without this, an alignment run with Coupling=Goto-Forward active had its own GoTos misclassified
+    // as external repositions, adopted as a "confirmed" new held target, and followed by a spurious
+    // extra GoTo cycle after each point. Deliberately checking "anything other than IDLE/DONE" rather
+    // than mirroring ForwardState/CorrectState's SLEWING-only check: handleMultiPointAlignment() runs
+    // BEFORE this function each tick (unlike handleGotoForward()/handleAutoCorrectGoto(), which run
+    // after), so on the exact tick a point's slew completes, m_alignState has already flipped to
+    // SETTLING by the time weCommandedIt is evaluated here - a SLEWING-only check would still miss
+    // precisely the arrival tick where the misclassification actually happens. Alignment's own
+    // SETTLING already owns verifying arrival and syncing; reposition detection has nothing useful to
+    // add for either of its states.
+    const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING ||
+                                (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE);
 
     // Onset/still-moving detection: compare the mount's own position against
     // the last tick's, rather than watching isMountSlewing() (see
