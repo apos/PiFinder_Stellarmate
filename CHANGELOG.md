@@ -7,6 +7,15 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Mount Bridge GUI: "Quick Actions" as its own group, separate from Coupling; gated on active
+  mode**: found live investigating why reseed-from-mount and Sync-mount-from-PiFinder both fail
+  silently right after Full Simulation/Real Hardware startup - the everyday action buttons (Sync,
+  Align to Held Target, Goto Held Target, Stop movement, Threshold, Decouple) were merged into the
+  same block as the Coupling mode picker, and had no Coupling-state gating at all. Now two separate
+  boxed groups, with the four big action buttons disabled whenever Coupling is Off. Role/hardware
+  mode/setup checklist grouped under one plain "Settings" label.
+- **Mount Bridge: default Coupling is Verify/Alert only, not Off**, on a genuinely fresh install
+  with no saved config yet - a safer, more informative first-run default than a silent Off.
 - **Mount Bridge: pushes confirmed external mount repositions to PiFinder itself (#300)**: when a
   mount GoTo happens directly on the mount (hand paddle, SkySafari, KStars talking straight to the
   mount driver) while Goto-Forward/Auto-correct-Goto is active, `handleRepositionDetection()`
