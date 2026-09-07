@@ -7,6 +7,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- **Mount Bridge: singleton guard against duplicate driver instances**: `indiserver`'s FIFO
+  `start` has no dedup of its own, and this device's own driver supervision was found live sending
+  it twice in quick succession - two genuinely separate processes both registering as "PiFinder
+  Mount Bridge" with the same indiserver at once. Now uses an `flock()`-based lock (not a PID file,
+  which could wrongly refuse a later restart after an unclean kill) scoped to the parent indiserver
+  process, so a genuine duplicate under the same indiserver is refused immediately while two
+  separate indiserver instances (e.g. a real profile alongside a Fake-Mode test instance) can still
+  each run their own single Mount Bridge.
 - **Mount Bridge GUI: "Quick Actions" as its own group, separate from Coupling; gated on active
   mode**: found live investigating why reseed-from-mount and Sync-mount-from-PiFinder both fail
   silently right after Full Simulation/Real Hardware startup - the everyday action buttons (Sync,

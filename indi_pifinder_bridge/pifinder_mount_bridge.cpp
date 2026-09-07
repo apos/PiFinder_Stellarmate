@@ -4,9 +4,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <string>
+
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -439,10 +445,59 @@ bool isPiFinderSolveFresh(double maxAgeSeconds)
     return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
 }
 
+// Singleton guard (2026-09-07, direct feedback: "Warum haben die Treiber
+// keine Singleton???"). Found live: indiserver's FIFO `start` has no dedup
+// of its own - something sent it twice for this same driver, and two
+// genuinely separate processes both happily registered with the same
+// indiserver as "PiFinder Mount Bridge" at once.
+//
+// flock() rather than a PID file, specifically to avoid the classic
+// stale-lock problem: if this process is ever killed uncleanly (SIGKILL,
+// a crash), a PID file would be left behind and could wrongly refuse a
+// later, legitimate restart. flock() needs no such liveness-checking - the
+// kernel releases it automatically the instant the holding process exits,
+// crashes, or is killed, full stop.
+//
+// Scoped to this process's *parent* PID (indiserver's own PID) rather than
+// one fixed path, so two genuinely separate indiserver instances (e.g. a
+// real Full-Simulation profile and a separate Fake-Mode test instance on a
+// different port) can each still run their own single Mount Bridge without
+// falsely colliding with each other - only a second instance spawned by
+// the SAME indiserver (today's actual bug) gets refused.
+bool acquireSingletonLock()
+{
+    const std::string lockPath = "/tmp/.indi_pifinder_mount_bridge_" + std::to_string(getppid()) + ".lock";
+    const int fd = open(lockPath.c_str(), O_CREAT | O_RDWR, 0600);
+    if (fd < 0)
+        return true; // can't even attempt the lock - fail open rather than refuse to start over a filesystem hiccup
+
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+    {
+        close(fd);
+        return false; // another instance already holds it
+    }
+
+    // Deliberately never closed - held for this process's entire lifetime
+    // so the lock stays in effect. No leak in practice: the kernel reclaims
+    // the fd (and releases the flock) on process exit regardless of how it
+    // exits.
+    return true;
+}
+
 } // namespace
 
 PiFinderMountBridge::PiFinderMountBridge()
 {
+    // As early as possible - before any INDI property/network setup - so a
+    // duplicate exits immediately and cleanly, never registering with
+    // indiserver at all. See acquireSingletonLock()'s own comment.
+    if (!acquireSingletonLock())
+    {
+        fprintf(stderr, "PiFinder Mount Bridge: another instance is already running under this "
+                        "indiserver (parent pid %d) - exiting.\n", getppid());
+        exit(1);
+    }
+
     setVersion(1, 1);
     setDriverInterface(AUX_INTERFACE);
 
