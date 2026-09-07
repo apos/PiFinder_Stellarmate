@@ -27,6 +27,7 @@ echo "-> Building..."
 cmake --build "${BUILD_DIR}"
 
 echo "-> Installing driver executable..."
+stop_indi_driver_and_wait "indi_pifinder_mount_bridge"
 sudo cp "${BUILD_DIR}/indi_pifinder_mount_bridge" /usr/bin/indi_pifinder_mount_bridge
 sudo chmod +x /usr/bin/indi_pifinder_mount_bridge
 
@@ -40,8 +41,8 @@ else
 fi
 
 echo ""
-echo "Done. If the driver was already running, stop it first before installing,"
-echo "or the cp above will fail with 'Text file busy'."
+echo "Done. (Any already-running instance was stopped automatically before"
+echo "installing, to avoid a 'Text file busy' cp failure.)"
 echo ""
 echo "Restart the StellarMate Webmanager to see it in the catalog (from the"
 echo "GUI/VNC session, not SSH): systemctl --user restart stellarmatewebmanager.service"
