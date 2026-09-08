@@ -50,16 +50,23 @@
  def _json_response(data, status=200):
      """Unified JSON response format"""
      return Response(
-@@ -166,6 +199,8 @@
+@@ -166,6 +199,15 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
 +                "debug_solve": ss.debug_solve(),
 +                "fake_solve_active": ss.fake_solve_active(),
++                # Last confirmed solve-based PiFinder Align (see
++                # state.SharedStateObj.set_last_align). last_align_time is an
++                # epoch float an external poller dedups on; ra/dec are J2000
++                # degrees. All null until the first Align this session.
++                "last_align_time": ss.last_align_time(),
++                "last_align_ra": ss.last_align_ra(),
++                "last_align_dec": ss.last_align_dec(),
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -219,6 +254,198 @@
+@@ -219,6 +261,198 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
  
@@ -258,7 +265,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -770,6 +997,128 @@
+@@ -770,6 +1004,128 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  

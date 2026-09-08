@@ -1,12 +1,11 @@
 # Concept: Sync mount on a confirmed PiFinder Align, regardless of Coupling mode
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
-> [GitHub issue #313](https://github.com/apos/PiFinder_Stellarmate/issues/313) on
-> [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
-> promoted, revised, or dropped. Implementation deliberately deferred past this write-up: agreed
-> live with the project owner while a real mount was actively in use during a live sky test.
+> **Status: implemented (branch `feature/313-sync-on-pifinder-align`), pending live verification on
+> `stellarmate-pi5`.** Written via this project's `cpt` (concept) convention — see
+> `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and `00021_bm-documentation-depth-standard.md`.
+> Tracked as [GitHub issue #313](https://github.com/apos/PiFinder_Stellarmate/issues/313) on
+> [Project #15](https://github.com/users/apos/projects/15). The two §5 open questions were resolved
+> with the project owner on 2026-09-08 (see §5); §9 records what implementation itself turned up.
 >
 > **Naming coincidence, not the same feature**: [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md)
 > §4 also mentions an "Align" (an *LX200 protocol* `:Cx#`-style command an external client could
@@ -140,26 +139,25 @@ sequenceDiagram
 | Existing PiFinder `/api/status` poll | wherever Mount Bridge already reads PiFinder's live solve | Carries the new field piggy-backed, no new poll loop needed |
 | `diffs/*.diff` + `bin/patch_PiFinder_installation_files.sh` | established project mechanism | How the PiFinder-side field addition gets applied/reapplied, never a direct upstream commit |
 
-## 5. Open Questions
+## 5. Open Questions — resolved 2026-09-08
 
-- **Should `MODE_VERIFY_ALERT` be excluded too, alongside `MODE_OFF`?** Verify/Alert's entire
-  documented contract is "warn only, never touch the mount." A Sync is arguably not a
-  "correction" in the same sense a GoTo/re-slew is (nothing physically moves) - but it *is* a
-  write to the mount. Needs an explicit decision from the project owner before implementation,
-  not an assumption either way.
-- **Unconditional sync, or only above some minimum drift?** A successful Align is a rare,
-  deliberate, user-triggered event (not a noisy continuous poll) - arguably it should always sync
-  regardless of how small the resulting drift is, for simplicity and predictability. Worth
-  confirming rather than silently adding a threshold that doesn't exist in the live-reported
-  expectation.
-- **Where exactly does `/api/status` get assembled upstream today?** Needs re-confirming against
-  the actual current PiFinder source at implementation time (§3.3), not assumed from this
-  session's snapshot of the code.
-- **Failure/timeout handling**: if the new `/api/status` field is briefly stale/unavailable right
-  after a PiFinder restart (matching this project's general pattern of "don't act on an
-  unconfirmed miss"), Mount Bridge should treat a missing field the same way it treats other
-  optional PiFinder fields elsewhere - no new failure-handling shape needed, but confirm the
-  existing convention still applies here.
+- **Should `MODE_VERIFY_ALERT` be excluded too, alongside `MODE_OFF`?** → **No — Verify/Alert
+  syncs on an Align.** Only `MODE_OFF` (explicitly decoupled) is excluded. Rationale from the
+  owner discussion: the trigger is a deliberate user calibration, not automation reacting to poll
+  noise, and a Sync corrects exactly the mount self-knowledge Verify/Alert's own drift alerts
+  depend on being accurate. It is surfaced as a visible `INFO` log line there ("Verify/Alert
+  normally never writes the mount; a deliberate Align is the one exception"), matching that mode's
+  "tell me, don't act silently" character.
+- **Unconditional sync, or only above some minimum drift?** → **Unconditional.** No threshold. A
+  successful Align is rare and deliberate; at ~0 drift the Sync is a harmless no-op write, and a
+  threshold would add a constant and config surface nobody asked for. Matches the manual "Sync
+  mount from PiFinder" button, which also syncs unconditionally.
+- **Where exactly does `/api/status` get assembled upstream today?** → `api_extensions.py`,
+  `@app.route("/api/status")` (the `data` dict at ~line 200, alongside `debug_solve` /
+  `fake_solve_active`). Confirmed against the live 2.6.3 source.
+- **Failure/timeout handling** → confirmed: `httpGetPiFinderAlignEvent()` returns false (acts on
+  nothing) on any HTTP/parse failure or a null/absent field, same fail-closed shape as the other
+  `httpGetPiFinder*` readers. A brief post-restart gap just means "retry next tick".
 
 ## 6. Test Strategy
 
@@ -186,9 +184,40 @@ sequenceDiagram
 
 ## 8. Strategic Roadmap
 
-1. Resolve the open questions in §5 with the project owner (Verify/Alert exclusion, threshold).
-2. PiFinder-side: add `last_align_time` to `SharedStateObj` + `/api/status`, as a new/regenerated
-   diff.
-3. Mount Bridge-side: add the poll read, dedup state, and `sendMountCoordsSafe()` call site,
-   gated per the resolved questions.
-4. Live-verify per §6, on real hardware, mirroring the exact scenario that surfaced this gap.
+1. ~~Resolve the §5 open questions with the project owner.~~ Done 2026-09-08.
+2. ~~PiFinder-side: `last_align_time` (+ `_ra` / `_dec`) on `SharedStateObj` + `/api/status`.~~
+   Done — `diffs/state_py.diff`, `diffs/api_extensions_py.diff`, `diffs/align_py.diff` (new),
+   `diffs/test_last_align_stamp_py.diff` (new, regression test).
+3. ~~Mount Bridge-side: poll read, dedup, `sendMountCoordsSafe()` call site.~~ Done —
+   `handlePiFinderAlignSync()` / `httpGetPiFinderAlignEvent()`.
+4. **Live-verify on `stellarmate-pi5`** per §6 — the outstanding step. On x86 UTM the Mount
+   Bridge side can be exercised in isolation with `test_tools/align_sync_test.py` (mocks
+   `/api/status`, watches the linked mount over INDI); the PiFinder side is covered by the
+   `pytest` in step 2 and needs a real on-device Align to verify end to end.
+
+## 9. Implementation notes (what building it turned up)
+
+- **Only one stamp site, not "both".** An earlier plan was to stamp every `set_target_pixel()`
+  writer. Reading the code, there are three: `align_on_radec()` (real plate-solve calibration —
+  the one that matters), `UIAlign.key_number(1)` ("reset reticle to center" — a *blind* reset with
+  no sky solve), and `align_daytime.py::_save_alignment()` (manual daylight calibration, no RA/Dec
+  at all). Syncing the mount off either of the latter two would push PiFinder's *uncorrected*
+  guess (or a daytime terrestrial pointing) to the mount. So the stamp lives inside
+  `align_on_radec()` only — which also means both real entry points (the Align screen's
+  `key_square()` and `object_details.py`'s "align on this object") are covered for free, since
+  both call it.
+- **Sync to the asserted target, not the post-align solve.** The Mount Bridge syncs to
+  `last_align_ra`/`last_align_dec` (the catalog coords the user centred), not to PiFinder's
+  subsequent `/api/status` solved position. No dependence on a fresh solve still being available a
+  poll-cycle later (a cloud right after the Align), no sidereal drift across the gap.
+- **Unit + epoch.** `/api/status` reports the align RA/Dec in **degrees, J2000** (same as
+  `solution.RA/Dec`). `httpGetPiFinderAlignEvent()` converts to **hours, JNow** at the source —
+  `/15` then `INDI::J2000toObserved()` — exactly mirroring `httpGetPiFinderFreshCamPosition()`
+  (whose own comments record the runaway-slew and perpetual-drift bugs that skipping either
+  conversion caused).
+- **Deferral, not just dedup.** Beyond the `m_lastAlignSyncTime` timestamp dedup (first sighting
+  adopted silently so a pre-existing Align doesn't fire on every reconnect), the Sync is deferred
+  while the mount is slewing (`isMountSlewing()` — a SYNC mid-slew is unsafe on many mounts, and
+  an in-flight GoTo establishes position anyway) or while the bridge's own Multi-Point Alignment
+  run is active (`m_alignState`). Both bounded by `ALIGN_SYNC_RETRY_MAX_SEC` (45 s) → give up with
+  a warning rather than retry forever.

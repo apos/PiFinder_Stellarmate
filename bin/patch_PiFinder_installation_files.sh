@@ -575,6 +575,33 @@ python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ 
 echo "------------------------------------"
 
 ##################################################
+# PiFinder ui/align.py - records the confirmed solve-based Align (RA/Dec +
+# timestamp) into shared_state so /api/status can surface it; the Mount
+# Bridge driver Syncs the mount to it regardless of Coupling mode (#313,
+# docs/concepts/mount_bridge_sync_on_pifinder_align.md)
+
+echo "🔧 Updating ui/align.py ..."
+cp "$align_py" "$align_py.bak"
+
+    apply_patch_or_warn "$align_py" "${pifinder_stellarmate_dir}/diffs/align_py.diff"
+show_diff_if_changed "$align_py"
+python3 -m py_compile "$align_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder tests/test_last_align_stamp.py - regression guard for the #313
+# align-stamp behaviour above (new file, create-diff; inert on-device -
+# only runs in a dev checkout with requirements_dev.txt, like every other
+# file already in python/tests/). -N makes re-runs a no-op once it exists.
+
+echo "🔧 Adding tests/test_last_align_stamp.py ..."
+apply_patch_or_warn "${pifinder_dir}/python/tests/test_last_align_stamp.py" \
+    "${pifinder_stellarmate_dir}/diffs/test_last_align_stamp_py.diff"
+python3 -m py_compile "${pifinder_dir}/python/tests/test_last_align_stamp.py" \
+    && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/object_details.py - surfaces the on-device push-to target
 # (UIState's own target()/set_target(), previously never called) so GET
 # /api/current_target (see api_extensions.py above) can report it - see

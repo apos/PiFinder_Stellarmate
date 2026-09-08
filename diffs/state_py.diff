@@ -15,7 +15,7 @@
          # self.__solve_state
          # None = No solve attempted yet
          # True = Valid solve data from either IMU or Camera
-@@ -306,6 +314,17 @@
+@@ -306,6 +314,32 @@
          self.__arch = None
          self.__camera_align = False
          self.__camera_type = "imx296"  # Default, will be set by camera process
@@ -30,10 +30,25 @@
 +        # detection) - distinct from debug_solve, which fakes the camera
 +        # image, not the position pipeline.
 +        self.__fake_solve_active: bool = False
++        # Last confirmed solve-based PiFinder Align (ui/align.py's
++        # align_on_radec() success path): wall-clock time plus the J2000
++        # RA/Dec (degrees) the user just centered in the telescope's own
++        # eyepiece. None = no such Align since this process started.
++        # Surfaced in /api/status; an external consumer (PiFinder_Stellarmate's
++        # Mount Bridge) polls last_align_time and, on a change, syncs the
++        # mount's own coordinate belief to (ra, dec) - the scope has not
++        # moved, only PiFinder's calibration improved, so a plain Sync is the
++        # correct mount reaction regardless of Coupling mode. Deliberately NOT
++        # set by the "reset reticle to center" path (align.py
++        # UIAlign.key_number(1)) or the manual daytime align (align_daytime.py),
++        # neither of which is a confirmed sky position. See set_last_align().
++        self.__last_align_time: Optional[float] = None
++        self.__last_align_ra: Optional[float] = None
++        self.__last_align_dec: Optional[float] = None
          # Configured lens, the half of the optical train nothing can detect.
          # None means "not stated", which resolves to the sensor's shipped lens
          # -- that is what lets installs predating this setting keep working.
-@@ -360,6 +379,23 @@
+@@ -360,6 +394,23 @@
                  f"Invalid value for set_power_state: {v}. power_state not changed."
              )
  
@@ -57,7 +72,7 @@
      def arch(self):
          return self.__arch
  
-@@ -414,6 +450,18 @@
+@@ -414,6 +465,42 @@
      def set_optical_train_known(self, v: bool):
          self.__optical_train_known = bool(v)
  
@@ -72,6 +87,30 @@
 +
 +    def set_fake_solve_active(self, v: bool):
 +        self.__fake_solve_active = v
++
++    def last_align_time(self) -> Optional[float]:
++        return self.__last_align_time
++
++    def last_align_ra(self) -> Optional[float]:
++        return self.__last_align_ra
++
++    def last_align_dec(self) -> Optional[float]:
++        return self.__last_align_dec
++
++    def set_last_align(self, ra: float, dec: float) -> None:
++        """Record a confirmed solve-based PiFinder Align. ``ra``/``dec`` are
++        the J2000 catalog coordinates (degrees) of the object the user just
++        centered in the telescope's own eyepiece - i.e. where the telescope
++        is now known to be truly pointed. Called only from
++        ``ui/align.py::align_on_radec()`` on success, so every real align
++        entry point (the Align screen, "align on this object" from the
++        object list) is covered while the non-solve paths (reset-to-center,
++        manual daytime align) are not. Stamps all three fields together so a
++        reader never sees a fresh timestamp with stale coordinates.
++        """
++        self.__last_align_ra = float(ra)
++        self.__last_align_dec = float(dec)
++        self.__last_align_time = time.time()
 +
      def sats(self):
          return self.__sats
