@@ -349,6 +349,20 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- **Mount Bridge tile: the manual one-shot seed moved into Quick Actions, one row, no on/off toggle
+  (#319)**: the "Advanced: manual one-shot seed" sub-section (RA/Dec injected via PiFinder's
+  `/api/fake_solve`, #106/#205) moved out of the "Simulation, Test and Power" tile into the Mount
+  Bridge tile's Quick Actions group - it's a one-shot mount-relative action, same family as Sync /
+  Align / Goto there. Status, `Re-seed from mount`, `Set position` and the RA/Dec inputs now sit on
+  one wrapping row. The two-state `Toggle` button is gone: `Re-seed from mount` and `Set position`
+  each turn Injected Solve on themselves and are always available (not hidden until active); a small
+  `Turn off` appears only while a seed is active. `Re-seed from mount` follows the Coupling-Off gate
+  (it reads the coupled mount's position); `Set position` + the RA/Dec inputs stay enabled while
+  Coupling is Off (a manual RA/Dec needs no mount). Still collapsed by default. The separate
+  Synthetic Solve toggle is unchanged. Also fixed: turning off Synthetic Solve now actually clears
+  `fake_solve_active` (the `/api/fake_solve_disable` call was missing its `port` and silently
+  no-op'd).
+
 - **Mode cards + readiness line moved into the Mount Bridge tile, between Role and Setup checklist
   (#267)**: previously mirrored in the unrelated "Simulation, Test and Power" tile "so a user never
   has to open the other card" - direct feedback that they actually belong right next to the Setup
