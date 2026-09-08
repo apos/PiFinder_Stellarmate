@@ -1356,6 +1356,13 @@
   #mb-decouple-btn:hover { background: #2a2a2a; color: #fff; }
   #mb-decouple-btn:disabled { opacity: 0.5; cursor: default; }
   #mb-threshold-manual-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  /* #319: the relocated manual one-shot seed row - status + Re-seed + Set
+     position + RA/Dec + (when active) Turn off, on one wrapping flex row,
+     same pattern as #mb-threshold-manual-row above. gap replaces
+     .ql-small-btn's own margin-left here. */
+  #fake-solve-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  #fake-solve-row .ql-small-btn { margin-left: 0; }
+  #fake-solve-row .pf-num-input { width: 4.4em; }
   /* Autoconnect status text (2026-09-06, direct feedback: used to sit on
      its own line between the Coupling and big-action button rows, which
      read as oddly wedged between two unrelated things) - lives here now,
@@ -1881,6 +1888,32 @@
              of which the user watching greyed-out buttons can be expected to
              guess. See updateActionButtonsCouplingGate(). -->
         <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
+
+        <!-- #319: manual one-shot seed - relocated here from "Simulation, Test
+             and Power" (it's a one-shot mount-relative action, not a
+             Simulation-tile setting). Collapsed by default. No explicit
+             on/off toggle: Re-seed from mount / Set position each turn it on
+             themselves, and always visible (not hidden until active). A small
+             "Turn off" appears only while it's active (otherwise nothing to
+             turn off). Re-seed from mount follows the Coupling-Off gate (it
+             reads the coupled mount's position); Set position + the RA/Dec
+             inputs do not - a manual RA/Dec needs no mount. The separate
+             Synthetic Solve toggle in the other tile is unchanged. -->
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-seed-advanced', 'mb-seed-advanced-chevron')">
+          <span>Manual one-shot seed<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span id="mb-seed-advanced-chevron">&#9660; show</span>
+        </div>
+        <div id="mb-seed-advanced" style="display:none;">
+          <div id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Synthetic Solve above (which continuously feeds a position) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning - trusting PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose.">
+            <span id="fake-solve-advanced-status" class="mb-row-label" style="margin-right:0;">unknown</span>
+            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Needs an active Coupling mode - it reads the coupled mount.">Re-seed from mount</button>
+            <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled title="Set Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't (#205).">Set position</button>
+            <input type="number" id="fake-solve-manual-ra" class="pf-num-input" step="0.01" min="0" max="360" placeholder="RA&deg;">
+            <input type="number" id="fake-solve-manual-dec" class="pf-num-input" step="0.01" min="-90" max="90" placeholder="Dec&deg;">
+            <button id="fake-solve-off-btn" class="ql-small-btn ql-small-btn-white" onclick="disableFakeSolve()" style="display:none;" title="Turn Injected Solve off - PiFinder resumes real camera solving. Shown only while a seed is active.">Turn off</button>
+            <span id="fake-solve-manual-status"></span>
+          </div>
+        </div>
       </div>
       <div class="mb-group-box">
         <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
@@ -2145,43 +2178,11 @@
           <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
           <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
         </div>
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('fake-solve-advanced', 'fake-solve-advanced-chevron')">
-          <span>Advanced: manual one-shot seed</span>
-          <span id="fake-solve-advanced-chevron">&#9660; show</span>
-        </div>
-        <div id="fake-solve-advanced" style="display:none;">
-            <!-- Re-grouped 2026-08-10 (direct feedback: "Das wirkt alles
-                 sehr unaufgeräumt" - re-read basic-memory/basic-memory/
-                 00017_bm-ui-design-anforderung-klar-einheitlich.md's own
-                 grouping rule: "optisch ansprechend (keine lose
-                 Zeilen-Wüste), platzsparend (horizontale Gruppen statt
-                 vertikaler Zeilenstapel, wo der Inhalt das hergibt)").
-                 RA/Dec/Set position previously LOOKED vertically stacked
-                 despite being one inline row in the markup - turned out to
-                 be .hw-detail's own white-space:pre-wrap rendering this
-                 block's literal source line breaks as real ones, not a
-                 CSS-grouping problem at all. Moved this row off
-                 .hw-detail (never actually the right class for a control
-                 group - it's meant for preformatted log/summary text) onto
-                 the same plain flex .mb-row every other horizontal group
-                 on this page already uses. Re-seed now gets its own row
-                 (was crammed onto the status/Toggle row before), and
-                 Set position/RA/Dec now genuinely sit in one row, button
-                 first per direct feedback's own specified order. -->
-            <div class="hw-row" id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Solve Simulation above (which only swaps the camera image) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Turning it on seeds a one-time position from the currently coupled mount (via Mount Bridge), not a continuous follow - but doesn't just drift forever: whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning. That re-anchor trusts PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose - see its own status text here instead.">
-              Manual one-shot seed: <span id="fake-solve-advanced-status">unknown</span>
-              <button id="fake-solve-btn" class="ql-small-btn ql-small-btn-white" onclick="toggleFakeSolve()" disabled>Toggle</button>
-            </div>
-            <div class="mb-row" id="fake-solve-reseed-row" title="Re-read the coupled mount's current position and re-inject it, without turning Injected Solve off first (#205).">
-              <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" style="display:none;" disabled>Re-seed from mount</button>
-            </div>
-            <div class="mb-row" id="fake-solve-manual-row" title="Sets Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't already (#205).">
-              <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled>Set position</button>
-              <input type="number" id="fake-solve-manual-ra" step="0.01" min="0" max="360" placeholder="RA (deg)" style="width:5.5rem; margin-left:0.5rem;">
-              <input type="number" id="fake-solve-manual-dec" step="0.01" min="-90" max="90" placeholder="Dec (deg)" style="width:5.5rem; margin-left:0.3rem;">
-              <span id="fake-solve-manual-status" style="margin-left:0.5rem;"></span>
-            </div>
-          </div>
+        <!-- #319: the "manual one-shot seed" sub-section moved from here into
+             the Mount Bridge tile's Quick Actions group (#mb-seed-advanced) -
+             it's a one-shot mount-relative action, same family as Sync/Align/
+             Goto there, not a Simulation-tile setting. The Synthetic Solve
+             row/toggle above stays. -->
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('legacy-builtin-details', 'legacy-builtin-chevron')">
           <span>PiFinder built-in test tools (legacy)</span>
           <span id="legacy-builtin-chevron">&#9656; show</span>
@@ -2795,12 +2796,13 @@ function applySolveStatus(data) {
 // row - see setMbStatusUnconfirmed()'s own comment for why).
 let lastFakeSolveActive = null;
 
-// True for the duration of toggleFakeSolve()'s own fetch + poll loop.
+// True for the duration of an in-flight seed action's fetch + poll loop
+// (reseedFakeSolve / setFakeSolveManual / disableFakeSolve).
 // While true, applyFakeSolveStatus() still updates lastFakeSolveActive/the
 // badge (so the badge appears immediately once the backend confirms the
-// change, and so the toggle loop's own "did it land yet" check keeps
-// working) but leaves the dot/text/button alone - those are
-// toggleFakeSolve()'s to own during the operation.
+// change, and so the action loop's own "did it land yet" check keeps
+// working) but leaves the status text / buttons alone - those are the
+// running action's to own during the operation.
 //
 // Found live: an independent setInterval(refreshDebugSolve, 20000) (see
 // bottom of file) runs regardless of any in-progress toggle. Without this
@@ -2826,7 +2828,7 @@ let fakeSolveToggleInFlight = false;
 // underlying fake_solve_active flag (#106/#205), same reasoning as the
 // primary row's own single source of truth.
 function applyFakeSolveAdvancedButtonStates(stateClass) {
-  for (const id of ['fake-solve-btn', 'fake-solve-reseed-btn', 'fake-solve-manual-btn']) {
+  for (const id of ['fake-solve-reseed-btn', 'fake-solve-manual-btn', 'fake-solve-off-btn']) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.classList.remove('ql-small-btn-white', 'ql-small-btn-yellow', 'ql-small-btn-green', 'ql-small-btn-red');
@@ -2834,22 +2836,46 @@ function applyFakeSolveAdvancedButtonStates(stateClass) {
   }
 }
 
-function applyFakeSolveStatus(data) {
-  const statusEl = document.getElementById('fake-solve-advanced-status');
-  const btn = document.getElementById('fake-solve-btn');
+// #319: Re-seed / Set position / RA-Dec inputs are always available (not
+// hidden until active) - each self-enables Injected Solve. Two gates still
+// apply and are combined here, since both a status poll (applyFakeSolveStatus)
+// and a Coupling-mode change (updateActionButtonsCouplingGate) can move them:
+//   - status must be known (a confirmed true/false from /api/status)
+//   - Re-seed from mount additionally needs an active Coupling mode, because
+//     it reads the *coupled mount's* position; Set position + the inputs take
+//     a manual RA/Dec and don't.
+let _fakeSolveStatusKnown = false;
+let _seedCouplingCoupled = false;
+function updateSeedControlsEnabled() {
   const reseedBtn = document.getElementById('fake-solve-reseed-btn');
   const manualBtn = document.getElementById('fake-solve-manual-btn');
+  const raEl = document.getElementById('fake-solve-manual-ra');
+  const decEl = document.getElementById('fake-solve-manual-dec');
+  if (!reseedBtn || fakeSolveToggleInFlight) return;  // in-flight action owns them
+  manualBtn.disabled = !_fakeSolveStatusKnown;
+  raEl.disabled = !_fakeSolveStatusKnown;
+  decEl.disabled = !_fakeSolveStatusKnown;
+  reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedCouplingCoupled;
+  reseedBtn.title = _seedCouplingCoupled
+    ? "Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't."
+    : "Coupling is Off - Re-seed reads the coupled mount's position, so it needs an active Coupling mode. Use Set position for a manual RA/Dec.";
+}
+
+function applyFakeSolveStatus(data) {
+  const statusEl = document.getElementById('fake-solve-advanced-status');
+  const offBtn = document.getElementById('fake-solve-off-btn');
   const badge = document.getElementById('mode-ampel-fake-solve-badge');
+  if (!statusEl) return;
 
   if (data.fake_solve_active !== true && data.fake_solve_active !== false) {
     // Unconfirmed (unreachable/failed poll, or no confirmation yet at all
     // on initial page load).
     if (!fakeSolveToggleInFlight) {
+      _fakeSolveStatusKnown = false;
       statusEl.textContent = 'unknown';
-      btn.disabled = true;
-      manualBtn.disabled = true;
-      reseedBtn.style.display = 'none';
+      offBtn.style.display = 'none';
       applyFakeSolveAdvancedButtonStates('ql-small-btn-white');
+      updateSeedControlsEnabled();
     }
     return;
   }
@@ -2857,15 +2883,13 @@ function applyFakeSolveStatus(data) {
   lastFakeSolveActive = data.fake_solve_active;
   badge.style.display = lastFakeSolveActive ? '' : 'none';
   if (fakeSolveToggleInFlight) return;
-  btn.disabled = false;
-  manualBtn.disabled = false;
-  // Re-seed only makes sense while already active - turning it on fresh
-  // already seeds once, and the manual field above covers "set to a
-  // specific position" for either state (#205).
-  reseedBtn.style.display = lastFakeSolveActive ? '' : 'none';
-  reseedBtn.disabled = false;
-  btn.textContent = lastFakeSolveActive ? 'Turn off' : 'Toggle';
+  _fakeSolveStatusKnown = true;
+  // "Turn off" only exists while there's something to turn off - #319
+  // dropped the two-state toggle; the two actions above self-enable, this
+  // is the one-way stop for a seed that isn't Truth-Injector-driven.
+  offBtn.style.display = lastFakeSolveActive ? '' : 'none';
   applyFakeSolveAdvancedButtonStates(lastFakeSolveActive ? 'ql-small-btn-green' : 'ql-small-btn-white');
+  updateSeedControlsEnabled();
   if (!lastFakeSolveActive) {
     statusEl.textContent = 'off';
     return;
@@ -2873,14 +2897,12 @@ function applyFakeSolveStatus(data) {
   const ra = data.fake_solve_ra;
   const dec = data.fake_solve_dec;
   const since = data.last_solve_success;
-  let text = 'active';
+  let text = 'on';
   if (typeof ra === 'number' && typeof dec === 'number') {
-    text = `active (RA ${ra.toFixed(1)}°/Dec ${dec.toFixed(1)}°`;
+    text = `on · ${ra.toFixed(1)}° / ${dec.toFixed(1)}°`;
     if (typeof since === 'number') {
       const minutes = Math.max(0, Math.round((Date.now() / 1000 - since) / 60));
-      text += minutes === 0 ? ', just now)' : `, ${minutes} min ago)`;
-    } else {
-      text += ')';
+      text += minutes === 0 ? ' · just now' : ` · ${minutes} min ago`;
     }
   }
   statusEl.textContent = text;
@@ -3077,7 +3099,10 @@ async function toggleTruthInjector() {
       // fake_solve_active flag - it stays true (just aging) until
       // something explicitly clears it. Clear it here too so "off" here
       // actually means off, not just "not being refreshed anymore".
-      await fetch('/api/fake_solve_disable', { method: 'POST' });
+      // (#319: pass the port - /api/fake_solve_disable rejects an empty one,
+      // so without it this DELETE silently no-op'd and the flag stuck.)
+      const injPort = pifinderScreenUrl ? (new URL(pifinderScreenUrl).port || '80') : '80';
+      await fetch(`/api/fake_solve_disable?port=${injPort}`, { method: 'POST' });
     }
   } catch (e) {
     toggleError = 'could not reach the server';
@@ -3367,72 +3392,53 @@ function setKeypadStyle(style) {
   setKeypadStyle(style);
 })();
 
-// Same poll-until-changed approach as toggleDebugSolve() above, reusing
-// refreshDebugSolve() (which already applies fake-solve status via
+// #319: the two-state Toggle button is gone - reseedFakeSolve() and
+// setFakeSolveManual() each self-enable Injected Solve. This is the one-way
+// "off", shown only while a seed is active (see applyFakeSolveStatus()).
+// Same poll-until-changed approach as toggleDebugSolve(), reusing
+// refreshDebugSolve() (which applies fake-solve status via
 // applyFakeSolveStatus()) rather than duplicating the fetch/parse logic.
-// Turning on seeds a one-time position from the currently coupled mount
-// (see _pifinder_enable_fake_solve_from_mount() - not a continuous follow,
-// that's the larger #130 concept). Turning off just clears the flag.
-async function toggleFakeSolve() {
+async function disableFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
-  const btn = document.getElementById('fake-solve-btn');
+  const btn = document.getElementById('fake-solve-off-btn');
   const textEl = document.getElementById('fake-solve-advanced-status');
-  const turningOn = lastFakeSolveActive !== true;
-  const endpoint = turningOn ? '/api/fake_solve_enable_from_mount' : '/api/fake_solve_disable';
   fakeSolveToggleInFlight = true;
   btn.disabled = true;
-  textEl.textContent = turningOn ? 'Reading mount position…' : 'Turning off…';
+  textEl.textContent = 'Turning off…';
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
-  // Badge follows the row's dot immediately, not just once confirmed -
-  // otherwise it stayed invisible for the whole in-flight window (several
-  // seconds, given the mount-read+inject round trip) and only popped in
-  // right at the very end (User feedback).
-  document.getElementById('mode-ampel-fake-solve-badge').style.display = '';
   try {
-    if (!turningOn && lastTruthInjectorDesired === true) {
-      // Turning off here must also stop the Truth Injector - it shares
-      // the exact same fake_solve_active flag, so leaving it running would
-      // just re-activate this within its next 2s tick (direct feedback,
-      // 2026-08-10).
+    if (lastTruthInjectorDesired === true) {
+      // Injected Solve and the Truth Injector share the same
+      // fake_solve_active flag - if the injector is running, stop it too or
+      // its next 2s tick just turns this back on (direct feedback, 2026-08-10).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`${endpoint}?port=${port}`, { method: 'POST' });
-    const result = await resp.json();
-    if (turningOn && result.success !== true) {
-      fakeSolveToggleInFlight = false;
-      textEl.textContent = `could not enable (${result.error || 'unknown error'})`;
-      applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
-      btn.disabled = false;
-      return;
-    }
+    await fetch(`/api/fake_solve_disable?port=${port}`, { method: 'POST' });
   } catch (e) {
-    // fall through to the poll loop below either way
+    // fall through to the poll loop - it reflects whatever is actually true
   }
   const deadline = Date.now() + 16000;
   let landed = false;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 1000));
     await refreshDebugSolve();
-    if (lastFakeSolveActive === turningOn) {
+    if (lastFakeSolveActive === false) {
       landed = true;
       break;
     }
   }
-  // Release the flag before the final refresh so it actually repaints the
-  // dot/text/button with the real outcome - every refreshDebugSolve() call
-  // above was a no-op for this row while in flight, by design.
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
   await refreshTruthInjectorStatus();
   if (!landed) btn.disabled = false;
 }
 
-// #205: re-read the coupled mount's current position and re-inject it
-// without disabling Injected Solve first - reuses the same enable endpoint
-// (it always seeds fresh from the mount, on or off makes no difference to
-// it), only reachable from the GUI while already active (see the
-// reseedBtn.style.display toggle in applyFakeSolveStatus() above).
+// #205: re-read the coupled mount's current position and re-inject it -
+// reuses the enable endpoint (it always seeds fresh from the mount, on or
+// off makes no difference), so this is also how Injected Solve gets turned
+// ON from the GUI (#319 dropped the separate Toggle). Gated on an active
+// Coupling mode by updateSeedControlsEnabled() - it reads the coupled mount.
 async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
@@ -3453,10 +3459,22 @@ async function reseedFakeSolve() {
       return;
     }
   } catch (e) {
-    // fall through - refreshDebugSolve() below will show whatever's true now
+    // fall through - the poll below will show whatever's true now
+  }
+  // Poll until the flag actually flips (the mount-read + inject round trip
+  // can take a few seconds) so a Re-seed that turns Injected Solve on from
+  // off shows the result promptly, not only on the slow 20s interval.
+  const deadline = Date.now() + 16000;
+  let landed = false;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1000));
+    await refreshDebugSolve();
+    if (lastFakeSolveActive === true) { landed = true; break; }
   }
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
+  await refreshTruthInjectorStatus();
+  if (!landed) btn.disabled = false;
 }
 
 // #205: sets Injected Solve to a specific RA/Dec (degrees, JNow) via
@@ -4772,7 +4790,7 @@ function restoreCollapsibleSections() {
   const sections = [
     ['ql-links', 'ql-links-chevron', 'block'],
     ['legacy-builtin-details', 'legacy-builtin-chevron', 'block'],
-    ['fake-solve-advanced', 'fake-solve-advanced-chevron', 'block'],
+    ['mb-seed-advanced', 'mb-seed-advanced-chevron', 'block'],
     ['hw-details', 'hw-details-chevron', 'block'],
     ['ext-hw-status', 'ext-hw-chevron', 'block'],
     ['mode-power-groups', 'mode-power-chevron', 'flex'],
@@ -4997,6 +5015,10 @@ function updateActionButtonsCouplingGate(couplingMode) {
   });
   const hint = document.getElementById('mb-quick-actions-hint');
   if (hint) hint.style.display = coupled ? 'none' : '';
+  // #319: "Re-seed from mount" in the same group reads the coupled mount, so
+  // it follows this gate too; "Set position" + inputs don't (manual RA/Dec).
+  _seedCouplingCoupled = coupled;
+  updateSeedControlsEnabled();
 }
 
 // European keyboards/locales often produce a comma decimal separator (e.g.
