@@ -248,15 +248,43 @@ distinction between "refused because parked, expected" and "refused because some
 
 ### 8.5 Live-open mystery: logged success, no mount movement
 
-**Unresolved, needs its own follow-up.** One live `TRIGGER_SYNC_NOW` attempt (fresh Truth-Injector-fed
-solve confirmed present, `isAboveHorizon` should have passed at Alt=0.22°) produced `[INFO] Manual
-SYNC sent to mount.` in the captured `<message>` stream, yet `LX200 OnStep.EQUATORIAL_EOD_COORD`
-never changed from its pre-trigger value across multiple direct `indi_getprop` checks. Not yet
-root-caused - candidates not yet ruled out: `m_client->sendMountCoords()` itself silently failing
-downstream of the log line, a stale `m_client` device pointer after the several driver restarts
-earlier in the same session, or a race with the concurrently-running Truth Injector. Needs a clean,
-single-variable repro (fresh driver instance, no other process touching the mount) before further
-diagnosis - out of scope to chase further within this concept doc.
+**Resolved, 2026-09-09 (later session).** Root-caused via basic-memory 00090 Regel 3's raw
+`<message>`-capture technique against a clean, single-variable repro (direct `indi_setprop`
+against the driver, no GUI/Python layer involved): `sendMountCoords()` itself was never broken -
+a controlled direct test moved the mount exactly as commanded, confirmed via `indi_getprop`
+before/after. Of the three original candidates, the stale-`m_client`-pointer hypothesis was ruled
+out directly (a fresh driver restart reproduced the identical "no movement" symptom immediately);
+the real causes turned out to be entirely upstream/downstream of `sendMountCoords()`, not in it:
+
+- The GUI's own `sync_mount_to_pifinder_visible_position()` (Python) had a `state == "Ok"` gate on
+  `"PiFinder LX200".EQUATORIAL_EOD_COORD` that, live-verified, can never be true even with a fully
+  valid, confirmed position - that INDI property's `state` reflects the generic LX200 driver's own
+  internal "have I ever been Synced" notion, unrelated to PiFinder's solve validity. Removed.
+- Neither the GUI nor the driver ever checked whether the mount **accepted** the Sync it was sent -
+  a genuine mount-level rejection (see the new §8.5.1 below) was reported to the GUI as unqualified
+  "success" purely because the *command* was sent successfully, regardless of the outcome. Fixed:
+  the trigger now watches the driver's own `<message>` log for the ~1.5s after sending and surfaces
+  a real error if either Mount Bridge or the mount itself logs one.
+
+See `gui_installer/indi_client.py`'s `sync_mount_to_pifinder_visible_position()` and
+`_send_switch_and_confirm()` for the current implementation.
+
+#### 8.5.1 New open item: OnStep pier-side/meridian limit on Sync (not resolved)
+
+Live-reproduced, 2026-09-09: a Sync to a target requiring the opposite pier side from what OnStep
+currently believes it's on (`LX200 OnStep.TELESCOPE_PIER_SIDE`, confirmed **read-only** via INDI -
+not overridable from this project's side) is refused by the mount's own firmware:
+`OnStep slew/syncError: Outside limits: Max/Min Dec, Under Pole Limit, Meridian Limit, Sync
+attempted to wrong pier side`. This directly affects "Sync mount from PiFinder"'s own stated primary
+use case ("useful after moving the mount by hand") - a manual clutch-release reposition to the
+other pier side would hit exactly this refusal. Not a false negative (OnStep is protecting a real
+mechanical/cable-wrap concern it can't verify from a bare Sync alone) but not yet worked around
+either. Two directions floated, neither built/verified:
+- Research OnStep's own correct procedure for "I was manually repositioned across the meridian,
+  reset your assumption" (likely a distinct realign flow, not a plain Sync).
+- An automatic, driver-side stepwise walk-across instead of one large jump - unconfirmed whether
+  this actually bypasses the check (it may key off the target's absolute Hour Angle vs. the mount's
+  stored belief, not the size of the jump) or just delays hitting the same wall.
 
 ### 8.6 Daytime real-object align (constraint 5.2.4)
 
@@ -310,8 +338,65 @@ never stored or exposed as a standing, pollable value.
   Simulator" is a device at all); this belongs on Mount Bridge itself and applies equally to Real
   Hardware and Full Simulation, since both drive a real (or real-shaped) `EQUATORIAL_EOD_COORD`.
 
-**Not attempted this session** - flagged live by the user as the next concrete step, deliberately
-left for a fresh session/context window rather than rushed at the end of a very long one.
+**Implemented, 2026-09-09 (the deferred fresh session).** `MOUNT_HORIZON_STATUS.ALTITUDE_DEG`, a new
+standing INDI number property on `PiFinder Mount Bridge`, computed every `TimerHit()` tick from the
+mount's own reported `EQUATORIAL_EOD_COORD` (mode-independent, reuses `isAboveHorizon()`'s own math
+exactly as proposed above). Surfaced as a dedicated below-horizon showstopper card in the Mount
+Bridge tile (its own category, split from the PiFinder-category no-solve card per direct feedback:
+"Mount below ist von der Kategorie Mount Bridge... immer konsequent unterhalb der badges"), with its
+own "Sync mount from PiFinder" / "Goto Home Position" recovery actions - see §8.9 for how those
+actions themselves were then hardened.
+
+### 8.9 Sync mount from PiFinder: unification, result-verification, and related GUI fixes
+(2026-09-09, live-tested end-to-end)
+
+A cluster of fixes that came out of actually live-testing §8.8's below-horizon recovery banner,
+worth recording together since they were found and fixed as one continuous debugging session:
+
+- **Three separate "Sync mount from PiFinder" buttons** (Quick Actions, the sim-mismatch card, the
+  below-horizon card) called two different backend mechanisms with different, inconsistent gating -
+  confusing since all three carry the identical label. Unified to one: the new
+  `SYNC_TO_COORDS`/`TRIGGER_SYNC_TO_COORDS` driver primitive (deliberately separate from the
+  existing, fresh-solve-gated `TRIGGER_SYNC_NOW` used elsewhere for normal operation - see that
+  property's own header comment in `pifinder_mount_bridge.h`), no freshness judgment, same as a
+  manual Sync in KStars' own INDI panel.
+- **Result verification** - see §8.5 above.
+- **`_truth_injector_stop()` wasn't clearing `fake_solve_active`** on stop - only killed the
+  subprocess, leaving `/api/status` reporting a stale "Injected" state indefinitely.
+- **"PiFinder Simulator" doesn't follow a Sync**, only a genuine Slew (`EQUATORIAL_EOD_COORD` state
+  `Busy`, or a changed slew target) - **by design**, `indi_pifinder_simulator/pifinder_simulator.cpp`
+  `ISSnoopDevice()`, to avoid a documented 2026-09-01 feedback-loop bug. This made "Re-seed from
+  mount" and "Sync mount from PiFinder" look broken (PiFinder Simulator visibly stayed put) even
+  though both worked correctly for what they actually touch (PiFinder's real solve pipeline / the
+  mount respectively) - neither had ever been able to reach "PiFinder Simulator" at all, a wholly
+  separate INDI device. Fixed by having "Re-seed from mount" ALSO send a plain, direct INDI Sync to
+  "PiFinder Simulator" itself (`sync_pifinder_simulator_to()`, no custom driver primitive needed -
+  the simulator is a pure test fixture with no horizon-safety concern of its own).
+- **`STARTUP_DEFAULT_SOURCE` (§8.7) is a one-time startup snapshot, never re-evaluated** - the
+  sim-mismatch banner it drives stayed up even after the actual mismatch was genuinely fixed by a
+  live Re-seed/Sync, since the underlying INDI property itself never changes again after driver
+  startup (by design - not revisited here, an earlier attempt to widen the startup grace window was
+  explicitly reverted per direct feedback). Fixed client-side instead: `status_page.html` now tracks
+  a session-lifetime "acknowledged" flag, set only on a genuinely successful Re-seed/Sync from either
+  of the banner's two buttons (not a live drift-threshold recheck - a *refused* action, e.g. mount
+  below horizon, correctly leaves the banner up).
+- **"OFF ist OFF"**: the "Synthetic Solve" toggle's displayed text/dot reflected only its own
+  `_truth_injector_desired` intent flag, showing "off" even while a *different* mechanism (Manual
+  one-shot seed, Re-seed from mount, Sync mount from PiFinder - all inject as a side effect) held the
+  real, combined `fake_solve_active` true - directly contradicting a simultaneously-lit "Injected"
+  badge. Both the toggle's click behavior (`_pifinder_fake_solve_active_live()`, checks the real
+  state on both PiFinder ports rather than trusting its own memory of intent) and its display
+  (`applyTruthInjectorState()`, now also considers `lastFakeSolveActive`) were fixed to reflect one
+  single truth regardless of source.
+- **CSS**: a long error message inside `#mb-action-status` inherited `text-transform: uppercase`
+  from its parent `.group-label` (fine for a short heading, wrong for a sentence), and
+  `white-space: nowrap` + `overflow: hidden` alone did not reliably prevent it from forcing the
+  page's grid/flex ancestor chain wider (a known CSS "blowout" gotcha - `min-width: 0` on one element
+  doesn't guarantee every ancestor has it too) - switched to wrapping instead of nowrap+ellipsis.
+- **Injected Solve badge color reversed red → green**: red was chosen deliberately in an earlier
+  mockup round ("not a real camera solve" caution) but reversed per direct feedback - injecting a
+  synthetic position always "succeeds" by definition, so red (reserved for an actual problem) was
+  the wrong signal; the "Injected" label itself already says it isn't a real solve.
 
 ## 9. Open questions / not decided here
 
@@ -322,7 +407,8 @@ left for a fresh session/context window rather than rushed at the end of a very 
   replaced with "mount linked and connected" (`data.mount_connected` from `/api/mount_bridge_status`,
   already computed server-side from the live mount device's own `CONNECTION` state) - live-verified
   on real hardware, "Re-seed from mount" now works correctly with Coupling = Off.
-- **C**: §8.5's silent-failure mystery - needs dedicated live diagnosis, not solved here.
+- ~~**C**: §8.5's silent-failure mystery~~ **Resolved 2026-09-09** - see §8.5. Replaced by a new
+  open item, §8.5.1: OnStep's pier-side/meridian limit on Sync after a manual reposition.
 - **D**: §3 principle 3 (manual mount movement) - genuinely unanswered; likely belongs jointly with
   `pifinder_mount_model_cloud_tracking.md` rather than as new scope here.
 - **E**: §6's detection-mechanism candidates (INDI-device snoop vs. EkosLive API vs. pulse-frequency
@@ -331,8 +417,8 @@ left for a fresh session/context window rather than rushed at the end of a very 
 - **F**: §6.2's per-mechanism suspension list is a first pass, not verified complete - a careful
   read of every automatic Mount Bridge action against "would this fire, incorrectly, mid-guiding" is
   still needed once §6's detection question (E) is resolved.
-- **G**: §8.8 (mount altitude/horizon status not surfaced) - the next concrete implementation step,
-  explicitly deferred to a fresh session. Design sketched, nothing built yet.
+- ~~**G**: §8.8 (mount altitude/horizon status not surfaced)~~ **Resolved, implemented 2026-09-09**
+  - see §8.8 and §8.9 for the follow-on fixes found while live-testing it.
 - Should this concept's use-case matrix (§7) become an actual Test Case (TC-PFSM-...), the way #313
   did, once any of §8's gaps are closed? Natural follow-up, not decided yet.
 
