@@ -6542,6 +6542,15 @@ async function triggerSyncToPiFinderVisible() {
     setTimeout(clearMbActionStatus, 6000);
   } else {
     clearMbActionStatus();
+    // 2026-09-09, direct feedback ("ICH WILL NICHT Re-seeden, sondern
+    // synch from PiFinder. Ist meine Entscheidung!"): the sim-mismatch
+    // card itself offers both buttons as equally valid fixes ("Re-seed...
+    // or Sync...") - clearing the acknowledgment only on Re-seed's own
+    // success (see reseedFakeSolve()) second-guessed that choice. Whichever
+    // one the user picks and succeeds with resolves the card.
+    _simStartupMismatch = false;
+    _simMismatchAcknowledged = true;
+    renderNoSolveBanner();
   }
   btns.forEach((b, i) => { b.textContent = originals[i]; b.disabled = false; delete b.dataset.busy; });
 }
