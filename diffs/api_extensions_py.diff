@@ -265,7 +265,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -770,6 +1004,128 @@
+@@ -770,6 +1004,147 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -330,6 +330,25 @@
 +            ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
 +            ra = float(ra_h._degrees)
 +            dec = float(dec_d.degrees)
++            # Near-pole singularity: RA is mathematically undefined exactly at
++            # the celestial pole, and numerically meaningless well before that
++            # too - the Cartesian position's X/Y components (which the RA
++            # component above is recovered from via atan2) shrink toward zero
++            # as |dec| -> 90, so floating-point noise dominates the result
++            # rather than the caller's intended direction. Found live
++            # (2026-09-09, PiFinder_Stellarmate #322/#323 session): injecting
++            # dec=90 exactly returned a completely different, essentially
++            # arbitrary RA on every call regardless of the RA sent in -
++            # confirmed by resending the same dec=90 with two different RAs
++            # and getting the same (wrong) RA back both times. Below this
++            # threshold, keep the caller's own JNow RA (uncorrected for
++            # precession - not ideal, but a defined, intentional value beats
++            # a numerically arbitrary one) instead of the ill-conditioned
++            # recomputed one; the Dec component itself stays fine down to the
++            # actual pole and is unaffected.
++            NEAR_POLE_DEC_DEG = 89.9
++            if abs(dec_jnow) >= NEAR_POLE_DEC_DEG:
++                ra = ra_jnow
 +            server_instance.fake_solve_command_queue.put(FakeSolve(ra=ra, dec=dec))
 +            return _json_response({"success": True, "ra": ra, "dec": dec})
 +        except Exception as e:

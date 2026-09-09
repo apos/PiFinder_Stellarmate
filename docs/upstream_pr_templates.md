@@ -382,6 +382,68 @@ current tip).
 
 ---
 
+## PR 9 — Bugfix: `POST /api/fake_solve` returns garbage RA near the celestial pole
+
+**Depends on**: nothing. **Priority: medium** — silently wrong data (no error), but only triggers
+near the pole; already filed as
+[brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645), with the fix already
+applied locally in this project's copy (`diffs/api_extensions_py.diff`) - see this file for a
+ready-to-file version of that same fix.
+
+### Suggested title
+`Fix: /api/fake_solve returns an arbitrary RA when dec is near the celestial pole`
+
+### Suggested body
+
+> ## What's broken
+>
+> `api_fake_solve()` converts the injected JNow RA/Dec to J2000 via a skyfield Cartesian position
+> vector, then recovers spherical RA/Dec from it (`.radec()`, an `atan2` over the vector's X/Y
+> components):
+>
+> ```python
+> p = position_of_radec(ra_hours=ra_jnow / 15.0, dec_degrees=dec_jnow, epoch=ts.now())
+> ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
+> ```
+>
+> Near the pole, those X/Y components shrink toward zero, so floating-point noise - not the
+> caller's intended direction - ends up determining the returned RA. Verified live: injecting
+> `dec=90.0` with two different RA values (206.1° and 50.0°) both returned the *same* wrong RA
+> (~1.3°) regardless of what was sent in; `dec=45°` round-tripped correctly (within expected
+> precession drift).
+>
+> ## How I found it
+>
+> An external INDI mount reporting `EQUATORIAL_EOD_COORD` at exactly Dec=90° (a freshly-connected,
+> not-yet-aligned OnStep mount) via a downstream integration's "seed PiFinder from the mount's
+> current position" feature - every attempt near the pole silently produced a wrong RA with no
+> error surfaced anywhere.
+>
+> ## The fix
+>
+> Below a small margin from the pole, keep the caller's original (uncorrected-for-precession) RA
+> instead of the ill-conditioned recomputed one - a defined, intentional value beats a numerically
+> arbitrary one. Dec itself stays accurate all the way to the true pole and needs no special-casing.
+>
+> ```python
+> NEAR_POLE_DEC_DEG = 89.9
+> if abs(dec_jnow) >= NEAR_POLE_DEC_DEG:
+>     ra = ra_jnow
+> ```
+>
+> placed right after `ra`/`dec` are computed, before `FakeSolve(ra=ra, dec=dec)` is queued.
+>
+> ## Open questions for maintainers
+>
+> - Is `89.9°` the right margin, or should it be derived from the actual precession magnitude
+>   (~12-14' as of 2026) instead of a flat constant?
+> - Should this same guard apply anywhere else `position_of_radec(...).radec(...)` is used for a
+>   JNow→J2000 conversion, or is `/api/fake_solve` the only caller that can receive a genuinely
+>   near-polar input (an external mount's own coordinate) rather than a real sky position (which a
+>   camera solve would essentially never report as exactly polar)?
+
+---
+
 ## Not templated: generic-username login support
 
 Noted in the inventory doc (§2) as a lighter-weight alternative to this project's SMOS-specific

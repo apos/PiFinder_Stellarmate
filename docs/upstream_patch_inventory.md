@@ -176,6 +176,28 @@ integration point. Flagging it here rather than in the PR templates — this nee
 rationale reconstructed (or the removal re-justified against a specific StellarMate GPS behavior)
 before it's fit to propose upstream, or even to keep long-term without a comment explaining it.
 
+### 1.8 Near-pole RA singularity in `POST /api/fake_solve`
+
+**File**: `diffs/api_extensions_py.diff`.
+
+`api_fake_solve()` converts the injected JNow RA/Dec to J2000 via a skyfield Cartesian position
+vector, then recovers spherical RA/Dec from it (`.radec()`, an `atan2` over the vector's X/Y
+components). Near the celestial pole those components shrink toward zero, so floating-point noise
+- not the caller's intended direction - ends up determining the returned RA. Verified live
+(2026-09-09): injecting `dec=90.0` with two different RA values (206.1° and 50.0°) both returned
+the *same* wrong RA regardless of what was sent; `dec=45°` round-tripped correctly. Fix: below
+`abs(dec) >= 89.9`, keep the caller's original (uncorrected-for-precession) RA instead of the
+ill-conditioned recomputed one - a defined value beats an arbitrary one, and Dec itself stays
+accurate all the way to the true pole.
+
+**Why upstream-relevant**: a real, reproducible bug in a general-purpose API endpoint (any caller
+injecting a near-polar position gets silently wrong data back, no error), not StellarMate-specific
+- filed as [brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645). Found via
+this project's Mount Bridge "Re-seed from mount" testing - a mount parked exactly at Dec=90°
+reproduced it on every attempt. See
+[`docs/concepts/session_start_position_reconciliation.md`](concepts/session_start_position_reconciliation.md)
+§8.2/§8.5 for the investigation that led here.
+
 ---
 
 ## 2. StellarMate/SMOS-only (not relevant upstream)
