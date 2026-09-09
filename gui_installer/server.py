@@ -1099,6 +1099,27 @@ def _truth_injector_start(device: str):
     )
 
 
+def _pifinder_fake_solve_active_live() -> bool:
+    """True if PiFinder itself currently reports an injected position -
+    checked live on ports 80 and 8080, independent of `_truth_injector_
+    desired` (which only tracks THIS process's own Truth Injector intent).
+    Added 2026-09-09, direct feedback ("OFF ist OFF - Basta"): the Synthetic
+    Solve toggle used to decide On/Off purely from `_truth_injector_desired`
+    - correct for ITS OWN feature, but misleading whenever a DIFFERENT
+    mechanism (Manual one-shot seed, #205) was the one actually holding
+    fake_solve_active true. A user reasonably reads "Synthetic Solve: off"
+    as "nothing is injected" - this makes the toggle check the real,
+    combined ground truth instead of trusting a memory of its own intent."""
+    for port in ("80", "8080"):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+                if json.loads(resp.read()).get("fake_solve_active"):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 def _truth_injector_stop():
     global _truth_injector_proc
     if _truth_injector_proc is not None:
@@ -3945,9 +3966,15 @@ class Handler(BaseHTTPRequestHandler):
             # Alignment's mount-mirroring case).
             requested_device = parse_qs(parsed.query).get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
             with _truth_injector_lock:
-                if _truth_injector_desired:
+                # Decide On/Off from the REAL, live combined state (2026-09-09,
+                # "OFF ist OFF") - not just `_truth_injector_desired`, which
+                # only remembers THIS toggle's own intent and stays False if
+                # e.g. Manual one-shot seed (#205) is what's actually holding
+                # fake_solve_active true. A click while anything is injected
+                # always clears it - "start" only fires when truly nothing is.
+                if _truth_injector_desired or _pifinder_fake_solve_active_live():
                     _truth_injector_desired = False
-                    _mb_log("stopping PiFinder Truth Injector...")
+                    _mb_log("stopping PiFinder Truth Injector / clearing Injected Solve...")
                     try:
                         _truth_injector_stop()
                     except Exception as e:
