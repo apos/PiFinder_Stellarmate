@@ -3226,6 +3226,11 @@ function applyFakeSolveStatus(data) {
 
   lastFakeSolveActive = data.fake_solve_active;
   badge.style.display = lastFakeSolveActive ? '' : 'none';
+  // Keep the "Synthetic Solve" text/dot in sync with this same truth right
+  // away, not just on its own slower poll cycle (2026-09-09, "OFF IST OFF"
+  // - see applyTruthInjectorState()'s own comment). `alive` only matters
+  // when `desired` is true - a placeholder here is fine otherwise.
+  if (lastTruthInjectorDesired !== null) applyTruthInjectorState(lastTruthInjectorDesired, true, null);
   if (fakeSolveToggleInFlight) return;
   _fakeSolveStatusKnown = true;
   // "Turn off" only exists while there's something to turn off - #319
@@ -3365,11 +3370,29 @@ function applyTruthInjectorState(desired, alive, errorText) {
     applySimTileState('dot-red', errorText);
     return;
   }
-  btn.textContent = desired ? 'Turn off' : 'Toggle';
-  if (!desired) {
+  // 2026-09-09, direct feedback ("OFF IST OFF... ich sags jetzt nicht mehr
+  // oft"): this text/dot used to reflect ONLY `desired` (Truth Injector's
+  // own intent) - accurate for that one feature, but misleading whenever a
+  // DIFFERENT mechanism (Manual one-shot seed, Re-seed from mount, Sync
+  // mount from PiFinder - all of which inject as a side effect) was what
+  // actually held the real, combined fake_solve_active true. The toggle's
+  // own CLICK behavior was already fixed to force-clear regardless of
+  // source (_pifinder_fake_solve_active_live()) - this fixes the DISPLAY
+  // to match that same real truth, using lastFakeSolveActive (set by
+  // refreshDebugSolve() from the same /api/status this whole page already
+  // polls for the Injected badge).
+  const trulyActive = desired || lastFakeSolveActive === true;
+  btn.textContent = trulyActive ? 'Turn off' : 'Toggle';
+  if (!trulyActive) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'off';
     applySimTileState('dot-white', 'off');
+  } else if (!desired) {
+    // Injected via something other than Truth Injector itself (Manual
+    // seed/Re-seed/Sync) - real and on, just not THIS feature's own doing.
+    setHwDot(dotEl, 'status-dot dot-green');
+    textEl.textContent = 'on (injected elsewhere - e.g. Manual seed)';
+    applySimTileState('dot-green', 'on (injected elsewhere)');
   } else if (alive) {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'running';
