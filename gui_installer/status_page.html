@@ -3854,6 +3854,19 @@ async function reseedFakeSolve() {
       btn.disabled = false;
       return;
     }
+    // 2026-09-09, direct feedback ("Das war für den Initial Start gedacht,
+    // sonst nix"): _simStartupMismatch itself stays a one-time startup
+    // check by design (see STARTUP_DEFAULT_SOURCE's own comment - not
+    // re-evaluated live, and deliberately not touching that timing again
+    // after the earlier revert). But the banner it drives is a *problem*
+    // notice, and this is the actual fix for that problem succeeding - it
+    // should clear here, on the corrective action's own real success, not
+    // stay frozen forever just because the one-time check itself never
+    // re-runs. Gated on this call's own genuine success (not a live drift
+    // threshold) so a refused Sync (e.g. mount below horizon) correctly
+    // leaves the banner up - nothing was actually fixed in that case.
+    _simStartupMismatch = false;
+    renderNoSolveBanner();
   } catch (e) {
     // fall through - the poll below will show whatever's true now
   }
