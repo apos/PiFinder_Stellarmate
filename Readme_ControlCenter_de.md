@@ -31,13 +31,14 @@ die Basis-PiFinder-auf-StellarMate-Installation beschreibt, die dieses Tool verw
 3. [Architektur](#architektur)
 4. [Feature-Übersicht](#feature-übersicht)
 5. [Installation & bebilderte Anleitung](#installation--bebilderte-anleitung)
-6. [Technische Referenz: API-Oberfläche](#technische-referenz-api-oberfläche)
-7. [Persistenz & Prozessmodell](#persistenz--prozessmodell)
-8. [Authentifizierung & Sicherheitsmodell](#authentifizierung--sicherheitsmodell)
-9. [Bekannte Einschränkungen & Fehlerbehebung](#bekannte-einschränkungen--fehlerbehebung)
-10. [Entwicklung & Testing](#entwicklung--testing)
-11. [Strategische Roadmap](#strategische-roadmap)
-12. [Versionskompatibilität](#versionskompatibilität)
+6. [Mount Bridge & Sync-Workflows](#mount-bridge--sync-workflows)
+7. [Technische Referenz: API-Oberfläche](#technische-referenz-api-oberfläche)
+8. [Persistenz & Prozessmodell](#persistenz--prozessmodell)
+9. [Authentifizierung & Sicherheitsmodell](#authentifizierung--sicherheitsmodell)
+10. [Bekannte Einschränkungen & Fehlerbehebung](#bekannte-einschränkungen--fehlerbehebung)
+11. [Entwicklung & Testing](#entwicklung--testing)
+12. [Strategische Roadmap](#strategische-roadmap)
+13. [Versionskompatibilität](#versionskompatibilität)
 
 ---
 
@@ -284,6 +285,187 @@ im selben Netzwerk (keine Desktop-Session auf dem Pi nötig; der Server bindet `
 </td>
 </tr>
 </table>
+
+---
+
+## Mount Bridge & Sync-Workflows
+
+Der **INDI-Mount-Bridge**-Bereich des Control Center koppelt PiFinders eigene, plate-solvte
+Himmelsposition an eine Teleskopmontierung — über den `PiFinder Mount Bridge`-INDI-Treiber, sodass
+der Alltags-Workflow "steht meine Montierung noch da, wo PiFinder sie vermutet, und wenn nicht, wie
+korrigiere ich das" nicht das separate INDI-Kontrollfeld braucht. Der Treiber, die Coupling-Modi und
+die Split-Host-Varianten sind vollständig in
+[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) beschrieben; dieser Abschnitt ist eine
+bebilderte Anleitung für die Control-Center-Oberfläche dazu — die Kacheln lesen, plus die
+**Sync-basierten** Wiederherstellungs-Abläufe des täglichen Gebrauchs.
+
+> **Alle Screenshots unten stammen aus dem Full-Simulation-Modus** (ein simulierter PiFinder plus
+> eine simulierte Montierung — INDIs eigener `Telescope Simulator`, dargestellt als Montierungstyp
+> `EQ_GEM`), keine echte Hardware. Layout, Badges und Buttons sind auf einem realen Setup identisch;
+> nur der Gerätename und die Zahlen unterscheiden sich. Koordinaten-GoTos sind in diesem
+> Simulations-Setup nicht sinnvoll, deshalb bleiben die Abläufe Sync-basiert — die einzige Ausnahme
+> ist **Goto Home Position**, ein natives OnStep-Referenzpositions-Kommando, kein Koordinaten-GoTo.
+
+### Die Kacheln lesen
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_baseline.png"><img src="docs/images/readme/cc_mount_bridge_baseline.png" width="620"></a><br>
+<sub>Grundzustand (Full Simulation): PiFinder-Badge-Zeile, das Mount-Bridge-Verbindungsdiagramm und die Coupling-Statuszeile — der Seitenanfang, nichts aufgeklappt.</sub>
+</td>
+</tr>
+</table>
+
+Hier gibt es zwei Dinge zu lesen, von oben nach unten:
+
+- **Die PiFinder-Badge-Zeile** — `Cam` / `Solve` / `Injected` / `IMU` / `GPS` und das
+  Schirm-Orientierungs-Badge, jeweils in der Vier-Zustands-Ampelsprache der Seite (weiß = unbekannt,
+  grün = ok, gelb = eingeschränkt, rot = fehlgeschlagen). Im Screenshot ist `Solve` rot (drinnen
+  kein echter Kamera-Solve), aber `Injected` grün — die Position, die PiFinder meldet, ist eine
+  *synthetische* (s. [Synthetic Solve vs. manueller Einmal-Seed](#synthetic-solve-vs-manueller-einmal-seed)
+  unten).
+- **Das Mount-Bridge-Diagramm** — `PiFinder ↔ Bridge ↔ Mount`, mit zwei Anzeigen zwischen
+  Bridge- und Mount-Icon:
+  - **Drift** — der Winkelabstand zwischen PiFinders solvter Position und der von der Montierung
+    gemeldeten Position, in Bogenminuten (als `1° 5'` jenseits von 60'). Grün innerhalb des
+    Schwellwerts, gelb darüber, rot jenseits von ~0,5°. Nur sichtbar, solange ein Coupling-Modus
+    aktiv überwacht.
+  - **Alt** — die eigene Höhe der Montierung, bei jedem Treiber-Tick aus ihrer gemeldeten Position
+    neu berechnet. Wird rot am oder unter dem Horizont-Sicherheitsabstand.
+  - Unter dem Diagramm eine einzeilige Coupling-Statuszeile (`Watching for drift` · `verify alert
+    (drift 0.2')`) — farbiger Punkt plus Worte für denselben Zustand, mit `Details`-Aufklapper,
+    damit die Zeile ihre Höhe nicht ändert, wenn der Text sich ändert.
+
+Dieses Diagramm und die Drift-/Alt-Anzeigen sitzen in der **PiFinder**-Kachel (direkt unter der
+Badge-Zeile), weil sie reiner Status sind; der `INDI Mount Bridge`-Abschnitt weiter unten enthält
+die *Aktionen*.
+
+### "PiFinder's simulated position isn't related to the mount"
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_sim_mismatch.png"><img src="docs/images/readme/cc_mount_bridge_sim_mismatch.png" width="620"></a><br>
+<sub>Full-Simulation-Starthinweis: PiFinders simulierte Himmelsposition wurde unabhängig von der Montierung gesetzt, jede Übereinstimmung ist also Zufall, bis man beide verknüpft.</sub>
+</td>
+</tr>
+</table>
+
+In Full Simulation wählen der simulierte PiFinder und die simulierte Montierung ihre Startposition
+jeweils selbst. Wenn der Mount-Bridge-Treiber startet und feststellt, dass er nichts Besseres als
+seinen einkompilierten Fallback zur Verfügung hatte, zeigt er diese gelbe Karte einmalig: Die
+Drift-Zahl mag auf den ersten Blick *in Ordnung* aussehen (es ist ja ein echter Stern), aber
+Verify/Alert und Sync-from-PiFinder bedeuten relativ zur Montierung noch nichts. Die Karte bietet
+die zwei Wege an, das zu ändern — nimm den, der zur vertrauenswürdigen Seite passt:
+
+| Button | Was er tut | Wann |
+|---|---|---|
+| **Re-seed from mount** | Liest die aktuelle Position der Montierung und injiziert *diese* als PiFinders Position. | Die Montierung steht richtig; PiFinders (simulierter) Solve ist der Ausreißer. |
+| **Sync mount from PiFinder** | Synct die Montierung auf das, was PiFinder gerade zeigt — sofortige Positionsaktualisierung, kein Slew. | PiFinders Position stimmt (ein echter Solve, oder eine bewusst gesetzte) und die Montierung glaubt Falsches — z. B. nach Bewegen der Montierung von Hand. |
+
+Sobald eine der beiden wirklich erfolgreich ist, verschwindet die Karte. Das ist der
+meistgenutzte Ablauf der ganzen Mount-Bridge-Oberfläche: Derselbe **Sync mount from PiFinder**-Button
+erscheint auch in den Quick Actions und im Drift-Banner und tut überall dasselbe — ein
+Einmal-Sync auf PiFinders *gerade sichtbare* Position, ohne Frische-Prüfung, unabhängig vom
+Coupling-Modus.
+
+### Montierung unter dem Horizont
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_below_horizon.png"><img src="docs/images/readme/cc_mount_bridge_below_horizon.png" width="620"></a><br>
+<sub>Full Simulation: die gemeldete Position der Montierung liegt unter dem Horizont — das <code>Alt</code>-Badge ist rot und eine Wiederherstellungs-Karte zeigt die zwei Auswege.</sub>
+</td>
+</tr>
+</table>
+
+Sinkt die gemeldete Position der Montierung auf oder unter den Horizont-Sicherheitsabstand, wird das
+`Alt`-Badge rot und diese Wiederherstellungs-Karte erscheint. Hier hilft kein Software-Schalter —
+der Treiber lässt ohnehin keinen Sync oder GoTo auf ein Ziel unter dem Horizont durch — deshalb
+bietet die Karte nur die zwei echten Auswege:
+
+- **Sync mount from PiFinder** — wenn PiFinders *eigene* Position über dem Horizont liegt (was oft
+  der Fall ist: genau diese Uneinigkeit ist der Punkt), gelingt dies und korrigiert die Annahme der
+  Montierung ohne jede physische Bewegung.
+- **Goto Home Position** — schickt die Montierung auf ihre native OnStep-Home-/Referenzposition. Ein
+  Firmware-Referenzkommando, kein Koordinaten-GoTo, funktioniert also auch dann, wenn ein
+  Koordinaten-GoTo abgelehnt würde.
+
+Die Drift-Zahl friert währenddessen auf ihrem letzten Wert ein — sie wird unter dem Horizont nicht
+neu berechnet, da sie nichts bedeuten würde.
+
+### Einen Coupling-Modus wählen
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_coupling.png"><img src="docs/images/readme/cc_mount_bridge_coupling.png" width="620"></a><br>
+<sub>Der <code>INDI Mount Bridge</code>-Abschnitt (Full Simulation): Quick Actions oben, die Coupling-Presets darunter, die einmaligen Settings unten eingeklappt.</sub>
+</td>
+</tr>
+</table>
+
+Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal einstellt:
+
+- **Quick Actions** — die Einmal-Buttons: **Sync mount from PiFinder** (oben), **Align to Held
+  Target** und **Goto Held Target** (korrigieren PiFinders bzw. der Montierung Annahme über das
+  gehaltene Ziel — brauchen einen aktiven Coupling-Modus) und **Stop movement** (Not-Halt; setzt
+  außerdem Coupling auf Off, damit nichts nachtriggert). **Threshold** (Bogenmin.) ist, wie weit
+  daneben, bevor Verify/Alert warnt oder ein Auto-correct-Modus eingreift. **Decouple** setzt
+  Coupling zurück auf Off.
+- **Coupling-Presets** — eines wählen:
+  - **Verify/Alert only** — überwacht die Drift, bewegt die Montierung nie. Der passive "steht meine
+    Montierung noch richtig?"-Check für die Astrofotografie.
+  - **Auto-correct (Sync)** — dieselbe Überwachung, aber sobald die Drift den Threshold übersteigt,
+    synct es die Montierung auf PiFinders Position (sofort, kein Slew — funktioniert mit jeder
+    Montierung). Der Von-Hand-schieben-dann-korrigieren-Workflow.
+  - **GoTo** — slewt physisch; hält das zuletzt von einer der beiden Seiten gesetzte Ziel. Braucht
+    eine echte Goto-fähige Montierung und wird daher in diesem Simulations-Setup nicht durchgespielt.
+- **Settings** (eingeklappt) — Rolle, Hardware-Modus und die nummerierte Einrichtungs-Checkliste.
+  Einmalige Konfiguration pro Sitzung, aus dem Alltagsablauf herausgehalten.
+
+Ein Preset zu klicken, bevor die nummerierten Setup-Schritte alle grün sind, schlägt nicht fehl —
+es führt erst das Setup aus (Autoconnect) und wendet dann den geklickten Modus an.
+
+### Synthetic Solve vs. manueller Einmal-Seed
+
+Beide füttern PiFinder eine Position, die er nicht plate-gesolvt hat, um alles hinter einem Solve
+(die Mount Bridge, die UI) ohne Himmelssicht zu testen — aber es sind verschiedene Werkzeuge:
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_synthetic_solve.png"><img src="docs/images/readme/cc_synthetic_solve.png" width="480"></a><br>
+<sub>Synthetic Solve (in <em>Simulation, Test and Power</em>): ein Toggle, von einem Hintergrund-Watchdog am Leben gehalten.</sub>
+</td>
+</tr>
+</table>
+
+**Synthetic Solve** füttert PiFinder *kontinuierlich* die Position der simulierten Montierung (über
+`test_tools/pifinder_truth_injector.py`), sodass PiFinder und die simulierte Montierung als eins
+mitlaufen, wenn eine sich bewegt. Ein Toggle, ein Punkt; ein Watchdog startet die Fütterung neu,
+falls sie stirbt. Das ist der normale "es gibt einen Himmel"-Schalter für Full Simulation. Er treibt
+das grüne `Injected`-Badge in der PiFinder-Kachel.
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
+<sub>Manueller Einmal-Seed (Full Simulation), in den Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code> und eine direkte RA/Dec-Eingabe.</sub>
+</td>
+</tr>
+</table>
+
+**Manueller Einmal-Seed** (eingeklappt in den Quick Actions) injiziert *eine einzelne* Position und
+hört dann auf: **Re-seed from mount** liest die aktuelle Position der Montierung einmal, **Set
+position** nimmt eine wörtliche RA/Dec (JNow, Grad), und beide schalten die Injektion ein, falls sie
+aus war. PiFinders normales IMU-Dead-Reckoning trackt von diesem Anker aus weiter, genau wie von
+einem echten Solve. Damit setzt man PiFinder an *eine* bekannte Stelle — z. B. um die Uneinigkeit
+für einen Sync-Test herzustellen — statt ihn der Montierung folgen zu lassen. `Turn off` bringt
+PiFinder zum echten Kamera-Solving zurück. Bewusst *nicht* im Synthetic-Solve-Punkt gespiegelt, um
+dieses eine Signal einfach zu halten.
 
 ---
 

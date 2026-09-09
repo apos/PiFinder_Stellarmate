@@ -29,13 +29,14 @@ PiFinder-on-StellarMate installation this tool manages, and to
 3. [Architecture](#architecture)
 4. [Feature Walkthrough](#feature-walkthrough)
 5. [Installation & Illustrated Guide](#installation--illustrated-guide)
-6. [Technical Reference: API Surface](#technical-reference-api-surface)
-7. [Persistence & Process Model](#persistence--process-model)
-8. [Authentication & Security Model](#authentication--security-model)
-9. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
-10. [Development & Testing](#development--testing)
-11. [Strategic Roadmap](#strategic-roadmap)
-12. [Version Compatibility](#version-compatibility)
+6. [Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows)
+7. [Technical Reference: API Surface](#technical-reference-api-surface)
+8. [Persistence & Process Model](#persistence--process-model)
+9. [Authentication & Security Model](#authentication--security-model)
+10. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
+11. [Development & Testing](#development--testing)
+12. [Strategic Roadmap](#strategic-roadmap)
+13. [Version Compatibility](#version-compatibility)
 
 ---
 
@@ -271,6 +272,179 @@ the same network (no desktop session on the Pi required; the server binds `0.0.0
 </td>
 </tr>
 </table>
+
+---
+
+## Mount Bridge & Sync Workflows
+
+The Control Center's **INDI Mount Bridge** area couples PiFinder's own plate-solved sky position to a
+telescope mount, through the `PiFinder Mount Bridge` INDI driver — so the everyday "is my mount still
+where PiFinder thinks it is, and fix it if not" workflow doesn't need the separate INDI Control
+Panel. The driver, the coupling modes, and the split-host variants are covered in full in
+[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md); this section is a picture walkthrough of the
+Control Center surface for it — reading the tiles, and the **sync-based** recovery flows that make up
+day-to-day use.
+
+> **All screenshots below are from Full Simulation mode** (a simulated PiFinder plus a simulated
+> mount — INDI's own `Telescope Simulator`, presented as mount type `EQ_GEM`), not real hardware.
+> The layout, badges, and buttons are identical on a real setup; only the device name and the
+> numbers differ. Coordinate GoTos aren't meaningful in this simulation setup, so the walkthroughs
+> stay on sync-based recovery — the one exception is **Goto Home Position**, which is a native OnStep
+> reference-position command, not a coordinate GoTo.
+
+### Reading the tiles
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_baseline.png"><img src="docs/images/readme/cc_mount_bridge_baseline.png" width="620"></a><br>
+<sub>Baseline reading (Full Simulation): PiFinder badge row, the Mount Bridge connection diagram, and the coupling status line — the top of the page, nothing expanded.</sub>
+</td>
+</tr>
+</table>
+
+Two things to read here, top to bottom:
+
+- **The PiFinder badge row** — `Cam` / `Solve` / `Injected` / `IMU` / `GPS` and the screen-orientation
+  badge, each in the page's four-state colour language (white = unknown, green = ok, yellow =
+  degraded, red = failed). In the shot, `Solve` is red (no real camera solve indoors) but `Injected`
+  is green — the position PiFinder is reporting is a *synthetic* one (see
+  [Synthetic Solve vs. a manual one-shot seed](#synthetic-solve-vs-a-manual-one-shot-seed) below).
+- **The Mount Bridge diagram** — `PiFinder ↔ Bridge ↔ Mount`, with two readouts wedged between the
+  Bridge and Mount icons:
+  - **Drift** — the angular distance between PiFinder's solved position and the mount's reported
+    position, in arcminutes (shown as `1° 5'` past 60'). Green within your Threshold, yellow past it,
+    red past ~0.5°. Only shown while a coupling mode is actively watching.
+  - **Alt** — the mount's own altitude, recomputed every driver tick from its reported position.
+    Turns red at or below the horizon safety margin.
+  - Below the diagram, a one-line coupling status (`Watching for drift` · `verify alert (drift
+    0.2')`) — a coloured dot plus words for the same state, with a `Details` expander so the row
+    doesn't change height as the text changes.
+
+This diagram and the drift/alt readouts live in the **PiFinder** tile (directly under the badge row)
+because they're pure status; the `INDI Mount Bridge` section further down is where the *actions* are.
+
+### "PiFinder's simulated position isn't related to the mount"
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_sim_mismatch.png"><img src="docs/images/readme/cc_mount_bridge_sim_mismatch.png" width="620"></a><br>
+<sub>Full Simulation startup notice: PiFinder's simulated sky position was seeded independently of the mount, so any agreement between them is coincidental until you tie them together.</sub>
+</td>
+</tr>
+</table>
+
+In Full Simulation the simulated PiFinder and the simulated mount each pick a start position on
+their own. When the Mount Bridge driver starts and finds it had nothing better to go on than its
+compiled-in fallback, it raises this amber card once: the drift number may *look* fine at a glance
+(it's a real star, after all), but Verify/Alert and Sync-from-PiFinder don't actually mean anything
+relative to the mount yet. The card offers the two ways to make them mean something — pick whichever
+matches which side you trust:
+
+| Button | What it does | Use when |
+|---|---|---|
+| **Re-seed from mount** | Reads the mount's current position and injects *that* as PiFinder's position. | The mount is where you want to be; PiFinder's (simulated) solve is the odd one out. |
+| **Sync mount from PiFinder** | Syncs the mount to whatever PiFinder currently shows — an instant position update, no slew. | PiFinder's position is correct (a real solve, or one you deliberately set) and the mount's belief is wrong — e.g. after moving the mount by hand. |
+
+Either one, once it genuinely succeeds, clears the card. This is the most-exercised flow of the
+whole Mount Bridge surface: the same **Sync mount from PiFinder** button also appears in Quick
+Actions and in the drift banner, and does the same thing everywhere — a one-shot sync to PiFinder's
+*currently visible* position, with no freshness check, regardless of the coupling mode.
+
+### Mount below the horizon
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_below_horizon.png"><img src="docs/images/readme/cc_mount_bridge_below_horizon.png" width="620"></a><br>
+<sub>Full Simulation: the mount's reported position is below the horizon — the <code>Alt</code> badge is red and a recovery card appears with the two ways out.</sub>
+</td>
+</tr>
+</table>
+
+When the mount's own reported position drops to or below the horizon safety margin, the `Alt` badge
+turns red and this recovery card appears. No software toggle helps here — the driver won't let a
+Sync or GoTo through to a below-horizon target anyway — so the card offers only the two real ways
+out:
+
+- **Sync mount from PiFinder** — if PiFinder's *own* position is above the horizon (which it often
+  is: the disagreement is the whole point), this succeeds and corrects the mount's belief with no
+  physical motion.
+- **Goto Home Position** — sends the mount to its native OnStep home/reference position. This is a
+  firmware reference command, not a coordinate GoTo, so it works even when a coordinate GoTo would
+  be refused.
+
+The drift figure freezes at its last value while this is showing — it isn't recomputed while the
+mount is below the horizon, since it wouldn't mean anything.
+
+### Choosing a Coupling mode
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_coupling.png"><img src="docs/images/readme/cc_mount_bridge_coupling.png" width="620"></a><br>
+<sub>The <code>INDI Mount Bridge</code> section (Full Simulation): Quick Actions on top, the Coupling presets below, and the one-time Settings collapsed at the bottom.</sub>
+</td>
+</tr>
+</table>
+
+The section splits into what you use every session and what you set once:
+
+- **Quick Actions** — the one-shot buttons: **Sync mount from PiFinder** (above), **Align to Held
+  Target** and **Goto Held Target** (correct PiFinder's or the mount's belief about the held target
+  — need an active coupling mode), and **Stop movement** (emergency stop; also sets Coupling to Off
+  so nothing re-triggers). **Threshold** (arcmin) is how far off before Verify/Alert warns or an
+  Auto-correct mode acts. **Decouple** sets Coupling back to Off.
+- **Coupling presets** — pick one:
+  - **Verify/Alert only** — watches the drift, never moves the mount. The passive "is my mount still
+    aligned?" check for astrophotography.
+  - **Auto-correct (Sync)** — same watching, but once drift passes the Threshold it syncs the mount
+    to PiFinder's position (instant, no slew — works on any mount). The push-to-by-hand-then-correct
+    workflow.
+  - **GoTo** — physically slews; holds whichever target was most recently set from either side.
+    Needs a real Goto-capable mount, so it isn't exercised in this simulation setup.
+- **Settings** (collapsed) — Role, hardware mode, and the numbered setup checklist. One-time
+  per-session configuration, kept out of the everyday flow.
+
+Clicking a preset before the numbered setup steps are all green doesn't fail — it runs the setup
+first (Autoconnect), then applies the mode you clicked.
+
+### Synthetic Solve vs. a manual one-shot seed
+
+Both feed PiFinder a position it didn't plate-solve, for exercising everything downstream of a solve
+(the Mount Bridge, the UI) without sky access — but they're different tools:
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_synthetic_solve.png"><img src="docs/images/readme/cc_synthetic_solve.png" width="480"></a><br>
+<sub>Synthetic Solve (in <em>Simulation, Test and Power</em>): one toggle, kept alive by a background watchdog.</sub>
+</td>
+</tr>
+</table>
+
+**Synthetic Solve** *continuously* feeds PiFinder the simulated mount's position (via
+`test_tools/pifinder_truth_injector.py`), so PiFinder and the simulated mount track together as one
+moves. One toggle, one dot; a watchdog restarts the feed if it dies. This is the normal Full
+Simulation "there is a sky" switch. It drives the green `Injected` badge in the PiFinder tile.
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
+<sub>Manual one-shot seed (Full Simulation), inside Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code>, and a direct RA/Dec entry.</sub>
+</td>
+</tr>
+</table>
+
+**Manual one-shot seed** (collapsed inside Quick Actions) injects a *single* position and stops:
+**Re-seed from mount** reads the mount's current position once, **Set position** takes a literal
+RA/Dec (JNow, degrees), and either turns the injection on if it wasn't. PiFinder's normal IMU
+dead-reckoning tracks from that anchor exactly as it would from a real solve. Use this to place
+PiFinder at one known spot — e.g. to set up the disagreement for a Sync test — rather than have it
+follow the mount. `Turn off` returns PiFinder to real camera solving. Deliberately *not* reflected
+in the Synthetic Solve dot, to keep that one signal simple.
 
 ---
 
