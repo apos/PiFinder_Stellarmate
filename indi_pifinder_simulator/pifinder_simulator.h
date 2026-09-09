@@ -130,7 +130,18 @@ class PiFinderSimulator : public INDI::Telescope
         // TimerHit() timestamp, bounded by STARTUP_DEFAULT_GRACE_SEC below
         // before giving up and falling back to "anywhere safe".
         long m_startupDefaultWaitSince = 0;
-        static constexpr int STARTUP_DEFAULT_GRACE_SEC = 8;
+        // Widened 8 -> 25 (2026-09-09, direct feedback: "Sorge dafür dass
+        // der Fehler beim Start behoben wird" - the mismatch banner this
+        // produced was correctly diagnosed as this window simply being too
+        // short against real Ekos/hardware startup timing, not something a
+        // user should have to click around after the fact). 8s repeatedly
+        // wasn't enough for the real mount driver (serial connect + first
+        // status report) to have delivered a position via the snoop yet,
+        // so this fell through to "anywhere_safe" even though the mount
+        // was, in fact, about to be available seconds later. 25s matches
+        // the outer bound already used elsewhere in this project for a
+        // full driver/profile startup sequence.
+        static constexpr int STARTUP_DEFAULT_GRACE_SEC = 25;
 
         // Surfaced as a read-only INDI text property (see initProperties())
         // so the Control Center can tell a user *why* PiFinder Simulator
