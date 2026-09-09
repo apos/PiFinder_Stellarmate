@@ -1895,10 +1895,15 @@
              on/off toggle: Re-seed from mount / Set position each turn it on
              themselves, and always visible (not hidden until active). A small
              "Turn off" appears only while it's active (otherwise nothing to
-             turn off). Re-seed from mount follows the Coupling-Off gate (it
-             reads the coupled mount's position); Set position + the RA/Dec
-             inputs do not - a manual RA/Dec needs no mount. The separate
-             Synthetic Solve toggle in the other tile is unchanged. -->
+             turn off). Re-seed from mount needs the mount linked/connected -
+             NOT gated on Coupling mode (see docs/concepts/
+             session_start_position_reconciliation.md §8.2 - it reads the
+             mount's own position directly, no Coupling automation involved,
+             and gating it on Coupling != Off blocked exactly the
+             session-start case it's most needed for). Set position + the
+             RA/Dec inputs need neither a mount nor a solve - a manual RA/Dec
+             stands alone. The separate Synthetic Solve toggle in the other
+             tile is unchanged. -->
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-seed-advanced', 'mb-seed-advanced-chevron')">
           <span>Manual one-shot seed<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
           <span id="mb-seed-advanced-chevron">&#9660; show</span>
@@ -1906,7 +1911,7 @@
         <div id="mb-seed-advanced" style="display:none;">
           <div id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Synthetic Solve above (which continuously feeds a position) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning - trusting PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose.">
             <span id="fake-solve-advanced-status" class="mb-row-label" style="margin-right:0;">unknown</span>
-            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Needs an active Coupling mode - it reads the coupled mount.">Re-seed from mount</button>
+            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode - needs the mount linked and connected.">Re-seed from mount</button>
             <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled title="Set Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't (#205).">Set position</button>
             <input type="number" id="fake-solve-manual-ra" class="pf-num-input" step="0.01" min="0" max="360" placeholder="RA&deg;">
             <input type="number" id="fake-solve-manual-dec" class="pf-num-input" step="0.01" min="-90" max="90" placeholder="Dec&deg;">
@@ -2839,13 +2844,18 @@ function applyFakeSolveAdvancedButtonStates(stateClass) {
 // #319: Re-seed / Set position / RA-Dec inputs are always available (not
 // hidden until active) - each self-enables Injected Solve. Two gates still
 // apply and are combined here, since both a status poll (applyFakeSolveStatus)
-// and a Coupling-mode change (updateActionButtonsCouplingGate) can move them:
+// and a mount-link change (updateMbDiagram) can move them:
 //   - status must be known (a confirmed true/false from /api/status)
-//   - Re-seed from mount additionally needs an active Coupling mode, because
-//     it reads the *coupled mount's* position; Set position + the inputs take
-//     a manual RA/Dec and don't.
+//   - Re-seed from mount additionally needs the mount linked and connected -
+//     it reads the mount's own EQUATORIAL_EOD_COORD directly via INDI, which
+//     needs no Coupling *automation* active at all (see
+//     docs/concepts/session_start_position_reconciliation.md §8.2 - found
+//     live 2026-09-09: gating this on Coupling != Off blocked exactly the
+//     session-start bootstrap case it's most needed for, since a fresh
+//     session normally starts with Coupling still Off). Set position + the
+//     inputs take a manual RA/Dec and need neither.
 let _fakeSolveStatusKnown = false;
-let _seedCouplingCoupled = false;
+let _seedMountConnected = false;
 function updateSeedControlsEnabled() {
   const reseedBtn = document.getElementById('fake-solve-reseed-btn');
   const manualBtn = document.getElementById('fake-solve-manual-btn');
@@ -2855,10 +2865,10 @@ function updateSeedControlsEnabled() {
   manualBtn.disabled = !_fakeSolveStatusKnown;
   raEl.disabled = !_fakeSolveStatusKnown;
   decEl.disabled = !_fakeSolveStatusKnown;
-  reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedCouplingCoupled;
-  reseedBtn.title = _seedCouplingCoupled
-    ? "Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't."
-    : "Coupling is Off - Re-seed reads the coupled mount's position, so it needs an active Coupling mode. Use Set position for a manual RA/Dec.";
+  reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedMountConnected;
+  reseedBtn.title = _seedMountConnected
+    ? "Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode."
+    : "No mount linked/connected yet - Re-seed reads the mount's position directly, so it needs a connected mount (not an active Coupling mode). Use Set position for a manual RA/Dec.";
 }
 
 function applyFakeSolveStatus(data) {
@@ -3449,6 +3459,12 @@ async function reseedFakeSolve() {
   textEl.textContent = 'Reading mount position…';
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   try {
+    if (lastTruthInjectorDesired === true) {
+      // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
+      // Truth Injector's next 2s tick would otherwise immediately overwrite
+      // this one-shot re-seed with the shadow device's own position (#323).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
@@ -3499,6 +3515,13 @@ async function setFakeSolveManual() {
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   let failed = false;
   try {
+    if (lastTruthInjectorDesired === true) {
+      // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
+      // Truth Injector's next 2s tick would otherwise immediately overwrite
+      // this one-shot manual position with the shadow device's own position
+      // (#323 - found live testing #319/#322).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
     const result = await resp.json();
     failed = result.success !== true;
@@ -3510,6 +3533,7 @@ async function setFakeSolveManual() {
   if (failed) applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
+  await refreshTruthInjectorStatus();
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the
@@ -5015,10 +5039,9 @@ function updateActionButtonsCouplingGate(couplingMode) {
   });
   const hint = document.getElementById('mb-quick-actions-hint');
   if (hint) hint.style.display = coupled ? 'none' : '';
-  // #319: "Re-seed from mount" in the same group reads the coupled mount, so
-  // it follows this gate too; "Set position" + inputs don't (manual RA/Dec).
-  _seedCouplingCoupled = coupled;
-  updateSeedControlsEnabled();
+  // "Re-seed from mount" in the same group deliberately does NOT follow this
+  // gate (see updateSeedControlsEnabled()'s own comment) - it's gated on the
+  // mount being linked/connected instead, set separately from updateMbDiagram().
 }
 
 // European keyboards/locales often produce a comma decimal separator (e.g.
@@ -5153,6 +5176,10 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
+  // Re-seed from mount's own gate (see updateSeedControlsEnabled()) - independent
+  // of Coupling mode, so set here rather than from updateActionButtonsCouplingGate().
+  _seedMountConnected = data.mount_connected === true;
+  updateSeedControlsEnabled();
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
   syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
