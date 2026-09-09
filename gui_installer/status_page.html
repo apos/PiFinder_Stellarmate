@@ -3100,7 +3100,18 @@ function updateNoSolveBanner(data) {
 // "near_mount" and null (device doesn't exist, e.g. Real Hardware mode)
 // both mean nothing to warn about; "anywhere_safe"/"compiled_fallback"
 // mean the simulator's own position has no real relationship to the mount.
+let _simMismatchAcknowledged = false;  // set by a genuinely successful Re-seed - see reseedFakeSolve()
 function updateSimStartupMismatch(source) {
+  // 2026-09-09, direct feedback ("Die Meldung nervt immer noch"): this
+  // function itself is called again on every poll (a few seconds apart),
+  // unconditionally recomputing _simStartupMismatch from the still-frozen
+  // STARTUP_DEFAULT_SOURCE property (never touched that timing again after
+  // the earlier revert) - so reseedFakeSolve()'s one-time clear was
+  // getting silently overwritten back to true within seconds, every time.
+  // _simMismatchAcknowledged makes the clear actually stick for the rest
+  // of this page's lifetime once the real corrective action has genuinely
+  // succeeded.
+  if (_simMismatchAcknowledged) return;
   _simStartupMismatch = source === 'anywhere_safe' || source === 'compiled_fallback';
   renderNoSolveBanner();
 }
@@ -3865,7 +3876,13 @@ async function reseedFakeSolve() {
     // re-runs. Gated on this call's own genuine success (not a live drift
     // threshold) so a refused Sync (e.g. mount below horizon) correctly
     // leaves the banner up - nothing was actually fixed in that case.
+    // _simMismatchAcknowledged (added right after this first attempt still
+    // left the banner reappearing within seconds - see
+    // updateSimStartupMismatch()'s own comment): without it, the next
+    // periodic poll of STARTUP_DEFAULT_SOURCE silently overwrote this
+    // clear back to true, since that underlying property never changes.
     _simStartupMismatch = false;
+    _simMismatchAcknowledged = true;
     renderNoSolveBanner();
   } catch (e) {
     // fall through - the poll below will show whatever's true now
