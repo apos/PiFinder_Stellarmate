@@ -81,6 +81,10 @@ class PiFinderSimulator : public INDI::Telescope
         void TimerHit() override;
 
     private:
+        // See its own definition (pifinder_simulator.cpp) for why this
+        // moved out of Connect() (2026-09-09).
+        void maybeApplyStartupDefault();
+
         // Wherever it was last Sync'd/GoTo'd to - starts at a fixed, sensible
         // above-the-horizon default (see m_hasPosition below), not 0h/0deg.
         double m_currentRA = 5.5;
@@ -116,6 +120,30 @@ class PiFinderSimulator : public INDI::Telescope
         // once per process lifetime (not on every reconnect, and never once
         // a real Sync()/Goto() has already set something deliberate).
         bool m_startupDefaultReplaced = false;
+
+        // 2026-09-09: Connect() itself is too early for the mount snoop to
+        // have delivered anything yet (same class of race as TimerHit()
+        // never having started without SetTimer() in Connect() - see that
+        // fix's own comment below) - moved the actual pick to the first few
+        // TimerHit() ticks instead, giving IUSnoopNumber() a real chance to
+        // land first. 0 = not started waiting yet; set to the first
+        // TimerHit() timestamp, bounded by STARTUP_DEFAULT_GRACE_SEC below
+        // before giving up and falling back to "anywhere safe".
+        long m_startupDefaultWaitSince = 0;
+        static constexpr int STARTUP_DEFAULT_GRACE_SEC = 8;
+
+        // Surfaced as a read-only INDI text property (see initProperties())
+        // so the Control Center can tell a user *why* PiFinder Simulator
+        // ended up where it did - "anywhere_safe"/"compiled_fallback" both
+        // mean no real relationship to the mount was established, which a
+        // first-time user has no way to notice just by looking at a
+        // position that "looks like a real star". Direct user request,
+        // 2026-09-09 - same session that added the no-solve banner this
+        // extends.
+        std::string m_startupDefaultSource = "pending";
+        ITextVectorProperty StartupDefaultSourceTP;
+        IText StartupDefaultSourceT[1] {};
+        enum { STARTUP_DEFAULT_SOURCE };
 
         // Distinct from Sync()/Goto() above, which move the simulated "sky
         // truth" position itself (m_currentRA/DEC, what a test session feeds

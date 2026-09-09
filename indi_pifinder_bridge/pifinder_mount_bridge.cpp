@@ -647,8 +647,16 @@ bool PiFinderMountBridge::initProperties()
     // to the existing automatic correction (HOLDING) rather than duplicated
     // here.
     IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align to Held Target", ISS_OFF);
-    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 4, getDeviceName(), "MANUAL_TRIGGER",
+    IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_TO_COORDS], "TRIGGER_SYNC_TO_COORDS", "Sync To Coords", ISS_OFF);
+    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 5, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
+
+    // See the header comment - RA/Dec to sync the mount to on the next
+    // TRIGGER_SYNC_TO_COORDS, no freshness judgment made here at all.
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_RA], "RA", "RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_DEC], "DEC", "DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&SyncToCoordsNP, SyncToCoordsN, 2, getDeviceName(), "SYNC_TO_COORDS",
+                       "Sync to coords", "Main Control", IP_RW, 60, IPS_IDLE);
 
     IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
     IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
@@ -716,6 +724,13 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // §8.8: see the header comment. Range/step match isAboveHorizon()'s own
+    // libnova output (degrees, -90..90); IPS_IDLE until the first real
+    // reading, same convention as most other status properties here.
+    IUFillNumber(&MountHorizonStatusN[0], "ALTITUDE_DEG", "Mount altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 1, getDeviceName(), "MOUNT_HORIZON_STATUS",
+                       "Mount horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // See the header comment - the fixed J2000 coordinate of the last
     // genuinely new target, distinct from the tactical (JNow) held target.
     IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
@@ -772,6 +787,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&BridgeModeSP);
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
+        defineProperty(&SyncToCoordsNP);
         defineProperty(&AbortMountSP);
         defineProperty(&MultiPointAlignSP);
         defineProperty(&AlignConfigNP);
@@ -781,6 +797,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&MountHorizonStatusNP);
         defineProperty(&OriginalTargetNP);
         defineProperty(&OriginalTargetDriftNP);
         defineProperty(&MountRejectTP);
@@ -829,6 +846,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(BridgeModeSP.name);
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
+        deleteProperty(SyncToCoordsNP.name);
         deleteProperty(AbortMountSP.name);
         deleteProperty(MultiPointAlignSP.name);
         deleteProperty(AlignConfigNP.name);
@@ -838,6 +856,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(MountHorizonStatusNP.name);
         deleteProperty(OriginalTargetNP.name);
         deleteProperty(OriginalTargetDriftNP.name);
         deleteProperty(MountRejectTP.name);
@@ -1705,6 +1724,26 @@ void PiFinderMountBridge::TimerHit()
 
     if (havePositions)
         IDSetNumber(&DriftStatusNP, nullptr);
+
+    // §8.8: independent of havePositions above - this only needs the
+    // mount's own reported position, not a fresh PiFinder solve, so it
+    // stays meaningful even with no solve active at all (the exact
+    // situation that motivated this: a below-horizon mount with neither a
+    // real nor synthetic solve, where havePositions is false the whole
+    // time). isAboveHorizon() itself fails open (altitude=90, "above") if
+    // no location lock exists yet - same deliberate defense-in-depth
+    // semantics as every other caller of it, not changed here.
+    {
+        double mountRA, mountDec;
+        if (m_client->getMountRADE(mountRA, mountDec))
+        {
+            double altitude = 90.0;
+            const bool above = isAboveHorizon(mountRA, mountDec, altitude);
+            MountHorizonStatusN[0].value = altitude;
+            MountHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
+            IDSetNumber(&MountHorizonStatusNP, nullptr);
+        }
+    }
 
     // Deliberately published here, AFTER handleGotoForward()/
     // handleAutoCorrectGoto()/the plain-Sync branch above have all had a
@@ -2934,8 +2973,25 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             const bool wantGoto = ManualTriggerS[TRIGGER_GOTO_NOW].s == ISS_ON;
             const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
             const bool wantAlignHeld = ManualTriggerS[TRIGGER_ALIGN_HELD].s == ISS_ON;
+            const bool wantSyncToCoords = ManualTriggerS[TRIGGER_SYNC_TO_COORDS].s == ISS_ON;
 
-            if (wantAlignHeld)
+            if (wantSyncToCoords)
+            {
+                // See SyncToCoordsNP's own header comment - whatever was last
+                // written there, no freshness/source judgment made here.
+                if (sendMountCoordsSafe(SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value, "SYNC"))
+                {
+                    LOGF_INFO("Manual SYNC to explicit coords sent to mount (RA %.4fh, DEC %.4f deg).",
+                              SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send explicit-coords Sync to mount.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantAlignHeld)
             {
                 // Re-sends the held target to PiFinder itself - see this
                 // switch's own IUFillSwitch comment above for why Goto Held
@@ -3016,7 +3072,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // a human clicked the button. Previously used the plain
                 // (non-atomic, no freshness/source check at all)
                 // getPiFinderRADE() - this manual path had none of the
-                // protection the automatic paths already had.
+                // protection the automatic paths already had. Deliberately
+                // UNCHANGED (2026-09-09, direct feedback: "Der Normalbetrieb
+                // bleibt wie er ist") - the below-horizon recovery banner's
+                // own, looser needs are served by TRIGGER_SYNC_TO_COORDS
+                // above instead, a separate primitive, not a change here.
                 double piRA, piDec;
                 const bool haveFreshCamPosition =
                     m_client->isReady() &&
@@ -3321,6 +3381,17 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             // nothing in the GUI explaining why. Same auto-save-on-change
             // pattern as those, just missing here.
             saveConfig(true, DriftThresholdNP.name);
+            return true;
+        }
+
+        if (strcmp(name, SyncToCoordsNP.name) == 0)
+        {
+            // Transient one-shot input for TRIGGER_SYNC_TO_COORDS below -
+            // not persisted (saveConfig), unlike DriftThresholdNP above:
+            // this is a value to act on once, not a standing setting.
+            IUUpdateNumber(&SyncToCoordsNP, values, names, n);
+            SyncToCoordsNP.s = IPS_OK;
+            IDSetNumber(&SyncToCoordsNP, nullptr);
             return true;
         }
 

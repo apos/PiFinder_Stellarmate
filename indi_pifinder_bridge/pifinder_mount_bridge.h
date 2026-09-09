@@ -196,8 +196,22 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         // Manual, immediate one-shot trigger (works regardless of BridgeModeSP)
         ISwitchVectorProperty ManualTriggerSP;
-        ISwitch ManualTriggerS[4];
-        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW, TRIGGER_GOTO_HELD, TRIGGER_ALIGN_HELD };
+        ISwitch ManualTriggerS[5];
+        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW, TRIGGER_GOTO_HELD, TRIGGER_ALIGN_HELD, TRIGGER_SYNC_TO_COORDS };
+
+        // General-purpose companion to TRIGGER_SYNC_NOW above (2026-09-09,
+        // direct feedback): that trigger always makes ITS OWN fresh-CAM-
+        // solve-gated choice of what to sync to (#227) - deliberately not
+        // touched here, normal operation stays exactly as it was. This is
+        // a different, explicit primitive: sync the mount to WHATEVER
+        // RA/Dec a caller writes here, no freshness judgment made by the
+        // driver at all - the caller (a GUI button, a script) already
+        // decided this coordinate is the one to use. Write RA/Dec here,
+        // then set TRIGGER_SYNC_TO_COORDS to fire it - same two-step
+        // write-then-trigger shape SyncToCoordsN's own values follow.
+        INumberVectorProperty SyncToCoordsNP;
+        INumber SyncToCoordsN[2];
+        enum { SYNC_TO_COORDS_RA, SYNC_TO_COORDS_DEC };
 
         // Emergency stop - sends TELESCOPE_ABORT_MOTION to the active mount
         // immediately, independent of Coupling mode or any in-progress
@@ -412,6 +426,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // the VERIFY_ALERT mode and general visibility.
         INumberVectorProperty DriftStatusNP;
         INumber DriftStatusN[1];
+
+        // §8.8 (docs/concepts/session_start_position_reconciliation.md): the
+        // mount's own altitude, computed continuously (every TimerHit(),
+        // mode-independent - same reasoning as DriftStatusNP just above)
+        // from whatever EQUATORIAL_EOD_COORD the mount is already reporting
+        // (m_client->getMountRADE(), already snooped, no new subscription).
+        // Reuses isAboveHorizon()'s own math rather than a second,
+        // independently-maintained calculation that could drift out of sync
+        // with the actual safety gate sendMountCoordsSafe() enforces. State
+        // mirrors that same margin: IPS_ALERT when at/below
+        // HORIZON_SAFETY_MARGIN_DEG, IPS_OK otherwise. Not published at all
+        // until the mount has reported a first real position (no "0.0" or
+        // "90.0" placeholder flashed before that).
+        INumberVectorProperty MountHorizonStatusNP;
+        INumber MountHorizonStatusN[1];
 
         // Distinct from DriftStatusNP (mount vs PiFinder agreement) and
         // m_lastForwardedRA/Dec below (the tactical "held target", which
