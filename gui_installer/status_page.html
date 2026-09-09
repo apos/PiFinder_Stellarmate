@@ -1138,20 +1138,36 @@
      Reserving the space plus a short opacity transition fixes both: the
      rest of the tile never jumps, and the message arrives/leaves smoothly. */
   #mb-action-status {
-    height: 1.5rem;
+    /* 2026-09-09, direct feedback ("Jetzt hat Deine Fehlermeldung die
+       gesamte GUI verzogen"): two bugs found together. (1) sitting inside
+       .group-label inherited that class's text-transform: uppercase - fine
+       for a short heading like "MOUNT BRIDGE", not for a full sentence
+       error. (2) white-space: nowrap + overflow: hidden relies on a flex
+       item actually being allowed to shrink below its content's intrinsic
+       width - a long unbreakable line can still force the grid/flex
+       ancestor chain wider regardless (min-width:0 on THIS element alone
+       doesn't guarantee every ancestor has it too - a known CSS grid/flex
+       "blowout" gotcha). Switched to wrapping instead of nowrap+ellipsis -
+       guarantees this can never push its container wider, whatever the
+       ancestor chain looks like, at the cost of the text truncating less
+       neatly (wraps to a second line instead). */
+    max-height: 3.2rem;
+    overflow-y: auto;
     box-sizing: border-box;
     background: #1a3a5c;
     color: #7ec8ff;
     border-radius: 6px;
     padding: 0.25rem 0.6rem;
     font-size: 0.72rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    text-transform: none;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
     opacity: 0;
     transition: opacity 0.15s ease;
     min-width: 0;
-    flex: 0 1 auto;
+    max-width: 100%;
+    flex: 1 1 auto;
   }
   #mb-action-status.mb-action-status-visible { opacity: 1; }
   /* Own compact flex row for the (i)-labelled heading plus its action
@@ -5941,12 +5957,33 @@ function renderStatusWithDot(el, text) {
   el.appendChild(document.createTextNode(rest));
 }
 
-function setMbActionStatus(text) {
+let mbActionStatusAutoClearTimer = null;
+function setMbActionStatus(text, autoClearMs) {
+  // autoClearMs (2026-09-09, direct feedback: "Deine Fehlermeldung steht
+  // 'forever'"): a bare setTimeout(clearMbActionStatus, N) at each call
+  // site could race - an older call's timer firing AFTER a newer message
+  // was already shown would clear that newer one early, or (with several
+  // near-simultaneous clicks each scheduling their own timer) the visible
+  // text could look like it never goes away since a fresh one keeps
+  // landing before any single timer completes unnoticed. One timer, owned
+  // here, replaced on every call - only the LATEST call's clear request
+  // can ever fire.
+  if (mbActionStatusAutoClearTimer) {
+    clearTimeout(mbActionStatusAutoClearTimer);
+    mbActionStatusAutoClearTimer = null;
+  }
   const el = document.getElementById('mb-action-status');
   renderStatusWithDot(el, text);
   el.classList.add('mb-action-status-visible');
+  if (autoClearMs) {
+    mbActionStatusAutoClearTimer = setTimeout(clearMbActionStatus, autoClearMs);
+  }
 }
 function clearMbActionStatus() {
+  if (mbActionStatusAutoClearTimer) {
+    clearTimeout(mbActionStatusAutoClearTimer);
+    mbActionStatusAutoClearTimer = null;
+  }
   document.getElementById('mb-action-status').classList.remove('mb-action-status-visible');
 }
 let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives the Link/Unlink Mount button
