@@ -536,11 +536,24 @@ def mount_bridge_drift(
             "align_count": None,
             "align_min_altitude": None,
             "align_direction": None,
+            "mount_altitude_deg": None,
+            "mount_below_horizon": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
     drift_status_prop = device_props.get("DRIFT_STATUS", {})
     drift_status = drift_status_prop.get("elements", {})
+    # §8.8 (docs/concepts/session_start_position_reconciliation.md): not
+    # defined at all on an older driver build (pre-this-fix) - elements.get()
+    # below then yields None throughout, same as "no reading yet", not an
+    # error. IPS_ALERT is the driver's own signal for "at/below the horizon
+    # safety margin" (see HORIZON_SAFETY_MARGIN_DEG in the C++ source) -
+    # trust that directly rather than re-deriving a threshold here.
+    mount_horizon_prop = device_props.get("MOUNT_HORIZON_STATUS", {})
+    mount_horizon_elements = mount_horizon_prop.get("elements", {})
+    mount_altitude_raw = mount_horizon_elements.get("ALTITUDE_DEG")
+    mount_altitude_deg = float(mount_altitude_raw) if mount_altitude_raw not in (None, "") else None
+    mount_below_horizon = (mount_horizon_prop.get("state") == "Alert") if mount_altitude_deg is not None else None
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -607,6 +620,8 @@ def mount_bridge_drift(
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
         "align_direction": align_direction,
+        "mount_altitude_deg": mount_altitude_deg,
+        "mount_below_horizon": mount_below_horizon,
     }
 
 

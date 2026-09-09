@@ -2750,6 +2750,30 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(status)
             return
 
+        if parsed.path == "/api/simulator_startup_source":
+            # Read-only snapshot of "PiFinder Simulator"'s own
+            # STARTUP_DEFAULT_SOURCE text property (indi_pifinder_simulator's
+            # maybeApplyStartupDefault(), 2026-09-09) - lets the no-solve
+            # banner warn when the Full-Simulation "sky truth" device landed
+            # nowhere near the mount (no snoop yet, or nothing safe found
+            # nearby) rather than silently looking fine because *a* real star
+            # was picked. Only meaningful in Full Simulation - "PiFinder
+            # Simulator" doesn't exist as a device otherwise, so a failed
+            # read here (device not present) is the normal, expected case on
+            # Real Hardware, not an error.
+            try:
+                props = indi_client.get_properties(device="PiFinder Simulator", timeout=3.0)
+                source = (
+                    props.get("PiFinder Simulator", {})
+                    .get("STARTUP_DEFAULT_SOURCE", {})
+                    .get("elements", {})
+                    .get("SOURCE")
+                )
+                self._send_json({"source": source})
+            except Exception:
+                self._send_json({"source": None})
+            return
+
         if parsed.path == "/api/mount_bridge_drift":
             # Fast, best-effort companion to /api/mount_bridge_status above -
             # added because tying the drift readout to that endpoint's 20s

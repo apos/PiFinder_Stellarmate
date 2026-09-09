@@ -716,6 +716,13 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // §8.8: see the header comment. Range/step match isAboveHorizon()'s own
+    // libnova output (degrees, -90..90); IPS_IDLE until the first real
+    // reading, same convention as most other status properties here.
+    IUFillNumber(&MountHorizonStatusN[0], "ALTITUDE_DEG", "Mount altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 1, getDeviceName(), "MOUNT_HORIZON_STATUS",
+                       "Mount horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // See the header comment - the fixed J2000 coordinate of the last
     // genuinely new target, distinct from the tactical (JNow) held target.
     IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
@@ -781,6 +788,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&MountHorizonStatusNP);
         defineProperty(&OriginalTargetNP);
         defineProperty(&OriginalTargetDriftNP);
         defineProperty(&MountRejectTP);
@@ -838,6 +846,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(MountHorizonStatusNP.name);
         deleteProperty(OriginalTargetNP.name);
         deleteProperty(OriginalTargetDriftNP.name);
         deleteProperty(MountRejectTP.name);
@@ -1705,6 +1714,26 @@ void PiFinderMountBridge::TimerHit()
 
     if (havePositions)
         IDSetNumber(&DriftStatusNP, nullptr);
+
+    // §8.8: independent of havePositions above - this only needs the
+    // mount's own reported position, not a fresh PiFinder solve, so it
+    // stays meaningful even with no solve active at all (the exact
+    // situation that motivated this: a below-horizon mount with neither a
+    // real nor synthetic solve, where havePositions is false the whole
+    // time). isAboveHorizon() itself fails open (altitude=90, "above") if
+    // no location lock exists yet - same deliberate defense-in-depth
+    // semantics as every other caller of it, not changed here.
+    {
+        double mountRA, mountDec;
+        if (m_client->getMountRADE(mountRA, mountDec))
+        {
+            double altitude = 90.0;
+            const bool above = isAboveHorizon(mountRA, mountDec, altitude);
+            MountHorizonStatusN[0].value = altitude;
+            MountHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
+            IDSetNumber(&MountHorizonStatusNP, nullptr);
+        }
+    }
 
     // Deliberately published here, AFTER handleGotoForward()/
     // handleAutoCorrectGoto()/the plain-Sync branch above have all had a

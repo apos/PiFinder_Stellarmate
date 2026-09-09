@@ -1221,6 +1221,34 @@
   #mb-drift-banner .mb-drift-banner-btn-primary:hover { filter: brightness(1.15); }
   #mb-drift-banner .mb-drift-banner-btn-secondary { background: #222; color: #ddd; border-color: #555; }
   #mb-drift-banner .mb-drift-banner-btn-secondary:hover { border-color: #777; }
+  /* No-solve-source banner (2026-09-09, docs/concepts/
+     session_start_position_reconciliation.md) - same structure as
+     #mb-drift-banner, amber not red: nothing is at risk, but nothing
+     downstream (Sync/Reseed/Coupling) can work until a position exists.
+     Shown whenever neither a real solve nor Injected Solve is active - the
+     exact "session just started, no signal at all" gap a first-time user
+     has no way to diagnose on their own. */
+  #no-solve-banner {
+    display: none;
+    gap: 0.7rem;
+    align-items: flex-start;
+    background: #2a2214;
+    border: 1px solid #e0a030;
+    border-radius: 7px;
+    padding: 0.7rem 0.8rem;
+    margin-bottom: 0.7rem;
+  }
+  #no-solve-banner svg { flex-shrink: 0; width: 20px; height: 20px; color: #e0a030; margin-top: 0.1rem; }
+  #no-solve-banner .mb-drift-banner-body { flex: 1; min-width: 0; }
+  #no-solve-banner-title { color: #f5c877; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
+  #no-solve-banner-text { color: #ddd0b0; font-size: 0.76rem; line-height: 1.45; margin-bottom: 0.55rem; }
+  #no-solve-banner .mb-drift-banner-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  #no-solve-banner .mb-drift-banner-btn {
+    border-radius: 5px; padding: 0.4rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid #444; text-align: center; cursor: pointer;
+  }
+  #no-solve-banner .mb-drift-banner-btn-primary { background: #e0a030; color: #221a00; border-color: #e0a030; }
+  #no-solve-banner .mb-drift-banner-btn-primary:hover { filter: brightness(1.1); }
   .mb-node {
     border: 1px solid #444;
     border-radius: 6px;
@@ -1294,6 +1322,26 @@
   #mb-drift-badge.mb-drift-yellow #mb-drift-value { color: #f5a623; }
   #mb-drift-badge.mb-drift-red { border-color: #e53935; }
   #mb-drift-badge.mb-drift-red #mb-drift-value { color: #e53935; }
+
+  /* §8.8 (2026-09-09): small companion badge next to Drift - value only,
+     no full-size number like Drift's own (this is a much lower-stakes
+     status than "is the mount pointed where PiFinder thinks it is"), same
+     base shape/colors so it reads as belonging to the same diagram. */
+  #mb-horizon-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    background: #222;
+    border: 1px solid #444;
+    color: #ccc;
+    font-size: 0.72rem;
+  }
+  #mb-horizon-value { font-size: 1rem; font-weight: bold; line-height: 1; color: #888; }
+  #mb-horizon-badge.mb-horizon-alert { border-color: #e53935; }
+  #mb-horizon-badge.mb-horizon-alert #mb-horizon-value { color: #e53935; }
   /* #178: read-only "who does the held target come from" badge next to the
      unified GoTo button - deliberately plain/quiet (no color coding, this
      isn't a warning state, just informational) per the "no manual
@@ -1758,6 +1806,19 @@
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
+        <!-- No-solve-source banner (2026-09-09) - see its CSS comment above
+             for why this exists and updateNoSolveBanner() for the exact
+             trigger condition. -->
+        <div id="no-solve-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          <div class="mb-drift-banner-body">
+            <div id="no-solve-banner-title">No solve active - neither real nor synthetic</div>
+            <div id="no-solve-banner-text">Sync/Re-seed/Coupling can't do anything until PiFinder has a position from somewhere. If it's daytime, cloudy, or you're testing without a real sky, turn on Synthetic Solve; otherwise wait for a real camera solve.</div>
+            <div class="mb-drift-banner-actions">
+              <button id="no-solve-banner-btn" class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="toggleTruthInjector()">Turn on Synthetic Solve</button>
+            </div>
+          </div>
+        </div>
       <!-- Mount Bridge diagram/status moved here (2026-08-09, direct
            feedback: "das ist ja auch eine Infogruppe von Icons... gehören
            direkt unter die Cam, Solve... Gruppe") - both are pure info/
@@ -1810,6 +1871,10 @@
         <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera).">
           <span id="mb-drift-value">0.0'</span>
           <span>Drift</span>
+        </div>
+        <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
+          <span id="mb-horizon-value">0°</span>
+          <span>Alt</span>
         </div>
         <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
         <div class="mb-node" id="mb-node-mount" title="Mount">
@@ -1895,10 +1960,15 @@
              on/off toggle: Re-seed from mount / Set position each turn it on
              themselves, and always visible (not hidden until active). A small
              "Turn off" appears only while it's active (otherwise nothing to
-             turn off). Re-seed from mount follows the Coupling-Off gate (it
-             reads the coupled mount's position); Set position + the RA/Dec
-             inputs do not - a manual RA/Dec needs no mount. The separate
-             Synthetic Solve toggle in the other tile is unchanged. -->
+             turn off). Re-seed from mount needs the mount linked/connected -
+             NOT gated on Coupling mode (see docs/concepts/
+             session_start_position_reconciliation.md §8.2 - it reads the
+             mount's own position directly, no Coupling automation involved,
+             and gating it on Coupling != Off blocked exactly the
+             session-start case it's most needed for). Set position + the
+             RA/Dec inputs need neither a mount nor a solve - a manual RA/Dec
+             stands alone. The separate Synthetic Solve toggle in the other
+             tile is unchanged. -->
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-seed-advanced', 'mb-seed-advanced-chevron')">
           <span>Manual one-shot seed<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
           <span id="mb-seed-advanced-chevron">&#9660; show</span>
@@ -1906,7 +1976,7 @@
         <div id="mb-seed-advanced" style="display:none;">
           <div id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Synthetic Solve above (which continuously feeds a position) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning - trusting PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose.">
             <span id="fake-solve-advanced-status" class="mb-row-label" style="margin-right:0;">unknown</span>
-            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Needs an active Coupling mode - it reads the coupled mount.">Re-seed from mount</button>
+            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode - needs the mount linked and connected.">Re-seed from mount</button>
             <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled title="Set Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't (#205).">Set position</button>
             <input type="number" id="fake-solve-manual-ra" class="pf-num-input" step="0.01" min="0" max="360" placeholder="RA&deg;">
             <input type="number" id="fake-solve-manual-dec" class="pf-num-input" step="0.01" min="-90" max="90" placeholder="Dec&deg;">
@@ -2777,6 +2847,146 @@ function applySolveStatus(data) {
   }
 }
 
+// No-solve-source banner (2026-09-09, docs/concepts/
+// session_start_position_reconciliation.md) - a first-time user starting a
+// session with no real sky view (daytime, clouds, indoor testing) and
+// Synthetic Solve not yet turned on had no signal anywhere telling them
+// *why* Sync/Re-seed/Coupling do nothing - the only existing hint
+// (mb-quick-actions-hint) explains Coupling being Off, not the more basic
+// "nothing to sync from at all" case underneath it.
+//
+// Same "solve_source" vocabulary as applySolveStatus() above, deliberately
+// NOT reusing its early-return structure (that function stops as soon as it
+// knows what dot color to show; this one needs the actual solve_source
+// value even when fake_solve_active is true, to tell "genuinely nothing"
+// apart from "IMU still has an old anchor to extrapolate from" - the two
+// look the same to a user with fake_solve_active alone). IMU deliberately
+// does NOT trigger this banner: an old anchor is still *something* for
+// downstream freshness-gated actions to work with, unlike CAM_FAILED/
+// null/undefined, which is genuinely nothing.
+// Debounced the same way as mbStatusMissStreak/_MB_READINESS_CONSECUTIVE_
+// FAILS_BEFORE_RESTART elsewhere in this codebase: a *single* CAM_FAILED
+// poll is not evidence of anything wrong. integrator.py's
+// _apply_failed_solve() stamps solve_source=CAMERA_FAILED on every single
+// failed attempt, even while IMU dead-reckoning is quietly still bridging
+// underneath it - IMU only overwrites solve_source when the device has
+// actually moved enough to matter (_advance_with_imu's angle_moved
+// threshold), so a stationary/slow-tracking setup can sit on CAM_FAILED
+// between otherwise-healthy solves.
+//
+// The real PiFinder solves every ~0.5s or faster (direct correction,
+// 2026-09-09 - the concept doc's own "1-3 solves/sec" figure was already in
+// the right ballpark, this pins it down harder). Against that, sampling via
+// the 20s refreshDebugSolve() cycle is a near-random single snapshot out of
+// ~40 actual attempts - nowhere near enough resolution for a debounce
+// count to mean anything (two 20s-apart samples both landing on a bad
+// instant, purely by chance, is entirely plausible during a generally
+// healthy session). Given its own dedicated fast poll below (2s, the same
+// cadence refreshMbDrift() already uses for the same "must catch it
+// promptly, not up to 20s late" reasoning), 5 consecutive misses covers
+// ~10s and ~20 real solve attempts - a far more meaningful sample than the
+// original 2-samples-at-20s-apart scheme it replaces.
+//
+// Asymmetric on purpose: slow to alarm (needs sustained absence), instant
+// to clear (any single confirmed position ends it immediately).
+const NO_SOLVE_STREAK_THRESHOLD = 5;
+let _noSolveStreak = 0;
+let _noSolveHasNothing = false;   // latest debounced result from /api/debug_solve
+// Second, independent condition for the same banner (direct user request,
+// 2026-09-09): Full Simulation's own "sky truth" device (PiFinder
+// Simulator) landing on a real-but-unrelated star, not one near the mount
+// - see indi_pifinder_simulator's maybeApplyStartupDefault() and its new
+// STARTUP_DEFAULT_SOURCE property. This is genuinely different from
+// "no solve at all": PiFinder *does* have a position here, it's just not
+// one that lets Verify/Alert or Sync-from-PiFinder mean anything relative
+// to the mount - looks fine at a glance (a real star!) unless flagged.
+// No debounce needed - the driver decides this exactly once at its own
+// startup and never revisits it, so unlike solve_source there is no
+// tick-to-tick noise to filter.
+let _simStartupMismatch = false;
+// §8.8 (docs/concepts/session_start_position_reconciliation.md, 2026-09-09):
+// third, independent condition. Fed from the same 2s poll as drift
+// (refreshMbDrift() -> MOUNT_HORIZON_STATUS, computed every driver tick from
+// whatever EQUATORIAL_EOD_COORD the mount already reports - see
+// isAboveHorizon() in pifinder_mount_bridge.cpp). null/undefined means "no
+// reading yet" (older driver build, or mount not connected) - deliberately
+// NOT treated as "below horizon", same fail-open reasoning the driver itself
+// uses. Unlike _noSolveHasNothing this needs no debounce of its own: the
+// driver's own IPS_ALERT already reflects its current instantaneous
+// altitude, and a real mount doesn't cross the horizon fast enough for a
+// single stale poll to matter here the way solve noise does above.
+let _mountBelowHorizon = false;
+let _mountAltitudeDeg = null;
+function updateMountHorizonStatus(altitudeDeg, belowHorizon) {
+  _mountAltitudeDeg = (typeof altitudeDeg === 'number') ? altitudeDeg : null;
+  _mountBelowHorizon = belowHorizon === true;
+  renderNoSolveBanner();
+
+  const badge = document.getElementById('mb-horizon-badge');
+  if (!badge) return;
+  if (_mountAltitudeDeg === null) {
+    // No reading yet (older driver build, or mount not connected) - stays
+    // hidden entirely rather than showing a misleading "0°", same
+    // hidden-until-known convention as #mb-drift-badge.
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  document.getElementById('mb-horizon-value').textContent = `${_mountAltitudeDeg.toFixed(0)}°`;
+  badge.classList.toggle('mb-horizon-alert', _mountBelowHorizon);
+}
+function renderNoSolveBanner() {
+  const banner = document.getElementById('no-solve-banner');
+  if (!banner) return;
+  const titleEl = document.getElementById('no-solve-banner-title');
+  const textEl = document.getElementById('no-solve-banner-text');
+  const btn = document.getElementById('no-solve-banner-btn');
+  const showNoSolve = _noSolveStreak >= NO_SOLVE_STREAK_THRESHOLD && _noSolveHasNothing;
+  if (showNoSolve) {
+    titleEl.textContent = 'No solve active - neither real nor synthetic';
+    textEl.textContent = "Sync/Re-seed/Coupling can't do anything until PiFinder has a position from somewhere. If it's daytime, cloudy, or you're testing without a real sky, turn on Synthetic Solve; otherwise wait for a real camera solve.";
+    // §8.8: append, don't replace - the core message above (no solve at
+    // all) still applies regardless; this just adds *why* pointing a real
+    // camera at the sky wouldn't help either, right now, without it being
+    // mistaken for the whole explanation on its own.
+    if (_mountBelowHorizon && _mountAltitudeDeg !== null) {
+      textEl.textContent += ` The mount itself is currently ${Math.abs(_mountAltitudeDeg).toFixed(0)}° below the horizon - point it above the horizon, or Sync it once it can see something.`;
+    }
+    btn.style.display = '';
+    btn.textContent = 'Turn on Synthetic Solve';
+    btn.onclick = toggleTruthInjector;
+  } else if (_simStartupMismatch) {
+    titleEl.textContent = "PiFinder's simulated position isn't related to the mount";
+    textEl.textContent = "Full Simulation's own \"sky truth\" (PiFinder Simulator) started on a real star, but not one near the mount - Sync/Re-seed won't establish a meaningful drift to correct. Re-seed PiFinder from the mount, or Sync the mount from PiFinder, to bring them together manually.";
+    btn.style.display = 'none';
+  } else {
+    banner.style.display = 'none';
+    return;
+  }
+  // 'flex', not '' - the CSS rule itself defaults to display:none (see its
+  // own definition above), so clearing the inline style would just fall
+  // back to that, not actually show it. Found live (2026-09-09): the
+  // banner never appeared despite hasNothing correctly evaluating true.
+  banner.style.display = 'flex';
+}
+
+function updateNoSolveBanner(data) {
+  if (!('solve_source' in data)) return;  // unconfirmed poll - leave as-is
+  _noSolveHasNothing = data.fake_solve_active !== true &&
+    data.solve_source !== 'CAM' && data.solve_source !== 'IMU';
+  _noSolveStreak = _noSolveHasNothing ? _noSolveStreak + 1 : 0;
+  renderNoSolveBanner();
+}
+
+// Polled independently (see refreshSimulatorStartupSource() below) -
+// "near_mount" and null (device doesn't exist, e.g. Real Hardware mode)
+// both mean nothing to warn about; "anywhere_safe"/"compiled_fallback"
+// mean the simulator's own position has no real relationship to the mount.
+function updateSimStartupMismatch(source) {
+  _simStartupMismatch = source === 'anywhere_safe' || source === 'compiled_fallback';
+  renderNoSolveBanner();
+}
+
 // Injected Solve / Dead Reckoning (#106/#128) - a synthetic RA/Dec
 // injected via PiFinder's /api/fake_solve, with real IMU dead-reckoning
 // taking over from there. Kept visually and semantically separate from
@@ -2839,13 +3049,18 @@ function applyFakeSolveAdvancedButtonStates(stateClass) {
 // #319: Re-seed / Set position / RA-Dec inputs are always available (not
 // hidden until active) - each self-enables Injected Solve. Two gates still
 // apply and are combined here, since both a status poll (applyFakeSolveStatus)
-// and a Coupling-mode change (updateActionButtonsCouplingGate) can move them:
+// and a mount-link change (updateMbDiagram) can move them:
 //   - status must be known (a confirmed true/false from /api/status)
-//   - Re-seed from mount additionally needs an active Coupling mode, because
-//     it reads the *coupled mount's* position; Set position + the inputs take
-//     a manual RA/Dec and don't.
+//   - Re-seed from mount additionally needs the mount linked and connected -
+//     it reads the mount's own EQUATORIAL_EOD_COORD directly via INDI, which
+//     needs no Coupling *automation* active at all (see
+//     docs/concepts/session_start_position_reconciliation.md §8.2 - found
+//     live 2026-09-09: gating this on Coupling != Off blocked exactly the
+//     session-start bootstrap case it's most needed for, since a fresh
+//     session normally starts with Coupling still Off). Set position + the
+//     inputs take a manual RA/Dec and need neither.
 let _fakeSolveStatusKnown = false;
-let _seedCouplingCoupled = false;
+let _seedMountConnected = false;
 function updateSeedControlsEnabled() {
   const reseedBtn = document.getElementById('fake-solve-reseed-btn');
   const manualBtn = document.getElementById('fake-solve-manual-btn');
@@ -2855,10 +3070,10 @@ function updateSeedControlsEnabled() {
   manualBtn.disabled = !_fakeSolveStatusKnown;
   raEl.disabled = !_fakeSolveStatusKnown;
   decEl.disabled = !_fakeSolveStatusKnown;
-  reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedCouplingCoupled;
-  reseedBtn.title = _seedCouplingCoupled
-    ? "Re-read the coupled mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't."
-    : "Coupling is Off - Re-seed reads the coupled mount's position, so it needs an active Coupling mode. Use Set position for a manual RA/Dec.";
+  reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedMountConnected;
+  reseedBtn.title = _seedMountConnected
+    ? "Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode."
+    : "No mount linked/connected yet - Re-seed reads the mount's position directly, so it needs a connected mount (not an active Coupling mode). Use Set position for a manual RA/Dec.";
 }
 
 function applyFakeSolveStatus(data) {
@@ -3058,6 +3273,46 @@ async function refreshTruthInjectorStatus() {
 setInterval(refreshTruthInjectorStatus, 4000);
 refreshTruthInjectorStatus();
 
+// Dedicated fast poll for the no-solve banner (2026-09-09) - independent
+// of, and faster than, refreshDebugSolve()'s own 20s cycle, same reasoning
+// as refreshTruthInjectorStatus() above and refreshMbDrift() below: this
+// tracks something that needs to be caught within a few solve attempts,
+// not up to 20s late. See updateNoSolveBanner()'s own comment for why 20s
+// was too coarse against a ~0.5s real solve rate. Deliberately minimal -
+// only fetches what the banner needs, not the full refreshDebugSolve()
+// payload (which also drives the Test Mode button/dot and orientation
+// badge - no reason to touch those every 2s too).
+async function refreshNoSolveBanner() {
+  if (!pifinderScreenUrl) return;
+  const port = new URL(pifinderScreenUrl).port || '80';
+  try {
+    const resp = await fetch(`/api/debug_solve?port=${port}`, { cache: 'no-store' });
+    const data = await resp.json();
+    updateNoSolveBanner(data);
+  } catch (e) {
+    // best-effort poll - leave the banner in its last-known state rather
+    // than reacting to a single missed request.
+  }
+}
+setInterval(refreshNoSolveBanner, 2000);
+
+// Companion poll for the same banner's second condition (see
+// updateSimStartupMismatch()) - a stable, driver-decided-once value, so a
+// slower cadence than the 2s solve poll is plenty; independent request so
+// a slow/failed /api/simulator_startup_source lookup (device not present
+// on Real Hardware - the common case) never blocks the no-solve check.
+async function refreshSimulatorStartupSource() {
+  try {
+    const resp = await fetch('/api/simulator_startup_source', { cache: 'no-store' });
+    const data = await resp.json();
+    updateSimStartupMismatch(data.source);
+  } catch (e) {
+    // best-effort - leave the last-known state showing
+  }
+}
+setInterval(refreshSimulatorStartupSource, 10000);
+refreshSimulatorStartupSource();
+
 // Real poll-until-target-reached control loop (2026-08-10, direct feedback
 // pass #2: "so lange (!) nach dem Drücken der Status nicht erreicht ist:
 // gelb blinken" / "geht etwas schief: rot! ... zeige was schief gelaufen
@@ -3188,6 +3443,7 @@ async function refreshDebugSolve() {
     }
     applySolveStatus(data);
     applyFakeSolveStatus(data);
+    updateNoSolveBanner(data);
     // debug_solve is null (not false) specifically when PiFinder's own
     // /api/status itself was unreachable (_pifinder_solve_status() in
     // server.py returned None) - the real "is PiFinder there at all" signal,
@@ -3449,6 +3705,12 @@ async function reseedFakeSolve() {
   textEl.textContent = 'Reading mount position…';
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   try {
+    if (lastTruthInjectorDesired === true) {
+      // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
+      // Truth Injector's next 2s tick would otherwise immediately overwrite
+      // this one-shot re-seed with the shadow device's own position (#323).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
@@ -3499,6 +3761,13 @@ async function setFakeSolveManual() {
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   let failed = false;
   try {
+    if (lastTruthInjectorDesired === true) {
+      // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
+      // Truth Injector's next 2s tick would otherwise immediately overwrite
+      // this one-shot manual position with the shadow device's own position
+      // (#323 - found live testing #319/#322).
+      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    }
     const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
     const result = await resp.json();
     failed = result.success !== true;
@@ -3510,6 +3779,7 @@ async function setFakeSolveManual() {
   if (failed) applyFakeSolveAdvancedButtonStates('ql-small-btn-red');
   fakeSolveToggleInFlight = false;
   await refreshDebugSolve();
+  await refreshTruthInjectorStatus();
 }
 
 // Independent of the Fake/Real Mode switch above - controls whether the
@@ -5015,10 +5285,9 @@ function updateActionButtonsCouplingGate(couplingMode) {
   });
   const hint = document.getElementById('mb-quick-actions-hint');
   if (hint) hint.style.display = coupled ? 'none' : '';
-  // #319: "Re-seed from mount" in the same group reads the coupled mount, so
-  // it follows this gate too; "Set position" + inputs don't (manual RA/Dec).
-  _seedCouplingCoupled = coupled;
-  updateSeedControlsEnabled();
+  // "Re-seed from mount" in the same group deliberately does NOT follow this
+  // gate (see updateSeedControlsEnabled()'s own comment) - it's gated on the
+  // mount being linked/connected instead, set separately from updateMbDiagram().
 }
 
 // European keyboards/locales often produce a comma decimal separator (e.g.
@@ -5153,6 +5422,10 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
+  // Re-seed from mount's own gate (see updateSeedControlsEnabled()) - independent
+  // of Coupling mode, so set here rather than from updateActionButtonsCouplingGate().
+  _seedMountConnected = data.mount_connected === true;
+  updateSeedControlsEnabled();
   updateBridgeSettingsInfo(data);
   syncThresholdInputFromDriver(data.drift_threshold);
   syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
@@ -5906,6 +6179,7 @@ async function refreshMbDrift() {
       updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
+      updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle

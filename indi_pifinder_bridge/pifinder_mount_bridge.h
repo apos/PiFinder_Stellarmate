@@ -413,6 +413,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty DriftStatusNP;
         INumber DriftStatusN[1];
 
+        // §8.8 (docs/concepts/session_start_position_reconciliation.md): the
+        // mount's own altitude, computed continuously (every TimerHit(),
+        // mode-independent - same reasoning as DriftStatusNP just above)
+        // from whatever EQUATORIAL_EOD_COORD the mount is already reporting
+        // (m_client->getMountRADE(), already snooped, no new subscription).
+        // Reuses isAboveHorizon()'s own math rather than a second,
+        // independently-maintained calculation that could drift out of sync
+        // with the actual safety gate sendMountCoordsSafe() enforces. State
+        // mirrors that same margin: IPS_ALERT when at/below
+        // HORIZON_SAFETY_MARGIN_DEG, IPS_OK otherwise. Not published at all
+        // until the mount has reported a first real position (no "0.0" or
+        // "90.0" placeholder flashed before that).
+        INumberVectorProperty MountHorizonStatusNP;
+        INumber MountHorizonStatusN[1];
+
         // Distinct from DriftStatusNP (mount vs PiFinder agreement) and
         // m_lastForwardedRA/Dec below (the tactical "held target", which
         // legitimately gets re-anchored by every ordinary correction - see

@@ -29,7 +29,18 @@ size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
 // rather than inventing a second altitude-safety mechanism. Returns false
 // (leaving the caller's own fallback in place) if PiFinder's web server
 // isn't reachable yet or has no candidate above minAltitude.
-bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName)
+//
+// centerRA/centerDec (2026-09-09, degrees J2000, NAN = "omit both, let the
+// endpoint default to PiFinder's own current position" - the original
+// behavior): direct user request - "irgendein sicherer Stern am ganzen
+// Himmel" was too loose a default; picking one near wherever the mount
+// already is (radiusDeg, typically 20-30) gives Verify/Alert and
+// Auto-correct something plausible to reconcile against from the very
+// first tick, rather than two arbitrarily far-apart truths. Only one of
+// centerRA/centerDec needs to be checked for NAN - the caller always sets
+// both or neither.
+bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName,
+                              double centerRA = NAN, double centerDec = NAN, double radiusDeg = 180.0)
 {
     for (const char *url : {"http://127.0.0.1/api/nearby_bright_stars", "http://127.0.0.1:8080/api/nearby_bright_stars"})
     {
@@ -37,8 +48,17 @@ bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, 
         if (curl == nullptr)
             continue;
 
-        char fullUrl[192];
-        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=180&count=1&min_altitude=%.1f", url, minAltitude);
+        char fullUrl[256];
+        if (std::isnan(centerRA))
+        {
+            std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=1&min_altitude=%.1f",
+                          url, radiusDeg, minAltitude);
+        }
+        else
+        {
+            std::snprintf(fullUrl, sizeof(fullUrl), "%s?ra=%.6f&dec=%.6f&radius=%.1f&count=1&min_altitude=%.1f",
+                          url, centerRA, centerDec, radiusDeg, minAltitude);
+        }
 
         std::string body;
         curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
@@ -118,6 +138,15 @@ bool PiFinderSimulator::initProperties()
     IUFillTextVector(&MountDeviceTP, MountDeviceT, 1, getDeviceName(), "FOLLOW_MOUNT_DEVICE",
                       "Follow mount", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    // Read-only status for whichever startup-default path actually fired
+    // (see TimerHit()'s comment) - "pending" until decided, then one of
+    // "near_mount"/"anywhere_safe"/"compiled_fallback". Consumed by the
+    // Control Center to warn when no real relationship to the mount could
+    // be established (2026-09-09).
+    IUFillText(&StartupDefaultSourceT[STARTUP_DEFAULT_SOURCE], "SOURCE", "Startup position source", "pending");
+    IUFillTextVector(&StartupDefaultSourceTP, StartupDefaultSourceT, 1, getDeviceName(), "STARTUP_DEFAULT_SOURCE",
+                      "Startup Default", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // Snoop decode target - name/element names must match the real
     // EQUATORIAL_EOD_COORD shape for IUSnoopNumber() to recognize it.
     // "device" filled in once a mount is actually named (see ISNewText()).
@@ -159,6 +188,7 @@ bool PiFinderSimulator::updateProperties()
     {
         defineProperty(PushToTargetNP);
         defineProperty(&MountDeviceTP);
+        defineProperty(&StartupDefaultSourceTP);
 
         // See m_connectedConfigLoaded's own comment - MountDeviceTP has
         // nothing to load into until just now. loadConfig() re-delivers any
@@ -176,6 +206,7 @@ bool PiFinderSimulator::updateProperties()
     {
         deleteProperty(PushToTargetNP);
         deleteProperty(MountDeviceTP.name);
+        deleteProperty(StartupDefaultSourceTP.name);
     }
 
     return true;
@@ -191,27 +222,12 @@ bool PiFinderSimulator::saveConfigItems(FILE *fp)
 bool PiFinderSimulator::Connect()
 {
     LOG_INFO("PiFinder Simulator connected.");
-    // Runs exactly once per process lifetime, before any client could
-    // realistically have issued a Sync()/Goto() yet (those need this
-    // Connect() to have already succeeded) - see pickSafeDefaultPosition()'s
-    // own comment for why the compiled-in default alone isn't safe.
-    if (!m_startupDefaultReplaced)
-    {
-        double safeRA, safeDec;
-        std::string safeName;
-        if (pickSafeDefaultPosition(20.0, safeRA, safeDec, safeName))
-        {
-            m_currentRA = safeRA;
-            m_currentDEC = safeDec;
-            LOGF_INFO("Defaulting to a real, currently-visible star (%s, RA %.4fh, DEC %.4f deg) instead of the fixed compiled-in default.",
-                      safeName.c_str(), safeRA, safeDec);
-        }
-        else
-        {
-            LOG_WARN("Could not fetch a safe default position from PiFinder's own /api/nearby_bright_stars (not reachable yet?) - keeping the compiled-in default. Sync/Goto to a real target before relying on this device's position.");
-        }
-        m_startupDefaultReplaced = true;
-    }
+    // The startup-default pick itself moved to TimerHit() (2026-09-09) - see
+    // that function's own comment. Connect() is too early: before any
+    // client could realistically have issued Sync()/Goto(), but *also*
+    // before the mount snoop could realistically have delivered anything,
+    // which a mount-relative default needs.
+    //
     // Found live (2026-09-01): nothing ever started the poll loop on
     // Connect() - TimerHit()/ReadScopeStatus() genuinely never ran even
     // once without this (confirmed with a throwaway counter property, not
@@ -230,10 +246,62 @@ bool PiFinderSimulator::Disconnect()
     return true;
 }
 
+// Runs once, on one of the first few TimerHit() ticks rather than at
+// Connect() itself (2026-09-09 - see Connect()'s own comment for why):
+// waits up to STARTUP_DEFAULT_GRACE_SEC for the mount snoop to deliver a
+// real position, so the mount-relative search in pickSafeDefaultPosition()
+// (radius 20-30deg, direct user request) gets a genuine chance to fire
+// instead of near-always falling through to "anywhere safe" purely on
+// timing. Once the grace window expires - mount snoop present or not -
+// this fires exactly once and never revisits the decision (m_hasPosition
+// only ever moves again via an explicit Sync()/Goto() after this).
+void PiFinderSimulator::maybeApplyStartupDefault()
+{
+    if (m_startupDefaultReplaced)
+        return;
+
+    const long now = static_cast<long>(time(nullptr));
+    if (m_startupDefaultWaitSince == 0)
+        m_startupDefaultWaitSince = now;
+
+    const bool haveMountCenter = MountEqNP.s != IPS_IDLE &&
+        isUsableCoordinate(MountEqN[MOUNT_AXIS_RA].value, MountEqN[MOUNT_AXIS_DE].value);
+    const bool graceExpired = now - m_startupDefaultWaitSince >= STARTUP_DEFAULT_GRACE_SEC;
+    if (!haveMountCenter && !graceExpired)
+        return;  // keep waiting - not yet decided either way
+
+    double safeRA, safeDec;
+    std::string safeName;
+    // JNow->J2000 deliberately NOT precession-corrected here (unlike the
+    // exact-Sync paths elsewhere in this project) - sub-degree drift is
+    // irrelevant against a 20-30deg search radius.
+    const double centerRA = haveMountCenter ? MountEqN[MOUNT_AXIS_RA].value * 15.0 : NAN;
+    const double centerDec = haveMountCenter ? MountEqN[MOUNT_AXIS_DE].value : NAN;
+    if (pickSafeDefaultPosition(20.0, safeRA, safeDec, safeName, centerRA, centerDec, 25.0))
+    {
+        m_currentRA = safeRA;
+        m_currentDEC = safeDec;
+        m_startupDefaultSource = haveMountCenter ? "near_mount" : "anywhere_safe";
+        LOGF_INFO("Defaulting to a real, currently-visible star (%s, RA %.4fh, DEC %.4f deg, %s) instead of the fixed compiled-in default.",
+                  safeName.c_str(), safeRA, safeDec,
+                  haveMountCenter ? "near the mount" : "no mount position after waiting - anywhere safe");
+    }
+    else
+    {
+        m_startupDefaultSource = "compiled_fallback";
+        LOG_WARN("Could not fetch a safe default position from PiFinder's own /api/nearby_bright_stars (not reachable yet?) - keeping the compiled-in default. Sync/Goto to a real target before relying on this device's position.");
+    }
+    IUSaveText(&StartupDefaultSourceT[STARTUP_DEFAULT_SOURCE], m_startupDefaultSource.c_str());
+    StartupDefaultSourceTP.s = IPS_OK;
+    IDSetText(&StartupDefaultSourceTP, nullptr);
+    m_startupDefaultReplaced = true;
+}
+
 void PiFinderSimulator::TimerHit()
 {
     if (!isConnected())
         return;
+    maybeApplyStartupDefault();
     ReadScopeStatus();
     SetTimer(getCurrentPollingPeriod());
 }
