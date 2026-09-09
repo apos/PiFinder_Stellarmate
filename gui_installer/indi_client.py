@@ -1207,6 +1207,47 @@ def get_pifinder_simulator_follow_mount(
     return device_props.get("FOLLOW_MOUNT_DEVICE", {}).get("elements", {}).get("MOUNT_DEVICE", "")
 
 
+def sync_pifinder_simulator_to(
+    ra_deg: float,
+    dec_deg: float,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Directly INDI-Syncs "PiFinder Simulator" itself to `ra_deg`/`dec_deg`
+    (JNow, degrees - converted to hours for RA here).
+
+    Added 2026-09-09, direct feedback ("Auch schon ein gutes Dutzend mal
+    bemängelt"): "Re-seed from mount" only ever called PiFinder's own
+    /api/fake_solve REST endpoint, which updates PiFinder's REAL solve
+    pipeline (and through it, the separate "PiFinder LX200" INDI mirror) -
+    it has no way to reach "PiFinder Simulator" at all, a wholly separate
+    INDI device/driver process. So "Re-seed PiFinder from the mount" only
+    ever moved half of what its own label promises; PiFinder Simulator
+    stayed wherever it started, looking unrelated to the mount even right
+    after a successful re-seed. Unlike the real mount's own
+    sendMountCoordsSafe(), PiFinder Simulator is a pure test fixture with
+    no horizon-safety concern of its own - a plain INDI::Telescope Sync
+    via its standard ON_COORD_SET/EQUATORIAL_EOD_COORD properties (same
+    ones queried in get_pifinder_simulator_follow_mount()'s sibling
+    functions) is sufficient, no custom driver primitive needed like the
+    real mount's SYNC_TO_COORDS.
+
+    Best-effort: silently does nothing if "PiFinder Simulator" isn't
+    currently loaded/connected (e.g. Real Hardware mode) - this is a
+    convenience for simulator/test setups, not something that should ever
+    block or fail the real mount's own re-seed."""
+    try:
+        set_switch("PiFinder Simulator", "ON_COORD_SET", "SYNC", host, port, timeout)
+        set_number(
+            "PiFinder Simulator", "EQUATORIAL_EOD_COORD",
+            {"RA": ra_deg / 15.0, "DEC": dec_deg},
+            host, port, timeout,
+        )
+    except INDIClientError:
+        pass
+
+
 def trigger_abort_mount(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,

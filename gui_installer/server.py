@@ -1919,9 +1919,17 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return resp.status == 200, None
+            ok = resp.status == 200
     except Exception as e:
         return False, str(e)
+    # 2026-09-09, direct feedback: the REST call above only ever reached
+    # PiFinder's real solve pipeline ("PiFinder LX200"'s INDI mirror) -
+    # "PiFinder Simulator" is a separate INDI device it can't touch at all.
+    # Best-effort, never fails this whole re-seed if the simulator isn't
+    # loaded (Real Hardware mode) - see sync_pifinder_simulator_to()'s own
+    # docstring.
+    indi_client.sync_pifinder_simulator_to(ra_deg, dec_deg)
+    return ok, None
 
 
 def _pifinder_disable_fake_solve(port: str) -> bool:
