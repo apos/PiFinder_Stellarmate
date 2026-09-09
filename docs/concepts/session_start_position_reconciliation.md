@@ -276,14 +276,52 @@ no effect on Mount Bridge's behavior whatsoever - Auto-correct, Goto-Forward, an
 Reposition-Detection would all react to guide-induced drift/dithers exactly as if they were a real
 external reposition, today.
 
+### 8.8 Mount altitude/horizon status not surfaced anywhere (found 2026-09-09, live)
+
+**Not implemented - no continuous signal exists at all.** Found live testing the no-solve banner
+(§8/PR pending) on **Real Hardware** (not simulation): mount below the horizon, PiFinder itself also
+below the horizon (no real solve possible), Coupling Off. The no-solve banner correctly appeared
+("No solve active - neither real nor synthetic") - but said nothing about *why* nothing can help:
+the mount itself being below the horizon is exactly the kind of context a first-time user needs to
+understand the situation, and it's silently missing.
+
+**Confirmed no existing property to reuse**: `indi_getprop "LX200 OnStep.HORIZONTAL_COORD.*"` returns
+nothing - this OnStep driver exposes no live Alt/Az at all. The *only* place altitude gets computed
+today is `PiFinderMountBridge::isAboveHorizon(ra, dec, altitude)`
+(`indi_pifinder_bridge/pifinder_mount_bridge.cpp:1819-1859`, `HORIZON_SAFETY_MARGIN_DEG = -5.0`) -
+and that's purely reactive, called only at the moment a `sendMountCoordsSafe()` write is attempted,
+never stored or exposed as a standing, pollable value.
+
+**Proposed design** (not started - sizing only):
+- Compute altitude every `TimerHit()` tick from whatever `EQUATORIAL_EOD_COORD` the mount is
+  already reporting (already snooped/watched, no new INDI subscription needed) - reuse
+  `isAboveHorizon()`'s own math rather than a second, independently-maintained calculation that
+  could drift out of sync with the actual safety gate.
+- Expose as a new standing INDI number property on `PiFinder Mount Bridge` (e.g.
+  `MOUNT_HORIZON_STATUS.ALTITUDE_DEG`), continuously updated - mirrors this same session's
+  `STARTUP_DEFAULT_SOURCE` pattern added to `indi_pifinder_simulator` (§8.7's sibling fix, done
+  2026-09-09 - a new backend endpoint reads a driver-computed value, a frontend poll surfaces it).
+- Surface in the Control Center: extend the same no-solve banner text when the mount is confirmed
+  below horizon ("...and the mount itself is currently N° below the horizon - point it above the
+  horizon, or Sync once it's able to see something"), and/or a dedicated dot/value in the Mount
+  Bridge diagram itself (`mb-diagram`) next to the existing Drift badge.
+- Scope note: this is **more general** than §8.7's `indi_pifinder_simulator`-specific
+  `STARTUP_DEFAULT_SOURCE` work - that one only exists in Full Simulation (where "PiFinder
+  Simulator" is a device at all); this belongs on Mount Bridge itself and applies equally to Real
+  Hardware and Full Simulation, since both drive a real (or real-shaped) `EQUATORIAL_EOD_COORD`.
+
+**Not attempted this session** - flagged live by the user as the next concrete step, deliberately
+left for a fresh session/context window rather than rushed at the end of a very long one.
+
 ## 9. Open questions / not decided here
 
 - **A**: Should #323's auto-disable-Synthetic-Solve behavior extend to also *start* a lightweight
   self-refresh for a one-shot seed, or is periodic re-stamping better owned entirely on the PiFinder
   side (§8.3)? Two different components could each partially solve this - avoid solving it twice.
-- **B**: Exact mechanism for relaxing §8.2's Coupling gate - drop it entirely, or replace "Coupling
-  ≠ Off" with a narrower check (e.g. "a mount is linked and connected", which is already implied by
-  `ACTIVE_DEVICES.ACTIVE_MOUNT` + `CONNECTION.CONNECT`, and doesn't require Coupling automation)?
+- ~~**B**: Exact mechanism for relaxing §8.2's Coupling gate~~ **Resolved, implemented 2026-09-09**:
+  replaced with "mount linked and connected" (`data.mount_connected` from `/api/mount_bridge_status`,
+  already computed server-side from the live mount device's own `CONNECTION` state) - live-verified
+  on real hardware, "Re-seed from mount" now works correctly with Coupling = Off.
 - **C**: §8.5's silent-failure mystery - needs dedicated live diagnosis, not solved here.
 - **D**: §3 principle 3 (manual mount movement) - genuinely unanswered; likely belongs jointly with
   `pifinder_mount_model_cloud_tracking.md` rather than as new scope here.
@@ -293,6 +331,8 @@ external reposition, today.
 - **F**: §6.2's per-mechanism suspension list is a first pass, not verified complete - a careful
   read of every automatic Mount Bridge action against "would this fire, incorrectly, mid-guiding" is
   still needed once §6's detection question (E) is resolved.
+- **G**: §8.8 (mount altitude/horizon status not surfaced) - the next concrete implementation step,
+  explicitly deferred to a fresh session. Design sketched, nothing built yet.
 - Should this concept's use-case matrix (§7) become an actual Test Case (TC-PFSM-...), the way #313
   did, once any of §8's gaps are closed? Natural follow-up, not decided yet.
 
