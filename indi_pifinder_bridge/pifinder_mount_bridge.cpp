@@ -647,8 +647,16 @@ bool PiFinderMountBridge::initProperties()
     // to the existing automatic correction (HOLDING) rather than duplicated
     // here.
     IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align to Held Target", ISS_OFF);
-    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 4, getDeviceName(), "MANUAL_TRIGGER",
+    IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_TO_COORDS], "TRIGGER_SYNC_TO_COORDS", "Sync To Coords", ISS_OFF);
+    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 5, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
+
+    // See the header comment - RA/Dec to sync the mount to on the next
+    // TRIGGER_SYNC_TO_COORDS, no freshness judgment made here at all.
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_RA], "RA", "RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_DEC], "DEC", "DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&SyncToCoordsNP, SyncToCoordsN, 2, getDeviceName(), "SYNC_TO_COORDS",
+                       "Sync to coords", "Main Control", IP_RW, 60, IPS_IDLE);
 
     IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
     IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
@@ -779,6 +787,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&BridgeModeSP);
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
+        defineProperty(&SyncToCoordsNP);
         defineProperty(&AbortMountSP);
         defineProperty(&MultiPointAlignSP);
         defineProperty(&AlignConfigNP);
@@ -837,6 +846,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(BridgeModeSP.name);
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
+        deleteProperty(SyncToCoordsNP.name);
         deleteProperty(AbortMountSP.name);
         deleteProperty(MultiPointAlignSP.name);
         deleteProperty(AlignConfigNP.name);
@@ -2963,8 +2973,25 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             const bool wantGoto = ManualTriggerS[TRIGGER_GOTO_NOW].s == ISS_ON;
             const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
             const bool wantAlignHeld = ManualTriggerS[TRIGGER_ALIGN_HELD].s == ISS_ON;
+            const bool wantSyncToCoords = ManualTriggerS[TRIGGER_SYNC_TO_COORDS].s == ISS_ON;
 
-            if (wantAlignHeld)
+            if (wantSyncToCoords)
+            {
+                // See SyncToCoordsNP's own header comment - whatever was last
+                // written there, no freshness/source judgment made here.
+                if (sendMountCoordsSafe(SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value, "SYNC"))
+                {
+                    LOGF_INFO("Manual SYNC to explicit coords sent to mount (RA %.4fh, DEC %.4f deg).",
+                              SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send explicit-coords Sync to mount.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantAlignHeld)
             {
                 // Re-sends the held target to PiFinder itself - see this
                 // switch's own IUFillSwitch comment above for why Goto Held
@@ -3045,7 +3072,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // a human clicked the button. Previously used the plain
                 // (non-atomic, no freshness/source check at all)
                 // getPiFinderRADE() - this manual path had none of the
-                // protection the automatic paths already had.
+                // protection the automatic paths already had. Deliberately
+                // UNCHANGED (2026-09-09, direct feedback: "Der Normalbetrieb
+                // bleibt wie er ist") - the below-horizon recovery banner's
+                // own, looser needs are served by TRIGGER_SYNC_TO_COORDS
+                // above instead, a separate primitive, not a change here.
                 double piRA, piDec;
                 const bool haveFreshCamPosition =
                     m_client->isReady() &&
@@ -3350,6 +3381,17 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             // nothing in the GUI explaining why. Same auto-save-on-change
             // pattern as those, just missing here.
             saveConfig(true, DriftThresholdNP.name);
+            return true;
+        }
+
+        if (strcmp(name, SyncToCoordsNP.name) == 0)
+        {
+            // Transient one-shot input for TRIGGER_SYNC_TO_COORDS below -
+            // not persisted (saveConfig), unlike DriftThresholdNP above:
+            // this is a value to act on once, not a standing setting.
+            IUUpdateNumber(&SyncToCoordsNP, values, names, n);
+            SyncToCoordsNP.s = IPS_OK;
+            IDSetNumber(&SyncToCoordsNP, nullptr);
             return true;
         }
 

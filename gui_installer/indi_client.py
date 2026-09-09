@@ -902,6 +902,104 @@ def set_coupling_mode(
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
 
 
+def _send_switch_and_confirm(
+    device: str,
+    vector_name: str,
+    on_element: str,
+    watch_devices: set,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    settle_gap: float = 1.5,
+) -> None:
+    """Like set_switch(), but additionally watches the driver's own
+    <message> log (basic-memory 00090 Regel 3's technique) for `settle_gap`
+    seconds after sending, on one persistent connection, and raises
+    INDIClientError with the driver's own text if any device in
+    `watch_devices` logs an error-looking message in that window.
+
+    Added 2026-09-09, direct feedback: set_switch() alone only confirms the
+    command was SENT, not that the mount actually accepted it - a real
+    OnStep meridian/pier-side Sync refusal was being reported to the GUI as
+    "success" because nothing checked the actual outcome ("Das kann doch
+    nicht sein, dass ich in der GUI ein Sync hinbekomme und du nicht").
+
+    Deliberately not "wait for an explicit success message" - many
+    drivers/actions don't emit one for a routine command. Only an
+    error-looking message (case-insensitive "error"/"fail" in the text) is
+    treated as failure; silence within the window is the expected good
+    case, same as set_switch()'s own fire-and-forget contract otherwise."""
+    props = get_properties(device=device, host=host, port=port, timeout=timeout)
+    vector = props.get(device, {}).get(vector_name)
+    if not vector:
+        raise INDIClientError(
+            f"{device}: property {vector_name!r} not currently defined "
+            "(device may not be connected yet, or the name is wrong)"
+        )
+    elements = list(vector["elements"].keys())
+    if on_element not in elements:
+        raise INDIClientError(f"{device}.{vector_name}: unknown element {on_element!r} (known: {elements})")
+
+    lines = [f'<newSwitchVector device="{_xml_escape(device)}" name="{_xml_escape(vector_name)}">']
+    for el in elements:
+        state = "On" if el == on_element else "Off"
+        lines.append(f'<oneSwitch name="{_xml_escape(el)}">{state}</oneSwitch>')
+    lines.append("</newSwitchVector>")
+    message = "\n".join(lines)
+
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+    except OSError as e:
+        raise INDIClientError(f"Could not connect to indiserver at {host}:{port}: {e}") from e
+
+    error_holder: dict = {}
+    msg_attrs: dict = {}
+
+    def start_element(name, attrs):
+        if name == "message":
+            msg_attrs.clear()
+            msg_attrs.update(attrs)
+
+    def end_element(name):
+        if name == "message" and "text" not in error_holder:
+            dev = msg_attrs.get("device", "")
+            msg = msg_attrs.get("message", "")
+            if dev in watch_devices:
+                low = msg.lower()
+                if "error" in low or "fail" in low:
+                    error_holder["text"] = f"{dev}: {msg}"
+
+    parser = xml.parsers.expat.ParserCreate()
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.Parse(b"<indiwrapper>", False)
+
+    try:
+        sock.sendall(b'<getProperties version="1.7"/>')
+        sock.sendall(message.encode())
+        deadline = time.monotonic() + settle_gap
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or "text" in error_holder:
+                break
+            sock.settimeout(remaining)
+            try:
+                chunk = sock.recv(65536)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            try:
+                parser.Parse(chunk, False)
+            except xml.parsers.expat.ExpatError:
+                continue
+    finally:
+        sock.close()
+
+    if "text" in error_holder:
+        raise INDIClientError(error_holder["text"])
+
+
 def trigger_manual_sync(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
@@ -913,6 +1011,70 @@ def trigger_manual_sync(
     hand (no Goto involved at all), where none of the Coupling presets would
     otherwise react."""
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)
+
+
+def trigger_goto_home(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Native OnStep Home (TELESCOPE_HOME.GO) - distinct from Park: OnStep's
+    own reference/index position (its "0h RA at the pole" mechanical
+    reference), not a user-saved parking spot. Bypasses Mount Bridge
+    entirely (no isAboveHorizon() gate on this path)."""
+    set_switch("LX200 OnStep", "TELESCOPE_HOME", "GO", host, port, timeout)
+
+
+def sync_mount_to_pifinder_visible_position(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Below-horizon recovery action (2026-09-09, direct feedback): syncs the
+    mount to whatever "PiFinder LX200" is CURRENTLY reporting - the exact
+    same live value KStars/SkySafari already display - with no freshness/
+    source judgment at all. Deliberately does NOT touch trigger_manual_sync()
+    above (that stays fresh-CAM-solve-gated for normal operation, #227);
+    this reads the plain live INDI mirror itself and feeds it into the
+    driver's SYNC_TO_COORDS/TRIGGER_SYNC_TO_COORDS primitive, which the
+    driver executes with no freshness check of its own either - the whole
+    point being "what the user can see is what gets synced to."
+    Raises INDIClientError if PiFinder LX200's position isn't available."""
+    props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
+    coord_prop = props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {})
+    coord = coord_prop.get("elements", {})
+    ra, dec = coord.get("RA"), coord.get("DEC")
+    if ra in (None, "") or dec in (None, ""):
+        raise INDIClientError("PiFinder LX200's own reported position isn't available")
+    # No `state == "Ok"` gate here (removed 2026-09-09, direct feedback +
+    # live-verified): the original assumption - that this INDI property's
+    # state transitions Idle -> Ok once a real position is confirmed, same
+    # as the #107 pattern elsewhere - does NOT hold for "PiFinder LX200".
+    # Confirmed live: even with a fully valid, deliberately injected solve
+    # (fake_solve_active=True, solve_state=True, matching RA/Dec) the state
+    # stayed "Idle". This property is the generic INDI LX200 driver's own
+    # internal notion of "has this telescope wrapper itself been Synced",
+    # not a reflection of PiFinder's solve validity - unrelated to what this
+    # function needs to know. The RA/Dec-present check above is the only
+    # meaningful guard; whether that value is *fresh* is deliberately not
+    # this function's concern (see the module-level docstring above it) -
+    # same as a manual Sync in KStars' own INDI panel.
+    set_number("PiFinder Mount Bridge", "SYNC_TO_COORDS", {"RA": float(ra), "DEC": float(dec)}, host, port, timeout)
+    # _send_switch_and_confirm (not plain set_switch, 2026-09-09 direct
+    # feedback): watches "PiFinder Mount Bridge" AND "LX200 OnStep" - a
+    # rejection can come from either (our own horizon-safety refusal, or
+    # the mount's own firmware refusing the Sync, e.g. a pier-side
+    # conflict) - both must surface as a real error here, not silent
+    # reported success.
+    _send_switch_and_confirm(
+        "PiFinder Mount Bridge",
+        "MANUAL_TRIGGER",
+        "TRIGGER_SYNC_TO_COORDS",
+        watch_devices={"PiFinder Mount Bridge", "LX200 OnStep"},
+        host=host,
+        port=port,
+        timeout=timeout,
+    )
 
 
 def trigger_goto_held(

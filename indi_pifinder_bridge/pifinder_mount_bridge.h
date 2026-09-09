@@ -196,8 +196,22 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         // Manual, immediate one-shot trigger (works regardless of BridgeModeSP)
         ISwitchVectorProperty ManualTriggerSP;
-        ISwitch ManualTriggerS[4];
-        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW, TRIGGER_GOTO_HELD, TRIGGER_ALIGN_HELD };
+        ISwitch ManualTriggerS[5];
+        enum { TRIGGER_SYNC_NOW, TRIGGER_GOTO_NOW, TRIGGER_GOTO_HELD, TRIGGER_ALIGN_HELD, TRIGGER_SYNC_TO_COORDS };
+
+        // General-purpose companion to TRIGGER_SYNC_NOW above (2026-09-09,
+        // direct feedback): that trigger always makes ITS OWN fresh-CAM-
+        // solve-gated choice of what to sync to (#227) - deliberately not
+        // touched here, normal operation stays exactly as it was. This is
+        // a different, explicit primitive: sync the mount to WHATEVER
+        // RA/Dec a caller writes here, no freshness judgment made by the
+        // driver at all - the caller (a GUI button, a script) already
+        // decided this coordinate is the one to use. Write RA/Dec here,
+        // then set TRIGGER_SYNC_TO_COORDS to fire it - same two-step
+        // write-then-trigger shape SyncToCoordsN's own values follow.
+        INumberVectorProperty SyncToCoordsNP;
+        INumber SyncToCoordsN[2];
+        enum { SYNC_TO_COORDS_RA, SYNC_TO_COORDS_DEC };
 
         // Emergency stop - sends TELESCOPE_ABORT_MOTION to the active mount
         // immediately, independent of Coupling mode or any in-progress

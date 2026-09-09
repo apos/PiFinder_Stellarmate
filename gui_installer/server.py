@@ -1108,6 +1108,13 @@ def _truth_injector_stop():
         except subprocess.TimeoutExpired:
             _truth_injector_proc.kill()
         _truth_injector_proc = None
+    # Found live (2026-09-09): this only ever killed the process - PiFinder's
+    # own fake_solve_active flag was never cleared, so /api/status kept
+    # reporting a stale "Injected Solve" state (and the no-solve banner's own
+    # debounce never saw the real gap) indefinitely after stopping. DELETE
+    # /api/fake_solve is idempotent/harmless if it was already off.
+    _pifinder_disable_fake_solve("80")
+    _pifinder_disable_fake_solve("8080")
 
 
 def _truth_injector_watchdog(interval=5):
@@ -3792,6 +3799,37 @@ class Handler(BaseHTTPRequestHandler):
             _mb_log("syncing mount from PiFinder's current position...")
             try:
                 indi_client.trigger_manual_sync()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_goto_home":
+            # Native OnStep Home (TELESCOPE_HOME.GO) - bypasses Mount Bridge,
+            # works even while below horizon (§8.8 showstopper action).
+            _mb_log("sending mount to its native Home position...")
+            try:
+                indi_client.trigger_goto_home()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_sync_to_pifinder_visible":
+            # Below-horizon recovery action (§8.8 showstopper) - syncs the
+            # mount to whatever PiFinder LX200 is CURRENTLY showing, no
+            # freshness/source check (see sync_mount_to_pifinder_visible_
+            # position()'s own docstring for why this is a deliberately
+            # separate primitive from /api/mount_bridge_manual_sync).
+            _mb_log("syncing mount to PiFinder's currently visible position...")
+            try:
+                indi_client.sync_mount_to_pifinder_visible_position()
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
