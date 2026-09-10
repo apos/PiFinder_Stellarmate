@@ -513,17 +513,60 @@ core design that makes it work with any INDI mount.
 
 ### In practice: which controls you actually touch
 
-The tables above are the full surface. Day to day it comes down to a handful:
+The tables above are the full surface. Day to day it comes down to a handful - highlighted in red
+on the actual tab below, with a realistic example value for each:
 
-| Where | Control | When |
-|---|---|---|
-| PiFinder LX200 → Connection | Network / TCP `127.0.0.1:4030` | Once, at setup |
-| PiFinder LX200 → Main Control | **Connect** | Every session (or let Auto Connect do it) |
-| Mount Bridge → Options | **Active devices** (PiFinder + Mount) | Once, at setup |
-| Mount Bridge → Main Control | **Connect**, then **Coupling** | Every session — Coupling is the one dial you change by intent |
-| Mount Bridge → Main Control | **Drift Threshold** | Rarely — tighten / loosen the drift alarm |
-| Mount Bridge → Main Control | **Manual (one-shot)** → *Sync Now* / *Goto Held Target* | Recovery after a bump or a refused slew |
-| any driver → Options → Configuration | **Save** | After changing anything you want to survive a restart |
+| Where | Control | Example | When |
+|---|---|---|---|
+| PiFinder LX200 → Connection | Network / TCP, Server + Port | `127.0.0.1` : `4030` (the defaults - rarely need to change) | Once, at setup |
+| PiFinder LX200 → Main Control | **Connect** | - | Every session (or let Auto Connect do it) |
+| Mount Bridge → Options | **Configuration** | Click **Save** after any change below | After changing anything you want to survive a restart (applies to every driver, not just this one) |
+| Mount Bridge → Options | **Active devices** | PiFinder = `PiFinder LX200`, Mount = your mount's device name (e.g. `LX200 OnStep`) | Once, at setup |
+| Mount Bridge → Main Control | **Connect**, then **Coupling** | `Verify/Alert only` to start safe; `Goto-Forward` for full push-to-drives-the-mount | Every session - Coupling is the one dial you change by intent |
+| Mount Bridge → Main Control | **Drift Threshold** | `5.0` arcmin (default) | Rarely - tighten / loosen the drift alarm |
+| Mount Bridge → Main Control | **Manual (one-shot)** | Pick `Sync Now` or `Goto Held Target` from the dropdown | Recovery after a bump or a refused slew |
+
+Each highlighted crop below links to the **full, unedited desktop screenshot it came from** -
+whole screen, real INDI log messages included, not just the panel in isolation. The crop is only a
+callout, not a replacement for seeing the real thing (full screenshots are also all cataloged in
+[Screenshot Reference](#screenshot-reference)).
+
+<table>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/lx200_connection_highlight.png" width="300"></a><br>
+<sub>PiFinder LX200 → Connection <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/lx200_main_connect_highlight.png" width="300"></a><br>
+<sub>PiFinder LX200 → Main Control <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/mount_bridge_options_configuration_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Options → Configuration <em>(click for full screen)</em></sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/mount_bridge_options_activedevices_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Options → Active devices <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_connectcoupling_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Connect / Coupling <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_driftthreshold_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Drift Threshold <em>(click for full screen, scrolled)</em></sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_manualtrigger_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Manual (one-shot) <em>(click for full screen)</em></sub>
+</td>
+</tr>
+</table>
 
 Everything else is read-only status or an inherited base-class control that does nothing for
 PiFinder (see [Step 3](#step-3-indi-control-panel--connect-the-devices)).
@@ -687,54 +730,90 @@ particulars for this driver:
 
 ## Screenshot Reference
 
-Every screenshot in this document, grouped by where it comes from. `PiFinder Simulator` and
-`Telescope Simulator` are deliberately not duplicated here - their own INDI Control Panel tabs and
-KStars right-click behavior are covered in [Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)
-and [Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md).
+Every screenshot in this document, grouped by where it comes from - plus the full-desktop INDI
+Control Panel captures for `PiFinder Simulator`/`Telescope Simulator` (below), since those were
+taken in the same session as this document's own tabs. Their detailed setup walkthrough and KStars
+right-click behavior still live in [Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md) and
+[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md), not duplicated here.
+
+**The practically-relevant fields, highlighted** (also shown inline in
+[In practice: which controls you actually touch](#in-practice-which-controls-you-actually-touch))
+
+| Screenshot | Shows |
+|---|---|
+| <img src="docs/images/pfinder_lx200/lx200_connection_highlight.png" width="120"> | PiFinder LX200 → Connection: Network / TCP, Server + Port |
+| <img src="docs/images/pfinder_lx200/lx200_main_connect_highlight.png" width="120"> | PiFinder LX200 → Main Control: Connect |
+| <img src="docs/images/pfinder_lx200/mount_bridge_options_configuration_highlight.png" width="120"> | Mount Bridge → Options: Configuration (Load/Save/Default/Purge) |
+| <img src="docs/images/pfinder_lx200/mount_bridge_options_activedevices_highlight.png" width="120"> | Mount Bridge → Options: Active devices |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_connectcoupling_highlight.png" width="120"> | Mount Bridge → Main Control: Connect + Coupling |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_driftthreshold_highlight.png" width="120"> | Mount Bridge → Main Control: Drift Threshold |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_manualtrigger_highlight.png" width="120"> | Mount Bridge → Main Control: Manual (one-shot) |
 
 **Web Manager** (`http://<pi-address>:8624`)
 
 | Screenshot | Shows |
 |---|---|
-| [`webmanager_overview.png`](docs/images/pfinder_lx200/webmanager_overview.png) | Profile "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status |
-| [`webmanager_drivers_list.png`](docs/images/pfinder_lx200/webmanager_drivers_list.png) | Drivers multi-select — where the PiFinder drivers appear |
-| [`webmanager_driver_source.png`](docs/images/pfinder_lx200/webmanager_driver_source.png) | Driver Source set to "System INDI Drivers" |
-| [`webmanager_profile.png`](docs/images/pfinder_lx200/webmanager_profile.png) | A real-mount profile: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, all online |
+| <a href="docs/images/pfinder_lx200/webmanager_overview.png"><img src="docs/images/pfinder_lx200/webmanager_overview.png" width="120"></a> | Profile "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status |
+| <a href="docs/images/pfinder_lx200/webmanager_drivers_list.png"><img src="docs/images/pfinder_lx200/webmanager_drivers_list.png" width="120"></a> | Drivers multi-select — where the PiFinder drivers appear |
+| <a href="docs/images/pfinder_lx200/webmanager_driver_source.png"><img src="docs/images/pfinder_lx200/webmanager_driver_source.png" width="120"></a> | Driver Source set to "System INDI Drivers" |
+| <a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="120"></a> | A real-mount profile: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, all online |
 
 **Ekos**
 
 | Screenshot | Shows |
 |---|---|
-| [`ekos_select_profile.png`](docs/images/pfinder_lx200/ekos_select_profile.png) | Select Profile → Start/Stop Ekos → Connect/Disconnect Devices |
-| [`ekos_profile_editor.png`](docs/images/pfinder_lx200/ekos_profile_editor.png) | Profile Editor: Mode "Remote Host", `localhost:7624`, Auto Connect |
+| <a href="docs/images/pfinder_lx200/ekos_select_profile.png"><img src="docs/images/pfinder_lx200/ekos_select_profile.png" width="120"></a> | Select Profile → Start/Stop Ekos → Connect/Disconnect Devices |
+| <a href="docs/images/pfinder_lx200/ekos_profile_editor.png"><img src="docs/images/pfinder_lx200/ekos_profile_editor.png" width="120"></a> | Profile Editor: Mode "Remote Host", `localhost:7624`, Auto Connect |
 
-**INDI Control Panel — PiFinder LX200 tab**
+**INDI Control Panel — PiFinder LX200 tab (full tab, close crop)**
 
-| Screenshot | Shows |
-|---|---|
-| [`indi_control_panel_tabs_PiFinder_LX200_connection.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png) | Connection subtab: Network / TCP, `127.0.0.1:4030` |
-| [`indi_control_panel_tabs_PiFinder_LX200_main.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png) | Main Control subtab: Track / Slew only, no Sync |
-
-**INDI Control Panel — PiFinder Mount Bridge tab**
+These two predate the full-desktop pass below and are kept for a tight, zoomed-in view of just the
+panel; see the next section for the same tabs with the whole screen and real log messages.
 
 | Screenshot | Shows |
 |---|---|
-| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png) | Main Control subtab: Coupling, correction action, manual triggers, alignment |
-| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png) | Options subtab: Active devices + indiserver Settings |
-| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png) | Shadow Sync subtab: mirror commands onto a non-driving device |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png" width="120"></a> | Connection subtab: Network / TCP, `127.0.0.1:4030` |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="120"></a> | Main Control subtab: Track / Slew only, no Sync |
+
+**INDI Control Panel — PiFinder Mount Bridge tab (full tab, close crop)**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="120"></a> | Main Control subtab: Coupling, correction action, manual triggers, alignment |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="120"></a> | Options subtab: Active devices + indiserver Settings |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png" width="120"></a> | Shadow Sync subtab: mirror commands onto a non-driving device |
+
+**INDI Control Panel — full desktop, every tab, real INDI log messages included**
+
+Whole-screen captures (Ubuntu desktop, taskbar, the actual KStars window) with the message log at
+the bottom left showing genuine live output at capture time - not a staged/idealized state.
+`PiFinder Simulator` and `Telescope Simulator` are included here since they're part of the same
+INDI Control Panel session, even though the rest of their documentation lives in
+[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md).
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png" width="120"></a> | PiFinder LX200 → Connection - log shows a real `CMD read ERROR -4` / `Failed to get RA from PiFinder` episode |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png" width="120"></a> | PiFinder LX200 → Main Control |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png" width="120"></a> | Mount Bridge → Main Control, top (Connection, Coupling, Manual one-shot, Multi-Point Alignment) |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png" width="120"></a> | Mount Bridge → Main Control, scrolled down (Drift Threshold, Auto-Sync limit, status) - log shows a real drift warning |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png" width="120"></a> | Mount Bridge → Options |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_shadow.png" width="120"></a> | Mount Bridge → Shadow Sync |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png" width="120"></a> | PiFinder Simulator → Main Control |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png" width="120"></a> | Telescope Simulator → Main Control |
 
 **KStars sky map**
 
 | Screenshot | Shows |
 |---|---|
-| [`kstars_context_menu_both_mount_and_pifinder.png`](docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png) | PiFinder and mount as separate target devices in the right-click context menu |
-| [`kstars_context_menu_PiFinder_LX200.png`](docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png) | "PiFinder LX200" submenu: only Goto, Abort, Find Telescope |
+| <a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="120"></a> | PiFinder and mount as separate target devices in the right-click context menu |
+| <a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="120"></a> | "PiFinder LX200" submenu: only Goto, Abort, Find Telescope |
 
 **SkySafari**
 
 | Screenshot | Shows |
 |---|---|
-| [`skysafari_ip_port_Meade_LXClassic.png`](docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png) | Network connection settings: telescope type, IP address, port `9624` |
+| <a href="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png"><img src="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png" width="120"></a> | Network connection settings: telescope type, IP address, port `9624` |
 
 ---
 

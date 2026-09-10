@@ -143,12 +143,12 @@ Simulator" tab:
 <table>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png" width="420"></a><br>
-<sub>PiFinder Simulator → Main Control: On Set, Eq. Coordinates, Simulate push-to, Follow mount</sub>
+<a href="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png" width="420"></a><br>
+<sub>PiFinder Simulator → Main Control: On Set, Eq. Coordinates, Simulate push-to, Follow mount <em>(click for full desktop screenshot with INDI log)</em></sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png" width="420"></a><br>
-<sub>Telescope Simulator → Main Control: the stock mount stand-in's full mount menu (Track, Park, Pier Side, ...)</sub>
+<a href="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png" width="420"></a><br>
+<sub>Telescope Simulator → Main Control: the stock mount stand-in's full mount menu (Track, Park, Pier Side, ...) <em>(click for full desktop screenshot with INDI log)</em></sub>
 </td>
 </tr>
 </table>
@@ -297,17 +297,28 @@ instead, not duplicated here.
 
 | Screenshot | Shows |
 |---|---|
-| [`webmanager_drivers_pifinder_simulator.png`](docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png) | Drivers dropdown: "PiFinder Simulator" checked alongside the other profile drivers |
+| <a href="docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png"><img src="docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png" width="120"></a> | Drivers dropdown: "PiFinder Simulator" checked alongside the other profile drivers |
 
-**INDI Control Panel — PiFinder Simulator tab**
-
-| Screenshot | Shows |
-|---|---|
-| [`indi_control_panel_tabs_PiFinder_Simulator_main.png`](docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png) | Main Control subtab: On Set, Eq. Coordinates, Simulate push-to, Follow mount |
-
-**INDI Control Panel — Telescope Simulator tab**
+**INDI Control Panel — PiFinder Simulator tab (close crop)**
 
 | Screenshot | Shows |
 |---|---|
-| [`indi_control_panel_tabs_Telescope_Simulator_main.png`](docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png) | Main Control subtab: the stock mount stand-in's full mount menu (Track Mode, Tracking, Track Rates, Home, Parking, Pier Side) |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png" width="120"></a> | Main Control subtab: On Set, Eq. Coordinates, Simulate push-to, Follow mount |
+
+**INDI Control Panel — Telescope Simulator tab (close crop)**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png" width="120"></a> | Main Control subtab: the stock mount stand-in's full mount menu (Track Mode, Tracking, Track Rates, Home, Parking, Pier Side) |
+
+**INDI Control Panel — full desktop, real INDI log messages included**
+
+Whole-screen captures (Ubuntu desktop, taskbar, the actual KStars window), message log included -
+taken in the same session as [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md#screenshot-reference)'s
+own full-desktop set.
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png" width="120"></a> | PiFinder Simulator → Main Control |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png" width="120"></a> | Telescope Simulator → Main Control |
 </content>
