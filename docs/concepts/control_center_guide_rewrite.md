@@ -78,6 +78,5 @@ to work out its own architecture for getting actual image bytes into this git re
   the *layout*, the specific numbers don't matter): Drift 0.7', Alt 39°, Coupling = Verify/Alert
   only, "PiFinder Simulator isn't related to the mount" banner genuinely showing (good real example
   for use case 2).
-- `basic-memory/pifinder-stellarmate/00127_...-2026-09-09.md` has the full technical detail of what
-  changed in the Mount Bridge GUI this session, useful background for writing accurate walkthrough
-  text even before new screenshots exist.
+- The Mount Bridge GUI consistency pass from 2026-09-09 (see CHANGELOG.md) is useful background for
+  writing accurate walkthrough text even before new screenshots exist.

@@ -1,8 +1,6 @@
 # First-Time Setup Wizard — Concept
 
-> **Status: concept — Phase 1 not started.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> **Status: concept — Phase 1 not started.** Tracked as
 > [GitHub issue #265](https://github.com/apos/PiFinder_Stellarmate/issues/265) on
 > [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
 > promoted, revised, or dropped.
@@ -164,13 +162,11 @@ once §3.3's `Done` state is reached; a manual dismiss (`localStorage` flag, sam
 `toggleCollapsibleSection`) is Phase 3.
 
 Visual language: reuses the existing `.status-dot` vocabulary (`dot-white` / `dot-green` /
-`dot-yellow`) and `.group-label` / role-card styling — no new status system (per
-`basic-memory/basic-memory/00017_bm-ui-design-anforderung-klar-einheitlich.md`).
+`dot-yellow`) and `.group-label` / role-card styling — no new status system.
 
 ## 4. Design Principles
 
-Per `basic-memory/basic-memory/00017_bm-ui-design-anforderung-klar-einheitlich.md`, already
-established for this page:
+Already established for this page:
 
 - **No decorative emoji, traffic-light dots only.** Wizard "done" / "next" / "not yet" reuse
   `.status-dot` (`dot-green` / `dot-yellow` / `dot-white`).
@@ -229,8 +225,7 @@ everything else.
 
 ## 7. Effort / Priority
 
-T-shirt size **S–M** (per `basic-memory/basic-memory/00019_bm-github-project-schema-todo-format`) —
-no new state machine and no new backend endpoint; the work is the §2.1 detection logic, the panel,
+T-shirt size **S–M** — no new state machine and no new backend endpoint; the work is the §2.1 detection logic, the panel,
 and careful live verification across UC0a–UC0c and both §2.2 scenarios. Priority **P1**: raised from
 live Pi4 testing as real onboarding
 friction; not a correctness bug (nothing is broken), but first-time setup is materially harder than

@@ -1,11 +1,9 @@
 # Concept: Mount Bridge Reposition Detection (Unifying "Follow mount's goto" / "Follow PiFinder's push to")
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> **Status: concept — not yet implemented.** Tracked as
 > [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178) on
 > [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
-> promoted, revised, or dropped. Design context: `basic-memory/pifinder-stellarmate/00093`.
+> promoted, revised, or dropped.
 >
 > **Overlaps with [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md)**
 > - found late while writing this, see §8 for how the two relate. Read that document's §4-§5
@@ -22,7 +20,7 @@ initiate a GoTo does not match how these sessions actually unfold: a target migh
 PiFinder, then fine-corrected by hand at the eyepiece, then re-centered via SkySafari a few minutes
 later — real usage crosses both "sides" freely within the same observing run.
 
-Live testing (2026-08-07/08, see `basic-memory/pifinder-stellarmate/00093`) surfaced the concrete
+Live testing (2026-08-07/08) surfaced the concrete
 failure mode this concept fixes: after a PiFinder push-to, deliberate hand-paddle fine-centering
 (routine at high magnification) was actively fought by the automatic correction, which pulled the
 mount back toward the original catalog coordinate instead of accepting the newly, manually
@@ -203,8 +201,8 @@ own step 1 - corrected here rather than left as an undisclosed gap). Real, subst
   position update, not a blind reset" - so implementing one should produce a primitive reusable by
   the other, not two independent Align-like mechanisms.
 - That document's §5 discusses reusing **#130 ("Mount is source")** for a mount-model role. #130 was
-  built, found buggy, and surgically removed (`basic-memory/basic-memory/00089_bm-git-development-workflow.md`
-  §2 - a 6-file, ~194-line removal because the feature wasn't isolated cleanly). This concept's UC2
+  built, found buggy, and surgically removed (a 6-file, ~194-line removal because the feature wasn't
+  isolated cleanly). This concept's UC2
   does **not** revive #130 or make the mount an unconditional position source - it only ever adopts
   a mount-side position after (a) an explicit, attributable command signal (§3.2 row 2) or (b) an
   explicit user confirmation (§3.2 row 4, corrected), never silently or continuously. Worth being
@@ -225,9 +223,8 @@ way that would need to be redone once the cloud-tracking concept is eventually t
 
 ## 9. Found late (2026-09-01): two independent PiFinder-position sources, migration never completed
 
-Root-caused via `stellarmate-utm` live testing (see
-`basic-memory/pifinder-stellarmate/00105_simulation-alignment-luecke-und-mount-bridge-hang-2026-09-01.md`
-§10) the recurring "PiFinder and mount disagree by N arcmin, but no confirmed-good baseline has been
+Root-caused via `stellarmate-utm` live testing: the recurring "PiFinder and mount disagree by N
+arcmin, but no confirmed-good baseline has been
 observed since the last restart/mode-switch" symptom, and a live-observed drift value that flickered
 between two very different readings from tick to tick.
 
@@ -288,7 +285,7 @@ SETTLING/HOLDING call sites for the same reason (see their own comments).
 
 Root-caused via `stellarmate-utm` testing, immediately after §9's fix landed - live-observed the
 mount "going back to the last Goto" repeatedly and never actually following a fresh reposition, via
-KStars/Ekos file logging (`basic-memory/pifinder-stellarmate/00084`). Direct user question that
+KStars/Ekos file logging. Direct user question that
 pinned the mechanism precisely: *"warum dauert es 45 Sekunden, wenn PiFinder in 0,5s einen Solve
 liefern kann?"* - the answer turned out to explain both symptoms with one root cause.
 
@@ -312,7 +309,7 @@ liefern kann?"* - the answer turned out to explain both symptoms with one root c
 Sync+Track back to the held target - a genuine, multi-second physical slew, going through
 `ForwardState::SLEWING` just like any other Goto. But `sendMountCoords()` is the single choke point
 that also updates `PiFinderBridgeClient::m_lastMountCommandTime` (→ `CORRECTION_AGE`, see
-`complete_position_simulator.md` and `basic-memory/pifinder-stellarmate/00105` §§6-9), which "PiFinder
+`complete_position_simulator.md` §§6-9), which "PiFinder
 Simulator"'s dead-reckoning-follow deliberately uses to *ignore* any mount Busy episode Mount Bridge
 itself just caused (`mountBridgeIsCorrectingRightNow = CORRECTION_AGE < CORRECTION_GRACE_SEC`) - built
 specifically to stop PiFinder from chasing Mount Bridge's own small HOLDING residual nudges in a
@@ -360,6 +357,4 @@ Alignment, manual triggers) keeps today's behavior unchanged by default.
 ## Related
 
 - [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178)
-- `basic-memory/pifinder-stellarmate/00093_goto-forward-holding-architektur-und-solve-kadenz-flaschenhals.md`
-- `basic-memory/pifinder-stellarmate/00009_indi-mount-bridge-concept.md` (original Mount Bridge concept)
 - [PR #182](https://github.com/apos/PiFinder_Stellarmate/pull/182), [PR #183](https://github.com/apos/PiFinder_Stellarmate/pull/183)

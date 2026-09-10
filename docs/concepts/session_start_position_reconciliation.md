@@ -1,7 +1,6 @@
 # Concept: Session-Start Position Reconciliation (PiFinder / PiFinder Simulator / Mount)
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` convention (see
-> `basic-memory/basic-memory/00020_bm-cpt-command-system.md`). Not yet filed as a GitHub issue -
+> **Status: concept — not yet implemented.** Not yet filed as a GitHub issue -
 > see §9 for the proposed issue split. Update that issue (once filed) if this concept is revised.
 
 ## 1. Context
@@ -71,7 +70,7 @@ Restated from the live conversation that produced this concept:
 |---|---|---|
 | **PiFinder** (the software) | The real or Fake-Mode PiFinder process; `/api/status` is its single source of truth (`solution.RA/Dec`, `solve_source`, `last_solve_success`, `fake_solve_active`). | Only via real camera solves, Fake-Solve injection, or IMU dead-reckoning between the two. |
 | **PiFinder LX200** (INDI device) | A pass-through INDI/LX200 facade over PiFinder's own `/api/status` (`indi_pifinder_lx200`). Whatever PiFinder currently believes, this device reports - nothing more. | Follows PiFinder exactly; not an independent position source. |
-| **PiFinder Simulator** (INDI device) | A *separate* stand-in device (`indi_pifinder_simulator`) used as a Shadow Sync target / Truth Injector source in Full-Simulation setups - **not** the same thing as PiFinder LX200, and not driven by `/api/status` at all. | Only while the watched mount is actively slewing (`ISSnoopDevice`, `pifinder_simulator.h:61-73` - "physically accurate, since a real PiFinder is rigidly bolted to the OTA and moves with any real mount movement"). Holds independently once the mount goes idle again - does **not** keep following further idle-state mount drift by design (see #177, basic-memory 00092/00164). |
+| **PiFinder Simulator** (INDI device) | A *separate* stand-in device (`indi_pifinder_simulator`) used as a Shadow Sync target / Truth Injector source in Full-Simulation setups - **not** the same thing as PiFinder LX200, and not driven by `/api/status` at all. | Only while the watched mount is actively slewing (`ISSnoopDevice`, `pifinder_simulator.h:61-73` - "physically accurate, since a real PiFinder is rigidly bolted to the OTA and moves with any real mount movement"). Holds independently once the mount goes idle again - does **not** keep following further idle-state mount drift by design (see #177). |
 | **The Mount** (`LX200 OnStep`, `Telescope Simulator`, ...) | The actual (or simulated) telescope mount, via its own INDI driver. Has its own internal pointing model, independent of PiFinder entirely. | Tracking (sidereal), GoTo/Sync commands, or hand-slewing. |
 | **Mount Bridge** (`indi_pifinder_mount_bridge`) | The reconciliation layer between PiFinder and the Mount - this concept is primarily about what *it* should do at session start. | N/A - it's the mediator, not a position source itself. |
 
@@ -138,8 +137,8 @@ The three states the user named, plus what's missing to actually build this:
    larger than a guide pulse and would kick the guide star out of the frame), Goto-Forward
    (must suspend for the same reason), Reposition-Detection (dithering - a legitimate, guiding-
    software-issued small position perturbation between subs - must **not** be misread as an
-   unexpected external reposition), and the CC's own readiness watchdog (`_mb_readiness_self_heal`,
-   basic-memory `00126...`) - a driver restart mid-guiding-session would be actively harmful, not
+   unexpected external reposition), and the CC's own readiness watchdog (`_mb_readiness_self_heal`)
+   - a driver restart mid-guiding-session would be actively harmful, not
    just inconvenient. Each needs its own explicit decision, not an assumption that "suspend" means
    the same thing for all of them.
 3. **Guiding lost/stopped**. Mount Bridge's own mechanisms should resume - but only once genuinely
@@ -200,8 +199,8 @@ Checked directly against the running driver/GUI code on `stellarmate-pi5` (branc
 **Partially fulfilled.** `TimerHit()` calls `syncMountToPiFinderPosition()` unconditionally once per
 connection (`m_didInitialSync`), but **only** when `BridgeModeS[MODE_AUTO_CORRECT] || BridgeModeS[MODE_GOTO_FORWARD]`
 is selected (`pifinder_mount_bridge.cpp:1512-1517`). At session start with Coupling still at its
-saved default - which the CC's own `_mb_readiness_self_heal` restart cycle keeps re-loading, see
-basic-memory `00126_pi5-313-align-sync-deployment-und-test-2026-09-08.md` - this fires only if that
+saved default - which the CC's own `_mb_readiness_self_heal` restart cycle keeps re-loading -
+this fires only if that
 default happens to be Auto-correct/Goto-Forward. Off and Verify-Alert never get this automatic
 reconciliation, which is arguably correct for Off (fully decoupled, by definition) but is a gap for
 Verify-Alert (it monitors drift, but starts from a potentially wrong baseline with no initial Sync
@@ -248,7 +247,7 @@ distinction between "refused because parked, expected" and "refused because some
 
 ### 8.5 Live-open mystery: logged success, no mount movement
 
-**Resolved, 2026-09-09 (later session).** Root-caused via basic-memory 00090 Regel 3's raw
+**Resolved, 2026-09-09 (later session).** Root-caused via a raw
 `<message>`-capture technique against a clean, single-variable repro (direct `indi_setprop`
 against the driver, no GUI/Python layer involved): `sendMountCoords()` itself was never broken -
 a controlled direct test moved the mount exactly as commanded, confirmed via `indi_getprop`
@@ -440,12 +439,5 @@ worth recording together since they were found and fixed as one continuous debug
 - [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md) - overlaps §3
   principle 3 and §5.2.5/5.2.6 (tracking through cloud gaps via a mount-held model).
 - `indi_pifinder_simulator/pifinder_simulator.h:61-73` (`ISSnoopDevice`) - `PiFinder Simulator`'s
-  actual follow-while-slewing / hold-once-idle behavior (§4's terminology table); #177 and
-  basic-memory `00092_pifinder-truth-simulator-konzept-und-umsetzung.md` / `00164` are the features
-  that built this.
-- basic-memory `pifinder-stellarmate/00105_simulation-alignment-luecke-und-mount-bridge-hang-2026-09-01.md`
-  §1 - the originally-deferred "PiFinder alignment in Full Simulation" idea this concept revisits
-  with more structure. Written 2026-09-01, **before** #177's follow-while-slewing behavior existed -
-  its "rigid pin, never moves" framing is now only accurate for the idle-state case (§4).
-- basic-memory `pifinder-stellarmate/00126_pi5-313-align-sync-deployment-und-test-2026-09-08.md` -
-  the CC readiness-watchdog behavior referenced in §8.1.
+  actual follow-while-slewing / hold-once-idle behavior (§4's terminology table); #177 and #164 are
+  the features that built this.

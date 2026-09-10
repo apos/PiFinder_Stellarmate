@@ -1,8 +1,6 @@
 # Concept: Mount Bridge notifies PiFinder of a confirmed external mount reposition
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> **Status: concept — not yet implemented.** Tracked as
 > [GitHub issue #300](https://github.com/apos/PiFinder_Stellarmate/issues/300) on
 > [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
 > promoted, revised, or dropped.

@@ -1,10 +1,9 @@
 # Concept: Singleton guard against duplicate INDI driver instances
 
-> **Status: implemented for Mount Bridge, not yet for the other two custom drivers.** Written via
-> this project's `cpt` convention - see `basic-memory/basic-memory/00020_bm-cpt-command-system.md`
-> and `00021_bm-documentation-depth-standard.md`. Tracked as
+> **Status: implemented for Mount Bridge, not yet for the other two custom drivers.** Tracked as
 > [GitHub issue #303](https://github.com/apos/PiFinder_Stellarmate/issues/303) on
-> [Project #15](https://github.com/users/apos/projects/15).
+> [Project #15](https://github.com/users/apos/projects/15). Extending it to the remaining two
+> drivers is tracked as [GitHub issue #306](https://github.com/apos/PiFinder_Stellarmate/issues/306).
 
 ## 1. Basic Functionality
 
@@ -60,8 +59,8 @@ sequenceDiagram
 
 The *cause* of the duplicate `start` (the Web Manager's own driver supervision, based on the
 parent-PID evidence) is outside this project's own code and not something this repo controls or can
-reliably fix - matching this session's own "don't diagnose why every time, guarantee the outcome"
-standard (see `basic-memory/basic-memory/00017`'s newest entry). A guard at the one point this
+reliably fix - matching this project's "don't diagnose why every time, guarantee the outcome"
+standard. A guard at the one point this
 project *does* own - the driver's own startup - makes the outcome (exactly one running instance)
 true regardless of how many times, or why, something asks for a second one.
 

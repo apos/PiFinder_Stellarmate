@@ -1,10 +1,9 @@
 # Concept: Simulated IMU for Full Simulation (fixing discrete PiFinder position jumps)
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` convention - see
-> `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and `00021_bm-documentation-depth-standard.md`.
+> **Status: concept — not yet implemented.**
 > Spans two repositories: `PiFinder_Stellarmate` (this repo, test tooling) and `PiFinder`
 > (`~/PiFinder`, `imu_fake.py`/`imu_pi.py`/`integrator.py`). Design context:
-> `basic-memory/pifinder-stellarmate/00105` §10-11, `docs/concepts/mount_bridge_reposition_detection.md` §9-10.
+> `docs/concepts/mount_bridge_reposition_detection.md` §9-10.
 
 ## 1. Overview
 
@@ -160,5 +159,4 @@ implementation of the same physical fact that could drift out of sync with the f
 
 - `mount_bridge_reposition_detection.md` §9 (dual position-source fix), §10 (Fall-4 revert livelock)
 - `complete_position_simulator.md` (dead-reckoning-follow feature this reuses, `CORRECTION_AGE`)
-- `basic-memory/pifinder-stellarmate/00105` §10-11 (live diagnosis that led here)
 - `PiFinder/python/PiFinder/imu_fake.py`, `imu_pi.py`, `integrator.py` (PiFinder repo)

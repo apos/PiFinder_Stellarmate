@@ -96,10 +96,8 @@ guessing across camera/GPIO/software/menu-logic all at once.
   Uses PiFinder's own venv (already has Pillow + numpy - no new system
   packages needed). `--rotate` is degrees counter-clockwise ("left").
 - **When to use:** developing/testing with the physical HAT disconnected but
-  a small SPI screen attached instead - see
-  `basic-memory/pifinder-stellarmate/00024_waveshare-lcd-fake-mode-dev-setup.md`
-  for the full overlay setup and a documented GPIO conflict with the real
-  keypad matrix.
+  a small SPI screen (Waveshare) attached instead - Fake Mode overlay setup,
+  with a known GPIO conflict against the real keypad matrix to watch for.
 
 ## fb_keyboard_bridge.py
 
@@ -132,11 +130,9 @@ guessing across camera/GPIO/software/menu-logic all at once.
   for every end-user install.
 - **When to use:** same scenario as `fb_screen_mirror.py` - no physical
   keypad attached. Live-tested (LogiLink ID0120): navigation, long-press,
-  and the marking menu all confirmed working - see
-  `basic-memory/pifinder-stellarmate/00024_waveshare-lcd-fake-mode-dev-setup.md`
-  for two real bugs found and fixed during that testing (a missed
-  long-press timer, and a thread race that closed the marking menu
-  immediately on release).
+  and the marking menu all confirmed working, after fixing two real bugs
+  found during that testing (a missed long-press timer, and a thread race
+  that closed the marking menu immediately on release).
 
 ## multipoint_alignment_trace.py
 
@@ -201,10 +197,9 @@ doesn't work" report:
    actually change the electrical signal on its GPIO line? Confirms or rules
    out a hardware fault.
 
-Run both before concluding which side the problem is on - see
-`basic-memory/basic-memory/00015_bm-hardware-vs-software-diagnostic-split.md`
-for why this two-step split is worth doing as a default habit, not just for
-PiFinder.
+Run both before concluding which side the problem is on - this
+hardware-vs-software diagnostic split is worth doing as a default habit,
+not just for PiFinder.
 
 ## Adding a new tool here
 

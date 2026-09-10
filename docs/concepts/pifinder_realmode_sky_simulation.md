@@ -1,10 +1,6 @@
 # Concept: PiFinder Realmode Sky Simulation (synthetic GSC image → the real solver runs)
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. The entire
-> `docs/concepts/` folder was read first per that convention. Design context:
-> `basic-memory/pifinder-stellarmate/00129_synthetic-image-injection-realmode-solver-simulation-2026-09-10`.
+> **Status: concept — not yet implemented.**
 > Tracked as [GitHub issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)
 > (`concept` + `pifinder` labels) on [Project #15](https://github.com/users/apos/projects/15).
 > This concept is the image-layer sibling of [#164](https://github.com/apos/PiFinder_Stellarmate/issues/164)'s
