@@ -249,18 +249,20 @@ The rule: verify real state, never ``the process is alive''.
 \end{frame}
 
 \begin{frame}[t]{One weak PiFinder, one strong box}
-Three install roles: \textbf{All-in-one} \quad$\cdot$\quad \textbf{PiFinder host} \quad$\cdot$\quad \textbf{Control host}.
+Pick the \textbf{role} at setup:
 \smallskip{}
-\begin{itemize}
-\item \textbf{INDI-only install} (\code{--mode=indi\_only}) — just the INDI deps + the two PFSM drivers; no PiFinder clone, no venv.
-\item \textbf{Control host} — a strong StellarMate PC runs INDI, Ekos, guiding and capture; the low-power PiFinder Pi over the LAN only supplies its solved position.
-\end{itemize}
-\vspace{0.7em}
 \begin{center}
-\includegraphics[width=\linewidth,keepaspectratio]{cc_install}
+\includegraphics[width=\linewidth,keepaspectratio]{cc_roles}
 \end{center}
-\smallskip{}
-{\footnotesize\color{AVVPGrey}The Control Center's Install tile — pick the branch, tick \textbf{INDI-only} for a control host.}
+\medskip{}
+\begin{itemize}
+\item \textbf{Control host} — a strong StellarMate PC runs INDI, Ekos, guiding and capture; the low-power PiFinder Pi over the LAN only supplies its solved position.
+\item \textbf{INDI-only install} (\code{--mode=indi\_only}) — the Control-host case: just the INDI deps + the two PFSM drivers, no PiFinder clone or venv.
+\end{itemize}
+\vspace{0.2em}
+\begin{center}
+\includegraphics[width=0.9\linewidth,keepaspectratio]{cc_install}
+\end{center}
 \end{frame}
 
 \begin{frame}[t]{PiFinder LX200}
