@@ -204,6 +204,11 @@ Open `http://<pi-address>:8624` in a browser. The whole Web Manager is a single 
 
 **Build the profile:**
 
+> The Control Center's **Settings → Role** cards (All-in-one / PiFinder host / Control host) build
+> this driver list for you — see
+> [Readme_ControlCenter.md → Roles](Readme_ControlCenter.md#roles). Do it by hand here if you
+> prefer, or aren't using the Control Center.
+
 1. Type a name into **New Profile** → **+**.
 2. Open **Drivers** and tick **PiFinder LX200**, optionally your real mount's driver
    (e.g. *LX200 OnStep*), and — for mount coupling — **PiFinder Mount Bridge**. Add
