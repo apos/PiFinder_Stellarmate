@@ -43,6 +43,9 @@
 \def\AVVPSubAgendaTitle{Where we are}
 \def\AVVPMainAgendaTitle{Agenda}
 
+% colour external URLs; leave internal nav links (footer title, agenda bar) at their surrounding colour
+\hypersetup{colorlinks=true,urlcolor=AVVPBlue,linkcolor=.,citecolor=.,filecolor=.}
+
 \begin{document}
 
 \AVVPDarkMode
@@ -412,11 +415,13 @@ APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directl
 \subsection*{Links}
 \begin{frame}[t]{Links}
 \begin{itemize}
-\item \code{github.com/apos/PiFinder\_Stellarmate} — repo, README, docs.
-\item \code{docs/upstream\_patch\_inventory.md} \; / \; \code{docs/upstream\_pr\_templates.md}
-\item \code{docs/concepts/mount\_bridge\_web\_integration.md}
-\item \code{brickbots/PiFinder} — upstream \quad$\cdot$\quad issue \#645 (near-pole RA)
-\item GitHub Project 15 — tracked roadmap.
+\item \href{https://github.com/apos/PiFinder_Stellarmate}{\code{github.com/apos/PiFinder\_Stellarmate}} — repo, README, docs.
+\item \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/upstream_patch_inventory.md}{\code{docs/upstream\_patch\_inventory.md}} \; / \;
+      \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/upstream_pr_templates.md}{\code{docs/upstream\_pr\_templates.md}}
+\item \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/mount_bridge_web_integration.md}{\code{docs/concepts/mount\_bridge\_web\_integration.md}}
+\item \href{https://github.com/brickbots/PiFinder}{\code{brickbots/PiFinder}} — upstream \quad$\cdot$\quad
+      \href{https://github.com/brickbots/PiFinder/issues/645}{issue \#645} (near-pole RA)
+\item \href{https://github.com/users/apos/projects/15}{GitHub Project 15} — tracked roadmap.
 \end{itemize}
 \end{frame}
 
