@@ -16,3 +16,4 @@
 # keep the rendered deck tracked, ignore any other stray PDFs
 *.pdf
 !PFSM_overview.pdf
+!PFSM_overview_light.pdf
