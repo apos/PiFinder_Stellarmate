@@ -178,6 +178,24 @@ before it's fit to propose upstream, or even to keep long-term without a comment
 
 ---
 
+### 1.8 Near-pole RA singularity in `POST /api/fake_solve`
+
+**File**: `diffs/api_extensions_py.diff`.
+
+`api_fake_solve()` converts the injected JNow RA/Dec to J2000 through a skyfield Cartesian vector,
+then recovers RA via `.radec()` (an `atan2` over the vector's X/Y components). Near the celestial
+pole those components shrink toward zero, so floating-point noise — not the caller's intended
+direction — determines the returned RA. Live-verified: injecting `dec=90` with two different RA
+values both returned the same wrong RA; `dec=45` round-trips correctly. Fix: for
+`abs(dec) >= 89.9`, keep the caller's own JNow RA instead of the recomputed one. Dec stays accurate
+to the true pole.
+
+**Upstream-relevant**: a general-purpose endpoint silently returns wrong data (no error) for any
+near-polar injection. Filed as
+[brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645).
+
+---
+
 ## 2. StellarMate/SMOS-only (not relevant upstream)
 
 These only make sense because this project runs *inside* a StellarMate-managed install, sitting
