@@ -154,7 +154,7 @@ PiFinder is patched in place, never forked. The mount side is generic INDI.
 \item UTM x86 — install + Control Center + Mount Bridge vs.\ the Simulator (no real solving).
 \end{itemize}
 \medskip{}
-Pinned to a fixed release tag, not the upstream \emph{release} branch. The README table is the single source of truth.
+Pinned to a fixed release tag, not the upstream \emph{release} branch.
 \end{frame}
 
 % ============================================================
@@ -165,24 +165,29 @@ Pinned to a fixed release tag, not the upstream \emph{release} branch. The READM
 
 \begin{frame}[t]{Why a Control Center}
 \begin{columns}[T]
-\column{0.40\textwidth}
+\column{0.34\textwidth}
 \begin{itemize}
 \item Watch an install from a phone at the scope.
 \item Switch Fake Mode $\leftrightarrow$ the real service.
 \item Check camera / IMU / GPS are really detected.
 \item Reboot the Pi without SSH.
 \end{itemize}
-\column{0.56\textwidth}
-\includegraphics[width=\linewidth,height=0.66\textheight,keepaspectratio]{cc_full_page}
+\column{0.64\textwidth}
+\hfill\includegraphics[height=0.86\textheight,keepaspectratio]{cc_full_page}
 \end{columns}
 \end{frame}
 
 \begin{frame}[t]{Stdlib only — by necessity}
+\begin{columns}[T]
+\column{0.34\textwidth}
 \begin{itemize}
 \item It bootstraps the very venv that PiFinder needs, so it can't depend on one.
 \item \code{http.server} on \code{:8765}, polled every 1--2\,s.
 \item HTTP Basic auth against the system account (PAM).
 \end{itemize}
+\column{0.64\textwidth}
+\hfill\includegraphics[height=0.86\textheight,keepaspectratio]{cc_full_page}
+\end{columns}
 \end{frame}
 
 \begin{frame}[t]{Traffic-light badges}
@@ -227,14 +232,14 @@ The rule: verify real state, never ``the process is alive''.
 
 \begin{frame}[t]{PiFinder LX200}
 \begin{columns}[T]
-\column{0.40\textwidth}
+\column{0.34\textwidth}
 \begin{itemize}
 \item Talks LX200 to PiFinder's \code{pos\_server.py} (TCP 4030).
 \item Reports the solved position each poll; a GoTo is only a push-to.
 \item No Sync — PiFinder measures the truth every frame.
 \end{itemize}
-\column{0.56\textwidth}
-\includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{lx200_onset}
+\column{0.64\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.74\textheight,keepaspectratio]{lx200_cp}
 \end{columns}
 \end{frame}
 
@@ -255,14 +260,14 @@ The rule: verify real state, never ``the process is alive''.
 \begin{frame}[t]{Generic INDI, nothing mount-specific}
 Only \code{EQUATORIAL\_EOD\_COORD} + \code{ON\_COORD\_SET} — never a mount command.
 \begin{columns}[T]
-\column{0.42\textwidth}
+\column{0.33\textwidth}
 \begin{itemize}
 \item Multi-Point Alignment (\#191) — automated multi-star run.
 \item Reposition detection — adopt or revert a move.
 \item Shadow Sync — mirror onto a non-driving device.
 \end{itemize}
-\column{0.56\textwidth}
-\includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{kstars_both_c}
+\column{0.65\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{kstars_menu}
 \end{columns}
 \end{frame}
 
