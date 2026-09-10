@@ -186,21 +186,55 @@ This must run from the actual GUI/VNC desktop session, not from a plain SSH sess
 > Manager directly (not through KStars) and build the profile here — this is the *only* place the
 > PiFinder drivers exist.
 
-Open `http://<pi-address>:8624` in a browser.
+Open `http://<pi-address>:8624` in a browser. The whole Web Manager is a single page:
 
-- **Driver Source**: **"System INDI Drivers"** — this is the only tab/source the PiFinder drivers
-  show up under in the Web Manager. They are not listed anywhere else, and not visible from Ekos's
-  own driver catalog at all (see the warning at the top of this document).
-- Under "Telescopes": add **PiFinder LX200**, and optionally your real mount's driver
-  (e.g. "LX200 OnStep")
-- Under "Auxiliary": add **PiFinder Mount Bridge** (only if you want it)
-- Save the profile, click **Start**
+| Control | What it does |
+|---|---|
+| **Equipment Profile** dropdown | Selects the profile to edit / run |
+| 💾 save / **−** (next to it) | Save edits to the selected profile / delete it |
+| **New Profile** field + **+** | Create a new, empty profile with that name |
+| **Auto Start** / **Auto Connect** | Start this profile when the Web Manager boots / connect all its devices once the server is up |
+| **Drivers** ("N items selected") | The multi-select of drivers this profile runs |
+| **Port** | `indiserver` port (default **`7624`**) |
+| **Driver Source** | Which driver catalog the list is read from — must be **"System INDI Drivers"** |
+| **Remote Drivers** | `driver@host` entries for drivers on another box — not needed here |
+| **Stop** / **Start** + icon row (power, restart, network, 👁) | Start/stop the `indiserver` for the selected profile; 👁 opens the INDI Control Panel |
+| **Server Status** | Live list of the drivers the running server has loaded |
+
+**Build the profile:**
+
+1. Type a name into **New Profile** → **+**.
+2. Open **Drivers** and tick **PiFinder LX200**, optionally your real mount's driver
+   (e.g. *LX200 OnStep*), and — for mount coupling — **PiFinder Mount Bridge**. Add
+   *PiFinder Simulator* / *Telescope Simulator* only for a hardware-free test setup.
+3. Leave **Port** at `7624`. Set **Driver Source** to **System INDI Drivers**.
+4. Click 💾 **save**, then **Start**.
+
+**Driver Source** must be **"System INDI Drivers"**: the PiFinder drivers are installed as system
+INDI drivers (`/usr/share/indi/`). The other options ("KStars Flatpak – Stable / Nightly") read a
+Flatpak KStars' bundled catalog, which does not contain them — select one of those and the
+PiFinder drivers disappear from the Drivers list. They are not visible from Ekos's own driver
+catalog either (see the warning at the top of this document).
 
 <table>
 <tr>
-<td align="center">
-<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="600"></a><br>
-<sub>StellarMate Web Manager: profile "PiFinder OnStepX Bridge" with the drivers PiFinder Mount Bridge, LX200 OnStep, PiFinder LX200, and Server Status showing all three online — Driver Source set to "System INDI Drivers"</sub>
+<td align="center" width="55%">
+<a href="docs/images/pfinder_lx200/webmanager_overview.png"><img src="docs/images/pfinder_lx200/webmanager_overview.png" width="440"></a><br>
+<sub>Web Manager: profile "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status</sub>
+</td>
+<td align="center" width="45%">
+<a href="docs/images/pfinder_lx200/webmanager_drivers_list.png"><img src="docs/images/pfinder_lx200/webmanager_drivers_list.png" width="330"></a><br>
+<sub>Drivers multi-select — the PiFinder drivers appear here, and only here</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="55%">
+<a href="docs/images/pfinder_lx200/webmanager_driver_source.png"><img src="docs/images/pfinder_lx200/webmanager_driver_source.png" width="440"></a><br>
+<sub>Driver Source: use "System INDI Drivers"; the Flatpak catalogs lack the PiFinder drivers</sub>
+</td>
+<td align="center" width="45%">
+<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="330"></a><br>
+<sub>A real-mount profile: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, all online</sub>
 </td>
 </tr>
 </table>
@@ -290,13 +324,38 @@ doesn't launch or look up anything locally at all: it's purely a network client 
 `indiserver` that the Web Manager already started, so it doesn't matter which driver catalog Ekos
 itself has.
 
-- Ekos Profile Editor → **Mode: Remote Host** (not "Local"!), Host `localhost`, Port **`7624`**
-  (the `indiserver` port from the Web Manager profile)
-- Also enable **"INDI Web Manager"**, Port **`8624`** — this lets Ekos talk to the Web Manager's
-  own API (so its Start/Stop controls act on the remote profile), and the **"Scan"** button can
-  auto-discover it on the network instead of typing the host manually
-- Click "Start" → Ekos connects to the running server → every device already connected appears
-  automatically in the INDI Control Panel / Mount tab
+**In the Ekos tab** (Tools → Ekos, `Ctrl+K`):
+
+1. **1. Select Profile** — pick your profile in the dropdown. The buttons next to it: **+** new,
+   **✏** edit, **✗** delete, **⛶** set default, **🪄** wizard.
+2. **✏ edit** opens the **Profile Editor**:
+   - **Mode: Remote Host** (not "Local"!), Host `localhost`, Port **`7624`** — the `indiserver`
+     port from the Web Manager profile.
+   - **Auto Connect** on: connect all devices as soon as Ekos starts.
+   - **INDI Web Manager** (checkbox + Port `8624`) — optional. Tick it and Ekos's own Start/Stop
+     buttons act on the *remote* Web Manager profile, and **Scan** can find the box on the
+     network. Leave it off and Ekos is a pure network client of an `indiserver` you start
+     elsewhere (the Web Manager, or the Control Center).
+   - **Select Devices** — in Remote Host mode this only lists drivers Ekos itself would launch;
+     for a PiFinder setup it can stay effectively empty (the PiFinder drivers are **not** here
+     and don't need to be — they run under the Web Manager). Click **Save**.
+3. **2. Start & Stop Ekos** — the **▶ / ■** button starts/stops the session. On start, every
+   device the remote server already has connected shows up in the Mount / Capture / … modules
+   and the INDI Control Panel.
+4. **3. Connect & Disconnect Devices** — force a reconnect of all devices without restarting Ekos.
+
+<table>
+<tr>
+<td align="center" width="60%">
+<a href="docs/images/pfinder_lx200/ekos_select_profile.png"><img src="docs/images/pfinder_lx200/ekos_select_profile.png" width="480"></a><br>
+<sub>Ekos: Select Profile → Start &amp; Stop Ekos → Connect &amp; Disconnect Devices (session stopped)</sub>
+</td>
+<td align="center" width="40%">
+<a href="docs/images/pfinder_lx200/ekos_profile_editor.png"><img src="docs/images/pfinder_lx200/ekos_profile_editor.png" width="330"></a><br>
+<sub>Profile Editor: Mode "Remote Host", localhost:7624, Auto Connect</sub>
+</td>
+</tr>
+</table>
 
 Right-clicking a star shows both devices as separate targets in the context menu — the red
 crosshair markers show where PiFinder is currently "looking" versus where the mount actually is
@@ -307,16 +366,12 @@ screenshot:
 
 <table>
 <tr>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png"><img src="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png" width="260"></a><br>
-<sub>Ekos Profile Editor: Mode "Remote Host", Host localhost, Port 7624, INDI Web Manager enabled</sub>
-</td>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="260"></a><br>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="300"></a><br>
 <sub>Sky map: PiFinder and mount as separate target devices in the context menu</sub>
 </td>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="260"></a><br>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="300"></a><br>
 <sub>"PiFinder LX200" submenu: only Goto, Abort, Find Telescope</sub>
 </td>
 </tr>
@@ -452,6 +507,30 @@ exhaustive — see `LX200Telescope`/`INDI::Telescope` in libindi for details):
 To the mount the Bridge sends **only** generic INDI standard properties — `EQUATORIAL_EOD_COORD`
 (target RA/DEC) + `ON_COORD_SET` (`SYNC` or `TRACK`), never a mount-specific command. That is the
 core design that makes it work with any INDI mount.
+
+### In practice: which controls you actually touch
+
+The tables above are the full surface. Day to day it comes down to a handful:
+
+| Where | Control | When |
+|---|---|---|
+| PiFinder LX200 → Connection | Network / TCP `127.0.0.1:4030` | Once, at setup |
+| PiFinder LX200 → Main Control | **Connect** | Every session (or let Auto Connect do it) |
+| Mount Bridge → Options | **Active devices** (PiFinder + Mount) | Once, at setup |
+| Mount Bridge → Main Control | **Connect**, then **Coupling** | Every session — Coupling is the one dial you change by intent |
+| Mount Bridge → Main Control | **Drift Threshold** | Rarely — tighten / loosen the drift alarm |
+| Mount Bridge → Main Control | **Manual (one-shot)** → *Sync Now* / *Goto Held Target* | Recovery after a bump or a refused slew |
+| any driver → Options → Configuration | **Save** | After changing anything you want to survive a restart |
+
+Everything else is read-only status or an inherited base-class control that does nothing for
+PiFinder (see [Step 3](#step-3-indi-control-panel--connect-the-devices)).
+
+**Can you group or rearrange properties in the INDI Control Panel?** No. The layout is fixed by
+each driver: one tab per device, then that driver's own property groups as subtabs (*Main
+Control*, *Connection*, *Options*, …). There is no way to make custom groups, hide rows, or
+reorder them. Two things soften it: **Options → Configuration → Save** makes a driver reappear
+with your values already set, and **Ekos** surfaces the few properties that matter mid-session in
+its own module GUIs (Mount, Capture, Focus, Align), so the raw panel is rarely needed during a run.
 
 ### Data flow: Auto-Correct / Verify-Alert (drift polling)
 
