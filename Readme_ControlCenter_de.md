@@ -243,48 +243,75 @@ bash gui_installer/launch_setup_gui.sh
 ```
 
 Dann `http://<pi-adresse>:8765` im Browser öffnen — auf dem Pi selbst, oder von jedem anderen Gerät
-im selben Netzwerk (keine Desktop-Session auf dem Pi nötig; der Server bindet `0.0.0.0`).
+im selben Netzwerk (keine Desktop-Session auf dem Pi nötig; der Server bindet `0.0.0.0`). Jeder
+Benutzername funktioniert; das Passwort ist das des `stellarmate`-Systemkontos (s.
+[Authentifizierung & Sicherheitsmodell](#authentifizierung--sicherheitsmodell)).
+
+### Die Seite auf einen Blick
 
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="600"></a><br>
-<sub>Von einem anderen Gerät im Netzwerk aus geöffnet — keine Desktop-Session auf dem Pi nötig</sub>
+<a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="500"></a><br>
+<sub>Die ganze Seite (hier im Full-Simulation-Modus). Von oben nach unten: die <strong>PiFinder</strong>-Kachel (OLED-Spiegel, Quick Keys, die Cam/Solve/IMU/GPS-Badge-Zeile und direkt darunter das Mount-Bridge-Verbindungsdiagramm), die <strong>INDI Mount Bridge</strong>-Kachel, <strong>Simulation, Test and Power</strong> und ganz unten <strong>Install or Update</strong>. Jede Kachelüberschrift klappt ein; der Zustand wird pro Browser gemerkt.</sub>
 </td>
 </tr>
 </table>
+
+Die drei Status-Kacheln sind an anderer Stelle beschrieben — die PiFinder-Badge-Zeile und das
+Mount-Bridge-Diagramm in [Mount Bridge & Sync-Workflows](#mount-bridge--sync-workflows), die
+Hardware-Checkliste und die Mode-Schalter in [Feature-Übersicht](#feature-übersicht). Der Rest
+dieses Abschnitts ist die eine Kachel, die dort nicht vorkommt: **Install or Update**.
+
+### Installieren oder aktualisieren
 
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="600"></a><br>
-<sub>Die komplette Control-Center-Seite, so verlinkt von PiFinders eigener "PFSM"-Seite.</sub>
+<a href="docs/images/readme/cc_install_idle.png"><img src="docs/images/readme/cc_install_idle.png" width="640"></a><br>
+<sub>Die Kachel im Ruhezustand, wenn bereits eine Installation existiert. <strong>PFSM Source Branch</strong> wählt, welchen Branch <em>der projekteigenen Skripte</em> ein Lauf benutzt (nicht PiFinder selbst); das ↻ prüft neu, was tatsächlich auf der Platte liegt. Die drei PiFinder-Aktionen und ein separates <strong>Uninstall</strong>.</sub>
 </td>
 </tr>
 </table>
 
+- **Reinstall from scratch** — löscht `~/PiFinder` komplett, klont den offiziellen `release`-Branch
+  auf der gepinnten Version frisch, dann werden alle StellarMate-Patches neu angewendet.
+  Bestätigungsdialog: *Reinstall from scratch? This permanently deletes the existing ~/PiFinder
+  directory and everything in it.*
+- **Update** — `git reset --hard` + `pull` auf dem vorhandenen `~/PiFinder` auf die gepinnte
+  Version, danach die Patches erneut; das Verzeichnis bleibt. Bestätigungsdialog: *Update? This runs
+  `git reset --hard` on ~/PiFinder, discarding any local changes there.*
+- **Reset** — stoppt die PiFinder-Services und löscht nur `~/PiFinder`s Python-venv und
+  Build-Zustand; Services, INDI-Treiber, udev-Regeln, Daten und Konfiguration bleiben unangetastet.
+  Für einen sauberen Ausgangspunkt vor einem erneuten Lauf, ohne sonst etwas zu verlieren.
+- **Uninstall** — in einer eigenen Gruppe, weil es viel mehr betrifft: entfernt jede systemd-Unit,
+  die INDI-Treiber, `~/PiFinder` **und diesen `~/PiFinder_Stellarmate`-Checkout selbst** (das
+  Control Center hört auf zu funktionieren, sobald es startet). Siehe
+  [Reset / Uninstall](#reset--uninstall) und [help.html#uninstall](gui_installer/help.html).
+
+Reinstall, Update, Reboot und Shutdown fragen alle vorher nach — und der Dialog wird *eindringlicher*,
+falls bereits ein Lauf in Arbeit ist, statt sofort auszulösen.
+
 <table>
 <tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
-<sub>Install/Update: Live-Fortschritt, Terminal-Ausgabe und Reboot-/Close-Steuerung in einer Kachel</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
-<sub>Quick Links: PiFinder-Status plus direkte Links (Remote-Seite, PFSM-Seite, diese Seite, GitHub-Doku)</sub>
-</td>
-</tr>
-<tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
-<sub>Mode & Power: Real-/Fake-Mode-Umschalter, Hardware-Checkliste, PiFinder-Service- und Pi-Power-Steuerung</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
-<sub>Mount Bridge: Verbindungsdiagramm, Coupling-Presets und die geführte Einrichtungs-Checkliste</sub>
+<td align="center">
+<a href="docs/images/readme/cc_install_running.png"><img src="docs/images/readme/cc_install_running.png" width="640"></a><br>
+<sub>Ein laufender Vorgang: eine 10-Schritt-Fortschrittsleiste, eine Phasen-Checkliste (grüner Haken = fertig, gestreift = aktuell) und die Live-Terminal-Ausgabe des Setup-Skripts direkt in der Kachel.</sub>
 </td>
 </tr>
 </table>
+
+Die Fortschrittsleiste verfolgt die *am weitesten* erreichte Phase, damit der venv-Bootstrap-
+Selbst-Neustart mitten im Lauf den Fortschritt nicht rückwärts springen lässt. Ein **Reboot
+Now**-Button erscheint **nur**, wenn dieser Lauf tatsächlich `/boot/config.txt` geändert hat (der
+einzige Fall, der einen braucht). Wenn der Lauf endet, startet sich das Control Center einmal selbst
+neu, um neuen Code zu laden, und kehrt dann in den obigen Ruhezustand zurück; die vollständige
+Zusammenfassung — Versionen, Zeiten, etwaige Warnungen — steht in
+`~/PiFinder_Stellarmate/.gui_setup.log`.
+
+Auf einem anderen Gerät: `INDI-only` (Checkbox) installiert nur die INDI-Build-Abhängigkeiten und
+beide INDI-Treiber — kein Clone, kein venv, kein Katalog — für einen separaten Control-Host, der
+über das Netz an einen PiFinder gekoppelt ist (s. [help.html#indi-only-mode](gui_installer/help.html)).
 
 ---
 
