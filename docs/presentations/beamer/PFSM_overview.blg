@@ -1,0 +1,15 @@
+[0] Config.pm:328> INFO - This is Biber 2.21
+[0] Config.pm:331> INFO - Logfile is 'PFSM_overview.blg'
+[22] biber-darwin:342> INFO - === Thu Sep 10, 2026, 18:00:40
+[28] Biber.pm:421> INFO - Reading 'PFSM_overview.bcf'
+[55] Biber.pm:1002> INFO - Found 4 citekeys in bib section 0
+[60] Biber.pm:4487> INFO - Processing section 0
+[63] Biber.pm:4678> INFO - Looking for bibtex file 'bibtex.bib' for section 0
+[64] bibtex.pm:1713> INFO - LaTeX decoding ...
+[65] bibtex.pm:1519> INFO - Found BibTeX data source 'bibtex.bib'
+[80] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
+[80] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[80] Biber.pm:4307> INFO - Sorting list 'nyt/global//global/global/global' of type 'entry' with template 'nyt' and locale 'de-DE'
+[80] Biber.pm:4313> INFO - No sort tailoring available for locale 'de-DE'
+[83] bbl.pm:676> INFO - Writing 'PFSM_overview.bbl' with encoding 'UTF-8'
+[83] bbl.pm:779> INFO - Output to PFSM_overview.bbl
