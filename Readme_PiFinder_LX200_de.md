@@ -40,6 +40,7 @@ SkySafari, and (optionally) a real motorized mount. It is a companion to the mai
 5. [Code, Deployment & Strategien](#code-deployment--strategien)
 6. [Bekannte Einschränkungen & Troubleshooting](#bekannte-einschränkungen--troubleshooting)
 7. [Versionskompatibilität](#versionskompatibilität)
+8. [Screenshot-Referenz](#screenshot-referenz)
 
 ---
 
@@ -692,6 +693,59 @@ Details für diesen Treiber:
 |---|---|
 | libindi | 2.2.2 (Systempaket) |
 | Getestete Mount / Treiber | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
+
+---
+
+## Screenshot-Referenz
+
+Jeder Screenshot in diesem Dokument, gruppiert nach Herkunft. `PiFinder Simulator` und
+`Telescope Simulator` sind hier bewusst nicht dupliziert - ihre eigenen INDI-Control-Panel-Tabs und
+das KStars-Rechtsklick-Verhalten stehen in [Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)
+und [Readme_PiFinder_in_KStars_de.md](Readme_PiFinder_in_KStars_de.md).
+
+**Web Manager** (`http://<pi-adresse>:8624`)
+
+| Screenshot | Zeigt |
+|---|---|
+| [`webmanager_overview.png`](docs/images/pfinder_lx200/webmanager_overview.png) | Profil "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status |
+| [`webmanager_drivers_list.png`](docs/images/pfinder_lx200/webmanager_drivers_list.png) | Drivers-Mehrfachauswahl — wo die PiFinder-Treiber auftauchen |
+| [`webmanager_driver_source.png`](docs/images/pfinder_lx200/webmanager_driver_source.png) | Driver Source auf "System INDI Drivers" gesetzt |
+| [`webmanager_profile.png`](docs/images/pfinder_lx200/webmanager_profile.png) | Ein Real-Mount-Profil: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, alle online |
+
+**Ekos**
+
+| Screenshot | Zeigt |
+|---|---|
+| [`ekos_select_profile.png`](docs/images/pfinder_lx200/ekos_select_profile.png) | Select Profile → Start/Stop Ekos → Connect/Disconnect Devices |
+| [`ekos_profile_editor.png`](docs/images/pfinder_lx200/ekos_profile_editor.png) | Profile Editor: Mode "Remote Host", `localhost:7624`, Auto Connect |
+
+**INDI Control Panel — PiFinder-LX200-Tab**
+
+| Screenshot | Zeigt |
+|---|---|
+| [`indi_control_panel_tabs_PiFinder_LX200_connection.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png) | Connection-Subtab: Network / TCP, `127.0.0.1:4030` |
+| [`indi_control_panel_tabs_PiFinder_LX200_main.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png) | Main-Control-Subtab: nur Track / Slew, kein Sync |
+
+**INDI Control Panel — PiFinder-Mount-Bridge-Tab**
+
+| Screenshot | Zeigt |
+|---|---|
+| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png) | Main-Control-Subtab: Coupling, Correction Action, manuelle Trigger, Alignment |
+| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png) | Options-Subtab: Active Devices + indiserver Settings |
+| [`indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png`](docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png) | Shadow-Sync-Subtab: spiegelt Kommandos auf ein nicht-steuerndes Gerät |
+
+**KStars-Himmelskarte**
+
+| Screenshot | Zeigt |
+|---|---|
+| [`kstars_context_menu_both_mount_and_pifinder.png`](docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png) | PiFinder und Mount als getrennte Zielgeräte im Rechtsklick-Kontextmenü |
+| [`kstars_context_menu_PiFinder_LX200.png`](docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png) | "PiFinder LX200"-Untermenü: nur Goto, Abort, Find Telescope |
+
+**SkySafari**
+
+| Screenshot | Zeigt |
+|---|---|
+| [`skysafari_ip_port_Meade_LXClassic.png`](docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png) | Netzwerkverbindungs-Einstellungen: Teleskoptyp, IP-Adresse, Port `9624` |
 
 ---
 

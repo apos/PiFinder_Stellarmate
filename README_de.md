@@ -361,17 +361,25 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
   Simulation, das Control Center) — das meiste davon steht bereits im Abschnitt `[Unreleased]` von
   `CHANGELOG.md`.
 - Ausgewählte Änderungen zurück ins Upstream-Projekt [PiFinder](https://github.com/brickbots/PiFinder)
-  spielen (welche PRs — noch zu entscheiden).
-- Ein Guiding-Watcher (Dithering- / Sternverlust-Erkennung während der Aufnahme) — Issue bereits
-  offen.
+  spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:
+  [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
+  [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
+- Ein Guiding-Watcher (Dithering- / Sternverlust-Erkennung während der Aufnahme) — Konzept:
+  [`docs/concepts/session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md).
 
 **Version 3.x — integrieren**
 
-- Tiefere StellarMate-Integration, in Zusammenarbeit mit dem SMOS-Projekt.
+- Tiefere StellarMate-Integration, in Zusammenarbeit mit dem SMOS-Projekt —
+  [Issue #35](https://github.com/apos/PiFinder_Stellarmate/issues/35) (Anforderungsanalyse),
+  [Issue #36](https://github.com/apos/PiFinder_Stellarmate/issues/36) (Vision).
 - Die wesentlichen Aktionen direkt in der PiFinder-App-Oberfläche anbieten statt nur eines Links aufs
   Control Center — vor allem die Quick Actions, den Coupling-Modus, das INDI-Setup, Multi-Point
-  Alignment und Test Hardware.
+  Alignment und Test Hardware. Konzept:
+  [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
+  §7 ([Issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
 - Ein „echter" Simulator — Plate-Solving gegen den GSC-Katalog statt einer injizierten Position.
+  Konzept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
+  ([Issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
 
 ## Deinstallation
 

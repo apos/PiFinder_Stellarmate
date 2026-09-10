@@ -352,16 +352,25 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
 - Harden and test the current feature set end-to-end (Mount Bridge coupling, Full Simulation, the
   Control Center) — the bulk of this is already in `CHANGELOG.md`'s `[Unreleased]` section.
 - Contribute selected changes back upstream to [PiFinder](https://github.com/brickbots/PiFinder)
-  (which patches — still to be decided).
-- A guiding watcher (dithering / lost-star detection during imaging) — issue already open.
+  (which patches — still to be decided) — process and candidate list:
+  [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
+  [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
+- A guiding watcher (dithering / lost-star detection during imaging) — concept:
+  [`docs/concepts/session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md).
 
 **Version 3.x — integrate**
 
-- Deeper StellarMate integration, in coordination with the SMOS project.
+- Deeper StellarMate integration, in coordination with the SMOS project —
+  [issue #35](https://github.com/apos/PiFinder_Stellarmate/issues/35) (requirements analysis),
+  [issue #36](https://github.com/apos/PiFinder_Stellarmate/issues/36) (vision).
 - Surface the essential actions directly in the PiFinder app UI instead of only a link to the
   Control Center — mainly the Quick Actions, Coupling mode, INDI setup, Multi-Point Alignment, and
-  Test Hardware.
+  Test Hardware. Concept:
+  [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
+  §7 ([issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
 - A "real" simulator — plate-solving against the GSC catalog rather than an injected position.
+  Concept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
+  ([issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
 
 ## Uninstallation
 
