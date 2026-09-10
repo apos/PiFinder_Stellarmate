@@ -388,6 +388,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- **PiFinder `POST /api/fake_solve`: arbitrary RA near the celestial pole**: the JNow→J2000
+  conversion recovers RA from a skyfield Cartesian vector via `atan2` over its X/Y components, which
+  shrink toward zero near the pole — so noise, not the caller's RA, determined the result. Injecting
+  `dec=90` with different RAs returned the same wrong RA each time (`dec=45` was fine). Now, for
+  `abs(dec) >= 89.9`, the caller's own JNow RA is kept; Dec is unaffected. Patch in
+  `diffs/api_extensions_py.diff`; filed upstream as
+  [brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645). Live-verified in the
+  simulator (dec 89.99 / 90, several RA values each round-trip; dec 45 control unchanged).
 - **Mount Bridge: Multi-Point Alignment's own GoTos misclassified as external repositions (#309)**:
   `gotoAlignPoint()` only ever set `m_alignState`, never `m_forwardState`/`m_correctState`, so
   `handleRepositionDetection()`'s own-command check (`weCommandedIt`) didn't recognize alignment's own

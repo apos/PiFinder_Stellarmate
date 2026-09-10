@@ -382,6 +382,40 @@ current tip).
 
 ---
 
+## PR 9 — Bugfix: `POST /api/fake_solve` returns an arbitrary RA near the celestial pole
+
+**Depends on**: nothing. **Priority: medium** — silently wrong data with no error, but only near the
+pole. Filed as [brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645); the fix
+is already in `diffs/api_extensions_py.diff`.
+
+### Suggested title
+
+`Fix: /api/fake_solve returns an arbitrary RA when dec is near the celestial pole`
+
+### Suggested body
+
+> ## What's broken
+>
+> `api_fake_solve()` converts the injected JNow RA/Dec to J2000 through a skyfield Cartesian vector,
+> then recovers RA via `.radec()` (an `atan2` over the vector's X/Y components). Near the pole those
+> components shrink toward zero, so floating-point noise — not the caller's RA — determines the
+> result. Injecting `dec=90` with two different RA values returns the same wrong RA both times;
+> `dec=45` round-trips correctly.
+>
+> ## The fix
+>
+> Near the pole, keep the caller's original (uncorrected-for-precession) RA instead of the
+> ill-conditioned recomputed one. Dec stays accurate to the true pole.
+>
+> ```python
+> if abs(dec_jnow) >= 89.9:
+>     ra = ra_jnow
+> ```
+>
+> right after `ra`/`dec` are computed, before `FakeSolve(ra=ra, dec=dec)` is queued.
+
+---
+
 ## Not templated: generic-username login support
 
 Noted in the inventory doc (§2) as a lighter-weight alternative to this project's SMOS-specific

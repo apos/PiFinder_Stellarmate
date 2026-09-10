@@ -265,7 +265,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -770,6 +1004,128 @@
+@@ -770,6 +1004,134 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -330,6 +330,12 @@
 +            ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
 +            ra = float(ra_h._degrees)
 +            dec = float(dec_d.degrees)
++            # Near the pole RA is numerically meaningless: the atan2 that
++            # recovers it above runs on a near-zero X/Y vector, so noise
++            # dominates the caller's intended direction. Keep the caller's
++            # own JNow RA there instead. Upstream: brickbots/PiFinder#645.
++            if abs(dec_jnow) >= 89.9:
++                ra = ra_jnow
 +            server_instance.fake_solve_command_queue.put(FakeSolve(ra=ra, dec=dec))
 +            return _json_response({"success": True, "ra": ra, "dec": dec})
 +        except Exception as e:
