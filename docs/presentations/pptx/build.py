@@ -8,7 +8,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 import os, random
 
-_R = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "images"))
+_R = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "images"))
 _A = os.path.join(os.path.dirname(__file__), "assets")   # pre-cropped screenshot regions, see assets/README
 _MAP = {
     "hero.jpg":        os.path.join(_R, "readme", "PiFinder.jpg"),
