@@ -361,8 +361,10 @@ Right-clicking a star shows both devices as separate targets in the context menu
 crosshair markers show where PiFinder is currently "looking" versus where the mount actually is
 (deliberately far apart here, for illustration). The "PiFinder LX200" submenu expanded shows only
 **Goto / Abort / Find Telescope**, no Sync (see
-[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)). Click any thumbnail for the full-size
-screenshot:
+[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)). The full sky-map view and every
+right-click operation is covered in
+[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md). Click any thumbnail for the
+full-size screenshot:
 
 <table>
 <tr>

@@ -352,6 +352,7 @@ repo it's uninstalling.
 *   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — the numpad-as-keypad bridge: architecture, key mapping, self-healing design. ([Deutsche Version](Readme_KeyboardBridge_de.md))
 *   **[Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)** — set up an x86 StellarMate OS VM (UTM on a Mac) as a hardware-free control-host + simulator dev machine. ([Deutsche Version](Readme_UTM_dev_X86_de.md))
 *   **[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)** — the PiFinder Simulator / Injected Solve, for testing the Mount Bridge without a real mount or clear sky.
+*   **[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md)** — how KStars shows the PiFinder devices on the sky map, and what the right-click Goto/Sync operations do. ([Deutsche Version](Readme_PiFinder_in_KStars_de.md))
 *   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions. ([Deutsche Version](Readme_design_decisions_de.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history · **[GitHub Project](https://github.com/users/apos/projects/15)** — tracked roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
