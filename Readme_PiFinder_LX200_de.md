@@ -2,21 +2,15 @@
 
 *[English version](Readme_PiFinder_LX200.md)*
 
-> ### ✅ Built & verified against
+> ### ✅ Getestet und verifiziert gegen
 >
-> * **PiFinder software 2.6.0**
-> * **StellarMate OS 2.2.1** (Arch Linux)
-> * **libindi 2.2.2** (system package — no INDI source checkout needed)
-> * Real hardware: Raspberry Pi 4 + PiFinder unit + **Skywatcher EQ5 with an OnStepX controller** (`indi_lx200_OnStep` 1.27)
+> * **libindi 2.2.2** (Systempaket — kein INDI-Source-Checkout nötig)
+> * Verifiziert gegen eine echte Montierung: **Skywatcher EQ5 + OnStepX** (`indi_lx200_OnStep` 1.27)
 >
-> If you're on different versions, the concepts below still apply, but property names/behavior of
-> third-party mount drivers (like OnStep) may differ slightly between libindi releases.
->
-> **Hinweis (2026-09-04)**: das Projekt pinnt inzwischen **PiFinder 2.6.3 / StellarMate OS 2.3.0**
-> (siehe Haupt-[README.md](README.md)); der Installationsablauf selbst ist für diesen Pin erneut
-> verifiziert, aber die obigen Zahlen zur echten Mount-Bridge-Hardware spiegeln weiterhin die
-> zuletzt tatsächlich gegen eine physische Montierung getestete Kombination wider — Retest mit dem
-> neuen Pin steht noch aus.
+> Bei einem anderen libindi-Release gelten die Konzepte unten weiterhin, aber Property-Namen/Verhalten
+> von Fremd-Mount-Treibern (wie OnStep) können leicht abweichen. Für die getesteten PiFinder- /
+> StellarMate-OS- / Pi-Kombinationen s. die
+> [Versionskompatibilitäts-Tabelle in README.md](README.md#version-compatibility).
 
 > ### ⚠️ Zwingend erforderlich: geht nur über den StellarMate Web Manager
 >
@@ -564,16 +558,14 @@ Für Nachvollziehbarkeit und als Warnung für ähnliche zukünftige Änderungen:
 
 ## Versionskompatibilität
 
+Die PiFinder- / StellarMate-OS- / Raspberry-Pi-Testmatrix wird an einer Stelle gepflegt — der
+[Versionskompatibilitäts-Tabelle in README.md](README.md#version-compatibility). INDI-spezifische
+Details für diesen Treiber:
+
 | Komponente | Version |
 |---|---|
-| PiFinder | 2.6.0 |
-| StellarMate OS | 2.2.1 (Arch Linux) |
-| libindi | 2.2.2 |
-| Getestete Mount/Treiber | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
-| Hardware | Raspberry Pi 4 |
-
-Siehe auch die "Version Compatibility"-Tabelle im [Haupt-README](README.md) für die Basis-PiFinder-
-Installation.
+| libindi | 2.2.2 (Systempaket) |
+| Getestete Mount / Treiber | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
 
 ---
 

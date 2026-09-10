@@ -4,13 +4,11 @@
 
 > ### ✅ Built & verified against
 >
-> * **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux), Raspberry Pi 4 and Pi 5
 > * Test device: **LogiLink ID0120** (2.4GHz USB-dongle numpad, no dedicated arrow keys)
 > * Python **evdev** package, any Linux kernel with `/dev/input/eventN` nodes (no X11 required)
-> * **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0**; install
->   flow re-verified for that pin (x86 dev/control host), Pi4/Pi5 hardware re-test pending — see
->   Version Compatibility below. This bridge depends only on PiFinder's stable Remote API (see
->   below), so it isn't expected to be affected either way.
+> * Depends only on PiFinder's stable `POST /api/key` Remote API — no PiFinder-version-specific
+>   behavior. Tested PiFinder / StellarMate OS / Pi combinations: see the
+>   [Version Compatibility table in README.md](README.md#version-compatibility).
 
 This document covers the **Keyboard Bridge** (`test_tools/fb_keyboard_bridge.py`) — a small,
 PiFinder-code-independent process that turns any plain USB/2.4GHz-dongle numeric keypad into a
@@ -31,7 +29,7 @@ and stops it.
 7. [Self-Healing & Persistence](#self-healing--persistence)
 8. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
 9. [Development & Testing](#development--testing)
-10. [Strategic Roadmap](#strategic-roadmap)
+10. [Roadmap](#roadmap)
 11. [Version Compatibility](#version-compatibility)
 
 ---
@@ -46,9 +44,9 @@ problems this project runs into constantly:
    has to be tested with the physical unit in hand — no bench testing, no CI, no "quick check from
    the desk" without the actual telescope mount hardware.
 2. **A cheap, physically robust field-replacement.** PiFinder's HAT keypad shares GPIO lines with
-   other add-on hardware in this project's own setup (see the GPIO 16 conflict documented in
-   `basic-memory/pifinder-stellarmate/00000` and `00023`) — a small wireless numpad sidesteps that
-   entirely, is lighter, and needs far less power.
+   other add-on hardware in this project's own setup (e.g. the Geekworm X1203 UPS / GPIO 16 conflict
+   — see the compatibility banner in the main [README.md](README.md)) — a small wireless numpad
+   sidesteps that entirely, is lighter, and needs far less power.
 
 The Keyboard Bridge solves both with one script: it reads raw key events from *any* Linux input
 device (`evdev`) and forwards them to PiFinder's existing, stable `POST /api/key` Remote API — the
@@ -83,8 +81,7 @@ The bridge is intentionally **decoupled from PiFinder's own process and code**:
 - **Stdlib + one dependency.** Only `evdev` (for reading raw input events) and `Pillow` (only used to
   verify the auto-probe's response really is an image) are needed beyond the standard library —
   installed once into PiFinder's own venv, tracked in `bin/requirements_additional.txt` so a venv
-  rebuild doesn't silently drop it again (this happened once, see
-  `basic-memory/pifinder-stellarmate/00030`).
+  rebuild doesn't silently drop it again (this happened once).
 
 ---
 
@@ -246,8 +243,7 @@ Two independent problems, two independent fixes:
   (`Type=simple`, `Restart=always`), enabled/disabled by the Control Center's toggle — systemd's own
   enabled-state is what survives a reboot, not an in-memory flag. This replaced an earlier design
   that tracked a plain `Popen` object inside the Control Center's own server process, which
-  obviously couldn't survive a reboot of the whole Pi at all (see
-  `basic-memory/pifinder-stellarmate/00035`).
+  obviously couldn't survive a reboot of the whole Pi at all.
 - **Self-healing across a Fake/Real Mode switch**: a mode switch changes *which port* is actually
   reachable (Real Mode: 80/8080, Fake Mode: 8081). Rather than being explicitly stopped and
   restarted whenever the mode changes (the original design, later found unnecessary), `send()` drops
@@ -275,42 +271,34 @@ Two independent problems, two independent fixes:
 - `keypad_gpio_matrix_test.py` (same `test_tools/` directory) is the equivalent raw-hardware
   diagnostic for the *real* HAT keypad — useful for telling apart a bridge-layer problem from a
   physical keypad problem when something doesn't respond as expected.
-- No automated test suite exists for the bridge itself yet (see Strategic Roadmap).
+- No automated test suite exists for the bridge itself yet (see Roadmap).
 
 ---
 
-## Strategic Roadmap
+## Roadmap
 
-Prioritized per `basic-memory/pifinder-stellarmate/00001`'s GitHub-Projects-schema TODO table (see
-[[bm-github-project-schema-todo-format]] for the schema itself):
-
-| Priority | Size | Item |
-|---|---|---|
-| P3 (not yet tracked) | S | Automated smoke test: feed synthetic evdev events through `classify()`/the event loop without real hardware, verify expected `/api/key` calls (would need a mock HTTP target — currently zero test coverage for this script). |
-| P3 (not yet tracked) | M | Consider a small on-screen/journal status indicator visible without SSH access when no PiFinder instance is reachable, rather than only a log line. |
-
-No open bugs are currently tracked against this component.
+The project-wide direction (v2.x / v3.x) is in the main [README.md](README.md#roadmap). Tracked,
+prioritized work lives in the [GitHub Project](https://github.com/users/apos/projects/15) ([roadmap
+view](https://github.com/users/apos/projects/15/views/4)); shipped changes are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## Version Compatibility
 
-| PiFinder | SMOS | Pi 4 | Pi 5 |
-|---|---|---|---|
-| 2.6.3 | 2.3.0 | ⚠️ install-flow x86-verified (2026-09-04), Pi4 hardware re-test pending | ⚠️ install-flow x86-verified (2026-09-04), Pi5 hardware re-test pending |
-| 2.6.0 | 2.2.1 | ✅ tested | ✅ tested |
-| 2.5.1 | 2.1.1 | ✅ tested (earlier mapping) | — |
+The PiFinder / StellarMate OS / Pi test matrix is maintained in one place — the
+[Version Compatibility table in the main README.md](README.md#version-compatibility).
 
-Depends only on PiFinder's `POST /api/key` Remote API, which has been stable across every PiFinder
-version this project has targeted — no PiFinder-version-specific behavior in the bridge itself.
+The bridge depends only on PiFinder's `POST /api/key` Remote API, which has been stable across every
+PiFinder version this project has targeted — no PiFinder-version-specific behavior in the bridge
+itself.
 
 ## See Also
 
 - [Readme_ControlCenter.md](Readme_ControlCenter.md) — the toggle button that starts/stops this
   bridge, and the sibling "External SPI LCD" toggle for hardware-free display testing.
-- [README.md](README.md) — base PiFinder-on-StellarMate installation.
-- `basic-memory/pifinder-stellarmate/00031`, `00035` — the two design iterations that led to the
-  current architecture (decoupling from the LCD toggle, then systemd persistence).
+- [README.md](README.md) — base PiFinder-on-StellarMate installation, the version matrix, and the
+  project roadmap.
 
 ---
 

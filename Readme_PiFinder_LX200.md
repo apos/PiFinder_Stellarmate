@@ -4,18 +4,13 @@
 
 > ### ✅ Built & verified against
 >
-> * **PiFinder software 2.6.0**
-> * **StellarMate OS 2.2.1** (Arch Linux)
 > * **libindi 2.2.2** (system package — no INDI source checkout needed)
-> * Real hardware: Raspberry Pi 4 + PiFinder unit + **Skywatcher EQ5 with an OnStepX controller** (`indi_lx200_OnStep` 1.27)
+> * Verified against a real mount: **Skywatcher EQ5 + OnStepX** (`indi_lx200_OnStep` 1.27)
 >
-> If you're on different versions, the concepts below still apply, but property names/behavior of
-> third-party mount drivers (like OnStep) may differ slightly between libindi releases.
->
-> **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0** (see main
-> [README.md](README.md)); the install flow itself is re-verified for that pin, but this document's
-> real-Mount-Bridge-hardware numbers above still reflect the last combo actually re-tested against
-> a physical mount — retest with the new pin is pending.
+> If you're on a different libindi release, the concepts below still apply, but property
+> names/behavior of third-party mount drivers (like OnStep) may differ slightly. For the tested
+> PiFinder / StellarMate OS / Pi combinations, see the
+> [Version Compatibility table in README.md](README.md#version-compatibility).
 
 > ### ⚠️ Mandatory: this only works through the StellarMate Web Manager
 >
@@ -556,16 +551,14 @@ For traceability, and as a warning for similar future changes:
 
 ## Version Compatibility
 
+The PiFinder / StellarMate OS / Raspberry Pi test matrix is maintained in one place — the
+[Version Compatibility table in README.md](README.md#version-compatibility). INDI-specific
+particulars for this driver:
+
 | Component | Version |
 |---|---|
-| PiFinder | 2.6.0 |
-| StellarMate OS | 2.2.1 (Arch Linux) |
-| libindi | 2.2.2 |
-| Tested mount/driver | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
-| Hardware | Raspberry Pi 4 |
-
-See also the "Version Compatibility" table in the [main README](README.md) for the base PiFinder
-installation.
+| libindi | 2.2.2 (system package) |
+| Tested mount / driver | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
 
 ---
 

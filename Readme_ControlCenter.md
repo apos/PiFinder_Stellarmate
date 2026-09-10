@@ -4,14 +4,12 @@
 
 > ### ✅ Built & verified against
 >
-> * **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux), Raspberry Pi 4 and Pi 5
 > * Pure Python **stdlib** (`http.server`) backend — no framework, no external web dependency
 > * Live-tested end-to-end: fresh install, reinstall, update, reboot-persistence, Fake/Real Mode
 >   switching, all hardware toggles
-> * **Note (2026-09-04)**: the project now pins **PiFinder 2.6.3 / StellarMate OS 2.3.0**; install
->   flow re-verified for that pin (x86 dev/control host), Pi4/Pi5 hardware re-test pending — see
->   Version Compatibility below. As noted there, the Control Center itself has no
->   PiFinder-version-specific code, so this mainly tracks the underlying install/SMOS combo.
+> * No PiFinder-version-specific code — talks to PiFinder only through its stable `/api/*` Remote
+>   API. For the tested PiFinder / StellarMate OS / Pi combinations, see the
+>   [Version Compatibility table in README.md](README.md#version-compatibility).
 
 This document covers the **PiFinder Stellarmate Control Center** (`gui_installer/`) — the local web
 application that installs, updates, monitors, and controls this project's PiFinder integration. It
@@ -35,7 +33,7 @@ PiFinder-on-StellarMate installation this tool manages, and to
 9. [Authentication & Security Model](#authentication--security-model)
 10. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
 11. [Development & Testing](#development--testing)
-12. [Strategic Roadmap](#strategic-roadmap)
+12. [Roadmap](#roadmap)
 13. [Version Compatibility](#version-compatibility)
 
 ---
@@ -80,9 +78,8 @@ flowchart TB
 
 ## Design Principles
 
-Established and enforced over multiple UI-polish rounds this project went through (see
-`basic-memory/pifinder-stellarmate/00017_bm-ui-design-anforderung-klar-einheitlich` for the global
-principle this project's UI now follows):
+Established and enforced over multiple UI-polish rounds this project went through — a global
+principle this project's UI now follows:
 
 1. **One consistent status-row pattern everywhere.** Every status line is `<dot> Label: status`, in
    that order, with no exceptions — an inconsistency here (one row reading `status <dot>` instead)
@@ -529,9 +526,9 @@ completing at all before the connection drops.
 The recurring pattern across every toggle in this tool: **systemd's own enabled-state is the single
 source of truth for "should this be on after a reboot,"** never a flag file or an in-memory variable
 in `server.py`. This was arrived at after two separate incidents where a plain tracked subprocess
-(`Popen`) failed to survive a reinstall or a reboot — see
-`basic-memory/pifinder-stellarmate/00027` (Fake Mode surviving a `rm -rf` unnoticed, running stale
-code) and `00035` (the numpad bridge's original design).
+(`Popen`) failed to survive a reinstall or a reboot — once when a hardware-free Fake Mode instance
+survived a `rm -rf` unnoticed and kept running stale code, and once with the numpad bridge's
+original design.
 
 ---
 
@@ -560,8 +557,8 @@ code) and `00035` (the numpad bridge's original design).
 ## Known Limitations & Troubleshooting
 
 - **No camera/IMU on Pi 5 with certain UPS shields**: unrelated to this tool itself, but surfaces
-  through its hardware checklist — see `basic-memory/pifinder-stellarmate/00000` for the documented
-  Geekworm X1203/GPIO 16 conflict, which the checklist will correctly report as "keyboard"
+  through its hardware checklist — the Geekworm X1203/GPIO 16 conflict (see the compatibility banner
+  in the main [README.md](README.md)), which the checklist will correctly report as "keyboard"
   hardware-affected (not camera/IMU/GPS, which this checklist covers).
 - **A crashed camera subprocess can leave `pifinder.service` reporting "active."** This is exactly
   why the hardware checklist exists and checks raw hardware rather than trusting `systemctl
@@ -580,39 +577,26 @@ code) and `00035` (the numpad bridge's original design).
 - `test_tools/fake_mode.sh start`/`stop` can be exercised directly, independent of the Control
   Center's own tile, for scripting/automation.
 - The `pifinder-remote` Claude Code skill's `pf_remote.py` (`.claude/skills/pifinder-remote/`) is
-  what `fake_mode.sh` uses under the hood to launch a fake-hardware instance — see
-  `basic-memory/pifinder-stellarmate/00020` for that skill's own design.
-- No automated test suite exists for `gui_installer/` yet (see Strategic Roadmap) — all verification
+  what `fake_mode.sh` uses under the hood to launch a fake-hardware instance.
+- No automated test suite exists for `gui_installer/` yet (see Roadmap) — all verification
   to date has been live, manual, end-to-end testing against real installs/reinstalls/reboots.
 
 ---
 
-## Strategic Roadmap
+## Roadmap
 
-Prioritized per `basic-memory/pifinder-stellarmate/00001`'s GitHub-Projects-schema TODO table
-([[bm-github-project-schema-todo-format]] for the schema convention itself). Effort/dependency notes
-included since several of these build on each other:
-
-| Priority | Size | Item | Depends on |
-|---|---|---|---|
-| P2 | L | Guided, GUI-driven test workflow (user request, 2026-07-16): step through enabling Test Mode, configuring the Web Manager, checking Ekos settings, all from one screen | Benefits from the second Control Center page below existing first, to avoid overloading the current single-page layout |
-| P2 | M | Second, decoupled Control Center page for PiFinder-mode details and multiple test-runner buttons (Keypad GPIO test, Fake LX200 simulator) — first page stays focused on Setup/Update/Install | None, but the guided test workflow above would build on it |
-| P2 | L | Persistent, password-protected admin webserver replacing the on-demand setup-GUI-server model — would also structurally fix the reboot-disconnects-the-browser problem, and could host `smos-post-update.sh` actions, an IgnorePkg-pin status dashboard, and INDI-driver rebuilds as buttons | None — independent, larger architectural change; see `basic-memory/pifinder-stellarmate/00015` for the original brainstorm |
-| P3 (not yet tracked) | M | Automated test coverage for `server.py`'s request handlers (currently zero — all verification has been manual/live) | None |
-
-No currently-open bugs are tracked against the Control Center itself (its most recent regressions —
-the session-bus/`stellarmatewebmanager` restart issue, the dot-order UI inconsistency — are both
-resolved, see `basic-memory/pifinder-stellarmate/00033`).
+The project-wide direction (v2.x / v3.x) is in the main [README.md](README.md#roadmap). Tracked,
+prioritized work — including Control-Center-specific items — lives in the
+[GitHub Project](https://github.com/users/apos/projects/15) ([roadmap
+view](https://github.com/users/apos/projects/15/views/4)); shipped changes are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## Version Compatibility
 
-| PiFinder | SMOS | Pi 4 | Pi 5 |
-|---|---|---|---|
-| 2.6.3 | 2.3.0 | ⚠️ install-flow x86-verified (2026-09-04), Pi4 hardware re-test pending | ⚠️ install-flow x86-verified (2026-09-04), Pi5 hardware re-test pending |
-| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ fully tested |
-| 2.5.1 | 2.1.1 | ✅ tested | — |
+The PiFinder / StellarMate OS / Pi test matrix is maintained in one place — the
+[Version Compatibility table in the main README.md](README.md#version-compatibility).
 
 The Control Center itself has no PiFinder-version-specific code paths — it only ever talks to
 PiFinder through its stable `/api/*` Remote API and to the system through `systemctl`/raw hardware
@@ -624,9 +608,10 @@ probes, both independent of the installed PiFinder version.
   "Turn Numpad On/Off" button controls.
 - [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) — the INDI integration layer, whose "INDI
   Drivers" page links back to this Control Center.
-- [README.md](README.md) — base PiFinder-on-StellarMate installation.
-- `basic-memory/pifinder-stellarmate/00017` (global UI design principle), `00021` (mode-switch
-  state-machine design), `00030`/`00033`/`00035` (persistence-model iterations).
+- [README.md](README.md) — base PiFinder-on-StellarMate installation, the version matrix, and the
+  project roadmap.
+- [Readme_design_decisions.md](Readme_design_decisions.md) — condensed rationale behind the key
+  design decisions across the project.
 
 ---
 
