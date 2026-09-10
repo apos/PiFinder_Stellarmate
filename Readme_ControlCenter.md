@@ -230,48 +230,74 @@ bash gui_installer/launch_setup_gui.sh
 ```
 
 Then open `http://<pi-address>:8765` in a browser — on the Pi itself, or from any other device on
-the same network (no desktop session on the Pi required; the server binds `0.0.0.0`).
+the same network (no desktop session on the Pi required; the server binds `0.0.0.0`). Any username
+works; the password is the `stellarmate` system account's password (see
+[Authentication & Security Model](#authentication--security-model)).
+
+### The page at a glance
 
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="600"></a><br>
-<sub>Opened remotely from another device on the network — no desktop session on the Pi needed</sub>
+<a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="500"></a><br>
+<sub>The whole page (Full Simulation shown here). Top to bottom: the <strong>PiFinder</strong> tile (OLED mirror, quick keys, the Cam/Solve/IMU/GPS badge row, and — directly under it — the Mount Bridge connection diagram), the <strong>INDI Mount Bridge</strong> tile, <strong>Simulation, Test and Power</strong>, and <strong>Install or Update</strong> at the bottom. Every tile heading collapses; the state is remembered per browser.</sub>
 </td>
 </tr>
 </table>
+
+The three status tiles are covered elsewhere — the PiFinder badge row and the Mount Bridge diagram
+in [Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows), the hardware checklist and mode
+switches in [Feature Walkthrough](#feature-walkthrough). The rest of this section is the one tile
+that section doesn't reach: **Install or Update**.
+
+### Installing or updating
 
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="600"></a><br>
-<sub>The full Control Center page, as linked from PiFinder's own "PFSM" page.</sub>
+<a href="docs/images/readme/cc_install_idle.png"><img src="docs/images/readme/cc_install_idle.png" width="640"></a><br>
+<sub>The idle tile when an install already exists. <strong>PFSM Source Branch</strong> picks which branch of <em>this project's own scripts</em> a run uses (not PiFinder itself); the ↻ re-checks what is actually on disk. The three PiFinder actions and a separate <strong>Uninstall</strong>.</sub>
 </td>
 </tr>
 </table>
 
+- **Reinstall from scratch** — deletes `~/PiFinder` entirely, clones a fresh copy of the official
+  `release` branch at the pinned version, then re-applies every StellarMate patch. Confirm dialog:
+  *Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything
+  in it.*
+- **Update** — `git reset --hard` + `pull` on the existing `~/PiFinder` to the pinned version, then
+  re-applies the patches, keeping the directory. Confirm dialog: *Update? This runs `git reset
+  --hard` on ~/PiFinder, discarding any local changes there.*
+- **Reset** — stops the PiFinder services and wipes only `~/PiFinder`'s Python venv and build state;
+  services, INDI drivers, udev rules, data and config are untouched. Use it to get a clean slate for
+  a re-run without losing anything else.
+- **Uninstall** — in its own group because it acts on much more: removes every systemd unit, the
+  INDI drivers, `~/PiFinder`, **and this `~/PiFinder_Stellarmate` checkout itself** (the Control
+  Center stops working once it starts). See
+  [Reset / Uninstall](#reset--uninstall) and [help.html#uninstall](gui_installer/help.html).
+
+Reinstall, Update, Reboot and Shutdown all confirm first, and the dialog gets *more* insistent if a
+run is already in progress rather than firing immediately.
+
 <table>
 <tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
-<sub>Install/Update: live progress, terminal output, and Reboot/Close controls in one tile</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
-<sub>Quick Links: PiFinder status plus direct links (remote page, PFSM page, this page, GitHub docs)</sub>
-</td>
-</tr>
-<tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
-<sub>Mode & Power: Real/Fake Mode switch, hardware checklist, PiFinder service and Pi power controls</sub>
-</td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
-<sub>Mount Bridge: connection diagram, Coupling presets, and the guided setup checklist</sub>
+<td align="center">
+<a href="docs/images/readme/cc_install_running.png"><img src="docs/images/readme/cc_install_running.png" width="640"></a><br>
+<sub>A run in progress: a 10-step progress bar, a per-phase checklist (green check = done, striped = current), and the setup script's live terminal output streamed straight into the tile.</sub>
 </td>
 </tr>
 </table>
+
+The progress bar tracks the *furthest* phase reached, so the venv-bootstrap self-restart mid-run
+doesn't make progress appear to jump backwards. A **Reboot Now** button appears **only** when this
+run actually changed `/boot/config.txt` (the only case that needs one). When the run finishes, the
+Control Center restarts itself once to load any new code, then returns to the idle state above; the
+full summary — versions, timings, any warnings — is written to
+`~/PiFinder_Stellarmate/.gui_setup.log`.
+
+Running elsewhere: `INDI-only` (checkbox) installs just the INDI build dependencies and both INDI
+drivers — no clone, no venv, no catalog — for a separate control host coupled to a PiFinder over the
+network (see [help.html#indi-only-mode](gui_installer/help.html)).
 
 ---
 
