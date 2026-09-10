@@ -409,6 +409,19 @@ Auf einem anderen Gerät: `INDI-only` (Checkbox) installiert nur die INDI-Build-
 beide INDI-Treiber — kein Clone, kein venv, kein Katalog — für einen separaten Control-Host, der
 über das Netz an einen PiFinder gekoppelt ist (s. [help.html#indi-only-mode](gui_installer/help.html)).
 
+### Als Nächstes: Equipment-Profil anlegen (zwingend erforderlich)
+
+> **⚠️ Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari
+> nutzbar.** Die gerade gebauten INDI-Treiber (`PiFinder LX200`, optional `PiFinder Mount Bridge`)
+> existieren nur im eigenen Treiber-Katalog des StellarMate Web Managers — sie tauchen nirgends in
+> Ekos auf, und es gibt kein Profil dafür, bis eines selbst angelegt wird. Diesen Schritt zu
+> überspringen ist der mit Abstand häufigste Grund, warum die Mount-Bridge-Kachel unten, SkySafari
+> oder Ekos' Geräteliste nach einer sonst erfolgreichen Installation leer bleiben.
+
+Das einmal direkt im Web Manager erledigen (`http://<pi-adresse>:8624`, nicht über KStars) —
+vollständige bebilderte Anleitung:
+[Readme_PiFinder_LX200_de.md — Schritt 2: Equipment-Profil im Web-Manager anlegen](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
+
 ---
 
 ## Mount Bridge & Sync-Workflows

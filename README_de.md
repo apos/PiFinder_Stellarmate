@@ -37,7 +37,7 @@ und vollständige Ausrüstungssteuerung betreibt. Das Setup-Skript automatisiert
 > * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
 >   `release`-Branches. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host —
->   [Versionskompatibilität](#version-compatibility) hat die Details.
+>   [Versionskompatibilität](#versionskompatibilität) hat die Details.
 > * **Pi 5 Tastatur ⚠️** — ein Geekworm-X1203-UPS-Shield belegt GPIO 16 gemeinsam mit Tastatur-
 >   Spalte 0 (Tasten 7/4/1/LEFT), die Spalte fällt aus. Hardware-Konflikt zwischen den zwei
 >   Aufsteck-Boards, nur mit diesem Shield; eine [Numpad-Bridge](Readme_KeyboardBridge_de.md) umgeht
@@ -49,6 +49,22 @@ und vollständige Ausrüstungssteuerung betreibt. Das Setup-Skript automatisiert
 >   Simulation / Fake Mode, die Mount Bridge und Reboot/Shutdown, in einer lokalen Webseite. Siehe
 >   [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md); ausgelieferte Änderungen in
 >   [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Inhaltsverzeichnis
+
+1. [Schnellstart](#schnellstart)
+2. [Hauptfunktionen & Änderungen](#hauptfunktionen--änderungen)
+3. [Hardware-Anforderungen](#hardware-anforderungen)
+4. [Installation](#installation)
+5. [Nach der Installation: PiFinders "PFSM"-Seite](#nach-der-installation-pifinders-pfsm-seite)
+6. [Der INDI-Treiber](#der-indi-treiber)
+7. [SMOS-Updates](#smos-updates)
+8. [Versionskompatibilität](#versionskompatibilität)
+9. [Roadmap](#roadmap)
+10. [Deinstallation](#deinstallation)
+11. [Siehe auch](#siehe-auch)
 
 ---
 
@@ -84,6 +100,13 @@ cd PiFinder_Stellarmate
 ```
 
 Alle Details: [Installation](#installation).
+
+> **⚠️ In jedem Fall zwingend nötiger nächster Schritt: Equipment-Profil im Web Manager anlegen.**
+> Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari nutzbar —
+> die Treiber existieren nur im eigenen Katalog des StellarMate Web Managers, und es gibt kein
+> Profil dafür, bis eines selbst angelegt wird — direkt im Web Manager
+> (`http://<pi-adresse>:8624`, nicht über KStars).
+> Siehe [Readme_PiFinder_LX200_de.md — Schritt 2](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
 
 ---
 
@@ -357,11 +380,11 @@ heraus ausgeführt werden kann, das er gerade deinstalliert.
 ## Siehe auch
 
 *   **[Readme_ControlCenter_de.md](Readme_ControlCenter_de.md)** — vollständige Control-Center-Dokumentation: Architektur, Designprinzipien, Feature-Übersicht, Mount-Bridge- & Sync-Workflows, API-Referenz. ([English version](Readme_ControlCenter.md))
-*   **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)** — die INDI-Schicht: bebilderte Einrichtungsanleitung, LX200-Kommando-/Property-Referenz, Code- und Deployment-Strategie. ([English version](Readme_PiFinder_LX200.md))
+*   **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)** — die INDI-Schicht: bebilderte Schritt-für-Schritt-Einrichtung (Equipment-Profil im Web Manager, INDI Control Panel, KStars/Ekos, SkySafari), LX200-Kommando-/Property-Referenz, Code- und Deployment-Strategie. ([English version](Readme_PiFinder_LX200.md))
 *   **[Readme_KeyboardBridge_de.md](Readme_KeyboardBridge_de.md)** — die Numpad-als-Tastatur-Bridge: Architektur, Tastenbelegung, Selbstheilungs-Design. ([English version](Readme_KeyboardBridge.md))
 *   **[Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)** — ein x86-StellarMate-OS-VM (UTM auf einem Mac) als hardwarefreie Control-Host- + Simulator-Entwicklungsmaschine einrichten. ([English version](Readme_UTM_dev_X86.md))
 *   **[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)** — der PiFinder Simulator / Injected Solve, zum Testen der Mount Bridge ohne echte Montierung oder klaren Himmel.
-*   **[Readme_PiFinder_in_KStars_de.md](Readme_PiFinder_in_KStars_de.md)** — wie KStars die PiFinder-Geräte auf der Himmelskarte zeigt und was die Rechtsklick-Operationen Goto/Sync bewirken. ([English version](Readme_PiFinder_in_KStars.md))
+*   **[Readme_PiFinder_in_KStars_de.md](Readme_PiFinder_in_KStars_de.md)** — wie KStars die PiFinder-Geräte auf der Himmelskarte zeichnet und was die Rechtsklick-Operationen Goto/Sync/Abort je Gerät tatsächlich bewirken. ([English version](Readme_PiFinder_in_KStars.md))
 *   **[Readme_design_decisions_de.md](Readme_design_decisions_de.md)** — Zusammenfassung der wichtigsten Design-Entscheidungen. ([English version](Readme_design_decisions.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — Versionshistorie · **[GitHub-Projekt](https://github.com/users/apos/projects/15)** — getrackte Roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — kurze Build-Referenz für den PiFinder-LX200-Treiber.
