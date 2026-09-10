@@ -36,22 +36,18 @@ and stops it.
 
 ## Why This Exists
 
-PiFinder's real input device is a physical keypad HAT wired directly to GPIO, read through
-`keyboard_pi.py`. That's the right design for the finished product, but it creates two practical
-problems this project runs into constantly:
+PiFinder's real input device is a keypad HAT wired to GPIO (read through `keyboard_pi.py`). A
+HAT-only path has two downsides:
 
-1. **Hardware-free development and testing.** A HAT-only input path means every UI/software change
-   has to be tested with the physical unit in hand — no bench testing, no CI, no "quick check from
-   the desk" without the actual telescope mount hardware.
-2. **A cheap, physically robust field-replacement.** PiFinder's HAT keypad shares GPIO lines with
-   other add-on hardware in this project's own setup (e.g. the Geekworm X1203 UPS / GPIO 16 conflict
-   — see the compatibility banner in the main [README.md](README.md)) — a small wireless numpad
-   sidesteps that entirely, is lighter, and needs far less power.
+1. **No hardware-free testing.** Every UI change needs the physical unit in hand — no bench test, no
+   CI.
+2. **GPIO contention.** The HAT keypad shares GPIO lines with other add-on hardware (e.g. the
+   Geekworm X1203 UPS / GPIO 16 conflict — see the compatibility banner in the main
+   [README.md](README.md)). A wireless numpad sidesteps that, and is lighter and lower-power.
 
-The Keyboard Bridge solves both with one script: it reads raw key events from *any* Linux input
-device (`evdev`) and forwards them to PiFinder's existing, stable `POST /api/key` Remote API — the
-same endpoint the Web UI's virtual keypad, `pf_remote.py`, and the Setup GUI already use. No
-PiFinder source code is touched; the bridge is a pure client of a public interface.
+The Keyboard Bridge reads raw key events from *any* Linux input device (`evdev`) and forwards them
+to PiFinder's stable `POST /api/key` Remote API — the same endpoint the Web UI keypad, `pf_remote.py`,
+and the Setup GUI use. No PiFinder source is touched; the bridge is a pure client of a public API.
 
 ```mermaid
 flowchart LR
@@ -128,17 +124,11 @@ the real HAT and this stand-in:
    that key's `ALT_*` variant — matching the full set of `ALT_*` actions that exist on real hardware
    (`ALT_0`, `ALT_PLUS`, `ALT_MINUS`, `ALT_LEFT/UP/DOWN/RIGHT`).
 
-A subtle correctness detail worth documenting explicitly, since it caused a real, hard-to-spot bug
-during development: whether a long-press/hold action **already fired** is tracked in its own
-`fired_codes` set, written only by the timer thread (`fire_hold()`) the instant it sends its action —
-*before* any network I/O. The key-up handler (main thread) only ever reads and clears this set; it
-never infers "did the hold fire" from whether a `Timer` object is still present in `hold_timers`,
-because `fire_hold()` removes itself from `hold_timers` right as it fires, creating a race where
-key-up could see "already gone" and (wrongly) send an extra short press on release. For SQUARE
-specifically, that spurious extra press closed the marking menu the long-press had just opened — the
-menu appeared to open and then immediately vanish. Fixed by using two independent signals for two
-independent questions ("is a timer still pending" vs. "did the timer already fire") instead of
-overloading one.
+Two independent signals track two independent questions: `hold_timers` = is a hold timer pending;
+`fired_codes` = did a hold already fire (written by `fire_hold()` before any network I/O, read and
+cleared by the key-up handler). The key-up handler never infers "did the hold fire" from
+`hold_timers` — `fire_hold()` removes itself from `hold_timers` as it fires, so that would race and
+send a spurious extra short press on release.
 
 ---
 

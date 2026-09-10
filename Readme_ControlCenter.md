@@ -12,11 +12,10 @@
 >   [Version Compatibility table in README.md](README.md#version-compatibility).
 
 This document covers the **PiFinder Stellarmate Control Center** (`gui_installer/`) — the local web
-application that installs, updates, monitors, and controls this project's PiFinder integration. It
-started as a thin wrapper around the setup script's terminal output and grew into this project's
-primary operational surface. Companion to the main [README.md](README.md), which covers the base
-PiFinder-on-StellarMate installation this tool manages, and to
-[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md), whose toggle button lives here.
+application that installs, updates, monitors, and controls this project's PiFinder integration, and
+the primary operational surface for a StellarMate-managed install. Companion to the main
+[README.md](README.md) (base installation) and [Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)
+(whose toggle button lives here).
 
 ---
 
@@ -79,29 +78,17 @@ flowchart TB
 
 ## Design Principles
 
-Established and enforced over multiple UI-polish rounds this project went through — a global
-principle this project's UI now follows:
-
-1. **One consistent status-row pattern everywhere.** Every status line is `<dot> Label: status`, in
-   that order, with no exceptions — an inconsistency here (one row reading `status <dot>` instead)
-   was flagged and fixed specifically because it broke this rule.
-2. **Traffic-light semantics, not emoji.** Four states — white (unknown/checking), green (fully
-   functional), yellow (running but degraded, e.g. hardware missing), red (failed/not running) — as
-   a colored dot, not an emoji, so the same visual language reads correctly regardless of font/OS
-   emoji rendering.
-3. **Verify against real, independent state — never trust "the process is alive."** `pifinder.service`
-   can report `systemctl is-active` = true even with a fully crashed camera subprocess (a known
-   PiFinder architecture quirk, see [Feature Walkthrough](#hardware-checklist)). Every status check
-   in this tool that matters for a "is this actually usable" answer checks the real, underlying
-   signal (raw hardware probes, actual HTTP reachability with response verification, settle-checked
-   process state) rather than a single process-alive bit.
-4. **Confirm before anything destructive or hard to reverse.** Reinstall, Update, Reboot, and
-   Shutdown all require an explicit confirmation dialog — and that dialog gets *more* insistent
-   (stronger wording) if another run is already in progress, rather than firing immediately on
-   click.
-5. **Context-aware labels over generic ones.** "PiFinder is running, but not functional" always
-   names *which* hardware is missing (camera, IMU, or both) rather than a fixed, potentially
-   misleading generic label.
+1. **One status-row pattern everywhere.** Every status line is `<dot> Label: status`, in that order.
+2. **Traffic-light colours, not emoji.** Four states (white / green / yellow / red) as a coloured
+   dot, so the language reads the same regardless of font or OS emoji rendering.
+3. **Verify real state, never "the process is alive."** `pifinder.service` can be `systemctl
+   is-active` = true with a crashed camera subprocess. Every check that answers "is this usable"
+   reads the underlying signal — a hardware probe, a verified HTTP response, a settle-checked
+   process state.
+4. **Confirm anything destructive or hard to reverse.** Reinstall, Update, Reboot, and Shutdown each
+   confirm first; the dialog is worded more strongly if a run is already in progress.
+5. **Context-aware labels.** "PiFinder is running, but not functional" names *which* hardware is
+   missing (camera, IMU, or both).
 
 ---
 
@@ -109,127 +96,135 @@ principle this project's UI now follows:
 
 ### The colour language
 
-Every indicator on the page — the icon badges in the PiFinder tile, the dots on status lines, the
-Mount Bridge diagram — uses the same four states:
+<img src="docs/images/readme/badge_row.png" width="480">
+
+Every indicator on the page — the badges above, the dots on status lines, the Mount Bridge diagram —
+uses the same four states:
 
 | | Meaning |
 |---|---|
-| ⚪ **white / neutral** | Unknown — not checked yet, or the check couldn't reach its target. Pulses faintly while a check is in flight. |
-| 🟢 **green** | Confirmed good / working. |
-| 🟡 **yellow** | Running, but degraded or not fully there — hardware missing, no GPS fix yet, a value past its threshold. |
-| 🔴 **red** | Failed, not running, or a value outside a safe range. |
+| ⚪ **white / neutral** | Unknown — not checked yet, or unreachable. Pulses while a check is running. |
+| 🟢 **green** | Confirmed working. |
+| 🟡 **yellow** | Running but degraded — hardware missing, no GPS fix, a value past its threshold. |
+| 🔴 **red** | Failed, not running, or a value out of safe range. |
 
-Colours always come from a real, independent check (a hardware probe, an HTTP response actually
-verified, a settle-checked process state), never from "the process is alive" — see
-[Design Principles](#design-principles). The
-[Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows) section shows the badge row in
-context.
+Every colour comes from a real check (a hardware probe, a verified HTTP response, a settle-checked
+process state), not from "the process is alive". `Cam` / `Solve` / `IMU` / `GPS` always match their
+row in **Hardware test and details** ([Feature Walkthrough → Hardware Checklist](#hardware-checklist)).
 
-### PiFinder tile — the badge row
+### Cam
 
-`Cam` / `Solve` / `IMU` / `GPS` mirror the **Hardware test and details** checklist rows exactly (see
-[Feature Walkthrough → Hardware Checklist](#hardware-checklist)) — the badge and its detail row
-always agree.
+<img src="docs/images/readme/badge_cam.png" width="80">
 
-**`Cam`** — is a camera detected and actually usable? (`rpicam-hello --list-cameras`, run through
-PiFinder's own venv)
+Is a camera detected and usable? `rpicam-hello --list-cameras`, run through PiFinder's venv.
 
-| | State | Meaning |
+| | Status | Shows |
 |---|---|---|
-| ⚪ | `checking…` / `unknown (…)` | The test hasn't run yet this session, or the probe tool isn't available on this host (e.g. no `rpicam-hello` on x86). |
+| ⚪ | `checking…` / `unknown (…)` | Not tested yet this session, or the probe tool isn't on this host (no `rpicam-hello` on x86). |
 | 🟢 | `functional` | A real capture succeeded. |
-| 🔴 | `not detected` / `error (…)` | No camera found, or the capture/driver failed (the detail row names which). A crashed camera subprocess shows here even while `pifinder.service` still reports "active". |
+| 🔴 | `not detected` / `error (…)` | No camera, or the capture/driver failed. A crashed camera subprocess shows here even while `pifinder.service` reports "active". |
 
-**`Solve`** — is PiFinder's plate-solver currently producing a position? (from PiFinder's own
-`solve_source`; independent of Solve Simulation, which only substitutes test images)
+### Solve
 
-| | State | Meaning |
+<img src="docs/images/readme/badge_solve.png" width="130">
+
+Is PiFinder's plate-solver producing a position right now? Read from PiFinder's `solve_source`.
+
+| | Status | Shows |
 |---|---|---|
-| ⚪ | `unknown` | No data from PiFinder yet. |
-| 🟢 | `solving` | The camera is currently solving successfully (no age limit — this is a different question from Mount Bridge's own "fresh enough to correct from" check, its 5 s Solve Freshness setting). |
-| 🟡 | `no fresh solve yet – estimating from IMU` | No recent camera solve; the position is being dead-reckoned from the IMU. Pulses. |
-| 🔴 | `no star match – normal indoors/no sky view` | The last solve attempt found no stars (expected without a clear sky — not a hardware fault). |
-| 🔴 | `not real – see Injected Solve below` | An **Injected Solve** is active, so the reported position is not backed by a real plate-solve. |
+| ⚪ | `unknown` | No data from PiFinder. |
+| 🟢 | `solving` | The camera is solving successfully. No age limit — separate from Mount Bridge's own 5 s freshness gate. |
+| 🟡 | `estimating from IMU` | No recent camera solve; position is dead-reckoned from the IMU. Pulses. |
+| 🔴 | `no star match` | Last attempt found no stars — normal indoors / no sky, not a fault. |
+| 🔴 | `not real – see Injected Solve` | An Injected Solve is active; the position isn't a real plate-solve. |
 
-**`Injected`** — a chip that appears docked onto `Solve`'s right edge **only while Injected Solve
-(Dead Reckoning) is active** — a manually seeded RA/Dec (Synthetic Solve, Re-seed from mount, Set
-position, or Sync). Its presence *is* the signal; there is no colour scale. Whenever it shows,
-`Solve` is red. See [Mount Bridge & Sync Workflows → Synthetic Solve vs. a manual one-shot
-seed](#synthetic-solve-vs-a-manual-one-shot-seed).
+### Injected
 
-**`IMU`** — is the BNO055 orientation sensor wired up? (raw I²C bus scan for its address, run through
-PiFinder's venv)
+Appears docked onto `Solve`'s right edge **only while [Injected Solve](#synthetic-solve-vs-a-manual-one-shot-seed)
+is active** (Synthetic Solve, Re-seed from mount, Set position, or Sync). Its presence is the
+signal — no colour scale. Whenever it shows, `Solve` is red.
 
-| | State | Meaning |
+### IMU
+
+<img src="docs/images/readme/badge_imu.png" width="80">
+
+Is the BNO055 orientation sensor wired up? Raw I²C bus scan for its address, run through PiFinder's venv.
+
+| | Status | Shows |
 |---|---|---|
-| ⚪ | `checking…` / `unknown (…)` | The test hasn't run yet this session, or the probe tool isn't available on this host (e.g. no `rpicam-hello` on x86). |
+| ⚪ | `checking…` / `unknown (…)` | Not tested yet this session, or the probe tool isn't on this host. |
 | 🟢 | `functional` | The chip answered on the I²C bus. |
 | 🔴 | `not detected` / `error (…)` | Nothing at the BNO055 address, or the read errored. |
 
-**`GPS`** — what does PiFinder's own GPS handling currently report? (queried from PiFinder, not
-re-implemented here)
+### GPS
 
-| | State | Meaning |
+<img src="docs/images/readme/badge_gps.png" width="80">
+
+PiFinder's own GPS status, queried from PiFinder.
+
+| | Status | Shows |
 |---|---|---|
-| ⚪ | `not reachable` | PiFinder isn't answering — Real or Fake Mode must be running to read GPS status. |
-| 🟢 | `locked` | A position fix is held (detail row shows lat/lon, timezone, last fix time, source). |
-| 🟡 | `no fix yet` | The receiver is present and reachable but hasn't acquired a fix. |
+| ⚪ | `not reachable` | PiFinder isn't answering — Real or Fake Mode must be running. |
+| 🟢 | `locked` | A fix is held (detail row: lat/lon, timezone, last fix, source). |
+| 🟡 | `no fix yet` | Receiver present and reachable, no fix yet. |
 
-**`PiFinder`** (shows a value such as `Right / Equatorial`) — PiFinder's own **Mount Type** +
-**PiFinder Type** settings, which feed its IMU dead-reckoning. Shown whenever PiFinder hardware is
-reachable, independent of Mount Bridge.
+### PiFinder (Mount Type)
 
-| | State | Meaning |
+<img src="docs/images/readme/badge_pftype.png" width="170">
+
+PiFinder's own **Mount Type** + **PiFinder Type** settings (both feed its dead-reckoning). Shown
+whenever PiFinder is reachable. The value (`Right / Equatorial`, …) is always shown; the colour is
+Mount Bridge's verdict:
+
+| | State | Shows |
 |---|---|---|
-| ⚪ | value shown, neutral | PiFinder is reachable but Mount Bridge can't yet verify the type against a connected INDI mount. |
-| 🟢 | value shown, green | Mount Bridge verified it — PiFinder's Mount Type matches the connected mount. Colours this badge and the Mount icon's type line in the diagram together. |
-| 🔴 | value shown, red | Mismatch between PiFinder's Mount Type and the connected mount — the dead-reckoning math would be wrong. (PiFinder Type itself can't be auto-checked; judge it against your actual rig.) |
+| ⚪ | neutral | PiFinder reachable, but no connected INDI mount to verify against. |
+| 🟢 | green | Mount Type matches the connected mount. Colours this badge and the diagram's Mount type line together. |
+| 🔴 | red | Mount Type ≠ connected mount — dead-reckoning would be wrong. (PiFinder Type can't be auto-checked; check it against your rig yourself.) |
 
 ### Mount Bridge diagram
 
-The connection diagram (`PiFinder ↔ Bridge ↔ Mount`) sits directly under the badge row.
+<img src="docs/images/readme/badge_mb_diagram.png" width="560">
 
-**The three node icons** — each shows whether that device's INDI `CONNECTION` is up:
+`PiFinder ↔ Bridge ↔ Mount`, directly under the badge row. Present only with a Mount Bridge in the
+profile.
 
-| | Meaning |
-|---|---|
-| ⚪ | Not linked / state unknown. |
-| 🟢 | Connected. |
-| 🔴 | Loaded but disconnected. |
+**Device nodes** (`PiFinder`, `Bridge`, `Mount`) — each node icon shows that device's INDI
+`CONNECTION`: ⚪ not linked / unknown · 🟢 connected · 🔴 loaded but disconnected. The dotted arrows
+show what the Bridge is doing (reading, correcting, forwarding a GoTo).
 
-The dotted arrows between the nodes show what the Bridge is *doing* (reading only, about to
-correct, forwarding a GoTo) — not a traffic-light.
+### Drift
 
-**`Drift`** (the value between the Bridge and Mount icons) — the angular distance between PiFinder's
-solved position and the mount's reported position, in arcminutes (shown as `1° 5'` past 60').
+<img src="docs/images/readme/badge_mb_drift.png" width="80">
 
-| | State | Meaning |
-|---|---|---|
-| — | *hidden* | No coupling mode is actively watching, or the Bridge isn't connected. |
-| 🟢 | ≤ Threshold | Within the drift Threshold you've set (default 5′). |
-| 🟡 | > Threshold | Past the Threshold — Verify/Alert warns, an Auto-correct mode acts. |
-| 🔴 | ≥ 30′ (≈ 0.5°) | Past a generic "probably outside the eyepiece field of view" limit (a full-moon diameter — not a measurement of your actual optics). |
-
-The number **freezes at its last value while the mount is below the horizon** — it isn't recomputed
-there — and resumes when the mount is back above it.
-
-**`Alt`** — the mount's own altitude, recomputed every driver tick from its reported position.
+Angular distance between PiFinder's solved position and the mount's reported position, in arcminutes
+(`1° 5'` past 60'). Hidden unless a coupling mode is watching and the Bridge is connected. Freezes
+at its last value while the mount is below the horizon.
 
 | | State | Meaning |
 |---|---|---|
-| — | *hidden* | No altitude reading yet (older driver build, or mount not connected). |
-| 🟢 | above margin | Above the horizon safety margin. |
-| 🔴 | at/below margin | At or below the horizon — the mount won't accept a Sync or GoTo there; a recovery card appears with **Sync mount from PiFinder** / **Goto Home Position**. |
+| 🟢 | ≤ Threshold | Within your drift Threshold (default 5′). |
+| 🟡 | > Threshold | Past the Threshold — Verify/Alert warns, Auto-correct acts. |
+| 🔴 | ≥ 30′ (≈ 0.5°) | Past a generic "outside the eyepiece field of view" limit (full-moon diameter, not your actual optics). |
 
-Below the diagram, a one-line **coupling status** — a dot (⚪ not coupled yet · 🟢 watching / holding
-· 🟡 or 🔴 drift past threshold) plus words, with a `Details` expander for the full explanation.
+### Altitude
+
+<img src="docs/images/readme/badge_mb_alt.png" width="80">
+
+The mount's own altitude, recomputed every driver tick from its reported position. Hidden until the
+mount reports a position.
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | neutral | Above the horizon safety margin. |
+| 🔴 | red | At or below the horizon — the mount refuses a Sync or GoTo there; a recovery card appears (**Sync mount from PiFinder** / **Goto Home Position**). |
 
 ### Status-line dots
 
-The `<dot> Label: status` lines throughout the page use the same four colours: `PiFinder is
-running` (🟢) vs `not detected` (🔴); `Normal (NN% CPU)` (🟢) vs a busy Pi (🟡/🔴, a heads-up that
-PiFinder's own position server may briefly lag); the INDI Mount Bridge status line (🟢 connected ·
-⚪ `(unconfirmed)` while a status check is momentarily out).
+The `<dot> Label: status` lines use the same four colours: `PiFinder is running` (🟢) / `not
+detected` (🔴); `Normal (NN% CPU)` (🟢) / busy Pi (🟡–🔴); the INDI Mount Bridge line (🟢 connected /
+⚪ `(unconfirmed)` while a check is momentarily out). The coupling status line under the diagram is
+⚪ not coupled / 🟢 watching or holding / 🟡–🔴 drift past threshold, with a `Details` expander.
 
 ---
 
@@ -260,89 +255,66 @@ progress instead of holding a request open.
 
 ### Setup / Install / Update
 
-Drives `pifinder_stellarmate_setup.sh` through its `--action=` flag instead of interactive terminal
-prompts (including the venv-bootstrap two-pass self-restart, which the script otherwise expects a
-human to sit through). A 10-step progress bar and checklist track phase markers from the script; a
-Reboot button appears only when actually needed.
+Runs `pifinder_stellarmate_setup.sh` via its `--action=` flag — no terminal prompts, the
+venv-bootstrap self-restart handled automatically. A 10-step progress bar + checklist track the
+script's phase markers; the Reboot button shows only when `/boot/config.txt` changed.
 
 ### Reset / Uninstall
 
-Two destructive actions, deliberately grouped by actual scope rather than by when they were built —
-each sits next to the other action(s) that touch the same thing:
+Two destructive actions, grouped by scope. Both confirm first; the same explanations are in
+[help.html](gui_installer/help.html).
 
-- **Reset** (in the **PiFinder** group, next to Reinstall/Update - all three only ever touch
-  `~/PiFinder`): briefly stops `pifinder.service`/`pifinder_splash.service`/`pifinder-setup.service`
-  so they're not running against a half-deleted venv, then wipes `~/PiFinder`'s own Python virtual
-  environment and build state (`POST /reset`, streamed via `GET /api/reset_log`). Does **not**
-  disable/remove those services or touch INDI drivers/udev rules - they stay installed, just
-  stopped until the next setup run or reboot.
-- **Uninstall** (in its own **PiFinder Stellarmate** group): stops, disables, and removes every
-  systemd unit this project installs, removes the INDI drivers, and deletes both `~/PiFinder` **and**
-  this `~/PiFinder_Stellarmate` checkout itself (`POST /uninstall`, streamed via
-  `GET /api/uninstall_log`) - the only action here that also removes the Control Center's own
-  directory and unit. Runs via `bin/uninstall_pifinder_stellarmate.sh --selfmove`, which copies
-  itself to `/tmp` first so the deletion of its own source tree doesn't kill the running process
-  mid-uninstall; a deliberate small pause between each systemd unit stop gives the frontend's poll
-  loop (`GET /api/uninstall_log`, 200ms) a real chance to show each step before the connection drops
-  (without it, 6 unit stops complete in under a second - too fast to show each step).
+- **Reset** (in the **PiFinder** group) — stops `pifinder.service` / `pifinder_splash.service` /
+  `pifinder-setup.service`, then wipes only `~/PiFinder`'s Python venv and build state (`POST
+  /reset`, streamed via `GET /api/reset_log`). Services, INDI drivers, and udev rules stay
+  installed.
+- **Uninstall** (in the **PiFinder Stellarmate** group) — stops, disables, and removes every
+  systemd unit this project installs, removes the INDI drivers, and deletes `~/PiFinder` **and this
+  `~/PiFinder_Stellarmate` checkout** (`POST /uninstall`, streamed via `GET /api/uninstall_log`).
+  Runs `bin/uninstall_pifinder_stellarmate.sh --selfmove` (copies itself to `/tmp` so it can delete
+  its own source tree).
 
-Both confirm dialogs spell out the exact scope before acting - see
-[help.html#install-update](gui_installer/help.html) (Reset) and
-[help.html#uninstall](gui_installer/help.html) (Uninstall) for the same explanations surfaced in-app.
+### Fake / Real Mode Switch
 
-### Fake/Real Mode Switch
-
-A dedicated tile shows whether PiFinder is currently running for real (`pifinder.service`) or as a
-hardware-free instance for dev/testing (`test_tools/fake_mode.sh`, port 8081), with a one-click
-switch. The switch doesn't trust the launched process's exit code alone — it **settle-checks** the
-actual target state (up to 8 seconds, polling every second) before declaring success, since
-`systemctl start`/`pf_remote.py launch` both return as soon as the process is *spawned*, not once
-it's actually reachable.
+Shows whether PiFinder runs for real (`pifinder.service`) or as a hardware-free instance
+(`test_tools/fake_mode.sh`, port 8081), with a one-click switch. **Settle-checked**: it polls the
+target state for up to 8 s before reporting success, since `systemctl start` / `pf_remote.py launch`
+return as soon as the process is spawned, not once it's reachable.
 
 ### Hardware Checklist
 
-Checks camera, IMU, and GPS **directly against the hardware**, independent of what PiFinder's own
-software believes:
+Checks camera, IMU, and GPS **directly against the hardware**, not against PiFinder's software
+state (`pifinder.service` can be "active" with a crashed camera subprocess):
 
-| Check | Method | Why not just ask PiFinder |
-|---|---|---|
-| Camera | `rpicam-hello --list-cameras` | `pifinder.service` can report "active" with a fully crashed camera subprocess — the rest of the app (web server, GPS, IMU) keeps running regardless, a known upstream architecture quirk. |
-| IMU | Raw I2C bus scan for the BNO055's address (`0x28`/`0x29`), run through PiFinder's own venv (needs `board`/`adafruit_bno055`) | Same reasoning — a software-level "IMU ok" isn't independent evidence the chip is actually wired up. |
-| GPS | Direct query to `gpsd`'s own `DEVICES` report over its native protocol (port 2947) | `gpsd` is a shared, concurrent-safe daemon — safe to query alongside PiFinder's own connection to it, and reports the receiver's *presence*, independent of whether a fix has been acquired yet. |
+| Check | Method |
+|---|---|
+| Camera | `rpicam-hello --list-cameras` |
+| IMU | Raw I²C bus scan for the BNO055 address (`0x28`/`0x29`), through PiFinder's venv |
+| GPS | `gpsd`'s own `DEVICES` report over its native protocol (port 2947) — reports the receiver's *presence*, separate from whether a fix is acquired |
 
-Keyboard is deliberately **not** included in this live checklist (checking it needs PiFinder
-stopped, since it needs exclusive GPIO access) — the row instead points at
-`test_tools/keypad_gpio_matrix_test.py` for a manual, PiFinder-stopped check.
+Keyboard isn't in the live checklist (it needs PiFinder stopped for exclusive GPIO access) — the
+row points at `test_tools/keypad_gpio_matrix_test.py` instead.
 
 ### Solve Simulation
 
-A direct toggle for PiFinder's own "Tools → Test Mode" (canned test images substituted for the
-camera, for exercising plate-solve UI without sky access) via `POST /api/debug_solve` — proxied
-through this server rather than fetched directly from the browser (PiFinder's own API doesn't set
-CORS headers, and this way the toggle works regardless of which port PiFinder actually landed on).
-Built specifically because driving this via simulated keypresses (`/api/key` menu navigation) proved
-unreliable — keypresses could be silently dropped, leaving the menu cursor stuck.
+Toggles PiFinder's own **Tools → Test Mode** (canned test images for the camera) via `POST
+/api/debug_solve`, proxied through this server (PiFinder's API sets no CORS headers, and this way
+the toggle works whichever port PiFinder landed on).
 
 ### Hardware / Peripherals: External SPI LCD & Numpad Bridge
 
-Two independent toggles for hardware-free dev/test peripherals:
-
-- **External SPI LCD** — enables/disables a Waveshare 3.5" LCD's device-tree overlay in
-  `/boot/config.txt` and reboots (Pi firmware overlays only apply at boot; there's no live-toggle
-  path). Needs the same GPIO lines a real HAT's OLED/keypad use, so the two can never be active
-  simultaneously. Once active, `pifinder-fake-mode-autostart.service` brings up Fake Mode plus both
-  LCD bridges automatically on every boot.
-- **Numpad Bridge** — see [Readme_KeyboardBridge.md](Readme_KeyboardBridge.md) for the bridge
-  itself. This toggle just drives `pifinder-numpad-bridge.service`'s enabled-state (`systemctl
-  enable/disable --now`).
+- **External SPI LCD** — toggles a Waveshare 3.5" LCD's device-tree overlay in `/boot/config.txt`
+  and reboots (firmware overlays only apply at boot). Uses the same GPIO lines as a real HAT's
+  OLED/keypad, so the two can't be active at once. Once on,
+  `pifinder-fake-mode-autostart.service` brings up Fake Mode + both LCD bridges on every boot.
+- **Numpad Bridge** — drives `pifinder-numpad-bridge.service`'s enabled-state (`systemctl
+  enable/disable --now`). See [Readme_KeyboardBridge.md](Readme_KeyboardBridge.md).
 
 ### Power Actions
 
-Always-visible Reboot/Shutdown buttons (`sudo reboot`/`sudo poweroff`), each with its own
-confirmation dialog that becomes more insistent if an install/update or mode switch is currently in
-progress. Distinct from the "Close Setup" action, which only stops this web server's own process
-(and persists that as `pifinder-control-center.service`'s disabled state, so it doesn't silently
-restart on the next boot either).
+Reboot / Shutdown (`sudo reboot` / `sudo poweroff`), each with a confirmation dialog. Separate from
+**Close Setup**, which stops only this web server and persists
+`pifinder-control-center.service` as disabled so it doesn't restart on boot.
 
 ---
 
@@ -499,10 +471,9 @@ matches which side you trust:
 | **Re-seed from mount** | Reads the mount's current position and injects *that* as PiFinder's position. | The mount is where you want to be; PiFinder's (simulated) solve is the odd one out. |
 | **Sync mount from PiFinder** | Syncs the mount to whatever PiFinder currently shows — an instant position update, no slew. | PiFinder's position is correct (a real solve, or one you deliberately set) and the mount's belief is wrong — e.g. after moving the mount by hand. |
 
-Either one, once it genuinely succeeds, clears the card. This is the most-exercised flow of the
-whole Mount Bridge surface: the same **Sync mount from PiFinder** button also appears in Quick
-Actions and in the drift banner, and does the same thing everywhere — a one-shot sync to PiFinder's
-*currently visible* position, with no freshness check, regardless of the coupling mode.
+Either one, once it succeeds, clears the card. The same **Sync mount from PiFinder** button also
+appears in Quick Actions and in the drift banner — everywhere, it does a one-shot sync to PiFinder's
+*currently visible* position, no freshness check, regardless of coupling mode.
 
 ### Mount below the horizon
 
@@ -652,12 +623,8 @@ completing at all before the connection drops.
 | External SPI LCD | `/boot/config.txt` overlay line — persists across reboots by definition (firmware-level) |
 | Numpad Bridge | `pifinder-numpad-bridge.service` — same enable/disable pattern as the Control Center itself |
 
-The recurring pattern across every toggle in this tool: **systemd's own enabled-state is the single
-source of truth for "should this be on after a reboot,"** never a flag file or an in-memory variable
-in `server.py`. This was arrived at after two separate incidents where a plain tracked subprocess
-(`Popen`) failed to survive a reinstall or a reboot — once when a hardware-free Fake Mode instance
-survived a `rm -rf` unnoticed and kept running stale code, and once with the numpad bridge's
-original design.
+Every toggle uses the same rule: **systemd's own enabled-state is the single source of truth for
+"on after a reboot"** — never a flag file or an in-memory variable in `server.py`.
 
 ---
 

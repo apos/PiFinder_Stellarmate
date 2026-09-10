@@ -4,9 +4,24 @@
 
 ![PiFinder mounted on a telescope under the night sky](docs/images/readme/PiFinder.jpg)
 
-This project provides a set of scripts to seamlessly install, patch, and integrate the [PiFinder](https://www.pifinder.io/) software into a [Stellarmate](https://www.stellarmate.com/) environment. It automates the entire setup process, ensuring that PiFinder works correctly alongside Stellarmate's existing services.
+## Summary
 
-The primary goal is to allow users to leverage the powerful plate-solving and object-finding capabilities of PiFinder on a device that is also running Stellarmate for astrophotography, EAA, and full equipment control.
+This project installs, patches, and integrates the [PiFinder](https://www.pifinder.io/)
+plate-solving push-to system into a [StellarMate](https://www.stellarmate.com/) setup, so a single
+Raspberry Pi runs PiFinder's plate-solving and object-finding **alongside** StellarMate for
+astrophotography, EAA, and full equipment control. The setup script automates the whole process.
+
+**The building blocks, and why:**
+
+- **Raspberry Pi** — the platform both PiFinder and StellarMate already target.
+- **PiFinder** — a Python-based push-to solver with a **global-shutter camera** (clean plate-solves
+  even while the mount is moving). Open source in both hardware and software, which is what makes
+  integrating it feasible at all: the setup patches it in place instead of forking it.
+- **StellarMate** — a well-maintained community project with an open-source core and a strong app
+  ecosystem (StellarMate App, KStars/Ekos, INDI Web Manager) for driving a full imaging rig.
+- **INDI** — the glue between the two. Both sides already speak it: PiFinder exposes its solved
+  position as an INDI telescope, and the optional **Mount Bridge** couples that to any
+  INDI-supported motorised mount — no mount-specific protocol, no custom code per mount.
 
 > ### ⚠️ **Disclaimer**
 >
@@ -16,11 +31,19 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 
 > ### ✅ **Current Pinned Versions**
 >
-> * Pinned to **PiFinder software 2.6.3** on **StellarMate OS 2.3.0** (Arch Linux) — see `version.txt`/`pifinder_stellarmate_setup.sh`, not the upstream `release` branch's moving HEAD, for reproducible installs. Fully tested on Pi 4, Pi 5, and the x86 dev/simulator host — see the [Version Compatibility](#version-compatibility) table below.
-> * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12, against the pin current at that time).
-> * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅ (against the pin current at the time of testing). (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
-> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount, all four Coupling presets — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
-> * **Control Center**: the PiFinder tile includes "Quick keys" — a compact on-page keypad (arrows, Long, Enter, two selectable layouts) to drive PiFinder's OLED menu without switching to the separate Remote page. Mount Bridge, PiFinder Mode/Test/Power, and Install or Update sections are collapsible, with the choice remembered across reloads. A Night mode toggle renders all page text in glowing red. PiFinder installs/updates target a pinned release tag rather than the upstream `release` branch's moving HEAD. A "PiFinder" status badge shows PiFinder's own Mount Type + PiFinder Type settings at a glance (green while running, red if they don't match the connected mount), and the Mount Bridge diagram's mount icon shows the mount's own type. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.3.0** (Arch Linux) via `version.txt` /
+>   `pifinder_stellarmate_setup.sh` — a fixed release tag, not the upstream `release` branch's moving
+>   HEAD. Fully tested on Pi 4, Pi 5, and the x86 dev/simulator host —
+>   [Version Compatibility](#version-compatibility) has the details.
+> * **Pi 5 keyboard ⚠️** — a Geekworm X1203 UPS shield shares GPIO 16 with keypad column 0 (keys
+>   7/4/1/LEFT), disabling that column. Hardware conflict between the two add-on boards, only with
+>   that shield attached; a [numpad bridge](Readme_KeyboardBridge.md) sidesteps it.
+> * **INDI integration** — standalone LX200 driver + optional Mount Bridge coupling, verified
+>   end-to-end against a real Skywatcher EQ5 / OnStepX mount. See
+>   [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md).
+> * **Control Center** — installs/updates, hardware checklist, Real / Full-Simulation / Fake-Mode
+>   switching, the Mount Bridge, and Reboot/Shutdown, in one local web page. See
+>   [Readme_ControlCenter.md](Readme_ControlCenter.md); shipped changes in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

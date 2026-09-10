@@ -449,12 +449,10 @@ from that corrected model) should land closer. This repeats - re-verify, sync + 
 still outside the threshold - up to `MAX_SETTLE_RETRIES` (3) attempts before giving up and logging
 a warning, so a genuinely noisy solve can't chase itself forever.
 
-Why does the Bridge snoop `TARGET_EOD_COORD` instead of a property of its own? `INDI::Telescope`
-(the base class of every LX200-style driver, including `PiFinder LX200`) already publishes this
-property **automatically** on every successful `Goto()` call (see `inditelescope.cpp`,
-`ISNewNumber()`) — regardless of whether the driver itself has a motor. Adding a custom property to
-the PiFinder driver turned out to be unnecessary (a first attempt even collided with this existing
-property, see [Known bugs](#bugs-found-during-development)).
+The Bridge snoops `TARGET_EOD_COORD` rather than a property of its own because `INDI::Telescope`
+(the base class of every LX200-style driver, including `PiFinder LX200`) publishes it automatically
+on every successful `Goto()` call (see `inditelescope.cpp`, `ISNewNumber()`), regardless of whether
+the driver has a motor. A custom property would only duplicate — and collide with — that one.
 
 ---
 
@@ -507,24 +505,16 @@ Staged, from safest to most realistic:
 3. **Real hardware** (real PiFinder + real EQ5/OnStepX): final verification of all modes (Sync,
    Goto, Goto-Forward) with actual, visible mount movement.
 
-### Bugs found during development
+### Implementation gotchas
 
-For traceability, and as a warning for similar future changes:
-
-1. **Symlink name mismatch** (old driver): the binary's name didn't match the name expected in
-   `drivers.xml` — the driver failed to load.
-2. **`tty_read()` instead of `tty_nread_section()`**: 6–10s lag per position update (see above,
-   [LX200 commands](#lx200-commands-pifinder-lx200--pifinders-own-server)).
-3. **`TARGET_EOD_COORD` name collision**: a first attempt at building the Goto-Forward feature via
-   a new property collided with the identically-named property already provided by
-   `INDI::Telescope` (different element names: `RA`/`DEC` vs. the self-chosen `TARGET_RA`/
-   `TARGET_DEC`) — leading to `IDSetNumber` errors ("No INumber 'TARGET_RA'"). Fix: removed the
-   custom property entirely, used the existing base-class property instead.
-4. **`loadConfig()` on every client connection**: `PiFinderMountBridge::ISGetProperties()` called
-   `loadConfig(true)` on **every** new client connection (every `indi_getprop` call, every reopen
-   of the INDI Control Panel) — silently overwriting the just-chosen Coupling mode with the
-   last-saved one. Fixed with an `m_configLoaded` flag so `loadConfig()` only actually loads
-   anything on the very first call.
+- The driver binary's name must match the name in `drivers.xml`, or it won't load.
+- Read PiFinder's LX200 replies with `tty_nread_section()`, not `tty_read()` — the latter adds
+  6–10 s of lag per position update.
+- Don't add a custom `TARGET_*` property to forward Goto targets — `INDI::Telescope` already
+  publishes `TARGET_EOD_COORD` (elements `RA`/`DEC`); snoop that.
+- `PiFinderMountBridge::ISGetProperties()` must not call `loadConfig()` on every client connection —
+  it would overwrite the current Coupling mode with the last-saved one on every `indi_getprop` or
+  INDI Control Panel reopen. An `m_configLoaded` flag limits it to the first call.
 
 ---
 
