@@ -16,7 +16,8 @@ isolated worktree, not the live, patched `~/PiFinder` checkout. PR 1 in particul
 filed.
 
 Recommended order: **PR 1 → PR 2 → PR 3**, each depending on the previous being merged (or at least
-open) on `main`. PRs 4–7 are independent of that chain and of each other.
+open) on `main`. PRs 4–10 are independent of that chain and of each other (PR 8 and PR 10 both
+touch `pos_server.py` but are independent changes — file as separate commits).
 
 ---
 
@@ -413,6 +414,64 @@ is already in `diffs/api_extensions_py.diff`.
 > ```
 >
 > right after `ra`/`dec` are computed, before `FakeSolve(ra=ra, dec=dec)` is queued.
+
+---
+
+## PR 10 — `pos_server.py` serves only one LX200 client at a time
+
+**Depends on**: nothing. Independent of PR 8, though both touch `pos_server.py` — file them as
+separate commits. **Priority: medium/high** — a hard limitation for any multi-client setup, not a
+bug with a workaround.
+
+The rework is already in `diffs/pos_server_py.diff`; the full design (per-shared-resource
+concurrency analysis, eventuality table, test plan) is in
+`docs/concepts/pos_server_multi_client_architecture.md`. Re-verify line numbers/context against
+current `main` before filing — this project's copy was last generated against a live checkout.
+
+### Suggested title
+
+`pos_server.py: serve LX200 clients concurrently (one thread per connection)`
+
+### Suggested body
+
+> ## What's limited
+>
+> `run_server()`'s accept loop calls `handle_client()` inline, so `pos_server.py` (port 4030) serves
+> exactly one client at a time. A second connection gets no response at all — not even a
+> communication error — until the first one disconnects.
+>
+> The module docstring names SkySafari as *the* client, but in practice several independent clients
+> connect, potentially at once:
+>
+> | Client | How it connects |
+> |---|---|
+> | SkySafari (iOS/iPadOS) | directly, LX200/TCP to :4030 |
+> | Stellarium | directly, LX200/TCP to :4030 (also sends the ACK byte) |
+> | KStars / Ekos (or any INDI client) | indirectly — an INDI telescope driver that is itself a client of :4030 |
+>
+> "SkySafari on the phone while KStars runs on the laptop" is an ordinary setup and it currently
+> doesn't work.
+>
+> ## The change
+>
+> - `run_server()` spawns one daemon thread per accepted connection (`listen(1)` → `listen(5)`).
+> - The module-globals that held per-connection state (`is_stellarium`,
+>   `stellarium_latitude`/`stellarium_longitude`, `sr_result`) become `threading.local()`. This also
+>   removes the last connection-unscoped part of a cross-client `:Sr`/`:Sd` pairing hazard.
+> - The `sequence` counter is lock-guarded (two simultaneous GoTo pushes).
+> - A passive connection cap (N per IP, M global) so a broken reconnect loop can't exhaust the
+>   process. (An earlier attempt to *actively* drop an older same-IP connection was removed — real
+>   independent clients can share an IP, e.g. two local INDI drivers.)
+>
+> Behavior is unchanged for a single client.
+>
+> ## Open questions for maintainers
+>
+> - Acceptable to bump the `listen()` backlog and add a thread per connection here, or would you
+>   prefer `selectors`/asyncio?
+> - Where should the connection-cap constants live (module constants, `config.json`)?
+> - Is there appetite for concurrent clients at all, or is single-client considered sufficient for the
+>   documented SkySafari use case?
 
 ---
 
