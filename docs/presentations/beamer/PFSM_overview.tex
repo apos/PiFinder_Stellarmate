@@ -2,7 +2,7 @@
 %% (github.com/apos/beamer_template_AVVP_eV).  Vendored: tex/, fonts/, pics/.
 %% Build:  latexmk -lualatex PFSM_overview.tex      (twice, for the agenda bar)
 %%   or:   lualatex PFSM_overview  &&  lualatex PFSM_overview
-\documentclass[12pt,ngerman,aspectratio=1609]{beamer}
+\documentclass[12pt,english,aspectratio=1609]{beamer}
 \usepackage{mathptmx}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{luainputenc}
@@ -29,7 +29,7 @@
 % screenshots live in the repo's docs tree — no copies needed
 \graphicspath{%
   {img/}%
-  {../assets/}%
+  {../pptx/assets/}%
   {../../images/readme/}%
   {../../images/pfinder_lx200/}%
   {../../images/pfinder_simulator/}%
@@ -38,6 +38,10 @@
 
 \newcommand{\code}[1]{{\ttfamily #1}}
 \beamerdefaultoverlayspecification{}   % show everything at once; overview deck, not a talk-reveal
+
+% English deck -> override the template's German auto-labels
+\def\AVVPSubAgendaTitle{Where we are}
+\def\AVVPMainAgendaTitle{Agenda}
 
 \begin{document}
 
@@ -342,7 +346,7 @@ APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directl
 \end{frame}
 
 % ============================================================
-\section*{Zusammenfassung}
+\section*{Summary}
 % ============================================================
 
 \begin{frame}[t]{Roadmap \& where to jump in}
@@ -373,7 +377,7 @@ APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directl
 \end{enumerate}
 \vskip0pt plus.5fill
 \begin{itemize}
-\item Ausblick
+\item Outlook
 \begin{itemize}
 \item Real-sky solver simulation (\#344).
 \item Selected patches back to \code{brickbots/PiFinder}.
@@ -394,7 +398,7 @@ APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directl
 
 \appendix
 
-\section*{Anhang}
+\section*{Appendix}
 
 \subsection*{Links}
 \begin{frame}[t]{Links}

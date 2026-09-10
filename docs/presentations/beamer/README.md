@@ -1,6 +1,6 @@
 # Beamer version of the PFSM overview deck
 
-`PFSM_overview.tex` — the same content as `../PFSM_overview.pptx`, built on the
+`PFSM_overview.tex` — the same content as `../pptx/PFSM_overview.pptx`, built on the
 **AVVP e.V. Beamer template** (<https://github.com/apos/beamer_template_AVVP_eV>).
 
 ## Build
@@ -24,11 +24,11 @@ Copied verbatim from the template repo so the deck builds standalone:
 - `pics/` — AVVP logos, CC icon, dark background
 
 Screenshots are **not** copied — `\graphicspath` in the `.tex` points at
-`../assets/` and `../../images/…` in this repo.
+`../pptx/assets/` and `../../images/…` in this repo.
 
 ## Keeping it in sync
 
-The PowerPoint (`../PFSM_overview.pptx`, from `../build.py`) and this `.tex` are
+The PowerPoint (`../pptx/PFSM_overview.pptx`, from `../pptx/build.py`) and this `.tex` are
 maintained separately. When the deck's content changes, update both.
 
 If the AVVP template changes upstream, re-copy `tex/ fonts/ pics/` from a fresh
