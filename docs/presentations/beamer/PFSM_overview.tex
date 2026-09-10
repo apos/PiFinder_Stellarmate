@@ -237,24 +237,28 @@ The rule: verify real state, never ``the process is alive''.
 
 \begin{frame}[t]{The Web Manager — a ``Remote'' profile}
 \begin{columns}[T]
-\column{0.44\textwidth}
+\column{0.42\textwidth}
 \begin{itemize}
 \item PFSM's INDI drivers live \textbf{only} in the StellarMate Web Manager (\code{:8624}) — the Equipment Profile is built there.
 \item KStars / Ekos then connects in \textbf{Remote Host} mode, never ``Local''.
-\item That is the one real difference from a stock StellarMate setup.
+\item The one real difference from a stock StellarMate setup.
 \end{itemize}
-\column{0.54\textwidth}
-\hfill\includegraphics[width=\linewidth,height=0.66\textheight,keepaspectratio]{webmanager_overview}
+\column{0.56\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{webmanager_full}
 \end{columns}
 \end{frame}
 
 \begin{frame}[t]{One weak PiFinder, one strong box}
+Three install roles: \textbf{All-in-one} \quad$\cdot$\quad \textbf{PiFinder host} \quad$\cdot$\quad \textbf{Control host}.
+\smallskip{}
 \begin{itemize}
-\item Install roles: \textbf{All-in-one} \quad$\cdot$\quad \textbf{PiFinder host} \quad$\cdot$\quad \textbf{Control host}.
-\item \textbf{INDI-only install} (\code{--mode=indi\_only}) — just the INDI build deps + the two PFSM drivers. No PiFinder clone, no venv; the local \code{\textasciitilde/PiFinder} is never touched.
-\item \textbf{Control host} — a capable StellarMate PC couples over the LAN to a low-power PiFinder Pi:\\
-      the PC runs INDI, Ekos, guiding and capture — the Pi only supplies its plate-solved position.
+\item \textbf{INDI-only install} (\code{--mode=indi\_only}) — just the INDI deps + the two PFSM drivers; no PiFinder clone, no venv.
+\item \textbf{Control host} — a strong StellarMate PC runs INDI, Ekos, guiding and capture; the low-power PiFinder Pi over the LAN only supplies its solved position.
 \end{itemize}
+\vspace{0.4em}
+\begin{center}
+\includegraphics[width=0.94\linewidth,keepaspectratio]{cc_install}
+\end{center}
 \end{frame}
 
 \begin{frame}[t]{PiFinder LX200}
