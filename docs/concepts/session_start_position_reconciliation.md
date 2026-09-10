@@ -148,13 +148,26 @@ The three states the user named, plus what's missing to actually build this:
 
 What else is missing (not in the user's original three, added here):
 
-- **Detection mechanism** - the actual open problem, since there's no existing signal (see above).
-  Candidates, none evaluated yet: snoop a guide-camera/PHD2 INDI device's own state property
-  directly (if the specific guiding software running on this StellarMate setup exposes one);
-  integrate with EkosLive's own guide-state API (an `ekoslive` process already runs on this device
-  for other purposes - unclear whether it or PHD2 expose anything queryable); or a purely
-  heuristic signal - a sustained pattern of small, frequent `TIMED_GUIDE_NS/WE` pulses on the mount
-  device itself, inferred without any explicit "I am guiding" signal at all.
+- **Detection mechanism** - narrowed down (2026-09-10, live-checked on this setup; the earlier
+  "no existing signal at all" framing was too pessimistic):
+  - **Which device guides**: Ekos's **Optical Train** declares it explicitly ("Guide via:
+    &lt;device&gt;"), queryable over D-Bus (`/KStars/Ekos/OpticalTrain`). No guessing which INDI
+    device to watch.
+  - **Guiding state**: `org.kde.kstars.Ekos.Guide` exposes `status` (int) plus a `newStatus(i)`
+    signal - the `Ekos::GuideState` enum, with *explicit* `GUIDE_CALIBRATING`, `GUIDE_GUIDING`,
+    `GUIDE_SUSPENDED`, `GUIDE_ABORTED`/`GUIDE_REACQUIRE` (star lost), and its own
+    **`GUIDE_DITHERING`**. That last one collapses §6.2's "a dither must not be misread as an
+    external reposition" into a non-problem - the state is named, not inferred.
+  - **Session context**: `org.kde.kstars.Ekos.Scheduler` has an equivalent `status` - a coarser
+    "a capture job is running, leave the mount alone" gate above the fine-grained Guide state.
+  - **The wrinkle**: Mount Bridge is an INDI *driver* with an embedded INDI *client*, not a
+    KStars/Ekos D-Bus client - it can't read `org.kde.kstars.*` directly. The state has to reach
+    it via one of: (a) a small companion process (same shape as `test_tools/pifinder_truth_injector.py`)
+    that bridges the Ekos D-Bus state onto an INDI property Mount Bridge snoops; (b) the Control
+    Center, which already shells out to `qdbus` for its Ekos integration and could feed the Bridge;
+    or (c) a pure-INDI fallback - a sustained pattern of small, frequent `TIMED_GUIDE_NS/WE` pulses
+    on the already-snooped mount device = guiding active (no calibration/dither distinction, some
+    detection lag).
 - **Pulse-guide vs. Sync/Goto scale mismatch** - worth stating explicitly: guide corrections are
   sub-arcsecond and continuous; anything Mount Bridge currently sends (a full Sync, or a Goto) is
   orders of magnitude larger. This is *why* §6.2's suspension matters, not just a nice-to-have.
@@ -302,6 +315,13 @@ not that one was removed. Every one of §6's three states (calibration/active/lo
 no effect on Mount Bridge's behavior whatsoever - Auto-correct, Goto-Forward, and
 Reposition-Detection would all react to guide-induced drift/dithers exactly as if they were a real
 external reposition, today.
+
+**Detection path identified 2026-09-10 (§6)**: Ekos already carries the signal - the Optical Train
+says *which* device guides, `org.kde.kstars.Ekos.Guide.status` says *what state* it's in
+(`GUIDE_DITHERING` included, so §6.2's dither ambiguity disappears), and the Scheduler state is a
+coarser session-level gate. The remaining work is plumbing that D-Bus state through to the driver
+(companion process, Control Center, or a pure-INDI `TIMED_GUIDE_*` pulse heuristic) and deciding
+the per-mechanism suspend/resume scope. Still zero code.
 
 ### 8.8 Mount altitude/horizon status not surfaced anywhere (found 2026-09-09, live)
 
