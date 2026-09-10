@@ -78,9 +78,12 @@ The **module owns the presentation and the Ekos-aware policy**:
   — the part [mount_bridge_web_integration.md](mount_bridge_web_integration.md) already designed
   as framework-agnostic logic;
 - **guiding / Scheduler suspension**: the module watches Ekos state and, when guiding is
-  calibrating/active/dithering or a Scheduler job is running, tells the driver to hold
-  (a new INDI switch on the Bridge, e.g. `EXTERNAL_HOLD`, set by the module — the driver already
-  has the concept of pausing its own mechanisms).
+  calibrating/active/dithering or a Scheduler job is running, tells the driver to hold via the
+  **`EXTERNAL_HOLD`** switch — spec'd in
+  [`mount_bridge_external_hold.md`](mount_bridge_external_hold.md)
+  ([#372](https://github.com/apos/PiFinder_Stellarmate/issues/372)), where a Control Center
+  watchdog drives the same switch first. The module just replaces that watchdog with in-process
+  `Ekos::GuideState`.
 
 So: **driver = mechanism + headless survival; module = Ekos-native UI + Ekos-aware gating.**
 

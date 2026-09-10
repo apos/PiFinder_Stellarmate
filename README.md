@@ -355,8 +355,12 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
   (which patches — still to be decided) — process and candidate list:
   [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
   [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
-- A guiding watcher (dithering / lost-star detection during imaging) — concept:
-  [`docs/concepts/session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md).
+- A guiding watcher — suspend Mount Bridge coupling while guiding/dithering is active. First step:
+  a Control Center watchdog + a `Mount Bridge EXTERNAL_HOLD` switch. Concept:
+  [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
+  ([issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); background in
+  [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /
+  [#324](https://github.com/apos/PiFinder_Stellarmate/issues/324)).
 
 **Version 3.x — integrate**
 
