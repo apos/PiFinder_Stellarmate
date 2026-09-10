@@ -12,3 +12,7 @@
 *.bcf
 *.bbl
 *.run.xml
+
+# keep the rendered deck tracked, ignore any other stray PDFs
+*.pdf
+!PFSM_overview.pdf
