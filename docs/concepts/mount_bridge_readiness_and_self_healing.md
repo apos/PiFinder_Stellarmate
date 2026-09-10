@@ -2,7 +2,7 @@
 
 ## 1. Context
 
-Live-tested 2026-09-01 (basic-memory pifinder-stellarmate/00105/00106, PR #237/#239, issue #238):
+Live-tested 2026-09-01 (PR #237/#239, issue #238):
 across a single testing session, Mount Bridge repeatedly became unresponsive or lost its linked/
 coupled state, and the Full-Simulation truth-injector died once with nothing noticing. Each time,
 the only way anything got fixed was a human (or an agent, driving raw `indi_setprop`/service
@@ -108,8 +108,7 @@ system caught and fixed something" instead of unexplained flapping.
   needs to be set wherever the user's own coupling-mode-change request currently gets sent, small
   addition.
 - **Should self-healing be visible/interruptible**, or fully silent? Given the readiness-line work
-  from 2026-08-30/31 (basic-memory 00102/00103) already surfaces "is everything ready" passively,
-  probably: silent when it succeeds (that's the whole point), loud only when it gives up (previous
-  bullet).
+  from 2026-08-30/31 already surfaces "is everything ready" passively, probably: silent when it
+  succeeds (that's the whole point), loud only when it gives up (previous bullet).
 - Not addressed here at all: root-causing *why* Mount Bridge goes unresponsive in the first place
   (issue #238) - this concept treats it as a fact to recover from, not a bug to fix directly.

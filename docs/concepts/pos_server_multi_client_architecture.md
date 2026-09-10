@@ -31,7 +31,7 @@ zugreifen."*
    Issue #107: `get_telescope_ra()`/`get_telescope_dec()` geben bei fehlender Lösung `None` statt
    der früheren `"+00*00'01"`-Fake-Koordinate zurück, UND `parse_sd_command()` verbraucht
    `sr_result` bereits **consume-once** (`ra_result, sr_result = sr_result, None`). **Korrektur
-   gegenüber der Vorversion dieses Dokuments**: [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]]s
+   gegenüber der Vorversion dieses Dokuments**: die frühere
    Kernaussage "`sr_result` wird nie zurückgesetzt" ist damit **bereits teilweise veraltet** — das
    Zurücksetzen NACH Gebrauch ist bereits gefixt. Was tatsächlich noch offen bleibt (und worauf sich
    dieses Konzept beschränkt): `sr_result` ist weiterhin ein **Modul-Global ohne Verbindungs-Scope**
@@ -60,7 +60,7 @@ augenfälligen Fälle:
 |---|---|---|---|
 | 1 | 3 verschiedene Client-Typen gleichzeitig verbunden (SkySafari + Stellarium + KStars via `PiFinder LX200`) | nur der zuerst verbundene wird bedient, alle anderen bekommen keine Antwort (s. §4 live-Beleg) | alle drei parallel bedient, siehe §4.3 |
 | 2 | **Derselbe** Client reconnected, ohne die alte Verbindung sauber zu schließen (App-Neustart, WLAN-Aussetzer) — die alte Verbindung hängt bis zu 60s im Socket-Timeout | die neue Verbindung wird bis zu 60s lang gar nicht bedient, obwohl es "nur" ein Client ist, keine drei | neue Verbindung bekommt sofort einen eigenen Thread (unabhängig davon, ob die alte noch ausläuft); die verwaiste alte räumt sich wie bisher über RST/Timeout selbst auf, begrenzt durch die Obergrenze aus §5.2 statt aktiv geschlossen zu werden (s. dortige Korrektur nach Testfund) |
-| 3 | Zwei Clients senden **gleichzeitig einen Goto** (`:Sr#`+`:Sd#`) | nicht möglich (nur einer ist überhaupt verbunden) — aber sobald mehrere verbunden sein können, ist das ohne Fix der exakte Mechanismus aus [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]] (RA von Client A + Dec von Client B verschmelzen) — s. §2 zur Korrektur, was an 00108 bereits gefixt ist und was nicht | pro Verbindung isolierter `sr_result` (thread-local) — kann nicht mehr passieren |
+| 3 | Zwei Clients senden **gleichzeitig einen Goto** (`:Sr#`+`:Sd#`) | nicht möglich (nur einer ist überhaupt verbunden) — aber sobald mehrere verbunden sein können, ist das ohne Fix der bekannte `sr_result`-Staleness-Mechanismus (RA von Client A + Dec von Client B verschmelzen) — s. §2 zur Korrektur, was davon bereits gefixt ist und was nicht | pro Verbindung isolierter `sr_result` (thread-local) — kann nicht mehr passieren |
 | 4 | Ein Client ist Stellarium (ACK gesendet), ein anderer zeitgleich verbunden ist es nicht | nicht möglich (Single-Client) — mit einfachem `threading` ohne weitere Vorkehrung würde der zweite Client fälschlich `is_stellarium=True` sehen | thread-local `is_stellarium`, jede Verbindung sieht nur ihren eigenen Wert |
 | 5 | Zwei Clients pushen gleichzeitig ein Ziel (`handle_goto_command`) — `sequence`-Zähler für die `object_id` | nicht möglich (Single-Client) | `threading.Lock()` um Inkrement+Read; `ra`/`dec`/`comp_ra`/`comp_dec` sind Stack-lokale Variablen je Aufruf, ohnehin nie geteilt — kein zusätzlicher Schutz nötig |
 | 6 | **Viele kurzlebige Verbindungen/Reconnect-Sturm eines fehlerhaften Clients — vom User als kritisch eingestuft** | jede wartet einfach in der Kernel-Backlog-Queue, keine Ressourcen-Eskalation, aber auch keine bedient — ein naiver "Thread pro `accept()`"-Ansatz OHNE Entprellung würde das dagegen in unbegrenztes Thread-/Verbindungswachstum übersetzen | **Entprellung + Plausibilitätscheck vor dem Thread-Start**, s. §5.2 — kein Blindes "jede Verbindung sofort bedienen" |
@@ -104,7 +104,7 @@ Stille — exakt das oben beobachtete `TimeoutError`.
 
 | # | Bug/Fix | Verhältnis zu diesem Konzept |
 |---|---|---|
-| [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]] | `sr_result` ist Modul-Global ohne Verbindungs-Scope — s. §2 für die Korrektur, was davon bereits gefixt ist | **Der verbleibende Teil (kein Scope) wird durch dieses Konzept gelöst.** Notiz muss vor dem Schließen korrigiert werden (s. §11, Schritt 3) |
+| `sr_result`-Staleness-Bug | `sr_result` ist Modul-Global ohne Verbindungs-Scope — s. §2 für die Korrektur, was davon bereits gefixt ist | **Der verbleibende Teil (kein Scope) wird durch dieses Konzept gelöst.** |
 | Issue [#118](https://github.com/apos/PiFinder_Stellarmate/issues/118) | `PiFinder LX200`-Treiber erkennt eine tote TCP-Verbindung zu `pos_server.py` nicht (`CONNECTION=On` lügt) | **Verwandt, aber orthogonal** — #118 ist ein Erkennungsproblem auf Client-Seite nach einem Server-Neustart; dieses Konzept ist ein Kapazitätsproblem auf Server-Seite bei mehreren *gleichzeitig* lebenden Verbindungen |
 | Heutiger `_call_with_timeout()`-Fix | begrenzt die Wartezeit auf `shared_state.solution()`/`.datetime()` pro Request über einen separaten `ThreadPoolExecutor` | **Wird überarbeitet, s. §5.3** — löst das Kapazitätsproblem (ein Client blockiert alle) nicht, das macht erst das Threading selbst; der bewusst begrenzte Pool wird als eigenständiges Kapazitätsrisiko ersetzt |
 
@@ -179,8 +179,7 @@ Verbindungen wurde dabei angetastet.
 
    Beide Grenzen sind bewusst konfigurierbare Konstanten, keine hartkodierten Magic Numbers ohne
    Namen — und bewusst **kein** ausgefeilter Rate-Limiter (Token-Bucket o. ä.): das wäre mehr
-   Komplexität, als der tatsächliche Kontext (eine Handvoll bekannter Client-Typen) rechtfertigt
-   (Prinzip [[00029_bm-standards-als-basis-iteration-als-korrektiv]]).
+   Komplexität, als der tatsächliche Kontext (eine Handvoll bekannter Client-Typen) rechtfertigt.
 
 Dieser Check läuft **im Accept-Loop selbst**, vor dem `threading.Thread(...).start()` — er ersetzt
 nicht die Thread-lokale Zustandstrennung aus §5.1, sondern verhindert, dass overhaupt zu viele
@@ -307,8 +306,7 @@ Clients werden für 5s getrennt".
 ## 9. Testplan
 
 Kein automatisierter Test existiert aktuell für `pos_server.py` (`python/tests/` hat keine
-`test_pos_server*`-Datei). Konkrete, exakte Schritte statt vager Ziele (s.
-[[00025_bm-testplaene-brauchen-exakte-schritte-nicht-vage-ziele]]):
+`test_pos_server*`-Datei). Konkrete, exakte Schritte statt vager Ziele:
 
 ### Manuell (sofort nach Umsetzung, ohne laufenden Live-Test zu stören)
 
@@ -405,30 +403,22 @@ Erfolg von 1+2 ab; 6 (CPU-Kontention) ist unabhängig und kann parallel laufen.
 |---|---|---|---|---|
 | 1 | `run_server()`/`handle_client()`/geteilter State (§5.1) + Entprellung/Plausibilitätscheck (§5.2) + überarbeiteter `_call_with_timeout()` (§5.3) + Thread-Namen im Log (§7) umsetzen | M | P0 | keine |
 | 2 | Manuelle Testschritte aus §9 durchführen, inkl. Reconnect-Sturm-Test | S | P0 | 1 |
-| 3 | [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]] korrigieren (Consume-once ist bereits gefixt, s. §2) und nach erfolgreicher Umsetzung schließen (s. [[00087_bm-bugfix-notiz-sofort-loeschen-bei-issue-abschluss]]) | XS | P1 | 1, 2 erfolgreich |
+| 3 | `sr_result`-Staleness-Bug korrigieren (Consume-once ist bereits gefixt, s. §2) | XS | P1 | 1, 2 erfolgreich |
 | 4 | `diffs/pos_server_py.diff` neu generieren — muss #107-Fix + überarbeiteten Timeout-Fix + Threading-Änderung als EINEN zusammenhängenden Diff abbilden (s. §2) | S | P0 | 1, 2 erfolgreich |
 | 5 | `python/tests/test_pos_server.py` (automatisierter Integrationstest, §9) | M | P2 | 1 |
 | 6 | **CPU-Kontention auf dem Pi4 untersuchen/mindern** (s. §10) — z. B. `nice`/`chrt` für den StateManager-Kindprozess, oder Profiling (`py-spy`/`austin`) während einer Live-Session, um zu bestätigen, welcher konkrete Prozess/Thread den StateManager tatsächlich verdrängt | M | P1 | keine (unabhängig) |
 | 7 | StellarMate-App-Pfad (INDI-Client über `PiFinder LX200`) einmal live mit tatsächlich verbundener SMOS-App verifizieren, jetzt wo der Pfad geklärt ist (§1) | XS | P2 | keine (unabhängig) |
 
-**Freigabe-Gate**: dieses Dokument ist reine Konzeption (s.
-[[00020_bm-cpt-command-system]] Schritt 5) — Schritt 1 (die eigentliche Code-Änderung) läuft nach
+**Freigabe-Gate**: dieses Dokument ist reine Konzeption — Schritt 1 (die eigentliche Code-Änderung) läuft nach
 Freigabe im normalen Feature-Branch-+-PR-Workflow gegen das PiFinder-Repo (`main`, s. dessen
 eigenes `CLAUDE.md`), mit anschließender Diff-Extraktion nach PiFinder_Stellarmate (Schritt 4 oben)
 wie beim `_call_with_timeout()`-Fix zuvor in dieser Session.
 
 ## 12. Bezug
 
-- [[00108_upstream-bug-pos-server-sr-result-stale-global-2026-09-03]] — der Bug, den dieses
-  Konzept strukturell mitlöst; muss vor dem Schließen korrigiert werden (s. §2, §11 Schritt 3).
 - Issue [#118](https://github.com/apos/PiFinder_Stellarmate/issues/118) — verwandtes, aber
   orthogonales Problem (tote Verbindung wird nicht erkannt).
 - `diffs/pos_server_py.diff` — bereits bestehender Patch (#107-Fix), muss bei der Umsetzung um die
   Threading-Änderung erweitert, nicht separat daneben gepflegt werden (s. §2, §11 Schritt 4).
-- [[00020_bm-cpt-command-system]] / [[00021_bm-documentation-depth-standard]] — Format-Vorgabe
-  für dieses Dokument.
-- [[00025_bm-testplaene-brauchen-exakte-schritte-nicht-vage-ziele]] — Format-Vorgabe für §9.
-- [[00029_bm-standards-als-basis-iteration-als-korrektiv]] — Begründung für die bewusst einfache
-  (kein Token-Bucket) Entprellung in §5.2.
 - `PiFinder/python/PiFinder/pos_server.py`, `PiFinder/python/PiFinder/state.py`,
   `PiFinder/python/PiFinder/main.py` (§10, Root-Cause-Recherche) — die untersuchten Dateien.

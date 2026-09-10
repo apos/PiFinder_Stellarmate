@@ -1,8 +1,6 @@
 # Concept: Mount Bridge Web Integration (Coupling Dial Without the INDI Control Panel)
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as a
+> **Status: concept — not yet implemented.** Tracked as a
 > GitHub issue with the `concept` label on [Project #15](https://github.com/users/apos/projects/15)
 > — update that issue if this concept is promoted, revised, or dropped.
 
@@ -257,8 +255,7 @@ Further live testing surfaced two more items in one round:
 
 ### 6.3 UX polish round: 5-step checklist, Autoconnect, help page (2026-07-25/26)
 
-Extended live-testing round with real EQ-5/OnStep hardware. Highlights (full detail in
-basic-memory `pifinder-stellarmate/00053`):
+Extended live-testing round with real EQ-5/OnStep hardware. Highlights:
 
 - **Real bug found and fixed, unrelated to this feature's own code**: `gui_installer/pam_auth.py`
   called `pam_acct_mgmt()` after a successful `pam_authenticate()`, which fails on this system
@@ -493,8 +490,7 @@ same as today.
 
 ## 11. Effort & Priority
 
-Per this project's [GitHub-Projects schema](../../Readme_ControlCenter.md) convention
-(`basic-memory/basic-memory/00019_bm-github-project-schema-todo-format.md`): **Priority low, Size
+Per this project's GitHub-Projects schema convention: **Priority low, Size
 L** — substantial (a new protocol client plus a multi-step UI flow), but bounded by the explicit
 non-goal (§1) keeping it well short of a general INDI client or profile editor. (Priority field
 naming updated 2026-07-20: the board's Priority options were renamed from `P0`/`P1`/`P2` to
@@ -548,6 +544,4 @@ build is lower-risk than one large change:
    web interface (§7).
 
 Each phase is a reasonable standalone GitHub issue/sub-issue under a parent "Mount Bridge Web
-Integration" issue, consistent with this project's existing parent/sub-issue pattern (see
-`basic-memory/pifinder-stellarmate/00041_pifinder-update-sh-veraltet-und-kaputt.md` for the
-precedent).
+Integration" issue, consistent with this project's existing parent/sub-issue pattern.

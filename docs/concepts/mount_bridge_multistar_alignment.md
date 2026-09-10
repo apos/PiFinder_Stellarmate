@@ -1,8 +1,6 @@
 # Concept: Automatic Multi-Point Alignment via Mount Bridge
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> **Status: concept — not yet implemented.** Tracked as
 > [GitHub issue #191](https://github.com/apos/PiFinder_Stellarmate/issues/191) on
 > [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
 > promoted, revised, or dropped.
@@ -264,8 +262,7 @@ fixing separately so the terminal state distinguishes a real success from an all
 Once the full feature (catalog selection, median-of-N, KStars feed) is built, it inherits Mount
 Bridge's existing test surface (INDI Control Panel, `indi_getprop`/`indi_setprop`, the Control
 Center GUI, live verification under real sky) rather than introducing a new one. Testing methodology
-notes worth carrying forward from earlier live-testing experience
-(`basic-memory/pifinder-stellarmate/00089` §7):
+notes worth carrying forward from earlier live-testing experience:
 - Prefer real, continuous camera solving over synthetic `/api/fake_solve` injection when verifying
   the median-of-N-solves step — synthetic injections showed non-deterministic drift under repeated
   rapid calls, which would confound testing an aggregation step specifically designed to smooth out
@@ -305,5 +302,3 @@ notes worth carrying forward from earlier live-testing experience
 - [GitHub issue #191](https://github.com/apos/PiFinder_Stellarmate/issues/191)
 - [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md)
 - [`mount_bridge_reposition_detection.md`](mount_bridge_reposition_detection.md)
-- `basic-memory/pifinder-stellarmate/00089_indi-debugging-werkzeugkasten-auf-diesem-pi4.md` §7
-  (tonight's live-testing methodology notes, directly relevant to §6 above)

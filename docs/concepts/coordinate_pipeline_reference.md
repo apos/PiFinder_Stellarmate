@@ -150,8 +150,7 @@ pipeline. Never write a bare catalog RA/Dec into either simulator's `EQUATORIAL_
    precession between the PiFinder (J2000) world and the mount (JNow) world?
 3. RA in hours or degrees on each side?
 4. Verify against the **driver logs** (`~/.var/app/org.kde.kstars/data/kstars/logs/`,
-   `~/PiFinder_data/pifinder.log`), not ad-hoc `indi_getprop` reconstruction -
-   see `basic-memory/basic-memory/00090` rule 3.
+   `~/PiFinder_data/pifinder.log`), not ad-hoc `indi_getprop` reconstruction.
 5. After the change: re-check the *whole* table end to end, not just the one
    symptom that prompted it.
 

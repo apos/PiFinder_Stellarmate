@@ -2,9 +2,7 @@
 
 > **Status: written up for the record (2026-08-09), not yet decided/implemented.** Captures a live
 > discussion during Goto-Forward/sync-before-goto testing - the user's own considerations plus mine,
-> deliberately kept as "considerations to act on later" rather than immediately coded. Written via
-> this project's `cpt` convention (`basic-memory/basic-memory/00020_bm-cpt-command-system.md`); the
-> entire `docs/concepts/` folder was read first per that convention.
+> deliberately kept as "considerations to act on later" rather than immediately coded.
 
 ## 1. Context
 
@@ -152,8 +150,7 @@ must account for both**, not just one.
 
 ### (A) Mount Type (`Settings -> Mount Type`: Alt/Az / Equatorial)
 
-**Already integrated, live-verified** (`basic-memory/pifinder-stellarmate/00017_mount-type-auto-sync`,
-2026-07-17): Mount Bridge already auto-syncs this from the INDI mount's own `TELESCOPE_MOUNT_TYPE`
+**Already integrated, live-verified** (2026-07-17): Mount Bridge already auto-syncs this from the INDI mount's own `TELESCOPE_MOUNT_TYPE`
 property (read by index per `inditelescope.h`'s fixed `MOUNT_ALTAZ=0/MOUNT_EQ_FORK=1/MOUNT_EQ_GEM=2`
 enum, mapped to PiFinder's own two-valued setting) via a live-reload API call
 (`POST /api/set_mount_type`, no PiFinder restart needed) - runs every `TimerHit()` tick, independent

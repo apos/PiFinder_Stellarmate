@@ -178,10 +178,10 @@ setup that may not be the right thing to keep debugging.
 
 ## 9. 2026-09-01 revision: §8's two-mode split is itself incomplete - three independent movement sources, not two mutually-exclusive modes
 
-§8's B recommendation was built (`indi_pifinder_simulator`, Option B - see [[00092]]/[[00164]]) and
+§8's B recommendation was built (`indi_pifinder_simulator`, Option B) and
 correctly gave PiFinder its own independent, self-sufficient sky-truth ("PiFinder Simulator" mode).
 Live-tested again 2026-09-01 (GoTo-Forward against `Telescope Simulator`, both PushTo-triggered and
-mount-side-GoTo-triggered - basic-memory pifinder-stellarmate/00105) exposed that **this still isn't
+mount-side-GoTo-triggered) exposed that **this still isn't
 a complete simulation** - not a regression of §8's fix, but a gap §8 itself didn't yet cover.
 
 **The physical model, stated precisely (User, 2026-09-01):** PiFinder is rigidly bolted to the OTA.
@@ -201,7 +201,7 @@ diverges from the true physical pointing, without the telescope having actually,
   mode see PiFinder "left behind," which isn't physically accurate. Confirmed live 2026-09-01: a
   Telescope-Simulator GoTo to Capella succeeded correctly (Mount Bridge's Fall-2 detection worked,
   `TARGET_SOURCE=MOUNT` set correctly), but `PiFinder Simulator` stayed frozen at its old position -
-  this is [[00105]]/#238/#177's finding, not a Mount Bridge bug.
+  this is #238/#177's finding, not a Mount Bridge bug.
 - **"Mount is source" (§3/§7)**: correctly follows real mount movement, but blindly mirrors
   *everything* the mount reports, including a wrong/drifted model with no real movement behind it -
   exactly §8's original finding, still true, unchanged by this revision.
@@ -230,7 +230,7 @@ stimuli**, rather than mutually-exclusive modes for different purposes:
    position (dead-reckoning through the slew, physically accurate - PiFinder is rigidly attached).
    Once the mount's status returns to idle/tracking, `PiFinder Simulator` holds its now-updated
    position independently again - it does **not** keep following any further mount-side drift after
-   the slew completes, preserving §8's mode-drift-detection property. This is [[00177]]'s originally-
+   the slew completes, preserving §8's mode-drift-detection property. This is issue #177's originally-
    proposed direction, still the right one, now scoped precisely against the physical model above
    instead of as a vague "optional following."
 3. Moving PiFinder/the OTA directly (manual Sync/Goto on `PiFinder Simulator`) already exists and
@@ -260,11 +260,9 @@ simulated PiFinder state.
 - Should PiFinder Simulator continue holding through an *aborted* slew the same way it does after a
   *completed* one, or does an abort need different handling?
 - §8's "which mode is currently active" GUI language (mode tiles from the 2026-08-30/31 Full-
-  Simulation rework, see basic-memory pifinder-stellarmate/00102/00103) will need revisiting once
-  this lands - "PiFinder Simulator" stops being a single fixed-truth mode and becomes "independent
+  Simulation rework) will need revisiting once this lands - "PiFinder Simulator" stops being a single fixed-truth mode and becomes "independent
   truth that also physically follows real mount movement," which may no longer need presenting as a
   separate concept from "Mount is source" at all. Not designed yet - flag only.
 
-Refs: [[00105]] (live 2026-09-01 test that surfaced this), issues #177 (original proposal, now
-scoped precisely) and #238 (superseded framing - corrected in a follow-up comment, this section is
-the authoritative version going forward).
+Refs: issues #177 (original proposal, now scoped precisely) and #238 (superseded framing -
+corrected in a follow-up comment, this section is the authoritative version going forward).

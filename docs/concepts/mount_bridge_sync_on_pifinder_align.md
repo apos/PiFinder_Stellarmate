@@ -1,8 +1,7 @@
 # Concept: Sync mount on a confirmed PiFinder Align, regardless of Coupling mode
 
 > **Status: implemented (branch `feature/313-sync-on-pifinder-align`), pending live verification on
-> `stellarmate-pi5`.** Written via this project's `cpt` (concept) convention — see
-> `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and `00021_bm-documentation-depth-standard.md`.
+> `stellarmate-pi5`.**
 > Tracked as [GitHub issue #313](https://github.com/apos/PiFinder_Stellarmate/issues/313) on
 > [Project #15](https://github.com/users/apos/projects/15). The two §5 open questions were resolved
 > with the project owner on 2026-09-08 (see §5); §9 records what implementation itself turned up.
