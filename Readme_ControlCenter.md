@@ -24,17 +24,18 @@ PiFinder-on-StellarMate installation this tool manages, and to
 
 1. [Basic Functionality (Overview)](#basic-functionality-overview)
 2. [Design Principles](#design-principles)
-3. [Architecture](#architecture)
-4. [Feature Walkthrough](#feature-walkthrough)
-5. [Installation & Illustrated Guide](#installation--illustrated-guide)
-6. [Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows)
-7. [Technical Reference: API Surface](#technical-reference-api-surface)
-8. [Persistence & Process Model](#persistence--process-model)
-9. [Authentication & Security Model](#authentication--security-model)
-10. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
-11. [Development & Testing](#development--testing)
-12. [Roadmap](#roadmap)
-13. [Version Compatibility](#version-compatibility)
+3. [Status Badges & Colours](#status-badges--colours)
+4. [Architecture](#architecture)
+5. [Feature Walkthrough](#feature-walkthrough)
+6. [Installation & Illustrated Guide](#installation--illustrated-guide)
+7. [Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows)
+8. [Technical Reference: API Surface](#technical-reference-api-surface)
+9. [Persistence & Process Model](#persistence--process-model)
+10. [Authentication & Security Model](#authentication--security-model)
+11. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
+12. [Development & Testing](#development--testing)
+13. [Roadmap](#roadmap)
+14. [Version Compatibility](#version-compatibility)
 
 ---
 
@@ -101,6 +102,134 @@ principle this project's UI now follows:
 5. **Context-aware labels over generic ones.** "PiFinder is running, but not functional" always
    names *which* hardware is missing (camera, IMU, or both) rather than a fixed, potentially
    misleading generic label.
+
+---
+
+## Status Badges & Colours
+
+### The colour language
+
+Every indicator on the page — the icon badges in the PiFinder tile, the dots on status lines, the
+Mount Bridge diagram — uses the same four states:
+
+| | Meaning |
+|---|---|
+| ⚪ **white / neutral** | Unknown — not checked yet, or the check couldn't reach its target. Pulses faintly while a check is in flight. |
+| 🟢 **green** | Confirmed good / working. |
+| 🟡 **yellow** | Running, but degraded or not fully there — hardware missing, no GPS fix yet, a value past its threshold. |
+| 🔴 **red** | Failed, not running, or a value outside a safe range. |
+
+Colours always come from a real, independent check (a hardware probe, an HTTP response actually
+verified, a settle-checked process state), never from "the process is alive" — see
+[Design Principles](#design-principles). The
+[Mount Bridge & Sync Workflows](#mount-bridge--sync-workflows) section shows the badge row in
+context.
+
+### PiFinder tile — the badge row
+
+`Cam` / `Solve` / `IMU` / `GPS` mirror the **Hardware test and details** checklist rows exactly (see
+[Feature Walkthrough → Hardware Checklist](#hardware-checklist)) — the badge and its detail row
+always agree.
+
+**`Cam`** — is a camera detected and actually usable? (`rpicam-hello --list-cameras`, run through
+PiFinder's own venv)
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | `checking…` / `unknown (…)` | The test hasn't run yet this session, or the probe tool isn't available on this host (e.g. no `rpicam-hello` on x86). |
+| 🟢 | `functional` | A real capture succeeded. |
+| 🔴 | `not detected` / `error (…)` | No camera found, or the capture/driver failed (the detail row names which). A crashed camera subprocess shows here even while `pifinder.service` still reports "active". |
+
+**`Solve`** — is PiFinder's plate-solver currently producing a position? (from PiFinder's own
+`solve_source`; independent of Solve Simulation, which only substitutes test images)
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | `unknown` | No data from PiFinder yet. |
+| 🟢 | `solving` | The camera is currently solving successfully (no age limit — this is a different question from Mount Bridge's own "fresh enough to correct from" check, its 5 s Solve Freshness setting). |
+| 🟡 | `no fresh solve yet – estimating from IMU` | No recent camera solve; the position is being dead-reckoned from the IMU. Pulses. |
+| 🔴 | `no star match – normal indoors/no sky view` | The last solve attempt found no stars (expected without a clear sky — not a hardware fault). |
+| 🔴 | `not real – see Injected Solve below` | An **Injected Solve** is active, so the reported position is not backed by a real plate-solve. |
+
+**`Injected`** — a chip that appears docked onto `Solve`'s right edge **only while Injected Solve
+(Dead Reckoning) is active** — a manually seeded RA/Dec (Synthetic Solve, Re-seed from mount, Set
+position, or Sync). Its presence *is* the signal; there is no colour scale. Whenever it shows,
+`Solve` is red. See [Mount Bridge & Sync Workflows → Synthetic Solve vs. a manual one-shot
+seed](#synthetic-solve-vs-a-manual-one-shot-seed).
+
+**`IMU`** — is the BNO055 orientation sensor wired up? (raw I²C bus scan for its address, run through
+PiFinder's venv)
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | `checking…` / `unknown (…)` | The test hasn't run yet this session, or the probe tool isn't available on this host (e.g. no `rpicam-hello` on x86). |
+| 🟢 | `functional` | The chip answered on the I²C bus. |
+| 🔴 | `not detected` / `error (…)` | Nothing at the BNO055 address, or the read errored. |
+
+**`GPS`** — what does PiFinder's own GPS handling currently report? (queried from PiFinder, not
+re-implemented here)
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | `not reachable` | PiFinder isn't answering — Real or Fake Mode must be running to read GPS status. |
+| 🟢 | `locked` | A position fix is held (detail row shows lat/lon, timezone, last fix time, source). |
+| 🟡 | `no fix yet` | The receiver is present and reachable but hasn't acquired a fix. |
+
+**`PiFinder`** (shows a value such as `Right / Equatorial`) — PiFinder's own **Mount Type** +
+**PiFinder Type** settings, which feed its IMU dead-reckoning. Shown whenever PiFinder hardware is
+reachable, independent of Mount Bridge.
+
+| | State | Meaning |
+|---|---|---|
+| ⚪ | value shown, neutral | PiFinder is reachable but Mount Bridge can't yet verify the type against a connected INDI mount. |
+| 🟢 | value shown, green | Mount Bridge verified it — PiFinder's Mount Type matches the connected mount. Colours this badge and the Mount icon's type line in the diagram together. |
+| 🔴 | value shown, red | Mismatch between PiFinder's Mount Type and the connected mount — the dead-reckoning math would be wrong. (PiFinder Type itself can't be auto-checked; judge it against your actual rig.) |
+
+### Mount Bridge diagram
+
+The connection diagram (`PiFinder ↔ Bridge ↔ Mount`) sits directly under the badge row.
+
+**The three node icons** — each shows whether that device's INDI `CONNECTION` is up:
+
+| | Meaning |
+|---|---|
+| ⚪ | Not linked / state unknown. |
+| 🟢 | Connected. |
+| 🔴 | Loaded but disconnected. |
+
+The dotted arrows between the nodes show what the Bridge is *doing* (reading only, about to
+correct, forwarding a GoTo) — not a traffic-light.
+
+**`Drift`** (the value between the Bridge and Mount icons) — the angular distance between PiFinder's
+solved position and the mount's reported position, in arcminutes (shown as `1° 5'` past 60').
+
+| | State | Meaning |
+|---|---|---|
+| — | *hidden* | No coupling mode is actively watching, or the Bridge isn't connected. |
+| 🟢 | ≤ Threshold | Within the drift Threshold you've set (default 5′). |
+| 🟡 | > Threshold | Past the Threshold — Verify/Alert warns, an Auto-correct mode acts. |
+| 🔴 | ≥ 30′ (≈ 0.5°) | Past a generic "probably outside the eyepiece field of view" limit (a full-moon diameter — not a measurement of your actual optics). |
+
+The number **freezes at its last value while the mount is below the horizon** — it isn't recomputed
+there — and resumes when the mount is back above it.
+
+**`Alt`** — the mount's own altitude, recomputed every driver tick from its reported position.
+
+| | State | Meaning |
+|---|---|---|
+| — | *hidden* | No altitude reading yet (older driver build, or mount not connected). |
+| 🟢 | above margin | Above the horizon safety margin. |
+| 🔴 | at/below margin | At or below the horizon — the mount won't accept a Sync or GoTo there; a recovery card appears with **Sync mount from PiFinder** / **Goto Home Position**. |
+
+Below the diagram, a one-line **coupling status** — a dot (⚪ not coupled yet · 🟢 watching / holding
+· 🟡 or 🔴 drift past threshold) plus words, with a `Details` expander for the full explanation.
+
+### Status-line dots
+
+The `<dot> Label: status` lines throughout the page use the same four colours: `PiFinder is
+running` (🟢) vs `not detected` (🔴); `Normal (NN% CPU)` (🟢) vs a busy Pi (🟡/🔴, a heads-up that
+PiFinder's own position server may briefly lag); the INDI Mount Bridge status line (🟢 connected ·
+⚪ `(unconfirmed)` while a status check is momentarily out).
 
 ---
 
