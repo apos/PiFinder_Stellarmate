@@ -91,6 +91,25 @@ gleichen Netzwerk aus (keine Desktop-Sitzung auf dem Pi nötig). Details siehe
 </tr>
 </table>
 
+**Stable vs. Beta**: der Clone oben checkt standardmäßig `main` aus (**Stable**, das zuletzt
+getaggte Release). Die eigene **Install or Update**-Kachel des Control Centers hat dafür einen
+**PFSM Source Branch**-Dropdown, um auf `dev` (**Beta**, der laufende Entwicklungs-Branch)
+umzuschalten — oder zurück auf `main` — für jede Installation/Reinstallation/jedes Update ab dann,
+ganz ohne manuelles `git checkout`:
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_stable.png"><img src="docs/images/readme/cc_branch_stable.png" width="380"></a><br>
+<sub><b>main (stable)</b> ausgewählt</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_beta.png"><img src="docs/images/readme/cc_branch_beta.png" width="380"></a><br>
+<sub><b>dev (beta)</b> ausgewählt</sub>
+</td>
+</tr>
+</table>
+
 **2. Terminal-Installation**
 
 ```bash
@@ -98,6 +117,10 @@ git clone https://github.com/apos/PiFinder_Stellarmate.git
 cd PiFinder_Stellarmate
 ./pifinder_stellarmate_setup.sh
 ```
+
+Hier gibt es kein Dropdown — Branch vor dem Skript-Aufruf direkt per git wechseln, z. B.
+`git clone -b dev https://github.com/apos/PiFinder_Stellarmate.git` für **Beta**, oder
+`git checkout main` / `git checkout dev` in einem bestehenden Checkout.
 
 Alle Details: [Installation](#installation).
 
