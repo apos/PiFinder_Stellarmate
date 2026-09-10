@@ -9,10 +9,20 @@ from pptx.oxml.ns import qn
 import os, random
 
 _R = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "images"))
+_A = os.path.join(os.path.dirname(__file__), "assets")   # pre-cropped screenshot regions, see assets/README
 _MAP = {
     "hero.jpg":        os.path.join(_R, "readme", "PiFinder.jpg"),
     "cc_full.png":     os.path.join(_R, "readme", "cc_full_page.png"),
     "cc_coupling.png": os.path.join(_R, "readme", "cc_mount_bridge_coupling.png"),
+    "lx200_cp.png":    os.path.join(_A, "lx200_onset.png"),
+    "sim_mount.png":   os.path.join(_A, "sim_mount_c.png"),
+    "sim_pf.png":      os.path.join(_A, "sim_pf_c.png"),
+    "kstars_both.png": os.path.join(_A, "kstars_both_c.png"),
+    "cc_map.png":      os.path.join(_A, "cc_map.png"),
+    "mb_diagram.png":  os.path.join(_R, "readme", "badge_mb_diagram.png"),
+    "wordmark_neg.png":os.path.join(_R, "logo",   "PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png"),
+    "heyapos.png":     os.path.join(_R, "readme", "HeyApos_Wortmarke_logo_thumb.png"),
+    "avvp_neg.png":    os.path.join(_R, "readme", "avvp_2019_logo_wortmarke_neg.png"),
 }
 
 DARK  = RGBColor(0x0B, 0x10, 0x26)
@@ -125,6 +135,27 @@ def scrim(s,x,y,w,h,color,opacity):
     srgb.append(srgb.makeelement(qn('a:alpha'),{'val':str(int(opacity*1000))}))
     return r
 
+def grad(s,x,y,w,h,stops,ang_deg):
+    """Smooth linear gradient rectangle. stops: (pos 0-100, 'RRGGBB', alpha 0-100).
+    ang_deg: 0 = left->right, 90 = top->bottom."""
+    r=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(x),Inches(y),Inches(w),Inches(h))
+    r.line.fill.background(); r.shadow.inherit=False
+    sp=r._element.spPr
+    for tag in ('a:solidFill','a:noFill','a:gradFill','a:blipFill','a:pattFill'):
+        e=sp.find(qn(tag))
+        if e is not None: sp.remove(e)
+    g=sp.makeelement(qn('a:gradFill'),{})
+    lst=g.makeelement(qn('a:gsLst'),{})
+    for pos,rgb,alpha in stops:
+        gs=lst.makeelement(qn('a:gs'),{'pos':str(int(pos*1000))})
+        cc=gs.makeelement(qn('a:srgbClr'),{'val':rgb})
+        cc.append(cc.makeelement(qn('a:alpha'),{'val':str(int(alpha*1000))}))
+        gs.append(cc); lst.append(gs)
+    g.append(lst)
+    g.append(g.makeelement(qn('a:lin'),{'ang':str(int(ang_deg*60000)),'scaled':'1'}))
+    sp.find(qn('a:prstGeom')).addnext(g)
+    return r
+
 def cover(s,path,img_w_px,img_h_px):
     """full-bleed background image, aspect preserved, centered (edges cropped)."""
     ar=img_w_px/img_h_px
@@ -152,30 +183,29 @@ def section(num,kick,title,sub=None):
 
 # ============================================================
 
-# 1 TITLE — full-bleed hero, aspect preserved, right-aligned (crops the baked logo off the left)
+# 1 TITLE — full-bleed hero kept bright, navy edge bar, baked-in wordmark left as shot
 s=slide(DARK)
 _hw=SH*(1400/719)
-s.shapes.add_picture(_MAP["hero.jpg"],Inches(SW-_hw),0,Inches(_hw),Inches(SH))
-scrim(s,0,0,SW,SH,DARK,16)          # gentle overall
-scrim(s,0,0,9.6,SH,DARK,24)         # mid band
-scrim(s,0,0,7.0,SH,DARK,26)         # strongest behind the text
-text(s,M,1.45,7.2,0.4,[[("PiFinder ",18,True,BLUE),("on ",18,True,PAPER),("StellarMate",18,True,AMBER)]])
-text(s,M,1.95,7.2,2.3,[[("Plate-solving push-to,",39,True,WHITE)],
-                        [("on a full imaging rig.",39,True,WHITE)]],ls=1.12)
-text(s,M,4.05,6.6,1.2,[[("One Raspberry Pi. PiFinder answers “where am I pointing”; "
-    "StellarMate drives the rest — over INDI.",20,False,PAPER)]],ls=1.35)
-text(s,M,5.45,7.0,0.35,[[("github.com/apos/PiFinder_Stellarmate",15,True,BLUE)]])
-text(s,M,5.82,7.6,0.3,[[("Community project — not affiliated with PiFinder or StellarMate",12,False,RGBColor(0xC2,0xCB,0xDB))]])
+s.shapes.add_picture(_MAP["hero.jpg"],Inches((SW-_hw)/2),0,Inches(_hw),Inches(SH))
+BAR=0.85
+_b=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(SW-BAR),0,Inches(BAR),Inches(SH))
+_b.fill.solid(); _b.fill.fore_color.rgb=DARK; _b.line.fill.background(); _b.shadow.inherit=False
+text(s,M,0.7,8.6,2.3,[[("Plate-solving push-to,",42,True,WHITE)],
+                       [("on a full imaging rig.",42,True,WHITE)]],ls=1.12)
+text(s,M,2.75,7.7,1.5,[[("One Raspberry Pi. PiFinder answers “where am I pointing”, "
+    "StellarMate drives everything else — joined over INDI.",20,False,PAPER)]],ls=1.35)
+text(s,SW-BAR-7.0,SH-0.95,6.8,0.34,[[("github.com/apos/PiFinder_Stellarmate",15,True,BLUE)]],align=PP_ALIGN.RIGHT)
+text(s,SW-BAR-7.6,SH-0.6,7.4,0.3,[[("Community project — not affiliated with PiFinder or StellarMate",12,False,RGBColor(0xC2,0xCB,0xDB))]],align=PP_ALIGN.RIGHT)
 
 # 2 AGENDA
 s=slide(LIGHT); head(s,"Agenda","What this deck covers")
 parts=[("1","Project summary & focus"),("2","PFSM Control Center"),
        ("3","PF LX200 & PF Mount Bridge"),("4","PF Simulator")]
 for i,(n,t) in enumerate(parts):
-    yy=2.2+i*1.02
-    circle(s,M,yy,0.62,NAVY,n,WHITE,24)
-    text(s,M+0.95,yy+0.03,11.0,0.5,[[(t,T_H2,True,INK)]])
-text(s,M,SH-1.9,SW-2*M,1.2,[[("Then two takeaways — ",T_BODYSM,False,MUTE),
+    yy=2.05+i*0.92
+    circle(s,M,yy,0.58,NAVY,n,WHITE,23)
+    text(s,M+0.92,yy+0.02,11.0,0.5,[[(t,T_H2,True,INK)]])
+text(s,M,SH-1.45,SW-2*M,1.0,[[("Then two takeaways — ",T_BODYSM,False,MUTE),
     ("PiFinder",T_BODYSM,True,INK),(": where to send PRs.  ",T_BODYSM,False,MUTE),
     ("StellarMate",T_BODYSM,True,INK),(": how the SMOS app could drive PFSM.",T_BODYSM,False,MUTE)]],ls=1.3)
 
@@ -315,13 +345,13 @@ text(s,M,SH-1.35,12.0,0.9,[[("The rule: verify real state, never “the process 
 footer(s,"Part 2 · Control Center")
 
 # 15 CC COUPLING
-CPH=6.0; CPW=CPH*(1328/1030); CPX=SW-0.35-CPW; CPY=(SH-CPH)/2
+CPH=5.35; CPW=CPH*(1328/1030); CPX=SW-CPW; CPY=SH-0.05-CPH
 s=slide(LIGHT); head(s,"Operating it","Coupling, without the INDI panel")
-bullets(s,M,2.55,4.5,4.2,[
+bullets(s,M,3.0,5.5,4.0,[
     "Quick Actions — one-shots",
     "Coupling presets — one click",
     "Settings — set once, hidden",
-],sz=T_BODYSM,gap=24)
+],sz=T_BODY,gap=34)
 pic(s,"cc_coupling.png",CPX,CPY,CPW,CPH)
 footer(s,"Part 2 · Control Center")
 
@@ -330,66 +360,78 @@ section("03","Part three","PF LX200 & PF Mount Bridge","PiFinder as a telescope,
 
 # 17 THREE BLOCKS
 s=slide(LIGHT); head(s,"The INDI layer","Three building blocks")
-blk=[("PiFinder LX200","INDI telescope. Reports the solved position; a GoTo becomes a push-to. Required.",BLUE),
-     ("PiFinder Mount Bridge","Optional. Snoops PiFinder + the mount, couples them. Speaks only generic INDI.",AMBER),
-     ("Your mount’s driver","Not ours — whatever your mount already uses. Only for a motorised mount.",RGBColor(0x8C,0xD8,0xB0))]
-yy=2.2
-for t,d,c in blk:
-    circle(s,M,yy+0.06,0.32,c)
-    text(s,M+0.6,yy-0.04,12.0,0.5,[[(t,T_H2-2,True,INK)]])
-    text(s,M+0.6,yy+0.52,11.7,1.0,[[(d,T_BODYSM-2,False,MUTE)]],ls=1.22)
-    yy+=1.62
-footer(s,"Part 3 · LX200 & Mount Bridge")
+blk=[("PiFinder LX200","INDI telescope. Reports the solved position; a GoTo becomes a push-to. Required."),
+     ("PiFinder Mount Bridge","Optional. Snoops PiFinder + the mount and couples them. Generic INDI only."),
+     ("Your mount’s driver","Not ours — whatever your mount already uses. Only for a motorised mount.")]
+yy=2.05
+for i,(t,d) in enumerate(blk):
+    text(s,M,yy,0.5,0.5,[[(str(i+1),T_H2-2,True,MOD)]])
+    text(s,M+0.55,yy-0.02,12.0,0.5,[[(t,T_H2-3,True,INK)]])
+    text(s,M+0.55,yy+0.46,11.4,0.8,[[(d,T_BODYSM-3,False,MUTE)]],ls=1.15)
+    yy+=1.12
+text(s,M,SH-2.05,SW-2*M,0.3,[[("The Mount Bridge status row — the three, wired together:",T_CAP,False,MUTE)]])
+card(s,0,SH-1.72,SW,1.72,fill=DARK,line=DARK)
+_dw=10.6
+pic(s,"mb_diagram.png",(SW-_dw)/2,SH-1.5,_dw,border=None,shadow=False)   # AR 8.22 -> h ~1.29
 
 # 18 LX200 DRIVER
 s=slide(LIGHT); head(s,"The telescope driver","PiFinder LX200")
-bullets(s,M,2.3,12.0,4.4,[
-    ("Talks LX200 ","to PiFinder’s pos_server.py on TCP 4030."),
-    ("Reports the freshly solved position ","every poll. A GoTo = a push-to target; nothing moves."),
-    ("No Sync ","— PiFinder measures the truth every frame. Nothing to correct."),
-],sz=T_BODY,gap=20)
-footer(s,"Part 3 · LX200 & Mount Bridge")
+bullets(s,M,2.0,12.4,2.2,[
+    ("Talks LX200 ","to PiFinder’s pos_server.py (TCP 4030)."),
+    ("Reports the solved position ","each poll; a GoTo is only a push-to."),
+    ("No Sync ","— PiFinder measures the truth every frame."),
+],sz=T_BODYSM,gap=9)
+LXW=11.3; LXX=(SW-LXW)/2; LXY=3.5
+pic(s,"lx200_cp.png",LXX,LXY,LXW)   # cropped INDI CP — On Set: Track / Slew, no Sync
+footer(s,"Part 3 · INDI Control Panel — On Set: Track / Slew, no Sync")
 
 # 19 COUPLING DIAL
 s=slide(LIGHT); head(s,"One property, four positions","The Coupling Dial")
-modes=[("Off","No coupling. Pure push-to.",MUTE),
-       ("Verify / Alert only","Warn on drift. Never touches the mount.",BLUE),
-       ("Auto-correct on drift","Past the threshold: Sync the mount to PiFinder.",AMBER),
-       ("Goto-Forward","New target → real Goto, then settle & refine.",RGBColor(0x8C,0xD8,0xB0))]
-yy=2.35
-for t,d,c in modes:
-    circle(s,M,yy+0.05,0.3,c)
-    text(s,M+0.56,yy-0.05,4.7,0.9,[[(t,T_BODY-2,True,INK)]],ls=1.05)
-    text(s,5.7,yy-0.05,7.1,0.9,[[(d,T_BODYSM-2,False,MUTE)]],ls=1.15)
-    yy+=1.12
-footer(s,"Part 3 · Auto-correct action: Sync (any mount) or Goto/Track")
+modes=[("Off","pure push-to"),
+       ("Verify / Alert only","warn only, hands off"),
+       ("Auto-correct on drift","Sync past threshold"),
+       ("Goto-Forward","real slew, then refine")]
+yy=2.5
+for i,(t,d) in enumerate(modes):
+    text(s,M,yy,0.5,0.5,[[(str(i+1),T_H2-2,True,MOD)]])
+    text(s,M+0.5,yy,3.8,0.6,[[(t,T_BODY-4,True,INK)]],ls=1.03)
+    text(s,M+0.5,yy+0.44,3.9,0.5,[[(d,T_BODYSM-3,False,MUTE)]])
+    yy+=1.15
+CDAR=2.162
+CDW=8.15; CDX=SW-CDW; CDY=2.4
+pic(s,"cc_map.png",CDX,CDY,CDW)
+text(s,CDX,CDY+CDW/CDAR+0.12,CDW,0.3,[[("The dial in the Control Center — ",T_CAP,False,MUTE),("Decouple + the three presets.",T_CAP,True,INK)]])
+footer(s,"Part 3 · Auto-correct → Sync (any mount); Goto-Forward → Goto / Track")
 
 # 20 GENERIC
 s=slide(LIGHT); head(s,"Works with any mount","Generic INDI, nothing mount-specific")
-text(s,M,2.35,12.0,1.4,[[("Only ",T_H2,False,INK),("EQUATORIAL_EOD_COORD",T_H2,True,NAVY),
-    (" + ",T_H2,False,INK),("ON_COORD_SET",T_H2,True,NAVY),(" — never a mount command.",T_H2,False,INK)]],ls=1.2)
-bullets(s,M,4.3,12.0,2.4,[
-    ("Multi-Point Alignment ","(#191) — automated multi-star run."),
-    ("Reposition detection ","— adopt an unexplained move, or revert."),
-    ("Shadow Sync ","— mirror commands onto a non-driving device."),
-],sz=T_BODYSM,gap=14)
-footer(s,"Part 3 · LX200 & Mount Bridge")
+text(s,M,2.0,12.3,0.6,[[("Only ",T_H2-3,False,INK),("EQUATORIAL_EOD_COORD",T_H2-3,True,NAVY),
+    (" + ",T_H2-3,False,INK),("ON_COORD_SET",T_H2-3,True,NAVY),(" — never a mount command.",T_H2-3,False,INK)]])
+text(s,M,2.72,12.4,0.5,[[("Multi-Point Alignment (#191)",T_BODYSM,True,INK),("    ·    ",T_BODYSM,False,MUTE),
+    ("Reposition detection",T_BODYSM,True,INK),("    ·    ",T_BODYSM,False,MUTE),
+    ("Shadow Sync",T_BODYSM,True,INK)]])
+KBW=9.0; KBX=(SW-KBW)/2; KBY=3.28
+pic(s,"kstars_both.png",KBX,KBY,KBW)
+footer(s,"Part 3 · PiFinder + the mount, co-located on the KStars sky map — right-click either")
 
 # 21 SECTION 04
 section("04","Part four","PF Simulator","Test the Mount Bridge with no real mount and no clear sky.")
 
 # 22 SIM SETUP
 s=slide(LIGHT); head(s,"Hardware-free testing","A mount side and a PiFinder side")
-card(s,M,2.2,6.0,3.9)
-text(s,M+0.45,2.5,5.0,0.5,[[("Mount side",T_H2,True,INK)]])
-text(s,M+0.45,3.3,5.2,2.4,[[("The stock INDI Telescope Simulator — Sync it or GoTo it like a real mount.",
-    T_BODYSM,False,MUTE)]],ls=1.28)
-card(s,6.9,2.2,6.0,3.9)
-text(s,7.35,2.5,5.0,0.5,[[("PiFinder side",T_H2,True,INK)]])
-bullets(s,7.35,3.3,5.2,2.6,[
+_c1x,_c2x,_cw=0.35,6.75,6.25
+card(s,_c1x,1.95,_cw,5.0)
+text(s,_c1x+0.35,2.15,5.4,0.5,[[("Mount side",T_H2,True,INK)]])
+text(s,_c1x+0.35,2.78,5.6,0.8,[[("Stock INDI Telescope Simulator — Sync or GoTo like a real mount.",
+    T_BODYSM,False,MUTE)]],ls=1.2)
+pic(s,"sim_mount.png",_c1x+0.3,3.9,_cw-0.6)   # AR 2.286 -> h 2.47
+card(s,_c2x,1.95,_cw,5.0)
+text(s,_c2x+0.35,2.15,5.2,0.5,[[("PiFinder side",T_H2,True,INK)]])
+bullets(s,_c2x+0.35,2.78,5.5,0.9,[
     ("Simulator ","— holds a settable RA/Dec."),
-    ("Truth Injector ","— POSTs it to /api/fake_solve every ~2 s."),
-],sz=T_BODYSM,gap=12)
+    ("Truth Injector ","— POSTs to /api/fake_solve."),
+],sz=T_BODYSM,gap=6)
+pic(s,"sim_pf.png",_c2x+0.3,3.9,_cw-0.6)      # AR 2.116 -> h 2.67
 footer(s,"Part 4 · Simulator")
 
 # 23 SIM DETAILS
@@ -447,14 +489,17 @@ s=slide(LIGHT); head(s,"Mapping","CC feature → app screen")
 pairs=[("Status badges","a read-only status card"),
        ("Coupling presets","a segmented control"),
        ("Quick Actions","buttons on that card")]
-yy=2.5
+yy=2.35
 for a,b in pairs:
-    text(s,M,yy,5.4,0.6,[[(a,T_BODY-1,True,INK)]])
-    ar=s.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW,Inches(5.7),Inches(yy+0.06),Inches(0.5),Inches(0.42))
-    ar.fill.solid(); ar.fill.fore_color.rgb=BLUE; ar.line.fill.background(); ar.shadow.inherit=False
-    text(s,6.5,yy,6.2,0.6,[[(b,T_BODY-1,False,MUTE)]])
-    yy+=1.15
-text(s,M,SH-1.0,12.0,0.6,[[("APIs already exist: /api/mount_bridge_* , or the INDI properties directly.",T_CAP,False,MUTE)]])
+    text(s,M,yy,0.5,0.5,[[(str(pairs.index((a,b))+1),T_H2-2,True,MOD)]])
+    text(s,M+0.5,yy,3.8,0.5,[[(a,T_BODY-3,True,INK)]])
+    text(s,M+0.5,yy+0.46,3.9,0.5,[[(b,T_BODYSM-3,False,MUTE)]])
+    yy+=1.2
+text(s,M,SH-0.8,4.6,0.5,[[("APIs: /api/mount_bridge_*, or INDI.",T_CAP,False,MUTE)]])
+CMAR=2.162
+CMW=8.15; CMX=SW-CMW; CMY=2.35
+pic(s,"cc_map.png",CMX,CMY,CMW)
+text(s,CMX,CMY+CMW/CMAR+0.12,CMW,0.3,[[("Where each maps from, in the Control Center",T_CAP,False,MUTE)]])
 footer(s,"Takeaway 2 · SMOS app")
 
 # 30 ROADMAP
@@ -476,6 +521,19 @@ bullets(s,7.35,2.95,5.3,3.2,[
 ],sz=T_BODYSM-2,gap=14,color=PAPER,marker=AMBER)
 text(s,M,6.55,12.0,0.4,[[("github.com/apos/PiFinder_Stellarmate",16,True,BLUE),
     ("   ·   GitHub Project #15   ·   CHANGELOG.md",14,False,MOD)]])
+
+# 31 CLOSING — mirrors the README.md footer
+s=slide(DARK); stars(s,52,31)
+_ww=6.8
+s.shapes.add_picture(_MAP["wordmark_neg.png"],Inches((SW-_ww)/2),Inches(2.15),Inches(_ww))   # 950x179 -> h 1.28
+text(s,M,3.95,SW-2*M,0.4,[[("© github.com/apos 2026",T_BODYSM,False,MOD)]],align=PP_ALIGN.CENTER)
+text(s,M,4.45,SW-2*M,0.4,[[("Unofficial community project — not affiliated with StellarMate or PiFinder.",
+    T_CAP+1,False,MUTE)]],align=PP_ALIGN.CENTER)
+_hh=1.15
+s.shapes.add_picture(_MAP["heyapos.png"],Inches(SW/2-0.2-_hh*(416/234)),Inches(5.55),Inches(_hh*(416/234)))
+_aw=2.3
+s.shapes.add_picture(_MAP["avvp_neg.png"],Inches(SW/2+0.2),Inches(5.72),Inches(_aw))          # 2600x646 -> h 0.57
+text(s,M,SH-0.55,SW-2*M,0.3,[[("youtube.com/heyapos   ·   avvp.de",T_CAP,False,MOD)]],align=PP_ALIGN.CENTER)
 
 out=os.path.join(os.path.dirname(__file__),"PFSM_overview.pptx")
 prs.save(out)
