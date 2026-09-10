@@ -368,6 +368,10 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
   Test Hardware. Concept:
   [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
   §7 ([issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
+- A native **Ekos module** for PiFinder — the same controls as a first-class KStars tab, in
+  coordination with the KStars maintainer. Concept:
+  [`docs/concepts/ekos_pifinder_module.md`](docs/concepts/ekos_pifinder_module.md)
+  ([issue #370](https://github.com/apos/PiFinder_Stellarmate/issues/370)).
 - A "real" simulator — plate-solving against the GSC catalog rather than an injected position.
   Concept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
   ([issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
