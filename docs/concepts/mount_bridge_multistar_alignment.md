@@ -1,9 +1,10 @@
 # Concept: Automatic Multi-Point Alignment via Mount Bridge
 
-> **Status: concept — not yet implemented.** Tracked as
-> [GitHub issue #191](https://github.com/apos/PiFinder_Stellarmate/issues/191) on
-> [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
-> promoted, revised, or dropped.
+> **Status: core feature implemented** (candidate selection, driver, Control Center GUI, simulator
+> test tooling — [PR #219](https://github.com/apos/PiFinder_Stellarmate/pull/219)). Tracked as
+> [GitHub issue #191](https://github.com/apos/PiFinder_Stellarmate/issues/191) (kept open) on
+> [Project #15](https://github.com/users/apos/projects/15) — §4.3 (median-of-N-solves) and §4.5
+> (KStars-model feed) remain explicitly out of scope until separately decided.
 >
 > **Builds on two existing concepts, read both first:**
 > - [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md) §4 already

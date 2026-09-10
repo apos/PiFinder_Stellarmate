@@ -1,10 +1,12 @@
 # Concept: Control Center Guide Rewrite (screenshots + use-case walkthroughs)
 
-> **Status: concept - not started.** Written 2026-09-09 after a long live-testing session left the
-> Mount Bridge / Sync GUI significantly changed (see
-> [`session_start_position_reconciliation.md`](session_start_position_reconciliation.md) §8.8/§8.9)
-> with no corresponding update to the user-facing guides. Blocked mid-session on tooling (see §5) -
-> handed off to a fresh session rather than solved awkwardly here.
+> **Status: implemented, [PR #335](https://github.com/apos/PiFinder_Stellarmate/pull/335).** Written
+> 2026-09-09 after a long live-testing session left the Mount Bridge / Sync GUI significantly
+> changed (see [`session_start_position_reconciliation.md`](session_start_position_reconciliation.md)
+> §8.8/§8.9) with no corresponding update to the user-facing guides. `Readme_ControlCenter.md`/`_de.md`
+> now have a "Mount Bridge & Sync Workflows" section with real Full-Simulation screenshots; this was
+> the first of several documentation sessions that followed on 2026-09-10 (see CHANGELOG.md for the
+> full list of merged documentation PRs since).
 
 ## 1. Why
 

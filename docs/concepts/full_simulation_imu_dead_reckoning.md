@@ -1,6 +1,7 @@
 # Concept: Simulated IMU for Full Simulation (fixing discrete PiFinder position jumps)
 
-> **Status: concept — not yet implemented.**
+> **Status: implemented** (`PiFinder/python/PiFinder/imu_fake.py`, `Imu` class, dated 2026-09-01 -
+> the code itself cites this document by name).
 > Spans two repositories: `PiFinder_Stellarmate` (this repo, test tooling) and `PiFinder`
 > (`~/PiFinder`, `imu_fake.py`/`imu_pi.py`/`integrator.py`). Design context:
 > `docs/concepts/mount_bridge_reposition_detection.md` §9-10.

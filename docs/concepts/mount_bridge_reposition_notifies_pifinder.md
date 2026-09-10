@@ -1,9 +1,8 @@
 # Concept: Mount Bridge notifies PiFinder of a confirmed external mount reposition
 
-> **Status: concept — not yet implemented.** Tracked as
-> [GitHub issue #300](https://github.com/apos/PiFinder_Stellarmate/issues/300) on
-> [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
-> promoted, revised, or dropped.
+> **Status: implemented, PR [#301](https://github.com/apos/PiFinder_Stellarmate/pull/301).** Tracked
+> as [GitHub issue #300](https://github.com/apos/PiFinder_Stellarmate/issues/300) (closed) on
+> [Project #15](https://github.com/users/apos/projects/15).
 >
 > **Related, not overlapping**: [`mount_bridge_reposition_detection.md`](mount_bridge_reposition_detection.md)
 > (already implemented — `handleRepositionDetection()`) is what this concept builds on: it decides
