@@ -165,10 +165,8 @@ sudo systemctl disable --now pifinder-numpad-bridge.service  # off, persists acr
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="500"></a><br>
-<sub>The Control Center — the numpad bridge's "Turn Numpad On/Off" row lives in the hardware/peripherals
-section shown here. A dedicated close-up screenshot of that row is a documentation follow-up
-(see <a href="#strategic-roadmap">Strategic Roadmap</a>).</sub>
+<a href="docs/images/readme/cc_numpad_row.png"><img src="docs/images/readme/cc_numpad_row.png" width="620"></a><br>
+<sub>The Control Center's <strong>Turn Numpad On/Off</strong> control — in the <em>Simulation, Test and Power</em> tile, under <em>Hardware test and details → Optional external hardware</em>. No reboot; works against Real or Fake Mode.</sub>
 </td>
 </tr>
 </table>
@@ -288,7 +286,6 @@ Prioritized per `basic-memory/pifinder-stellarmate/00001`'s GitHub-Projects-sche
 
 | Priority | Size | Item |
 |---|---|---|
-| P2 | XS | Take and add a close-up screenshot of the Control Center's numpad toggle row to this document (currently only shown as part of the full-page screenshot). |
 | P3 (not yet tracked) | S | Automated smoke test: feed synthetic evdev events through `classify()`/the event loop without real hardware, verify expected `/api/key` calls (would need a mock HTTP target — currently zero test coverage for this script). |
 | P3 (not yet tracked) | M | Consider a small on-screen/journal status indicator visible without SSH access when no PiFinder instance is reachable, rather than only a log line. |
 

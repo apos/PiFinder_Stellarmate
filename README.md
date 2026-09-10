@@ -40,8 +40,8 @@ Then open the page in a browser — on the Pi itself, or from any other device o
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="700"></a><br>
-<sub>The Setup GUI opened remotely, from another device on the network</sub>
+<a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="460"></a><br>
+<sub>The Control Center, opened from any browser on the network — no desktop session on the Pi needed (Full Simulation shown)</sub>
 </td>
 </tr>
 </table>
@@ -201,22 +201,22 @@ bash gui_installer/launch_setup_gui.sh --shutdown-webserver
 <table>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
-<sub>Install/Update: live progress, terminal output, and Reboot/Close controls in one tile</sub>
+<a href="docs/images/readme/cc_install_running.png"><img src="docs/images/readme/cc_install_running.png" width="380"></a><br>
+<sub>Install or Update: a 10-step progress bar, a per-phase checklist, and the setup script's live terminal output in one tile</sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
-<sub>Quick Links: PiFinder status plus direct links (remote page, PFSM page, this page, GitHub docs)</sub>
+<a href="docs/images/readme/cc_mode_tile.png"><img src="docs/images/readme/cc_mode_tile.png" width="380"></a><br>
+<sub>Simulation, Test and Power: Synthetic Solve, the direct-against-hardware checklist, and collapsible service/power actions</sub>
 </td>
 </tr>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
-<sub>Mode & Power: hardware checklist, Simulation and testing (Fake Mode, Solve Simulation, Injected Solve), collapsible service/power controls</sub>
+<a href="docs/images/readme/cc_mount_bridge_baseline.png"><img src="docs/images/readme/cc_mount_bridge_baseline.png" width="380"></a><br>
+<sub>The PiFinder tile: OLED mirror and quick keys, the Cam/Solve/IMU/GPS badges, and the Mount Bridge connection diagram (drift, altitude, coupling)</sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
-<sub>Mount Bridge: connection diagram, Coupling presets, and the guided setup checklist</sub>
+<a href="docs/images/readme/cc_mount_bridge_coupling.png"><img src="docs/images/readme/cc_mount_bridge_coupling.png" width="380"></a><br>
+<sub>The INDI Mount Bridge tile: Quick Actions, the Coupling presets, and the guided setup checklist (collapsed)</sub>
 </td>
 </tr>
 </table>
