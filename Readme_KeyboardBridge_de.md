@@ -173,10 +173,8 @@ sudo systemctl disable --now pifinder-numpad-bridge.service  # aus, übersteht R
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="500"></a><br>
-<sub>Das Control Center — die "Turn Numpad On/Off"-Zeile der Numpad-Bridge liegt im hier gezeigten
-Hardware-/Peripherie-Abschnitt. Ein eigener Nahaufnahme-Screenshot dieser Zeile ist eine offene
-Doku-Aufgabe (s. <a href="#strategische-roadmap">Strategische Roadmap</a>).</sub>
+<a href="docs/images/readme/cc_numpad_row.png"><img src="docs/images/readme/cc_numpad_row.png" width="620"></a><br>
+<sub>Der <strong>Turn Numpad On/Off</strong>-Schalter im Control Center — in der Kachel <em>Simulation, Test and Power</em>, unter <em>Hardware test and details → Optional external hardware</em>. Kein Reboot; funktioniert gegen Real- oder Fake-Mode.</sub>
 </td>
 </tr>
 </table>
@@ -299,7 +297,6 @@ TODO-Tabelle (s. [[bm-github-project-schema-todo-format]] für das Schema selbst
 
 | Priorität | Größe | Punkt |
 |---|---|---|
-| P2 | XS | Nahaufnahme-Screenshot der Numpad-Umschalt-Zeile im Control Center für dieses Dokument ergänzen (bisher nur als Teil des Ganzseiten-Screenshots gezeigt). |
 | P3 (noch nicht getrackt) | S | Automatisierter Smoke-Test: synthetische evdev-Events durch `classify()`/die Event-Loop schicken, ohne echte Hardware, erwartete `/api/key`-Aufrufe verifizieren (bräuchte ein Mock-HTTP-Ziel — aktuell keinerlei Testabdeckung für dieses Skript). |
 | P3 (noch nicht getrackt) | M | Kleiner On-Screen-/Journal-Statusindikator erwägen, sichtbar ohne SSH-Zugriff, wenn keine PiFinder-Instanz erreichbar ist, statt nur einer Log-Zeile. |
 
