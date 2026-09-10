@@ -85,6 +85,24 @@ Then open the page in a browser — on the Pi itself, or from any other device o
 </tr>
 </table>
 
+**Stable vs. Beta**: the clone above checks out `main` (**Stable**, the latest tagged release) by
+default. The Control Center's own **Install or Update** tile has a **PFSM Source Branch** dropdown
+to switch to `dev` (**Beta**, the moving development branch) - or back to `main` - for any
+install/reinstall/update it runs from then on, no manual `git checkout` needed:
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_stable.png"><img src="docs/images/readme/cc_branch_stable.png" width="380"></a><br>
+<sub><b>main (stable)</b> selected</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_beta.png"><img src="docs/images/readme/cc_branch_beta.png" width="380"></a><br>
+<sub><b>dev (beta)</b> selected</sub>
+</td>
+</tr>
+</table>
+
 **2. Terminal install**
 
 ```bash
@@ -92,6 +110,10 @@ git clone https://github.com/apos/PiFinder_Stellarmate.git
 cd PiFinder_Stellarmate
 ./pifinder_stellarmate_setup.sh
 ```
+
+No dropdown here - switch branches with git itself before running the script, e.g.
+`git clone -b dev https://github.com/apos/PiFinder_Stellarmate.git` for **Beta**, or
+`git checkout main` / `git checkout dev` in an existing checkout.
 
 Full details: [Installation](#installation).
 
