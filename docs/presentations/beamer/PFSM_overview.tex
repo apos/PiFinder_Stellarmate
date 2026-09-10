@@ -360,6 +360,7 @@ Next (v3.x): render a GSC star field and run PiFinder's real solver on it — is
 \begin{frame}[t]{PiFinder — patches that aren't PFSM-specific}
 \code{docs/upstream\_patch\_inventory.md}
 \begin{itemize}
+\item \textbf{Multi-client \code{pos\_server.py}} — a thread per connection. It served one client at a time; SkySafari, Stellarium, KStars and our LX200 driver all want it at once. \code{(docs/concepts/pos\_server\_multi\_client\_architecture.md)}
 \item Test Mode toggle + status readback — a reliable API trigger.
 \item Camera-process resilience — fall back to the debug camera instead of crashing.
 \item \code{all\_ips()} — show every network address, not just the default route.
