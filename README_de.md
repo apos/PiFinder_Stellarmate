@@ -377,6 +377,10 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
   Alignment und Test Hardware. Konzept:
   [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
   §7 ([Issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
+- Ein natives **Ekos-Modul** für PiFinder — dieselben Controls als vollwertiger KStars-Tab, in
+  Abstimmung mit dem KStars-Maintainer. Konzept:
+  [`docs/concepts/ekos_pifinder_module.md`](docs/concepts/ekos_pifinder_module.md)
+  ([Issue #370](https://github.com/apos/PiFinder_Stellarmate/issues/370)).
 - Ein „echter" Simulator — Plate-Solving gegen den GSC-Katalog statt einer injizierten Position.
   Konzept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
   ([Issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
