@@ -364,8 +364,12 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
   spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:
   [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
   [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
-- Ein Guiding-Watcher (Dithering- / Sternverlust-Erkennung während der Aufnahme) — Konzept:
-  [`docs/concepts/session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md).
+- Ein Guiding-Watcher — die Mount-Bridge-Kopplung pausieren, solange Guiding/Dithering läuft.
+  Erster Schritt: ein Control-Center-Watchdog + eine `Mount Bridge EXTERNAL_HOLD`-Switch. Konzept:
+  [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
+  ([Issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); Hintergrund in
+  [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /
+  [#324](https://github.com/apos/PiFinder_Stellarmate/issues/324)).
 
 **Version 3.x — integrieren**
 

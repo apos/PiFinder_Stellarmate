@@ -323,6 +323,13 @@ coarser session-level gate. The remaining work is plumbing that D-Bus state thro
 (companion process, Control Center, or a pure-INDI `TIMED_GUIDE_*` pulse heuristic) and deciding
 the per-mechanism suspend/resume scope. Still zero code.
 
+**First implementable step spec'd 2026-09-10**:
+[`mount_bridge_external_hold.md`](mount_bridge_external_hold.md)
+([#372](https://github.com/apos/PiFinder_Stellarmate/issues/372)) - a `Mount Bridge EXTERNAL_HOLD`
+switch gated in `TimerHit()`, driven by a Control Center watchdog polling `Ekos.Guide.status`.
+The driver half is shared with the eventual [Ekos module](ekos_pifinder_module.md); the watchdog
+is the throwaway part that proves the behaviour first.
+
 ### 8.8 Mount altitude/horizon status not surfaced anywhere (found 2026-09-09, live)
 
 **Not implemented - no continuous signal exists at all.** Found live testing the no-solve banner
