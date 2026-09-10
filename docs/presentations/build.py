@@ -117,6 +117,23 @@ def head(s,kick,title,tc=INK):
 def footer(s,txt,dark=False):
     text(s,M,SH-0.5,SW-2*M,0.3,[[(txt,12,False,MOD if dark else MUTE)]])
 
+def scrim(s,x,y,w,h,color,opacity):
+    """opacity 0-100 (0 = invisible)."""
+    r=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(x),Inches(y),Inches(w),Inches(h))
+    r.fill.solid(); r.fill.fore_color.rgb=color; r.line.fill.background(); r.shadow.inherit=False
+    sf=r.fill._xPr.find(qn('a:solidFill')); srgb=sf.find(qn('a:srgbClr'))
+    srgb.append(srgb.makeelement(qn('a:alpha'),{'val':str(int(opacity*1000))}))
+    return r
+
+def cover(s,path,img_w_px,img_h_px):
+    """full-bleed background image, aspect preserved, centered (edges cropped)."""
+    ar=img_w_px/img_h_px
+    if ar >= SW/SH:
+        w=SH*ar; h=SH; x=(SW-w)/2; y=0.0
+    else:
+        w=SW; h=SW/ar; x=0.0; y=(SH-h)/2
+    return s.shapes.add_picture(_MAP[path],Inches(x),Inches(y),Inches(w),Inches(h))
+
 def stars(s,n,seed):
     random.seed(seed)
     for _ in range(n):
@@ -135,18 +152,20 @@ def section(num,kick,title,sub=None):
 
 # ============================================================
 
-# 1 TITLE
-s=slide(DARK); stars(s,60,1)
-pic(s,"hero.jpg",8.25,0,5.09,7.5,border=None,shadow=False)
-mask=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(7.55),0,Inches(0.9),prs.slide_height)
-mask.fill.solid(); mask.fill.fore_color.rgb=DARK; mask.line.fill.background(); mask.shadow.inherit=False
-text(s,M,1.95,7.0,0.5,[[("PiFinder ",18,True,BLUE),("on ",18,True,MOD),("StellarMate",18,True,AMBER)]])
-text(s,M,2.5,6.7,2.4,[[("Plate-solving push-to,",38,True,WHITE)],
-                       [("on a full imaging rig.",38,True,WHITE)]],ls=1.12)
-text(s,M,4.55,6.4,1.2,[[("One Raspberry Pi. PiFinder answers “where am I pointing”, "
-    "StellarMate drives everything else — joined over INDI.",21,False,MOD)]],ls=1.35)
-text(s,M,SH-0.95,7.0,0.35,[[("github.com/apos/PiFinder_Stellarmate",15,True,BLUE)]])
-text(s,M,SH-0.6,7.0,0.3,[[("Community project — not affiliated with PiFinder or StellarMate",12,False,MUTE)]])
+# 1 TITLE — full-bleed hero, aspect preserved, right-aligned (crops the baked logo off the left)
+s=slide(DARK)
+_hw=SH*(1400/719)
+s.shapes.add_picture(_MAP["hero.jpg"],Inches(SW-_hw),0,Inches(_hw),Inches(SH))
+scrim(s,0,0,SW,SH,DARK,16)          # gentle overall
+scrim(s,0,0,9.6,SH,DARK,24)         # mid band
+scrim(s,0,0,7.0,SH,DARK,26)         # strongest behind the text
+text(s,M,1.45,7.2,0.4,[[("PiFinder ",18,True,BLUE),("on ",18,True,PAPER),("StellarMate",18,True,AMBER)]])
+text(s,M,1.95,7.2,2.3,[[("Plate-solving push-to,",39,True,WHITE)],
+                        [("on a full imaging rig.",39,True,WHITE)]],ls=1.12)
+text(s,M,4.05,6.6,1.2,[[("One Raspberry Pi. PiFinder answers “where am I pointing”; "
+    "StellarMate drives the rest — over INDI.",20,False,PAPER)]],ls=1.35)
+text(s,M,5.45,7.0,0.35,[[("github.com/apos/PiFinder_Stellarmate",15,True,BLUE)]])
+text(s,M,5.82,7.6,0.3,[[("Community project — not affiliated with PiFinder or StellarMate",12,False,RGBColor(0xC2,0xCB,0xDB))]])
 
 # 2 AGENDA
 s=slide(LIGHT); head(s,"Agenda","What this deck covers")
@@ -259,25 +278,26 @@ footer(s,"Part 1 · Summary")
 section("02","Part two","PFSM Control Center","Install, mode-switching, hardware checks and the Mount Bridge — one web page, no SSH.")
 
 # 12 CC WHY
+CCW=5.55; CCH=CCW/(2400/3030); CCX=SW-0.35-CCW; CCY=(SH-CCH)/2
 s=slide(LIGHT); head(s,"Motivation","Why a Control Center")
-bullets(s,M,2.3,7.4,4.0,[
+bullets(s,M,2.35,6.5,4.2,[
     "Watch an install from a phone at the scope.",
     "Switch Fake Mode ⟷ the real service.",
     "Check camera / IMU / GPS are really detected.",
     "Reboot the Pi without SSH.",
-],sz=T_BODY,gap=18)
-pic(s,"cc_full.png",9.15,0.9,3.7)
+],sz=T_BODY,gap=20)
+pic(s,"cc_full.png",CCX,CCY,CCW,CCH)
 footer(s,"Part 2 · Control Center")
 
 # 13 CC STDLIB
 s=slide(LIGHT); head(s,"Architecture","Stdlib only — by necessity")
-text(s,M,2.4,7.6,2.4,[[("It bootstraps the very venv that PiFinder needs, "
+text(s,M,2.4,6.5,3.0,[[("It bootstraps the very venv that PiFinder needs, "
     "so it can’t depend on one.",T_H2,True,INK)]],ls=1.2)
-bullets(s,M,4.6,7.6,2.2,[
+bullets(s,M,5.0,6.5,2.0,[
     "http.server on :8765, polled every 1–2 s.",
     "HTTP Basic auth against the system account (PAM).",
 ],sz=T_BODYSM,gap=14)
-pic(s,"cc_full.png",9.15,0.9,3.7)
+pic(s,"cc_full.png",CCX,CCY,CCW,CCH)
 footer(s,"Part 2 · Control Center")
 
 # 14 BADGES
@@ -295,13 +315,14 @@ text(s,M,SH-1.35,12.0,0.9,[[("The rule: verify real state, never “the process 
 footer(s,"Part 2 · Control Center")
 
 # 15 CC COUPLING
+CPH=6.0; CPW=CPH*(1328/1030); CPX=SW-0.35-CPW; CPY=(SH-CPH)/2
 s=slide(LIGHT); head(s,"Operating it","Coupling, without the INDI panel")
-bullets(s,M,2.3,6.6,4.2,[
-    ("Quick Actions ","— Sync from PiFinder, Goto Held Target, Stop."),
-    ("Coupling presets ","— one click sets every INDI property."),
-    ("Settings ","— one-time setup, collapsed away."),
-],sz=T_BODYSM,gap=16)
-pic(s,"cc_coupling.png",8.0,1.6,5.0)
+bullets(s,M,2.55,4.5,4.2,[
+    "Quick Actions — one-shots",
+    "Coupling presets — one click",
+    "Settings — set once, hidden",
+],sz=T_BODYSM,gap=24)
+pic(s,"cc_coupling.png",CPX,CPY,CPW,CPH)
 footer(s,"Part 2 · Control Center")
 
 # 16 SECTION 03
