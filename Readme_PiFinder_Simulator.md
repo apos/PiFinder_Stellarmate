@@ -2,23 +2,23 @@
 
 ## Quickstart
 
-**Was er kann:**
-- Simuliert PiFinders Position exakt und deterministisch - kein echter Himmel, keine echte PiFinder-Hardware nötig.
-- Injiziert diese Position als echten Solve in PiFinder (`/api/fake_solve`), sodass Mount Bridge exakt wie im Realbetrieb reagiert.
-- Kann optional automatisch dem Mount folgen (`FOLLOW_MOUNT_DEVICE`, [#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)) - simuliert damit ein starr am Teleskop montiertes PiFinder inklusive Dead-Reckoning bei Slews.
-- Läuft gegen die stock INDI Telescope Simulator als Mount-Gegenstück - keine reale Montierung nötig.
+**What it can do:**
+- Simulates PiFinder's position exactly and deterministically - no real sky, no real PiFinder hardware needed.
+- Injects that position as a real solve into PiFinder (`/api/fake_solve`), so Mount Bridge reacts exactly as it would in real operation.
+- Can optionally follow the mount automatically (`FOLLOW_MOUNT_DEVICE`, [#239](https://github.com/apos/PiFinder_Stellarmate/pull/239)) - simulating a PiFinder rigidly mounted to the telescope, including dead-reckoning during slews.
+- Runs against the stock INDI Telescope Simulator as its mount counterpart - no real mount needed.
 
-**Was er nicht kann:**
-- Kein echtes Kamera-Solving, keine Sichtfeld-/Optik-Simulation.
-- Kein Rauschen/keine realistische Solve-Latenz von sich aus - die kommt höchstens vom Truth-Injector-Intervall, nicht vom Simulator selbst.
-- Erscheint absichtlich NICHT als Mount-Kandidat im Control Center (wie "PiFinder LX200" auch nicht).
-- Kein Setup-Komfort (manuelles Sync/RA-Dec-Eintippen nötig) - siehe [#176](https://github.com/apos/PiFinder_Stellarmate/issues/176).
+**What it can't do:**
+- No real camera solving, no field-of-view/optics simulation.
+- No noise/realistic solve latency of its own - at most that comes from the Truth Injector's interval, not the simulator itself.
+- Deliberately does NOT appear as a mount candidate in the Control Center (same as "PiFinder LX200").
+- No setup convenience (manual Sync/RA-Dec entry needed) - see [#176](https://github.com/apos/PiFinder_Stellarmate/issues/176).
 
-**Use Cases:**
-- Root-Cause-Debugging von Mount-Bridge-Logik ohne klaren Himmel.
-- Reposition-Detection (Fall 1-4) gezielt mit exakten, reproduzierbaren Werten triggern.
-- Stresstests (schnelles Tracking-Toggle, wiederholte PushTos) unabhängig von Wetter/Tageszeit.
-- Regressionstest vor jedem Fix-Deploy, bevor mit echter Hardware getestet wird.
+**Use cases:**
+- Root-cause debugging of Mount Bridge logic without a clear sky.
+- Deliberately triggering Reposition Detection (Fall 1-4) with exact, reproducible values.
+- Stress tests (fast tracking toggling, repeated PushTos) independent of weather/time of day.
+- Regression testing before every fix deploy, before testing against real hardware.
 
 See [Installation & Illustrated Guide](#installation--illustrated-guide) below to actually set it up.
 For what KStars shows for this device and the mount, and what the right-click Goto/Sync operations

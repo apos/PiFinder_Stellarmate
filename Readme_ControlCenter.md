@@ -397,6 +397,19 @@ Running elsewhere: `INDI-only` (checkbox) installs just the INDI build dependenc
 drivers — no clone, no venv, no catalog — for a separate control host coupled to a PiFinder over the
 network (see [help.html#indi-only-mode](gui_installer/help.html)).
 
+### Next: create your equipment profile (mandatory)
+
+> **⚠️ A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari.** The
+> INDI drivers this install just built (`PiFinder LX200`, optionally `PiFinder Mount Bridge`) only
+> exist in the StellarMate Web Manager's own driver catalog — they don't appear anywhere inside
+> Ekos, and there is no profile for them until you create one yourself. Skipping this step is the
+> single most common reason the Mount Bridge tile below, or SkySafari, or Ekos's device list, all
+> stay empty after an otherwise successful install.
+
+Do this once, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars) — full
+walkthrough with screenshots:
+[Readme_PiFinder_LX200.md — Step 2: create an equipment profile in the Web Manager](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
+
 ---
 
 ## Mount Bridge & Sync Workflows

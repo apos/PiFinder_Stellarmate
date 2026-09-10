@@ -47,6 +47,22 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 
 ---
 
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Key Features & Changes](#key-features--changes)
+3. [Hardware Requirements](#hardware-requirements)
+4. [Installation](#installation)
+5. [After Installation: PiFinder's "PFSM" Page](#after-installation-pifinders-pfsm-page)
+6. [Using the INDI Driver](#using-the-indi-driver)
+7. [SMOS Updates](#smos-updates)
+8. [Version Compatibility](#version-compatibility)
+9. [Roadmap](#roadmap)
+10. [Uninstallation](#uninstallation)
+11. [See Also](#see-also)
+
+---
+
 ## Quick Start
 
 **1. Browser install (recommended)**
@@ -78,6 +94,12 @@ cd PiFinder_Stellarmate
 ```
 
 Full details: [Installation](#installation).
+
+> **⚠️ Mandatory next step, either way: create an equipment profile in the Web Manager.**
+> A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari — the drivers
+> only exist in the StellarMate Web Manager's own catalog, and there is no profile for them until
+> you create one, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars).
+> See [Readme_PiFinder_LX200.md — Step 2](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
 
 ---
 
@@ -348,11 +370,11 @@ repo it's uninstalling.
 ## See Also
 
 *   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, Mount Bridge & Sync workflows, API reference. ([Deutsche Version](Readme_ControlCenter_de.md))
-*   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — the INDI layer: illustrated setup guide, LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
+*   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — the INDI layer: illustrated step-by-step setup (Web Manager equipment profile, INDI Control Panel, KStars/Ekos, SkySafari), LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
 *   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — the numpad-as-keypad bridge: architecture, key mapping, self-healing design. ([Deutsche Version](Readme_KeyboardBridge_de.md))
 *   **[Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)** — set up an x86 StellarMate OS VM (UTM on a Mac) as a hardware-free control-host + simulator dev machine. ([Deutsche Version](Readme_UTM_dev_X86_de.md))
 *   **[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)** — the PiFinder Simulator / Injected Solve, for testing the Mount Bridge without a real mount or clear sky.
-*   **[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md)** — how KStars shows the PiFinder devices on the sky map, and what the right-click Goto/Sync operations do. ([Deutsche Version](Readme_PiFinder_in_KStars_de.md))
+*   **[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md)** — how KStars draws the PiFinder devices on the sky map, and what each device's right-click Goto/Sync/Abort operations actually do. ([Deutsche Version](Readme_PiFinder_in_KStars_de.md))
 *   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions. ([Deutsche Version](Readme_design_decisions_de.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history · **[GitHub Project](https://github.com/users/apos/projects/15)** — tracked roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
