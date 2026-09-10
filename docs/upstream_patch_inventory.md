@@ -131,7 +131,8 @@ instance in parallel with a real one (e.g. for dev/testing, exactly why this pro
 
 ### 1.6 LX200 "no position yet" placeholder (`pos_server.py`)
 
-**File**: `diffs/pos_server_py.diff`.
+**File**: `diffs/pos_server_py.diff` — this diff also carries the concurrency rework in §1.9;
+the two are independent and should be filed as separate commits/PRs upstream.
 
 `get_telescope_ra()`/`get_telescope_dec()` (the `:GR#`/`:GD#` LX200 handlers) returned a fixed
 `"+00*00'01"` placeholder whenever PiFinder had no valid pointing yet, instead of signaling "no
@@ -193,6 +194,53 @@ to the true pole.
 **Upstream-relevant**: a general-purpose endpoint silently returns wrong data (no error) for any
 near-polar injection. Filed as
 [brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645).
+
+### 1.9 Multi-client `pos_server.py` (one thread per connection)
+
+**File**: `diffs/pos_server_py.diff` (same diff as §1.6, regenerated to carry both changes — split
+them when filing).
+
+`run_server()`'s accept loop called `handle_client()` **inline**: `pos_server.py` (the LX200
+protocol server on TCP 4030) served exactly one client at a time. A second connection got no
+response at all — not even a communication error — until the first one disconnected.
+
+But port 4030 is spoken to by several genuinely independent client types, potentially concurrently:
+
+| Client | How it connects |
+|---|---|
+| **SkySafari** (iOS/iPadOS) | directly, LX200/TCP to :4030 — the server's originally documented client |
+| **Stellarium** | directly, LX200/TCP to :4030 (also sends the ACK byte — `is_stellarium`) |
+| **KStars / Ekos** | indirectly — the `PiFinder LX200` INDI driver is *itself* a client of :4030 |
+| **StellarMate app** | via the same INDI driver as KStars (no separate wire to :4030) |
+
+Fix: `run_server()` starts **one daemon thread per accepted connection** (`listen(1)` → `listen(5)`).
+Every module-global that actually held *per-connection* state (`is_stellarium`,
+`stellarium_latitude`/`_longitude`, `sr_result`) becomes `threading.local()` — which as a side
+effect closes the last, connection-unscoped part of the `sr_result` cross-client contamination risk
+(the consume-once part was already fixed, see §1.6). The `sequence` counter is lock-guarded (race on
+two simultaneous GoTo pushes), and there is a passive connection cap (3 per IP, 8 global) so a
+misbehaving reconnect loop can't exhaust the process. A first debounce attempt that *actively closed*
+an older connection from the same IP when a new one arrived was removed after a two-client test from
+`127.0.0.1` (exactly how `indi_pifinder_lx200` connects) showed real independent clients can share an
+IP.
+
+Full design, per-shared-resource concurrency-safety analysis, eventuality table and test plan:
+`docs/concepts/pos_server_multi_client_architecture.md`. Live-tested twice — isolated
+(`test_pos_server_multiclient.py`, fake `shared_state`, test port) and against the running service on
+:4030 with three real parallel clients alongside the already-connected `PiFinder LX200` driver.
+
+**Why upstream-relevant**: not a StellarMate concern at all — `pos_server.py` is PiFinder's own
+LX200 server and its single-client accept loop is a plain limitation for *anyone* running more than
+one planetarium/app against it (SkySafari on a phone while KStars runs on a laptop is a completely
+ordinary setup). The rework is self-contained and behavior-preserving for the single-client case.
+See PR 10 in `docs/upstream_pr_templates.md`.
+
+**Related, deliberately not part of this fix** (flagged as a separate P1 in basic-memory
+`pifinder-stellarmate/00111`): `pos_server`'s latency-critical, externally-exposed read path talks to
+the `StateManager` child process with no scheduling priority. On a Pi 4 (4 cores) under a full
+`PiFinder.main` process fan-out (13 processes, load average 3.5–5.7 observed) that shows up as
+occasional `shared_state` slowness — CPU oversubscription, not a code defect, but a real design gap
+(`nice`/`chrt` for the StateManager, or profiling).
 
 ---
 
