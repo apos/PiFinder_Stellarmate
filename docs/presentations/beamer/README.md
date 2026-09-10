@@ -8,10 +8,11 @@
 Needs a full TeX Live / MacTeX (LuaLaTeX). No `biber` step.
 
 ```bash
-latexmk -lualatex PFSM_overview.tex
-# or:
-lualatex PFSM_overview && lualatex PFSM_overview   # 2nd pass fills the agenda bar
+./build.sh                    # builds both PFSM_overview.pdf (dark) and PFSM_overview_light.pdf
 ```
+
+Dark only: `latexmk -lualatex PFSM_overview.tex` (run twice).
+Light only: `lualatex -jobname=PFSM_overview_light "\def\PFSMlightbuild{}\input{PFSM_overview}"` (twice).
 
 Output: `PFSM_overview.pdf`.
 

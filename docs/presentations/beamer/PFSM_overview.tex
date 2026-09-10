@@ -46,11 +46,22 @@
 % colour external URLs; leave internal nav links (footer title, agenda bar) at their surrounding colour
 \hypersetup{colorlinks=true,urlcolor=AVVPBlue,linkcolor=.,citecolor=.,filecolor=.}
 
+% Dark by default. Build the LIGHT version with:
+%   lualatex -jobname=PFSM_overview_light "\def\PFSMlightbuild{}\input{PFSM_overview}"
+\newif\ifPFSMlight
+\ifdefined\PFSMlightbuild\PFSMlighttrue\fi
+
 \begin{document}
 
-\AVVPDarkMode
-\AVVPFootlineDark
-\AVVPBgFillWidth{pics/AVVPBg_dark.png}{0}{0}
+\ifPFSMlight
+  \AVVPLightMode
+  \AVVPFootlineLight
+  \AVVPBgFillWidth{pics/AVVPBg_light.png}{0}{0}
+\else
+  \AVVPDarkMode
+  \AVVPFootlineDark
+  \AVVPBgFillWidth{pics/AVVPBg_dark.png}{0}{0}
+\fi
 
 \title[PiFinder\_Stellarmate]{PFSM — Plate-solving push-to,\\
 on a full imaging rig}
@@ -431,8 +442,8 @@ APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directl
 \begin{center}
 \vfill
 {\AVVPTitleFont\color{AVVPBlue}\Large Thanks — and clear skies.}\\[1.6em]
-\includegraphics[width=0.5\paperwidth,keepaspectratio]{PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg}\\[1.2em]
-{\small \textcolor{white}{\textcopyright{} github.com/apos 2026}}\\[0.4em]
+\includegraphics[width=0.5\paperwidth,keepaspectratio]{\ifPFSMlight PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg\else PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg\fi}\\[1.2em]
+{\small \ifPFSMlight\color{AVVPBg}\else\color{white}\fi\textcopyright{} github.com/apos 2026}\\[0.4em]
 {\footnotesize \textcolor{AVVPGrey}{Unofficial community project — not affiliated with StellarMate or PiFinder.}}
 \vfill
 \end{center}
