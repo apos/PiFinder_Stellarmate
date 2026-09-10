@@ -4,9 +4,27 @@
 
 ![PiFinder am Teleskop unter Sternenhimmel](docs/images/readme/PiFinder.jpg)
 
-Dieses Projekt stellt eine Reihe von Skripten bereit, um die [PiFinder](https://www.pifinder.io/)-Software nahtlos in eine [Stellarmate](https://www.stellarmate.com/)-Umgebung zu installieren, zu patchen und zu integrieren. Es automatisiert den gesamten Einrichtungsprozess und sorgt dafür, dass PiFinder korrekt neben den bestehenden Stellarmate-Diensten funktioniert.
+## Zusammenfassung
 
-Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuche-Funktionen von PiFinder auf einem Gerät zugänglich zu machen, das gleichzeitig Stellarmate für Astrofotografie, EAA und vollständige Ausrüstungssteuerung betreibt.
+Dieses Projekt installiert, patcht und integriert das [PiFinder](https://www.pifinder.io/)-Plate-
+Solving-Push-to-System in ein [StellarMate](https://www.stellarmate.com/)-Setup, sodass ein einzelner
+Raspberry Pi PiFinders Plate-Solving und Objektsuche **neben** StellarMate für Astrofotografie, EAA
+und vollständige Ausrüstungssteuerung betreibt. Das Setup-Skript automatisiert den gesamten Ablauf.
+
+**Die Bausteine — und warum:**
+
+- **Raspberry Pi** — die Plattform, die PiFinder und StellarMate ohnehin beide anvisieren.
+- **PiFinder** — ein Python-basierter Push-to-Solver mit einer **Global-Shutter-Kamera** (saubere
+  Plate-Solves auch während sich die Montierung bewegt). Open Source in Hard- *und* Software — genau
+  das macht die Integration überhaupt machbar: Das Setup patcht ihn direkt an Ort und Stelle, statt
+  ihn zu forken.
+- **StellarMate** — ein gut gepflegtes Community-Projekt mit Open-Source-Kern und einem starken
+  App-Ökosystem (StellarMate App, KStars/Ekos, INDI Web Manager) zum Steuern einer kompletten
+  Imaging-Ausrüstung.
+- **INDI** — der Kitt zwischen beiden. Beide Seiten sprechen es bereits: PiFinder stellt seine
+  solvte Position als INDI-Teleskop bereit, und die optionale **Mount Bridge** koppelt das an jede
+  INDI-unterstützte motorisierte Montierung — kein montierungsspezifisches Protokoll, kein
+  Custom-Code pro Montierung.
 
 > ### ⚠️ **Haftungsausschluss**
 >
@@ -16,11 +34,21 @@ Das Hauptziel ist es, Nutzern die leistungsfähigen Plate-Solving- und Objektsuc
 
 > ### ✅ **Aktuell gepinnte Versionen**
 >
-> * Gepinnt auf **PiFinder-Software 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) — siehe `version.txt`/`pifinder_stellarmate_setup.sh`, nicht auf den beweglichen HEAD des upstream `release`-Branches, für reproduzierbare Installationen. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host — siehe die [Versionskompatibilität](#version-compatibility)-Tabelle unten.
-> * **Raspberry Pi 4**: Vollständig unterstützt — Kamera ✅, Plate-Solve ✅, IMU ✅, GPS ✅. Unter echtem Nachthimmel getestet (2026-07-12, gegen den zu diesem Zeitpunkt aktuellen Pin).
-> * **Raspberry Pi 5**: Unterstützt — GPS ✅, Web-UI ✅, OLED ✅ (gegen den zum Testzeitpunkt aktuellen Pin). (Ein monatelanges "OLED bleibt dunkel"-Problem entpuppte sich als defektes HAT-Board, kein Pi5-/Software-Problem — gelöst am 2026-07-17 durch Austausch des physischen HAT-Boards.) **Tastatur ⚠️**: Am Testgerät belegt ein Geekworm-X1203-UPS-Shield GPIO 16 gemeinsam mit Spalte 0 der Tastaturmatrix (Tasten 7/4/1/LEFT) — dadurch ist diese komplette Spalte dauerhaft unbrauchbar. Ein echter Hardware-Ressourcenkonflikt zwischen zwei Aufsteck-Boards, kein Pi5- oder Software-Problem, und nur relevant bei Setups mit diesem UPS-Shield. Kamera benötigt ein 15-poliges FFC-CSI-Adapterkabel (Pi4 nutzt 22-polig) — beim Testgerät noch nicht verbaut.
-> * **INDI-Integration**: eigenständiger LX200-Treiber + optionale Kopplung an eine echte Montierung ("Mount Bridge"), Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5/OnStepX-Montierung, alle vier Coupling-Presets — siehe [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md) und [CHANGELOG.md](CHANGELOG.md).
-> * **Control Center**: die PiFinder-Kachel bietet "Quick keys" — ein kompaktes Tastenfeld direkt auf der Seite (Pfeile, Long, Enter, zwei wählbare Layouts), um PiFinders OLED-Menü zu bedienen, ohne auf die separate Remote-Seite zu wechseln. Mount Bridge, PiFinder Mode/Test/Power und Install or Update sind einklappbar, die Wahl bleibt über Reloads hinweg gespeichert. Ein Night-Mode-Umschalter stellt den gesamten Seitentext in leuchtendem Rot dar. PiFinder-Installationen/Updates zielen auf einen gepinnten Release-Tag statt auf den beweglichen HEAD des upstream `release`-Branches. Ein "PiFinder"-Badge zeigt PiFinders eigene Mount-Type- + PiFinder-Type-Einstellungen auf einen Blick (grün solange PiFinder läuft, rot bei Nichtübereinstimmung mit der verbundenen Montierung), und das Montierungssymbol im Mount-Bridge-Diagramm zeigt zusätzlich den eigenen Mount Type der Montierung. Siehe [CHANGELOG.md](CHANGELOG.md) für die vollständige Historie.
+> * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) über `version.txt` /
+>   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
+>   `release`-Branches. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host —
+>   [Versionskompatibilität](#version-compatibility) hat die Details.
+> * **Pi 5 Tastatur ⚠️** — ein Geekworm-X1203-UPS-Shield belegt GPIO 16 gemeinsam mit Tastatur-
+>   Spalte 0 (Tasten 7/4/1/LEFT), die Spalte fällt aus. Hardware-Konflikt zwischen den zwei
+>   Aufsteck-Boards, nur mit diesem Shield; eine [Numpad-Bridge](Readme_KeyboardBridge_de.md) umgeht
+>   das.
+> * **INDI-Integration** — eigenständiger LX200-Treiber + optionale Mount-Bridge-Kopplung,
+>   Ende-zu-Ende verifiziert gegen eine echte Skywatcher-EQ5 / OnStepX-Montierung. Siehe
+>   [Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md).
+> * **Control Center** — Installationen/Updates, Hardware-Checkliste, Umschaltung Real / Full
+>   Simulation / Fake Mode, die Mount Bridge und Reboot/Shutdown, in einer lokalen Webseite. Siehe
+>   [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md); ausgelieferte Änderungen in
+>   [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

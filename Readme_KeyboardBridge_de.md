@@ -36,24 +36,20 @@ Umschalt-Button dokumentiert, der diese Bridge startet und stoppt.
 
 ## Warum das existiert
 
-PiFinders echtes Eingabegerät ist ein physisches Tastatur-HAT, direkt per GPIO verdrahtet und über
-`keyboard_pi.py` ausgelesen. Für das fertige Produkt ist das die richtige Lösung, erzeugt aber zwei
-praktische Probleme, auf die dieses Projekt ständig stößt:
+PiFinders echtes Eingabegerät ist ein Tastatur-HAT an GPIO (über `keyboard_pi.py` ausgelesen). Ein
+reiner HAT-Pfad hat zwei Nachteile:
 
-1. **Hardware-freie Entwicklung und Tests.** Ein reiner HAT-Eingabepfad bedeutet: jede
-   UI-/Software-Änderung muss mit der physischen Einheit in der Hand getestet werden — kein
-   Bank-Test, keine CI, kein "kurzer Check vom Schreibtisch aus" ohne die tatsächliche
-   Teleskop-Montierungs-Hardware.
-2. **Ein günstiger, physisch robuster Feld-Ersatz.** PiFinders HAT-Tastatur teilt sich in diesem
-   Projekt GPIO-Leitungen mit anderer Zusatz-Hardware (z. B. der Geekworm-X1203-USV / GPIO-16-Konflikt
-   — s. das Kompatibilitäts-Banner im Haupt-[README.md](README.md)) — ein kleiner
-   Wireless-Nummernblock umgeht das komplett, ist leichter und braucht deutlich weniger Strom.
+1. **Kein hardware-freies Testen.** Jede UI-Änderung braucht die physische Einheit in der Hand —
+   kein Bench-Test, keine CI.
+2. **GPIO-Konkurrenz.** Die HAT-Tastatur teilt sich GPIO-Leitungen mit anderer Zusatz-Hardware
+   (z. B. der Geekworm-X1203-USV / GPIO-16-Konflikt — s. das Kompatibilitäts-Banner im
+   Haupt-[README.md](README.md)). Ein Wireless-Nummernblock umgeht das, ist leichter und
+   stromsparender.
 
-Die Keyboard Bridge löst beides mit einem Skript: Sie liest rohe Tastenereignisse von **jedem**
-Linux-Eingabegerät (`evdev`) und leitet sie an PiFinders bestehende, stabile
-`POST /api/key`-Remote-API weiter — denselben Endpunkt, den die Web-UI-eigene virtuelle Tastatur,
-`pf_remote.py` und die Setup-GUI ohnehin schon nutzen. Kein PiFinder-Quellcode wird angefasst; die
-Bridge ist ein reiner Client einer öffentlichen Schnittstelle.
+Die Keyboard Bridge liest rohe Tastenereignisse von **jedem** Linux-Eingabegerät (`evdev`) und
+leitet sie an PiFinders stabile `POST /api/key`-Remote-API weiter — denselben Endpunkt, den die
+Web-UI-Tastatur, `pf_remote.py` und die Setup-GUI nutzen. Kein PiFinder-Quellcode wird angefasst;
+die Bridge ist ein reiner Client einer öffentlichen API.
 
 ```mermaid
 flowchart LR
@@ -133,19 +129,11 @@ zwischen dem echten HAT und diesem Ersatz überträgt:
    `ALT_*`-Aktionen, die auf echter Hardware existieren (`ALT_0`, `ALT_PLUS`, `ALT_MINUS`,
    `ALT_LEFT/UP/DOWN/RIGHT`).
 
-Ein subtiles Korrektheitsdetail, das explizit dokumentiert werden sollte, da es während der
-Entwicklung einen echten, schwer zu findenden Bug verursachte: ob eine Long-Press-/Hold-Aktion
-**bereits ausgelöst** hat, wird in einem eigenen `fired_codes`-Set festgehalten, geschrieben nur vom
-Timer-Thread (`fire_hold()`) genau in dem Moment, in dem er seine Aktion sendet — **bevor** jegliche
-Netzwerk-I/O stattfindet. Der Key-up-Handler (Hauptthread) liest und leert dieses Set nur; er
-schließt niemals aus dem Vorhandensein/Fehlen eines `Timer`-Objekts in `hold_timers`, ob der Hold
-"gefeuert" hat, weil `fire_hold()` sich selbst genau in dem Moment aus `hold_timers` entfernt, in dem
-es feuert — das erzeugt eine Race Condition, bei der Key-up "bereits weg" sehen und (fälschlich)
-einen zusätzlichen kurzen Druck beim Loslassen senden könnte. Bei SQUARE speziell schloss dieser
-überzählige Druck das gerade erst per Long-Press geöffnete Marking Menu wieder — das Menü öffnete
-sich sichtbar und verschwand sofort wieder. Behoben, indem zwei unabhängige Signale für zwei
-unabhängige Fragen genutzt werden ("läuft noch ein Timer" vs. "hat der Timer bereits gefeuert"),
-statt eines für beide zu überladen.
+Zwei unabhängige Signale für zwei unabhängige Fragen: `hold_timers` = läuft noch ein Hold-Timer;
+`fired_codes` = hat ein Hold bereits gefeuert (geschrieben von `fire_hold()` vor jeglicher
+Netzwerk-I/O, gelesen und geleert vom Key-up-Handler). Der Key-up-Handler schließt nie aus
+`hold_timers`, ob der Hold gefeuert hat — `fire_hold()` entfernt sich selbst beim Feuern aus
+`hold_timers`, das würde also racen und einen überzähligen kurzen Druck beim Loslassen senden.
 
 ---
 
