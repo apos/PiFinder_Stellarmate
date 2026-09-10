@@ -21,6 +21,8 @@
 - Regressionstest vor jedem Fix-Deploy, bevor mit echter Hardware getestet wird.
 
 See [Installation & Illustrated Guide](#installation--illustrated-guide) below to actually set it up.
+For what KStars shows for this device and the mount, and what the right-click Goto/Sync operations
+do, see [Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md).
 
 ## Table of Contents
 

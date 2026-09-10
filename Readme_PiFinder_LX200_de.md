@@ -366,7 +366,9 @@ Rechtsklick auf einen Stern zeigt beide Geräte als getrennte Ziele im Kontextme
 Fadenkreuze markieren, wo PiFinder aktuell "hinsieht" und wo die Mount tatsächlich steht (hier
 absichtlich weit auseinander, zur Illustration). Das Untermenü "PiFinder LX200" aufgeklappt zeigt
 nur **Goto / Abort / Find Telescope**, kein Sync (siehe
-[Warum kein TELESCOPE_CAN_SYNC?](#warum-kein-telescope_can_sync)). Klick auf ein Vorschaubild
+[Warum kein TELESCOPE_CAN_SYNC?](#warum-kein-telescope_can_sync)). Die vollständige
+Himmelskarten-Ansicht und alle Rechtsklick-Operationen behandelt
+[Readme_PiFinder_in_KStars_de.md](Readme_PiFinder_in_KStars_de.md). Klick auf ein Vorschaubild
 öffnet den Screenshot in voller Größe:
 
 <table>
