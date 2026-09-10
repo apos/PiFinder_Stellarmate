@@ -1,8 +1,12 @@
 # Concept: Mount Bridge Web Integration (Coupling Dial Without the INDI Control Panel)
 
-> **Status: concept — not yet implemented.** Tracked as a
-> GitHub issue with the `concept` label on [Project #15](https://github.com/users/apos/projects/15)
-> — update that issue if this concept is promoted, revised, or dropped.
+> **Status: implemented and released (v1.3.0).** Tracked as
+> [GitHub issue #38](https://github.com/apos/PiFinder_Stellarmate/issues/38) (closed) on
+> [Project #15](https://github.com/users/apos/projects/15). Phases 1-4 of §11's plan shipped and
+> closed individually (#39, #40, #41, #42), then extended past the original scope (role cards,
+> split-host support, real-mount validation of all four Coupling presets). Phase 5 (porting the
+> INDI client module into PiFinder's own web interface, §7) remains a separate, not-started stretch
+> goal, tracked on its own as [issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43).
 
 ## 1. Overview
 

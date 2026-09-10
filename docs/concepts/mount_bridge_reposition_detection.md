@@ -1,9 +1,11 @@
 # Concept: Mount Bridge Reposition Detection (Unifying "Follow mount's goto" / "Follow PiFinder's push to")
 
-> **Status: concept — not yet implemented.** Tracked as
-> [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178) on
-> [Project #15](https://github.com/users/apos/projects/15) — update that issue if this concept is
-> promoted, revised, or dropped.
+> **Status: the core mechanism this document describes (Fall 1-4 reposition classification,
+> `handleRepositionDetection()`) is implemented — [PR #196](https://github.com/apos/PiFinder_Stellarmate/pull/196).**
+> [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178) remains open for this
+> concept's original, broader framing (a single unified GoTo button replacing the Goto-Forward /
+> Auto-correct mode split entirely) - that reframing was not adopted; both modes still exist as
+> separate presets, with reposition detection running underneath them as described here.
 >
 > **Overlaps with [`pifinder_mount_model_cloud_tracking.md`](pifinder_mount_model_cloud_tracking.md)**
 > - found late while writing this, see §8 for how the two relate. Read that document's §4-§5

@@ -1,9 +1,11 @@
 # Concept: PiFinder Fake-Solve Simulation (Safe, Weather-Independent Mount Bridge Testing)
 
-> **Status: concept — not yet implemented.** Tracked as
+> **Status: implemented and in active use** (`/api/fake_solve`, exercised throughout this project's
+> other Full-Simulation tooling and docs). Tracked as
 > [GitHub issue #106](https://github.com/apos/PiFinder_Stellarmate/issues/106) (`concept` +
-> `pifinder` labels) on [Project #15](https://github.com/users/apos/projects/15) — update that
-> issue if this concept is promoted, revised, or dropped.
+> `pifinder` labels, kept open) on [Project #15](https://github.com/users/apos/projects/15) — a real
+> bug (a degenerate IMU anchor silently killing dead-reckoning for the rest of the session) was
+> found and fixed via live testing, see [issue #116](https://github.com/apos/PiFinder_Stellarmate/issues/116).
 
 ## 1. Overview
 
