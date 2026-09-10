@@ -53,13 +53,17 @@ Plate-solving push-to, on a full imaging rig}
 
 \makebeamertitle
 
+\AVVPAgendaOnlySections   % 3 top-level sections in the footer bar; agenda interstitial per section, not per subsection
+
 \begin{frame}{Agenda}
 \tableofcontents{}
 \end{frame}
 
 % ============================================================
-\section{For newcomers}
+\section{Introduction}
 % ============================================================
+
+\subsection{For newcomers}
 
 \begin{frame}[t]{Two problems, one telescope}
 \begin{columns}[T]
@@ -108,7 +112,7 @@ PiFinder is patched in place, never forked. The mount side is generic INDI.
 \end{frame}
 
 % ============================================================
-\section{Project summary \& focus}
+\subsection{Project summary \& focus}
 % ============================================================
 
 \begin{frame}[t]{What PFSM is}
@@ -149,8 +153,10 @@ Pinned to a fixed release tag, not the upstream \emph{release} branch. The READM
 \end{frame}
 
 % ============================================================
-\section{PFSM Control Center}
+\section{Implementation}
 % ============================================================
+
+\subsection{Control Center}
 
 \begin{frame}[t]{Why a Control Center}
 \begin{columns}[T]
@@ -199,7 +205,7 @@ The rule: verify real state, never ``the process is alive''.
 \end{frame}
 
 % ============================================================
-\section{PF LX200 \& PF Mount Bridge}
+\subsection{PF LX200 \& Mount Bridge}
 % ============================================================
 
 \begin{frame}[t]{Three building blocks}
@@ -256,7 +262,7 @@ Only \code{EQUATORIAL\_EOD\_COORD} + \code{ON\_COORD\_SET} — never a mount com
 \end{frame}
 
 % ============================================================
-\section{PF Simulator}
+\subsection{PF Simulator}
 % ============================================================
 
 \begin{frame}[t]{A mount side and a PiFinder side}
@@ -290,8 +296,10 @@ Next (v3.x): render a GSC star field and run PiFinder's real solver on it — is
 \end{frame}
 
 % ============================================================
-\section{Where to contribute}
+\section{Contribute}
 % ============================================================
+
+\subsection{Upstream: PiFinder}
 
 \begin{frame}[t]{PiFinder — patches that aren't PFSM-specific}
 \code{docs/upstream\_patch\_inventory.md}
@@ -304,6 +312,8 @@ Next (v3.x): render a GSC star field and run PiFinder's real solver on it — is
 \end{itemize}
 Ready-to-file PR text: \code{docs/upstream\_pr\_templates.md}.
 \end{frame}
+
+\subsection{App: StellarMate}
 
 \begin{frame}[t]{StellarMate — extending the SMOS app for PFSM}
 What a thin integration needs:
