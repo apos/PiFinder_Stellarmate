@@ -137,10 +137,11 @@ real mount are coupled:
 | **Off** | No coupling at all. Pure push-to. | Dobson, no motor. |
 | **Verify/Alert only** | Continuously compares PiFinder's solved position to the mount's reported position; logs a warning if they disagree by more than the configured threshold. Never writes to the mount. | Astrophotography: a passive "is my mount still correctly aligned?" sanity check. |
 | **Auto-correct on drift** | Same comparison, but if drift exceeds the threshold, automatically sends a `Sync` or `Goto/Track` (configurable via `CORRECTION_ACTION`) to the mount. | Manual push-to-then-correct workflows: you slew by hand until PiFinder shows on-target, the Bridge picks up the resulting drift and straightens the mount out afterwards. |
-| **Goto-Forward** *(new)* | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and auto-corrects any residual with a `Sync`. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
+| **Goto-Forward** | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and auto-corrects any residual with a `Sync`. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
 
-There's also a **Manual (one-shot)** control (`MANUAL_TRIGGER`: "Sync Now" / "Goto Now") that works
-regardless of the selected mode — useful for a single manual correction without switching modes.
+There's also a **Manual (one-shot)** control (`MANUAL_TRIGGER`) that fires a single Sync or Goto
+regardless of the selected mode, for a one-off correction without switching modes — see the
+[property reference](#property-referenz-pifinder-mount-bridge) for the full list of triggers.
 
 ---
 
@@ -210,46 +211,76 @@ Im Browser: `http://<pi-adresse>:8624` öffnen.
 
 ### Schritt 3: INDI Control Panel — Geräte verbinden
 
-Die Tab-Leiste oben zeigt alle drei Geräte nebeneinander, sobald das Profil läuft.
+In KStars öffnen: **Tools → Devices → INDI Control Panel** (`Strg+I`); es öffnet sich auch von
+selbst, sobald das Profil startet. Pro Treiber im Profil gibt es einen Top-Level-Tab:
 
-**PiFinder LX200** verbinden:
-- Tab "PiFinder LX200" → Connection
-- Connection Mode: **TCP**, Address `127.0.0.1`, Port **`4030`**
-- "Connect" klicken
+| Tab | Rolle | Verbinden? |
+|---|---|---|
+| **PiFinder LX200** | PiFinders gelöste Position als INDI-Teleskop | Ja — die Kern-Integration |
+| **PiFinder Mount Bridge** | Koppelt PiFinder an eine echte Mount | Nur mit motorisierter Mount |
+| Treiber deiner Mount (z.B. *LX200 OnStep*) | Die echte Mount | Wie für diese Mount üblich |
+| *PiFinder Simulator*, *Telescope Simulator*, *SkySafari*, … | Optionale Test-/Bridge-Treiber | Siehe [Simulator-Guide](Readme_PiFinder_Simulator.md) und [Schritt 5](#schritt-5-skysafari-anbinden) |
 
-Danach im Tab "Main Control" bestätigen — hier ist auch direkt sichtbar, dass es unter "On Set"
-nur **Track/Slew** gibt, kein Sync (siehe [Was passiert bei einem GoTo](#was-passiert-bei-einem-goto-auf-pifinder-lx200)).
+#### PiFinder LX200
 
-**Deine echte Mount** verbinden (Beispiel OnStepX): je nach Anbindung Serial-Port oder TCP wählen,
-dann "Connect".
+1. Untertab **Connection**: Connection Mode **Network**, Connection Type **TCP**, Server-Adresse
+   `127.0.0.1` Port **`4030`** → **Set**.
+2. Untertab **Main Control** → **Connect**. *On Set* zeigt dann nur **Track / Slew**, kein Sync
+   (siehe [Warum kein `TELESCOPE_CAN_SYNC`?](#warum-kein-telescope_can_sync)); *Eq. Coordinates*
+   zeigt die live gelöste Position.
 
-**PiFinder Mount Bridge** verbinden (falls verwendet):
-- Tab "PiFinder Mount Bridge" → Untertab "Options" → "Active devices" → `PiFinder` und `Mount` auf
-  die richtigen Gerätenamen setzen (z.B. "PiFinder LX200" / "LX200 OnStep")
-- "Connect" klicken (Main Control-Tab)
-- Danach "Coupling" auf den gewünschten Modus setzen (siehe Tabelle oben)
-
-Klick auf ein Vorschaubild öffnet den Screenshot in voller Größe:
+Die Untertabs **Options**, **Motion Control**, **Site Management** und **Guide** stammen aus der
+LX200-Basisklasse. Sie werden angezeigt, sind aber wirkungslos: PiFinder hat keinen Motor und
+bezieht Zeit und Standort aus seinem eigenen GPS (der Treiber loggt `updateTime called, ignoring`
+/ `updateLocation called, ignoring`).
 
 <table>
 <tr>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png" width="380"></a><br>
-<sub>Alle drei Tabs; PiFinder LX200 → Connection (TCP 127.0.0.1:4030)</sub>
+<sub>PiFinder LX200 → Connection: Network / TCP, 127.0.0.1 : 4030</sub>
 </td>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="380"></a><br>
-<sub>PiFinder LX200 → Main Control: nur Track/Slew, kein Sync</sub>
+<sub>PiFinder LX200 → Main Control: nur Track / Slew, kein Sync</sub>
 </td>
 </tr>
+</table>
+
+#### Deine echte Mount
+
+So verbinden, wie du es für diesen Treiber gewohnt bist — Serial-Port oder TCP, dann **Connect**.
+Hier gibt es nichts PiFinder-Spezifisches.
+
+#### PiFinder Mount Bridge
+
+1. Untertab **Options** → **Active devices**: `PiFinder` auf den Gerätenamen von PiFinder LX200
+   setzen und `Mount` auf den Gerätenamen deiner Mount (z.B. *PiFinder LX200* / *LX200 OnStep*).
+   Die Zeile **Settings** darüber richtet den eingebetteten Client der Bridge auf den lokalen
+   `indiserver` aus — bei `localhost` : `7624` belassen.
+2. Untertab **Main Control** → **Connect**, dann **Coupling** auf den gewünschten Modus setzen
+   ([Kopplungsgrad-Dial](#die-mount-bridge-kopplungsgrad-dial)). Dieser Tab trägt außerdem die
+   One-Shot-Trigger, die Drift-Schwelle und den Live-Drift-Status, den Multi-Point-Alignment-Lauf
+   und die Rückfrage bei unerklärter Neupositionierung — siehe die
+   [Property-Referenz](#property-referenz-pifinder-mount-bridge).
+3. Untertab **Shadow Sync**: spiegelt jedes an die Mount gesendete Kommando der Bridge auf ein
+   zweites, nicht steuerndes Gerät (Vorgabe *PiFinder Simulator*), damit ein simulierter PiFinder
+   einer echten Mount folgen kann. Wird automatisch scharfgeschaltet, sobald das Shadow-Gerät
+   vorhanden ist; nur für die Simulator-Setups relevant.
+
+<table>
 <tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="380"></a><br>
-<sub>Mount Bridge → Options: Active devices gesetzt</sub>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control: Coupling, Korrektur-Aktion, Trigger, Alignment</sub>
 </td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="380"></a><br>
-<sub>Mount Bridge → Main Control: Coupling, Manual Trigger, Drift-Status</sub>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="300"></a><br>
+<sub>Mount Bridge → Options: Active devices + indiserver-Settings</sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png" width="300"></a><br>
+<sub>Mount Bridge → Shadow Sync: Kommandos auf ein nicht steuerndes Gerät spiegeln</sub>
 </td>
 </tr>
 </table>
@@ -387,24 +418,45 @@ nicht erschöpfend — Details siehe `LX200Telescope`/`INDI::Telescope` in libin
 | `DEVICE_ADDRESS` | Text | TCP-Zieladresse/Port (Standard `127.0.0.1:4030`) |
 | `EQUATORIAL_EOD_COORD` | Number (RO für reine Anzeige, wird bei Goto beschrieben) | Aktuelle RA/DEC |
 | `TARGET_EOD_COORD` | Number (von der Basisklasse selbst verwaltet) | Zuletzt kommandiertes Goto-Ziel — **das** ist die Property, die die Mount Bridge snoopt, um neue Push-to-Anfragen zu erkennen (siehe unten) |
-| `ON_COORD_SET` | Switch | Nur `TRACK` verfügbar (kein `SYNC`, kein separates `SLEW`) |
+| `ON_COORD_SET` | Switch | `TRACK` / `SLEW` (beide laufen über `Goto()`); kein `SYNC` |
 | `TELESCOPE_ABORT_MOTION` | Switch | Abort (no-op-artig, da kein Motor, aber Teil der Basis-Capability) |
 
 ### Property-Referenz: PiFinder Mount Bridge
 
-| Property | Typ | Elemente | Zweck |
-|---|---|---|---|
-| `BRIDGE_SETTINGS` | Text | `INDISERVER_HOST`, `INDISERVER_PORT` | Wo der interne Client den `indiserver` findet (Standard `localhost:7624`) |
-| `ACTIVE_DEVICES` | Text | `ACTIVE_PIFINDER`, `ACTIVE_MOUNT` | Welche zwei Geräte gesnoopt werden |
-| `BRIDGE_MODE` | Switch (1oM) | `MODE_OFF`, `MODE_VERIFY_ALERT`, `MODE_AUTO_CORRECT`, `MODE_GOTO_FORWARD` | Kopplungsgrad, siehe Tabelle oben |
-| `CORRECTION_ACTION` | Switch (1oM) | `ACTION_SYNC`, `ACTION_GOTO` | Was `MODE_AUTO_CORRECT` bei Drift-Überschreitung tut |
-| `MANUAL_TRIGGER` | Switch | `TRIGGER_SYNC_NOW`, `TRIGGER_GOTO_NOW` | Sofort-Aktion, unabhängig vom Modus |
-| `DRIFT_THRESHOLD` | Number | `THRESHOLD_ARCMIN` (Default 5.0) | Schwelle für Drift-Alarm/Korrektur |
-| `DRIFT_STATUS` | Number (RO) | `DRIFT_ARCMIN` | Aktuell berechnete Winkeldistanz PiFinder↔Mount |
+**Bedienelemente** (auf dem Untertab Main Control, sofern nicht anders vermerkt):
 
-Die Bridge sendet an die Mount **ausschließlich** generische INDI-Standard-Properties:
-`EQUATORIAL_EOD_COORD` (Ziel-RA/DEC) + `ON_COORD_SET` (Switch `SYNC` oder `TRACK`) — nie ein
-mount-spezifisches Kommando. Das ist der Kern, der die Bridge generisch für jede INDI-Mount macht.
+| Property | Typ | Zweck |
+|---|---|---|
+| `BRIDGE_SETTINGS` | Text *(Options)* | `indiserver` Host/Port für den eingebetteten Client (Standard `localhost:7624`) |
+| `ACTIVE_DEVICES` | Text *(Options)* | Welches PiFinder- und Mount-Gerät gesnoopt wird |
+| `SHADOW_DEVICE_NAME` / `SHADOW_SYNC` | Text / Switch *(Shadow Sync)* | Zweites, nicht steuerndes Gerät, auf das Mount-Kommandos gespiegelt werden, plus An/Aus |
+| `BRIDGE_MODE` | Switch (1oM) | Coupling: `MODE_OFF` / `MODE_VERIFY_ALERT` / `MODE_AUTO_CORRECT` / `MODE_GOTO_FORWARD` — siehe [Kopplungsgrad-Dial](#die-mount-bridge-kopplungsgrad-dial) |
+| `CORRECTION_ACTION` | Switch (1oM) | Was Auto-Correct bei Drift tut: `ACTION_SYNC` oder `ACTION_GOTO` (Goto/Track) |
+| `MANUAL_TRIGGER` | Switch (≤1) | One-Shot, jeder Modus: `TRIGGER_SYNC_NOW`, `TRIGGER_GOTO_NOW`, `TRIGGER_GOTO_HELD` (gehaltenes Originalziel erneut senden), `TRIGGER_ALIGN_HELD`, `TRIGGER_SYNC_TO_COORDS` |
+| `SYNC_TO_COORDS` | Number | RA/DEC (JNow) für `TRIGGER_SYNC_TO_COORDS` |
+| `ABORT_MOUNT` | Switch | Not-Stopp — sendet einen Abort an die Mount |
+| `MULTI_POINT_ALIGN` | Switch (≤1) | Start / Stop eines automatisierten Multi-Point-Alignment-Laufs ([#191](https://github.com/apos/PiFinder_Stellarmate/issues/191)) |
+| `ALIGN_CONFIG` / `ALIGN_DIRECTION` | Number / Switch (1oM) | Suchradius, Punktzahl, Mindesthöhe dieses Laufs; bevorzugte Himmelsregion (Any/N/E/S/W) |
+| `REPOSITION_CONFIRM` | Switch (≤1) | Antwort auf die Rückfrage bei unerklärter Neupositionierung: neue Position übernehmen oder aufs gehaltene Ziel zurück |
+| `DRIFT_THRESHOLD` | Number | Drift darüber (Bogenminuten, Default 5.0) löst Alarm / Korrektur aus |
+| `MAX_SYNC_DRIFT` | Number | Sicherheitsgrenze: ein Auto-Sync oberhalb (Bogenminuten, Default 120) wird verweigert |
+| `SOLVE_FRESHNESS` | Number | Maximales Solve-Alter (s, Default 5), auf das eine Auto-Korrektur reagiert |
+
+**Nur-Lese-Status:**
+
+| Property | Zeigt |
+|---|---|
+| `DRIFT_STATUS` | Aktuelle Winkeldistanz PiFinder↔Mount (Bogenminuten) |
+| `MOUNT_HORIZON_STATUS` | Mount-Höhe (Grad); die Drift-Berechnung friert ein, solange die Mount unter dem Horizont steht |
+| `TARGET_SOURCE` (+ `…_AGE`, `CORRECTION_AGE`) | Ob die Bridge gerade PiFinder oder der Mount folgt, und wie lange seit dieser Änderung / dem letzten selbst gesendeten Kommando |
+| `ORIGINAL_TARGET` (+ `…_DRIFT`) | J2000-RA/DEC des letzten wirklich neuen GoTo-Ziels und die aktuelle Drift davon |
+| `ALIGN_PROGRESS` | Multi-Point-Lauf: aktueller Punkt / gesamt / verifiziert |
+| `MOUNT_REJECT` | Gefüllt, wenn die Mount ein Goto/Sync ablehnt (Achsen- oder Höhengrenze) |
+| `PIFINDER_ORIENTATION` | PiFinders eigener Mount-Typ / Screen-Direction, vom PiFinder-Gerät gesnoopt |
+
+An die Mount sendet die Bridge **ausschließlich** generische INDI-Standard-Properties —
+`EQUATORIAL_EOD_COORD` (Ziel-RA/DEC) + `ON_COORD_SET` (`SYNC` oder `TRACK`), nie ein
+mount-spezifisches Kommando. Das ist der Kern, der sie für jede INDI-Mount generisch macht.
 
 ### Datenfluss: Auto-Correct / Verify-Alert (Drift-Polling)
 
