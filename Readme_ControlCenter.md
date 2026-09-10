@@ -546,6 +546,41 @@ The section splits into what you use every session and what you set once:
 Clicking a preset before the numbered setup steps are all green doesn't fail — it runs the setup
 first (Autoconnect), then applies the mode you clicked.
 
+#### Roles
+
+The three **Role** cards under *Settings* say what this device does in the wider setup — picking
+one rewrites the equipment profile for you (which PiFinder LX200, and whether a Mount Bridge):
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_roles.png"><img src="docs/images/readme/cc_roles.png" width="640"></a><br>
+<sub><em>Settings → Role</em>: the three roles.</sub>
+</td>
+</tr>
+</table>
+
+| Role | This device | Profile it builds |
+|---|---|---|
+| **All-in-one** | PiFinder hardware **with** a mount attached here | PiFinder LX200 (local) + Mount Bridge |
+| **PiFinder host** | PiFinder only — the coupling happens on another box | PiFinder LX200 (local), no Mount Bridge |
+| **Control host** | No PiFinder hardware — couples a **remote** PiFinder to a mount here | PiFinder LX200 (remote, by IP) + Mount Bridge |
+
+The role is normally chosen once, during setup. A **Control host** is exactly the case for the
+**`INDI-only`** checkbox in the [Install or Update tile](#installing-or-updating) (`--mode=indi_only`):
+it installs just the two INDI drivers and their build dependencies — no PiFinder clone, no venv.
+`PiFinder LX200` itself is the same driver in every role; only its address (local vs. a remote IP)
+and whether a Mount Bridge is present change ([Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)).
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_settings_expanded.png"><img src="docs/images/readme/cc_settings_expanded.png" width="440"></a><br>
+<sub>The whole <em>Settings</em> block expanded, for context: Role cards, Hardware mode (Real Hardware / Full Simulation / Fake Mode), the numbered setup checklist, and Multi-Point Alignment.</sub>
+</td>
+</tr>
+</table>
+
 ### Synthetic Solve vs. a manual one-shot seed
 
 Both feed PiFinder a position it didn't plate-solve, for exercising everything downstream of a solve

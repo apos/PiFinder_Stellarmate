@@ -564,6 +564,43 @@ Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal eins
 Ein Preset zu klicken, bevor die nummerierten Setup-Schritte alle grün sind, schlägt nicht fehl —
 es führt erst das Setup aus (Autoconnect) und wendet dann den geklickten Modus an.
 
+#### Rollen
+
+Die drei **Rollen**-Karten unter *Settings* legen fest, was dieses Gerät im Gesamt-Setup tut —
+eine auszuwählen baut das Equipment-Profil für dich um (welches PiFinder LX200, und ob eine Mount
+Bridge):
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_roles.png"><img src="docs/images/readme/cc_roles.png" width="640"></a><br>
+<sub><em>Settings → Role</em>: die drei Rollen.</sub>
+</td>
+</tr>
+</table>
+
+| Rolle | Dieses Gerät | Profil, das sie baut |
+|---|---|---|
+| **All-in-one** | PiFinder-Hardware **mit** hier angeschlossener Montierung | PiFinder LX200 (lokal) + Mount Bridge |
+| **PiFinder host** | Nur PiFinder — die Kopplung läuft auf einem anderen Rechner | PiFinder LX200 (lokal), keine Mount Bridge |
+| **Control host** | Keine PiFinder-Hardware — koppelt einen **entfernten** PiFinder an eine Montierung hier | PiFinder LX200 (entfernt, per IP) + Mount Bridge |
+
+Die Rolle wird normalerweise einmal beim Setup gewählt. Ein **Control host** ist genau der Fall für
+die **`INDI-only`**-Checkbox im [Install- oder Update-Tile](#installieren-oder-aktualisieren)
+(`--mode=indi_only`): installiert nur die zwei INDI-Treiber und ihre Build-Abhängigkeiten — kein
+PiFinder-Klon, kein venv. `PiFinder LX200` selbst ist in jeder Rolle derselbe Treiber; nur seine
+Adresse (lokal vs. entfernte IP) und ob eine Mount Bridge da ist ändern sich
+([Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)).
+
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/readme/cc_settings_expanded.png"><img src="docs/images/readme/cc_settings_expanded.png" width="440"></a><br>
+<sub>Der ganze <em>Settings</em>-Block ausgeklappt, zur Einordnung: Rollen-Karten, Hardware-Modus (Real Hardware / Full Simulation / Fake Mode), die nummerierte Einrichtungs-Checkliste und Multi-Point Alignment.</sub>
+</td>
+</tr>
+</table>
+
 ### Synthetic Solve vs. manueller Einmal-Seed
 
 Beide füttern PiFinder eine Position, die er nicht plate-gesolvt hat, um alles hinter einem Solve
