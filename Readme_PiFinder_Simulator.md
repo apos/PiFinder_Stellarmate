@@ -33,6 +33,7 @@ do, see [Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md).
 - [Code, Deployment & Strategy](#code-deployment--strategy)
 - [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
 - [Related Issues](#related-issues)
+- [Screenshot Reference](#screenshot-reference)
 
 ## Basic Functionality (Overview)
 
@@ -121,6 +122,15 @@ and won't show custom drivers reliably. In the Drivers dropdown, search "PiFinde
 **PiFinder Simulator** alongside whatever else is already in the profile (PiFinder LX200, Mount
 Bridge, your real mount driver).
 
+<table>
+<tr>
+<td align="center">
+<a href="docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png"><img src="docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png" width="420"></a><br>
+<sub>Web Manager Drivers dropdown: "PiFinder Simulator" checked alongside the other profile drivers</sub>
+</td>
+</tr>
+</table>
+
 ### Step 3: Connect and set a starting position
 
 Start the profile, connect everything as usual. In the INDI Control Panel, open the "PiFinder
@@ -129,6 +139,23 @@ Simulator" tab:
 1. Set **On Set** to **Sync** (not Track/Slew - Sync just records the position, no motion semantics
    apply to this device anyway, but keeping it explicit avoids surprises).
 2. Enter an RA/Dec of your choice in the **Eq. Coordinates** fields and click **einstellen**/**Set**.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png" width="420"></a><br>
+<sub>PiFinder Simulator → Main Control: On Set, Eq. Coordinates, Simulate push-to, Follow mount</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png" width="420"></a><br>
+<sub>Telescope Simulator → Main Control: the stock mount stand-in's full mount menu (Track, Park, Pier Side, ...)</sub>
+</td>
+</tr>
+</table>
+
+`FOLLOW_MOUNT_DEVICE` (§ [Technical Reference](#technical-reference) below) shows up here as **Follow
+mount** - already pointed at "Telescope Simulator" in the screenshot above, since this INDI device
+uses the same name for both its label and value fields.
 
 ### Step 4: Start the injector
 
@@ -259,4 +286,28 @@ Goto-Forward testing yet**, independent of the simulator - see
 - [#170](https://github.com/apos/PiFinder_Stellarmate/issues/170) - Auto-correct (Goto & Track) convergence fix, verified using this simulator
 - [#171](https://github.com/apos/PiFinder_Stellarmate/issues/171), [#176](https://github.com/apos/PiFinder_Stellarmate/issues/176), [#177](https://github.com/apos/PiFinder_Stellarmate/issues/177), [#178](https://github.com/apos/PiFinder_Stellarmate/issues/178) - open follow-ups
 - [#179](https://github.com/apos/PiFinder_Stellarmate/issues/179) - emergency stop button, found necessary while testing with this simulator
+
+## Screenshot Reference
+
+Every screenshot in this document, grouped by where it comes from. `PiFinder LX200` and `PiFinder
+Mount Bridge` are covered in [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md#screenshot-reference)
+instead, not duplicated here.
+
+**Web Manager** (`http://<pi-address>:8624`)
+
+| Screenshot | Shows |
+|---|---|
+| [`webmanager_drivers_pifinder_simulator.png`](docs/images/pfinder_simulator/webmanager_drivers_pifinder_simulator.png) | Drivers dropdown: "PiFinder Simulator" checked alongside the other profile drivers |
+
+**INDI Control Panel — PiFinder Simulator tab**
+
+| Screenshot | Shows |
+|---|---|
+| [`indi_control_panel_tabs_PiFinder_Simulator_main.png`](docs/images/pfinder_simulator/indi_control_panel_tabs_PiFinder_Simulator_main.png) | Main Control subtab: On Set, Eq. Coordinates, Simulate push-to, Follow mount |
+
+**INDI Control Panel — Telescope Simulator tab**
+
+| Screenshot | Shows |
+|---|---|
+| [`indi_control_panel_tabs_Telescope_Simulator_main.png`](docs/images/pfinder_simulator/indi_control_panel_tabs_Telescope_Simulator_main.png) | Main Control subtab: the stock mount stand-in's full mount menu (Track Mode, Tracking, Track Rates, Home, Parking, Pier Side) |
 </content>
