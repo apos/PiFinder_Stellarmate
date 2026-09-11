@@ -1532,6 +1532,23 @@ _mb_readiness_retrier = _BackgroundRetrier()
 # consistent with this file's other time.time()/time.monotonic() use.
 _maintenance_mode_since = None
 
+# Direct request (2026-09-11): "Die gelbe Meldung nervt ungemein. Die
+# brauchen wir wirklich nur beim ersten Start. Dann nicht mehr." -
+# indi_pifinder_simulator's own STARTUP_DEFAULT_SOURCE is computed fresh on
+# every restart of THAT PROCESS (a simulation-only device, restarted often
+# during a long dev/test session - self-heal cycles, manual reconnects,
+# indiserver restarts), so PR #395's live-drift check re-derives "still a
+# mismatch?" correctly per-restart but the card can still flash back on
+# right after each one, before drift has been freshly confirmed small
+# again. This tracks "has this ever actually been resolved this
+# installation" permanently (survives every driver/Control Center restart,
+# not just the current process/page load) - once true, never goes back to
+# false short of deleting MOUNT_BRIDGE_DESIRED_STATE_FILE (a fresh
+# install). Set the first time the readiness watchdog observes a small
+# drift (same <10' threshold as the frontend's own liveDriftConfirmsRelated)
+# - piggybacks on that already-running poll, no extra INDI round-trip.
+_sim_mismatch_ever_resolved = False
+
 
 def _save_mount_bridge_desired_state():
     """Best-effort atomic write (temp file + os.replace, same pattern as
@@ -1547,6 +1564,7 @@ def _save_mount_bridge_desired_state():
             "mb_desired_coupling_action": _mb_desired_coupling_action,
             "mb_desired_connected": _mb_desired_connected,
             "maintenance_mode_since": _maintenance_mode_since,
+            "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1561,6 +1579,7 @@ def _load_mount_bridge_desired_state():
     just means "nothing configured yet", the same as a fresh install."""
     global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
+    global _sim_mismatch_ever_resolved
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1574,6 +1593,7 @@ def _load_mount_bridge_desired_state():
     _mb_desired_coupling_action = data.get("mb_desired_coupling_action")
     _mb_desired_connected = data.get("mb_desired_connected")
     _maintenance_mode_since = data.get("maintenance_mode_since")
+    _sim_mismatch_ever_resolved = data.get("sim_mismatch_ever_resolved", False)
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
@@ -1836,6 +1856,16 @@ def _mount_bridge_readiness_watchdog(interval=5):
             _mount_bridge_readiness_self_heal(status)
         except Exception as e:  # a watchdog thread must never die silently
             _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
+        # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
+        # as the frontend's own liveDriftConfirmsRelated (PR #395), just
+        # persisted permanently instead of only for the current page/process.
+        global _sim_mismatch_ever_resolved
+        if not _sim_mismatch_ever_resolved:
+            drift = status.get("drift_arcmin")
+            if isinstance(drift, (int, float)) and drift < 10:
+                _sim_mismatch_ever_resolved = True
+                _save_mount_bridge_desired_state()
+                _mb_log("Sim-mismatch warning resolved for good this install (drift confirmed small) - won't show again.")
 
 
 def _run_hardware_test():
@@ -2929,6 +2959,7 @@ class Handler(BaseHTTPRequestHandler):
                     "hostname": socket.gethostname(),
                     "device_type": _get_device_type(),
                     "maintenance_mode_since": _maintenance_mode_since,
+                    "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
