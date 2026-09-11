@@ -2587,14 +2587,24 @@ sudo systemctl start pifinder</pre>
 // for the claim/heartbeat/release lifecycle and the read-only UI it drives.
 const CC_CLIENT_ID = (function() {
   try {
-    let id = localStorage.getItem('cc_client_id');
+    // sessionStorage, NOT localStorage (2026-09-11, live-found: two Chrome
+    // windows on the same machine, same profile, both showed as fully in
+    // control - localStorage is shared across every tab/window of the same
+    // origin in a profile, so both read back the identical id and the
+    // server correctly-but-uselessly treated them as one client re-claiming
+    // its own lease, never as two). sessionStorage is scoped per tab/window
+    // (technically per top-level browsing context) - a plain reload of the
+    // same tab keeps it (so reclaiming still works as "the same client"),
+    // but a new tab or window always gets a fresh one, which is exactly the
+    // "each open window is its own potential client" model this lock needs.
+    let id = sessionStorage.getItem('cc_client_id');
     if (!id) {
       id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-      localStorage.setItem('cc_client_id', id);
+      sessionStorage.setItem('cc_client_id', id);
     }
     return id;
   } catch (e) {
-    // localStorage unavailable (private mode, etc.) - a per-load id still
+    // sessionStorage unavailable (private mode, etc.) - a per-load id still
     // lets this tab participate, it just won't survive a reload as "the
     // same client" (loses its claim on refresh, has to re-claim/wait like
     // any fresh tab - degraded, not broken).
@@ -4542,7 +4552,16 @@ async function checkPageVersion() {
   }
 }
 checkPageVersion();
-ccRegisterPoll(checkPageVersion, 20000);
+// NOT ccRegisterPoll() (2026-09-11, live-found regression): this must keep
+// running even while read-only/non-host - it answers "is MY tab running
+// current code at all", which is exactly the question a stale, pre-host-lock
+// tab needs answered (that's the tab with no read-only banner to show in the
+// first place, since it predates this whole feature - the stale-page-banner
+// above is its only route to finding out anything changed). Pausing it for
+// every non-host tab silently broke that safety net for every tab that
+// *does* have current code too - same class of bug as the two timers above,
+// same fix: run unconditionally, like ccHeartbeat()/ccPollHostStatus().
+setInterval(checkPageVersion, 20000);
 
 // A click needs its own visible acknowledgment, distinct from
 // refreshBranchInfo()'s silent periodic use - the result (the hint text)
