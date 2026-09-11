@@ -2458,7 +2458,7 @@ sudo systemctl start pifinder</pre>
             </div>
           </div>
           <div class="vgroup-divider"></div>
-          <div class="mode-power-group" title="Affects the whole Raspberry Pi, not just PiFinder or this setup page.">
+          <div class="mode-power-group" title="Affects the whole device, not just PiFinder or this setup page.">
             <div class="group-label">This Pi</div>
             <div class="mode-power-group-buttons">
               <button id="power-reboot-btn" class="power-btn" onclick="powerAction('reboot')">Reboot Pi</button>
@@ -4926,6 +4926,22 @@ async function reboot() {
   watchForServerLoss();
 }
 
+// Direct user feedback: with multiple devices/tabs open at once (this UTM
+// simulation, a real Pi, another Pi on the same bench...), a plain "Reboot
+// Pi"/"Shutdown Pi" label doesn't say WHICH device is about to go down -
+// easy to click the wrong tab's button. Same hostname already shown in the
+// sticky header (#268) - just also put it on the buttons themselves, the
+// place a click actually happens. Falls back to the generic label until
+// the hostname is known (right after page load).
+let cachedHostname = null;
+function updatePowerButtonLabels() {
+  const suffix = cachedHostname ? ` ${cachedHostname}` : ' Pi';
+  const rebootBtn = document.getElementById('power-reboot-btn');
+  const poweroffBtn = document.getElementById('power-poweroff-btn');
+  if (rebootBtn) rebootBtn.textContent = 'Reboot' + suffix;
+  if (poweroffBtn) poweroffBtn.textContent = 'Shutdown' + suffix;
+}
+
 // Always-available Pi power controls (distinct from the conditional
 // "Reboot Now" prompt above, which only appears after a config-changing
 // install/update run).
@@ -4953,7 +4969,7 @@ async function powerAction(kind) {
     if (!started) {
       rebootBtn.disabled = false;
       poweroffBtn.disabled = false;
-      btn.textContent = isReboot ? 'Reboot Pi' : 'Shutdown Pi';
+      updatePowerButtonLabels();
       alert(`Could not ${verb.toLowerCase()}: ` + (data.error || 'unknown error'));
       return;
     }
@@ -5390,6 +5406,8 @@ async function init() {
   // about this instance, so populated once here rather than every poll.
   if (data.hostname) {
     document.getElementById('cc-hostname-text').textContent = data.hostname;
+    cachedHostname = data.hostname;
+    updatePowerButtonLabels();
   }
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
