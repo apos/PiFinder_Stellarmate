@@ -3426,8 +3426,22 @@ function renderNoSolveBanner() {
 
 function updateNoSolveBanner(data) {
   if (!('solve_source' in data)) return;  // unconfirmed poll - leave as-is
+  // Found live (2026-09-11, same gap as applySolveStatus()'s staleness fix
+  // just above): a *stale* CAM value used to count as "there's something"
+  // here exactly like a genuinely fresh one, so this banner - whose whole
+  // job is catching "no position to sync from" - could never fire for the
+  // case where solving had stopped entirely but solve_source was still
+  // sitting on its last successful "CAM" from a long time ago. Direct
+  // feedback: "dann fehlt aber die gelbe Meldung, dass der Solve
+  // angeschaltet werden soll!" - the card/button below already existed and
+  // already does the right thing, it just never got triggered. Same
+  // lastSolveSuccessTime/5s freshness check as applySolveStatus().
+  const solveAgeSec = typeof lastSolveSuccessTime === 'number'
+    ? (Date.now() / 1000) - lastSolveSuccessTime : null;
+  const camIsStale = solveAgeSec === null || solveAgeSec < 0 || solveAgeSec > 5;
+  const effectiveSolveSource = (data.solve_source === 'CAM' && camIsStale) ? null : data.solve_source;
   _noSolveHasNothing = data.fake_solve_active !== true &&
-    data.solve_source !== 'CAM' && data.solve_source !== 'IMU';
+    effectiveSolveSource !== 'CAM' && effectiveSolveSource !== 'IMU';
   _noSolveStreak = _noSolveHasNothing ? _noSolveStreak + 1 : 0;
   renderNoSolveBanner();
 }
