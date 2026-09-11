@@ -168,7 +168,46 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // BridgeModeS that are allowed to actively command the mount
         // (Auto-correct, Goto-Forward) - never for Verify-Alert/Off, which
         // must never move/Sync the mount at all.
+        //
+        // Refined (2026-09-11, direct feedback, live-observed): the above
+        // reasoning conflates two different situations that this in-memory
+        // flag cannot tell apart - "the mount itself just (re)connected,
+        // its position really is unknown" (the #227 case above) vs. "only
+        // this Bridge *process* restarted (a self-heal cycle, a crash, a
+        // manual restart) while the mount driver kept running the whole
+        // time and never lost its own position." m_didInitialSync is reset
+        // to false on every Connect() regardless of which case this is, so
+        // every Bridge restart used to blindly re-Sync the mount to
+        // whatever PiFinder currently reports - live-caught doing this
+        // with a manually-injected "Manual one-shot seed" test position
+        // during a #374 UAT session, silently overwriting a perfectly good
+        // mount position with an unrelated test value. Direct feedback:
+        // "eigentlich sollte die Wahrheit im INDI Treiber stehen und auch
+        // einen Restart überleben" - LastKnownMountPosNP below is that
+        // durable truth (survives a Bridge restart via ordinary INDI
+        // config save/load, unlike this in-memory flag), and the
+        // TimerHit() bootstrap now trusts the mount instead of blindly
+        // re-syncing it whenever the mount's current position still
+        // matches what was last known-good before this (re)start.
         bool m_didInitialSync = false;
+
+        // Durable (survives a Bridge process restart via ordinary INDI
+        // config save/load - see saveConfigItems()) record of the mount's
+        // own last-seen position, refreshed whenever it moves meaningfully
+        // (TimerHit(), independent of BridgeModeSP - same "always-on
+        // baseline" philosophy as DriftStatusNP). Purely diagnostic
+        // bookkeeping on its own; its actual purpose is read at the
+        // m_didInitialSync bootstrap above, comparing this pre-restart
+        // baseline against the mount's live position right now - the mount
+        // itself is the ground truth here, this property is only a way to
+        // remember what it was so a same-position case across a Bridge-only
+        // restart can be told apart from a genuine "position unknown" case.
+        // 0/0 (the IUFillNumber default) means "never saved" - same
+        // RA0/Dec0-as-sentinel convention used elsewhere in this file.
+        INumberVectorProperty LastKnownMountPosNP;
+        INumber LastKnownMountPosN[2];
+        enum { LAST_KNOWN_MOUNT_RA, LAST_KNOWN_MOUNT_DE };
+        static constexpr double MOUNT_UNCHANGED_THRESHOLD_ARCMIN = 5.0;
 
         // Mode-Readiness-Check (2026-08-08, User request): runs whenever a
         // Coupling mode other than Off is (re-)selected. Verifies known

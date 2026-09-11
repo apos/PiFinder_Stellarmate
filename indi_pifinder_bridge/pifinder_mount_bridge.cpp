@@ -769,6 +769,14 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&PiFinderHorizonStatusNP, PiFinderHorizonStatusN, 1, getDeviceName(), "PIFINDER_HORIZON_STATUS",
                        "PiFinder horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    // See the header comment - durable (config-file) record of the mount's
+    // last-seen position, read back at Connect()-time to tell a Bridge-only
+    // restart apart from a genuine fresh mount connection.
+    IUFillNumber(&LastKnownMountPosN[LAST_KNOWN_MOUNT_RA], "RA", "RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&LastKnownMountPosN[LAST_KNOWN_MOUNT_DE], "DEC", "DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&LastKnownMountPosNP, LastKnownMountPosN, 2, getDeviceName(), "LAST_KNOWN_MOUNT_POS",
+                       "Last known mount position", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // See the header comment - the fixed J2000 coordinate of the last
     // genuinely new target, distinct from the tactical (JNow) held target.
     IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
@@ -837,6 +845,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&DriftStatusNP);
         defineProperty(&MountHorizonStatusNP);
         defineProperty(&PiFinderHorizonStatusNP);
+        defineProperty(&LastKnownMountPosNP);
         defineProperty(&OriginalTargetNP);
         defineProperty(&OriginalTargetDriftNP);
         defineProperty(&MountRejectTP);
@@ -897,6 +906,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(DriftStatusNP.name);
         deleteProperty(MountHorizonStatusNP.name);
         deleteProperty(PiFinderHorizonStatusNP.name);
+        deleteProperty(LastKnownMountPosNP.name);
         deleteProperty(OriginalTargetNP.name);
         deleteProperty(OriginalTargetDriftNP.name);
         deleteProperty(MountRejectTP.name);
@@ -1565,11 +1575,58 @@ void PiFinderMountBridge::TimerHit()
     // accurate. Only for the modes actually allowed to move/Sync the mount;
     // Verify-Alert and Off must stay passive. Retries every tick (no fresh
     // solve yet just means try again next tick) until it succeeds once.
+    //
+    // Refined (2026-09-11, direct feedback): "unconditionally" used to mean
+    // literally every Connect(), including a Bridge-only restart where the
+    // mount driver itself never disconnected and its position was perfectly
+    // good the whole time - see m_didInitialSync's own header comment for
+    // the live incident this caused (a manually-injected test position
+    // silently overwrote a real, good mount position after an unrelated
+    // Bridge self-heal restart). Checked against LastKnownMountPosNP first -
+    // durable across a Bridge restart, unlike m_didInitialSync itself: if
+    // the mount's current position still matches what was last known-good
+    // before this (re)start, the mount driver is the actual ground truth
+    // and never lost track, so trust it instead of blindly overwriting it
+    // from PiFinder's current position.
     if (!m_didInitialSync &&
         (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON || BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON))
     {
-        if (syncMountToPiFinderPosition())
+        double mountRA, mountDec;
+        const bool haveSavedBaseline = LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value != 0.0 ||
+                                        LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value != 0.0;
+        if (haveSavedBaseline && m_client->getMountRADE(mountRA, mountDec) &&
+            angularSeparationArcmin(mountRA, mountDec, LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value,
+                                     LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value) < MOUNT_UNCHANGED_THRESHOLD_ARCMIN)
+        {
+            LOG_INFO("Mount position unchanged since before this (re)start - the mount driver itself never "
+                      "lost track, trusting it instead of blindly re-Syncing from PiFinder's current position.");
             m_didInitialSync = true;
+        }
+        else if (syncMountToPiFinderPosition())
+        {
+            m_didInitialSync = true;
+        }
+    }
+
+    // Keep LastKnownMountPosNP fresh as an ordinary, mode-independent
+    // baseline (same "always-on, Coupling-mode-independent" philosophy as
+    // DriftStatusNP below) - written to disk only when the mount actually
+    // moved enough to matter, not every tick. Deliberately runs AFTER the
+    // bootstrap check above, so a restart always compares against the
+    // PRE-restart baseline first, before this overwrites it with the
+    // (possibly just-changed) live position for the *next* restart.
+    {
+        double mountRA, mountDec;
+        if (m_client->getMountRADE(mountRA, mountDec) &&
+            angularSeparationArcmin(mountRA, mountDec, LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value,
+                                     LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value) > MOUNT_UNCHANGED_THRESHOLD_ARCMIN)
+        {
+            LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value = mountRA;
+            LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value = mountDec;
+            LastKnownMountPosNP.s = IPS_OK;
+            IDSetNumber(&LastKnownMountPosNP, nullptr);
+            saveConfig(true, LastKnownMountPosNP.name);
+        }
     }
 
     // #191 PoC - independent of Coupling mode entirely (a one-shot action,
@@ -3493,6 +3550,9 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     // Learned from the AlignConfigNP omission just above - added here from
     // the start this time, not after a repeat report.
     IUSaveConfigSwitch(fp, &AlignDirectionSP);
+    // See LastKnownMountPosNP's own header comment - this is what makes it
+    // durable across a Bridge process restart, unlike m_didInitialSync.
+    IUSaveConfigNumber(fp, &LastKnownMountPosNP);
     return true;
 }
 
