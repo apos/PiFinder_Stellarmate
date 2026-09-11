@@ -228,7 +228,7 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 800L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
     const CURLcode res = curl_easy_perform(curl);
@@ -324,6 +324,40 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
     {
         return false;
     }
+}
+
+// Cooldown wrapper around httpGetPiFinderFreshCamPosition() (2026-09-11,
+// issue #238): every caller tries the nginx-fronted URL (:80) then falls
+// back to PiFinder's own port (:8080), and TimerHit() reaches this - via the
+// drift computation, handleShadowSync(), and syncMountToPiFinderPosition() -
+// unconditionally on every tick. Found live: when PiFinder's HTTP API is
+// slow (same underlying condition as PiFinder LX200's pos_server.py reads
+// timing out - see the #139 comment above), each blocking curl_easy_perform()
+// pair could cost up to ~1.6s, and with no cooldown TimerHit() retried the
+// full pair on the very next tick regardless - 30+ seconds of the driver's
+// single event-loop thread being back-to-back blocked on a PiFinder that
+// wasn't answering, indistinguishable from the driver itself being hung
+// (issue #238's original gdb finding - a thread cleanly in select() - is
+// exactly what a blocking curl call inside libcurl looks like from outside).
+// After a full failed attempt (both URLs), skip trying again entirely for
+// FRESH_POSITION_FAILURE_COOLDOWN_SEC - an already-known-slow PiFinder gets
+// one bounded stall instead of one every tick, and recovers within one
+// cooldown window once it's responsive again.
+static constexpr double FRESH_POSITION_FAILURE_COOLDOWN_SEC = 5.0;
+
+bool fetchFreshPiFinderPosition(double maxAgeSeconds, double &ra, double &dec)
+{
+    static time_t s_lastFailureTime = 0;
+    const time_t now = time(nullptr);
+    if (s_lastFailureTime != 0 && difftime(now, s_lastFailureTime) < FRESH_POSITION_FAILURE_COOLDOWN_SEC)
+        return false;
+
+    const bool ok =
+        httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", maxAgeSeconds, ra, dec) ||
+        httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", maxAgeSeconds, ra, dec);
+
+    s_lastFailureTime = ok ? 0 : now;
+    return ok;
 }
 
 // True only if PiFinder's currently-reported position came from a real
@@ -1076,10 +1110,7 @@ void PiFinderMountBridge::handleShadowSync()
     // IMU interpolation, which is exactly the Shadow device visibly
     // drifting apart from PiFinder LX200 that was observed live.
     double piRA, piDec;
-    const bool haveFreshCamPosition =
-        httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-        httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
-    if (!haveFreshCamPosition)
+    if (!fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec))
         return;
 
     m_client->syncShadowCoords(piRA, piDec);
@@ -1565,8 +1596,7 @@ void PiFinderMountBridge::TimerHit()
     // top-level drift readout (the value everything else reacts to) was still exposed to.
     double piRA, piDec, mountRA, mountDec;
     const bool havePositions =
-        (httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-         httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)) &&
+        fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec) &&
         m_client->getMountRADE(mountRA, mountDec);
     double drift = 0.0;
     bool exceeded = false;
@@ -1901,8 +1931,7 @@ bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char 
 bool PiFinderMountBridge::syncMountToPiFinderPosition()
 {
     double piRA, piDec;
-    if (!(httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-          httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)))
+    if (!fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec))
     {
         LOG_WARN("No fresh PiFinder camera solve yet - deferring Goto until the mount can be Synced to a real position first.");
         return false;
@@ -2123,9 +2152,7 @@ void PiFinderMountBridge::handleGotoForward()
             }
 
             double piRA, piDec;
-            const bool haveFreshCamPosition =
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            const bool haveFreshCamPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec);
             if (!haveFreshCamPosition)
             {
                 // PiFinder hasn't produced a real camera solve since arrival
@@ -2318,9 +2345,7 @@ void PiFinderMountBridge::handleGotoForward()
             // snapshot for both the freshness/source guarantee and the
             // position value - see httpGetPiFinderFreshCamPosition().
             double piRA, piDec;
-            const bool haveFreshCamPosition =
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            const bool haveFreshCamPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec);
             if (!haveFreshCamPosition)
             {
                 // Found live 2026-09-06: this used to just break here, leaving
@@ -2793,9 +2818,7 @@ void PiFinderMountBridge::handleMultiPointAlignment()
             // by getPiFinderRADE() (INDI) for the value - the two could disagree on which position
             // was actually the fresh one.
             double piRA, piDec;
-            const bool haveFreshPosition =
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                httpGetPiFinderFreshCamPosition("http://127.0.0.1:8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+            const bool haveFreshPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec);
             if (!haveFreshPosition)
             {
                 if (--m_alignFreshnessWaitTicksRemaining <= 0)

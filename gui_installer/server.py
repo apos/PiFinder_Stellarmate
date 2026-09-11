@@ -168,6 +168,84 @@ REBOOT_MARKER = "###REBOOT_NEEDED### "
 
 _lock = threading.Lock()
 
+# Single-host lock (2026-09-11, direct feedback): the Control Center has no
+# concept of "who is currently in control" - PAM Basic Auth is one shared
+# credential for everyone, ThreadingHTTPServer genuinely runs concurrent
+# requests from different clients in parallel, and mbActionInFlight
+# (status_page.html) is a per-tab JS variable that protects nothing against
+# a second, independent browser session. Concretely risky on a Control host:
+# the same CC is commonly open both locally on that device and remotely
+# (e.g. a Mac browser over the LAN) - two clients issuing driver/profile
+# mutations around the same time is exactly the kind of unnecessary,
+# self-inflicted load/race this project has already been chasing (see the
+# pollMbLog() duplicate-render race, and the #238 investigation this
+# followed). Model: one client at a time holds a lease ("host") and may
+# mutate; every other client is read-only. A lease-based single-writer lock
+# (not a hard, permanent claim) so a crashed/closed tab doesn't lock
+# everyone out forever - see HOST_LEASE_TIMEOUT_SEC below.
+_host_lock = threading.Lock()
+_host_client_id = None       # str, or None if no one currently holds the lease
+_host_last_heartbeat = 0.0   # time.monotonic() of the last claim/heartbeat
+HOST_LEASE_TIMEOUT_SEC = 15.0  # a client heartbeats every 5s (status_page.html) - 15s tolerates a couple of missed beats (a slow poll, a brief network blip) without prematurely freeing the lease
+
+
+def _host_lease_active_locked():
+    """Caller must hold _host_lock. True if a (non-expired) lease exists."""
+    return _host_client_id is not None and (time.monotonic() - _host_last_heartbeat) < HOST_LEASE_TIMEOUT_SEC
+
+
+def _host_status(client_id):
+    with _host_lock:
+        active = _host_lease_active_locked()
+        return {
+            "host_active": active,
+            "is_host": active and client_id is not None and client_id == _host_client_id,
+        }
+
+
+def _host_claim(client_id):
+    """True if `client_id` now holds the lease - either no one else held it,
+    the previous lease expired, or it's the same client re-claiming (a page
+    reload keeps its stored id, so this is idempotent for that case)."""
+    global _host_client_id, _host_last_heartbeat
+    with _host_lock:
+        if _host_lease_active_locked() and _host_client_id != client_id:
+            return False
+        _host_client_id = client_id
+        _host_last_heartbeat = time.monotonic()
+        return True
+
+
+def _host_heartbeat(client_id):
+    global _host_last_heartbeat
+    with _host_lock:
+        if _host_client_id != client_id:
+            return False
+        _host_last_heartbeat = time.monotonic()
+        return True
+
+
+def _host_release(client_id):
+    global _host_client_id
+    with _host_lock:
+        if _host_client_id == client_id:
+            _host_client_id = None
+            return True
+        return False
+
+
+def _host_take_control(client_id):
+    """The emergency override ("Take control" button) - unconditionally
+    hands the lease to `client_id`, even if another client's lease is still
+    live. For the case the lease-expiry alone doesn't cover: the previous
+    host's tab is still open (so its own heartbeat would otherwise keep
+    renewing) but that session is gone/stuck/unreachable - a human decides
+    this, not a timeout."""
+    global _host_client_id, _host_last_heartbeat
+    with _host_lock:
+        _host_client_id = client_id
+        _host_last_heartbeat = time.monotonic()
+
 # Failed-auth rate limiting - see _require_auth(). Found live (2026-07-25): a
 # browser tab with stale/wrong cached Basic Auth credentials, combined with
 # several independent polling loops on this page, retried a wrong password
@@ -2562,6 +2640,37 @@ class Handler(BaseHTTPRequestHandler):
         self._send_401()
         return False
 
+    def _client_id(self):
+        """The requesting client's self-chosen id (status_page.html:
+        CC_CLIENT_ID, a UUID stored in localStorage) - the fetch() wrapper
+        near the top of that file's <script> sends it as a header on every
+        request; the /api/host/* endpoints also accept it as a query param
+        since navigator.sendBeacon() (used to release the lease on page
+        unload) can't set custom headers."""
+        header = self.headers.get("X-CC-Client-Id")
+        if header:
+            return header
+        qs = parse_qs(urlparse(self.path).query)
+        return qs.get("client_id", [""])[0] or None
+
+    def _require_host(self):
+        """Gate for mutating (POST) endpoints - see _host_lock's own module-
+        level comment. Sends its own error response and returns False if
+        this request's client doesn't currently hold the lease; caller
+        should return immediately in that case."""
+        client_id = self._client_id()
+        if not client_id:
+            self._send_json({"success": False, "error": "missing client id - reload the page"}, status=428)
+            return False
+        if not _host_status(client_id)["is_host"]:
+            self._send_json(
+                {"success": False, "error": "This Control Center is currently controlled by another client - "
+                                             "use “Take control” if that session is gone."},
+                status=409,
+            )
+            return False
+        return True
+
     def _send_json(self, obj, status=200):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
@@ -2605,6 +2714,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/last_run_summary":
             self._send_json(_consume_result_file())
+            return
+
+        if parsed.path == "/api/host/status":
+            self._send_json(_host_status(self._client_id()))
             return
 
         if parsed.path == "/":
@@ -3102,6 +3215,41 @@ class Handler(BaseHTTPRequestHandler):
         # credentials. Shutting the installer down isn't destructive, unlike
         # /start and /reboot below, which do require auth.
         if parsed.path != "/shutdown" and not self._require_auth():
+            return
+
+        # Single-host lock (see _host_lock's module-level comment): every
+        # mutating request must come from the client currently holding the
+        # lease, except the handful of paths below that manage the lease
+        # itself (claiming it is obviously not gated behind already holding
+        # it) and /shutdown (already exempt from auth above, same reasoning -
+        # not destructive, and the cross-origin PiFinder page has no way to
+        # carry a client id either).
+        _HOST_EXEMPT_PATHS = {
+            "/shutdown", "/api/host/claim", "/api/host/heartbeat",
+            "/api/host/release", "/api/host/take_control",
+        }
+        if parsed.path not in _HOST_EXEMPT_PATHS and not self._require_host():
+            return
+
+        if parsed.path == "/api/host/claim":
+            self._send_json({"success": True, "is_host": _host_claim(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/heartbeat":
+            self._send_json({"success": _host_heartbeat(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/release":
+            self._send_json({"success": _host_release(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/take_control":
+            client_id = self._client_id()
+            if not client_id:
+                self._send_json({"success": False, "error": "missing client id - reload the page"}, status=428)
+                return
+            _host_take_control(client_id)
+            self._send_json({"success": True, "is_host": True})
             return
 
         if parsed.path == "/start":
