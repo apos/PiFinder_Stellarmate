@@ -442,6 +442,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty MountHorizonStatusNP;
         INumber MountHorizonStatusN[1];
 
+        // PiFinder's own current altitude, mirroring MountHorizonStatusNP
+        // just above but for the *other* side of a Sync (2026-09-11, direct
+        // feedback: a Sync-from-PiFinder attempt with PiFinder's own
+        // position below the horizon was silently refused by
+        // sendMountCoordsSafe() with nothing but a log line and a toast the
+        // user only saw by chance - "ich schaue nachts im Feld nicht ins
+        // INDI Log". This lets the Control Center pre-empt the button
+        // instead of letting the user find out after clicking). Computed
+        // from the same fetchFreshPiFinderPosition() TimerHit() already
+        // calls for the drift readout - no extra HTTP round trip. Same
+        // IPS_ALERT/IPS_OK convention and "not published until a first
+        // reading exists" rule as MountHorizonStatusNP.
+        INumberVectorProperty PiFinderHorizonStatusNP;
+        INumber PiFinderHorizonStatusN[1];
+
         // Distinct from DriftStatusNP (mount vs PiFinder agreement) and
         // m_lastForwardedRA/Dec below (the tactical "held target", which
         // legitimately gets re-anchored by every ordinary correction - see

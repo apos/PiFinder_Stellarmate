@@ -1307,6 +1307,9 @@
   }
   .showstopper-card .mb-drift-banner-btn-primary { background: #e0a030; color: #221a00; border-color: #e0a030; }
   .showstopper-card .mb-drift-banner-btn-primary:hover { filter: brightness(1.1); }
+  .showstopper-card .mb-drift-banner-btn:disabled {
+    opacity: 0.45; cursor: not-allowed; filter: none;
+  }
   /* Control-host remote-address entry row (2026-09-11) - the mandatory,
      in-card replacement for the old prompt()-based IP entry: an input plus
      Test/Use buttons, same card so it inherits the "can't be missed, can't
@@ -3246,6 +3249,21 @@ function updateMountHorizonStatus(altitudeDeg, belowHorizon) {
   document.getElementById('mb-horizon-value').textContent = `${_mountAltitudeDeg.toFixed(0)}°`;
   badge.classList.toggle('mb-horizon-alert', _mountBelowHorizon);
 }
+// Mirrors _mountBelowHorizon/updateMountHorizonStatus() above, but for
+// PiFinder's own position (PIFINDER_HORIZON_STATUS) - the other side of a
+// Sync. Direct feedback (2026-09-11): a Sync-from-PiFinder attempt refused
+// by the driver for being below the horizon only showed up as a driver-log
+// line and a toast on the tab that clicked it - "ich schaue nachts im Feld
+// nicht ins INDI Log". No separate badge (the mount one already covers the
+// visible altitude readout) - this only gates the Sync button in the
+// sim-mismatch showstopper card below.
+let _pifinderBelowHorizon = false;
+let _pifinderAltitudeDeg = null;
+function updatePiFinderHorizonStatus(altitudeDeg, belowHorizon) {
+  _pifinderAltitudeDeg = (typeof altitudeDeg === 'number') ? altitudeDeg : null;
+  _pifinderBelowHorizon = belowHorizon === true;
+  renderNoSolveBanner();
+}
 // §8.8 follow-up (2026-09-09, direct feedback): was a single card picked
 // by an if/else-if priority chain - whichever condition came first silently
 // hid every other one that also happened to be true. "Es müssen alle die
@@ -3287,14 +3305,29 @@ function collectActiveShowstoppers() {
     });
   }
   if (_simStartupMismatch) {
+    // Direct feedback (2026-09-11): a Sync attempt with PiFinder's own
+    // position below the horizon used to just get refused by the driver,
+    // visible only as a log line - "ich schaue nachts im Feld nicht ins
+    // INDI Log". Disabled-with-a-visible-reason here, not hidden - the
+    // button stays where the user expects it, the warning is unmissable in
+    // the same card instead of buried in a log only the person driving the
+    // click would ever see.
+    const pfBelowHorizon = _pifinderBelowHorizon && _pifinderAltitudeDeg !== null;
+    const syncWarning = pfBelowHorizon
+      ? ` PiFinder's own position is currently ${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below the horizon - Sync would be refused, disabled until it's back above.`
+      : '';
     items.push({
       id: 'sim-mismatch',
       category: 'pifinder',
       title: "PiFinder's simulated position isn't related to the mount",
-      text: "Started on an unrelated star. Re-seed PiFinder from the mount, or Sync the mount from PiFinder.",
+      text: "Started on an unrelated star. Re-seed PiFinder from the mount, or Sync the mount from PiFinder." + syncWarning,
       buttons: [
         { label: 'Re-seed from mount', onclick: 'triggerReseedFromMountBanner()', action: 'reseed-from-mount' },
-        { label: 'Sync mount from PiFinder', onclick: 'triggerSyncToPiFinderVisible()', action: 'sync-to-visible' },
+        {
+          label: 'Sync mount from PiFinder', onclick: 'triggerSyncToPiFinderVisible()', action: 'sync-to-visible',
+          disabled: pfBelowHorizon,
+          title: pfBelowHorizon ? "PiFinder's position is below the horizon - the mount would refuse this Sync." : undefined,
+        },
       ],
     });
   }
@@ -3344,14 +3377,19 @@ function renderShowstopperGroup(wrapId, items) {
   // under them. Simple button-only cards have no local state to lose, but
   // skipping their rebuild too when nothing changed is harmless (and avoids
   // needless flicker).
-  const sig = items.map((i) => i.id).join('|');
+  // Includes text + each button's disabled flag, not just the id (2026-09-11):
+  // a card can stay the same id while its content changes underneath it (e.g.
+  // sim-mismatch's horizon warning/disabled Sync button toggling as PiFinder's
+  // altitude crosses the safety margin) - an id-only signature would freeze
+  // that update the same way it used to freeze the ctrl-remote-input value.
+  const sig = items.map((i) => `${i.id}:${i.text}:${(i.buttons || []).map((b) => b.disabled ? 1 : 0).join('')}`).join('|');
   if (wrap.dataset.showstopperSig === sig) return;
   wrap.dataset.showstopperSig = sig;
   const warnIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
   wrap.innerHTML = items.map((item) => {
     const buttonsHtml = item.buttons.length
       ? `<div class="mb-drift-banner-actions">${item.buttons.map((b) =>
-          `<button${b.action ? ` data-mb-action="${b.action}"` : ''} class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="${b.onclick}">${b.label}</button>`
+          `<button${b.action ? ` data-mb-action="${b.action}"` : ''}${b.disabled ? ' disabled' : ''}${b.title ? ` title="${b.title}"` : ''} class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="${b.onclick}">${b.label}</button>`
         ).join('')}</div>`
       : '';
     const extraHtml = item.extraHtml || '';
@@ -6703,6 +6741,7 @@ async function refreshMbDrift() {
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
+      updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
