@@ -1768,17 +1768,48 @@ def _mount_bridge_readiness_watchdog(interval=5):
     fix everything in one pass."""
     while True:
         time.sleep(interval)
+        # Diagnostic timing (2026-09-11, issue #385): this call already
+        # happens every tick regardless - just measuring how long it took
+        # costs nothing extra (no new connection, no added load, unlike a
+        # separate dedicated probe loop would). Live-caught this same day:
+        # the driver process itself stays perfectly healthy throughout
+        # (confirmed via /proc/<pid>/status sampling) while indiserver
+        # itself goes silent to every client - including a totally
+        # unrelated ad-hoc test connection - for ~28s roughly every ~5min,
+        # discovered only by someone happening to be watching with a
+        # hand-rolled timing script at the right moment. Logging it here
+        # permanently means the NEXT occurrence (in this VM, on a Pi5, or
+        # in the field) leaves this evidence on its own, for anyone to find
+        # later - no one has to be actively investigating when it happens.
+        # Threshold chosen well under TIMEOUT_BACKGROUND_POLL (7s) so a
+        # genuinely slow-but-fine poll doesn't spam this, but well above
+        # the sub-100ms this call normally takes over loopback.
+        _tick_start = time.monotonic()
         try:
             status = indi_client.mount_bridge_status(
                 timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
                 device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
             )
-        except indi_client.INDIClientError:
+        except indi_client.INDIClientError as e:
+            _elapsed = time.monotonic() - _tick_start
+            if _elapsed > 1.0:
+                _mb_log(
+                    f"Mount Bridge readiness watchdog: indiserver query itself took {_elapsed:.1f}s "
+                    f"then failed ({e}) - see issue #385, this points at indiserver itself, not "
+                    "necessarily the Mount Bridge driver."
+                )
             # No response at all from indiserver itself (not just Mount
             # Bridge) - nothing this watchdog can usefully act on
             # (indiserver itself is the Web Manager's concern, not this
             # one's).
             continue
+        else:
+            _elapsed = time.monotonic() - _tick_start
+            if _elapsed > 1.0:
+                _mb_log(
+                    f"Mount Bridge readiness watchdog: indiserver query took {_elapsed:.1f}s "
+                    f"(normally well under 0.1s) - see issue #385."
+                )
         try:
             _mount_bridge_readiness_self_heal(status)
         except Exception as e:  # a watchdog thread must never die silently
