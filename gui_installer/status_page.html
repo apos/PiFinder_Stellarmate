@@ -2069,6 +2069,7 @@
           <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand.">Sync mount from PiFinder</button>
           <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
           <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
+          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the held target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Held Target Now</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
         </div>
         <div class="mb-row" id="mb-threshold-manual-row">
@@ -5830,15 +5831,31 @@ function formatDrift(driftArcmin) {
   return `${driftArcmin.toFixed(1)}'`;
 }
 
-function updateDriftBadge(driftArcmin, threshold) {
+function updateDriftBadge(driftArcmin, threshold, driftState) {
   const badge = document.getElementById('mb-drift-badge');
   if (driftArcmin === null || driftArcmin === undefined) {
     badge.style.display = 'none';
     return;
   }
   badge.style.display = '';
-  document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin);
   badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red');
+  // 2026-09-11, direct feedback (live at the scope, cloud-caused solve gap -
+  // "Mount pinpoint, PiFinder pinpoint... Driftanzeige spinnt"): driftState
+  // was already being passed all the way here (see applyMbDriftAndMode's
+  // own call) but silently dropped - the driver correctly freezes
+  // DRIFT_STATUS (state -> Idle) rather than publishing a value computed
+  // off a stale/no-longer-fresh PiFinder position, but this badge coloured
+  // whatever number was already sitting there as if it were a live,
+  // current reading regardless - a frozen number from well before a solve
+  // gap (e.g. left over from an earlier, genuinely large test drift) shown
+  // in full red alert. "Idle" now shows the value muted/neutral instead of
+  // colour-coded, matching the dot-unconfirmed convention used elsewhere
+  // for the same driver state.
+  if (driftState === 'Idle') {
+    document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin) + ' (stale)';
+    return;
+  }
+  document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin);
   if (driftArcmin >= MB_FOV_LIMIT_ARCMIN) badge.classList.add('mb-drift-red');
   else if (driftArcmin > threshold) badge.classList.add('mb-drift-yellow');
   else badge.classList.add('mb-drift-green');
@@ -5959,7 +5976,7 @@ let wmLastCouplingMode = null;
 function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
   wmLastCouplingMode = couplingMode;
   const threshold = parseFloat(readThresholdInputRaw()) || 5;
-  updateDriftBadge(driftArcmin, threshold);
+  updateDriftBadge(driftArcmin, threshold, driftState);
   updateCouplingButtons(couplingMode, correctionAction);
   updateThresholdInputRelevance(couplingMode);
   updateActionButtonsCouplingGate(couplingMode);
@@ -7111,6 +7128,34 @@ async function triggerGotoHeld() {
   pollMbLog();
   await refreshMountBridgeStatus();
   mbActionInFlight = false;
+  clearMbActionStatus();
+}
+
+// 2026-09-11, direct feedback: exposes REPOSITION_CONFIRM_NO ("Revert to
+// held target") - already-existing, already-safe driver logic, previously
+// only reachable by waiting up to 45s for its own timeout, or via the raw
+// INDI Control Panel. Works regardless of Coupling mode - no data-mb-action
+// busy-state coupling gate needed here (unlike Goto Held Target above).
+async function triggerRepositionRevert() {
+  const btn = document.getElementById('mb-reposition-revert-btn');
+  if (btn.dataset.busy === '1') return;
+  const originalText = btn.textContent;
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+  btn.textContent = 'reverting…';
+  setMbActionStatus('⏳ Reverting to held target…');
+  try {
+    const resp = await fetch('/api/mount_bridge_reposition_revert', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog(), same pattern as the
+    // other manual action buttons.
+  }
+  btn.textContent = originalText;
+  btn.disabled = false;
+  delete btn.dataset.busy;
+  pollMbLog();
   clearMbActionStatus();
 }
 

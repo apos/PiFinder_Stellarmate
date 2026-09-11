@@ -4149,6 +4149,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_reposition_revert":
+            # 2026-09-11, direct feedback: exposes REPOSITION_CONFIRM_NO
+            # ("Revert to held target") - already-existing, already-safe
+            # driver logic, previously only reachable by waiting up to 45s
+            # or via the raw INDI Control Panel. See
+            # trigger_reposition_revert()'s own docstring for why this is
+            # PushTo-safe (verified live, doesn't touch PiFinder's own
+            # push-to counter/target).
+            _mb_log("reverting to the held target now...")
+            try:
+                indi_client.trigger_reposition_revert()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_sync_to_pifinder_visible":
             # Below-horizon recovery action (§8.8 showstopper) - syncs the
             # mount to whatever PiFinder LX200 is CURRENTLY showing, no

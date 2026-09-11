@@ -1139,6 +1139,30 @@ def trigger_align_held(
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_ALIGN_HELD", host, port, timeout)
 
 
+def trigger_reposition_revert(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Immediately fires REPOSITION_CONFIRM's "No" branch (`RepositionConfirmSP`
+    REPOSITION_CONFIRM_NO, "Revert to held target") - already-existing,
+    already-working driver logic (pifinder_mount_bridge.cpp ~3307-3336):
+    Sync mount to PiFinder's current live position, then Track to the held
+    target, routed through the normal SLEWING/SETTLING state machine so real
+    convergence is verified. Live-verified 2026-09-11: this specific path -
+    Sync+Track sent to the MOUNT device, never to PiFinder's own LX200
+    mirror - does NOT touch PiFinder's own PushTo counter/target at all
+    (confirmed by watching PiFinder's own PUSH N display during an
+    automatic firing of this same code via the 45s timeout path - it did
+    not increment).
+
+    Previously only reachable by waiting up to 45s for
+    REPOSITION_CONFIRM's own timeout, or via the raw INDI Control Panel -
+    invisible from the Control Center GUI. This is the GUI-side trigger for
+    the exact same, already-safe mechanism - no driver change involved."""
+    set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_NO", host, port, timeout)
+
+
 # 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
 # still-not-root-caused "process alive but unresponsive to any INDI query"
 # hang (#238) - live-verified by hand many times this same session
