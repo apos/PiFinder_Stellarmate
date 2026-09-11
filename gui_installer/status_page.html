@@ -1299,6 +1299,18 @@
   }
   .showstopper-card .mb-drift-banner-btn-primary { background: #e0a030; color: #221a00; border-color: #e0a030; }
   .showstopper-card .mb-drift-banner-btn-primary:hover { filter: brightness(1.1); }
+  /* Control-host remote-address entry row (2026-09-11) - the mandatory,
+     in-card replacement for the old prompt()-based IP entry: an input plus
+     Test/Use buttons, same card so it inherits the "can't be missed, can't
+     be dismissed" treatment every other showstopper already gets. */
+  .showstopper-card .mb-drift-banner-inputrow { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.4rem; }
+  .showstopper-card .mb-drift-banner-inputrow input {
+    flex: 1; min-width: 10rem; background: #1a1608; color: #f5e6c0; border: 1px solid #6b5320;
+    border-radius: 5px; padding: 0.4rem 0.55rem; font-size: 0.78rem;
+  }
+  .showstopper-card .mb-drift-banner-subtext { font-size: 0.74rem; line-height: 1.4; min-height: 1.1em; margin-bottom: 0.4rem; color: #ddd0b0; }
+  .showstopper-card .mb-drift-banner-subtext-ok { color: #8fd19e; }
+  .showstopper-card .mb-drift-banner-subtext-bad { color: #ff8a80; }
   .mb-node {
     border: 1px solid #444;
     border-radius: 6px;
@@ -3057,6 +3069,29 @@ function collectActiveShowstoppers() {
       ],
     });
   }
+  // Control host with no PiFinder position source at all (Mount Bridge
+  // present, neither a local nor a remote PiFinder LX200) - deriveProfileRole()
+  // calls this 'bridge-only'. A Control host has no USB fallback (direct
+  // feedback: "Es gibt keine Möglichkeit, einen PiFinder über USB
+  // anzuschließen") - a remote address is mandatory, so this card cannot be
+  // dismissed and stays up until one is actually applied. Replaces the old
+  // prompt()-based entry in onRoleCardClick('ctrl').
+  if (deriveProfileRole() === 'bridge-only') {
+    items.push({
+      id: 'ctrl-remote-missing',
+      category: 'mount-bridge',
+      title: 'Control host: no PiFinder configured yet',
+      text: "This device has no PiFinder hardware attached - it couples to one running on another device, over the network (no USB fallback). Enter that device's IP address (shown on its own tile once its role is set to \"PiFinder host\"), then Test before applying:",
+      extraHtml:
+        '<div class="mb-drift-banner-inputrow">' +
+        `<input type="text" id="ctrl-remote-input" placeholder="192.168.1.42 or host:7624" value="${wmLx200Remote || ''}">` +
+        '<button class="mb-drift-banner-btn" onclick="testCtrlRemoteAddress()">Test</button>' +
+        '<button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="applyCtrlRemoteAddress()">Use this address</button>' +
+        '</div>' +
+        '<div id="ctrl-remote-test-result" class="mb-drift-banner-subtext"></div>',
+      buttons: [],
+    });
+  }
   return items;
 }
 
@@ -3069,8 +3104,20 @@ function renderShowstopperGroup(wrapId, items) {
   if (!wrap) return;
   if (items.length === 0) {
     wrap.innerHTML = '';
+    wrap.dataset.showstopperSig = '';
     return;
   }
+  // Skip the rebuild if the exact same set of cards is already showing
+  // (2026-09-11): this fires on every status poll (updateNoSolveBanner()),
+  // a few seconds apart. The Control-host remote-address card below holds
+  // live input the user may be mid-typing into - a blind innerHTML rebuild
+  // on every poll would wipe both the text and the cursor/focus out from
+  // under them. Simple button-only cards have no local state to lose, but
+  // skipping their rebuild too when nothing changed is harmless (and avoids
+  // needless flicker).
+  const sig = items.map((i) => i.id).join('|');
+  if (wrap.dataset.showstopperSig === sig) return;
+  wrap.dataset.showstopperSig = sig;
   const warnIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
   wrap.innerHTML = items.map((item) => {
     const buttonsHtml = item.buttons.length
@@ -3078,7 +3125,8 @@ function renderShowstopperGroup(wrapId, items) {
           `<button${b.action ? ` data-mb-action="${b.action}"` : ''} class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="${b.onclick}">${b.label}</button>`
         ).join('')}</div>`
       : '';
-    return `<div class="showstopper-card" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${buttonsHtml}</div></div>`;
+    const extraHtml = item.extraHtml || '';
+    return `<div class="showstopper-card" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${extraHtml}${buttonsHtml}</div></div>`;
   }).join('');
 }
 
@@ -6047,18 +6095,38 @@ let wmPifinderConnected = null;
 let wmBridgeConnected = null;
 let wmMountConnected = null;
 let mbLogPosition = 0;
+let _mbLogPollInFlight = null;
+// Guarded against overlapping calls (2026-09-11, live-found: duplicated
+// blocks in the on-page log during a busy Autoconnect run). pollMbLog() is
+// called both by the 4s setInterval below AND manually right after nearly
+// every driver/action call (toggleWmDriver(), ensureSimulatorDriver(),
+// onRoleCardClick(), ...) to refresh immediately - mbLogPosition only
+// advances after a call's own fetch resolves, so two calls firing close
+// together both read the same (stale) position, both fetch the same new
+// lines, and both append them - the server's own log buffer was never
+// duplicated, only this client-side render. A caller that arrives while
+// one is already in flight now awaits that same in-flight fetch instead of
+// starting a second, redundant one.
 async function pollMbLog() {
-  try {
-    const resp = await fetch(`/api/mount_bridge_log?position=${mbLogPosition}`, { cache: 'no-store' });
-    const data = await resp.json();
-    if (data.lines && data.lines.length) {
-      const logEl = document.getElementById('mb-log');
-      logEl.textContent += (logEl.textContent ? '\n' : '') + data.lines.join('\n');
-      logEl.scrollTop = logEl.scrollHeight;
+  if (_mbLogPollInFlight) return _mbLogPollInFlight;
+  _mbLogPollInFlight = (async () => {
+    try {
+      const resp = await fetch(`/api/mount_bridge_log?position=${mbLogPosition}`, { cache: 'no-store' });
+      const data = await resp.json();
+      if (data.lines && data.lines.length) {
+        const logEl = document.getElementById('mb-log');
+        logEl.textContent += (logEl.textContent ? '\n' : '') + data.lines.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      mbLogPosition = data.position;
+    } catch (e) {
+      // diagnostic aid only - failing silently here is fine
     }
-    mbLogPosition = data.position;
-  } catch (e) {
-    // diagnostic aid only - failing silently here is fine
+  })();
+  try {
+    await _mbLogPollInFlight;
+  } finally {
+    _mbLogPollInFlight = null;
   }
 }
 setInterval(pollMbLog, 4000);
@@ -6864,6 +6932,36 @@ async function startAutoconnect(mode) {
   // user clicked a different preset meanwhile, or this run's own
   // waitForCondition() below already gave up - let that one own it now
   if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
+
+  // Verify/ensure the local PiFinder LX200's own connection settings BEFORE
+  // Ekos gets a chance to auto-connect it below (2026-09-11, live-found):
+  // a profile's PiFinder LX200 can be left on INDI::Telescope's base-class
+  // default (Serial, some stale port) if it was never connected through
+  // this Control Center before - e.g. right after a fresh install. Left
+  // uncorrected, Ekos's own Auto Connect then fails outright ("Failed to
+  // connect to PiFinder LX200...") and this whole Autoconnect run gets
+  // stuck forever waiting for wmEkosConnected, which never happens.
+  // /api/mount_bridge_connect already does exactly this fix (indi_client.
+  // ensure_pifinder_lx200_tcp(), idempotent, logs when it had to correct
+  // something) plus the actual CONNECT - doing it here too is harmless
+  // (INDI's CONNECT is a no-op on an already-connected device) and means
+  // Ekos sees a device that's already correctly configured, or already
+  // connected, instead of racing it. Skipped for a remote PiFinder LX200
+  // (Control host role) - no local driver instance here to fix.
+  if (wmHasLx200 === true && !wmLx200Remote) {
+    setAutoconnectStatus('Autoconnect: verifying PiFinder LX200 connection settings…');
+    try {
+      const params = new URLSearchParams({ device: 'PiFinder LX200', profile: wmSelectedProfile });
+      const resp = await fetch(`/api/mount_bridge_connect?${params}`, { method: 'POST' });
+      const data = await resp.json();
+      if (!data.success) {
+        setAutoconnectStatus(`Autoconnect: could not verify PiFinder LX200's connection settings (${data.error || 'unknown error'}) - continuing anyway.`);
+      }
+    } catch (e) {
+      // best-effort - Ekos's own Auto Connect still gets a chance below
+    }
+    if (autoconnectMode !== mode || autoconnectGeneration !== generation) return;
+  }
 
   if (!wmActiveMount) {
     setAutoconnectStatus('Autoconnect: wait or pick your mount in setup checklist (Role) and click "Link telescope mount" to continue.');
@@ -7672,18 +7770,17 @@ async function onRoleCardClick(kind) {
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
   } else {
-    const entered = prompt(
-      "IP address of the PiFinder host device (shown in its own Mount Bridge tile when its role is 'PiFinder host'). Port defaults to 7624:",
-      wmLx200Remote || ''
-    );
-    if (entered === null) return;
-    const value = entered.trim();
-    if (!value) return;
-    if (!/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(value)) {
-      alert(`"${value}" is not a valid host or host:port.`);
-      return;
-    }
-    actions.push(['lx200', 'add_remote', value]);
+    // No prompt() here anymore (2026-09-11, direct feedback: mandatory
+    // entry, same yellow-box style as the other showstoppers, not a
+    // dismissible native dialog) - this just clears the way for the
+    // 'ctrl-remote-missing' card below to appear (any local PiFinder LX200
+    // removed, Mount Bridge added); the card itself owns entering, testing,
+    // and applying the remote address. If a remote address is already set,
+    // there is nothing to clear and this card never appears - editing an
+    // already-working remote address isn't handled here (out of scope of
+    // this fix; use the "PiFinder LX200 (remote ...): remove" button in the
+    // checklist below, then this card reappears).
+    if (wmHasLx200 === true && !wmLx200Remote) actions.push(['lx200', 'remove', null]);
     if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
   }
   if (actions.length === 0) {
@@ -7712,6 +7809,78 @@ async function onRoleCardClick(kind) {
   mbActionInFlight = false;
   clearMbActionStatus();
   setStepBusy(3, false);
+  if (kind === 'ctrl') {
+    document.getElementById('ctrl-remote-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('ctrl-remote-input')?.focus();
+  }
+}
+
+// Control-host remote-address entry (2026-09-11) - the input+Test+Apply row
+// inside the 'ctrl-remote-missing' showstopper card (collectActiveShowstoppers()).
+function _parseCtrlRemoteInput() {
+  const raw = (document.getElementById('ctrl-remote-input')?.value || '').trim();
+  if (!raw || !/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(raw)) return null;
+  return raw;
+}
+
+function _setCtrlRemoteResult(text, kind) {
+  const el = document.getElementById('ctrl-remote-test-result');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'mb-drift-banner-subtext' + (kind ? ` mb-drift-banner-subtext-${kind}` : '');
+}
+
+// Deliberately checks for the PiFinder LX200 device itself, not just TCP
+// reachability of host:port (direct feedback: "der Test soll auch prüfen,
+// ob dort ein PiFinder LX200 lauscht") - an open port with the wrong
+// service, or a right host whose profile just isn't started, both need a
+// different message than "can't reach it at all".
+async function testCtrlRemoteAddress() {
+  const value = _parseCtrlRemoteInput();
+  if (!value) {
+    _setCtrlRemoteResult('Enter a valid host or host:port first.', 'bad');
+    return;
+  }
+  _setCtrlRemoteResult('Testing…', null);
+  try {
+    const resp = await fetch(`/api/webmanager/test_remote_pifinder?remote=${encodeURIComponent(value)}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (data.device_found) {
+      _setCtrlRemoteResult(`✓ PiFinder LX200 answering at ${value}.`, 'ok');
+    } else if (data.reachable) {
+      _setCtrlRemoteResult(`${value} is reachable, but no PiFinder LX200 driver is running there - start/add it in that device's own Control Center first.`, 'bad');
+    } else {
+      _setCtrlRemoteResult(`Could not reach ${value}: ${data.error || 'connection failed'}.`, 'bad');
+    }
+  } catch (e) {
+    _setCtrlRemoteResult(`Test failed: ${e.message}`, 'bad');
+  }
+}
+
+async function applyCtrlRemoteAddress() {
+  const value = _parseCtrlRemoteInput();
+  if (!value) {
+    _setCtrlRemoteResult('Enter a valid host or host:port first.', 'bad');
+    return;
+  }
+  if (!wmSelectedProfile) {
+    alert('Pick a profile in step 1 first.');
+    return;
+  }
+  _setCtrlRemoteResult('Applying…', null);
+  try {
+    const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=lx200&action=add_remote&remote=${encodeURIComponent(value)}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+  } catch (e) {
+    _setCtrlRemoteResult(`Could not apply: ${e.message}`, 'bad');
+    return;
+  }
+  pollMbLog();
+  await refreshWmDriverButtons();
+  await loadWmProfiles();
+  await refreshMountBridgeStatus();
 }
 
 // Green checkmark on each step's label once its condition is actually met -

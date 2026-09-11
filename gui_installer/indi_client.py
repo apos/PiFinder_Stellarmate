@@ -737,7 +737,7 @@ PIFINDER_LX200_TCP_PORT = "4030"  # pos_server.py's fixed LX200 port - see Readm
 def ensure_pifinder_lx200_tcp(
     host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT,
     check_timeout: float = 1.5,
-) -> None:
+) -> bool:
     """Forces "PiFinder LX200"'s own connection onto TCP 127.0.0.1:4030
     (pos_server.py) rather than the INDI/LX200Telescope base class's default
     of a serial port. Found live (2026-07-25): left at its default, this
@@ -760,7 +760,17 @@ def ensure_pifinder_lx200_tcp(
     accepts connection-parameter changes while disconnected, so this
     disconnects first if needed and leaves the device disconnected - the
     caller (see server.py's /api/mount_bridge_connect) does the actual
-    CONNECT afterwards."""
+    CONNECT afterwards.
+
+    Returns True if the connection settings were wrong and had to be
+    corrected, False if they were already right - found live (2026-09-11)
+    that a profile's PiFinder LX200 can sit on the base-class Serial default
+    for a long time if it was never connected through this Control Center
+    before (e.g. right after a fresh install/reinstall), silently, until
+    something - here, Ekos's own Auto Connect - tries to use it and fails.
+    Callers should surface a `True` return as a visible warning rather than
+    swallow it, per the same "detect it happened and say so" requirement
+    this function's TCP-forcing behaviour itself was built for."""
     props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder LX200")
     if not device_props:
@@ -774,7 +784,7 @@ def ensure_pifinder_lx200_tcp(
         and address.get("PORT") == PIFINDER_LX200_TCP_PORT
     )
     if already_correct:
-        return
+        return False
 
     if _connection_state(device_props):
         set_switch("PiFinder LX200", "CONNECTION", "DISCONNECT", host, port, check_timeout)
@@ -800,6 +810,7 @@ def ensure_pifinder_lx200_tcp(
         {"ADDRESS": PIFINDER_LX200_TCP_HOST, "PORT": PIFINDER_LX200_TCP_PORT},
         host, port, check_timeout,
     )
+    return True
 
 
 def set_mount_bridge_active_devices(
