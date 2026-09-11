@@ -3315,6 +3315,28 @@ function collectActiveShowstoppers() {
       ],
     });
   }
+  // Same reasoning as "Mount is below the horizon" just above, but for
+  // PiFinder's OWN reported position (PIFINDER_HORIZON_STATUS, PR #381).
+  // Live-caught on real Pi5 hardware (2026-09-11, direct field feedback):
+  // both PiFinder and the mount were genuinely below the horizon, with no
+  // warning shown at all - because the ONLY place this ever surfaced was
+  // as extra text bolted onto the sim-mismatch card below, which only
+  // exists while _simStartupMismatch is true (e.g. already acknowledged
+  // earlier this session, or the positions happened to agree at startup).
+  // PIFINDER_HORIZON_STATUS can go IPS_ALERT completely independent of
+  // whether there's also a mount mismatch - this card no longer depends
+  // on that unrelated condition to ever appear.
+  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+    items.push({
+      id: 'pifinder-horizon',
+      category: 'pifinder',
+      title: "PiFinder's own position is below the horizon",
+      text: `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Re-seed from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
+      buttons: [
+        { label: 'Re-seed from mount', onclick: 'triggerReseedFromMountBanner()', action: 'reseed-from-mount' },
+      ],
+    });
+  }
   const showNoSolve = _noSolveStreak >= NO_SOLVE_STREAK_THRESHOLD && _noSolveHasNothing;
   if (showNoSolve) {
     items.push({
