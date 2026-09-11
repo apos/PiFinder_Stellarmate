@@ -538,6 +538,8 @@ def mount_bridge_drift(
             "align_direction": None,
             "mount_altitude_deg": None,
             "mount_below_horizon": None,
+            "pifinder_altitude_deg": None,
+            "pifinder_below_horizon": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -554,6 +556,15 @@ def mount_bridge_drift(
     mount_altitude_raw = mount_horizon_elements.get("ALTITUDE_DEG")
     mount_altitude_deg = float(mount_altitude_raw) if mount_altitude_raw not in (None, "") else None
     mount_below_horizon = (mount_horizon_prop.get("state") == "Alert") if mount_altitude_deg is not None else None
+    # PiFinder's own altitude - same idea as MountHorizonStatusNP above, the
+    # other side of a Sync. Lets the GUI pre-empt "Sync mount from PiFinder"
+    # before the driver refuses it (direct feedback: a night-field user
+    # won't see the driver log's refusal message).
+    pifinder_horizon_prop = device_props.get("PIFINDER_HORIZON_STATUS", {})
+    pifinder_horizon_elements = pifinder_horizon_prop.get("elements", {})
+    pifinder_altitude_raw = pifinder_horizon_elements.get("ALTITUDE_DEG")
+    pifinder_altitude_deg = float(pifinder_altitude_raw) if pifinder_altitude_raw not in (None, "") else None
+    pifinder_below_horizon = (pifinder_horizon_prop.get("state") == "Alert") if pifinder_altitude_deg is not None else None
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -622,6 +633,8 @@ def mount_bridge_drift(
         "align_direction": align_direction,
         "mount_altitude_deg": mount_altitude_deg,
         "mount_below_horizon": mount_below_horizon,
+        "pifinder_altitude_deg": pifinder_altitude_deg,
+        "pifinder_below_horizon": pifinder_below_horizon,
     }
 
 

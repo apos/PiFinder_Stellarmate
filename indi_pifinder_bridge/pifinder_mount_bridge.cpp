@@ -765,6 +765,10 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 1, getDeviceName(), "MOUNT_HORIZON_STATUS",
                        "Mount horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    IUFillNumber(&PiFinderHorizonStatusN[0], "ALTITUDE_DEG", "PiFinder altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumberVector(&PiFinderHorizonStatusNP, PiFinderHorizonStatusN, 1, getDeviceName(), "PIFINDER_HORIZON_STATUS",
+                       "PiFinder horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
     // See the header comment - the fixed J2000 coordinate of the last
     // genuinely new target, distinct from the tactical (JNow) held target.
     IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
@@ -832,6 +836,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
         defineProperty(&MountHorizonStatusNP);
+        defineProperty(&PiFinderHorizonStatusNP);
         defineProperty(&OriginalTargetNP);
         defineProperty(&OriginalTargetDriftNP);
         defineProperty(&MountRejectTP);
@@ -891,6 +896,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
         deleteProperty(MountHorizonStatusNP.name);
+        deleteProperty(PiFinderHorizonStatusNP.name);
         deleteProperty(OriginalTargetNP.name);
         deleteProperty(OriginalTargetDriftNP.name);
         deleteProperty(MountRejectTP.name);
@@ -1595,9 +1601,8 @@ void PiFinderMountBridge::TimerHit()
     // arcminutes whenever PiFinder's real position was actively changing, which this driver's own
     // top-level drift readout (the value everything else reacts to) was still exposed to.
     double piRA, piDec, mountRA, mountDec;
-    const bool havePositions =
-        fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec) &&
-        m_client->getMountRADE(mountRA, mountDec);
+    const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, piRA, piDec);
+    const bool havePositions = havePiFinderPosition && m_client->getMountRADE(mountRA, mountDec);
     double drift = 0.0;
     bool exceeded = false;
     if (havePositions)
@@ -1773,6 +1778,19 @@ void PiFinderMountBridge::TimerHit()
             MountHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
             IDSetNumber(&MountHorizonStatusNP, nullptr);
         }
+    }
+
+    // PiFinder's own altitude - same reasoning as MountHorizonStatusNP just
+    // above, mirrored for the other side of a Sync. piRA/piDec were already
+    // fetched for havePositions/the drift readout above (havePiFinderPosition
+    // guards their validity) - no second HTTP round trip.
+    if (havePiFinderPosition)
+    {
+        double altitude = 90.0;
+        const bool above = isAboveHorizon(piRA, piDec, altitude);
+        PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
+        IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
     }
 
     // Deliberately published here, AFTER handleGotoForward()/
