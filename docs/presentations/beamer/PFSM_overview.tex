@@ -149,6 +149,61 @@ for PiFinder and StellarMate developers}
 \item The StellarMate phone / tablet app.
 \end{itemize}
 \end{columns}
+\vspace{1.2em}
+\begin{center}
+\begin{tikzpicture}[
+  chip/.style={draw=AVVPBlue, line width=0.8pt, rounded corners=2pt, fill=AVVPBg,
+               text=white, minimum width=1.75cm, minimum height=1.15cm, align=center,
+               font=\tiny, inner sep=3pt},
+  arr/.style={-{Stealth[length=1.8mm,width=1.3mm]}, AVVPBlue, line width=0.7pt},
+  icon/.style={line width=0.8pt, AVVPBlue}
+]
+% --- icon glyphs, drawn to a common ~0.7cm footprint ---
+\newcommand{\iconCamera}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.3,-0.18) rectangle (0.3,0.18);
+  \draw[icon] (-0.1,0.18) rectangle (0.1,0.26);
+  \draw[icon] (0,0) circle (0.11);
+\end{tikzpicture}}
+\newcommand{\iconSolve}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon] (0,0) circle (0.27);
+  \draw[icon] (0,0) circle (0.12);
+  \draw[icon,line width=0.6pt] (-0.34,0) -- (0.34,0);
+  \draw[icon,line width=0.6pt] (0,-0.34) -- (0,0.34);
+\end{tikzpicture}}
+\newcommand{\iconStar}{\begin{tikzpicture}[baseline=-0.1cm]
+  \foreach \a in {0,45,90,135}{\draw[icon,line width=0.7pt]
+    ({0.28*cos(\a)},{0.28*sin(\a)}) -- ({-0.28*cos(\a)},{-0.28*sin(\a)});}
+  \filldraw[AVVPSpark] (0,0) circle (0.05);
+\end{tikzpicture}}
+\newcommand{\iconPlug}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.22,-0.16) rectangle (0.22,0.08);
+  \draw[icon,line width=1.0pt] (-0.1,0.08) -- (-0.1,0.27);
+  \draw[icon,line width=1.0pt] (0.1,0.08) -- (0.1,0.27);
+\end{tikzpicture}}
+\newcommand{\iconMonitor}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.3,0.0) rectangle (0.3,0.32);
+  \draw[icon] (0,0) -- (0,-0.14);
+  \draw[icon] (-0.14,-0.14) -- (0.14,-0.14);
+\end{tikzpicture}}
+\newcommand{\iconPhone}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=2pt] (-0.16,-0.3) rectangle (0.16,0.3);
+  \draw[icon,line width=0.6pt] (-0.08,-0.22) -- (0.08,-0.22);
+\end{tikzpicture}}
+% --- PiFinder: a straight pipeline ---
+\node[chip] (cam)   at (0,0)    {\iconCamera\\[1pt]Camera};
+\node[chip] (solve) at (2.15,0) {\iconSolve\\[1pt]Plate-solver};
+\node[chip] (pos)   at (4.3,0)  {\iconStar\\[1pt]Sky position};
+\draw[arr] (cam) -- (solve);
+\draw[arr] (solve) -- (pos);
+% --- StellarMate: two front ends, one INDI hub ---
+\node[chip] (indi)   at (7.3,0)      {\iconPlug\\[1pt]INDI};
+\node[chip] (kstars) at (10.0,0.68)  {\iconMonitor\\[1pt]KStars/Ekos};
+\node[chip] (app)    at (10.0,-0.68) {\iconPhone\\[1pt]App};
+\draw[arr] (kstars) -- (indi);
+\draw[arr] (app) -- (indi);
+\draw[-{Stealth[length=2mm,width=1.4mm]}, AVVPSpark, dashed, line width=0.9pt] (pos) -- (indi);
+\end{tikzpicture}
+\end{center}
 \end{frame}
 
 \begin{frame}[t]{PFSM is the wiring. INDI is the connector.}
