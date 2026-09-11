@@ -2804,6 +2804,14 @@ let lastSolveSource = null;
 // (isPiFinderSolveFresh() in pifinder_mount_bridge.cpp) rather than just
 // "has ever solved". null until the first confirmed poll.
 let lastSolveSuccessTime = null;
+// 2026-09-11, direct feedback ("Es sollte immer die Zeit im Raspberry Pi
+// gelten! Die Browser-Zeit kann durch alles mögliche beeinflusst sein. Und
+// StellarMate läuft auf dem Device, das ist die Referenz!"): the age itself
+// (not just the raw timestamp) is now computed server-side (server.py,
+// time.time() - the same device PiFinder runs on) and cached here as-of the
+// last poll that carried it - replaces every Date.now()-based computation
+// below, which mixed the VIEWING DEVICE's clock into a Pi-stamped timestamp.
+let lastSolveSuccessAgeSec = null;
 // pifinder.service's raw systemd state (from refreshMode()'s own poll,
 // every 5s) - read by updatePiFinderStatusAndWizardLink()'s wait overlay
 // (2026-08-09, #192) so it can say something concrete ("service is
@@ -3127,6 +3135,7 @@ function applySolveStatus(data) {
   if ('solve_source' in data) {
     lastSolveSource = data.solve_source || null;
     if (typeof data.last_solve_success === 'number') lastSolveSuccessTime = data.last_solve_success;
+    if (typeof data.last_solve_success_age_sec === 'number') lastSolveSuccessAgeSec = data.last_solve_success_age_sec;
     updateSimReadinessLine(); // this poll (20s) is the only place lastSolveSource changes
   }
   // While Injected Solve is active, solve_source still reports "CAM" (the
@@ -3155,8 +3164,7 @@ function applySolveStatus(data) {
   // faster (see this function's own header comment above), so anything
   // older than a few seconds is already genuinely stale, not still "recent
   // enough".
-  const solveAgeSec = typeof lastSolveSuccessTime === 'number'
-    ? (Date.now() / 1000) - lastSolveSuccessTime : null;
+  const solveAgeSec = lastSolveSuccessAgeSec;
   const solveIsStale = solveAgeSec === null || solveAgeSec < 0 || solveAgeSec > 5;
   if (data.solve_source === 'CAM' && !solveIsStale) {
     setHwDot(dotEl, 'status-dot dot-green');
@@ -3484,8 +3492,16 @@ function updateNoSolveBanner(data) {
   // above: an old anchor is still something useful downstream, whether or
   // not fresh camera attempts are also happening alongside it).
   const isImuFallback = data.solve_source === 'IMU';
-  const attemptAgeSec = typeof data.last_solve_attempt === 'number'
-    ? (Date.now() / 1000) - data.last_solve_attempt : null;
+  // 2026-09-11, direct feedback ("Es sollte immer die Zeit im Raspberry Pi
+  // gelten! Die Browser-Zeit kann durch alles mögliche beeinflusst sein.
+  // Und StellarMate läuft auf dem Device, das ist die Referenz!"): this used
+  // to compute (Date.now()/1000) - data.last_solve_attempt itself, mixing
+  // the VIEWING DEVICE's clock (arbitrary skew) with a timestamp PiFinder
+  // stamped using the Pi's own clock. The server now computes this same age
+  // itself (server.py, time.time() - same device PiFinder runs on) and
+  // sends the ready result - no client clock involved at all.
+  const attemptAgeSec = typeof data.last_solve_attempt_age_sec === 'number'
+    ? data.last_solve_attempt_age_sec : null;
   const nothingAttempting = attemptAgeSec === null || attemptAgeSec < 0 || attemptAgeSec > 5;
   _noSolveHasNothing = data.fake_solve_active !== true && !isImuFallback && nothingAttempting;
   _noSolveStreak = _noSolveHasNothing ? _noSolveStreak + 1 : 0;
@@ -6101,7 +6117,7 @@ function updateDriftGuidanceBanner(data) {
   const nonReal = document.getElementById('mode-tile-sim')?.classList.contains('tile-on') ||
                   document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
   const maxAge = typeof data.solve_freshness_max_age_sec === 'number' ? data.solve_freshness_max_age_sec : 5;
-  const solveAgeSec = typeof lastSolveSuccessTime === 'number' ? (Date.now() / 1000 - lastSolveSuccessTime) : null;
+  const solveAgeSec = lastSolveSuccessAgeSec;
   const camFresh = lastSolveSource === 'CAM' && solveAgeSec !== null && solveAgeSec >= 0 && solveAgeSec <= maxAge;
 
   const mountName = data.active_mount || 'the mount';
