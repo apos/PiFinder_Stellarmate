@@ -3272,6 +3272,11 @@ let _noSolveHasNothing = false;   // latest debounced result from /api/debug_sol
 // startup and never revisits it, so unlike solve_source there is no
 // tick-to-tick noise to filter.
 let _simStartupMismatch = false;
+// See collectActiveShowstoppers()'s own comment where this is used -
+// server-persisted "ever resolved this install" flag, set once from
+// /state's init poll below and never re-fetched (the server itself never
+// flips it back to false short of a fresh install).
+let simMismatchEverResolved = false;
 // §8.8 (docs/concepts/session_start_position_reconciliation.md, 2026-09-09):
 // third, independent condition. Fed from the same 2s poll as drift
 // (refreshMbDrift() -> MOUNT_HORIZON_STATUS, computed every driver tick from
@@ -3392,7 +3397,16 @@ function collectActiveShowstoppers() {
   const SIM_MISMATCH_DRIFT_OVERRIDE_ARCMIN = 10;
   const liveDriftConfirmsRelated = typeof lastKnownDriftArcmin === 'number' &&
     lastKnownDriftArcmin < SIM_MISMATCH_DRIFT_OVERRIDE_ARCMIN;
-  if (_simStartupMismatch && !liveDriftConfirmsRelated) {
+  // Direct feedback (2026-09-11): "Die brauchen wir wirklich nur beim
+  // ersten Start. Dann nicht mehr." - indi_pifinder_simulator recomputes
+  // STARTUP_DEFAULT_SOURCE fresh on every restart of THAT process (common
+  // during a long dev/test session - self-heal cycles, reconnects), so the
+  // card could flash back on right after each one even though it was
+  // already resolved earlier. simMismatchEverResolved (from /state,
+  // server-persisted - see _sim_mismatch_ever_resolved's own comment)
+  // survives every driver/Control Center restart, not just this page load,
+  // so once resolved once this install it stays resolved.
+  if (_simStartupMismatch && !liveDriftConfirmsRelated && !simMismatchEverResolved) {
     // Direct feedback (2026-09-11): a Sync attempt with PiFinder's own
     // position below the horizon used to just get refused by the driver,
     // visible only as a log line - "ich schaue nachts im Feld nicht ins
@@ -4988,6 +5002,7 @@ async function toggleMaintenanceMode() {
     const data = await resp.json();
     if (data.success) {
       applyMaintenanceModeState(data.maintenance_mode_since);
+  if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
     } else {
       alert('Could not change maintenance mode: ' + (data.error || 'unknown error'));
     }
@@ -5465,6 +5480,7 @@ async function init() {
     updatePowerButtonLabels();
   }
   applyMaintenanceModeState(data.maintenance_mode_since);
+  if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
   document.getElementById('cc-device-icon-x86').style.display = isPiDevice ? 'none' : '';
