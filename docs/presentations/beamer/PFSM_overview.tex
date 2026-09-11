@@ -22,6 +22,7 @@
   \def\gobbletableofcontents#1{\origtableofcontents}
 }
 \input{tex/avvp_beamer_preamble.tex}
+\usetikzlibrary{arrows.meta,positioning}
 \makeatother
 
 \usepackage{babel}
@@ -128,6 +129,29 @@ for PiFinder and StellarMate developers}
 \end{itemize}
 \medskip{}
 PiFinder is patched in place, never forked. The mount side is generic INDI.
+\vspace{0.6em}
+\begin{center}
+\begin{tikzpicture}[
+  node distance=2.0cm and 2.3cm,
+  box/.style={draw=AVVPBlue, line width=0.9pt, rounded corners=3pt, fill=AVVPBg,
+              text=white, minimum width=3.5cm, minimum height=1.3cm, align=center,
+              font=\footnotesize, inner sep=7pt},
+  boxopt/.style={box, draw=AVVPSpark, dashed},
+  boxrig/.style={box, draw=AVVPGrey!70!white},
+  lbl/.style={font=\tiny, text=AVVPGrey},
+  arr/.style={-{Stealth[length=2.2mm,width=1.6mm]}, AVVPBlue, line width=0.9pt},
+  arropt/.style={arr, AVVPSpark, dashed},
+  arrrig/.style={arr, AVVPGrey!70!white}
+]
+\node[box]              (pf) {\textbf{PiFinder}\\[2pt]INDI telescope};
+\node[boxopt, right=of pf] (mb) {\textbf{Mount Bridge}\\[2pt]optional};
+\node[box, right=of mb] (mt) {\textbf{Your mount's}\\[2pt]driver — generic INDI};
+\node[boxrig, below=1.3cm of mb] (rig) {\textbf{Your rig}\\[2pt]KStars/Ekos, the app — unchanged};
+\draw[arr]    (pf) -- (mb) node[midway, yshift=7pt, lbl] {solved position};
+\draw[arropt] (mb) -- (mt) node[midway, yshift=7pt, lbl] {EQUATORIAL\_EOD\_COORD};
+\draw[arrrig] (rig) -- (mt.south);
+\end{tikzpicture}
+\end{center}
 \end{frame}
 
 % ============================================================
