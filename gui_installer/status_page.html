@@ -3426,22 +3426,46 @@ function renderNoSolveBanner() {
 
 function updateNoSolveBanner(data) {
   if (!('solve_source' in data)) return;  // unconfirmed poll - leave as-is
-  // Found live (2026-09-11, same gap as applySolveStatus()'s staleness fix
-  // just above): a *stale* CAM value used to count as "there's something"
-  // here exactly like a genuinely fresh one, so this banner - whose whole
-  // job is catching "no position to sync from" - could never fire for the
-  // case where solving had stopped entirely but solve_source was still
-  // sitting on its last successful "CAM" from a long time ago. Direct
-  // feedback: "dann fehlt aber die gelbe Meldung, dass der Solve
-  // angeschaltet werden soll!" - the card/button below already existed and
-  // already does the right thing, it just never got triggered. Same
-  // lastSolveSuccessTime/5s freshness check as applySolveStatus().
-  const solveAgeSec = typeof lastSolveSuccessTime === 'number'
-    ? (Date.now() / 1000) - lastSolveSuccessTime : null;
-  const camIsStale = solveAgeSec === null || solveAgeSec < 0 || solveAgeSec > 5;
-  const effectiveSolveSource = (data.solve_source === 'CAM' && camIsStale) ? null : data.solve_source;
-  _noSolveHasNothing = data.fake_solve_active !== true &&
-    effectiveSolveSource !== 'CAM' && effectiveSolveSource !== 'IMU';
+  // Found live (2026-09-11), then corrected after direct field-safety
+  // feedback the same session - using solve_source's *category* (CAM vs
+  // CAM_FAILED vs IMU) for "is there something to sync from" has two
+  // related dangers:
+  // 1) A *stale* CAM value (solving genuinely stopped, but the last
+  //    successful classification was still sitting on "CAM" from a long
+  //    time ago) used to count as "there's something", so this banner -
+  //    whose whole job is catching "nothing to sync from" - could never
+  //    fire for exactly the case it exists to catch ("Dann fehlt aber die
+  //    gelbe Meldung, dass der Solve angeschaltet werden soll!").
+  // 2) My first fix for #1 (checking solve staleness) still left
+  //    CAM_FAILED lumped in with "genuinely nothing", same as before it -
+  //    but CAM_FAILED just means no star match on the *last* attempt,
+  //    completely normal under a passing cloud/indoors with a perfectly
+  //    healthy, actively-attempting real camera, not a malfunction (see
+  //    applySolveStatus()'s own CAM_FAILED wording). A real camera stuck
+  //    under a cloud for more than this banner's debounce window would
+  //    have wrongly suggested "Turn on Synthetic Solve" - substituting a
+  //    fabricated position for a perfectly working camera, just because
+  //    the sky is temporarily obscured. Caught by direct feedback before
+  //    merge: "das darf nicht dazu führen, dass bei einer Wolke der
+  //    Hinweis zum Synthetik Solve kommt... nachts kann eine unsinnige
+  //    Meldung fatal sein."
+  //
+  // The right question is not "did the last attempt succeed" but "is
+  // anything still attempting at all" - last_solve_attempt (unlike
+  // last_solve_success) answers that regardless of outcome: a real camera
+  // under a cloud keeps attempting every ~0.5-1s even while failing to
+  // match stars, so last_solve_attempt stays fresh throughout and this
+  // banner correctly stays quiet. Only when attempts themselves stop
+  // entirely - the actual "nothing is even trying" case - does
+  // last_solve_attempt go stale. IMU dead-reckoning keeps its own explicit
+  // exception regardless of attempt freshness (per the header comment
+  // above: an old anchor is still something useful downstream, whether or
+  // not fresh camera attempts are also happening alongside it).
+  const isImuFallback = data.solve_source === 'IMU';
+  const attemptAgeSec = typeof data.last_solve_attempt === 'number'
+    ? (Date.now() / 1000) - data.last_solve_attempt : null;
+  const nothingAttempting = attemptAgeSec === null || attemptAgeSec < 0 || attemptAgeSec > 5;
+  _noSolveHasNothing = data.fake_solve_active !== true && !isImuFallback && nothingAttempting;
   _noSolveStreak = _noSolveHasNothing ? _noSolveStreak + 1 : 0;
   renderNoSolveBanner();
 }
