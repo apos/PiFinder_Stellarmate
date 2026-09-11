@@ -85,22 +85,30 @@
   /* #268: sticky bar (always visible while scrolling the tiles below) - the
      negative margin cancels body's own padding on this side so the bar
      spans edge-to-edge and sticks flush with the real viewport top, instead
-     of floating inset within body's padding box. */
-  #page-title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+     of floating inset within body's padding box. #cc-header-sticky (2026-09-11)
+     carries the sticky/edge-to-edge treatment now, wrapping both the title
+     row and the read-only banner - the banner has to live inside this same
+     sticky box, not just below it, so it can't be scrolled out of view
+     (direct feedback: "muss das Banner direkt in den Header, damit man es
+     zuverlässig immer sieht"). */
+  #cc-header-sticky {
     position: sticky;
     top: 0;
     z-index: 10;
     background: #111;
     margin: -1.5rem -1.5rem 1rem;
-    padding: 0.6rem 1.5rem;
     border-bottom: 1px solid #292929;
   }
+  #page-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 1.5rem;
+  }
   @media (max-width: 767px) {
-    #page-title-row { margin: -0.8rem -0.8rem 1rem; padding: 0.5rem 0.8rem; }
+    #cc-header-sticky { margin: -0.8rem -0.8rem 1rem; }
+    #page-title-row { padding: 0.5rem 0.8rem; }
   }
   #cc-title-group {
     display: flex;
@@ -1621,6 +1629,46 @@
     cursor: pointer;
   }
   #stale-page-banner button:hover { filter: brightness(1.15); }
+  /* Single-host lock (2026-09-11) - amber like the showstopper cards
+     (informational/blocking, not an error state: nothing is broken, this
+     tab just isn't the one in control right now). Lives inside
+     #cc-header-sticky (see that rule's own comment) - a flush strip right
+     under the title row, not a separately-scrollable card, so it stays
+     visible no matter how far the tiles below are scrolled. */
+  #cc-readonly-banner {
+    background: #2a2214;
+    color: #ddd0b0;
+    border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #cc-readonly-banner { padding: 0.5rem 0.8rem; }
+  }
+  #cc-take-control-btn {
+    background: #e0a030;
+    color: #221a00;
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #cc-take-control-btn:hover { filter: brightness(1.1); }
+  /* Everything interactive dims and stops responding while read-only - this
+     page uses onclick= on both <button> and plain <div> (the role cards),
+     so [onclick] catches those too. #cc-take-control-btn is explicitly
+     exempted - it's the one control a read-only tab must still be able to
+     use. */
+  body.cc-read-only :is(button, input, select, [onclick]):not(#cc-take-control-btn) {
+    pointer-events: none;
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   /* Shown once after this page reloads following the Control Center's own
      post-success self-restart (see /last_run_summary) - the fresh server
      process has no other way to tell this reload apart from a plain visit,
@@ -1705,6 +1753,7 @@
 </head>
 <body>
 
+<div id="cc-header-sticky">
 <div id="page-title-row">
   <div id="cc-title-group">
     <img id="cc-header-icon" src="/project_icon.png" alt="">
@@ -1728,6 +1777,11 @@
     </span>
   </div>
   <button id="night-mode-toggle" onclick="toggleNightMode()" title="Night mode - all text glowing red, easier on dark-adapted eyes"><span class="nm-icon">&#9789;</span><span class="nm-label"> Night mode</span></button>
+</div>
+<div id="cc-readonly-banner" style="display:none;">
+  <span id="cc-readonly-banner-text">Control Center open elsewhere - this tab is read-only.</span>
+  <button id="cc-take-control-btn" onclick="ccTakeControl()">Take control</button>
+</div>
 </div>
 
 <div id="conn-lost-banner" style="display:none;"></div>
@@ -2525,6 +2579,171 @@ sudo systemctl start pifinder</pre>
 </div>
 
 <script>
+// Single-host lock (2026-09-11, direct feedback) - client id + a fetch()
+// wrapper that stamps every request with it, first thing in this file so
+// every later fetch() call (there are dozens, scattered through this page)
+// automatically carries it with zero changes at each call site. Server side:
+// _host_lock in server.py. See the #cc-readonly-banner block further down
+// for the claim/heartbeat/release lifecycle and the read-only UI it drives.
+const CC_CLIENT_ID = (function() {
+  try {
+    let id = localStorage.getItem('cc_client_id');
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      localStorage.setItem('cc_client_id', id);
+    }
+    return id;
+  } catch (e) {
+    // localStorage unavailable (private mode, etc.) - a per-load id still
+    // lets this tab participate, it just won't survive a reload as "the
+    // same client" (loses its claim on refresh, has to re-claim/wait like
+    // any fresh tab - degraded, not broken).
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+})();
+const _ccOrigFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+  init = init || {};
+  const headers = new Headers(init.headers || {});
+  headers.set('X-CC-Client-Id', CC_CLIENT_ID);
+  init.headers = headers;
+  return _ccOrigFetch(input, init);
+};
+
+// Single-host lock lifecycle. One client at a time is "host" (can mutate,
+// server-enforced - see _require_host() in server.py); every other client
+// is read-only: banner shown, every interactive control dimmed and inert
+// (body.cc-read-only CSS rule above the banner's own styles). A read-only
+// tab polls for the lease freeing up and claims it automatically the moment
+// it does - no manual action needed for the common case (the previous
+// host's tab was simply closed/reloaded). "Take control" is the explicit
+// override for the case a stuck/gone session is still (falsely) renewing
+// its own lease.
+let ccIsHost = false;
+let ccHeartbeatTimer = null;
+let ccHostPollTimer = null;
+
+function ccRenderReadOnlyBanner() {
+  document.body.classList.toggle('cc-read-only', !ccIsHost);
+  document.getElementById('cc-readonly-banner').style.display = ccIsHost ? 'none' : '';
+}
+
+// Direct feedback (2026-09-11): dimming the UI isn't enough on its own - a
+// read-only tab's own background polling (this page has ~16 independent
+// setInterval() pollers scattered through it - status, drift, Ekos, branch
+// info, ...) kept running regardless, still hitting the server every few
+// seconds for no reason once this tab can't act on any of it anyway.
+// ccRegisterPoll() replaces each of those bare setInterval(fn, ms) calls -
+// it only actually starts the interval once this tab is host, and
+// ccStopAllPolling()/ccStartAllPolling() (driven by ccUpdateTimers() below)
+// suspend/resume all of them together on every host-state change. The two
+// timers above (heartbeat/host-status-poll) are deliberately NOT part of
+// this registry - a read-only tab must keep checking whether it can become
+// host, that's the one thing that's still supposed to run.
+let ccPollRegistry = [];  // [{fn, ms, handle}]
+function ccRegisterPoll(fn, ms) {
+  const entry = { fn, ms, handle: null };
+  ccPollRegistry.push(entry);
+  if (ccIsHost) entry.handle = setInterval(fn, ms);
+  return fn;
+}
+function ccStartAllPolling() {
+  for (const entry of ccPollRegistry) {
+    if (entry.handle) continue;
+    entry.handle = setInterval(entry.fn, entry.ms);
+    entry.fn();  // refresh immediately on (re)claim instead of showing stale data for up to entry.ms
+  }
+}
+function ccStopAllPolling() {
+  for (const entry of ccPollRegistry) {
+    if (entry.handle) { clearInterval(entry.handle); entry.handle = null; }
+  }
+}
+
+function ccUpdateTimers() {
+  if (ccIsHost) {
+    if (ccHostPollTimer) { clearInterval(ccHostPollTimer); ccHostPollTimer = null; }
+    if (!ccHeartbeatTimer) ccHeartbeatTimer = setInterval(ccHeartbeat, 5000);
+    ccStartAllPolling();
+  } else {
+    if (ccHeartbeatTimer) { clearInterval(ccHeartbeatTimer); ccHeartbeatTimer = null; }
+    if (!ccHostPollTimer) ccHostPollTimer = setInterval(ccPollHostStatus, 4000);
+    ccStopAllPolling();
+  }
+}
+
+async function ccClaimHost() {
+  try {
+    const resp = await fetch('/api/host/claim', { method: 'POST' });
+    const data = await resp.json();
+    ccIsHost = !!data.is_host;
+  } catch (e) {
+    ccIsHost = false;
+  }
+  ccRenderReadOnlyBanner();
+  ccUpdateTimers();
+}
+
+async function ccPollHostStatus() {
+  try {
+    const resp = await fetch('/api/host/status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data.host_active) {
+      // Lease freed up (previous host released it, or its heartbeat lapsed) -
+      // claim it rather than just reflecting host_active=false, so this tab
+      // actually becomes usable again instead of staying read-only forever.
+      await ccClaimHost();
+      return;
+    }
+    ccIsHost = !!data.is_host;
+  } catch (e) {
+    // transient poll failure - leave the current state as-is, next tick retries
+  }
+  ccRenderReadOnlyBanner();
+  ccUpdateTimers();
+}
+
+async function ccHeartbeat() {
+  try {
+    const resp = await fetch('/api/host/heartbeat', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) return;
+  } catch (e) {
+    return;  // one missed beat isn't fatal - the server's own lease tolerates a few seconds of these
+  }
+  // Explicit "no" from the server (someone else took over, e.g. via Take
+  // control) - drop to read-only immediately rather than waiting for the
+  // lease to look expired from this tab's own perspective.
+  ccIsHost = false;
+  ccRenderReadOnlyBanner();
+  ccUpdateTimers();
+}
+
+async function ccTakeControl() {
+  try {
+    const resp = await fetch('/api/host/take_control', { method: 'POST' });
+    const data = await resp.json();
+    ccIsHost = !!data.is_host;
+  } catch (e) {
+    ccIsHost = false;
+  }
+  ccRenderReadOnlyBanner();
+  ccUpdateTimers();
+}
+
+window.addEventListener('pagehide', () => {
+  if (!ccIsHost) return;
+  // sendBeacon can't set custom headers - client_id goes as a query param
+  // here specifically (server's _client_id() accepts either); a normal
+  // fetch() release on every navigation isn't reliable (the page may
+  // already be tearing down before it lands).
+  try {
+    navigator.sendBeacon(`/api/host/release?client_id=${encodeURIComponent(CC_CLIENT_ID)}`);
+  } catch (e) { /* best-effort */ }
+});
+
+ccClaimHost();
+
 // Direct user feedback (2026-09-01): the static "PiFinder on Stellarmate
 // Control Center" title made it impossible to tell multiple open browser
 // tabs/windows for different PiFinder units apart. Append the host's last
@@ -3470,7 +3689,7 @@ async function refreshTruthInjectorStatus() {
     // flashing to "unknown" on one missed request.
   }
 }
-setInterval(refreshTruthInjectorStatus, 4000);
+ccRegisterPoll(refreshTruthInjectorStatus, 4000);
 refreshTruthInjectorStatus();
 
 // Dedicated fast poll for the no-solve banner (2026-09-09) - independent
@@ -3494,7 +3713,7 @@ async function refreshNoSolveBanner() {
     // than reacting to a single missed request.
   }
 }
-setInterval(refreshNoSolveBanner, 2000);
+ccRegisterPoll(refreshNoSolveBanner, 2000);
 
 // Companion poll for the same banner's second condition (see
 // updateSimStartupMismatch()) - a stable, driver-decided-once value, so a
@@ -3510,7 +3729,7 @@ async function refreshSimulatorStartupSource() {
     // best-effort - leave the last-known state showing
   }
 }
-setInterval(refreshSimulatorStartupSource, 10000);
+ccRegisterPoll(refreshSimulatorStartupSource, 10000);
 refreshSimulatorStartupSource();
 
 // Real poll-until-target-reached control loop (2026-08-10, direct feedback
@@ -4294,7 +4513,7 @@ async function refreshBranchInfo() {
     // isn't worth surfacing on its own
   }
 }
-setInterval(refreshBranchInfo, 30000);
+ccRegisterPoll(refreshBranchInfo, 30000);
 
 // Notices when this already-open tab's HTML/JS has fallen behind what the
 // server is now actually serving - e.g. the service was restarted from a
@@ -4323,7 +4542,7 @@ async function checkPageVersion() {
   }
 }
 checkPageVersion();
-setInterval(checkPageVersion, 20000);
+ccRegisterPoll(checkPageVersion, 20000);
 
 // A click needs its own visible acknowledgment, distinct from
 // refreshBranchInfo()'s silent periodic use - the result (the hint text)
@@ -6129,7 +6348,7 @@ async function pollMbLog() {
     _mbLogPollInFlight = null;
   }
 }
-setInterval(pollMbLog, 4000);
+ccRegisterPoll(pollMbLog, 4000);
 pollMbLog();
 
 // Direct feedback, 2026-08-10: switching mounts (Telescope Simulator ->
@@ -6345,7 +6564,7 @@ async function refreshMountBridgeStatus() {
     refreshConnectButtons();
   }
 }
-setInterval(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
+ccRegisterPoll(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
 refreshMountBridgeStatus();
 
 // Fast, best-effort drift refresh - kept deliberately separate from the 20s
@@ -6480,7 +6699,7 @@ async function refreshMbDrift() {
 // request rate further would add load to indiserver during exactly the busy
 // stretches (active corrections/slews) where the root-cause timeout issue
 // already lives.
-setInterval(refreshMbDrift, 2000);
+ccRegisterPoll(refreshMbDrift, 2000);
 
 // The four Coupling preset buttons, mapped to the server's own (mode,
 // action) pair - "auto_correct_sync"/"auto_correct_goto" are two distinct
@@ -7282,7 +7501,7 @@ async function checkEkosStatus() {
   }
   updateStepIndicators();
 }
-setInterval(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
+ccRegisterPoll(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
 checkEkosStatus();
 
 function refreshWmServerButton() {
@@ -8041,7 +8260,7 @@ async function toggleWmDriver(driver, clickedBtnId) {
 }
 
 loadWmProfiles();
-setInterval(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
+ccRegisterPoll(() => { if (!mbActionInFlight) loadWmProfiles(); }, 30000);
 
 // --- Test Hardware button: deeper functional checks (camera capture / IMU
 // read / PiFinder's own GPS status), classified as hardware/driver/python on
@@ -8261,16 +8480,16 @@ init();
 setTimeout(watchForNewRun, 3000);
 
 refreshMode();
-setInterval(refreshMode, 5000);
+ccRegisterPoll(refreshMode, 5000);
 
 refreshSystemLoad();
-setInterval(refreshSystemLoad, 30000);
+ccRegisterPoll(refreshSystemLoad, 30000);
 
 refreshDisplayBridge();
-setInterval(refreshDisplayBridge, 5000);
+ccRegisterPoll(refreshDisplayBridge, 5000);
 
 refreshKeyboardBridge();
-setInterval(refreshKeyboardBridge, 5000);
+ccRegisterPoll(refreshKeyboardBridge, 5000);
 
 // Re-render both the mode tile and the quick-links "PiFinder is running"
 // text once hardware status resolves - both read the same
@@ -8282,13 +8501,13 @@ function refreshHardwareStatusAndDependents() {
   });
 }
 refreshHardwareStatusAndDependents();
-setInterval(refreshHardwareStatusAndDependents, 20000);
+ccRegisterPoll(refreshHardwareStatusAndDependents, 20000);
 
 // Passive fallback so Solve Simulation status doesn't just go stale forever
 // once the initial detection/toggle-triggered refreshes are done with -
 // updatePiFinderStatusAndWizardLink() only calls refreshDebugSolve() on
 // PiFinder connect/disconnect transitions, not on every OLED-mirror tick.
-setInterval(refreshDebugSolve, 20000);
+ccRegisterPoll(refreshDebugSolve, 20000);
 </script>
 
 </body>
