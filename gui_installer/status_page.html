@@ -2291,6 +2291,23 @@
         </div>
         </div>
 
+        <div class="mb-checklist-divider"></div>
+        <div class="mb-group-box" id="maintenance-mode-box">
+          <div class="group-label" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>Maintenance mode<a class="help-link" href="/help.html#maintenance-mode" target="_blank" rel="noopener" title="Help">i</a></span>
+            <span id="maintenance-mode-badge" class="mb-group-badge mb-group-badge-config">off</span>
+          </div>
+          <div style="font-size:0.78rem;color:#aaa;line-height:1.5;margin-bottom:0.6rem;">Stops Mount Bridge and PiFinder LX200 from auto-reconnecting - use while rebuilding or redeploying a driver so nothing fights over the connection.</div>
+          <div class="mb-row" style="justify-content:space-between;">
+            <span>Keep drivers disconnected</span>
+            <button id="maintenance-mode-toggle-btn" class="ql-small-btn" onclick="toggleMaintenanceMode()">Turn on</button>
+          </div>
+          <div class="mb-row" style="justify-content:space-between;" title="Not available yet - the INDI Web Manager's own auto-health mechanism isn't exposed through an API this Control Center can call.">
+            <span style="color:#666;">Pause INDI Web Manager Auto Health</span>
+            <button class="ql-small-btn" disabled>Not available yet</button>
+          </div>
+        </div>
+
         <div id="mb-log" title="What this tile has been doing, in order."></div>
       </div>
 
@@ -4942,6 +4959,44 @@ function updatePowerButtonLabels() {
   if (poweroffBtn) poweroffBtn.textContent = 'Shutdown' + suffix;
 }
 
+// Direct request (2026-09-11): a way to keep Mount Bridge/PiFinder LX200
+// disconnected while rebuilding/redeploying a driver, so the readiness
+// watchdog doesn't reconnect it mid-edit. Renders both boxes from the
+// mockup so the "not yet available" row is honest about current scope
+// (INDI Web Manager Auto Health isn't exposed through an API yet) rather
+// than offering a control that does nothing.
+function applyMaintenanceModeState(sinceEpochSeconds) {
+  const badge = document.getElementById('maintenance-mode-badge');
+  const box = document.getElementById('maintenance-mode-box');
+  const btn = document.getElementById('maintenance-mode-toggle-btn');
+  if (!badge || !box || !btn) return;
+  const active = typeof sinceEpochSeconds === 'number';
+  box.style.borderColor = active ? '#5a4a1a' : '';
+  box.style.background = active ? '#1a1608' : '';
+  badge.className = 'mb-group-badge ' + (active ? 'mb-group-badge-live' : 'mb-group-badge-config');
+  badge.textContent = active
+    ? `active since ${new Date(sinceEpochSeconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : 'off';
+  btn.textContent = active ? 'Exit maintenance mode' : 'Turn on';
+}
+
+async function toggleMaintenanceMode() {
+  const btn = document.getElementById('maintenance-mode-toggle-btn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/maintenance_mode_toggle', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      applyMaintenanceModeState(data.maintenance_mode_since);
+    } else {
+      alert('Could not change maintenance mode: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Could not change maintenance mode: unreachable.');
+  }
+  btn.disabled = false;
+}
+
 // Always-available Pi power controls (distinct from the conditional
 // "Reboot Now" prompt above, which only appears after a config-changing
 // install/update run).
@@ -5409,6 +5464,7 @@ async function init() {
     cachedHostname = data.hostname;
     updatePowerButtonLabels();
   }
+  applyMaintenanceModeState(data.maintenance_mode_since);
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
   document.getElementById('cc-device-icon-x86').style.display = isPiDevice ? 'none' : '';
