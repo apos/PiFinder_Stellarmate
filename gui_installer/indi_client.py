@@ -1099,6 +1099,15 @@ def sync_mount_to_pifinder_visible_position(
         port=port,
         timeout=timeout,
     )
+    # 2026-09-11, direct feedback ("Die (echten) Solves sind da. Aber der
+    # PiFinder Simulator bleibt zurück"): same gap as "Re-seed from mount"
+    # had before sync_pifinder_simulator_to() was added for it (2026-09-09)
+    # - this function moves the MOUNT to match PiFinder LX200, but
+    # "PiFinder Simulator" is a wholly separate INDI device neither this nor
+    # the mount Sync can reach on its own. Now that mount and PiFinder LX200
+    # agree (the Sync above just succeeded), bring the simulator to the same
+    # place too - best-effort, never fails this function if it's not loaded.
+    sync_pifinder_simulator_to(float(ra) * 15.0, float(dec), host, port, timeout)
 
 
 def trigger_goto_held(
