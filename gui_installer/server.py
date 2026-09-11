@@ -2901,6 +2901,40 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, status=502)
             return
 
+        if parsed.path == "/api/webmanager/test_remote_pifinder":
+            # Control-host role: before committing a remote PiFinder LX200
+            # entry (POST .../pifinder_drivers&action=add_remote), let the
+            # user verify the address actually has a PiFinder LX200 driver
+            # answering there - a plain TCP-reachability check alone can't
+            # tell "wrong device/its profile isn't started" from "nothing at
+            # this address at all" (direct feedback: "der Test soll auch
+            # prüfen, ob dort ein PiFinder LX200 lauscht"). Read-only - GET,
+            # not a driver/profile change.
+            qs = parse_qs(parsed.query)
+            remote = qs.get("remote", [""])[0].strip()
+            if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote):
+                self._send_json(
+                    {"reachable": False, "device_found": False,
+                     "error": f"invalid remote host '{remote}' (expected host or host:port)"},
+                    status=400,
+                )
+                return
+            test_host, _, test_port_s = remote.partition(":")
+            test_port = int(test_port_s) if test_port_s else 7624
+            try:
+                props = indi_client.get_properties(
+                    device="PiFinder LX200", host=test_host, port=test_port,
+                    timeout=indi_client.DEFAULT_TIMEOUT,
+                )
+            except indi_client.INDIClientError as e:
+                # Covers both "nothing listening there" (connection refused/
+                # timed out) and "something answered but not INDI" (parse
+                # error) - either way, not reachable as a PiFinder host.
+                self._send_json({"reachable": False, "device_found": False, "error": str(e)})
+                return
+            self._send_json({"reachable": True, "device_found": "PiFinder LX200" in props, "error": None})
+            return
+
         if parsed.path == "/api/kstars_webmanager_link":
             # Setup-wizard step: is this profile's *KStars-side* Equipment
             # Profile actually set to use the local Web Manager? This is a
@@ -3633,7 +3667,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if device == "PiFinder LX200":
                 try:
-                    indi_client.ensure_pifinder_lx200_tcp()
+                    if indi_client.ensure_pifinder_lx200_tcp():
+                        _mb_log(
+                            "PiFinder LX200: connection settings were wrong "
+                            "(not TCP 127.0.0.1:4030) - corrected."
+                        )
                 except indi_client.INDIClientError as e:
                     if "not currently defined" not in str(e) or not profile:
                         _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
