@@ -2019,6 +2019,49 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
     # loaded (Real Hardware mode) - see sync_pifinder_simulator_to()'s own
     # docstring.
     indi_client.sync_pifinder_simulator_to(ra_deg, dec_deg)
+    # Live-found on real hardware (2026-09-11, direct field feedback):
+    # POST /api/fake_solve doesn't just seed a starting position - per
+    # integrator.py's own "while fake-solve simulation is active, it is
+    # authoritative and exclusive" guard, it makes PiFinder silently drop
+    # every subsequent REAL camera solve too, forever, until something
+    # explicitly clears it. This docstring already calls the re-seed "a
+    # one-time 'start here'", but the implementation never actually
+    # released that lock - so a real-hardware recovery click permanently
+    # disabled real solving, surfacing (misleadingly) as "Full Simulation"
+    # turning itself on: "Full Simulation hat sich automatisch eingeschaltet
+    # ... genau das wollten wir doch auf dem echten PiFinder verhindert."
+    #
+    # First attempt (also live-caught, before it shipped): an immediate
+    # DELETE right after the POST above returns is itself a race.
+    # api_fake_solve() only *enqueues* the FakeSolve command
+    # (fake_solve_command_queue) - integrator.py's own loop drains and
+    # applies it (including up to FAKE_SOLVE_ANCHOR_RETRIES *
+    # FAKE_SOLVE_ANCHOR_RETRY_DELAY, ~0.5s worst case, while it waits for a
+    # usable IMU anchor) on its own schedule, asynchronously. A DELETE that
+    # lands before that drain sets fake_solve_active back to False for a
+    # moment, then the Integrator's own delayed processing of the already-
+    # queued command sets it right back to True - silently re-locking
+    # exactly what this was meant to release. Confirmed live: a bare
+    # POST-then-immediate-DELETE with no wait left fake_solve_active=True
+    # afterward. Poll for the seed actually having landed (fake_solve_active
+    # confirmed True) before releasing it, bounded so a seed that never gets
+    # a usable IMU anchor at all can't hang this call forever - DELETE
+    # unconditionally once the wait ends either way, so the lock never gets
+    # left stuck on regardless of which branch was hit. Manual one-shot
+    # seed / the Truth Injector (deliberate simulation/testing, possibly
+    # with no real camera at all) intentionally do NOT do this - only this
+    # real-hardware-recovery code path.
+    if ok:
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2) as resp:
+                    if json.loads(resp.read()).get("fake_solve_active") is True:
+                        break
+            except Exception:
+                pass
+            time.sleep(0.1)
+        _pifinder_disable_fake_solve(port)
     return ok, None
 
 
