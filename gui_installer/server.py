@@ -1961,6 +1961,33 @@ def _pifinder_solve_status(port: str):
             "last_solve_success": data.get(
                 "last_solve_success", solution.get("last_solve_success")
             ),
+            # 2026-09-11, direct feedback ("Es sollte immer die Zeit im Raspberry
+            # Pi... gelten! Die Browser-Zeit kann durch alles mögliche
+            # beeinflusst sein. Und StellarMate läuft auf dem Device, das ist
+            # die Referenz!"): status_page.html used to compute this itself as
+            # Date.now()/1000 - last_solve_attempt - mixing the VIEWING
+            # DEVICE's clock (laptop/phone, arbitrary skew) with a timestamp
+            # PiFinder stamped using THIS Pi's own clock. Both PiFinder and
+            # this server run on the same device, so time.time() here is
+            # always the correct reference - computed once, server-side,
+            # instead of trusting whatever clock happens to be viewing.
+            "last_solve_attempt_age_sec": (
+                time.time() - last_solve_attempt_raw
+                if isinstance(last_solve_attempt_raw := data.get(
+                    "last_solve_attempt", solution.get("last_solve_attempt")
+                ), (int, float))
+                else None
+            ),
+            # Same reasoning/fix as last_solve_attempt_age_sec above, for the
+            # sibling "how long ago did a real solve last *succeed*" check
+            # (applySolveStatus()'s "stale" detection).
+            "last_solve_success_age_sec": (
+                time.time() - last_solve_success_raw
+                if isinstance(last_solve_success_raw := data.get(
+                    "last_solve_success", solution.get("last_solve_success")
+                ), (int, float))
+                else None
+            ),
         }
     except Exception:
         return None
