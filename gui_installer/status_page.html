@@ -2804,6 +2804,18 @@ let lastSolveSource = null;
 // (isPiFinderSolveFresh() in pifinder_mount_bridge.cpp) rather than just
 // "has ever solved". null until the first confirmed poll.
 let lastSolveSuccessTime = null;
+// 2026-09-11, direct feedback ("Die Meldung macht gerade absolut überhaupt
+// keinen Sinn... schon gar nicht im GoTo", Drift 0.0' live sichtbar
+// gleichzeitig mit der Karte): _simStartupMismatch (from STARTUP_DEFAULT_
+// SOURCE) is a one-time snapshot from driver startup that never
+// re-evaluates - the earlier 2026-09-09 fix (a client-side "acknowledged"
+// flag set on a successful Re-seed/Sync) only lasts until the next page
+// reload, which happens constantly during active use/testing. Tracked here
+// so the sim-mismatch card can check LIVE drift instead of only trusting
+// that frozen flag - if drift is currently small, PiFinder and the mount
+// are demonstrably related RIGHT NOW, whatever a stale startup snapshot
+// still claims.
+let lastKnownDriftArcmin = null;
 // 2026-09-11, direct feedback ("Es sollte immer die Zeit im Raspberry Pi
 // gelten! Die Browser-Zeit kann durch alles mögliche beeinflusst sein. Und
 // StellarMate läuft auf dem Device, das ist die Referenz!"): the age itself
@@ -3355,7 +3367,14 @@ function collectActiveShowstoppers() {
       buttons: [{ label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()' }],
     });
   }
-  if (_simStartupMismatch) {
+  // Live drift overrides the frozen startup snapshot (see
+  // lastKnownDriftArcmin's own declaration comment) - a small measured
+  // drift right now means PiFinder and the mount are demonstrably related,
+  // whatever STARTUP_DEFAULT_SOURCE still claims from driver-start time.
+  const SIM_MISMATCH_DRIFT_OVERRIDE_ARCMIN = 10;
+  const liveDriftConfirmsRelated = typeof lastKnownDriftArcmin === 'number' &&
+    lastKnownDriftArcmin < SIM_MISMATCH_DRIFT_OVERRIDE_ARCMIN;
+  if (_simStartupMismatch && !liveDriftConfirmsRelated) {
     // Direct feedback (2026-09-11): a Sync attempt with PiFinder's own
     // position below the horizon used to just get refused by the driver,
     // visible only as a log line - "ich schaue nachts im Feld nicht ins
@@ -6100,6 +6119,7 @@ function updateDriftGuidanceBanner(data) {
   if (!banner) return;
 
   const driftArcmin = data.drift_arcmin;
+  if (typeof driftArcmin === 'number') lastKnownDriftArcmin = driftArcmin;
   const couplingMode = data.coupling_mode;
   const bridgeUp = data.bridge_connected === true;
   const mountUp = data.mount_connected === true;
