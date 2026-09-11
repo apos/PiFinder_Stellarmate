@@ -3141,9 +3141,30 @@ function applySolveStatus(data) {
     textEl.textContent = 'not real - see Injected Solve below';
     return;
   }
-  if (data.solve_source === 'CAM') {
+  // Found live (2026-09-11, direct feedback: "Dann ist die Logik im CC
+  // FALSCH!"): solve_source alone only ever reflects the *last successful
+  // classification* and is never re-checked for age - if solving stops
+  // entirely (not failing, just nothing happening at all - e.g. no fresh
+  // fake_solve/camera/debug-camera frame arriving), this kept showing a
+  // confident green "solving" indefinitely off one solve from 45+ minutes
+  // earlier. lastSolveSuccessTime is already tracked above for exactly this
+  // - it just wasn't being used here. Same 5s fallback threshold and
+  // solveAgeSec computation as updateDriftGuidanceBanner() below (this
+  // endpoint doesn't carry solve_freshness_max_age_sec, only the mount-
+  // bridge-drift poll does) - the real PiFinder solves every ~0.5s or
+  // faster (see this function's own header comment above), so anything
+  // older than a few seconds is already genuinely stale, not still "recent
+  // enough".
+  const solveAgeSec = typeof lastSolveSuccessTime === 'number'
+    ? (Date.now() / 1000) - lastSolveSuccessTime : null;
+  const solveIsStale = solveAgeSec === null || solveAgeSec < 0 || solveAgeSec > 5;
+  if (data.solve_source === 'CAM' && !solveIsStale) {
     setHwDot(dotEl, 'status-dot dot-green');
     textEl.textContent = 'solving' + suffix;
+  } else if (data.solve_source === 'CAM' && solveIsStale) {
+    setHwDot(dotEl, 'status-dot dot-unconfirmed');
+    const ageText = solveAgeSec !== null ? `${Math.round(solveAgeSec)}s ago` : 'unknown';
+    textEl.textContent = `stale - last confirmed solve ${ageText}` + suffix;
   } else if (data.solve_source === 'CAM_FAILED') {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'no star match' + suffix + ' - normal indoors/no sky view';
