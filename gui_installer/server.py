@@ -1419,6 +1419,8 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
     guard means a still-pending attempt is left alone rather than stacking
     a second one."""
     global _pifinder_lx200_healed_for_start
+    if _maintenance_mode_since is not None:
+        return
     if status.get("active_pifinder") != "PiFinder LX200":
         return
     current_start = _pifinder_service_start_monotonic()
@@ -1512,6 +1514,24 @@ _mb_desired_coupling_action = None
 _mb_desired_connected = None
 _mb_readiness_retrier = _BackgroundRetrier()
 
+# Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
+# lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
+# against the Mount Bridge/PiFinder LX200 drivers (rebuild + redeploy) is
+# fought by two independent, otherwise-desirable automatic mechanisms: this
+# file's own Mount Bridge readiness watchdog (Check 2, _mb_desired_connected)
+# and _pifinder_lx200_auto_reconnect() below. Reuses the exact same
+# disconnect/connect primitives and _mb_desired_connected gate the manual
+# Setup-checklist buttons already use (/api/mount_bridge_connect) - this is a
+# convenience that does both devices at once and remembers it as a named,
+# visible mode, not a new reconnection mechanism of its own. ISO timestamp
+# string (not None) means active; used both for the "since HH:MM" badge and
+# as the gate itself, so there is only ever one source of truth for whether
+# it's on. Persisted (see _save_mount_bridge_desired_state()) so it survives
+# a Control Center restart - a driver rebuild often involves exactly that.
+# Unix timestamp (float, from time.time()) when set, not an ISO string -
+# consistent with this file's other time.time()/time.monotonic() use.
+_maintenance_mode_since = None
+
 
 def _save_mount_bridge_desired_state():
     """Best-effort atomic write (temp file + os.replace, same pattern as
@@ -1526,6 +1546,7 @@ def _save_mount_bridge_desired_state():
             "mb_desired_coupling_threshold": _mb_desired_coupling_threshold,
             "mb_desired_coupling_action": _mb_desired_coupling_action,
             "mb_desired_connected": _mb_desired_connected,
+            "maintenance_mode_since": _maintenance_mode_since,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1539,7 +1560,7 @@ def _load_mount_bridge_desired_state():
     MOUNT_BRIDGE_DESIRED_STATE_FILE's own comment). Missing/corrupt file
     just means "nothing configured yet", the same as a fresh install."""
     global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
-    global _mb_desired_coupling_action, _mb_desired_connected
+    global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1552,10 +1573,11 @@ def _load_mount_bridge_desired_state():
     _mb_desired_coupling_threshold = data.get("mb_desired_coupling_threshold")
     _mb_desired_coupling_action = data.get("mb_desired_coupling_action")
     _mb_desired_connected = data.get("mb_desired_connected")
+    _maintenance_mode_since = data.get("maintenance_mode_since")
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
-        f"connected={_mb_desired_connected!r})."
+        f"connected={_mb_desired_connected!r}, maintenance_mode_since={_maintenance_mode_since!r})."
     )
 
 # Restart-storm guard for check 1 (unresponsive driver) - see the concept
@@ -2906,6 +2928,7 @@ class Handler(BaseHTTPRequestHandler):
                     # not just by IP in the URL bar.
                     "hostname": socket.gethostname(),
                     "device_type": _get_device_type(),
+                    "maintenance_mode_since": _maintenance_mode_since,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
@@ -3964,6 +3987,48 @@ class Handler(BaseHTTPRequestHandler):
                 return  # restart_and_retry() already sent the error response
             _mark_mount_bridge_connect_desired()
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/maintenance_mode_toggle":
+            # See _maintenance_mode_since's own comment above - reuses the
+            # exact disconnect/connect primitives and _mb_desired_connected
+            # gate /api/mount_bridge_connect above already uses for a single
+            # device, just for both devices at once plus a named, persisted,
+            # visible mode. Deliberately does NOT use restart_and_retry()'s
+            # profile-restart fallback (unlike the general connect path
+            # above) - reconnecting on exit is a courtesy, not something
+            # that needs to survive a device never having loaded in the
+            # first place; the existing Setup checklist buttons remain the
+            # robust fallback for that harder case.
+            # _mb_desired_connected is already declared global earlier in
+            # this same do_POST method (the /api/mount_bridge_connect
+            # disconnect branch above) - Python raises "assigned to before
+            # global declaration" if it's redeclared global a second time
+            # here, even in an unrelated branch (verified live: the interp
+            # analyzes the whole function body flatly, not per-branch).
+            global _maintenance_mode_since
+            turning_on = _maintenance_mode_since is None
+            if turning_on:
+                _maintenance_mode_since = time.time()
+                _mb_desired_connected = False
+                for dev in ("PiFinder Mount Bridge", "PiFinder LX200"):
+                    try:
+                        indi_client.disconnect_device(dev)
+                    except indi_client.INDIClientError as e:
+                        _mb_log(f"maintenance mode: could not disconnect '{dev}': {e}")
+                _mb_log("Maintenance mode ON - Mount Bridge and PiFinder LX200 disconnected, "
+                        "auto-reconnect paused until turned off.")
+            else:
+                _maintenance_mode_since = None
+                _mb_desired_connected = None
+                for dev in ("PiFinder Mount Bridge", "PiFinder LX200"):
+                    try:
+                        indi_client.connect_device(dev)
+                    except indi_client.INDIClientError as e:
+                        _mb_log(f"maintenance mode: could not reconnect '{dev}': {e}")
+                _mb_log("Maintenance mode OFF - reconnecting, normal self-healing resumed.")
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True, "maintenance_mode_since": _maintenance_mode_since})
             return
 
         if parsed.path == "/api/ekos_start_profile":
