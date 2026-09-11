@@ -100,6 +100,36 @@ for PiFinder and StellarMate developers}
 \item All need one control layer: INDI, KStars/Ekos, an app.
 \end{itemize}
 \end{columns}
+\vspace{1.0em}
+\begin{center}
+\begin{tikzpicture}[
+  hub/.style={draw=AVVPBlue, line width=1pt, circle, fill=AVVPBg, text=white,
+              minimum size=1.9cm, align=center, font=\footnotesize, inner sep=2pt},
+  sat/.style={draw=AVVPGrey!70!white, line width=0.8pt, rounded corners=2pt, fill=AVVPBg,
+              text=AVVPGrey!70!white, minimum width=2.1cm, minimum height=0.8cm,
+              align=center, font=\scriptsize},
+  link/.style={AVVPGrey!70!white, line width=0.8pt},
+  unc/.style={AVVPSpark, dashed, line width=0.9pt, -{Stealth[length=1.8mm]}}
+]
+% left: an uncertain pointing direction
+\node[hub] (scope) at (0,0) {Telescope};
+\draw[unc] (scope) -- ++(55:1.9);
+\draw[unc] (scope) -- ++(15:1.7);
+\draw[unc] (scope) -- ++(85:1.6);
+\node[AVVPSpark, font=\Large\bfseries] at (1.05,1.15) {?};
+\node[below=0.35cm of scope, font=\scriptsize, text=AVVPGrey] {no position feedback};
+% right: one control layer, many devices
+\node[hub] (ctrl) at (6.6,0.05) {Control\\layer};
+\node[sat] (cam) at (4.6,1.25)  {Camera};
+\node[sat] (mnt) at (8.6,1.25)  {Mount};
+\node[sat] (gui) at (4.6,-1.15) {Guiding};
+\node[sat] (foc) at (8.6,-1.15) {Focus};
+\draw[link] (ctrl) -- (cam);
+\draw[link] (ctrl) -- (mnt);
+\draw[link] (ctrl) -- (gui);
+\draw[link] (ctrl) -- (foc);
+\end{tikzpicture}
+\end{center}
 \end{frame}
 
 \begin{frame}[t]{Each project owns one half}
