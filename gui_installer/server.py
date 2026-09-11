@@ -1981,6 +1981,18 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
     active_mount = status.get("active_mount")
     if not active_mount:
         return False, "no mount configured in Mount Bridge"
+    # Live-found (2026-09-11, TE for #374): active_mount is just the
+    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
+    # (e.g. right after a Control Center restart) it can already be set
+    # while the device itself isn't connected yet. get_properties() below
+    # then either errors (caught, visible) or - the actually-observed,
+    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
+    # indiserver is still holding from before the reconnect, silently
+    # seeding the re-seed from an old position instead of the live one.
+    # mount_connected is the device's own live CONNECTION.CONNECT read, not
+    # a persisted name - check it explicitly before trusting the position.
+    if not status.get("mount_connected"):
+        return False, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
     try:
         props = indi_client.get_properties(device=active_mount)
         eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
