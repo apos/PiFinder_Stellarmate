@@ -2411,15 +2411,15 @@ _PIFINDER_REMOTE_PASSWORD = "smate"
 # but took ~5s each, several seconds behind a burst of clicks). Cache one
 # opener (with its session cookie) per port and reuse it; only pay the
 # login cost again if a cached session turns out to be gone/expired.
-_pifinder_key_openers: dict[str, urllib.request.OpenerDirector] = {}
+_pifinder_key_openers: dict[tuple[str, str], urllib.request.OpenerDirector] = {}
 _pifinder_key_openers_lock = threading.Lock()
 
 
-def _pifinder_login(port: str) -> urllib.request.OpenerDirector | None:
+def _pifinder_login(port: str, host: str = "127.0.0.1") -> urllib.request.OpenerDirector | None:
     cookie_jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
     login_req = urllib.request.Request(
-        f"http://127.0.0.1:{port}/login",
+        f"http://{host}:{port}/login",
         method="POST",
         data=urlencode({"password": _PIFINDER_REMOTE_PASSWORD}).encode(),
     )
@@ -2429,23 +2429,32 @@ def _pifinder_login(port: str) -> urllib.request.OpenerDirector | None:
     return opener
 
 
-def _pifinder_send_key(port: str, code: str) -> bool:
+def _pifinder_send_key(port: str, code: str, host: str = "127.0.0.1") -> bool:
     """POST to PiFinder's own /key_callback - same endpoint remote.html's
     buttonClicked() uses, so a press from this Control Center's compact
-    keypad behaves identically to one from PiFinder's own remote page."""
+    keypad behaves identically to one from PiFinder's own remote page.
+
+    host (2026-09-12, direct feedback: Control host's Quick keys did nothing
+    against a remote PiFinder) defaults to this device's own PiFinder, same
+    as every call site before this - only the Control host role, which now
+    knows the remote PiFinder's address, ever passes something else. The
+    opener cache is keyed on (host, port) together, not port alone, so a
+    remote and a local PiFinder that happen to share a port number never
+    collide."""
     if port not in _ALLOWED_PIFINDER_PORTS or code not in _ALLOWED_PIFINDER_KEY_CODES:
         return False
+    cache_key = (host, port)
     key_req_data = json.dumps({"button": code}).encode()
     try:
         with _pifinder_key_openers_lock:
-            opener = _pifinder_key_openers.get(port)
+            opener = _pifinder_key_openers.get(cache_key)
             if opener is None:
-                opener = _pifinder_login(port)
+                opener = _pifinder_login(port, host)
                 if opener is None:
                     return False
-                _pifinder_key_openers[port] = opener
+                _pifinder_key_openers[cache_key] = opener
         key_req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/key_callback",
+            f"http://{host}:{port}/key_callback",
             method="POST",
             data=key_req_data,
             headers={"Content-Type": "application/json"},
@@ -2457,13 +2466,13 @@ def _pifinder_send_key(port: str, code: str) -> bool:
         # expired, ...) - drop it and try exactly once more with a fresh
         # login rather than silently failing from here on.
         with _pifinder_key_openers_lock:
-            _pifinder_key_openers.pop(port, None)
-            opener = _pifinder_login(port)
+            _pifinder_key_openers.pop(cache_key, None)
+            opener = _pifinder_login(port, host)
             if opener is None:
                 return False
-            _pifinder_key_openers[port] = opener
+            _pifinder_key_openers[cache_key] = opener
         key_req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/key_callback",
+            f"http://{host}:{port}/key_callback",
             method="POST",
             data=key_req_data,
             headers={"Content-Type": "application/json"},
@@ -3801,7 +3810,17 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
             key = qs.get("key", [""])[0]
-            self._send_json({"success": _pifinder_send_key(port, key)})
+            # Control host role only (2026-09-12) - the frontend passes this
+            # whenever pifinderScreenUrl points at a remote host; same
+            # hostname/IP shape already validated for the Control host
+            # card's own remote address elsewhere, so reject anything else
+            # rather than build an arbitrary-host request from unchecked
+            # input.
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_send_key(port, key, host)})
             return
 
         if parsed.path == "/api/fake_solve_disable":
