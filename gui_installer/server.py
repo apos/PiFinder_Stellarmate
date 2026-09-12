@@ -2763,6 +2763,23 @@ def _start_run(action, branch=None, mode=None):
             cmd.append(f"--branch={branch}")
         if mode and mode != "full":
             cmd.append(f"--mode={mode}")
+        # PFSM_CC_MANAGED_RUN tells the script's own final "restart the
+        # Control Center" line (see its own comment) that THIS run is being
+        # tracked by _reader_thread()/_cc_restart_pending below - it must
+        # skip its own restart and leave that to the already-correct, graceful
+        # mechanism (which waits for proc.wait(), writes the result file, and
+        # tells the frontend via "restarting": true) rather than racing it.
+        # Found live (2026-09-12): the script's unconditional restart killed
+        # this very Python process's _reader_thread mid-readline (before
+        # proc.wait() ever returned), so _cc_restart_pending never got set -
+        # the freshly restarted process came up with phase_index/running/
+        # exit_code all reset, and the frontend just saw the run vanish into
+        # "Idle" instead of the proper restarting/success handoff. A run
+        # started outside the Control Center (plain CLI/SSH) has no such
+        # process to race against - PFSM_CC_MANAGED_RUN is simply absent
+        # there, so the script's own restart still fires unconditionally,
+        # same guarantee as before.
+        env = dict(os.environ, PFSM_CC_MANAGED_RUN="1")
         _process = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
@@ -2770,6 +2787,7 @@ def _start_run(action, branch=None, mode=None):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=env,
         )
         threading.Thread(target=_reader_thread, args=(_process,), daemon=True).start()
     return True, None
