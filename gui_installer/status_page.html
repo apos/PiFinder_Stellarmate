@@ -4886,7 +4886,7 @@ function showChoices(existingInstall) {
       <div class="install-action-card install-action-card-primary">
         <div>
           <div class="install-action-title install-action-title-primary">Install INDI-only</div>
-          <div class="install-action-desc">Installs the INDI build dependencies and all three PiFinder INDI drivers (<code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code>, <code>PiFinder Simulator</code>) only. Your existing ~/PiFinder installation, if any, is left completely untouched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup - none of that applies when this device doesn't run PiFinder itself.</div>
+          <div class="install-action-desc">Installs the INDI build dependencies and all three PiFinder INDI drivers (<code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code>, <code>PiFinder Simulator</code>) only - and pulls this Control Center itself to the current branch first. Your existing ~/PiFinder installation, if any, is left completely untouched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup - none of that applies when this device doesn't run PiFinder itself.</div>
         </div>
         <button class="install-go-btn install-go-btn-primary" onclick="start('fresh')">Install</button>
       </div>
@@ -4910,7 +4910,7 @@ function showChoices(existingInstall) {
       <div class="install-action-card install-action-card-primary">
         <div>
           <div class="install-action-title install-action-title-primary">Update <span class="install-badge">recommended</span></div>
-          <div class="install-action-desc">Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.</div>
+          <div class="install-action-desc">Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches - and pulls this Control Center itself to the current branch first. Keeps the existing directory, just brings the code up to date.</div>
         </div>
         <button class="install-go-btn install-go-btn-primary" onclick="start('update')">Update</button>
       </div>
@@ -4919,7 +4919,7 @@ function showChoices(existingInstall) {
       <div class="install-action-card install-action-card-danger">
         <div>
           <div class="install-action-title">Reinstall from scratch</div>
-          <div class="install-action-desc">Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.</div>
+          <div class="install-action-desc">Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches - and pulls this Control Center itself to the current branch first. Use this if the installation is broken or you want a clean slate.</div>
         </div>
         <button class="install-go-btn install-go-btn-danger" onclick="start('reinstall')">Reinstall from scratch</button>
       </div>
