@@ -395,9 +395,15 @@
   .devtype-seg { display: flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; margin-bottom: 0.6rem; flex-wrap: wrap; }
   .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.65rem 0.8rem; cursor: pointer; }
   .devtype-seg-opt + .devtype-seg-opt { border-left: 1px solid #444; }
-  .devtype-seg-opt.devtype-seg-active { background: #12202e; }
+  /* Direct feedback (2026-09-12): "Bei uns ist grün == ausgewählt" - this
+     used a one-off blue (matched install_devtype_copy_mockups.html's own
+     approval, but never reconciled with the established selected-state
+     color elsewhere on this page, e.g. .mb-role-card.mb-role-active).
+     Same green now, for the same reason: "selected" needs the one visual
+     language, not a second one just for this control. */
+  .devtype-seg-opt.devtype-seg-active { background: #1c2a1c; }
   .devtype-seg-title { font-size: 0.8rem; font-weight: 600; color: #ddd; }
-  .devtype-seg-opt.devtype-seg-active .devtype-seg-title { color: #6fa8dc; }
+  .devtype-seg-opt.devtype-seg-active .devtype-seg-title { color: #4caf50; }
   .devtype-seg-sub { font-size: 0.72rem; color: #999; margin-top: 0.3rem; line-height: 1.5; }
   .devtype-seg-hw { font-size: 0.68rem; color: #e0a030; margin-top: 0.45rem; line-height: 1.4; }
   .devtype-seg-compat { font-size: 0.68rem; color: #7fc97f; margin-top: 0.4rem; line-height: 1.4; }
