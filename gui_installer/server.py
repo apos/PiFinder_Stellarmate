@@ -2134,7 +2134,31 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
         _run_hardware_test()
 
 
-def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
+def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float = 5):
+    """GET another device's own Control Center (always port 8765) - category
+    2b of docs/concepts/control_host_hardware_badges_mirroring.md. Forwards
+    THIS request's own Authorization header unchanged: the auth decision
+    (direct user choice, 2026-09-12) is to assume the same stellarmate
+    account password across every device in one PFSM fleet, matching
+    _PIFINDER_REMOTE_PASSWORD's own "smate" convention for PiFinder's Remote
+    page - _require_auth() on the remote end only ever checks the password
+    half of Basic Auth (never the username, see its own comment), so the
+    browser's own already-supplied header authenticates there unchanged, no
+    credential storage needed on either side. Returns the parsed JSON dict,
+    or None on any failure (unreachable, wrong password there, older PFSM
+    without this route, ...) - fails soft, same as every other
+    unreachable-remote case already does."""
+    try:
+        req = urllib.request.Request(f"http://{host}:8765{path}")
+        if auth_header:
+            req.add_header("Authorization", auth_header)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except Exception:
+        return None
+
+
+def _pifinder_solve_status(port: str, host: str = "127.0.0.1", auth_header: str | None = None):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state) plus the real
     solve-freshness fields (solve_source/last_solve_attempt/last_solve_success)
@@ -2149,7 +2173,9 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
     `host` defaults to this device's own PiFinder (docs/concepts/
     control_host_hardware_badges_mirroring.md, category 2a - same fix as
     _pifinder_send_key()'s host param, #419) - the route handler is
-    responsible for validating it before it reaches here."""
+    responsible for validating it before it reaches here. `auth_header` is
+    only used for the orientation fetch below, when host is remote - see its
+    own comment."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return None
     try:
@@ -2175,15 +2201,30 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
         # this (already independently useful) response.
         pifinder_mount_type = None
         pifinder_screen_direction = None
-        try:
-            with urllib.request.urlopen(
-                f"http://{host}:{port}/api/orientation_status", timeout=3
-            ) as resp:
-                orientation = json.loads(resp.read())
-            pifinder_mount_type = orientation.get("mount_type")
-            pifinder_screen_direction = orientation.get("screen_direction")
-        except Exception:
-            pass
+        if host in ("127.0.0.1", "::1"):
+            try:
+                with urllib.request.urlopen(
+                    f"http://{host}:{port}/api/orientation_status", timeout=3
+                ) as resp:
+                    orientation = json.loads(resp.read())
+                pifinder_mount_type = orientation.get("mount_type")
+                pifinder_screen_direction = orientation.get("screen_direction")
+            except Exception:
+                pass
+        else:
+            # Found live (2026-09-12): PiFinder's own server.py hardcodes
+            # request.remote_addr in ("127.0.0.1", "::1") on this specific
+            # route - a 403 for any remote caller, unrelated to and
+            # unfixable by our own host param (see docs/concepts/
+            # control_host_hardware_badges_mirroring.md's 2b section). Route
+            # through the REMOTE device's own Control Center instead - IT
+            # calls this same endpoint on itself (genuinely 127.0.0.1 from
+            # PiFinder's point of view there), returning the two fields we
+            # need as part of its own /api/debug_solve response.
+            proxied = _cc_proxy_get(host, f"/api/debug_solve?port={port}", auth_header)
+            if proxied:
+                pifinder_mount_type = proxied.get("pifinder_mount_type")
+                pifinder_screen_direction = proxied.get("pifinder_screen_direction")
         return {
             "pifinder_mount_type": pifinder_mount_type,
             "pifinder_screen_direction": pifinder_screen_direction,
@@ -3187,6 +3228,24 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/system_load":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            # Control host's own CPU/Temp proxy (category 2b) - direct
+            # feedback (2026-09-13): "auf dem CH brauche ich sowohl die
+            # lokalen als auch die remote Werte" - this route stays local-only
+            # when host is omitted (the common case, and this device's own
+            # reading in the Control host case too), only proxies when the
+            # frontend explicitly asks for the mirrored device's own load.
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                    return
+                proxied = _cc_proxy_get(host, "/api/system_load", self.headers.get("Authorization"))
+                self._send_json(proxied or {
+                    "load1": None, "load5": None, "load15": None, "cpu_count": None,
+                    "ratio1": None, "percent": None, "temp_c": None, "high": False,
+                })
+                return
             self._send_json(_system_load_status())
             return
 
@@ -3449,6 +3508,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/hardware_status":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            # Control host's own Camera/IMU badges (category 2b) - camera/imu
+            # are genuine local hardware checks (rpicam-hello/an I2C scan),
+            # meaningless run against anything but the machine that actually
+            # has the hardware, so a remote reading means proxying to THAT
+            # device's own Control Center (which already computes this
+            # correctly for itself) rather than a parameter tweak. Direct
+            # feedback (2026-09-13) after seeing the "not available" fallback
+            # (2026-09-12, PR #425) once too often: build the actual proxy.
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"camera": None, "imu": None, "gps": None, "error": f"invalid host '{host}'"}, status=400)
+                    return
+                proxied = _cc_proxy_get(host, "/api/hardware_status", self.headers.get("Authorization"))
+                self._send_json(proxied or {"camera": None, "imu": None, "gps": None})
+                return
             # gps deliberately does NOT use _gps_hardware_present() here (a
             # direct gpsd query for physical serial/USB GPS hardware) unlike
             # camera/imu above - PFSM devices normally have no physical GPS
@@ -3474,11 +3550,12 @@ class Handler(BaseHTTPRequestHandler):
 
         # Control host's own GPS badge (docs/concepts/
         # control_host_hardware_badges_mirroring.md, category 2a) - a
-        # separate route from /api/hardware_status above rather than adding
-        # ?host= to that one, since camera/imu there are genuinely local-only
-        # (category 2b, not yet built) and must keep reading THIS device's
-        # own hardware regardless of ?host=; folding gps into the same
-        # response would make ?host= look like it applies to all three.
+        # separate route from /api/hardware_status above rather than folding
+        # it into that one's own ?host= handling: gps is a thin proxy
+        # straight to PiFinder's own /api/status (like Solve), while
+        # /api/hardware_status's ?host= is a genuine Control-Center-to-
+        # Control-Center proxy (category 2b) - two different mechanisms
+        # that happen to serve the same badge row.
         if parsed.path == "/api/gps_status":
             qs = parse_qs(parsed.query)
             host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
@@ -3495,7 +3572,15 @@ class Handler(BaseHTTPRequestHandler):
             if not _valid_pifinder_host(host):
                 self._send_json({"debug_solve": None, "error": f"invalid host '{host}'"}, status=400)
                 return
-            self._send_json(_pifinder_solve_status(port, host) or {"debug_solve": None})
+            # Forwarded to _cc_proxy_get() only when host is remote and the
+            # orientation fields need the Control-Center-to-Control-Center
+            # proxy (see _pifinder_solve_status()'s own comment) - this
+            # request already passed _require_auth() to get here, so the
+            # header is always present and valid.
+            self._send_json(
+                _pifinder_solve_status(port, host, auth_header=self.headers.get("Authorization"))
+                or {"debug_solve": None}
+            )
             return
 
         if parsed.path == "/api/hardware_test_log":
