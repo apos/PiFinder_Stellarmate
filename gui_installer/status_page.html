@@ -7055,7 +7055,16 @@ function renderPifinderOrientationBadge() {
   let color = '#666';
   let valueClass = 'orientation-badge-value';
 
-  if (lastPfReachable) {
+  // Found live (2026-09-12), Control host testing: PiFinder's own
+  // /api/orientation_status rejects any request that isn't from 127.0.0.1
+  // (PiFinder/python/PiFinder/server.py, its own restriction, not something
+  // PFSM's ?host= param can work around) - a remote PiFinder is reachable
+  // (lastPfReachable true, /api/status itself has no such restriction) but
+  // this one field never comes back. A green "?/?" would flatly contradict
+  // itself (green normally means "confirmed"); show it as the same neutral
+  // grey as the "not reachable at all" case instead, whatever the reason
+  // for the gap (an older PiFinder without this route, or this one).
+  if (lastPfReachable && (lastPfScreenDirection || lastPfMountType)) {
     const pfType = PIFINDER_TYPE_LABELS[lastPfScreenDirection] || lastPfScreenDirection || '?';
     const pfMountType = PIFINDER_MOUNT_TYPE_LABELS[lastPfMountType] || lastPfMountType || '?';
     text = `${pfType} / ${pfMountType}`;
@@ -7071,6 +7080,8 @@ function renderPifinderOrientationBadge() {
       color = '#4caf50';
       valueClass += ' orientation-ok';
     }
+  } else if (lastPfReachable) {
+    text = 'unavailable';
   }
 
   pfValue.textContent = text;

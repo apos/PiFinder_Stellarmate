@@ -1129,6 +1129,7 @@ phase "Building INDI drivers"
 # build_and_install_indi_drivers() is shared with the --mode=indi_only path
 # below - see bin/build_and_install_indi_drivers.sh.
 build_and_install_indi_drivers
+echo "🔎 build_and_install_indi_drivers returned - proceeding to Installation Summary ..."
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(get_hw_model)
@@ -1251,6 +1252,14 @@ phase "Setup complete"
 # - only here it's the very last line racing the *end* of the run instead of
 # the middle. A run started outside the Control Center (plain CLI/SSH) has
 # no such process to race, and still gets its guaranteed restart below.
+#
+# Temporary diagnostic (2026-09-13): a run on the Pi5 vanished right after
+# the driver-install messages, before the Installation Summary above even
+# started printing - if that recurs, this line tells us whether execution
+# even reaches here at all, and if so, whether PFSM_CC_MANAGED_RUN survived
+# the venv re-exec/self-update re-exec earlier in this script intact. Remove
+# once that's understood.
+echo "🔎 PFSM_CC_MANAGED_RUN=${PFSM_CC_MANAGED_RUN:-<unset>}"
 if [ -z "${PFSM_CC_MANAGED_RUN:-}" ]; then
     sudo systemctl restart pifinder-control-center || true
 fi
