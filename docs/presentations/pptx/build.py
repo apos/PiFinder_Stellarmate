@@ -304,6 +304,16 @@ text(s,M,SH-1.3,12.0,0.9,[[("Pinned to a fixed release tag, not the upstream ",T
     ("release",T_CAP+1,True,INK),(" branch. The README table is the single source of truth.",T_CAP+1,False,MUTE)]],ls=1.3)
 footer(s,"Part 1 · Summary")
 
+# 10b PREREQUISITES
+s=slide(LIGHT); head(s,"Before you start","Prerequisites")
+bullets(s,M,2.4,12.0,3.0,[
+    ("A current StellarMate OS (SMOS) installation ","— the only supported base."),
+    ("Not supported: a stock PiFinder OS image. ","Doesn't make sense either — PFSM's entire "
+     "premise is the StellarMate integration (INDI, KStars/Ekos, the Web Manager, the app), and a "
+     "stock PiFinder OS has none of that to integrate with."),
+],sz=T_BODY,gap=20)
+footer(s,"Part 1 · Summary")
+
 # 11 SECTION 02
 section("02","Part two","PFSM Control Center","Install, mode-switching, hardware checks and the Mount Bridge — one web page, no SSH.")
 

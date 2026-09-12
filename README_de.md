@@ -26,6 +26,19 @@ und vollständige Ausrüstungssteuerung betreibt. Das Setup-Skript automatisiert
   INDI-unterstützte motorisierte Montierung — kein montierungsspezifisches Protokoll, kein
   Custom-Code pro Montierung.
 
+**Grundprinzipien:**
+
+- Die originale PiFinder-Software so unangetastet wie möglich lassen.
+- Die einzelnen Komponenten entkoppeln, damit sie unabhängig voneinander nutzbar sind.
+- Mit jeder INDI-kompatiblen Montierung funktionieren, statt das Projekt an einen bestimmten
+  Hersteller zu binden.
+- Die bestehenden Fähigkeiten von KStars, Ekos, INDI und SkySafari wiederverwenden.
+- Die Integration schlank und fokussiert halten, statt Funktionalität zu duplizieren, die das
+  INDI-Ökosystem bereits bietet.
+
+(Die INDI-integrationsspezifische Ausarbeitung davon — Build-Entscheidungen, Treiber-Architektur —
+lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
+
 > ### ⚠️ **Haftungsausschluss**
 >
 > * Dies ist ein Community-Projekt und steht in keiner offiziellen Verbindung zu PiFinder oder Stellarmate.
@@ -176,7 +189,12 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
 ### Voraussetzungen
 
 *   Ein Raspberry Pi 4 oder Pi 5 mit PiFinder-Hardware (Hat, Display, Kamera usw.).
-*   Stellarmate OS 2.3.0 (Arch Linux) installiert und laufend — das Setup-Skript warnt (fährt aber fort), falls deine SMOS-Version von diesem getesteten Pin abweicht.
+*   **Eine aktuelle StellarMate-OS-(SMOS-)Installation — die einzige unterstützte Basis.** Gepinnt auf
+    und getestet gegen StellarMate OS 2.3.0 (Arch Linux); das Setup-Skript warnt (fährt aber fort),
+    falls deine SMOS-Version von diesem getesteten Pin abweicht. **Die Installation auf einem
+    Stock-PiFinder-OS-Image wird nicht unterstützt** — die gesamte Existenzberechtigung dieses
+    Projekts ist die StellarMate-Integration (INDI, KStars/Ekos, der Web Manager, die App), die ein
+    Stock-PiFinder-OS gar nicht bereitstellt — es gäbe also nichts, womit integriert werden könnte.
 *   Grundlegende Vertrautheit mit der Linux-Kommandozeile.
 
 ### Einrichtungsschritte

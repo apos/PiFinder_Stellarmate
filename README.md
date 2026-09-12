@@ -23,6 +23,18 @@ astrophotography, EAA, and full equipment control. The setup script automates th
   position as an INDI telescope, and the optional **Mount Bridge** couples that to any
   INDI-supported motorised mount — no mount-specific protocol, no custom code per mount.
 
+**Fundamental principles:**
+
+- Keep the original PiFinder software as untouched as possible.
+- Decouple the different components so they can be used independently.
+- Work with any INDI-compatible mount rather than tying the project to a particular manufacturer.
+- Reuse the existing capabilities of KStars, Ekos, INDI, and SkySafari.
+- Keep the integration lightweight and focused rather than duplicating functionality already
+  provided by the INDI ecosystem.
+
+(The INDI-integration-specific elaboration of these — build choices, driver architecture — lives in
+[Readme_design_decisions.md](Readme_design_decisions.md).)
+
 > ### ⚠️ **Disclaimer**
 >
 > * This is a community project and is not officially affiliated with PiFinder or Stellarmate.
@@ -168,7 +180,12 @@ The setup process is designed to be straightforward. It will guide you through a
 ### Prerequisites
 
 *   A Raspberry Pi 4 or Pi 5 with PiFinder hardware (hat, screen, camera, etc.).
-*   Stellarmate OS 2.3.0 (Arch Linux) installed and running — the setup script warns (but proceeds) if your SMOS version differs from this tested pin.
+*   **A current StellarMate OS (SMOS) installation — the only supported base.** Pinned to and tested
+    against StellarMate OS 2.3.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
+    version differs from this tested pin. **Installing onto a stock PiFinder OS image is not
+    supported** — this project's entire premise is the StellarMate integration (INDI, KStars/Ekos,
+    the Web Manager, the app), none of which a stock PiFinder OS provides, so there would be nothing
+    for it to integrate with.
 *   Basic familiarity with the Linux command line.
 
 ### Setup Steps
