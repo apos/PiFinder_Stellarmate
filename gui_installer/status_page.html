@@ -3307,34 +3307,37 @@ function updatePiFinderStatusAndWizardLink() {
   document.getElementById('mode-ampel-row').style.display = pifinderScreenUrl ? 'flex' : 'none';
   document.getElementById('pifinder-screen-waiting').classList.toggle('pifinder-screen-waiting-visible', !pifinderScreenUrl);
   if (!pifinderScreenUrl) {
-    // Override the default "Waiting for PiFinder…" text for the unambiguous
-    // systemd states (#192) - "inactive" used to be left alone entirely,
-    // since that's also what a legitimately-up Fake Mode looks like to
-    // systemd (Fake Mode runs as its own non-systemd process - see
-    // FAKE_MODE_SCRIPT's own comment). lastPifinderMode (2026-09-12, direct
-    // feedback: "Waiting for PiFinder" reads as wrong when the service is
-    // simply off) is the second signal that actually distinguishes the two -
-    // only claim "off" once it agrees nothing (real or fake) is running.
-    // Both signals come straight from their own live probe (systemd,
-    // /api/status on the fake-hardware port) - deliberately NOT branched on
-    // role/deriveProfileRole() here (direct feedback, same session: never
-    // infer a component's status from something else's state when the real
-    // one can just be asked). Reads correctly in Control host too: the local
-    // service genuinely is off there, by design - stating that plainly is
-    // still accurate, not something to soften into role-based guessing.
+    // "Waiting for PiFinder…" used to be the ONLY message here - direct
+    // feedback (2026-09-12): "Diese generische Aussage ist einfach Unsinn
+    // und nichtssagend." Both lastRealServiceState (systemd) and
+    // lastPifinderMode (this device's own fake-hardware probe) are live,
+    // real signals - deliberately NOT branched on role/deriveProfileRole()
+    // (a component's status must come from asking that component, never
+    // inferred from something else's state) - so every combination they can
+    // actually report gets its own real, specific text. The generic message
+    // now only remains for the one moment where neither has answered even
+    // once yet (page just opened, no poll back).
     const waitingTextEl = document.getElementById('pifinder-screen-waiting-text');
-    if (lastRealServiceState === 'activating') {
+    if (lastPifinderMode === 'fake') {
+      // Fake Mode is its own non-systemd process (see FAKE_MODE_SCRIPT's own
+      // comment) - real_service_state only ever reflects pifinder.service,
+      // so this is the one case that signal can't speak to at all.
+      waitingTextEl.innerHTML = 'Fake Mode<br>is running&hellip;';
+    } else if (lastRealServiceState === 'activating' || lastRealServiceState === 'active') {
+      // "active" here means systemd already considers the process launched
+      // but this page's own screen-mirror probe still isn't getting an
+      // answer - PiFinder itself (star catalog load, camera init, ...) can
+      // take a few seconds after the unit itself reports active. Same text
+      // as "activating" on purpose: both just mean "give it a moment."
       waitingTextEl.innerHTML = 'PiFinder service<br>is starting&hellip;';
     } else if (lastRealServiceState === 'failed') {
       waitingTextEl.innerHTML = 'PiFinder service<br>failed to start';
-    } else if (lastRealServiceState === 'inactive' && lastPifinderMode === 'none') {
-      // True regardless of role (direct feedback, 2026-09-12: this also
-      // holds - and is worth saying plainly - in the Control host role,
-      // where the local service being off isn't a problem, it's the role
-      // itself; still accurate, not something to hide).
+    } else if (lastRealServiceState === 'inactive') {
+      // True regardless of role - reads correctly in Control host too, where
+      // the local service being off isn't a problem, it's the role itself.
       waitingTextEl.innerHTML = 'PiFinder service<br>is stopped';
     } else {
-      waitingTextEl.innerHTML = 'Waiting for<br>PiFinder&hellip;';
+      waitingTextEl.innerHTML = 'Checking PiFinder<br>status&hellip;';
     }
   }
   if (pifinderScreenUrl) {
