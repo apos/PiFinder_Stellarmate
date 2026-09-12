@@ -21,7 +21,7 @@ unlike the OLED/Quick-keys fixes - the badges are **not all the same kind of pro
 Reading every backend function behind these badges (`gui_installer/server.py`) shows they split
 into two categories that need different treatment:
 
-### 2a. Already a thin proxy to PiFinder's own web API - same fix as #419
+### 2a. Already a thin proxy to PiFinder's own web API - same fix as #419 (done)
 
 - **Solve badge** → `_pifinder_solve_status()` / `_pifinder_toggle_debug_solve()` - both just GET/
   POST to PiFinder's own `/api/status` / `/api/debug_solve`, wherever that PiFinder actually runs.
@@ -29,11 +29,15 @@ into two categories that need different treatment:
   PiFinder's own reported `location` from its `/api/status` (deliberately not re-implemented
   locally - "StellarMate/PiFinder already do this, we just want to see the result").
 
-All three are hardcoded to `127.0.0.1:{port}`, exactly like `_pifinder_send_key()`/
-`_pifinder_login()` were before #419. **Same fix applies directly**: add an optional `host`
-parameter (default `127.0.0.1`), thread it through, have the frontend pass
-`new URL(pifinderScreenUrl).hostname` the same way `pfSendKey()` now does. No new architecture
-needed - this is mechanical, low-risk, and can be done together with 2b below or on its own.
+All three were hardcoded to `127.0.0.1:{port}`, exactly like `_pifinder_send_key()`/
+`_pifinder_login()` were before #419. **Same fix applied directly**: each function grew an
+optional `host` parameter (default `127.0.0.1`), validated at the route (`_valid_pifinder_host()`)
+same as `/api/pifinder_key`; the frontend passes `pifinderHost()` (same
+`new URL(pifinderScreenUrl).hostname` `pfSendKey()` already used) as `?host=` on every
+`/api/debug_solve` call. GPS got its own new route, `/api/gps_status?host=...`, kept separate from
+`/api/hardware_status` rather than adding `?host=` there - camera/imu (2b, below) must keep reading
+THIS device's own local hardware regardless of `?host=`, so folding gps into that same response
+would make the parameter look like it applies to all three when it only ever would for gps.
 
 ### 2b. Genuine local hardware checks - need a real Control-Center-to-Control-Center proxy
 
@@ -78,10 +82,11 @@ Control-Center-to-Control-Center call, not a parameter tweak.
 
 ## 4. Suggested order of work
 
-1. Ship 2a first (Solve + GPS `host` parameter) - mechanical, same pattern as #419, no open
-   design questions, immediate value on its own.
+1. ~~Ship 2a first (Solve + GPS `host` parameter) - mechanical, same pattern as #419, no open
+   design questions, immediate value on its own.~~ Done (2026-09-12).
 2. Decide the auth question for 2b before writing any of it - the rest of the design follows
    once that's settled, and it's the one genuinely new piece of infrastructure this needs.
 3. 2b itself (Camera + IMU via CC-to-CC proxy) once 2 is answered.
 
-Not implemented yet - concept only, per direct request ("dann bitte das Konzept erstellen").
+2b (Camera/IMU) not implemented yet - concept only for that part, per direct request ("dann bitte
+das Konzept erstellen"). The auth question in section 3 above is still open.
