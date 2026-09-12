@@ -351,9 +351,44 @@
     padding: 0.7rem 0.9rem;
   }
   #branch-picker-row { margin-bottom: 0.4rem; font-size: 0.82rem; }
-  #indi-only-label { font-size: 0.78rem; color: #999; cursor: pointer; }
   #branch-current-hint { color: #777; margin-left: 0.5rem; font-size: 0.78rem; display: block; }
   #branch-other-input { margin-left: 0.4rem; }
+  /* Direct request (2026-09-12): replaces the old "INDI-only" checkbox -
+     device type is a fundamental, hard-to-reverse choice (it already
+     determines, via updateRoleCardCapability() in the Mount Bridge tile,
+     whether "All-in-one"/"PiFinder host" stay available later), deserves
+     the same visual weight as a real decision, not a small hover-tooltip
+     checkbox. Copy deliberately avoids the Mount Bridge tile's own role
+     names ("All-in-one"/"PiFinder host"/"Control host" as GUI terms) since
+     the user doesn't know that GUI yet at install time - describes the
+     actual hardware/network setup instead. Same visual language
+     (segmented two-option row) as install_devtype_copy_mockups.html,
+     approved 2026-09-12. */
+  .devtype-seg { display: flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; margin-bottom: 0.6rem; flex-wrap: wrap; }
+  .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.65rem 0.8rem; cursor: pointer; }
+  .devtype-seg-opt + .devtype-seg-opt { border-left: 1px solid #444; }
+  .devtype-seg-opt.devtype-seg-active { background: #12202e; }
+  .devtype-seg-title { font-size: 0.8rem; font-weight: 600; color: #ddd; }
+  .devtype-seg-opt.devtype-seg-active .devtype-seg-title { color: #6fa8dc; }
+  .devtype-seg-sub { font-size: 0.72rem; color: #999; margin-top: 0.3rem; line-height: 1.5; }
+  .devtype-seg-hw { font-size: 0.68rem; color: #e0a030; margin-top: 0.45rem; line-height: 1.4; }
+  .devtype-seg-compat { font-size: 0.68rem; color: #7fc97f; margin-top: 0.4rem; line-height: 1.4; }
+  /* Same purple as .install-badge-dev - dev-only aside, not a hardware
+     requirement (amber) or a compatibility guarantee (green). */
+  .devtype-seg-dev { font-size: 0.68rem; color: #b79ce8; margin-top: 0.4rem; line-height: 1.4; }
+  /* Advanced/troubleshooting disclosure (2026-09-12): Reset/Reinstall/
+     Uninstall demoted behind a click - almost everyone just wants Update,
+     these three are recovery/edge cases that don't need permanent equal
+     billing next to it (direct feedback: "Severity statt Gleichmacherei",
+     taken one step further). */
+  details.advanced { border: 1px solid #2a2a2a; border-radius: 8px; padding: 0; margin-top: 0.7rem; }
+  details.advanced summary { padding: 0.6rem 0.85rem; cursor: pointer; font-size: 0.78rem; color: #999; list-style: none; display: flex; align-items: center; gap: 0.4rem; }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced summary::before { content: "\25B8"; font-size: 0.7rem; }
+  details.advanced[open] summary::before { content: "\25BE"; }
+  details.advanced[open] summary { border-bottom: 1px solid #2a2a2a; }
+  details.advanced .inner { padding: 0.8rem 0.85rem; }
+  .install-badge-dev { background: #241c30; color: #b79ce8; border: 1px solid #4a3a68; }
   .pf-num-input {
     background: #232323;
     border: 1px solid #3a3a3a;
@@ -398,6 +433,43 @@
      an enabled one except for the cursor. */
   #choices button:disabled, #start-fresh:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   .choice-btn { margin: 0 0.6rem 0.6rem 0; }
+  /* Direct request (2026-09-12): "Severity statt Gleichmacherei" - Reinstall/
+     Update/Reset/Uninstall all rendered as the same solid dark-red before
+     this (Reset via #choices button's own base rule despite its .ql-small-
+     btn class - ID+type beats a plain class), with no visual signal that
+     "Reset" is harmless and "Reinstall from scratch" is the nuclear option.
+     Card layout surfaces each action's real consequence text (previously
+     title= tooltip only) directly under its name - approved mockup,
+     https://claude.ai/code/artifact/7397fde1-53fb-4237-972a-d89a89594d4a.
+     The extra class on each selector below (e.g. "#choices button.install-
+     go-btn-primary") is what lets these win over the ID-based base rule
+     above without !important. */
+  .install-action-card {
+    border: 1px solid #333; border-radius: 8px; padding: 0.75rem 0.9rem;
+    margin-bottom: 0.6rem; display: flex; align-items: center;
+    justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .install-action-card-primary { border-color: #2d5a3a; background: #10201a; padding: 0.9rem 1rem; }
+  .install-action-card-amber { border-color: #4a3a12; }
+  .install-action-card-danger { border-color: #2a1414; opacity: 0.88; }
+  .install-action-title { font-size: 0.84rem; font-weight: 600; color: #eee; display: flex; align-items: center; gap: 0.5rem; }
+  .install-action-title-primary { color: #7fd19e; font-size: 0.92rem; }
+  .install-action-desc { font-size: 0.74rem; color: #999; line-height: 1.5; margin-top: 0.3rem; max-width: 440px; }
+  .install-action-card-primary .install-action-desc { color: #b9d9c6; }
+  .install-badge { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.1rem 0.4rem; border-radius: 3px; background: #1c2a1c; color: #7fc97f; border: 1px solid #3a5a3a; }
+  #choices button.install-go-btn, #start-fresh.install-go-btn { padding: 0.4rem 0.8rem; font-size: 0.78rem; font-weight: 600; white-space: nowrap; flex-shrink: 0; margin-right: 0; }
+  #choices button.install-go-btn-primary { background: #4caf50; color: #0a1c0d; padding: 0.55rem 1.1rem; font-size: 0.82rem; }
+  #choices button.install-go-btn-amber { background: transparent; border: 1px solid #e0a030; color: #e0a030; }
+  #choices button.install-go-btn-danger { background: transparent; border: 1px solid #a33; color: #e08a8a; }
+  /* Uninstall lives in its own static group outside #choices (line ~2584) -
+     same danger-card look, plain class selector is enough there since it
+     has no competing ID-based base rule to out-specificity. */
+  #install-uninstall-btn.install-go-btn-danger { background: transparent; border: 1px solid #a33; color: #e08a8a; }
+  /* Uninstall dropped .power-btn (whose own :disabled rule this used to
+     inherit) in favor of .install-go-btn-danger above - same muted-red
+     in-flight look, restated directly on the id since nothing else here
+     still applies it. */
+  #install-uninstall-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
   #log.log-placeholder {
     color: #666;
     font-style: italic;
@@ -668,7 +740,13 @@
      identity entirely, inconsistent with how Stop movement/Stop alignment
      stay visibly red-tinted while disabled. */
   .power-btn:disabled { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; cursor: default; filter: none; }
-  #install-groups { display: flex; gap: 1rem; align-items: flex-start; margin: 0.3rem 0 0.8rem; }
+  /* 2026-09-12: single vertical flow, not a 3-column row - direct feedback:
+     "wir haben mehr oder weniger nur ein Thema: installing PFSM", the old
+     "PFSM Source Branch"/"PiFinder"/"PiFinder Stellarmate" columns implied
+     three separate concerns that don't actually exist (every action already
+     self-updates this Control Center's own checkout first, unconditionally -
+     see pifinder_stellarmate_setup.sh line ~78-82). */
+  #install-groups { display: block; margin: 0.3rem 0 0.8rem; }
   #install-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; cursor: pointer; }
   #install-heading-row .tile-heading { margin: 0; }
   #mode-tile {
@@ -779,6 +857,16 @@
   .mb-abort-btn { background: #a33; color: #fff; border-color: #a33; font-weight: 600; }
   .mb-abort-btn:not(:disabled):hover { filter: brightness(1.15); }
   .mb-abort-btn:disabled { background: #3a1414; color: #ff8a80; border-color: #5a2020; cursor: default; }
+  /* Direct request (2026-09-12): Maintenance mode's two buttons (next to
+     Setup INDI, and the header "Exit maintenance mode") in the same muted
+     red-tinted style as .mb-abort-btn:disabled above - reused here as a
+     deliberate at-rest look (not a disabled state) since it reads as
+     "caution/active override" without the full-alarm weight of the solid
+     .mb-abort-btn red, appropriate for a mode that's normal to leave on for
+     a while during driver work. */
+  .maint-mode-btn { background: #3a1414; color: #ff8a80; border: 1px solid #5a2020; font-weight: 600; }
+  .maint-mode-btn:not(:disabled):hover { filter: brightness(1.3); }
+  .maint-mode-btn:disabled { opacity: 0.6; cursor: default; }
   /* Coupling presets are the tile's central control (per live feedback) -
      bigger and full-width, with their own label line above instead of
      squeezed inline to the buttons' left. */
@@ -1221,6 +1309,19 @@
     padding: 0.5rem 0.6rem;
   }
   .mb-step-key { color: #fff; font-weight: 600; }
+  /* Direct request (2026-09-12): "auf den ersten Blick immer noch nicht
+     klar, welches das INDI WM Profil ist und welches das von EKOS" - steps
+     4 (Mount) and 5 (Ekos) usually show the same profile name (that's what
+     step 2's KStars Link check verifies), but they're two separate things
+     (the INDI Web Manager's own Equipment Profile vs. KStars' own Ekos
+     Profile Editor entry) - a small text tag makes which is which
+     unambiguous without needing a legend. Blue for INDI WM (no other use of
+     this hue on the page, reads as its own identity); amber for Ekos - the
+     same #e0a030 already used KStars-side elsewhere (e.g. step 2's own
+     warning color). */
+  .src-tag { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; padding: 0.05rem 0.35rem; border-radius: 3px; margin-right: 0.4rem; vertical-align: 1px; }
+  .src-tag-wm { color: #6fa8dc; border: 1px solid #2d5578; background: #12202e; }
+  .src-tag-ekos { color: #e0a030; border: 1px solid #4a3f20; background: #1c1a12; }
   .mb-step-key-star { flex-shrink: 0; }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
@@ -1610,17 +1711,22 @@
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
+  /* 2026-09-12: moved into #cc-header-sticky (see that rule's own comment,
+     and #cc-readonly-banner's) - same flush-strip-under-the-title-row
+     pattern as every other urgent/blocking message, not a rounded card that
+     scrolls out of view with the rest of the page. */
   #stale-page-banner {
     background: #1a2433;
     color: #bcd4ee;
-    border: 1px solid #2c4a6e;
-    padding: 0.6rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
+    border-top: 1px solid #2c4a6e;
+    padding: 0.5rem 1.5rem;
     font-size: 0.9rem;
     display: flex;
     align-items: center;
     gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #stale-page-banner { padding: 0.5rem 0.8rem; }
   }
   #stale-page-banner button {
     background: #8a2e24;
@@ -1650,6 +1756,42 @@
   }
   @media (max-width: 767px) {
     #cc-readonly-banner { padding: 0.5rem 0.8rem; }
+  }
+  /* Direct request (2026-09-12): "das ist so elementar, das muss direkt
+     UNTER die Überschrift... das gilt für alle Meldungen, die dringend
+     sind" - same flush-strip-under-the-title-row pattern as
+     #cc-readonly-banner right above (stays visible no matter how far the
+     tiles below are scrolled), not the easy-to-miss small text that used
+     to sit off to the side of the title row. */
+  #cc-maintenance-mode-banner {
+    background: #2a2214;
+    color: #e0a030;
+    border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #cc-maintenance-mode-banner { padding: 0.5rem 0.8rem; }
+  }
+  /* Direct request (2026-09-12): informs about pifinder.service having been
+     stopped automatically (see _pifinder_service_sync_with_lx200_target()
+     in server.py) - same flush-strip pattern as the other header banners. */
+  #cc-pifinder-service-notice-banner {
+    background: #2a2214;
+    color: #e0a030;
+    border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #cc-pifinder-service-notice-banner { padding: 0.5rem 0.8rem; }
   }
   #cc-take-control-btn {
     background: #e0a030;
@@ -1785,13 +1927,21 @@
   <span id="cc-readonly-banner-text">Control Center open elsewhere - this tab is read-only.</span>
   <button id="cc-take-control-btn" onclick="ccTakeControl()">Take control</button>
 </div>
+<div id="cc-maintenance-mode-banner" style="display:none;">
+  <span id="header-maintenance-mode-text"></span>
+  <button id="header-maintenance-mode-exit-btn" class="ql-small-btn maint-mode-btn" onclick="toggleMaintenanceMode()">Exit maintenance mode</button>
 </div>
-
-<div id="conn-lost-banner" style="display:none;"></div>
+<div id="cc-pifinder-service-notice-banner" style="display:none;">
+  <span id="cc-pifinder-service-notice-text"></span>
+  <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
+</div>
 <div id="stale-page-banner" style="display:none;">
   <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
   <button onclick="location.reload()">Reload now</button>
 </div>
+</div>
+
+<div id="conn-lost-banner" style="display:none;"></div>
 
 <div id="cc-restart-overlay">
   <div id="cc-restart-overlay-box">
@@ -2223,8 +2373,12 @@
         </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <div id="mb-setup-btn-row" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
-          <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">Setup INDI</button>
+          <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">One-Click Setup</button>
+          <a class="help-link" href="/help.html#setup-indi" target="_blank" rel="noopener" title="Help">i</a>
           <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+          <span id="maintenance-mode-badge" class="mb-group-badge mb-group-badge-live" style="display:none;"></span>
+          <button id="maintenance-mode-toggle-btn" class="ql-small-btn maint-mode-btn" onclick="toggleMaintenanceMode()">Maintenance mode</button>
+          <a class="help-link" href="/help.html#maintenance-mode" target="_blank" rel="noopener" title="Help">i</a>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       </div>
@@ -2257,8 +2411,9 @@
              Bridge, no mount here) - wrapper for the same reason as
              #mb-operate-rows above. -->
         <div id="mb-steps-4-6">
-        <div class="mb-row mb-step-row mb-step-row-key" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount:</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+          <span id="wm-mount-profile-tag"></span>
           <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
           <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
         </div>
@@ -2280,6 +2435,7 @@
 
         <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos:</span></span>
+          <span id="wm-ekos-profile-tag"></span>
           <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
         </div>
         <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
@@ -2289,23 +2445,6 @@
           <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
           <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
         </div>
-        </div>
-
-        <div class="mb-checklist-divider"></div>
-        <div class="mb-group-box" id="maintenance-mode-box">
-          <div class="group-label" style="display:flex;align-items:center;justify-content:space-between;">
-            <span>Maintenance mode<a class="help-link" href="/help.html#maintenance-mode" target="_blank" rel="noopener" title="Help">i</a></span>
-            <span id="maintenance-mode-badge" class="mb-group-badge mb-group-badge-config">off</span>
-          </div>
-          <div style="font-size:0.78rem;color:#aaa;line-height:1.5;margin-bottom:0.6rem;">Stops Mount Bridge and PiFinder LX200 from auto-reconnecting - use while rebuilding or redeploying a driver so nothing fights over the connection.</div>
-          <div class="mb-row" style="justify-content:space-between;">
-            <span>Keep drivers disconnected</span>
-            <button id="maintenance-mode-toggle-btn" class="ql-small-btn" onclick="toggleMaintenanceMode()">Turn on</button>
-          </div>
-          <div class="mb-row" style="justify-content:space-between;" title="Not available yet - the INDI Web Manager's own auto-health mechanism isn't exposed through an API this Control Center can call.">
-            <span style="color:#666;">Pause INDI Web Manager Auto Health</span>
-            <button class="ql-small-btn" disabled>Not available yet</button>
-          </div>
         </div>
 
         <div id="mb-log" title="What this tile has been doing, in order."></div>
@@ -2522,35 +2661,44 @@ sudo systemctl start pifinder</pre>
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="install-groups">
-      <div class="mode-power-group">
-        <div class="group-label">PFSM Source Branch</div>
-        <div id="branch-picker-row">
-          <select id="branch-select" onchange="onBranchSelectChange(true)">
-            <option value="main">main (stable)</option>
-            <option value="dev">dev (beta)</option>
-            <option value="__other__">Other&hellip;</option>
-          </select>
-          <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
-          <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
-          <span id="branch-current-hint" style="display:none;"></span>
+      <div class="group-label">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
+      <div id="devtype-seg" class="devtype-seg">
+        <div class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" onclick="onDeviceTypeClick('full')">
+          <div class="devtype-seg-title">StellarMate + PiFinder</div>
+          <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
+          <div class="devtype-seg-hw">&#9888; Needs a powerful Raspberry Pi to carry this combined role - Pi 5, NVMe storage, 8 GB RAM minimum.</div>
+          <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
         </div>
-        <label id="indi-only-label">
-          <input type="checkbox" id="indi-only-checkbox" onchange="onIndiOnlyToggle(this.checked)">
-          INDI-only (no PiFinder hardware - for control-host setups)
-        </label><a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a>
-      </div>
-      <div class="vgroup-divider"></div>
-      <div class="mode-power-group">
-        <div class="group-label">PiFinder<a class="help-link" href="/help.html#install-update" target="_blank" rel="noopener" title="Help">i</a></div>
-        <div id="choices" style="display:none;"></div>
-      </div>
-      <div class="vgroup-divider"></div>
-      <div class="mode-power-group" title="Uses bin/uninstall_pifinder_stellarmate.sh - stops and removes everything this project installed: systemd services, INDI drivers, ~/PiFinder, and this ~/PiFinder_Stellarmate checkout itself. Cannot be undone from here.">
-        <div class="group-label">PiFinder Stellarmate<a class="help-link" href="/help.html#uninstall" target="_blank" rel="noopener" title="Help">i</a></div>
-        <div class="mode-power-group-buttons">
-          <button id="install-uninstall-btn" class="power-btn" onclick="installAction('uninstall')">Uninstall</button>
+        <div class="devtype-seg-opt" id="devtype-opt-indi_only" onclick="onDeviceTypeClick('indi_only')">
+          <div class="devtype-seg-title">StellarMate + Control host only</div>
+          <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
+          <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
+          <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
         </div>
       </div>
+
+      <div class="hgroup-divider"></div>
+
+      <div class="group-label">Branch</div>
+      <div id="branch-picker-row">
+        <select id="branch-select" onchange="onBranchSelectChange(true)">
+          <option value="main">main (stable)</option>
+          <option value="dev">dev (beta)</option>
+          <option value="__other__">Other&hellip;</option>
+        </select>
+        <button type="button" id="branch-refresh-btn" class="refresh-link" onclick="manualRefreshBranchInfo(this)" title="Re-check which branch is actually on disk right now - useful if it was switched elsewhere (another tab, a terminal, a merged PR) since this page loaded.">&#8635;</button>
+        <input type="text" id="branch-other-input" placeholder="branch name" style="display:none;" oninput="branchTouched = true;">
+        <span id="branch-current-hint" style="display:none;"></span>
+      </div>
+
+      <div class="hgroup-divider"></div>
+
+      <div id="choices" style="display:none;"></div>
+
+      <details id="install-advanced-details" class="advanced">
+        <summary>Advanced / troubleshooting</summary>
+        <div class="inner" id="install-advanced-inner"></div>
+      </details>
     </div>
 
     <div id="status-row">
@@ -4567,35 +4715,59 @@ async function toggleKeyboardBridge() {
 let indiOnlyMode = false;
 let lastExistingInstall = false;
 
-function onIndiOnlyToggle(checked) {
-  indiOnlyMode = checked;
+function onDeviceTypeClick(type) {
+  indiOnlyMode = (type === 'indi_only');
+  document.getElementById('devtype-opt-full').classList.toggle('devtype-seg-active', type === 'full');
+  document.getElementById('devtype-opt-indi_only').classList.toggle('devtype-seg-active', type === 'indi_only');
   showChoices(lastExistingInstall);
 }
 
 function showChoices(existingInstall) {
   lastExistingInstall = existingInstall;
   const el = document.getElementById('choices');
+  const advInner = document.getElementById('install-advanced-inner');
   el.style.display = 'block';
-  // Reset lives in this same template (not separate static HTML) so it
-  // always renders in the same flex row as whichever primary action(s) this
-  // function shows, in every branch below - found live 2026-09-04: as a
-  // separate row underneath, it was easy to miss the size mismatch (this
-  // group's own primary button was noticeably larger than every sibling
-  // button on the page) until Reset sat right next to it instead.
-  const resetBtn = '<button id="install-reset-btn" class="ql-small-btn" onclick="installAction(\'reset\')" title="Briefly stops PiFinder\'s core services, then wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Use this to get a clean slate for a fresh setup run without losing anything else.">Reset</button>';
+  // Reset/Uninstall render into the Advanced disclosure now, in every
+  // branch below (2026-09-12: "Severity statt Gleichmacherei", taken
+  // further - Update/Install alone is the one thing almost everyone wants,
+  // these two - plus Reinstall, existing-install only - are recovery/edge
+  // cases that don't need permanent equal billing next to it). Same real
+  // consequence texts as each action always had, just visible now instead
+  // of hover-only.
+  const resetCard = `
+    <div class="install-action-card install-action-card-amber">
+      <div>
+        <div class="install-action-title">Reset <span class="install-badge install-badge-dev">recommended for development</span></div>
+        <div class="install-action-desc">Briefly stops PiFinder's core services, then wipes the Python virtual environment and build state only. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Use this to get a clean slate for a fresh setup run without losing anything else.</div>
+      </div>
+      <button id="install-reset-btn" class="install-go-btn install-go-btn-amber" onclick="installAction('reset')">Reset</button>
+    </div>`;
+  // Uses bin/uninstall_pifinder_stellarmate.sh --selfmove - acts on much
+  // more than the other three (also removes this ~/PiFinder_Stellarmate
+  // checkout, i.e. this Control Center's own service), previously in its
+  // own separate "PiFinder Stellarmate" group for that reason - now just
+  // the most severe entry in the same Advanced list instead of its own
+  // top-level column (see #install-groups' own comment on dropping the
+  // three-column layout).
+  const uninstallCard = `
+    <div class="install-action-card install-action-card-danger">
+      <div>
+        <div class="install-action-title">Uninstall everything</div>
+        <div class="install-action-desc">Uses bin/uninstall_pifinder_stellarmate.sh - stops and removes everything this project installed: systemd services, INDI drivers, ~/PiFinder, and this ~/PiFinder_Stellarmate checkout itself. This page goes offline within seconds. Cannot be undone from here.</div>
+      </div>
+      <button id="install-uninstall-btn" class="install-go-btn install-go-btn-danger" onclick="installAction('uninstall')">Uninstall</button>
+    </div>`;
   if (indiOnlyMode) {
     el.innerHTML = `
-      <p>Use this if this machine has <strong>no PiFinder hardware attached at all</strong> - for example a separate StellarMate/Astroberry
-      "control host" on your network that couples to a real PiFinder running elsewhere, via its INDI driver over the network
-      (see the info icon above for details on that setup). Only the INDI build dependencies and the two PiFinder INDI drivers
-      get installed here. Your existing <code>~/PiFinder</code> installation, if any, is left completely untouched: no clone or patch,
-      no Python virtual environment, no star catalog download, no GPIO/udev hardware setup - none of that applies when there's
-      no PiFinder hardware for this machine to actually run.</p>
-      <div class="mode-power-group-buttons">
-        <button class="choice-btn" onclick="start('fresh')">Install INDI-only</button>
-        ${resetBtn}
+      <div class="install-action-card install-action-card-primary">
+        <div>
+          <div class="install-action-title install-action-title-primary">Install INDI-only</div>
+          <div class="install-action-desc">Installs the INDI build dependencies and all three PiFinder INDI drivers (<code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code>, <code>PiFinder Simulator</code>) only. Your existing ~/PiFinder installation, if any, is left completely untouched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup - none of that applies when this device doesn't run PiFinder itself.</div>
+        </div>
+        <button class="install-go-btn install-go-btn-primary" onclick="start('fresh')">Install</button>
       </div>
     `;
+    advInner.innerHTML = resetCard + uninstallCard;
     return;
   }
   // No "Cancel"/"Close Setup" choice here - this webserver is meant to just
@@ -4611,22 +4783,38 @@ function showChoices(existingInstall) {
   // possible via `launch_setup_gui.sh --shutdown-webserver` from a terminal.
   if (existingInstall) {
     el.innerHTML = `
-      <p>An existing PiFinder installation was found at ~/PiFinder. Choose an action:</p>
-      <div class="mode-power-group-buttons">
-        <button class="choice-btn" onclick="start('reinstall')" title="Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.">Reinstall from scratch</button>
-        <button class="choice-btn" onclick="start('update')" title="Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.">Update (git reset --hard)</button>
-        ${resetBtn}
+      <div class="install-action-card install-action-card-primary">
+        <div>
+          <div class="install-action-title install-action-title-primary">Update <span class="install-badge">recommended</span></div>
+          <div class="install-action-desc">Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches. Keeps the existing directory, just brings the code up to date.</div>
+        </div>
+        <button class="install-go-btn install-go-btn-primary" onclick="start('update')">Update</button>
       </div>
     `;
+    advInner.innerHTML = resetCard + `
+      <div class="install-action-card install-action-card-danger">
+        <div>
+          <div class="install-action-title">Reinstall from scratch</div>
+          <div class="install-action-desc">Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches. Use this if the installation is broken or you want a clean slate.</div>
+        </div>
+        <button class="install-go-btn install-go-btn-danger" onclick="start('reinstall')">Reinstall from scratch</button>
+      </div>
+    ` + uninstallCard;
   } else {
     el.innerHTML = `
-      <p>No existing installation found. Clones PiFinder from the official <code>release</code> branch into
-         ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.).</p>
-      <div class="mode-power-group-buttons">
-        <button id="start-fresh" onclick="start('fresh')">Start Install</button>
-        ${resetBtn}
+      <div class="install-action-card install-action-card-primary">
+        <div>
+          <div class="install-action-title install-action-title-primary">Install from scratch</div>
+          <div class="install-action-desc">Clones PiFinder from the official release branch into ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.) - and pulls this Control Center itself to the current branch first.</div>
+        </div>
+        <button id="start-fresh" class="install-go-btn install-go-btn-primary" onclick="start('fresh')">Install</button>
       </div>
     `;
+    // Reinstall doesn't apply yet (nothing to reinstall over) - Reset stays
+    // as a defensive no-op-if-clean safety net for leftover state from a
+    // previous, incomplete attempt (unchanged from the pre-2026-09-12
+    // behavior, which already showed it here too).
+    advInner.innerHTML = resetCard + uninstallCard;
   }
 }
 
@@ -4973,30 +5161,44 @@ function updatePowerButtonLabels() {
   if (poweroffBtn) poweroffBtn.textContent = 'Shutdown' + suffix;
 }
 
-// Direct request (2026-09-11): a way to keep Mount Bridge/PiFinder LX200
-// disconnected while rebuilding/redeploying a driver, so the readiness
-// watchdog doesn't reconnect it mid-edit. Renders both boxes from the
-// mockup so the "not yet available" row is honest about current scope
-// (INDI Web Manager Auto Health isn't exposed through an API yet) rather
-// than offering a control that does nothing.
+// Direct request (2026-09-11, revised 2026-09-12): one button, not a set of
+// sub-toggles. Turning this on stops all three things that fight over a
+// driver being rebuilt - the INDI profile (server.py's /api/maintenance_mode_toggle
+// calls webmanager_client.stop_server()), the KStars/Ekos profile (DBus
+// org.kde.kstars.Ekos.stop()) and this Control Center's own driver
+// self-healing (_mount_bridge_readiness_self_heal() gated on
+// _maintenance_mode_since, same as _pifinder_lx200_auto_reconnect() already
+// was) - so nothing reconnects anything while a driver is being redeployed.
 function applyMaintenanceModeState(sinceEpochSeconds) {
   const badge = document.getElementById('maintenance-mode-badge');
-  const box = document.getElementById('maintenance-mode-box');
   const btn = document.getElementById('maintenance-mode-toggle-btn');
-  if (!badge || !box || !btn) return;
+  const banner = document.getElementById('cc-maintenance-mode-banner');
+  const headerText = document.getElementById('header-maintenance-mode-text');
+  if (!badge || !btn) return;
   const active = typeof sinceEpochSeconds === 'number';
-  box.style.borderColor = active ? '#5a4a1a' : '';
-  box.style.background = active ? '#1a1608' : '';
-  badge.className = 'mb-group-badge ' + (active ? 'mb-group-badge-live' : 'mb-group-badge-config');
-  badge.textContent = active
-    ? `active since ${new Date(sinceEpochSeconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    : 'off';
-  btn.textContent = active ? 'Exit maintenance mode' : 'Turn on';
+  const sinceText = active
+    ? `Maintenance mode - active since ${new Date(sinceEpochSeconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  badge.style.display = active ? '' : 'none';
+  badge.textContent = sinceText;
+  btn.textContent = active ? 'Exit maintenance mode' : 'Maintenance mode';
+  // Direct request (2026-09-12): "das ist so elementar, das muss direkt
+  // UNTER die Überschrift... das gilt für alle Meldungen, die dringend
+  // sind" - a flush banner strip right under the title row (same pattern
+  // as #cc-readonly-banner), not small text off to the side that's easy to
+  // overlook. Only shown while active - the entry point stays the button
+  // next to Setup INDI above.
+  if (banner && headerText) {
+    banner.style.display = active ? 'flex' : 'none';
+    headerText.textContent = sinceText;
+  }
 }
 
 async function toggleMaintenanceMode() {
   const btn = document.getElementById('maintenance-mode-toggle-btn');
+  const headerBtn = document.getElementById('header-maintenance-mode-exit-btn');
   btn.disabled = true;
+  if (headerBtn) headerBtn.disabled = true;
   try {
     const resp = await fetch('/api/maintenance_mode_toggle', { method: 'POST' });
     const data = await resp.json();
@@ -5010,6 +5212,45 @@ async function toggleMaintenanceMode() {
     alert('Could not change maintenance mode: unreachable.');
   }
   btn.disabled = false;
+  if (headerBtn) headerBtn.disabled = false;
+}
+
+// Direct request (2026-09-12): passive notification for
+// _pifinder_service_sync_with_lx200_target()'s own automatic action in
+// server.py - this is a background watchdog decision, not something this
+// tab necessarily triggered itself, so it needs its own poll (unlike
+// applyMaintenanceModeState() above, whose only other update path is the
+// direct response of this tab's own toggle click) rather than only
+// updating once at page load.
+function applyPifinderServiceNotice(remote) {
+  const banner = document.getElementById('cc-pifinder-service-notice-banner');
+  const text = document.getElementById('cc-pifinder-service-notice-text');
+  if (!banner || !text) return;
+  const active = typeof remote === 'string' && remote.length > 0;
+  banner.style.display = active ? 'flex' : 'none';
+  text.textContent = active
+    ? `Local PiFinder Service stopped - PiFinder at ${remote} is active.`
+    : '';
+}
+
+async function pollPifinderServiceNotice() {
+  try {
+    const resp = await fetch('/state', { cache: 'no-store' });
+    const data = await resp.json();
+    applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
+  } catch (e) {
+    // transient poll failure - leave the current banner as-is, next tick retries
+  }
+}
+setInterval(pollPifinderServiceNotice, 10000);
+
+async function dismissPifinderServiceNotice() {
+  applyPifinderServiceNotice(null);  // optimistic - the notice is about a past action, no need to wait on the round-trip
+  try {
+    await fetch('/api/pifinder_service_notice_dismiss', { method: 'POST' });
+  } catch (e) {
+    // best-effort - next pollPifinderServiceNotice() tick will just show it again if this didn't land
+  }
 }
 
 // Always-available Pi power controls (distinct from the conditional
@@ -5480,6 +5721,7 @@ async function init() {
     updatePowerButtonLabels();
   }
   applyMaintenanceModeState(data.maintenance_mode_since);
+  applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
   if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
@@ -7780,9 +8022,7 @@ async function checkEkosStatus() {
       // Bridge/mount devices), Ekos reporting connected too can only mean
       // it's using this same profile - those devices don't exist to connect
       // to under a different one. No separate D-Bus verification needed.
-      el.textContent = wmSelectedProfile
-        ? `✓ Ekos is connected in KStars (considered profile "${wmSelectedProfile}").`
-        : '✓ Ekos is connected in KStars.';
+      el.textContent = '✓ Ekos is connected in KStars.';
     } else {
       const canAutoHeal = !!wmSelectedProfile &&
         Date.now() > wmEkosAutoHealCooldownUntil &&
@@ -8396,6 +8636,38 @@ async function applyCtrlRemoteAddress() {
     alert('Pick a profile in step 1 first.');
     return;
   }
+  // Direct request (2026-09-12): pointing PiFinder LX200 at a remote device
+  // makes this device's own local PiFinder Service pointless - ask before
+  // stopping it, same as the existing manual Stop button's own confirm().
+  // Asked BEFORE anything below is touched, so declining is a clean abort
+  // (nothing to roll back - the alternative background watchdog check,
+  // _pifinder_service_sync_with_lx200_target() in server.py, would stop it
+  // automatically a few seconds later regardless, but silently rather than
+  // asking, which is exactly what this confirm() is here to avoid for a
+  // deliberate, user-initiated change like this one).
+  if (lastRealServiceState === 'active') {
+    if (!confirm(
+      `Pointing PiFinder LX200 at "${value}" also stops this device's own local PiFinder Service ` +
+      `(pifinder.service) - it isn't needed once PiFinder LX200 points elsewhere.\n\n` +
+      `Stop it and continue?`
+    )) {
+      _setCtrlRemoteResult('Cancelled - local PiFinder Service left running, remote address not applied.', null);
+      return;
+    }
+    try {
+      // /api/pifinder_service_stop_for_remote (not the plain ?action=stop
+      // endpoint) - also records WHY, so the header notice and the later
+      // auto-restart-once-LX200-goes-local-again logic both work correctly
+      // for this manually-triggered stop too, same as the background
+      // watchdog's own automatic one.
+      const stopResp = await fetch(`/api/pifinder_service_stop_for_remote?remote=${encodeURIComponent(value)}`, { method: 'POST' });
+      const stopData = await stopResp.json();
+      if (!stopData.success) throw new Error(stopData.error || 'failed');
+    } catch (e) {
+      _setCtrlRemoteResult(`Could not stop the local PiFinder Service: ${e.message}`, 'bad');
+      return;
+    }
+  }
   _setCtrlRemoteResult('Applying…', null);
   try {
     const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(wmSelectedProfile)}&driver=lx200&action=add_remote&remote=${encodeURIComponent(value)}`;
@@ -8429,6 +8701,28 @@ function updateStepIndicators() {
   );
   updateProfileRoleLine();
   updateSimReadinessLine();
+  updateProfileSourceTags();
+}
+
+// Direct request (2026-09-12): steps 4/5 usually show the same profile name
+// but are two separate things (see .src-tag's own CSS comment) - built via
+// createElement/textContent, not innerHTML string interpolation, since
+// wmSelectedProfile is a user-chosen Web Manager profile name (arbitrary
+// text) that must never be parsed as markup.
+function updateProfileSourceTags() {
+  const build = (containerId, tagClass, tagText) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (!wmSelectedProfile) return;
+    const tag = document.createElement('span');
+    tag.className = `src-tag ${tagClass}`;
+    tag.textContent = tagText;
+    container.appendChild(tag);
+    container.appendChild(document.createTextNode(wmSelectedProfile));
+  };
+  build('wm-mount-profile-tag', 'src-tag-wm', 'INDI WM');
+  build('wm-ekos-profile-tag', 'src-tag-ekos', 'EKOS');
 }
 
 // Compact mirror of the Setup checklist's own 5 config-vs-live steps, shown

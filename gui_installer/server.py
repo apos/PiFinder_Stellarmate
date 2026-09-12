@@ -340,6 +340,77 @@ def _real_service_failed() -> bool:
     ).returncode == 0
 
 
+def _stop_pifinder_service_for_remote(remote: str) -> None:
+    """Shared by _pifinder_service_sync_with_lx200_target() (automatic,
+    watchdog-driven) and /api/pifinder_service_stop_for_remote (manual,
+    applyCtrlRemoteAddress()'s own confirm() flow) - a single place that
+    stops the service AND records why, so the header notice and the later
+    auto-restart-once-LX200-goes-local-again logic work the same regardless
+    of which path triggered the stop. Raises on a systemctl failure - each
+    caller decides how to report that in its own context (an _mb_log() line
+    for the background watchdog, a JSON error response for the manual
+    endpoint)."""
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True, text=True, timeout=10)
+    result = subprocess.run(
+        ["sudo", "systemctl", "stop", "pifinder.service"], capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "systemctl stop failed")
+    _pifinder_service_auto_stopped_for_remote = remote
+    _pifinder_service_notice_dismissed = False
+    _save_mount_bridge_desired_state()
+
+
+def _pifinder_service_sync_with_lx200_target():
+    """Enforces the rule from direct feedback (2026-09-12): a local
+    pifinder.service is pointless once PiFinder LX200 points at a remote
+    device instead of this one (nothing here needs it, and on a camera-less
+    x86 Control Host it may just be error-looping) - and should come back
+    once LX200 goes local again. Called once per
+    _mount_bridge_readiness_watchdog() tick, same cadence as the other
+    self-heal checks.
+
+    Deliberately conservative in the "start" direction: only ever restarts
+    pifinder.service as the reverse of a stop THIS function itself
+    performed (tracked via _pifinder_service_auto_stopped_for_remote) -
+    never a general "must be running whenever LX200 is local" rule, which
+    would fight the separate, pre-existing Real/Fake Mode toggle (Fake Mode
+    deliberately stops this same service for an unrelated reason)."""
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    if not PIFINDER_SERVICE_UNIT.exists():
+        return  # nothing installed here at all (e.g. a pure INDI-only Control Host)
+    try:
+        wm_status = webmanager_client.server_status()
+        if not wm_status.get("running") or not wm_status.get("active_profile"):
+            return
+        driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
+    except webmanager_client.WebManagerError:
+        return  # Web Manager unreachable this tick - next tick re-checks, no guessing
+    lx200_remote = driver_status.get("lx200_remote")
+    if lx200_remote:
+        if _real_service_active():
+            try:
+                _stop_pifinder_service_for_remote(lx200_remote)
+                _mb_log(
+                    f"pifinder.service stopped automatically - PiFinder LX200 now points at "
+                    f"remote '{lx200_remote}', a local PiFinder isn't needed."
+                )
+            except Exception as e:
+                _mb_log(f"pifinder.service auto-stop failed: {e}")
+    elif _pifinder_service_auto_stopped_for_remote is not None:
+        try:
+            subprocess.run(["sudo", "systemctl", "start", "pifinder.service"], capture_output=True, text=True, timeout=15)
+            _mb_log(
+                f"pifinder.service restarted automatically - PiFinder LX200 is local again "
+                f"(was stopped for remote '{_pifinder_service_auto_stopped_for_remote}')."
+            )
+        except Exception as e:
+            _mb_log(f"pifinder.service auto-start failed: {e}")
+        _pifinder_service_auto_stopped_for_remote = None
+        _save_mount_bridge_desired_state()
+
+
 def _real_service_state() -> str:
     """pifinder.service's raw systemd ActiveState string (active,
     activating, inactive, failed, deactivating, ...) - added 2026-08-09
@@ -1532,6 +1603,36 @@ _mb_readiness_retrier = _BackgroundRetrier()
 # consistent with this file's other time.time()/time.monotonic() use.
 _maintenance_mode_since = None
 
+# The INDI Web Manager profile that was active when maintenance mode was
+# turned on - server_status() reports no active_profile once stop_server()
+# has been called, so this is the only place the name survives for turning
+# maintenance mode back off (including across a Control Center restart
+# while it's on, same reasoning as _maintenance_mode_since itself).
+_maintenance_mode_profile = None
+
+# Direct request (2026-09-12): "wenn ein entfernter PiFinder läuft ... dann
+# sollte der lokale PF service ausgeschaltet werden ... Ausser, die IP ist
+# localhost. Dann sollte dieser starten." - a local pifinder.service is
+# pointless (and on a camera-less x86 Control Host, potentially just an
+# error-loop) once PiFinder LX200 points at a remote device instead of this
+# one; _pifinder_service_sync_with_lx200_target() below enforces this every
+# watchdog tick. Holds the remote "host:port" spec while THIS logic is the
+# reason pifinder.service is currently stopped - None means either it was
+# never auto-stopped, or LX200 has gone back local since (in which case this
+# same logic already restarted it and cleared this back to None). Never
+# touches a service that's off for an unrelated reason (e.g. the user's own
+# Fake Mode choice) - only ever acts when this variable itself already
+# tracks having stopped it, or when LX200 is currently remote and the
+# service is currently active.
+_pifinder_service_auto_stopped_for_remote = None
+
+# Separate from the variable above on purpose: dismissing the header notice
+# must not erase the "I stopped this, remember to start it back up later"
+# memory that variable also carries - only hides the banner until the next
+# fresh auto-stop (a NEW remote value, or stopped-then-restarted-then-
+# stopped-again) resets this back to False.
+_pifinder_service_notice_dismissed = False
+
 # Direct request (2026-09-11): "Die gelbe Meldung nervt ungemein. Die
 # brauchen wir wirklich nur beim ersten Start. Dann nicht mehr." -
 # indi_pifinder_simulator's own STARTUP_DEFAULT_SOURCE is computed fresh on
@@ -1564,7 +1665,10 @@ def _save_mount_bridge_desired_state():
             "mb_desired_coupling_action": _mb_desired_coupling_action,
             "mb_desired_connected": _mb_desired_connected,
             "maintenance_mode_since": _maintenance_mode_since,
+            "maintenance_mode_profile": _maintenance_mode_profile,
             "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
+            "pifinder_service_auto_stopped_for_remote": _pifinder_service_auto_stopped_for_remote,
+            "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1579,7 +1683,8 @@ def _load_mount_bridge_desired_state():
     just means "nothing configured yet", the same as a fresh install."""
     global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
-    global _sim_mismatch_ever_resolved
+    global _maintenance_mode_profile, _sim_mismatch_ever_resolved
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1593,7 +1698,10 @@ def _load_mount_bridge_desired_state():
     _mb_desired_coupling_action = data.get("mb_desired_coupling_action")
     _mb_desired_connected = data.get("mb_desired_connected")
     _maintenance_mode_since = data.get("maintenance_mode_since")
+    _maintenance_mode_profile = data.get("maintenance_mode_profile")
     _sim_mismatch_ever_resolved = data.get("sim_mismatch_ever_resolved", False)
+    _pifinder_service_auto_stopped_for_remote = data.get("pifinder_service_auto_stopped_for_remote")
+    _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
@@ -1660,6 +1768,17 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     once makes a failure harder to attribute to any one of them."""
     global _mb_readiness_gave_up, _mb_readiness_consecutive_fails
     global _mb_readiness_follow_mount_consecutive_fails, _mb_readiness_follow_mount_gave_up_target
+
+    # Maintenance mode (2026-09-11/12): this Control Center's own driver
+    # self-healing is one of the three things maintenance mode stops (see
+    # /api/maintenance_mode_toggle's own comment) - found live 2026-09-12
+    # that this gate had only ever been added to
+    # _pifinder_lx200_auto_reconnect(), not here, which is exactly why
+    # disconnecting devices alone didn't stop them from being reconnected:
+    # Check 1 below restarts the Mount Bridge driver whenever it isn't
+    # running at all, with no maintenance-mode awareness.
+    if _maintenance_mode_since is not None:
+        return
 
     # --- Check 1: responsive at all -------------------------------------
     # mount_bridge_status() itself can't distinguish "driver never started"
@@ -1856,6 +1975,10 @@ def _mount_bridge_readiness_watchdog(interval=5):
             _mount_bridge_readiness_self_heal(status)
         except Exception as e:  # a watchdog thread must never die silently
             _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
+        try:
+            _pifinder_service_sync_with_lx200_target()
+        except Exception as e:  # same reasoning - must never kill this thread
+            _mb_log(f"pifinder.service/LX200-target sync raised unexpectedly: {e}")
         # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
         # as the frontend's own liveDriftConfirmsRelated (PR #395), just
         # persisted permanently instead of only for the current page/process.
@@ -2960,6 +3083,9 @@ class Handler(BaseHTTPRequestHandler):
                     "device_type": _get_device_type(),
                     "maintenance_mode_since": _maintenance_mode_since,
                     "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
+                    "pifinder_service_auto_stopped_for_remote": (
+                        _pifinder_service_auto_stopped_for_remote if not _pifinder_service_notice_dismissed else None
+                    ),
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
@@ -3579,6 +3705,40 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/pifinder_service_stop_for_remote":
+            # Direct request (2026-09-12): the manual Control-host remote-
+            # address flow (applyCtrlRemoteAddress()'s own confirm()) needs
+            # to stop pifinder.service for the exact same reason
+            # _pifinder_service_sync_with_lx200_target() does it
+            # automatically in the background - found live testing the
+            # watchdog feature itself: a stop via the plain
+            # /api/pifinder_service?action=stop endpoint above left
+            # _pifinder_service_auto_stopped_for_remote unset, so neither
+            # the header notice nor the later auto-restart-once-LX200-goes-
+            # local-again logic ever engaged for a manually-triggered stop.
+            # This endpoint is the single place both paths now go through -
+            # the watchdog calls the same stop+record logic internally
+            # rather than duplicating it.
+            qs = parse_qs(parsed.query)
+            remote = qs.get("remote", [""])[0]
+            if not remote:
+                self._send_json({"success": False, "error": "missing 'remote' query param"}, status=400)
+                return
+            try:
+                _stop_pifinder_service_for_remote(remote)
+            except subprocess.TimeoutExpired:
+                self._send_json({"success": False, "error": "systemctl stop pifinder.service timed out"}, status=502)
+                return
+            except RuntimeError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(
+                f"pifinder.service stopped (requested) - PiFinder LX200 now points at remote '{remote}', "
+                "a local PiFinder isn't needed."
+            )
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
@@ -4021,45 +4181,107 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/maintenance_mode_toggle":
-            # See _maintenance_mode_since's own comment above - reuses the
-            # exact disconnect/connect primitives and _mb_desired_connected
-            # gate /api/mount_bridge_connect above already uses for a single
-            # device, just for both devices at once plus a named, persisted,
-            # visible mode. Deliberately does NOT use restart_and_retry()'s
-            # profile-restart fallback (unlike the general connect path
-            # above) - reconnecting on exit is a courtesy, not something
-            # that needs to survive a device never having loaded in the
-            # first place; the existing Setup checklist buttons remain the
-            # robust fallback for that harder case.
+            # Direct request (2026-09-11, revised 2026-09-12 after the first
+            # cut - disconnecting the two PFSM devices - turned out not to be
+            # enough): "Einfach EINEN Button der das INDI WM Profil (nicht
+            # den Server!) stopped, das KStars Profile stopped (nur das
+            # Profil!), den Health Service stopped." One button, three
+            # things, all reversed together on the way back off:
+            #
+            # 1. The INDI Web Manager's *profile* (indiserver + every driver
+            #    it launched - verified live to run as direct child
+            #    processes of the stellarmatewebmanager.service cgroup, not
+            #    a separate systemd unit) via webmanager_client.stop_server()
+            #    / start_server(). This is NOT stellarmatewebmanager.service
+            #    itself (port 8624 stays up the whole time - "the server"
+            #    the user's wording distinguishes from "the profile" - so
+            #    this Control Center can still call start_server() later).
+            # 2. KStars/Ekos's *own* profile session (org.kde.kstars.Ekos.
+            #    stop()/start() via _ekos_qdbus() - the same D-Bus calls
+            #    _ekos_start_profile() already uses elsewhere) - stops Ekos's
+            #    own INDI client without closing KStars itself.
+            # 3. This Control Center's OWN driver self-healing
+            #    (_mount_bridge_readiness_self_heal()) - gated on
+            #    _maintenance_mode_since directly, same as
+            #    _pifinder_lx200_auto_reconnect() already was. Found live
+            #    2026-09-12: that gate had only ever been added to the
+            #    LX200 watchdog, not this one, which is exactly why the
+            #    first cut of this feature (disconnect-only) didn't
+            #    actually stop things from being reconnected - Check 1 of
+            #    the self-heal restarts the Mount Bridge *driver* whenever
+            #    it's not running at all, with no maintenance-mode check.
+            #
+            # The INDI WM profile name is captured into
+            # _maintenance_mode_profile *before* stopping it, since
+            # server_status() reports no active_profile once stopped - the
+            # only place the name survives for turning this back off
+            # (including across a Control Center restart while it's on).
+            #
             # _mb_desired_connected is already declared global earlier in
             # this same do_POST method (the /api/mount_bridge_connect
             # disconnect branch above) - Python raises "assigned to before
             # global declaration" if it's redeclared global a second time
             # here, even in an unrelated branch (verified live: the interp
             # analyzes the whole function body flatly, not per-branch).
-            global _maintenance_mode_since
+            global _maintenance_mode_since, _maintenance_mode_profile
             turning_on = _maintenance_mode_since is None
             if turning_on:
+                try:
+                    profile = webmanager_client.server_status().get("active_profile")
+                except webmanager_client.WebManagerError as e:
+                    profile = None
+                    _mb_log(f"maintenance mode: could not read active INDI profile: {e}")
+                _maintenance_mode_profile = profile
                 _maintenance_mode_since = time.time()
                 _mb_desired_connected = False
-                for dev in ("PiFinder Mount Bridge", "PiFinder LX200"):
-                    try:
-                        indi_client.disconnect_device(dev)
-                    except indi_client.INDIClientError as e:
-                        _mb_log(f"maintenance mode: could not disconnect '{dev}': {e}")
-                _mb_log("Maintenance mode ON - Mount Bridge and PiFinder LX200 disconnected, "
-                        "auto-reconnect paused until turned off.")
+
+                ekos_stop = _ekos_qdbus("org.kde.kstars.Ekos.stop")
+                if ekos_stop.returncode != 0:
+                    _mb_log(f"maintenance mode: KStars/Ekos stop failed or KStars not running: "
+                            f"{ekos_stop.stderr.strip() or ekos_stop.stdout.strip()}")
+
+                try:
+                    webmanager_client.stop_server()
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"maintenance mode: could not stop INDI profile: {e}")
+
+                _mb_log("Maintenance mode ON - INDI profile and KStars/Ekos profile stopped, "
+                        "this Control Center's driver self-healing paused until turned off.")
             else:
-                _maintenance_mode_since = None
-                _mb_desired_connected = None
-                for dev in ("PiFinder Mount Bridge", "PiFinder LX200"):
+                if _maintenance_mode_profile:
                     try:
-                        indi_client.connect_device(dev)
-                    except indi_client.INDIClientError as e:
-                        _mb_log(f"maintenance mode: could not reconnect '{dev}': {e}")
+                        webmanager_client.start_server(_maintenance_mode_profile)
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"maintenance mode: could not restart INDI profile "
+                                f"'{_maintenance_mode_profile}': {e}")
+                else:
+                    _mb_log("maintenance mode: no INDI profile name was captured - "
+                            "start it manually from the Setup checklist above.")
+
+                ekos_start = _ekos_qdbus("org.kde.kstars.Ekos.start")
+                if ekos_start.returncode != 0:
+                    _mb_log(f"maintenance mode: KStars/Ekos start failed or KStars not running: "
+                            f"{ekos_start.stderr.strip() or ekos_start.stdout.strip()}")
+
+                _maintenance_mode_since = None
+                _maintenance_mode_profile = None
+                _mb_desired_connected = None
                 _mb_log("Maintenance mode OFF - reconnecting, normal self-healing resumed.")
             _save_mount_bridge_desired_state()
             self._send_json({"success": True, "maintenance_mode_since": _maintenance_mode_since})
+            return
+
+        if parsed.path == "/api/pifinder_service_notice_dismiss":
+            # Only hides the header banner - does NOT clear
+            # _pifinder_service_auto_stopped_for_remote itself, which
+            # _pifinder_service_sync_with_lx200_target() still needs intact
+            # to know it's the one that should restart pifinder.service once
+            # PiFinder LX200 goes local again (see that variable's own
+            # comment).
+            global _pifinder_service_notice_dismissed
+            _pifinder_service_notice_dismissed = True
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True})
             return
 
         if parsed.path == "/api/ekos_start_profile":
