@@ -2937,7 +2937,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, path, content_type):
+    def _send_file(self, path, content_type, no_cache=False):
         if not path.is_file():
             self.send_error(404)
             return
@@ -2945,6 +2945,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if no_cache:
+            # Found live (2026-09-12): a 404 response (this route genuinely
+            # didn't exist yet on an older, not-yet-restarted process) can
+            # get cached by the browser and keep being served on a plain
+            # reload even once the route exists - same class of staleness
+            # as "/"'s own Cache-Control above, just for an image route
+            # instead of the page itself. Not applied to every _send_file()
+            # call - most of them (logos etc.) never change and benefit from
+            # the default caching.
+            self.send_header("Cache-Control", "no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(body)
 
@@ -3012,11 +3022,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/pifinder_welcome_blue.png":
-            self._send_file(PIFINDER_WELCOME_IMAGE_BLUE, "image/png")
+            self._send_file(PIFINDER_WELCOME_IMAGE_BLUE, "image/png", no_cache=True)
             return
 
         if parsed.path == "/pifinder_welcome_red.png":
-            self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png")
+            self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
             return
 
         if parsed.path == "/state":
