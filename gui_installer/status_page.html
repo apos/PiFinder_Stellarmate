@@ -280,6 +280,34 @@
   .status-success { background: #1a4a2a; color: #7ee8a0; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
   .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
+  /* 2026-09-12, direct feedback: the PiFinder tile's OLED mirror doesn't say
+     WHICH device it's mirroring - only #pifinder-tile-loc/-role-pill inside
+     the PiFinder tile's own heading use these, not .tile-heading generally,
+     so this stays scoped to that one tile. Inline, beside the heading text
+     (not stacked below it, direct feedback: "Platz sparen... da ist Platz
+     genug, auch im Handy-Modus") - the tile is wide enough on every
+     breakpoint this page already supports. */
+  #pifinder-tile-loc {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: normal;
+    color: #777;
+    margin-left: 0.6rem;
+    vertical-align: middle;
+  }
+  #pifinder-tile-role-pill {
+    display: inline-block;
+    margin-left: 0.5rem;
+    font-size: 0.66rem;
+    font-weight: normal;
+    padding: 0.12rem 0.5rem;
+    border-radius: 10px;
+    border: 1px solid #444;
+    color: #999;
+    background: #262626;
+    vertical-align: middle;
+  }
   /* Whole-tile collapse (Mount Bridge, PiFinder Mode/Test/Power, Install or
      Update - not the PiFinder tile, which stays always-visible) - the
      heading row itself is the click target, chevron mirrors
@@ -356,14 +384,14 @@
   /* Direct request (2026-09-12): replaces the old "INDI-only" checkbox -
      device type is a fundamental, hard-to-reverse choice (it already
      determines, via updateRoleCardCapability() in the Mount Bridge tile,
-     whether "All-in-one"/"PiFinder host" stay available later), deserves
-     the same visual weight as a real decision, not a small hover-tooltip
-     checkbox. Copy deliberately avoids the Mount Bridge tile's own role
-     names ("All-in-one"/"PiFinder host"/"Control host" as GUI terms) since
-     the user doesn't know that GUI yet at install time - describes the
-     actual hardware/network setup instead. Same visual language
-     (segmented two-option row) as install_devtype_copy_mockups.html,
-     approved 2026-09-12. */
+     whether "PiFinder host" stays available later), deserves the same
+     visual weight as a real decision, not a small hover-tooltip checkbox.
+     Copy deliberately avoids the Mount Bridge tile's own role names
+     ("PiFinder host"/"Control host" as GUI terms) since the user doesn't
+     know that GUI yet at install time - describes the actual
+     hardware/network setup instead. Same visual language (segmented
+     two-option row) as install_devtype_copy_mockups.html, approved
+     2026-09-12. */
   .devtype-seg { display: flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; margin-bottom: 0.6rem; flex-wrap: wrap; }
   .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.65rem 0.8rem; cursor: pointer; }
   .devtype-seg-opt + .devtype-seg-opt { border-left: 1px solid #444; }
@@ -1184,10 +1212,17 @@
      not a derived side note the user has to hunt for. */
   #mb-role-cards {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
     margin-bottom: 0.8rem;
   }
+  /* 2026-09-12, direct feedback: "All-in-one" and "PiFinder host" turned out
+     to be the same underlying thing (local PiFinder LX200, with or without
+     the Mount Bridge driver) - deriveProfileRole() already computed that
+     from one boolean, the two-card split just made it look like a bigger
+     decision than it is. #mb-add-mount-row (below) offers coupling a mount
+     from inside the single remaining "PiFinder host" card instead. */
+  #mb-add-mount-row { margin: -0.3rem 0 0.8rem; }
   .mb-role-card {
     border: 1px solid #444;
     border-radius: 6px;
@@ -2003,7 +2038,7 @@
 <div class="page">
     <div id="pifinder-glance-tile">
       <div class="tile-heading-row" style="cursor:default;">
-        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a></h3>
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a><span id="pifinder-tile-loc" style="display:none;" title="Where the PiFinder mirrored below actually runs."></span><span id="pifinder-tile-role-pill" style="display:none;" title="This device's current role - set in the Mount Bridge tile's Settings."></span></h3>
         <div id="pf-keypad-style-switch" title="Quick keys layout">
           <button id="pf-keypad-style-a-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('a')">A</button>
           <button id="pf-keypad-style-b-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('b')">B</button>
@@ -2365,18 +2400,17 @@
       </div>
       <div id="mb-role-details" style="display:none;">
         <div id="mb-role-cards">
-          <div class="mb-role-card" id="mb-role-card-aio" onclick="onRoleCardClick('aio')" title="Classic setup: this device runs its own PiFinder and couples it to a mount connected here. Configures the profile with PiFinder LX200 (local) + Mount Bridge.">
-            <div class="mb-role-card-title">All-in-one</div>
-            <div class="mb-role-card-sub">PiFinder hardware with mount.</div>
-          </div>
-          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device only shares its PiFinder's position on the network - the mount coupling happens on a separate control host. Configures the profile with PiFinder LX200 (local) only; Mount Bridge is removed.">
+          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device runs its own PiFinder. Configures the profile with PiFinder LX200 (local); couple a mount here too with the button below, or leave it host-only and couple the mount on a separate control host.">
             <div class="mb-role-card-title">PiFinder host</div>
-            <div class="mb-role-card-sub">PiFinder only, no mount.</div>
+            <div class="mb-role-card-sub">PiFinder hardware on this device. Mount optional.</div>
           </div>
           <div class="mb-role-card" id="mb-role-card-ctrl" onclick="onRoleCardClick('ctrl')" title="This device couples a PiFinder running on ANOTHER device to a mount connected here - asks for that device's IP address. Configures the profile with PiFinder LX200 (remote) + Mount Bridge.">
             <div class="mb-role-card-title">Control host</div>
             <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
           </div>
+        </div>
+        <div id="mb-add-mount-row" style="display:none;">
+          <button id="mb-add-mount-btn" class="ql-small-btn" onclick="onRoleCardClick('aio')" title="A mount is connected to this same device - adds the PiFinder Mount Bridge driver to the profile alongside PiFinder LX200, so this device also does the coupling. Same profile, no reinstall.">+ Couple a mount</button>
         </div>
         <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
           <span class="mb-row-label">This device's IP:</span>
@@ -3052,6 +3086,13 @@ let lastSolveSuccessAgeSec = null;
 // message for the entire time pifinderScreenUrl is still null, regardless
 // of *why*.
 let lastRealServiceState = null;
+// data.mode ('fake'|'real'|'none') from the same /api/pifinder_mode poll -
+// the second signal updatePiFinderStatusAndWizardLink() needs (2026-09-12,
+// direct feedback) to tell "pifinder.service is genuinely off" apart from
+// "Fake Mode is legitimately running instead" for the wait-overlay text:
+// lastRealServiceState alone reports 'inactive' for BOTH, since Fake Mode
+// runs outside systemd entirely (see FAKE_MODE_SCRIPT's own comment).
+let lastPifinderMode = null;
 
 // Builds "camera", "IMU", or "camera/IMU" from whichever of the two is
 // actually missing - both "not functional" messages below used to hardcode
@@ -3155,11 +3196,12 @@ function updateChecklist(phaseIndex, running, exitCode) {
 // Part of the consolidated quick-links tile.
 // Capability, not role (see docs/concepts/remote_indi_coupling_split_host.md,
 // "Device role model"): a device without PiFinder installed cannot share a
-// local PiFinder, so the two roles that need one (All-in-one, PiFinder
-// host) are disabled there - the ROLE itself stays a property of the
-// selected profile (updateProfileRoleLine()).
+// local PiFinder, so the "PiFinder host" card (with or without a mount
+// coupled - see the merged-cards comment on #mb-role-cards) is disabled
+// there - the ROLE itself stays a property of the selected profile
+// (updateProfileRoleLine()).
 function updateRoleCardCapability(pifinderInstalled) {
-  for (const k of ['aio', 'host']) {
+  for (const k of ['host']) {
     const card = document.getElementById(`mb-role-card-${k}`);
     card.classList.toggle('mb-role-disabled', !pifinderInstalled);
     if (!pifinderInstalled) {
@@ -3226,17 +3268,32 @@ function updatePiFinderStatusAndWizardLink() {
   document.getElementById('mode-ampel-row').style.display = pifinderScreenUrl ? 'flex' : 'none';
   document.getElementById('pifinder-screen-waiting').classList.toggle('pifinder-screen-waiting-visible', !pifinderScreenUrl);
   if (!pifinderScreenUrl) {
-    // Only override the default "Waiting for PiFinder…" text for the two
-    // unambiguous systemd states (#192) - "inactive" is deliberately left
-    // alone, since that's also what a legitimately-up Fake Mode looks like
-    // here (lastRealServiceState only ever reflects the real pifinder.service
-    // unit, not Fake Mode's separate non-systemd process) - showing "not
-    // running" there would be actively wrong, not just unhelpful.
+    // Override the default "Waiting for PiFinder…" text for the unambiguous
+    // systemd states (#192) - "inactive" used to be left alone entirely,
+    // since that's also what a legitimately-up Fake Mode looks like to
+    // systemd (Fake Mode runs as its own non-systemd process - see
+    // FAKE_MODE_SCRIPT's own comment). lastPifinderMode (2026-09-12, direct
+    // feedback: "Waiting for PiFinder" reads as wrong when the service is
+    // simply off) is the second signal that actually distinguishes the two -
+    // only claim "off" once it agrees nothing (real or fake) is running.
+    // Both signals come straight from their own live probe (systemd,
+    // /api/status on the fake-hardware port) - deliberately NOT branched on
+    // role/deriveProfileRole() here (direct feedback, same session: never
+    // infer a component's status from something else's state when the real
+    // one can just be asked). Reads correctly in Control host too: the local
+    // service genuinely is off there, by design - stating that plainly is
+    // still accurate, not something to soften into role-based guessing.
     const waitingTextEl = document.getElementById('pifinder-screen-waiting-text');
     if (lastRealServiceState === 'activating') {
       waitingTextEl.innerHTML = 'PiFinder service<br>is starting&hellip;';
     } else if (lastRealServiceState === 'failed') {
       waitingTextEl.innerHTML = 'PiFinder service<br>failed to start';
+    } else if (lastRealServiceState === 'inactive' && lastPifinderMode === 'none') {
+      // True regardless of role (direct feedback, 2026-09-12: this also
+      // holds - and is worth saying plainly - in the Control host role,
+      // where the local service being off isn't a problem, it's the role
+      // itself; still accurate, not something to hide).
+      waitingTextEl.innerHTML = 'PiFinder service<br>is off';
     } else {
       waitingTextEl.innerHTML = 'Waiting for<br>PiFinder&hellip;';
     }
@@ -5946,8 +6003,9 @@ async function refreshMode() {
   try {
     const resp = await fetch('/api/pifinder_mode', { cache: 'no-store' });
     const data = await resp.json();
-    if (data.real_service_state !== lastRealServiceState) {
+    if (data.real_service_state !== lastRealServiceState || data.mode !== lastPifinderMode) {
       lastRealServiceState = data.real_service_state || null;
+      lastPifinderMode = data.mode || null;
       updatePiFinderStatusAndWizardLink();
     }
     if (data.transitioning) {
@@ -8587,6 +8645,40 @@ function deriveProfileRole() {
   return 'none';
 }
 
+// Direct feedback (2026-09-12): the PiFinder tile's OLED mirror gives no clue
+// WHICH device it's actually mirroring - obvious enough on a single-device
+// setup, genuinely ambiguous once a Control host is mirroring a PiFinder
+// running on a completely different machine. Adds a second line under the
+// tile's own "PiFinder" heading with where that PiFinder actually runs, plus
+// the role pill (same role name as the card/status line above - one name for
+// the same thing, not a second vocabulary). Local case shows this device's
+// own hostname (cachedHostname, populated once in init()) alongside
+// "localhost"; remote case shows whatever the Control host card's remote
+// field actually holds (wmLx200Remote - a hostname or an IP, whichever the
+// user entered; nothing here fabricates a value not already known).
+function updatePiFinderTileLocation(role) {
+  const locEl = document.getElementById('pifinder-tile-loc');
+  const pillEl = document.getElementById('pifinder-tile-role-pill');
+  if (role === 'aio' || role === 'host') {
+    locEl.textContent = cachedHostname ? `${cachedHostname} · localhost` : 'localhost';
+    locEl.style.display = '';
+    pillEl.textContent = 'PiFinder host';
+    pillEl.style.display = '';
+  } else if (role === 'ctrl' || role === 'ctrl-incomplete') {
+    if (wmLx200Remote) {
+      locEl.textContent = `${wmLx200Remote} · remote`;
+      locEl.style.display = '';
+    } else {
+      locEl.style.display = 'none';
+    }
+    pillEl.textContent = 'Control host';
+    pillEl.style.display = '';
+  } else {
+    locEl.style.display = 'none';
+    pillEl.style.display = 'none';
+  }
+}
+
 // Renders every role-dependent piece in one place: the colored role chip
 // near the tile top, which role card is marked active, and which parts of
 // the tile even apply (the "PiFinder host" role has no mount here - the
@@ -8595,16 +8687,19 @@ function deriveProfileRole() {
 function updateProfileRoleLine() {
   const el = document.getElementById('mb-role-line');
   const role = deriveProfileRole();
-  for (const k of ['aio', 'host', 'ctrl']) {
-    document.getElementById(`mb-role-card-${k}`).classList.toggle(
-      'mb-role-active', role === k || (k === 'ctrl' && role === 'ctrl-incomplete')
-    );
-  }
+  // Single "PiFinder host" card now covers both local-with-mount ('aio') and
+  // local-without-mount ('host') - see the merged-cards comment on
+  // #mb-role-cards. Whether a mount is actually coupled is a detail of that
+  // one role, not a separate card to pick.
+  document.getElementById('mb-role-card-host').classList.toggle('mb-role-active', role === 'aio' || role === 'host');
+  document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
   const hostMode = role === 'host';
+  document.getElementById('mb-add-mount-row').style.display = hostMode ? '' : 'none';
   document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
+  updatePiFinderTileLocation(role);
   // The status line/diagram/caption are entirely derived from Mount
   // Bridge's own reported state (PiFinder/Bridge/Mount connection, drift,
   // coupling mode) - none of that is obtainable in the PiFinder-host role,
@@ -8631,12 +8726,12 @@ function updateProfileRoleLine() {
   let detail = '';
   let warn = '';
   let ok = true;
-  if (role === 'aio') {
-    roleName = 'All-in-one';
-    detail = `coupled to ${mountName}`;
-  } else if (role === 'host') {
+  if (role === 'aio' || role === 'host') {
+    // One role name for both - see the merged-cards comment on
+    // #mb-role-cards; only the detail clause says whether a mount happens
+    // to be coupled here too.
     roleName = 'PiFinder host';
-    detail = 'sharing PiFinder position only';
+    detail = role === 'aio' ? `coupled to ${mountName}` : 'sharing PiFinder position only';
   } else if (role === 'ctrl') {
     roleName = 'Control host';
     detail = `coupled to ${wmLx200Remote} + ${mountName}`;
@@ -8685,7 +8780,11 @@ function updateProfileRoleLine() {
 // every change shows up in the log identically.
 async function onRoleCardClick(kind) {
   if (mbActionInFlight) return;
-  const card = document.getElementById(`mb-role-card-${kind}`);
+  // 'aio' has no card of its own anymore (see the merged-cards comment on
+  // #mb-role-cards) - "+ Couple a mount" calls this with kind:'aio' while
+  // #mb-role-card-host is the one actually on screen, so the capability
+  // check below needs to look there instead.
+  const card = document.getElementById(`mb-role-card-${kind === 'aio' ? 'host' : kind}`);
   if (card.classList.contains('mb-role-disabled')) {
     await ccNoticeBanner(card.title);
     return;
@@ -8697,7 +8796,7 @@ async function onRoleCardClick(kind) {
   const profile = wmSelectedProfile;
   const actions = [];
   if (kind === 'aio') {
-    if (!(await ccConfirmBanner(`Configure profile "${profile}" as All-in-one? PiFinder LX200 (this device's own PiFinder) + Mount Bridge. The running profile is restarted to apply changes.`))) return;
+    if (!(await ccConfirmBanner(`Couple a mount to profile "${profile}"? Adds PiFinder Mount Bridge alongside PiFinder LX200 (this device's own PiFinder). The running profile is restarted to apply changes.`))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
   } else if (kind === 'host') {
