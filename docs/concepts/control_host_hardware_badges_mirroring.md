@@ -47,6 +47,17 @@ would make the parameter look like it applies to all three when it only ever wou
   rest of the app keeps running) - see its own docstring.
 - **IMU badge** → `_imu_hardware_present()` - a raw I2C scan (`_IMU_SCAN_SCRIPT`) against *this
   machine's own* I2C bus.
+- **PiFinder orientation badge** (Mount Type / PiFinder Type, next to the Cam/Solve/IMU/GPS row) -
+  found live (2026-09-12) testing 2a: this looked like the same kind of proxy as Solve/GPS
+  (`_pifinder_solve_status()`'s own `/api/orientation_status` call), and got the same `host` fix -
+  but PiFinder's own `server.py` (`~/PiFinder/python/PiFinder/server.py`) hardcodes
+  `request.remote_addr not in ("127.0.0.1", "::1")` on that specific route (and two others) as its
+  own security restriction, unrelated to PFSM. No `?host=` fix on this side can work around that -
+  it always 403s for a remote caller, `host` param or not. Getting this value for a remote PiFinder
+  needs the exact same thing as camera/imu: asking *that device's own* Control Center (where the
+  request genuinely comes from 127.0.0.1), not this one. Frontend already treats "reachable but
+  no orientation data" as a neutral grey "unavailable" rather than a self-contradicting green "?/?"
+  (2026-09-12 fix), so this doesn't currently mislead - it's just not implemented yet.
 
 Neither of these can be pointed at a remote IP the way a `host` parameter fixes a web-API proxy -
 `rpicam-hello` and a local I2C scan are only ever meaningful on the machine that actually has the
