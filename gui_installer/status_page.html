@@ -4924,7 +4924,7 @@ function showChoices(existingInstall) {
         <button class="install-go-btn install-go-btn-primary" onclick="start('fresh', this)">Install</button>
       </div>
     `;
-    advInner.innerHTML = resetCard + uninstallCard;
+    advInner.innerHTML = uninstallCard + resetCard;
     return;
   }
   // No "Cancel"/"Close Setup" choice here - this webserver is meant to just
@@ -4948,7 +4948,7 @@ function showChoices(existingInstall) {
         <button class="install-go-btn install-go-btn-primary" onclick="start('update', this)">Update</button>
       </div>
     `;
-    advInner.innerHTML = resetCard + `
+    advInner.innerHTML = `
       <div class="install-action-card install-action-card-danger">
         <div>
           <div class="install-action-title">Reinstall from scratch</div>
@@ -4956,7 +4956,7 @@ function showChoices(existingInstall) {
         </div>
         <button class="install-go-btn install-go-btn-danger" onclick="start('reinstall', this)">Reinstall from scratch</button>
       </div>
-    ` + uninstallCard;
+    ` + uninstallCard + resetCard;
   } else {
     el.innerHTML = `
       <div class="install-action-card install-action-card-primary">
@@ -4971,7 +4971,7 @@ function showChoices(existingInstall) {
     // as a defensive no-op-if-clean safety net for leftover state from a
     // previous, incomplete attempt (unchanged from the pre-2026-09-12
     // behavior, which already showed it here too).
-    advInner.innerHTML = resetCard + uninstallCard;
+    advInner.innerHTML = uninstallCard + resetCard;
   }
 }
 
