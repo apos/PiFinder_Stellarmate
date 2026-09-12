@@ -1116,16 +1116,6 @@
     gap: 0.5rem;
     margin: 0.7rem 0 0.9rem;
   }
-  /* Same layout as #mode-ampel-row above - deliberately a separate row, not
-     merged into it (see the row's own HTML comment for why: visibility here
-     must NOT be tied to PiFinder's own reachability). */
-  #ekos-wm-ampel-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 0.9rem;
-  }
   /* Direct feedback (2026-09-12): "Die Badges des PiFinder haben eine
      andere Größe, als die der Mount Bridge... Das sollte gleich groß sein."
      Padding/font-size now match .mb-node exactly (the icon itself,
@@ -1385,9 +1375,16 @@
      this hue on the page, reads as its own identity); amber for Ekos - the
      same #e0a030 already used KStars-side elsewhere (e.g. step 2's own
      warning color). */
-  .src-tag { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; padding: 0.05rem 0.35rem; border-radius: 3px; margin-right: 0.4rem; vertical-align: 1px; }
+  .src-tag { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; padding: 0.05rem 0.35rem; border-radius: 3px; margin-right: 0.4rem; vertical-align: 1px; display: inline-flex; align-items: center; gap: 0.2rem; }
   .src-tag-wm { color: #6fa8dc; border: 1px solid #2d5578; background: #12202e; }
   .src-tag-ekos { color: #e0a030; border: 1px solid #4a3f20; background: #1c1a12; }
+  /* Same monitor/server-rack shapes as the Ekos/INDI WM status badges
+     elsewhere on the page (2026-09-12, direct feedback: "vielleicht führen
+     wir bei dieser Gelegenheit auch gleich ein Symbol ein" - these tags were
+     text-only) - color comes from currentColor, inheriting .src-tag-wm/
+     -ekos's own fixed identity color, not a live status color like the
+     badges' state-driven one. */
+  .src-tag-icon { width: 11px; height: 11px; flex-shrink: 0; }
   .mb-step-key-star { flex-shrink: 0; }
   /* Icon-first status row: the three nodes carry connection state via the
      icon's own color (no separate dot anymore), and the drift readout sits
@@ -1519,6 +1516,33 @@
     min-width: 2.2rem;
     text-align: center;
   }
+  /* Ekos/INDI Web Manager status, attached directly to the Bridge node
+     (2026-09-12, direct feedback: these were briefly their own full-width
+     row - "das gehört in eine Reihe in die Sektion Mount-Bridge... die
+     Beziehung zwischen den Komponenten sollte man sehen" - mockup "C" was
+     picked because Bridge genuinely IS the thing WM starts and Ekos talks
+     to, unlike PiFinder/Mount which don't depend on either). Deliberately
+     smaller than .mode-ampel-badge - these are Bridge's own sub-status, not
+     peers of the PiFinder/Bridge/Mount chain nodes. */
+  .mb-node-nest-wrap { display: flex; flex-direction: column; align-items: center; }
+  .mb-node-nest-stem { width: 1px; height: 6px; background: #3a3a3a; }
+  .mb-node-nest-row { display: flex; gap: 0.3rem; }
+  .mb-node-nest-badge {
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    padding: 0.2rem 0.35rem;
+    background: #1c1c1c;
+    font-size: 0.58rem;
+    color: #888;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    white-space: nowrap;
+  }
+  /* Same color states/pulse as .mode-ampel-icon (setAmpelIconState() drives
+     both alike) - just smaller, so this comes after .mode-ampel-icon in the
+     cascade rather than duplicating its color rules. */
+  .mode-ampel-icon.mb-nest-icon { width: 13px; height: 13px; }
   /* Drift readout - kept at full size next to the Bridge node (not an
      absolute-positioned corner badge anymore). Green/yellow/red thresholds:
      green up to the configured Auto-correct/Verify-Alert threshold, yellow
@@ -2224,35 +2248,6 @@
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           </div>
         </div>
-        <!-- Direct feedback (2026-09-12): "es fehlt schlicht und ergreifend
-             eine Badge für EKOS und eine für den INDI WM... würde man hier
-             sehen, ob EKOS und der INDI WM auch wirklich funktionieren
-             (selbes Farbschema), hätte man sofort einen Überblick." Deliberately
-             its own row, NOT inside #mode-ampel-row above - that row hides
-             entirely whenever PiFinder itself is unreachable (see its own
-             comment), but Ekos/Web Manager are KStars/Mount-Bridge-side
-             concerns, completely independent of whether PiFinder answers -
-             hiding them together would lose exactly the "is the rest of the
-             chain OK" overview this exists for. Same .mode-ampel-badge look
-             as the row above, always visible. -->
-        <div id="ekos-wm-ampel-row">
-          <div class="mode-ampel-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
-            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-            </svg>
-            <span>Ekos</span>
-          </div>
-          <div class="mode-ampel-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
-            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-              <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-              <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
-              <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
-            </svg>
-            <span>INDI WM</span>
-          </div>
-        </div>
         <!-- Showstopper banners (2026-09-09) - see .showstopper-card's CSS
              comment above for why this is a wrapper, not a fixed single
              card: renderShowstoppers() fills this with one card per
@@ -2302,12 +2297,39 @@
           <span>PiFinder</span>
         </div>
         <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
-          <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-            <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-          </svg>
-          <span>Bridge</span>
+        <div class="mb-node-nest-wrap">
+          <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
+            <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg>
+            <span>Bridge</span>
+          </div>
+          <div class="mb-node-nest-stem"></div>
+          <!-- Ekos/INDI Web Manager (2026-09-12, direct feedback: "das
+               gehört in eine Reihe in die Sektion Mount-Bridge... die
+               Beziehung zwischen den Komponenten sollte man sehen" - hung
+               directly off Bridge rather than a free-floating row, since
+               Bridge is literally the INDI driver WM starts and Ekos talks
+               to; PiFinder/Mount don't depend on either the same way). -->
+          <div class="mb-node-nest-row">
+            <div class="mb-node-nest-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
+              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              <span>Ekos</span>
+            </div>
+            <div class="mb-node-nest-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
+              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
+                <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
+              </svg>
+              <span>WM</span>
+            </div>
+          </div>
         </div>
         <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera).">
           <span id="mb-drift-value">0.0'</span>
@@ -7256,10 +7278,11 @@ let wmKstarsLinked = null;
 let wmEkosConnected = null;  // null = unknown/KStars not running - see checkEkosStatus()
 // Whether the Web Manager service itself answered on the most recent
 // loadWmProfiles() poll - null only until the very first poll resolves,
-// after that always true/false (see #ekos-wm-ampel-row's own comment).
+// after that always true/false (see .mb-node-nest-row's own HTML comment).
 let wmReachable = null;
 
-// Shared by the two badges in #ekos-wm-ampel-row - same color mapping as
+// Shared by the two nested badges under the Bridge node (.mb-node-nest-row)
+// - same color mapping as
 // setHwDot() uses for the badges in #mode-ampel-row, just without that
 // function's "also sync a paired detail-row dot" step (Ekos/Web Manager have
 // no such detail-row dot to sync with here).
@@ -9205,20 +9228,27 @@ function updateStepIndicators() {
 // createElement/textContent, not innerHTML string interpolation, since
 // wmSelectedProfile is a user-chosen Web Manager profile name (arbitrary
 // text) that must never be parsed as markup.
+// Same icon shapes as #mode-ampel-ekos-icon/#mode-ampel-wm-icon (and the
+// Bridge-node nested badges) - fixed markup, not derived from any variable,
+// so setting it via innerHTML here doesn't reopen the wmSelectedProfile
+// markup-injection concern the surrounding comment is about.
+const SRC_TAG_ICON_WM = '<svg class="src-tag-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>';
+const SRC_TAG_ICON_EKOS = '<svg class="src-tag-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 function updateProfileSourceTags() {
-  const build = (containerId, tagClass, tagText) => {
+  const build = (containerId, tagClass, tagText, iconSvg) => {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
     if (!wmSelectedProfile) return;
     const tag = document.createElement('span');
     tag.className = `src-tag ${tagClass}`;
-    tag.textContent = tagText;
+    tag.innerHTML = iconSvg;
+    tag.appendChild(document.createTextNode(tagText));
     container.appendChild(tag);
     container.appendChild(document.createTextNode(wmSelectedProfile));
   };
-  build('wm-mount-profile-tag', 'src-tag-wm', 'INDI WM');
-  build('wm-ekos-profile-tag', 'src-tag-ekos', 'EKOS');
+  build('wm-mount-profile-tag', 'src-tag-wm', 'INDI WM', SRC_TAG_ICON_WM);
+  build('wm-ekos-profile-tag', 'src-tag-ekos', 'EKOS', SRC_TAG_ICON_EKOS);
 }
 
 // Compact mirror of the Setup checklist's own 5 config-vs-live steps, shown
