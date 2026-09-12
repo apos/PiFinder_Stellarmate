@@ -1812,6 +1812,25 @@
   @media (max-width: 767px) {
     #cc-restart-confirm-banner { padding: 0.5rem 0.8rem; }
   }
+  /* Generalizes #cc-restart-confirm-banner's own pattern (direct feedback,
+     2026-09-12, after still hitting a native confirm() on the role cards:
+     "Halte dich an die Vorgaben") - one reusable banner (ccConfirmBanner()/
+     ccNoticeBanner() below) instead of every action growing its own
+     one-off copy of the same markup. Same flush-strip look as every other
+     header banner. */
+  #cc-generic-confirm-banner {
+    background: #2a2214;
+    color: #ddd0b0;
+    border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #cc-generic-confirm-banner { padding: 0.5rem 0.8rem; }
+  }
   #cc-take-control-btn {
     background: #e0a030;
     color: #221a00;
@@ -1958,6 +1977,11 @@
   <span id="cc-restart-confirm-text">Restart the Control Center now? Unsaved changes on this page (e.g. an edited remote address) will be lost.</span>
   <button id="cc-restart-confirm-btn" class="ql-small-btn" onclick="confirmRestartControlCenter()">Restart now</button>
   <button id="cc-restart-cancel-btn" class="ql-small-btn" onclick="cancelRestartControlCenter()">Cancel</button>
+</div>
+<div id="cc-generic-confirm-banner" style="display:none;">
+  <span id="cc-generic-confirm-text"></span>
+  <button id="cc-generic-confirm-yes-btn" class="ql-small-btn" onclick="_ccGenericBannerAnswer(true)"></button>
+  <button id="cc-generic-confirm-no-btn" class="ql-small-btn" onclick="_ccGenericBannerAnswer(false)">Cancel</button>
 </div>
 <div id="stale-page-banner" style="display:none;">
   <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
@@ -4664,7 +4688,7 @@ async function toggleDisplayBridge() {
   const conflict = wantEnable
     ? 'This also means a real PiFinder HAT (OLED/keypad) cannot be used at the same time - they need the same GPIO lines.'
     : 'PiFinder will go back to normal (real HAT) operation after the reboot.';
-  if (!confirm(`Really ${verb} the external LCD? This edits /boot/config.txt and reboots the Pi now. ${conflict}`)) return;
+  if (!(await ccConfirmBanner(`Really ${verb} the external LCD? This edits /boot/config.txt and reboots the Pi now. ${conflict}`))) return;
   const action = wantEnable ? 'start' : 'stop';
   const btn = document.getElementById('display-toggle-btn');
   const stateEl = document.getElementById('display-status-state');
@@ -4676,7 +4700,7 @@ async function toggleDisplayBridge() {
     const resp = await fetch('/api/display_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();
     if (!data.success) {
-      alert('Could not toggle the LCD overlay: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not toggle the LCD overlay: ' + (data.error || 'unknown error'));
       refreshDisplayBridge();
       return;
     }
@@ -4739,7 +4763,7 @@ async function toggleKeyboardBridge() {
     const resp = await fetch('/api/keyboard_bridge?action=' + action, { method: 'POST' });
     const data = await resp.json();
     if (!data.success) {
-      alert('Could not toggle the numpad bridge: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not toggle the numpad bridge: ' + (data.error || 'unknown error'));
     }
   } catch (e) {
     // fall through to refreshKeyboardBridge() below either way
@@ -5010,11 +5034,11 @@ async function manualRefreshBranchInfo(btn) {
 
 async function start(action) {
   if (action === 'reinstall' &&
-      !confirm('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.')) {
+      !(await ccConfirmBanner('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.'))) {
     return;
   }
   if (action === 'update' &&
-      !confirm('Update? This runs "git reset --hard" on ~/PiFinder, discarding any local changes there.')) {
+      !(await ccConfirmBanner('Update? This runs "git reset --hard" on ~/PiFinder, discarding any local changes there.'))) {
     return;
   }
   document.getElementById('choices').style.display = 'none';
@@ -5168,7 +5192,7 @@ async function watchForNewRun() {
 }
 
 async function reboot() {
-  if (!confirm('Reboot the Pi now?')) return;
+  if (!(await ccConfirmBanner('Reboot the Pi now?'))) return;
   const btn = document.getElementById('reboot-button');
   btn.disabled = true;
   btn.textContent = 'Rebooting…';
@@ -5178,7 +5202,7 @@ async function reboot() {
     if (!data.rebooting) {
       btn.disabled = false;
       btn.textContent = 'Reboot Now';
-      alert('Could not reboot: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not reboot: ' + (data.error || 'unknown error'));
       return;
     }
   } catch (e) {
@@ -5249,10 +5273,10 @@ async function toggleMaintenanceMode() {
       applyMaintenanceModeState(data.maintenance_mode_since);
   if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
     } else {
-      alert('Could not change maintenance mode: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not change maintenance mode: ' + (data.error || 'unknown error'));
     }
   } catch (e) {
-    alert('Could not change maintenance mode: unreachable.');
+    await ccNoticeBanner('Could not change maintenance mode: unreachable.');
   }
   btn.disabled = false;
   if (headerBtn) headerBtn.disabled = false;
@@ -5309,7 +5333,7 @@ async function powerAction(kind) {
   const message = polling
     ? `⚠ A setup/update run is currently in progress! ${verb}ing now would interrupt it and could leave the installation in a broken state - there's no way to stop it once started, only to wait it out. Really ${verb.toLowerCase()} anyway?`
     : `${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`;
-  if (!confirm(message)) return;
+  if (!(await ccConfirmBanner(message))) return;
   const rebootBtn = document.getElementById('power-reboot-btn');
   const poweroffBtn = document.getElementById('power-poweroff-btn');
   const btn = isReboot ? rebootBtn : poweroffBtn;
@@ -5324,7 +5348,7 @@ async function powerAction(kind) {
       rebootBtn.disabled = false;
       poweroffBtn.disabled = false;
       updatePowerButtonLabels();
-      alert(`Could not ${verb.toLowerCase()}: ` + (data.error || 'unknown error'));
+      await ccNoticeBanner(`Could not ${verb.toLowerCase()}: ` + (data.error || 'unknown error'));
       return;
     }
   } catch (e) {
@@ -5332,6 +5356,49 @@ async function powerAction(kind) {
     // accepted the request - treat it the same as a confirmed action.
   }
   watchForServerLoss();
+}
+
+// Generic replacement for confirm()/alert() (2026-09-12, direct feedback
+// after still hitting a native confirm() dialog on the role cards: "Halte
+// dich an die Vorgaben") - generalizes #cc-restart-confirm-banner's own
+// one-off pattern into something every other action can reuse instead of
+// growing its own copy. Both helpers return a Promise, so callers need
+// `await` (making a non-async caller `async` where it wasn't already).
+let _ccGenericBannerResolve = null;
+
+// Confirm/Cancel - resolves true on Confirm, false on Cancel. Mirrors what
+// `if (!confirm(msg)) return;` used to do: `if (!(await ccConfirmBanner(msg))) return;`
+function ccConfirmBanner(message, confirmLabel) {
+  return new Promise((resolve) => {
+    document.getElementById('cc-generic-confirm-text').textContent = message;
+    const yesBtn = document.getElementById('cc-generic-confirm-yes-btn');
+    yesBtn.textContent = confirmLabel || 'Confirm';
+    yesBtn.style.display = '';
+    document.getElementById('cc-generic-confirm-no-btn').style.display = '';
+    document.getElementById('cc-generic-confirm-banner').style.display = 'flex';
+    _ccGenericBannerResolve = resolve;
+  });
+}
+
+// Single acknowledgement button, no Cancel - replaces a plain alert(msg)
+// (an error, or a "here's what happened" notice with nothing to confirm).
+function ccNoticeBanner(message, dismissLabel) {
+  return new Promise((resolve) => {
+    document.getElementById('cc-generic-confirm-text').textContent = message;
+    const yesBtn = document.getElementById('cc-generic-confirm-yes-btn');
+    yesBtn.textContent = dismissLabel || 'Dismiss';
+    yesBtn.style.display = '';
+    document.getElementById('cc-generic-confirm-no-btn').style.display = 'none';
+    document.getElementById('cc-generic-confirm-banner').style.display = 'flex';
+    _ccGenericBannerResolve = resolve;
+  });
+}
+
+function _ccGenericBannerAnswer(value) {
+  document.getElementById('cc-generic-confirm-banner').style.display = 'none';
+  const resolve = _ccGenericBannerResolve;
+  _ccGenericBannerResolve = null;
+  if (resolve) resolve(value);
 }
 
 // Manual way to trigger the same restart path a successful install/update
@@ -5399,7 +5466,7 @@ async function installAction(kind) {
   const message = isUninstall
     ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
     : 'Reset PiFinder? This briefly stops PiFinder\'s core services, then wipes the Python venv/build state. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Ready for a fresh setup run afterward.';
-  if (!confirm(message)) return;
+  if (!(await ccConfirmBanner(message))) return;
   // install-reset-btn is rendered by showChoices() now (2026-09-04, so it
   // always sits in the same button row as Reinstall/Update/Start Install -
   // see that function's own comment), not static HTML - null-guarded here
@@ -5419,7 +5486,7 @@ async function installAction(kind) {
         if (resetBtn) resetBtn.disabled = false;
         uninstallBtn.disabled = false;
         btn.textContent = 'Uninstall';
-        alert('Could not start uninstall: ' + (data.error || 'unknown error'));
+        await ccNoticeBanner('Could not start uninstall: ' + (data.error || 'unknown error'));
         return;
       }
       // Streams live into the shared Terminal like Reset, for as long as
@@ -5450,7 +5517,7 @@ async function installAction(kind) {
       resetBtn.disabled = false;
       uninstallBtn.disabled = false;
       btn.textContent = 'Reset';
-      alert('Could not start reset: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not start reset: ' + (data.error || 'unknown error'));
       return;
     }
     if (!polling && !hwTestPolling && !modeLogPolling) {
@@ -5471,7 +5538,7 @@ async function installAction(kind) {
       resetBtn.disabled = false;
       uninstallBtn.disabled = false;
       btn.textContent = 'Reset';
-      alert('Reset request failed.');
+      await ccNoticeBanner('Reset request failed.');
     }
   }
 }
@@ -5490,7 +5557,7 @@ async function pollResetLog() {
     document.getElementById('install-reset-btn').disabled = false;
     document.getElementById('install-uninstall-btn').disabled = false;
     document.getElementById('install-reset-btn').textContent = 'Reset';
-    alert('Lost connection while resetting.');
+    await ccNoticeBanner('Lost connection while resetting.');
     return;
   }
   if (data.lines.length > 0) {
@@ -5509,9 +5576,9 @@ async function pollResetLog() {
     document.getElementById('install-uninstall-btn').disabled = false;
     document.getElementById('install-reset-btn').textContent = 'Reset';
     if (data.exit_code === 0) {
-      alert('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
+      await ccNoticeBanner('Reset complete - venv/build state cleared. Run the setup script again to rebuild.');
     } else {
-      alert('Reset failed - see the terminal output above for details.');
+      await ccNoticeBanner('Reset failed - see the terminal output above for details.');
     }
   }
 }
@@ -5559,7 +5626,7 @@ async function pollUninstallLog() {
 // recover a crashed/hung Real Mode instance without a full mode round-trip.
 async function pifinderServiceAction(action) {
   if (action !== 'start' &&
-      !confirm(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`)) {
+      !(await ccConfirmBanner(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`))) {
     return;
   }
   const btns = ['pifinder-svc-start-btn', 'pifinder-svc-stop-btn', 'pifinder-svc-restart-btn'].map((id) => document.getElementById(id));
@@ -5949,7 +6016,7 @@ async function toggleMode() {
   const action = wantFake ? 'enable_fake' : 'disable_fake';
   const verb = wantFake ? 'switch to Fake Mode (stops the real pifinder.service)'
                         : 'switch to Real Mode (stops the fake-hardware instance)';
-  if (!confirm(`Really ${verb}?`)) return;
+  if (!(await ccConfirmBanner(`Really ${verb}?`))) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
   dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
@@ -5967,7 +6034,7 @@ async function toggleMode() {
     const resp = await fetch('/api/pifinder_mode?action=' + action, { method: 'POST' });
     const data = await resp.json();
     if (!data.started) {
-      alert('Could not switch mode: ' + (data.error || 'unknown error'));
+      await ccNoticeBanner('Could not switch mode: ' + (data.error || 'unknown error'));
       refreshMode();
       return;
     }
@@ -8620,21 +8687,21 @@ async function onRoleCardClick(kind) {
   if (mbActionInFlight) return;
   const card = document.getElementById(`mb-role-card-${kind}`);
   if (card.classList.contains('mb-role-disabled')) {
-    alert(card.title);
+    await ccNoticeBanner(card.title);
     return;
   }
   if (!wmSelectedProfile) {
-    alert('Pick a profile in step 1 first.');
+    await ccNoticeBanner('Pick a profile in step 1 first.');
     return;
   }
   const profile = wmSelectedProfile;
   const actions = [];
   if (kind === 'aio') {
-    if (!confirm(`Configure profile "${profile}" as All-in-one?\n\nPiFinder LX200 (this device's own PiFinder) + Mount Bridge. The running profile is restarted to apply changes.`)) return;
+    if (!(await ccConfirmBanner(`Configure profile "${profile}" as All-in-one? PiFinder LX200 (this device's own PiFinder) + Mount Bridge. The running profile is restarted to apply changes.`))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
   } else if (kind === 'host') {
-    if (!confirm(`Configure profile "${profile}" as PiFinder host?\n\nOnly PiFinder LX200 (this device's own PiFinder) stays in the profile - Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`)) return;
+    if (!(await ccConfirmBanner(`Configure profile "${profile}" as PiFinder host? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
   } else {
@@ -8668,7 +8735,7 @@ async function onRoleCardClick(kind) {
       if (!data.success) throw new Error(data.error || 'failed');
     }
   } catch (e) {
-    alert('Could not configure the role: ' + e.message);
+    await ccNoticeBanner('Could not configure the role: ' + e.message);
   }
   pollMbLog();
   await refreshWmDriverButtons();
@@ -8732,7 +8799,7 @@ async function applyCtrlRemoteAddress() {
     return;
   }
   if (!wmSelectedProfile) {
-    alert('Pick a profile in step 1 first.');
+    await ccNoticeBanner('Pick a profile in step 1 first.');
     return;
   }
   // Direct request (2026-09-12): pointing PiFinder LX200 at a remote device
@@ -8745,11 +8812,9 @@ async function applyCtrlRemoteAddress() {
   // asking, which is exactly what this confirm() is here to avoid for a
   // deliberate, user-initiated change like this one).
   if (lastRealServiceState === 'active') {
-    if (!confirm(
-      `Pointing PiFinder LX200 at "${value}" also stops this device's own local PiFinder Service ` +
-      `(pifinder.service) - it isn't needed once PiFinder LX200 points elsewhere.\n\n` +
-      `Stop it and continue?`
-    )) {
+    if (!(await ccConfirmBanner(
+      `Pointing PiFinder LX200 at "${value}" also stops this device's own local PiFinder Service (pifinder.service) - it isn't needed once PiFinder LX200 points elsewhere. Stop it and continue?`
+    ))) {
       _setCtrlRemoteResult('Cancelled - local PiFinder Service left running, remote address not applied.', null);
       return;
     }
