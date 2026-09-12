@@ -3441,10 +3441,18 @@ function updatePiFinderStatusAndWizardLink() {
     // FAKE_MODE_PORT in server.py) - this is genuinely a different, non-real
     // PiFinder process, not just a degraded real one, so it gets its own
     // wording rather than reusing the mode-tile's "degraded" yellow text.
+    // Control host (2026-09-12, direct feedback: "PiFinder ist running ->
+    // da fehlt die Info, welcher das ist" - ambiguous next to a tile that's
+    // mirroring a completely different device) - remote suffix everywhere
+    // below. lastHwCamera/lastHwImu only ever reflect THIS device's own
+    // hardware (category 2b, not yet built), so the "not functional"
+    // camera/IMU branch is meaningless here too - never shown when remote,
+    // same reasoning as setHwRow()/applyHwTestRow()'s own gate.
+    const remoteSuffix = isControlHostRole() ? ' (remote)' : '';
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = 'PiFinder is running (Fake Mode)';
-    } else if (lastHwCamera === false || lastHwImu === false) {
+      textEl.textContent = `PiFinder is running (Fake Mode)${remoteSuffix}`;
+    } else if (!isControlHostRole() && (lastHwCamera === false || lastHwImu === false)) {
       // Reachable (web server/OLED mirror up) does not mean functional - the
       // real instance keeps running fine even with no camera/IMU attached
       // (same known upstream issue the mode tile already accounts for).
@@ -3453,7 +3461,7 @@ function updatePiFinderStatusAndWizardLink() {
       textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Simulation, Test and Power)`;
     } else {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = 'PiFinder is running';
+      textEl.textContent = `PiFinder is running${remoteSuffix}`;
     }
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
@@ -3488,12 +3496,18 @@ function refreshSystemLoad() {
     // doing that division yourself (direct user feedback, 2026-08-04).
     // Uncapped on purpose: >100% is real oversubscription, not a bug.
     const tempSuffix = data.temp_c != null ? `, ${data.temp_c}°C` : '';
+    // /api/system_load always reads THIS device's own os.getloadavg() - on a
+    // Control host that's a different machine from the PiFinder shown right
+    // above it, so leaving it unlabeled reads as if it described the
+    // remote's load. Direct feedback (2026-09-12): "CPU/Temp info - auch
+    // hier müssen wir zwischen Remote und lokal unterscheiden."
+    const prefix = isControlHostRole() ? 'This device: ' : '';
     if (data.high) {
       dotEl.className = 'status-dot dot-red';
-      textEl.textContent = `High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
+      textEl.textContent = `${prefix}High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
     } else {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = `Normal (${data.percent}% CPU${tempSuffix})`;
+      textEl.textContent = `${prefix}Normal (${data.percent}% CPU${tempSuffix})`;
     }
   }).catch(() => {});
 }
@@ -6356,6 +6370,18 @@ let lastHwTestResult = { camera: null, imu: null, gps: null };
 function setHwRow(key, present) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
+  // Camera/IMU only ever check THIS device's own hardware (category 2b, not
+  // yet built) - on a Control host that's simply not the PiFinder being
+  // shown above, so showing this device's own (irrelevant) reading here
+  // would be actively wrong, not just unhelpful. Found live (2026-09-12,
+  // UTM Control host testing): "Camera und IMU stimmen nicht."
+  if ((key === 'camera' || key === 'imu') && isControlHostRole()) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'not available for a remote PiFinder yet';
+    const detailEl = document.getElementById('hw-' + key + '-detail');
+    if (detailEl) detailEl.textContent = '';
+    return;
+  }
   const tested = lastHwTestResult[key];
   if (tested && tested.status !== 'absent' && present !== false) {
     return; // keep showing the richer, already-classified Test Hardware result
@@ -8929,6 +8955,18 @@ function deriveProfileRole() {
   return 'none';
 }
 
+// This device is a Control host with no PiFinder hardware of its own by
+// design (see the role card's own text: "No PiFinder hardware used on this
+// device") - Camera/IMU/CPU checks that only ever read THIS device's local
+// hardware (docs/concepts/control_host_hardware_badges_mirroring.md,
+// category 2b - not yet built) are therefore never meaningful here and must
+// say so honestly rather than showing this device's own (irrelevant)
+// reading as if it described the remote PiFinder.
+function isControlHostRole() {
+  const role = deriveProfileRole();
+  return role === 'ctrl' || role === 'ctrl-incomplete';
+}
+
 // Direct feedback (2026-09-12): the PiFinder tile's OLED mirror gives no clue
 // WHICH device it's actually mirroring - obvious enough on a single-device
 // setup, genuinely ambiguous once a Control host is mirroring a PiFinder
@@ -9462,6 +9500,15 @@ function applyHwTestRow(key, result) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
   const detailEl = document.getElementById('hw-' + key + '-detail');
+  // Same reasoning as setHwRow()'s own comment - the functional test
+  // (rpicam-hello/I2C scan) only ever runs against THIS device's hardware,
+  // never the remote PiFinder's.
+  if ((key === 'camera' || key === 'imu') && isControlHostRole()) {
+    setHwDot(dotEl, 'status-dot dot-white');
+    textEl.textContent = 'not available for a remote PiFinder yet';
+    detailEl.textContent = '';
+    return;
+  }
   if (!result) return;
   if (result.status === 'functional') {
     setHwDot(dotEl, 'status-dot dot-green');
