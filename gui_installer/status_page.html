@@ -5911,7 +5911,15 @@ async function pollLog() {
 let pifinderScreenUrl = null;
 
 function piFinderProbeUrls() {
-  const host = location.hostname;
+  // Control host (2026-09-12, direct feedback: "Ich würde jetzt erwarten,
+  // dass ich vom Control Host aus alles sehe, was auf dem PiFinder
+  // geschieht: OLED... - das ist nicht der Fall") - this device has no local
+  // PiFinder at all, but wmLx200Remote (the INDI host:port the Control host
+  // card asks for) already names the box whose OLED is actually relevant
+  // here. Its own HTTP/image port is unrelated to the INDI port in that
+  // string (7624 by default) - only the host part carries over, the normal
+  // 80/8080/8081 candidates still apply on THAT host instead of this one.
+  const host = wmLx200Remote ? wmLx200Remote.split(':')[0] : location.hostname;
   // 80/8080: the real pifinder.service (with its historical port-80-busy
   // fallback). 8081: test_tools/fake_mode.sh's fake-hardware instance
   // (FAKE_MODE_PORT in server.py / DEFAULT_PORT in pf_remote.py) - without

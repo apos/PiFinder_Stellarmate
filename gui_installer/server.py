@@ -1722,6 +1722,22 @@ _MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING = 3
 _mb_readiness_follow_mount_consecutive_fails = 0
 _mb_readiness_follow_mount_gave_up_target = None
 
+# Debounce for the profile-bookkeeping check below - found live 2026-09-12:
+# the driver can be fully running/connected/linked while the Web Manager's
+# own PERSISTED profile record no longer lists "PiFinder Mount Bridge" as a
+# driver (root cause not fully pinned down - the removal path is a delete-
+# and-recreate of the whole profile, see webmanager_client.py's module
+# docstring, and nothing on that path is logged with who/what triggered it).
+# deriveProfileRole() then reads the profile as plain "PiFinder host" (no
+# mount) and the whole coupling UI disappears, even though the driver is
+# demonstrably alive and doing real work. Same reasoning as check 1's
+# debounce: a driver just (re)added to the profile may not show up via the
+# Web Manager's own /labels endpoint on the very next tick, and this must
+# never fight a genuine, in-progress removal (switching to "PiFinder host"
+# on purpose) while the old process is still shutting down.
+_MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL = 3
+_mb_readiness_profile_desync_consecutive = 0
+
 
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
@@ -1808,6 +1824,41 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
         # all need a connected Mount Bridge to mean anything and would just
         # fail/no-op against a disconnected one.
         return
+
+    # --- Check 2.5: profile bookkeeping matches live reality -------------
+    # See _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL's own comment for
+    # the incident this covers. Only reachable once checks 1/2 above already
+    # confirmed the driver is genuinely running AND connected - i.e. this
+    # never fires against a driver that's actually gone, only against one
+    # that's demonstrably fine but the profile's own record disagrees.
+    global _mb_readiness_profile_desync_consecutive
+    try:
+        active_profile = webmanager_client.server_status().get("active_profile")
+    except webmanager_client.WebManagerError:
+        active_profile = None
+    if active_profile:
+        try:
+            has_bridge = webmanager_client.pifinder_driver_status(active_profile).get("has_bridge")
+        except webmanager_client.WebManagerError:
+            has_bridge = None
+        if has_bridge is False:
+            _mb_readiness_profile_desync_consecutive += 1
+            if _mb_readiness_profile_desync_consecutive >= _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL:
+                def _do_resync():
+                    try:
+                        webmanager_client.set_pifinder_bridge(active_profile, True)
+                        _mb_log(
+                            "Mount Bridge self-heal: driver is live/connected but profile "
+                            f"'{active_profile}' no longer listed it - re-added it there "
+                            "(bookkeeping only, did not touch the running driver)."
+                        )
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"Mount Bridge self-heal: re-adding to profile failed: {e}")
+
+                if _mb_readiness_retrier.trigger(_do_resync):
+                    _mb_readiness_profile_desync_consecutive = 0
+            return
+        _mb_readiness_profile_desync_consecutive = 0
 
     # --- Check 3: linked to the desired mount, both devices connected ----
     if _mb_desired_mount:
