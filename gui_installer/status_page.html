@@ -5932,7 +5932,15 @@ function piFinderProbeUrls() {
 
 function tryPiFinderScreenUrls(urls, index) {
   if (index >= urls.length) {
-    setTimeout(() => tryPiFinderScreenUrls(urls, 0), 2000);
+    // Recompute fresh on every restart (2026-09-12, found live testing the
+    // Control host OLED mirror) - `urls` itself is otherwise a snapshot
+    // frozen at whatever moment this cycle first started. The very first
+    // call happens immediately on page load, long before wmLx200Remote is
+    // known (that needs wmSelectedProfile + a driver-status fetch, both
+    // async) - reusing that first, still-local snapshot forever meant a
+    // Control host's discovery loop could never pick up the remote host
+    // once it actually became known a few seconds later.
+    setTimeout(() => tryPiFinderScreenUrls(piFinderProbeUrls(), 0), 2000);
     return;
   }
   const probe = new Image();
