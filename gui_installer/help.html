@@ -115,6 +115,7 @@
 
 <h3 id="service-and-power-actions">Service and power actions</h3>
 <p><strong>PiFinder: Start / Stop / Restart</strong> control <code>pifinder.service</code> directly, independent of the Real/Fake Mode switch above - useful for a plain service bounce (e.g. after a config change) without switching modes.</p>
+<p><strong>Control Center: Restart</strong> restarts this web server itself (<code>pifinder-control-center.service</code>) - not PiFinder, not the Pi. Useful for picking up a manually-updated <code>PiFinder_Stellarmate</code> checkout (e.g. a terminal <code>git pull</code>) without waiting for the next install/update run, or as a quick recovery if the page seems stuck. The page reloads on its own once the new process is back, usually within a few seconds.</p>
 <p><strong>This Pi: Reboot Pi / Shutdown Pi</strong> affect the whole Raspberry Pi, not just PiFinder or this page.</p>
 
 <h2 id="install-update">Install or Update</h2>
