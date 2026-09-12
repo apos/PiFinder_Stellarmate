@@ -1159,6 +1159,57 @@ def _mb_log(line: str):
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
 
 
+# Generous - a real mount's own connect handshake (serial autobaud, TCP
+# handshake to a network mount) can take a few seconds, longer than the
+# ~0.1s a healthy indiserver query normally takes elsewhere on this page.
+_CONNECT_CONFIRM_TIMEOUT = 8.0
+
+
+def _confirm_device_connected(device: str, timeout: float = _CONNECT_CONFIRM_TIMEOUT):
+    """Polls `device`'s own CONNECTION property after connect_device() has
+    already sent the CONNECT switch - that call only confirms indiserver
+    *accepted* the command, not that the device actually came up (see
+    indi_client.set_switch()'s own docstring: it fires the switch and
+    returns, it never waits for a resulting state). Direct feedback
+    (2026-09-13, Control host Mount setup): "wie ist die IP des Mount - wenn
+    die nicht stimmt, fällt hier alles zusammen... muss man das abfragen,
+    wenn es nicht funktioniert? So, wie es auch INDI und die SMOS Handy-App
+    machen." Found live reading the code: today this endpoint reports
+    success the instant the switch is sent, regardless of whether the
+    device ever actually connects - a wrong serial port/network address for
+    a real mount would show "Connected" here even though nothing is
+    actually connected.
+
+    Returns (True, None) once CONNECT is confirmed On with state Ok, or
+    (False, detail) if the property instead reports Alert (the driver's own
+    reported failure - wrong connection settings is the most common cause)
+    or never resolves within `timeout` (still Busy, or indiserver stopped
+    answering)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            vector = indi_client.get_properties(
+                device=device, timeout=indi_client.TIMEOUT_QUICK_RETRY
+            ).get(device, {}).get("CONNECTION")
+        except Exception:
+            vector = None
+        if vector:
+            if vector.get("elements", {}).get("CONNECT") == "On" and vector.get("state") == "Ok":
+                return True, None
+            if vector.get("state") == "Alert":
+                return False, (
+                    f"{device} reported a connection failure - check its connection "
+                    "settings (serial port/baud rate, or network host/IP) in the INDI "
+                    "Control Panel"
+                )
+        time.sleep(0.3)
+    return False, (
+        f"{device} hasn't confirmed connecting within {timeout:.0f}s - check its "
+        "connection settings (serial port/baud rate, or network host/IP) in the "
+        "INDI Control Panel"
+    )
+
+
 # #191/#217, corrected 2026-08-30 (direct feedback: "wie kann denn der
 # Solve-Injector einen Wert liefern, wenn der PiFinder Simulator nichts
 # liefert. Dafür haben wir Ihn doch!!!!"): PiFinder Truth Injector toggle -
@@ -4304,18 +4355,25 @@ class Handler(BaseHTTPRequestHandler):
             _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)
-                _mb_log(f"  done.")
-                _mark_mount_bridge_connect_desired()
-                self._send_json({"success": True})
-                return
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 if "not currently defined" not in str(e) or not profile:
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
+                if not restart_and_retry(lambda: indi_client.connect_device(device)):
+                    return  # restart_and_retry() already sent the error response
 
-            if not restart_and_retry(lambda: indi_client.connect_device(device)):
-                return  # restart_and_retry() already sent the error response
+            # The switch send above only confirms indiserver accepted the
+            # command - poll the device's own CONNECTION property for the
+            # actual outcome (see _confirm_device_connected()'s own comment:
+            # a wrong serial port/network address otherwise still reported
+            # as "Connected").
+            ok, detail = _confirm_device_connected(device)
+            if not ok:
+                _mb_log(f"  {device}: {detail}")
+                self._send_json({"success": False, "error": detail}, status=502)
+                return
+            _mb_log(f"  done.")
             _mark_mount_bridge_connect_desired()
             self._send_json({"success": True})
             return
