@@ -2070,7 +2070,7 @@
 <div class="page">
     <div id="pifinder-glance-tile">
       <div class="tile-heading-row" style="cursor:default;">
-        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a><span id="pifinder-tile-loc" style="display:none;" title="Where the PiFinder mirrored below actually runs."></span><span id="pifinder-tile-role-pill" style="display:none;" title="This device's current role - set in the Mount Bridge tile's Settings."></span></h3>
+        <h3 class="tile-heading" title="Direct links to PiFinder's own remote page, its INDI/mount setup wizard, and this Control Center - plus the project's documentation, and a quick hardware glance.">PiFinder<a class="help-link" href="/help.html#quick-links" target="_blank" rel="noopener" title="Help">i</a><span id="pifinder-tile-role-pill" style="display:none;" title="This device's current role - set in the Mount Bridge tile's Settings."></span><span id="pifinder-tile-loc" style="display:none;" title="Where the PiFinder mirrored below actually runs."></span></h3>
         <div id="pf-keypad-style-switch" title="Quick keys layout">
           <button id="pf-keypad-style-a-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('a')">A</button>
           <button id="pf-keypad-style-b-btn" class="pf-keypad-style-btn" onclick="setKeypadStyle('b')">B</button>
@@ -4505,7 +4505,14 @@ async function pfSendKey(code, btn) {
     return;
   }
   pfFlashKey(btn);
-  const port = new URL(pifinderScreenUrl).port || '80';
+  const screenUrl = new URL(pifinderScreenUrl);
+  const port = screenUrl.port || '80';
+  // Control host role (2026-09-12, direct feedback: Quick keys did nothing
+  // against a remote PiFinder) - pifinderScreenUrl already points at
+  // whichever host actually answered (see piFinderProbeUrls()), local or
+  // remote; _pifinder_send_key() defaults to 127.0.0.1 on its own when this
+  // is omitted, so a plain local setup is unaffected either way.
+  const host = screenUrl.hostname;
   if (pfLongArmed) {
     code = `LNG_${code}`;
     pfLongArmed = false;
@@ -4513,7 +4520,7 @@ async function pfSendKey(code, btn) {
     document.getElementById('pf-key-long-b').classList.remove('pf-armed');
   }
   try {
-    const resp = await fetch(`/api/pifinder_key?port=${port}&key=${code}`, { method: 'POST' });
+    const resp = await fetch(`/api/pifinder_key?port=${port}&key=${code}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     // _pifinder_send_key() (server.py) returns false - without raising -
     // for a bad ?port=, a rejected login (default Remote-page password
     // changed), or PiFinder just not answering. That used to be swallowed
@@ -8807,8 +8814,14 @@ function updatePiFinderTileLocation(role) {
     pillEl.textContent = 'PiFinder host';
     pillEl.style.display = '';
   } else if (role === 'ctrl' || role === 'ctrl-incomplete') {
+    // Direct feedback (2026-09-12): "Der PiFinder ist nicht der Control
+    // Host, sondern der Client" - the pill always describes THIS device
+    // (unchanged), but "{remote} · remote" alone, sitting right next to it,
+    // read as if it were labeling the remote address's own role instead.
+    // "mirroring" makes the direction explicit: this (Control host) device
+    // is showing what's happening over there.
     if (wmLx200Remote) {
-      locEl.textContent = `${wmLx200Remote} · remote`;
+      locEl.textContent = `mirroring ${wmLx200Remote}`;
       locEl.style.display = '';
     } else {
       locEl.style.display = 'none';
