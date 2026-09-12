@@ -1116,6 +1116,16 @@
     gap: 0.5rem;
     margin: 0.7rem 0 0.9rem;
   }
+  /* Same layout as #mode-ampel-row above - deliberately a separate row, not
+     merged into it (see the row's own HTML comment for why: visibility here
+     must NOT be tied to PiFinder's own reachability). */
+  #ekos-wm-ampel-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.9rem;
+  }
   /* Direct feedback (2026-09-12): "Die Badges des PiFinder haben eine
      andere Größe, als die der Mount Bridge... Das sollte gleich groß sein."
      Padding/font-size now match .mb-node exactly (the icon itself,
@@ -1490,7 +1500,11 @@
     flex-direction: column;
     align-items: center;
     gap: 0.2rem;
-    color: #ccc;
+    /* Direct feedback (2026-09-12): now that the box size matches
+       .mode-ampel-badge, the label text color stood out as the one
+       remaining difference - "ich finde das Dezente bei den PiFinder
+       Badges... angenehmer". Same #999 now, not the brighter #ccc. */
+    color: #999;
   }
   .mb-icon {
     width: 32.5px;
@@ -2208,6 +2222,35 @@
           <div id="pifinder-glance-status-stack">
             <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
+          </div>
+        </div>
+        <!-- Direct feedback (2026-09-12): "es fehlt schlicht und ergreifend
+             eine Badge für EKOS und eine für den INDI WM... würde man hier
+             sehen, ob EKOS und der INDI WM auch wirklich funktionieren
+             (selbes Farbschema), hätte man sofort einen Überblick." Deliberately
+             its own row, NOT inside #mode-ampel-row above - that row hides
+             entirely whenever PiFinder itself is unreachable (see its own
+             comment), but Ekos/Web Manager are KStars/Mount-Bridge-side
+             concerns, completely independent of whether PiFinder answers -
+             hiding them together would lose exactly the "is the rest of the
+             chain OK" overview this exists for. Same .mode-ampel-badge look
+             as the row above, always visible. -->
+        <div id="ekos-wm-ampel-row">
+          <div class="mode-ampel-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <span>Ekos</span>
+          </div>
+          <div class="mode-ampel-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
+            <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
+              <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
+            </svg>
+            <span>INDI WM</span>
           </div>
         </div>
         <!-- Showstopper banners (2026-09-09) - see .showstopper-card's CSS
@@ -7211,6 +7254,25 @@ let wmActiveMount = null;  // from the last mount_bridge_status() poll - drives 
 let wmAutoLinkAttempted = false;  // guards the mount auto-detect/auto-link in refreshWmConnectRow() against repeat clicks
 let wmKstarsLinked = null;
 let wmEkosConnected = null;  // null = unknown/KStars not running - see checkEkosStatus()
+// Whether the Web Manager service itself answered on the most recent
+// loadWmProfiles() poll - null only until the very first poll resolves,
+// after that always true/false (see #ekos-wm-ampel-row's own comment).
+let wmReachable = null;
+
+// Shared by the two badges in #ekos-wm-ampel-row - same color mapping as
+// setHwDot() uses for the badges in #mode-ampel-row, just without that
+// function's "also sync a paired detail-row dot" step (Ekos/Web Manager have
+// no such detail-row dot to sync with here).
+function setAmpelIconState(iconId, state) {
+  const el = document.getElementById(iconId);
+  if (!el) return;
+  const color = state === 'ok' ? '#4caf50'
+    : state === 'bad' ? '#e53935'
+    : (state === 'warn' || state === 'unconfirmed') ? '#f5a623'
+    : '#666';
+  el.style.color = color;
+  el.classList.toggle('mode-ampel-icon-unconfirmed', state === 'unconfirmed');
+}
 let wmPifinderConnected = null;
 let wmBridgeConnected = null;
 let wmMountConnected = null;
@@ -8261,6 +8323,8 @@ async function loadWmProfiles() {
     const resp = await fetch('/api/webmanager/profiles', { cache: 'no-store' });
     const data = await resp.json();
     if (data.error || !data.profiles) throw new Error(data.error || 'no profiles');
+    wmReachable = true;
+    setAmpelIconState('mode-ampel-wm-icon', 'ok');
     const ownProfiles = data.profiles.filter((name) => name !== WM_DEFAULT_PROFILE);
     noProfileHint.style.display = ownProfiles.length === 0 ? '' : 'none';
     const previousValue = wmSelectedProfile;
@@ -8304,6 +8368,8 @@ async function loadWmProfiles() {
       document.getElementById('wm-kstars-link-row').style.display = 'none';
     }
   } catch (e) {
+    wmReachable = false;
+    setAmpelIconState('mode-ampel-wm-icon', 'bad');
     selectEl.innerHTML = '<option>unavailable</option>';
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
@@ -8388,6 +8454,7 @@ async function checkEkosStatus() {
       row.style.display = 'none';
       wmEkosConnected = null;
       updateStepIndicators();
+      setAmpelIconState('mode-ampel-ekos-icon', 'off');
       return;
     }
     wmEkosConnected = !!data.connected;
@@ -8428,6 +8495,7 @@ async function checkEkosStatus() {
     wmEkosConnected = null;
   }
   updateStepIndicators();
+  setAmpelIconState('mode-ampel-ekos-icon', wmEkosConnected === true ? 'ok' : wmEkosConnected === false ? 'warn' : 'off');
 }
 ccRegisterPoll(() => { if (!mbActionInFlight) checkEkosStatus(); }, 20000);
 checkEkosStatus();
