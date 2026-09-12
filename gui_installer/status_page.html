@@ -971,6 +971,15 @@
   }
   .mb-group-badge-config { background: #2a2a2a; color: #999; border: 1px solid #444; }
   .mb-group-badge-live { background: #1c2a1c; color: #7fc97f; border: 1px solid #3a5a3a; }
+  /* Same green as -live, applied to the "Configured" badge once steps 1-4
+     are actually all true (see updateStepIndicators()) - direct request
+     (2026-09-12): "'configured' sollte auch grün sein, wenn es ok ist". */
+  .mb-group-badge-ok { background: #1c2a1c; color: #7fc97f; border: 1px solid #3a5a3a; }
+  /* Same monitor/server-rack shapes used everywhere else on the page for
+     Ekos/INDI WM (2026-09-12, direct request to add icons here too) - plain
+     currentColor so it inherits .group-label's own muted #888, since this
+     just labels which section this is, not a live status by itself. */
+  .group-label-icon { width: 12px; height: 12px; vertical-align: -1px; margin-right: 0.3rem; }
   .mb-coupling-group-buttons {
     display: flex;
     flex: 1;
@@ -2574,7 +2583,7 @@
         <span id="mb-details-chevron">&#9660; show</span>
       </div>
       <div id="mb-details" style="display:none;">
-        <div class="group-label">INDI Web Manager<span class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
+        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>INDI Web Manager<span id="wm-config-badge" class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
         <div class="mb-row mb-step-row mb-step-row-key" style="display:none;" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
           <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
@@ -2615,7 +2624,7 @@
              config-vs-live distinction explicit instead of six visually
              identical checkmarks. -->
         <div class="mb-checklist-divider"></div>
-        <div class="group-label">Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
+        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
 
         <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos:</span></span>
@@ -9209,15 +9218,28 @@ async function applyCtrlRemoteAddress(triggerEl) {
 function updateStepIndicators() {
   const step1Done = !!wmSelectedProfile && wmServerRunning;
   const step2Done = wmKstarsLinked === true;
+  const step3Done = wmHasLx200 === true && wmHasBridge === true;
+  const step4Done = !!wmActiveMount;
   document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
   document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
-  document.getElementById('wm-step3-label').classList.toggle('mb-step-done', wmHasLx200 === true && wmHasBridge === true);
-  document.getElementById('wm-step4-label').classList.toggle('mb-step-done', !!wmActiveMount);
+  document.getElementById('wm-step3-label').classList.toggle('mb-step-done', step3Done);
+  document.getElementById('wm-step4-label').classList.toggle('mb-step-done', step4Done);
   document.getElementById('wm-step5-label').classList.toggle('mb-step-done', wmEkosConnected === true);
   const connectTargets = _availableConnectTargets();
   document.getElementById('wm-step6-label').classList.toggle(
     'mb-step-done', connectTargets.length > 0 && connectTargets.every(([, , connected]) => connected)
   );
+  // Direct request (2026-09-12): "'configured' sollte auch grün sein, wenn
+  // es ok ist" - was a static grey badge regardless of actual state. Green
+  // only once every one of steps 1-4 (the config-fact steps, see the
+  // "Ekos / KStars" group's own comment) is actually true - matches
+  // "Live now"'s own green-when-true convention, not a guess.
+  const configBadge = document.getElementById('wm-config-badge');
+  if (configBadge) {
+    const configDone = step1Done && step2Done && step3Done && step4Done;
+    configBadge.classList.toggle('mb-group-badge-ok', configDone);
+    configBadge.classList.toggle('mb-group-badge-config', !configDone);
+  }
   updateProfileRoleLine();
   updateSimReadinessLine();
   updateProfileSourceTags();
