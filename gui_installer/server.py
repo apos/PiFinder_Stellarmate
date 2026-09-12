@@ -320,10 +320,23 @@ _MODE_SETTLE_INTERVAL = 1
 # historical port-80-busy fallback 8080, or the fake-hardware instance on
 # FAKE_MODE_PORT) - used to validate the ?port= the frontend passes when
 # proxying to PiFinder's own /api/debug_solve, so this never becomes an
-# open proxy to an arbitrary host/port. Always dials 127.0.0.1 regardless
-# of which IP the browser used to reach this page - this server and
-# PiFinder always run on the same Pi.
+# open proxy to an arbitrary host/port. Dials 127.0.0.1 by default - see
+# _valid_pifinder_host() below for the Control host case (a remote PiFinder,
+# not on this same device).
 _ALLOWED_PIFINDER_PORTS = {"80", "8080", str(FAKE_MODE_PORT)}
+
+# Shared by every route that accepts an optional ?host= for a remote
+# PiFinder (Control host role - docs/concepts/
+# control_host_hardware_badges_mirroring.md, category 2a: Solve/GPS/Quick
+# keys/OLED mirror all reuse this exact hostname/IP shape, first validated
+# for #419). Same regex everywhere rather than trusting each route handler
+# to remember to check it - an unchecked host would make this an open proxy
+# to an arbitrary host.
+_PIFINDER_HOST_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def _valid_pifinder_host(host: str) -> bool:
+    return bool(_PIFINDER_HOST_RE.fullmatch(host))
 
 
 def _fake_mode_up() -> bool:
@@ -629,15 +642,20 @@ def _gps_hardware_present():
         return None
 
 
-def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT))):
+def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
     """GETs PiFinder's own /api/status from whichever of `ports` answers
     first (real service on 80/8080, or the fake-hardware instance). Returns
     the parsed dict, or None if none of them are reachable. Shared by the
     camera functional test (reading PiFinder's own CAM_FAILED signal instead
-    of fighting it for the camera device) and the GPS status snapshot."""
+    of fighting it for the camera device) and the GPS status snapshot.
+
+    `host` - see _pifinder_solve_status()'s own comment. Only meaningful for
+    the GPS caller (a remote PiFinder's own /api/status) - the camera
+    functional test always calls this locally, its own hardware can't be
+    anywhere else."""
     for port in ports:
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
                 return json.loads(resp.read())
         except Exception:
             continue
@@ -918,17 +936,20 @@ def _imu_functional_test(log):
     return {"status": "error", "error_type": "python", "detail": detail}
 
 
-def _gps_status_snapshot(log):
+def _gps_status_snapshot(log, host: str = "127.0.0.1"):
     """Reads PiFinder's own already-existing GPS/location handling via its
     /api/status endpoint - deliberately not re-implemented here (the user's
     own framing: StellarMate/PiFinder already do this, we just want to see
     the result). Returns the `location` dict PiFinder reports (lat/lon/
-    altitude/timezone/lock/...), or None if PiFinder isn't reachable."""
+    altitude/timezone/lock/...), or None if PiFinder isn't reachable.
+
+    `host` - see _pifinder_solve_status()'s own comment (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a)."""
     log(
         "GPS: reading location/time status from PiFinder's own /api/status "
         "(reuses PiFinder's existing GPS handling, not re-implemented here) ..."
     )
-    status = _pifinder_status_snapshot()
+    status = _pifinder_status_snapshot(host=host)
     if status is None:
         log("GPS: PiFinder's API isn't reachable right now (Real or Fake Mode must be running).")
         return None
@@ -2113,7 +2134,7 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
         _run_hardware_test()
 
 
-def _pifinder_solve_status(port: str):
+def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state) plus the real
     solve-freshness fields (solve_source/last_solve_attempt/last_solve_success)
@@ -2123,11 +2144,16 @@ def _pifinder_solve_status(port: str):
     solve_source is "CAM" (fresh plate-solve), "CAM_FAILED" (attempted, no
     star match - normal indoors/no sky view, not itself a hardware problem),
     or "IMU" (currently dead-reckoning between solves). See
-    PiFinder/types/positioning.py's SolveSource enum."""
+    PiFinder/types/positioning.py's SolveSource enum.
+
+    `host` defaults to this device's own PiFinder (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a - same fix as
+    _pifinder_send_key()'s host param, #419) - the route handler is
+    responsible for validating it before it reaches here."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return None
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
             data = json.loads(resp.read())
         # solve_source/last_solve_attempt/last_solve_success live under
         # data["solution"], not top-level (only debug_solve is top-level) -
@@ -2151,7 +2177,7 @@ def _pifinder_solve_status(port: str):
         pifinder_screen_direction = None
         try:
             with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/api/orientation_status", timeout=3
+                f"http://{host}:{port}/api/orientation_status", timeout=3
             ) as resp:
                 orientation = json.loads(resp.read())
             pifinder_mount_type = orientation.get("mount_type")
@@ -2353,16 +2379,17 @@ def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float):
         return False, str(e)
 
 
-def _pifinder_toggle_debug_solve(port: str) -> bool:
+def _pifinder_toggle_debug_solve(port: str, host: str = "127.0.0.1") -> bool:
     """POST to PiFinder's own /api/debug_solve - toggles Tools -> Test Mode
     directly via PiFinder's ui_queue, bypassing menu navigation/keyboard_queue
     (which drops keypresses unreliably - see basic-memory/pifinder-stellarmate/
-    00021 for how this was found)."""
+    00021 for how this was found). `host` - see _pifinder_solve_status()'s
+    own comment."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/debug_solve", method="POST", data=b""
+            f"http://{host}:{port}/api/debug_solve", method="POST", data=b""
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status == 200
@@ -3445,10 +3472,30 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Control host's own GPS badge (docs/concepts/
+        # control_host_hardware_badges_mirroring.md, category 2a) - a
+        # separate route from /api/hardware_status above rather than adding
+        # ?host= to that one, since camera/imu there are genuinely local-only
+        # (category 2b, not yet built) and must keep reading THIS device's
+        # own hardware regardless of ?host=; folding gps into the same
+        # response would make ?host= look like it applies to all three.
+        if parsed.path == "/api/gps_status":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"gps": None, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"gps": _gps_status_snapshot(lambda *_a: None, host=host)})
+            return
+
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json(_pifinder_solve_status(port) or {"debug_solve": None})
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"debug_solve": None, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json(_pifinder_solve_status(port, host) or {"debug_solve": None})
             return
 
         if parsed.path == "/api/hardware_test_log":
@@ -3821,7 +3868,11 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json({"success": _pifinder_toggle_debug_solve(port)})
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_toggle_debug_solve(port, host)})
             return
 
         if parsed.path == "/api/pifinder_key":
@@ -3835,7 +3886,7 @@ class Handler(BaseHTTPRequestHandler):
             # rather than build an arbitrary-host request from unchecked
             # input.
             host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
-            if not re.fullmatch(r"[A-Za-z0-9._-]+", host):
+            if not _valid_pifinder_host(host):
                 self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
                 return
             self._send_json({"success": _pifinder_send_key(port, key, host)})

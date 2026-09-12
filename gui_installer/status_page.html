@@ -3501,9 +3501,10 @@ function refreshSystemLoad() {
 // PiFinder's own "Tools -> Test Mode" (callbacks.activate_debug() ->
 // shared_state.debug_solve()) - entirely separate from this page's Fake Mode
 // tile. Triggered via gui_installer/server.py's own proxy (GET/POST
-// /api/debug_solve?port=N, always dialing 127.0.0.1 on that port) rather
-// than fetching PiFinder's API directly from the browser, since PiFinder
-// sets no CORS headers and this page is served from a different port. The
+// /api/debug_solve?port=N&host=H - defaults to 127.0.0.1, or the remote
+// PiFinder's own host on a Control host, see pifinderHost()) rather than
+// fetching PiFinder's API directly from the browser, since PiFinder sets no
+// CORS headers and this page is served from a different port. The
 // GET side now also returns solve_source/last_solve_attempt/last_solve_success
 // from the same /api/status call - refreshDebugSolve() below updates both the
 // Solve Simulation row (debug_solve on/off) and the separate, real "Solve"
@@ -4308,8 +4309,9 @@ refreshTruthInjectorStatus();
 async function refreshNoSolveBanner() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   try {
-    const resp = await fetch(`/api/debug_solve?port=${port}`, { cache: 'no-store' });
+    const resp = await fetch(`/api/debug_solve?port=${port}&host=${encodeURIComponent(host)}`, { cache: 'no-store' });
     const data = await resp.json();
     updateNoSolveBanner(data);
   } catch (e) {
@@ -4444,12 +4446,13 @@ async function refreshDebugSolve() {
     return null;
   }
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   // Port 8081 (Fake Mode) already runs PiFinder's separate CameraDebug class
   // (its own cycling synthetic images, independent of this toggle) - "off"
   // there does NOT mean a real camera, unlike when a real instance answers.
   const isFakeModePort = String(port) === '8081';
   try {
-    const resp = await fetch(`/api/debug_solve?port=${port}`, { cache: 'no-store' });
+    const resp = await fetch(`/api/debug_solve?port=${port}&host=${encodeURIComponent(host)}`, { cache: 'no-store' });
     const data = await resp.json();
     lastDebugSolve = data.debug_solve;
     if (data.debug_solve === true) {
@@ -4504,6 +4507,7 @@ async function refreshDebugSolve() {
 async function toggleDebugSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const btn = document.getElementById('debug-solve-btn');
   const textEl = document.getElementById('debug-solve-text');
   const dotEl = document.getElementById('debug-solve-dot');
@@ -4517,7 +4521,7 @@ async function toggleDebugSolve() {
   // details" section while the ampel row above it stayed static.
   setHwDot(dotEl, 'status-dot dot-yellow dot-unconfirmed');
   try {
-    await fetch(`/api/debug_solve?port=${port}`, { method: 'POST' });
+    await fetch(`/api/debug_solve?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
   } catch (e) {
     // fall through to the poll loop below either way
   }
@@ -4566,6 +4570,18 @@ function pfToggleLong(btn) {
 // clicks while one press is still in flight instead of queueing them, and
 // dims the keypad so it's visibly busy rather than looking unresponsive.
 let pfKeyBusy = false;
+
+// Shared by every fetch that proxies to PiFinder's own API and needs to know
+// which host to reach it on (Control host role - docs/concepts/
+// control_host_hardware_badges_mirroring.md, category 2a) - pifinderScreenUrl
+// already resolved to whichever host actually answered (piFinderProbeUrls()),
+// local or remote, same source pfSendKey() below already uses. Every
+// server-side function defaults to 127.0.0.1 on its own when host is
+// omitted, so a plain local setup (pifinderScreenUrl not known yet) is
+// unaffected either way - callers only need to append it when non-null.
+function pifinderHost() {
+  return pifinderScreenUrl ? new URL(pifinderScreenUrl).hostname : null;
+}
 
 async function pfSendKey(code, btn) {
   if (pfKeyBusy) return;
@@ -6360,19 +6376,33 @@ function setHwRow(key, present) {
 
 async function refreshHardwareStatus() {
   try {
+    // camera/imu are genuinely local-only checks (this device's own
+    // rpicam-hello/I2C bus) - unaffected by pifinderScreenUrl, see
+    // docs/concepts/control_host_hardware_badges_mirroring.md category 2b
+    // (not yet built).
     const resp = await fetch('/api/hardware_status', { cache: 'no-store' });
     const data = await resp.json();
     setHwRow('camera', data.camera);
     setHwRow('imu', data.imu);
-    applyGpsRow(data.gps);
     lastHwCamera = data.camera;
     lastHwImu = data.imu;
   } catch (e) {
     setHwRow('camera', null);
     setHwRow('imu', null);
-    applyGpsRow(null);
     lastHwCamera = null;
     lastHwImu = null;
+  }
+  // GPS is a separate request/endpoint (category 2a) - it just relays
+  // whichever PiFinder actually has the location (Control host role: the
+  // remote one, via ?host=), independent of this device's own local
+  // hardware checks above.
+  try {
+    const host = pifinderHost();
+    const resp = await fetch(`/api/gps_status${host ? `?host=${encodeURIComponent(host)}` : ''}`, { cache: 'no-store' });
+    const data = await resp.json();
+    applyGpsRow(data.gps);
+  } catch (e) {
+    applyGpsRow(null);
   }
 }
 
