@@ -1230,3 +1230,21 @@ echo "##############################################"
 rm -f "$warnings_file"
 
 phase "Setup complete"
+
+# Restart the Control Center now that every write to its stdout above is
+# already done - safe to do unconditionally here, unlike the enable/start
+# logic further up (which deliberately only starts it if inactive - see that
+# block's own comment about a 2026-08-01 SIGPIPE incident from restarting
+# too early, mid-script). This is genuinely the last action: self_update.sh/
+# switch_branch.sh at the very top of this script already unconditionally
+# update THIS checkout (PiFinder_Stellarmate itself) regardless of how the
+# script was invoked - a plain terminal run (not through the GUI's own
+# Update button) previously left the Control Center serving stale code
+# indefinitely, since only a GUI-triggered run's own success (server.py's
+# _cc_restart_pending) ever restarted it. Direct feedback (2026-09-12): "Wird
+# das CC neu installiert, dann wird es auch vom Setup neu gestartet. Ganz
+# einfach." When this run WAS started by the Control Center's own Update
+# button, this restarts the same process a second time in quick succession -
+# harmless, and guarantees the restart actually happens either way instead
+# of depending on which path triggered this run.
+sudo systemctl restart pifinder-control-center || true

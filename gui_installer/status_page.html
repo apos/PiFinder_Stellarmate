@@ -1866,6 +1866,22 @@
   @media (max-width: 767px) {
     #cc-generic-confirm-banner { padding: 0.5rem 0.8rem; }
   }
+  /* Direct feedback (2026-09-12): a button whose click opens this banner
+     had no acknowledgement of its own - the banner is always visible in the
+     sticky header, but with the triggering button possibly far down the
+     page, "did my click register" wasn't obvious. Two one-shot cues, no
+     scrolling/focus change (explicitly rejected - "nie gut, den Fokus...
+     einfach so zu ändern"):
+     1) a brief brightness flash on the banner itself when it appears;
+     2) .cc-pending-pulse on the clicked element for as long as the banner
+        stays open - reuses the existing "action pending" pulse
+        (mb-status-pulse, already used by .dot-unconfirmed and
+        .ql-small-btn-yellow) as a plain opacity pulse with no color
+        override, so it works unchanged on any button's own styling
+        (danger red, primary blue, a role card, ...). */
+  @keyframes cc-banner-flash { 0% { background: #4a3a18; } 100% { background: #2a2214; } }
+  #cc-generic-confirm-banner.cc-banner-flash-active { animation: cc-banner-flash 0.6s ease-out; }
+  .cc-pending-pulse { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   #cc-take-control-btn {
     background: #e0a030;
     color: #221a00;
@@ -2678,7 +2694,7 @@
 sudo systemctl start pifinder</pre>
             <div class="hw-row" title="Only relevant if you've attached a small secondary SPI display (e.g. Waveshare 3.5&quot; LCD) to this Pi's GPIO header. The button enables/disables its device-tree overlay in /boot/config.txt and reboots (Pi firmware overlays only apply at boot) - it needs the same GPIO lines a real HAT's OLED/keypad use, so the two can't be active at once. Once on, Fake Mode plus the screen/numpad bridges start automatically on every boot - nothing else to start manually.">
               <span class="status-dot dot-unconfirmed" id="display-status-dot"></span>External SPI LCD (optional, needs extra hardware): <span id="display-status-state">checking&hellip;</span>
-              <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge()" disabled>Checking&hellip;</button>
+              <button id="display-toggle-btn" class="ql-small-btn" onclick="toggleDisplayBridge(this)" disabled>Checking&hellip;</button>
             </div>
           </div>
         </div>
@@ -3722,7 +3738,7 @@ function collectActiveShowstoppers() {
         '<div class="mb-drift-banner-inputrow">' +
         `<input type="text" id="ctrl-remote-input" placeholder="192.168.1.42 or host:7624" value="${wmLx200Remote || ''}">` +
         '<button class="mb-drift-banner-btn" onclick="testCtrlRemoteAddress()">Test</button>' +
-        '<button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="applyCtrlRemoteAddress()">Use this address</button>' +
+        '<button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="applyCtrlRemoteAddress(this)">Use this address</button>' +
         '</div>' +
         '<div id="ctrl-remote-test-result" class="mb-drift-banner-subtext"></div>',
       buttons: [],
@@ -4739,13 +4755,13 @@ async function refreshDisplayBridge() {
   }
 }
 
-async function toggleDisplayBridge() {
+async function toggleDisplayBridge(triggerEl) {
   const wantEnable = !lastLcdOverlayEnabled;
   const verb = wantEnable ? 'enable' : 'disable';
   const conflict = wantEnable
     ? 'This also means a real PiFinder HAT (OLED/keypad) cannot be used at the same time - they need the same GPIO lines.'
     : 'PiFinder will go back to normal (real HAT) operation after the reboot.';
-  if (!(await ccConfirmBanner(`Really ${verb} the external LCD? This edits /boot/config.txt and reboots the Pi now. ${conflict}`))) return;
+  if (!(await ccConfirmBanner(`Really ${verb} the external LCD? This edits /boot/config.txt and reboots the Pi now. ${conflict}`, null, triggerEl))) return;
   const action = wantEnable ? 'start' : 'stop';
   const btn = document.getElementById('display-toggle-btn');
   const stateEl = document.getElementById('display-status-state');
@@ -4888,7 +4904,7 @@ function showChoices(existingInstall) {
           <div class="install-action-title install-action-title-primary">Install INDI-only</div>
           <div class="install-action-desc">Installs the INDI build dependencies and all three PiFinder INDI drivers (<code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code>, <code>PiFinder Simulator</code>) only - and pulls this Control Center itself to the current branch first. Your existing ~/PiFinder installation, if any, is left completely untouched: no clone/patch, no Python environment, no star catalog, no GPIO/udev setup - none of that applies when this device doesn't run PiFinder itself.</div>
         </div>
-        <button class="install-go-btn install-go-btn-primary" onclick="start('fresh')">Install</button>
+        <button class="install-go-btn install-go-btn-primary" onclick="start('fresh', this)">Install</button>
       </div>
     `;
     advInner.innerHTML = resetCard + uninstallCard;
@@ -4912,7 +4928,7 @@ function showChoices(existingInstall) {
           <div class="install-action-title install-action-title-primary">Update <span class="install-badge">recommended</span></div>
           <div class="install-action-desc">Resets your local PiFinder to the official release branch version (git reset --hard + pull) and re-applies all patches - and pulls this Control Center itself to the current branch first. Keeps the existing directory, just brings the code up to date.</div>
         </div>
-        <button class="install-go-btn install-go-btn-primary" onclick="start('update')">Update</button>
+        <button class="install-go-btn install-go-btn-primary" onclick="start('update', this)">Update</button>
       </div>
     `;
     advInner.innerHTML = resetCard + `
@@ -4921,7 +4937,7 @@ function showChoices(existingInstall) {
           <div class="install-action-title">Reinstall from scratch</div>
           <div class="install-action-desc">Completely deletes the existing PiFinder directory and performs a fresh installation: clones PiFinder from the official release branch and re-applies all StellarMate patches - and pulls this Control Center itself to the current branch first. Use this if the installation is broken or you want a clean slate.</div>
         </div>
-        <button class="install-go-btn install-go-btn-danger" onclick="start('reinstall')">Reinstall from scratch</button>
+        <button class="install-go-btn install-go-btn-danger" onclick="start('reinstall', this)">Reinstall from scratch</button>
       </div>
     ` + uninstallCard;
   } else {
@@ -4931,7 +4947,7 @@ function showChoices(existingInstall) {
           <div class="install-action-title install-action-title-primary">Install from scratch</div>
           <div class="install-action-desc">Clones PiFinder from the official release branch into ~/PiFinder and applies all StellarMate patches (INDI drivers, network fixes, etc.) - and pulls this Control Center itself to the current branch first.</div>
         </div>
-        <button id="start-fresh" class="install-go-btn install-go-btn-primary" onclick="start('fresh')">Install</button>
+        <button id="start-fresh" class="install-go-btn install-go-btn-primary" onclick="start('fresh', this)">Install</button>
       </div>
     `;
     // Reinstall doesn't apply yet (nothing to reinstall over) - Reset stays
@@ -5089,13 +5105,13 @@ async function manualRefreshBranchInfo(btn) {
   }, 400);
 }
 
-async function start(action) {
+async function start(action, triggerEl) {
   if (action === 'reinstall' &&
-      !(await ccConfirmBanner('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.'))) {
+      !(await ccConfirmBanner('Reinstall from scratch? This permanently deletes the existing ~/PiFinder directory and everything in it.', null, triggerEl))) {
     return;
   }
   if (action === 'update' &&
-      !(await ccConfirmBanner('Update? This runs "git reset --hard" on ~/PiFinder, discarding any local changes there.'))) {
+      !(await ccConfirmBanner('Update? This runs "git reset --hard" on ~/PiFinder, discarding any local changes there.', null, triggerEl))) {
     return;
   }
   document.getElementById('choices').style.display = 'none';
@@ -5249,8 +5265,8 @@ async function watchForNewRun() {
 }
 
 async function reboot() {
-  if (!(await ccConfirmBanner('Reboot the Pi now?'))) return;
   const btn = document.getElementById('reboot-button');
+  if (!(await ccConfirmBanner('Reboot the Pi now?', null, btn))) return;
   btn.disabled = true;
   btn.textContent = 'Rebooting…';
   try {
@@ -5390,10 +5406,10 @@ async function powerAction(kind) {
   const message = polling
     ? `⚠ A setup/update run is currently in progress! ${verb}ing now would interrupt it and could leave the installation in a broken state - there's no way to stop it once started, only to wait it out. Really ${verb.toLowerCase()} anyway?`
     : `${verb} this Pi now? This affects the whole device, not just PiFinder or this setup page.`;
-  if (!(await ccConfirmBanner(message))) return;
   const rebootBtn = document.getElementById('power-reboot-btn');
   const poweroffBtn = document.getElementById('power-poweroff-btn');
   const btn = isReboot ? rebootBtn : poweroffBtn;
+  if (!(await ccConfirmBanner(message, null, btn))) return;
   rebootBtn.disabled = true;
   poweroffBtn.disabled = true;
   btn.textContent = isReboot ? 'Rebooting…' : 'Shutting down…';
@@ -5422,37 +5438,59 @@ async function powerAction(kind) {
 // growing its own copy. Both helpers return a Promise, so callers need
 // `await` (making a non-async caller `async` where it wasn't already).
 let _ccGenericBannerResolve = null;
+// The element that triggered the currently-open banner (if the caller
+// passed one) - see .cc-pending-pulse's own CSS comment. Cleared, and the
+// pulse removed, the moment the banner closes either way (Confirm/Cancel/
+// Dismiss all funnel through _ccGenericBannerAnswer()).
+let _ccGenericBannerTriggerEl = null;
+
+function _ccShowGenericBanner(triggerEl) {
+  const banner = document.getElementById('cc-generic-confirm-banner');
+  banner.style.display = 'flex';
+  // Force a reflow before re-adding the class, so the flash animation
+  // restarts even if a previous banner's flash hadn't finished yet -
+  // otherwise the browser sees the class as "already applied" and no
+  // animation plays the second time.
+  banner.classList.remove('cc-banner-flash-active');
+  void banner.offsetWidth;
+  banner.classList.add('cc-banner-flash-active');
+  _ccGenericBannerTriggerEl = triggerEl || null;
+  if (triggerEl) triggerEl.classList.add('cc-pending-pulse');
+}
 
 // Confirm/Cancel - resolves true on Confirm, false on Cancel. Mirrors what
 // `if (!confirm(msg)) return;` used to do: `if (!(await ccConfirmBanner(msg))) return;`
-function ccConfirmBanner(message, confirmLabel) {
+// triggerEl (optional): the clicked button/card - see .cc-pending-pulse.
+function ccConfirmBanner(message, confirmLabel, triggerEl) {
   return new Promise((resolve) => {
     document.getElementById('cc-generic-confirm-text').textContent = message;
     const yesBtn = document.getElementById('cc-generic-confirm-yes-btn');
     yesBtn.textContent = confirmLabel || 'Confirm';
     yesBtn.style.display = '';
     document.getElementById('cc-generic-confirm-no-btn').style.display = '';
-    document.getElementById('cc-generic-confirm-banner').style.display = 'flex';
+    _ccShowGenericBanner(triggerEl);
     _ccGenericBannerResolve = resolve;
   });
 }
 
 // Single acknowledgement button, no Cancel - replaces a plain alert(msg)
 // (an error, or a "here's what happened" notice with nothing to confirm).
-function ccNoticeBanner(message, dismissLabel) {
+function ccNoticeBanner(message, dismissLabel, triggerEl) {
   return new Promise((resolve) => {
     document.getElementById('cc-generic-confirm-text').textContent = message;
     const yesBtn = document.getElementById('cc-generic-confirm-yes-btn');
     yesBtn.textContent = dismissLabel || 'Dismiss';
     yesBtn.style.display = '';
     document.getElementById('cc-generic-confirm-no-btn').style.display = 'none';
-    document.getElementById('cc-generic-confirm-banner').style.display = 'flex';
+    _ccShowGenericBanner(triggerEl);
     _ccGenericBannerResolve = resolve;
   });
 }
 
 function _ccGenericBannerAnswer(value) {
   document.getElementById('cc-generic-confirm-banner').style.display = 'none';
+  if (_ccGenericBannerTriggerEl) _ccGenericBannerTriggerEl.classList.remove('cc-pending-pulse');
+  _ccGenericBannerTriggerEl = null;
   const resolve = _ccGenericBannerResolve;
   _ccGenericBannerResolve = null;
   if (resolve) resolve(value);
@@ -5523,7 +5561,6 @@ async function installAction(kind) {
   const message = isUninstall
     ? '⚠ Uninstall PFSM completely? This stops and removes all PiFinder services, INDI drivers, ~/PiFinder itself, AND ~/PiFinder_Stellarmate - the folder this Control Center itself runs from. This page will go permanently offline within a few seconds, not just pause. This cannot be undone from here.'
     : 'Reset PiFinder? This briefly stops PiFinder\'s core services, then wipes the Python venv/build state. Your data, config, and installed services/drivers stay intact, just stopped until you re-run setup or reboot. Ready for a fresh setup run afterward.';
-  if (!(await ccConfirmBanner(message))) return;
   // install-reset-btn is rendered by showChoices() now (2026-09-04, so it
   // always sits in the same button row as Reinstall/Update/Start Install -
   // see that function's own comment), not static HTML - null-guarded here
@@ -5532,6 +5569,7 @@ async function installAction(kind) {
   const resetBtn = document.getElementById('install-reset-btn');
   const uninstallBtn = document.getElementById('install-uninstall-btn');
   const btn = isUninstall ? uninstallBtn : resetBtn;
+  if (!(await ccConfirmBanner(message, null, btn))) return;
   if (resetBtn) resetBtn.disabled = true;
   uninstallBtn.disabled = true;
   btn.textContent = isUninstall ? 'Uninstalling…' : 'Resetting…';
@@ -5682,12 +5720,12 @@ async function pollUninstallLog() {
 // be needed (Real/Fake Mode toggling already manages it), but useful to
 // recover a crashed/hung Real Mode instance without a full mode round-trip.
 async function pifinderServiceAction(action) {
+  const btn = document.getElementById(`pifinder-svc-${action}-btn`);
   if (action !== 'start' &&
-      !(await ccConfirmBanner(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`))) {
+      !(await ccConfirmBanner(`${action === 'stop' ? 'Stop' : 'Restart'} pifinder.service now? This interrupts a running PiFinder session.`, null, btn))) {
     return;
   }
   const btns = ['pifinder-svc-start-btn', 'pifinder-svc-stop-btn', 'pifinder-svc-restart-btn'].map((id) => document.getElementById(id));
-  const btn = document.getElementById(`pifinder-svc-${action}-btn`);
   const originalText = btn.textContent;
   btns.forEach((b) => { b.disabled = true; });
   btn.textContent = { start: 'starting…', stop: 'stopping…', restart: 'restarting…' }[action];
@@ -6074,7 +6112,7 @@ async function toggleMode() {
   const action = wantFake ? 'enable_fake' : 'disable_fake';
   const verb = wantFake ? 'switch to Fake Mode (stops the real pifinder.service)'
                         : 'switch to Real Mode (stops the fake-hardware instance)';
-  if (!(await ccConfirmBanner(`Really ${verb}?`))) return;
+  if (!(await ccConfirmBanner(`Really ${verb}?`, null, btn))) return;
   btn.disabled = true;
   btn.textContent = 'Switching…';
   dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
@@ -8786,21 +8824,25 @@ async function onRoleCardClick(kind) {
   // check below needs to look there instead.
   const card = document.getElementById(`mb-role-card-${kind === 'aio' ? 'host' : kind}`);
   if (card.classList.contains('mb-role-disabled')) {
-    await ccNoticeBanner(card.title);
+    await ccNoticeBanner(card.title, null, card);
     return;
   }
   if (!wmSelectedProfile) {
-    await ccNoticeBanner('Pick a profile in step 1 first.');
+    await ccNoticeBanner('Pick a profile in step 1 first.', null, card);
     return;
   }
   const profile = wmSelectedProfile;
   const actions = [];
   if (kind === 'aio') {
-    if (!(await ccConfirmBanner(`Couple a mount to profile "${profile}"? Adds PiFinder Mount Bridge alongside PiFinder LX200 (this device's own PiFinder). The running profile is restarted to apply changes.`))) return;
+    // The actual clicked element here is "+ Couple a mount", not the role
+    // card `card` resolves to above (that's #mb-role-card-host, unchanged
+    // by this click) - pulse the button people actually pressed.
+    const addMountBtn = document.getElementById('mb-add-mount-btn');
+    if (!(await ccConfirmBanner(`Couple a mount to profile "${profile}"? Adds PiFinder Mount Bridge alongside PiFinder LX200 (this device's own PiFinder). The running profile is restarted to apply changes.`, null, addMountBtn))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
   } else if (kind === 'host') {
-    if (!(await ccConfirmBanner(`Configure profile "${profile}" as PiFinder host? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`))) return;
+    if (!(await ccConfirmBanner(`Configure profile "${profile}" as PiFinder host? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`, null, card))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
   } else {
@@ -8891,14 +8933,14 @@ async function testCtrlRemoteAddress() {
   }
 }
 
-async function applyCtrlRemoteAddress() {
+async function applyCtrlRemoteAddress(triggerEl) {
   const value = _parseCtrlRemoteInput();
   if (!value) {
     _setCtrlRemoteResult('Enter a valid host or host:port first.', 'bad');
     return;
   }
   if (!wmSelectedProfile) {
-    await ccNoticeBanner('Pick a profile in step 1 first.');
+    await ccNoticeBanner('Pick a profile in step 1 first.', null, triggerEl);
     return;
   }
   // Direct request (2026-09-12): pointing PiFinder LX200 at a remote device
@@ -8912,7 +8954,8 @@ async function applyCtrlRemoteAddress() {
   // deliberate, user-initiated change like this one).
   if (lastRealServiceState === 'active') {
     if (!(await ccConfirmBanner(
-      `Pointing PiFinder LX200 at "${value}" also stops this device's own local PiFinder Service (pifinder.service) - it isn't needed once PiFinder LX200 points elsewhere. Stop it and continue?`
+      `Pointing PiFinder LX200 at "${value}" also stops this device's own local PiFinder Service (pifinder.service) - it isn't needed once PiFinder LX200 points elsewhere. Stop it and continue?`,
+      null, triggerEl
     ))) {
       _setCtrlRemoteResult('Cancelled - local PiFinder Service left running, remote address not applied.', null);
       return;
