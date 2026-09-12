@@ -3456,6 +3456,18 @@ let _simStartupMismatch = false;
 // /state's init poll below and never re-fetched (the server itself never
 // flips it back to false short of a fresh install).
 let simMismatchEverResolved = false;
+// Direct feedback (2026-09-12): on every reload, the sim-mismatch card
+// flashed on for a few seconds even when already resolved, then vanished on
+// its own. Cause: refreshSimulatorStartupSource()'s first call (fired
+// immediately at script load, see its own comment below) is a single fetch
+// that resolves faster than init()'s /state fetch (chained behind
+// /last_run_summary) - so _simStartupMismatch could already be true while
+// simMismatchEverResolved here was still its startup default of false, and
+// collectActiveShowstoppers() had no way to tell "not resolved" apart from
+// "don't know yet". Gates the card on having actually learned the real
+// value at least once; set true (and re-rendered) right after init()'s
+// /state fetch below.
+let _simMismatchStateKnown = false;
 // §8.8 (docs/concepts/session_start_position_reconciliation.md, 2026-09-09):
 // third, independent condition. Fed from the same 2s poll as drift
 // (refreshMbDrift() -> MOUNT_HORIZON_STATUS, computed every driver tick from
@@ -3585,7 +3597,7 @@ function collectActiveShowstoppers() {
   // server-persisted - see _sim_mismatch_ever_resolved's own comment)
   // survives every driver/Control Center restart, not just this page load,
   // so once resolved once this install it stays resolved.
-  if (_simStartupMismatch && !liveDriftConfirmsRelated && !simMismatchEverResolved) {
+  if (_simMismatchStateKnown && _simStartupMismatch && !liveDriftConfirmsRelated && !simMismatchEverResolved) {
     // Direct feedback (2026-09-11): a Sync attempt with PiFinder's own
     // position below the horizon used to just get refused by the driver,
     // visible only as a log line - "ich schaue nachts im Feld nicht ins
@@ -5808,6 +5820,8 @@ async function init() {
   applyMaintenanceModeState(data.maintenance_mode_since);
   applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
   if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
+  _simMismatchStateKnown = true;
+  renderNoSolveBanner();
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
   document.getElementById('cc-device-icon-x86').style.display = isPiDevice ? 'none' : '';
