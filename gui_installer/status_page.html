@@ -502,20 +502,30 @@
     color: #666;
     font-style: italic;
   }
+  /* Direct request (2026-09-12): the Terminal used to always render at a
+     fixed 60vh, regardless of how much output there actually was - "Sicht
+     aufs Terminal anpassen... default nur 15 Zeilen". Default height below
+     is 15 lines at this font-size/line-height plus the padding; #log-expand-
+     btn (driven by toggleLogExpanded()) switches to .log-expanded for the
+     previous 60vh, whenever there's more than 15 lines to show. The
+     existing per-poller "stay scrolled to bottom" logic is untouched and
+     still keeps the latest output in view at either height. */
   #log {
     background: #000;
     color: #b8f0b8;
     font-family: "SF Mono", Consolas, monospace;
     font-size: 0.85rem;
+    line-height: 1.4;
     padding: 1rem;
     border-radius: 6px;
-    height: 60vh;
+    height: 20rem;
     width: 100%;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
     box-sizing: border-box;
   }
+  #log.log-expanded { height: 60vh; }
   #status-row {
     display: flex;
     align-items: center;
@@ -2821,7 +2831,14 @@ sudo systemctl start pifinder</pre>
       </div>
       <pre id="last-run-banner-log"></pre>
     </div>
-    <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
+    <div class="collapsible-toggle" onclick="toggleCollapsibleSection('log-wrap', 'log-chevron')">
+      <span>Terminal</span>
+      <span id="log-chevron">&#9650; hide</span>
+    </div>
+    <div id="log-wrap">
+      <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
+      <button id="log-expand-btn" class="ql-small-btn" style="display:none;margin-top:0.5rem;" onclick="toggleLogExpanded()"></button>
+    </div>
     </div>
     </div>
   </div>
@@ -6307,6 +6324,51 @@ function restoreCollapsibleSections() {
   }
 }
 restoreCollapsibleSections();
+
+// #log-wrap is the one collapsible section that defaults OPEN (every other
+// one above defaults closed in the HTML itself) - the Terminal is useful to
+// see without an extra click the first time this page loads, "Grundsätzlich
+// zum ein-/ausklappen" just asks for the *ability* to close it, not a
+// closed-by-default start. So this restores the opposite direction from
+// restoreCollapsibleSections() above: only an explicitly saved "closed"
+// changes anything.
+try {
+  if (localStorage.getItem('collapsible-log-wrap') === 'closed') {
+    document.getElementById('log-wrap').style.display = 'none';
+    document.getElementById('log-chevron').innerHTML = '&#9660; show';
+  }
+} catch (e) {
+  // localStorage unavailable - leave the HTML default (open) in place
+}
+
+// "default nur 15 Zeilen" (direct request, 2026-09-12) - #log-expand-btn
+// shows/hides itself and keeps its own label in sync with however many
+// lines are actually in the Terminal right now, via a MutationObserver
+// instead of touching every one of the ~13 places that append to #log.
+const LOG_COLLAPSED_LINE_COUNT = 15;
+
+function updateLogExpandButton() {
+  const logEl = document.getElementById('log');
+  const btn = document.getElementById('log-expand-btn');
+  const lineCount = logEl.textContent ? logEl.textContent.split('\n').length : 0;
+  if (lineCount <= LOG_COLLAPSED_LINE_COUNT) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
+  btn.textContent = logEl.classList.contains('log-expanded')
+    ? `Show last ${LOG_COLLAPSED_LINE_COUNT} lines`
+    : `Show all (${lineCount} lines)`;
+}
+
+function toggleLogExpanded() {
+  document.getElementById('log').classList.toggle('log-expanded');
+  updateLogExpandButton();
+}
+
+new MutationObserver(updateLogExpandButton).observe(
+  document.getElementById('log'), { childList: true, characterData: true, subtree: true }
+);
 
 // Whole-tile collapse for Mount Bridge / PiFinder Mode, Test and Power /
 // Install or Update (not the PiFinder tile - that one stays always-visible).
