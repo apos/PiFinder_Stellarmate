@@ -2281,12 +2281,16 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1", auth_header: str 
         return None
 
 
-def _pifinder_enable_fake_solve_from_mount(port: str):
+def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1"):
     """Turn Injected Solve on, seeded with the currently coupled mount's
     live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
     active_mount) - a one-time "start here", not a continuous mount-follow
     (that's the larger #130 concept, not yet built). Returns
-    (success: bool, error: str or None)."""
+    (success: bool, error: str or None). `host` - see
+    _pifinder_solve_status()'s own comment (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a) - the mount
+    itself is always local to THIS device (Mount Bridge is a local INDI
+    driver), only the PiFinder being seeded can be remote."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False, "invalid port"
     try:
@@ -2318,7 +2322,7 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
     try:
         body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/fake_solve",
+            f"http://{host}:{port}/api/fake_solve",
             method="POST",
             data=body,
             headers={"Content-Type": "application/json"},
@@ -2370,24 +2374,24 @@ def _pifinder_enable_fake_solve_from_mount(port: str):
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline:
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2) as resp:
+                with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=2) as resp:
                     if json.loads(resp.read()).get("fake_solve_active") is True:
                         break
             except Exception:
                 pass
             time.sleep(0.1)
-        _pifinder_disable_fake_solve(port)
+        _pifinder_disable_fake_solve(port, host)
     return ok, None
 
 
-def _pifinder_disable_fake_solve(port: str) -> bool:
+def _pifinder_disable_fake_solve(port: str, host: str = "127.0.0.1") -> bool:
     """DELETE to PiFinder's own /api/fake_solve - turns Fake-Solve back off,
     resuming normal real-camera solving."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/fake_solve", method="DELETE"
+            f"http://{host}:{port}/api/fake_solve", method="DELETE"
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status == 200
@@ -2395,7 +2399,7 @@ def _pifinder_disable_fake_solve(port: str) -> bool:
         return False
 
 
-def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float):
+def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float, host: str = "127.0.0.1"):
     """POST an explicit RA/Dec (degrees, JNow) straight to PiFinder's own
     /api/fake_solve - independent of any coupled mount, unlike
     _pifinder_enable_fake_solve_from_mount() above. Turns Injected Solve on
@@ -2409,7 +2413,7 @@ def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float):
     try:
         body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/fake_solve",
+            f"http://{host}:{port}/api/fake_solve",
             method="POST",
             data=body,
             headers={"Content-Type": "application/json"},
@@ -3980,26 +3984,38 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/fake_solve_disable":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json({"success": _pifinder_disable_fake_solve(port)})
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_disable_fake_solve(port, host)})
             return
 
         if parsed.path == "/api/fake_solve_enable_from_mount":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            ok, err = _pifinder_enable_fake_solve_from_mount(port)
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            ok, err = _pifinder_enable_fake_solve_from_mount(port, host)
             self._send_json({"success": ok, "error": err})
             return
 
         if parsed.path == "/api/fake_solve_set":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
             try:
                 ra_deg = float(qs.get("ra", [""])[0])
                 dec_deg = float(qs.get("dec", [""])[0])
             except (ValueError, IndexError):
                 self._send_json({"success": False, "error": "ra/dec must be numeric degrees"}, status=400)
                 return
-            ok, err = _pifinder_set_fake_solve(port, ra_deg, dec_deg)
+            ok, err = _pifinder_set_fake_solve(port, ra_deg, dec_deg, host)
             self._send_json({"success": ok, "error": err})
             return
 

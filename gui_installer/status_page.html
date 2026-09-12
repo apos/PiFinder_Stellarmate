@@ -4482,7 +4482,8 @@ async function toggleTruthInjector() {
       // (#319: pass the port - /api/fake_solve_disable rejects an empty one,
       // so without it this DELETE silently no-op'd and the flag stuck.)
       const injPort = pifinderScreenUrl ? (new URL(pifinderScreenUrl).port || '80') : '80';
-      await fetch(`/api/fake_solve_disable?port=${injPort}`, { method: 'POST' });
+      const injHost = pifinderHost();
+      await fetch(`/api/fake_solve_disable?port=${injPort}&host=${encodeURIComponent(injHost || '127.0.0.1')}`, { method: 'POST' });
     }
   } catch (e) {
     toggleError = 'could not reach the server';
@@ -4803,6 +4804,7 @@ function setKeypadStyle(style) {
 async function disableFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const btn = document.getElementById('fake-solve-off-btn');
   const textEl = document.getElementById('fake-solve-advanced-status');
   fakeSolveToggleInFlight = true;
@@ -4816,7 +4818,7 @@ async function disableFakeSolve() {
       // its next 2s tick just turns this back on (direct feedback, 2026-08-10).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    await fetch(`/api/fake_solve_disable?port=${port}`, { method: 'POST' });
+    await fetch(`/api/fake_solve_disable?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
   } catch (e) {
     // fall through to the poll loop - it reflects whatever is actually true
   }
@@ -4860,6 +4862,7 @@ async function triggerReseedFromMountBanner() {
 async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const btn = document.getElementById('fake-solve-reseed-btn');
   const textEl = document.getElementById('fake-solve-advanced-status');
   fakeSolveToggleInFlight = true;
@@ -4873,7 +4876,7 @@ async function reseedFakeSolve() {
       // this one-shot re-seed with the shadow device's own position (#323).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
+    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
       fakeSolveToggleInFlight = false;
@@ -4926,6 +4929,7 @@ async function reseedFakeSolve() {
 async function setFakeSolveManual() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const raEl = document.getElementById('fake-solve-manual-ra');
   const decEl = document.getElementById('fake-solve-manual-dec');
   const statusEl = document.getElementById('fake-solve-manual-status');
@@ -4949,7 +4953,7 @@ async function setFakeSolveManual() {
       // (#323 - found live testing #319/#322).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
+    const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
     failed = result.success !== true;
     statusEl.textContent = result.success === true ? '' : `failed (${result.error || 'unknown error'})`;
