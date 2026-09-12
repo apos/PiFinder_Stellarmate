@@ -213,9 +213,9 @@
      kept separate from #pifinder-screen-wrap so the icon column doesn't
      also get covered by that overlay. */
   #pifinder-screen-inner { position: relative; flex-shrink: 0; }
-  /* Found live (2026-08-09, #187): the static splash fallback
-     (pifinder_welcome.png, red-channel-only to match the real OLED) is dark
-     enough that right after a real Pi reboot - before PiFinder's own web
+  /* Found live (2026-08-09, #187): the static splash fallback (blue or red,
+     see updatePiFinderStatusAndWizardLink()) is dark enough that right after
+     a real Pi reboot - before PiFinder's own web
      server is even reachable to probe, can take up to a minute or more
      competing with everything else the system starts at once - the tile
      just looked dead, with nothing telling the user PiFinder was even
@@ -2080,7 +2080,7 @@
       <div id="pifinder-glance-row">
         <div id="pifinder-screen-wrap">
           <div id="pifinder-screen-inner">
-            <img id="pifinder-screen" src="/pifinder_welcome.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+            <img id="pifinder-screen" src="/pifinder_welcome_blue.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
             <div id="pifinder-screen-waiting"><span id="pifinder-screen-waiting-text">Waiting for<br>PiFinder&hellip;</span></div>
           </div>
           <a class="help-link pifinder-screen-help" href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener" title="PiFinder User Guide">i</a>
@@ -3318,6 +3318,12 @@ function updatePiFinderStatusAndWizardLink() {
     // now only remains for the one moment where neither has answered even
     // once yet (page just opened, no poll back).
     const waitingTextEl = document.getElementById('pifinder-screen-waiting-text');
+    // Something is actually attempting to run (Fake Mode up, or systemd
+    // already launched/still launching pifinder.service) vs. definitely
+    // not (stopped/failed/not known yet) - drives which static placeholder
+    // shows behind the text below, same real signals as the text itself.
+    const attemptingToRun = lastPifinderMode === 'fake' ||
+      lastRealServiceState === 'activating' || lastRealServiceState === 'active';
     if (lastPifinderMode === 'fake') {
       // Fake Mode is its own non-systemd process (see FAKE_MODE_SCRIPT's own
       // comment) - real_service_state only ever reflects pifinder.service,
@@ -3339,6 +3345,15 @@ function updatePiFinderStatusAndWizardLink() {
     } else {
       waitingTextEl.innerHTML = 'Checking PiFinder<br>status&hellip;';
     }
+    // Direct feedback (2026-09-12): blue (PiFinder's own splash, untinted)
+    // while nothing is running/attempting to - red (matching the real
+    // OLED's own rendering) once something actually is, until the real
+    // mirror above takes over. Only touch .src when it needs to change -
+    // this runs on every poll tick, and reassigning an unchanged src would
+    // restart the image "load" each time for no reason.
+    const screenImg = document.getElementById('pifinder-screen');
+    const wantedSrc = attemptingToRun ? '/pifinder_welcome_red.png' : '/pifinder_welcome_blue.png';
+    if (!screenImg.src.endsWith(wantedSrc)) screenImg.src = wantedSrc;
   }
   if (pifinderScreenUrl) {
     const base = pifinderScreenUrl.replace(/\/image.*$/, '');
@@ -5940,11 +5955,13 @@ function refreshPiFinderScreen() {
     setTimeout(refreshPiFinderScreen, 1000);
   };
   probe.onerror = () => {
-    // PiFinder stopped responding - drop back to the static splash image
-    // and resume the discovery loop so it recovers automatically if
-    // PiFinder comes back.
+    // PiFinder stopped responding - drop back to a static splash image
+    // (updatePiFinderStatusAndWizardLink() right below immediately picks
+    // the right one - blue or red - from the actual current state; this is
+    // just a safe default for the instant before that runs) and resume the
+    // discovery loop so it recovers automatically if PiFinder comes back.
     pifinderScreenUrl = null;
-    document.getElementById('pifinder-screen').src = '/pifinder_welcome.png';
+    document.getElementById('pifinder-screen').src = '/pifinder_welcome_blue.png';
     updatePiFinderStatusAndWizardLink();
     tryPiFinderScreenUrls(piFinderProbeUrls(), 0);
   };

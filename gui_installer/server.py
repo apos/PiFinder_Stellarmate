@@ -64,13 +64,20 @@ PROJECT_LOGO = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_Wo
 # 96x96 (#268: sticky header icon, shown at ~22px - only needs enough
 # resolution for retina, not the full wordmark's 950x179).
 PROJECT_ICON = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_icon_negativ_fuer-dunklen-hg.png"
-# PiFinder's own splash bitmap (shown by pifinder_splash.service before the
-# main app is up) - only exists once PiFinder has actually been installed.
-PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
-# #117: cached red-tinted version of the above, matching the real OLED's
-# actual red rendering (see displays.py's RED_RGB color mask) instead of the
-# full-color/blue original - see _pifinder_welcome_image_red() below.
-PIFINDER_WELCOME_IMAGE_RED = GUI_DIR / ".welcome_red_cache.png"
+# OLED-mirror placeholder images (2026-09-12, direct feedback: "Das ist nicht
+# vom Device abhängig!") - bundled directly with this checkout, not read from
+# ~/PiFinder/images/welcome.png the way this used to work. That file only
+# ever exists once PiFinder itself has been cloned, and the red-tinted
+# version used to be generated on the fly via PiFinder's own venv (Pillow) -
+# meaning a device with no PiFinder installed yet (or no venv built yet) had
+# no placeholder to show at all, just a blank black tile. Both are now static
+# assets: blue is PiFinder's own upstream splash exactly as cloned; red is
+# the same image pre-converted to red-channel-only, matching the real OLED's
+# actual rendering (see displays.py's RED_RGB color mask) - see
+# status_page.html's updatePiFinderStatusAndWizardLink() for which one shows
+# when, driven by the same live state the wait-overlay text already uses.
+PIFINDER_WELCOME_IMAGE_BLUE = GUI_DIR / "pifinder_welcome_blue.png"
+PIFINDER_WELCOME_IMAGE_RED = GUI_DIR / "pifinder_welcome_red.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 # Written just before a successful run's self-restart (see
 # _restart_control_center()) so the fresh process can tell the reloaded page
@@ -754,49 +761,6 @@ _IMU_READ_SCRIPT = (
     "    print(json.dumps({'ok': False, 'exc_type': type(e).__name__, 'exc_msg': str(e)}))\n"
     "    sys.exit(1)\n"
 )
-
-# #117: tints a grayscale-derived version of the source image pure red
-# (R=luminance, G=0, B=0) - the same mapping PiFinder's own displays.py uses
-# for its real OLED (RED_RGB = ColorMask([1, 0, 0], "RGB")) - so the static
-# placeholder matches the warm red glow the live hardware is always seen in,
-# instead of the full-color/blue splash image as cloned from upstream.
-_RED_CONVERT_SCRIPT = (
-    "import sys\n"
-    "from PIL import Image\n"
-    "src, dst = sys.argv[1], sys.argv[2]\n"
-    "grey = Image.open(src).convert('L')\n"
-    "zero = Image.new('L', grey.size, 0)\n"
-    "Image.merge('RGB', (grey, zero, zero)).save(dst)\n"
-)
-
-
-def _pifinder_welcome_image_red():
-    """Returns the path to a red-tinted cache of PIFINDER_WELCOME_IMAGE,
-    (re)generating it via PiFinder's own venv (has Pillow, unlike the system
-    python3 this server itself runs under) whenever missing or older than
-    the source. Returns None if the source doesn't exist yet (PiFinder not
-    installed) or generation fails - callers should fall back to serving
-    the plain original in that case rather than 404ing a placeholder image."""
-    if not PIFINDER_WELCOME_IMAGE.is_file():
-        return None
-    if (
-        PIFINDER_WELCOME_IMAGE_RED.is_file()
-        and PIFINDER_WELCOME_IMAGE_RED.stat().st_mtime >= PIFINDER_WELCOME_IMAGE.stat().st_mtime
-    ):
-        return PIFINDER_WELCOME_IMAGE_RED
-    if not PIFINDER_VENV_PY.exists():
-        return None
-    try:
-        result = subprocess.run(
-            [str(PIFINDER_VENV_PY), "-c", _RED_CONVERT_SCRIPT,
-             str(PIFINDER_WELCOME_IMAGE), str(PIFINDER_WELCOME_IMAGE_RED)],
-            capture_output=True, text=True, timeout=10,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if result.returncode != 0 or not PIFINDER_WELCOME_IMAGE_RED.is_file():
-        return None
-    return PIFINDER_WELCOME_IMAGE_RED
 
 
 def _classify_capture_failure(stdout, stderr, timed_out):
@@ -3047,8 +3011,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(PROJECT_ICON, "image/png")
             return
 
-        if parsed.path == "/pifinder_welcome.png":
-            self._send_file(_pifinder_welcome_image_red() or PIFINDER_WELCOME_IMAGE, "image/png")
+        if parsed.path == "/pifinder_welcome_blue.png":
+            self._send_file(PIFINDER_WELCOME_IMAGE_BLUE, "image/png")
+            return
+
+        if parsed.path == "/pifinder_welcome_red.png":
+            self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png")
             return
 
         if parsed.path == "/state":
