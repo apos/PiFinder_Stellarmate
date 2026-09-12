@@ -3577,6 +3577,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"started": started, "error": error})
             return
 
+        if parsed.path == "/api/restart_control_center":
+            # Manual trigger for the same restart path a successful install/
+            # update run already uses (see _restart_control_center() and
+            # _cc_restart_pending's own comments) - lets a manually-updated
+            # checkout (e.g. a terminal `git pull`) get picked up without
+            # waiting for the next install run, and doubles as a quick
+            # recovery button if the page seems stuck. Guarded the same way
+            # reboot/shutdown/uninstall are - restarting this process out
+            # from under a real run would abort it uncleanly.
+            global _cc_restart_pending
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
+                    self._send_json(
+                        {"restarting": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+                _cc_restart_pending = True
+                _write_result_file()
+            self._send_json({"restarting": True})
+            threading.Thread(target=_restart_control_center, daemon=True).start()
+            return
+
         if parsed.path == "/reboot":
             with _lock:
                 if _running:

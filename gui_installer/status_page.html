@@ -1793,6 +1793,25 @@
   @media (max-width: 767px) {
     #cc-pifinder-service-notice-banner { padding: 0.5rem 0.8rem; }
   }
+  /* Same flush-strip pattern as the other header banners - replaces a
+     native confirm()/alert() pair for the "Restart Control Center" action
+     (see gui_installer/status_page.html's restartControlCenter()) per
+     basic-memory/basic-memory/00017's dialog-vs-banner rule: a native
+     browser dialog blocks the whole tab and looks jarring, the banner
+     stays in the same visual language as every other urgent message here. */
+  #cc-restart-confirm-banner {
+    background: #2a2214;
+    color: #ddd0b0;
+    border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  @media (max-width: 767px) {
+    #cc-restart-confirm-banner { padding: 0.5rem 0.8rem; }
+  }
   #cc-take-control-btn {
     background: #e0a030;
     color: #221a00;
@@ -1934,6 +1953,11 @@
 <div id="cc-pifinder-service-notice-banner" style="display:none;">
   <span id="cc-pifinder-service-notice-text"></span>
   <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
+</div>
+<div id="cc-restart-confirm-banner" style="display:none;">
+  <span id="cc-restart-confirm-text">Restart the Control Center now? Unsaved changes on this page (e.g. an edited remote address) will be lost.</span>
+  <button id="cc-restart-confirm-btn" class="ql-small-btn" onclick="confirmRestartControlCenter()">Restart now</button>
+  <button id="cc-restart-cancel-btn" class="ql-small-btn" onclick="cancelRestartControlCenter()">Cancel</button>
 </div>
 <div id="stale-page-banner" style="display:none;">
   <span>This page is running an older version - the Control Center has been updated since you loaded it.</span>
@@ -2611,6 +2635,13 @@ sudo systemctl start pifinder</pre>
               <button id="pifinder-svc-start-btn" class="ql-small-btn" onclick="pifinderServiceAction('start')" style="margin-left:0;">Start</button>
               <button id="pifinder-svc-stop-btn" class="ql-small-btn" onclick="pifinderServiceAction('stop')" style="margin-left:0;">Stop</button>
               <button id="pifinder-svc-restart-btn" class="ql-small-btn" onclick="pifinderServiceAction('restart')" style="margin-left:0;">Restart</button>
+            </div>
+          </div>
+          <div class="vgroup-divider"></div>
+          <div class="mode-power-group" title="Restarts this Control Center web server itself (pifinder-control-center.service) - not PiFinder, not the Pi. Picks up a manually-updated PiFinder_Stellarmate checkout, or recovers a page that seems stuck, without waiting for the next install/update run.">
+            <div class="group-label">Control Center</div>
+            <div class="mode-power-group-buttons">
+              <button id="cc-restart-btn" class="ql-small-btn" onclick="restartControlCenter()" style="margin-left:0;">Restart</button>
             </div>
           </div>
           <div class="vgroup-divider"></div>
@@ -3425,6 +3456,18 @@ let _simStartupMismatch = false;
 // /state's init poll below and never re-fetched (the server itself never
 // flips it back to false short of a fresh install).
 let simMismatchEverResolved = false;
+// Direct feedback (2026-09-12): on every reload, the sim-mismatch card
+// flashed on for a few seconds even when already resolved, then vanished on
+// its own. Cause: refreshSimulatorStartupSource()'s first call (fired
+// immediately at script load, see its own comment below) is a single fetch
+// that resolves faster than init()'s /state fetch (chained behind
+// /last_run_summary) - so _simStartupMismatch could already be true while
+// simMismatchEverResolved here was still its startup default of false, and
+// collectActiveShowstoppers() had no way to tell "not resolved" apart from
+// "don't know yet". Gates the card on having actually learned the real
+// value at least once; set true (and re-rendered) right after init()'s
+// /state fetch below.
+let _simMismatchStateKnown = false;
 // §8.8 (docs/concepts/session_start_position_reconciliation.md, 2026-09-09):
 // third, independent condition. Fed from the same 2s poll as drift
 // (refreshMbDrift() -> MOUNT_HORIZON_STATUS, computed every driver tick from
@@ -3554,7 +3597,7 @@ function collectActiveShowstoppers() {
   // server-persisted - see _sim_mismatch_ever_resolved's own comment)
   // survives every driver/Control Center restart, not just this page load,
   // so once resolved once this install it stays resolved.
-  if (_simStartupMismatch && !liveDriftConfirmsRelated && !simMismatchEverResolved) {
+  if (_simMismatchStateKnown && _simStartupMismatch && !liveDriftConfirmsRelated && !simMismatchEverResolved) {
     // Direct feedback (2026-09-11): a Sync attempt with PiFinder's own
     // position below the horizon used to just get refused by the driver,
     // visible only as a log line - "ich schaue nachts im Feld nicht ins
@@ -5291,6 +5334,60 @@ async function powerAction(kind) {
   watchForServerLoss();
 }
 
+// Manual way to trigger the same restart path a successful install/update
+// run already does on its own (_cc_restart_pending in server.py) - for
+// picking up a manually-updated checkout, or recovering a page that seems
+// stuck, without waiting for/running a full install action first. Unlike
+// powerAction()'s reboot/poweroff, this process comes back on its own -
+// reuses enterCcRestartingState()'s existing wait-then-reload flow instead
+// of watchForServerLoss()'s permanent-loss one.
+//
+// No confirm()/alert() here (basic-memory/basic-memory/00017's dialog-vs-
+// banner rule, 2026-09-12) - the click just opens #cc-restart-confirm-banner
+// (same flush-strip-under-the-title pattern as #cc-readonly-banner and the
+// others), and confirmRestartControlCenter()/cancelRestartControlCenter()
+// below drive it from there, including showing the error inline in the
+// banner text instead of alert()ing it.
+function restartControlCenter() {
+  document.getElementById('cc-restart-confirm-banner').style.display = 'flex';
+}
+
+function cancelRestartControlCenter() {
+  const banner = document.getElementById('cc-restart-confirm-banner');
+  banner.style.display = 'none';
+  document.getElementById('cc-restart-confirm-text').textContent =
+    'Restart the Control Center now? Unsaved changes on this page (e.g. an edited remote address) will be lost.';
+  const confirmBtn = document.getElementById('cc-restart-confirm-btn');
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = 'Restart now';
+  document.getElementById('cc-restart-cancel-btn').style.display = '';
+}
+
+async function confirmRestartControlCenter() {
+  const textEl = document.getElementById('cc-restart-confirm-text');
+  const confirmBtn = document.getElementById('cc-restart-confirm-btn');
+  const cancelBtn = document.getElementById('cc-restart-cancel-btn');
+  confirmBtn.disabled = true;
+  cancelBtn.style.display = 'none';
+  textEl.textContent = 'Restarting the Control Center…';
+  try {
+    const resp = await fetch('/api/restart_control_center', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.restarting) {
+      textEl.textContent = data.error || 'Could not restart: unknown error.';
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Retry';
+      cancelBtn.style.display = '';
+      return;
+    }
+  } catch (e) {
+    // Network error here can also mean the server went down right as it
+    // accepted the request - treat it the same as a confirmed restart.
+  }
+  document.getElementById('cc-restart-confirm-banner').style.display = 'none';
+  enterCcRestartingState();
+}
+
 // Uninstall/Reset - both drive bin/uninstall_pifinder_stellarmate.sh (see
 // its own header comments for --selfmove/--reset). Reset is comparatively
 // low-risk (venv/build state only, keeps data/config); Uninstall is final
@@ -5723,6 +5820,8 @@ async function init() {
   applyMaintenanceModeState(data.maintenance_mode_since);
   applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
   if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
+  _simMismatchStateKnown = true;
+  renderNoSolveBanner();
   const isPiDevice = (data.device_type || '').startsWith('pi');
   document.getElementById('cc-device-icon-pi').style.display = isPiDevice ? '' : 'none';
   document.getElementById('cc-device-icon-x86').style.display = isPiDevice ? 'none' : '';
