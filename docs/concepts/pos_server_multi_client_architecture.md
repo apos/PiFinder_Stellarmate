@@ -399,20 +399,27 @@ sinnvoller Folgeauftrag (§11), da dieses Modul sonst weiterhin ungetestet blieb
 Abhängigkeiten: 1 muss vor 2 stehen (Kern-Umsetzung zuerst, dann Tests dagegen); 3 hängt vom
 Erfolg von 1+2 ab; 6 (CPU-Kontention) ist unabhängig und kann parallel laufen.
 
-| # | Schritt | Aufwand | Priorität | Abhängigkeit |
-|---|---|---|---|---|
-| 1 | `run_server()`/`handle_client()`/geteilter State (§5.1) + Entprellung/Plausibilitätscheck (§5.2) + überarbeiteter `_call_with_timeout()` (§5.3) + Thread-Namen im Log (§7) umsetzen | M | P0 | keine |
-| 2 | Manuelle Testschritte aus §9 durchführen, inkl. Reconnect-Sturm-Test | S | P0 | 1 |
-| 3 | `sr_result`-Staleness-Bug korrigieren (Consume-once ist bereits gefixt, s. §2) | XS | P1 | 1, 2 erfolgreich |
-| 4 | `diffs/pos_server_py.diff` neu generieren — muss #107-Fix + überarbeiteten Timeout-Fix + Threading-Änderung als EINEN zusammenhängenden Diff abbilden (s. §2) | S | P0 | 1, 2 erfolgreich |
-| 5 | `python/tests/test_pos_server.py` (automatisierter Integrationstest, §9) | M | P2 | 1 |
-| 6 | **CPU-Kontention auf dem Pi4 untersuchen/mindern** (s. §10) — z. B. `nice`/`chrt` für den StateManager-Kindprozess, oder Profiling (`py-spy`/`austin`) während einer Live-Session, um zu bestätigen, welcher konkrete Prozess/Thread den StateManager tatsächlich verdrängt | M | P1 | keine (unabhängig) |
-| 7 | StellarMate-App-Pfad (INDI-Client über `PiFinder LX200`) einmal live mit tatsächlich verbundener SMOS-App verifizieren, jetzt wo der Pfad geklärt ist (§1) | XS | P2 | keine (unabhängig) |
+| # | Schritt | Aufwand | Priorität | Abhängigkeit | Status |
+|---|---|---|---|---|---|
+| 1 | `run_server()`/`handle_client()`/geteilter State (§5.1) + Entprellung/Plausibilitätscheck (§5.2) + überarbeiteter `_call_with_timeout()` (§5.3) + Thread-Namen im Log (§7) umsetzen | M | P0 | keine | ✅ **Umgesetzt** (Commit `db682a2`, PiFinder-Repo) |
+| 2 | Manuelle Testschritte aus §9 durchführen, inkl. Reconnect-Sturm-Test | S | P0 | 1 | ⬜ Nicht verifiziert von hier aus - kein Nachweis gefunden, dass diese Schritte gegen die fertige Implementierung nochmal durchlaufen wurden |
+| 3 | `sr_result`-Staleness-Bug korrigieren (Consume-once ist bereits gefixt, s. §2) | XS | P1 | 1, 2 erfolgreich | ✅ Im selben Commit enthalten (`_session.sr_result`, verifiziert im Diff) |
+| 4 | `diffs/pos_server_py.diff` neu generieren — muss #107-Fix + überarbeiteten Timeout-Fix + Threading-Änderung als EINEN zusammenhängenden Diff abbilden (s. §2) | S | P0 | 1, 2 erfolgreich | ✅ **Umgesetzt** - aktueller `diffs/pos_server_py.diff` enthält `threading.local()`/`_session`/`listen(5)`/Verbindungs-Obergrenzen, verifiziert per `grep` (2026-09-13); von Issue #401 unabhängig bereits als in sich geschlossen bestätigt |
+| 5 | `python/tests/test_pos_server.py` (automatisierter Integrationstest, §9) | M | P2 | 1 | ⚠️ **Datei existiert, deckt aber nicht das hier ab** - geprüft (2026-09-13): reine Parsing-/Formatierungs-Unittests, kein Thread-/Concurrency-Test; die `reset_module_state`-Fixture setzt noch `pos_server.is_stellarium`/`.sr_result` als Modul-Globals statt `_session.*` - stammt vermutlich von vor der Umstellung. Ob die Datei gegen den aktuellen (Thread-lokalen) Code überhaupt noch grün durchläuft, wurde nicht verifiziert (kein `pytest` in dieser Session-Umgebung installiert). Der ursprünglich für §9 gebaute `test_pos_server_multiclient.py` (Scratch-Skript gegen einen Test-Port) wurde laut §9 nie als dauerhafter Test übernommen - das ist weiterhin offen. |
+| 6 | **CPU-Kontention auf dem Pi4 untersuchen/mindern** (s. §10) — z. B. `nice`/`chrt` für den StateManager-Kindprozess, oder Profiling (`py-spy`/`austin`) während einer Live-Session, um zu bestätigen, welcher konkrete Prozess/Thread den StateManager tatsächlich verdrängt | M | P1 | keine (unabhängig) | ⬜ Kein Nachweis gefunden |
+| 7 | StellarMate-App-Pfad (INDI-Client über `PiFinder LX200`) einmal live mit tatsächlich verbundener SMOS-App verifizieren, jetzt wo der Pfad geklärt ist (§1) | XS | P2 | keine (unabhängig) | ⬜ Kein Nachweis gefunden |
 
-**Freigabe-Gate**: dieses Dokument ist reine Konzeption — Schritt 1 (die eigentliche Code-Änderung) läuft nach
+**Status (2026-09-13, nachträglich verifiziert statt nur konzeptionell)**: die Kern-Umsetzung (Schritt
+1, 3, 4 - das eigentliche Multi-Threading-Design aus §5-§7) ist **fertig und live im aktuellen
+`diffs/pos_server_py.diff`** - das "Freigabe-Gate" unten beschreibt nur noch den historischen
+Ablauf, ist kein offenes Gate mehr. Offen bleiben die Verifikations-/Folgeschritte 2, 5, 6, 7 - vor
+allem Schritt 5 verdient eine echte, dauerhafte Concurrency-Testdatei, da die aktuell so benannte
+Datei etwas anderes prüft, als der Name suggeriert.
+
+**Freigabe-Gate (historisch)**: dieses Dokument war reine Konzeption — Schritt 1 (die eigentliche Code-Änderung) lief nach
 Freigabe im normalen Feature-Branch-+-PR-Workflow gegen das PiFinder-Repo (`main`, s. dessen
 eigenes `CLAUDE.md`), mit anschließender Diff-Extraktion nach PiFinder_Stellarmate (Schritt 4 oben)
-wie beim `_call_with_timeout()`-Fix zuvor in dieser Session.
+wie beim `_call_with_timeout()`-Fix zuvor in dieser Session - dieser Ablauf ist bereits durchlaufen.
 
 ## 12. Bezug
 

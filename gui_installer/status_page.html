@@ -8173,6 +8173,21 @@ async function refreshMbDrift() {
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
+    } else {
+      // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
+      // from mount' darf im Client Mode nicht auftauchen" - none of these
+      // were ever reset when Mount Bridge stops being running (role
+      // genuinely has no Bridge driver at all, e.g. "PiFinder Client", or
+      // it just isn't connected yet) - they stayed frozen at whatever they
+      // last showed while it WAS running on this same page load, including
+      // a stale "PiFinder below horizon" showstopper offering "Re-seed
+      // from mount" on a device with no mount to re-seed from. None of
+      // this can mean anything without a live Mount Bridge poll behind it -
+      // reset to the same neutral state a fresh page load (Mount Bridge
+      // never having run yet) would already show.
+      updateMountHorizonStatus(null, false);
+      updatePiFinderHorizonStatus(null, false);
+      updateMountRejectWarning(false, null);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
