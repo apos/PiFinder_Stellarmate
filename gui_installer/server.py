@@ -1842,6 +1842,23 @@ _last_known_host_profile = None
 _last_known_client_profile = None
 
 
+def _is_client_reserved_profile(profile: str) -> bool:
+    """True for the one profile Client owns - never a legitimate Host memory.
+
+    Direct feedback (2026-09-13), live-caught: clicking "PiFinder host" while
+    "PFSM Client" was the only (and currently running) profile on the device
+    recorded _last_known_host_profile = "PFSM Client" anyway - its driver
+    shape is identical to Host's, so the per-driver reconfigure step found
+    "nothing to change" and only the role-choice/memory bookkeeping actually
+    fired. Both writers of _last_known_host_profile (this function's own
+    elif below, and /api/pifinder_role_choice's direct record) must refuse
+    the client-reserved profile specifically - checked against both the
+    fixed bootstrap name (covers a fresh install where nothing's connected
+    the two yet) and whatever's actually remembered for Client now (covers
+    the user having pointed Client at a renamed/different profile since)."""
+    return profile == webmanager_client.PIFINDER_CLIENT_PROFILE_NAME or profile == _last_known_client_profile
+
+
 def _note_active_profile(profile: str) -> None:
     """Called from every place that already independently confirms a Web
     Manager profile is genuinely running (_pifinder_service_sync_with_
@@ -1876,17 +1893,28 @@ def _note_active_profile(profile: str) -> None:
     # the Host bucket instead - same reasoning as "keep it simple, trust
     # the existing checks" the user already established for the endpoint-
     # level version of this same qualification.
-    client_qualifies = False
+    # Direct feedback (2026-09-13), live-caught: "Change to Host mode
+    # wechselt nicht zurück zum richtigen Profil (oder stimmt der Speicher
+    # nicht?)" - root cause was this function's own fallback. Whenever
+    # role_choice == "client" but the active profile didn't qualify (has a
+    # bridge), the old code fell through to the same "elif" that Host relies
+    # on to accept any profile - silently overwriting _last_known_host_
+    # profile with whatever was transiently active during CLIENT mode (e.g.
+    # a stray dropdown pick), even though the user never chose Host at all.
+    # Host's "accept any profile" only makes sense when the CURRENT choice
+    # actually is Host (or unset) - never as a catch-all for "Client chose
+    # something that doesn't qualify". That anomalous case already gets its
+    # own live warning (the "profile carries more than it needs" showstopper)
+    # and isn't anyone's canonical profile - nothing to remember here.
     if _pifinder_role_choice == "client":
         try:
             client_qualifies = not webmanager_client.pifinder_driver_status(profile)["has_bridge"]
         except webmanager_client.WebManagerError:
             client_qualifies = False
-    if client_qualifies:
-        if profile != _last_known_client_profile:
+        if client_qualifies and profile != _last_known_client_profile:
             _last_known_client_profile = profile
             changed = True
-    elif profile != _last_known_host_profile:
+    elif not _is_client_reserved_profile(profile) and profile != _last_known_host_profile:
         _last_known_host_profile = profile
         changed = True
     if changed:
@@ -3718,6 +3746,18 @@ class Handler(BaseHTTPRequestHandler):
                     # profile in its notice.
                     "cold_profile_start_gave_up": _cold_profile_start_gave_up,
                     "last_known_active_profile": _last_known_active_profile,
+                    # Found live (2026-09-13): missing here the whole time -
+                    # every "/state says X is None" diagnostic read during
+                    # tonight's per-role-profile-memory debugging was reading
+                    # a field that was simply absent from this response, not
+                    # necessarily reflecting the real in-memory/persisted
+                    # value (cross-checked against .mount_bridge_desired_
+                    # state.json directly, which had correct non-None values
+                    # at the same moment this endpoint reported them as
+                    # missing).
+                    "pifinder_role_choice": _pifinder_role_choice,
+                    "last_known_host_profile": _last_known_host_profile,
+                    "last_known_client_profile": _last_known_client_profile,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
@@ -4231,6 +4271,7 @@ class Handler(BaseHTTPRequestHandler):
         global _pifinder_role_choice
         global _profile_switch_in_progress
         global _last_known_host_profile
+        global _last_known_client_profile
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -4988,7 +5029,20 @@ class Handler(BaseHTTPRequestHandler):
             if not profile:
                 self._send_json({"success": False, "error": "missing profile"}, status=400)
                 return
-            _last_known_host_profile = profile
+            # Direct feedback (2026-09-14): "Wird überhaupt geprüft, ob die
+            # Auswahl mit dem gespeicherten Wert übereinstimmt, nachdem der
+            # Modus gewählt wurde?" - it wasn't: this endpoint (named for
+            # when it only ever served Host, before Client got the same
+            # "whatever's selected wins" treatment) always wrote
+            # _last_known_host_profile, regardless of which role was
+            # actually active - picking a profile from the dropdown while
+            # Client was the current choice silently recorded it as Host's
+            # memory instead. Simple, symmetric fix: write into whichever
+            # role is currently chosen, same as every other write site now.
+            if _pifinder_role_choice == "client":
+                _last_known_client_profile = profile
+            else:
+                _last_known_host_profile = profile
             _profile_switch_in_progress = True
             try:
                 try:
@@ -5091,7 +5145,6 @@ class Handler(BaseHTTPRequestHandler):
             # Grundsatz: "Minimal-Ansatz ist ein bewusster Klick des Users,
             # nicht von dir" for anything BEYOND Mount Bridge (other drivers
             # the user deliberately added stay untouched unless they ask).
-            global _last_known_client_profile
             qs = parse_qs(parsed.query)
             reset = qs.get("reset", ["0"])[0] == "1"
             changed = False
@@ -5203,13 +5256,29 @@ class Handler(BaseHTTPRequestHandler):
             # already does - whatever's actually running the moment "host" is
             # chosen becomes the profile restorePiFinderHostProfile() returns
             # to next time.
-            if choice == "host":
-                try:
-                    srv_status = webmanager_client.server_status()
-                    if srv_status["running"] and srv_status["active_profile"]:
-                        _last_known_host_profile = srv_status["active_profile"]
-                except webmanager_client.WebManagerError:
-                    pass
+            # Direct feedback (2026-09-13): "Der User muss die Wahl haben! Die
+            # Warnungen genügen als Hinweis." - restated the original,
+            # unchanged requirement after this session's dedicated-Client-
+            # profile mechanism had drifted away from it: this endpoint only
+            # ever fires as part of a deliberate, confirmed role-card click
+            # (onRoleCardClick()) - whatever profile is actually active at
+            # that moment IS the user's choice, recorded as-is, symmetrically
+            # for both roles. No qualification/reserved-profile gate here on
+            # purpose - the existing showstopper warnings (Mount Bridge
+            # present, extra drivers) are the agreed-on safety net for a
+            # pick that doesn't fit, not a silent override. That gate still
+            # applies to _note_active_profile() below, which runs
+            # unattended (the background readiness watchdog, not a click)
+            # and has no confirm dialog of its own to rely on instead.
+            try:
+                srv_status = webmanager_client.server_status()
+                active = srv_status["active_profile"] if srv_status["running"] else None
+            except webmanager_client.WebManagerError:
+                active = None
+            if active and choice == "host":
+                _last_known_host_profile = active
+            elif active and choice == "client":
+                _last_known_client_profile = active
             _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return

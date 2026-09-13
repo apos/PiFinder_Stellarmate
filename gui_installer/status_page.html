@@ -1108,6 +1108,20 @@
      for sitting alone in the flow - inside .mb-collapsed-summary's flex row
      it needs to stop claiming vertical space around itself instead. */
   .mb-collapsed-summary #mb-role-line { margin: 0; }
+  /* Direct feedback (2026-09-13): "Modus Hide: nur die Info mit LED-Button
+     anzeigen... Modus show: nur die Buttons anzeigen" - while the detail
+     block is expanded, this summary row's own info content (title/sub/
+     role-line) must disappear, not sit duplicated above the cards/tiles it
+     summarizes. Poll functions (updateProfileRoleLine(), updateModeSummaryLine()
+     via updateRealHardwareTile()) keep setting these children's inline
+     display independently of the collapse state - !important on a class
+     toggled by toggleCollapsibleSection() itself is what makes this stick
+     regardless of call order, instead of a one-time override that the next
+     poll tick would silently undo. The chevron is excluded so it stays
+     visible/clickable to collapse back. */
+  .mb-collapsed-summary.mb-summary-expanded > *:not(.mb-collapsed-summary-chevron) {
+    display: none !important;
+  }
   #hw-status {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
@@ -1562,6 +1576,17 @@
      the rest). Same visual card, now a class so renderShowstoppers() can
      stamp out one per currently-true condition into #showstopper-banners
      below, stacked. */
+  /* Direct feedback (2026-09-13): "die Fehlermeldung 'klebt' unterhalb der
+     Info-Anzeige" - #showstopper-banners itself has no margin (an empty
+     wrapper when nothing's active), and .showstopper-card only carries
+     margin-bottom, so the first card sat flush against the status lines
+     above it. Scoped to :first-child rather than a margin-top on the
+     wrapper itself, so an empty wrapper (no active showstopper) still
+     collapses to nothing instead of leaving a stray gap. */
+  #showstopper-banners .showstopper-card:first-child,
+  #showstopper-banners-mount-bridge .showstopper-card:first-child {
+    margin-top: 0.6rem;
+  }
   .showstopper-card {
     display: flex;
     gap: 0.7rem;
@@ -6959,6 +6984,13 @@ function toggleCollapsibleSection(contentId, chevronId, openDisplay) {
   const opening = content.style.display !== openDisplay;
   content.style.display = opening ? openDisplay : 'none';
   chevron.innerHTML = opening ? '&#9650; hide' : '&#9660; show';
+  // Only mb-role-details/mb-mode-cards-block have a .mb-collapsed-summary
+  // header carrying live info content (see its CSS rule for why) - this is
+  // a no-op for every other section, whose header is a plain static label.
+  const summaryHeader = content.previousElementSibling;
+  if (summaryHeader && summaryHeader.classList.contains('mb-collapsed-summary')) {
+    summaryHeader.classList.toggle('mb-summary-expanded', opening);
+  }
   try {
     localStorage.setItem('collapsible-' + contentId, opening ? 'open' : 'closed');
   } catch (e) {
@@ -6992,8 +7024,13 @@ function restoreCollapsibleSections() {
       // localStorage unavailable - leave the HTML default in place
     }
     if (saved === 'open') {
-      document.getElementById(contentId).style.display = openDisplay;
+      const content = document.getElementById(contentId);
+      content.style.display = openDisplay;
       document.getElementById(chevronId).innerHTML = '&#9650; hide';
+      const summaryHeader = content.previousElementSibling;
+      if (summaryHeader && summaryHeader.classList.contains('mb-collapsed-summary')) {
+        summaryHeader.classList.add('mb-summary-expanded');
+      }
     }
   }
 }
@@ -9918,7 +9955,30 @@ async function switchToPiFinderClientProfile(card, reset) {
 // never reconfigures drivers or picks a new profile out of nowhere - the
 // existing per-driver confirm further down still covers the "does this
 // profile's shape actually match Host" question on whatever it restores to.
-async function restorePiFinderHostProfile() {
+// Returns true if onRoleCardClick() should proceed (nothing needed restoring,
+// or the restore itself succeeded/was confirmed), false if it should stop
+// (the user declined the confirm).
+async function restorePiFinderHostProfile(card) {
+  // Direct feedback (2026-09-14): "Achtung: beim Klick auf Host! passiert
+  // es!" - this used to switch profiles immediately on click, with NO
+  // confirm at all, silently discarding whatever was just active for a
+  // different role (e.g. Client's own deliberately-picked "Simulation
+  // PFSM") before the user ever saw a dialog - the confirm further down
+  // only covers the SEPARATE driver-reconfigure step, by which point the
+  // destructive switch had already happened. switchToPiFinderClientProfile()
+  // already confirms before its own switch - mirror that here. Checking
+  // first via /state also means a genuine no-op (nothing remembered, or
+  // already on the remembered profile) stays silent, same as before.
+  let remembered = null;
+  try {
+    const stateResp = await fetch('/state', { cache: 'no-store' });
+    const stateData = await stateResp.json();
+    remembered = stateData.last_known_host_profile || null;
+  } catch (e) {
+    return true;  // can't tell - fall through, the shared flow below still works on whatever's selected
+  }
+  if (!remembered || remembered === wmLastActiveProfile) return true;
+  if (!(await ccConfirmBanner(`Switch back to your PiFinder host profile ("${remembered}")? The running profile is restarted.`, null, card))) return false;
   try {
     const resp = await fetch('/api/pifinder_host_profile', { method: 'POST' });
     const data = await resp.json();
@@ -9932,6 +9992,7 @@ async function restorePiFinderHostProfile() {
     // best-effort - the existing per-driver flow below still works on
     // whatever profile ends up selected either way
   }
+  return true;
 }
 
 // Direct feedback (2026-09-13): "auch wenn es schnell geht, ich will das
@@ -9956,22 +10017,29 @@ async function onRoleCardClick(kind) {
     return;
   }
   flashRoleCard(card);
-  // "PiFinder Client" no longer mutates whatever's selected in step 1 - it
-  // switches to its own dedicated profile instead. See
-  // switchToPiFinderClientProfile()'s own comment.
+  // Direct feedback (2026-09-14): "Client > PFS Sim ausgewählt, Host -> PF
+  // client ausgewählt, zurück auf Client - sollte PFS Sim sein, ist aber PF
+  // Client... Es ist offensichtlich so, dass die Host-Auswahl das Client-
+  // Profil überschreibt" - each role must restore ITS OWN remembered
+  // profile when switching TO it, unconditionally, every time - that's the
+  // whole point of this feature. The actual root cause of every earlier
+  // "restore discards my choice" symptom (including the profileTouched-
+  // gated version that used to sit here) was that the profile dropdown's
+  // own switch endpoint (/api/remember_host_profile) always wrote into
+  // Host's memory regardless of which role was actually active - now fixed
+  // to be role-aware (server.py). With writes finally correct, restoring
+  // on every click is safe again: picking a profile while Client is active
+  // writes Client's own memory immediately (onWmProfileChange()), so by
+  // the time you click a DIFFERENT role card, "restore MY memory" and
+  // "keep what's currently selected" are the same thing for the role you're
+  // leaving - this restore only ever changes anything for the role you're
+  // switching TO.
   if (kind === 'client') {
     await switchToPiFinderClientProfile(card, false);
     return;
   }
-  // Symmetric counterpart: "PiFinder host" has no single fixed profile
-  // name the way Client does, so restore whatever was last actually
-  // running for it instead - otherwise, right after having been on the
-  // dedicated "PFSM Client" profile, this card's own driver-shape check
-  // below would reconfigure THAT profile for Host use (see
-  // restorePiFinderHostProfile()'s own comment). No-op if nothing's been
-  // remembered yet or it's already active.
   if (kind === 'host') {
-    await restorePiFinderHostProfile();
+    if (!(await restorePiFinderHostProfile(card))) return;
   }
   if (!wmSelectedProfile) {
     await ccNoticeBanner('Pick a profile in step 1 first.', null, card);
@@ -9979,16 +10047,33 @@ async function onRoleCardClick(kind) {
   }
   const profile = wmSelectedProfile;
   const actions = [];
-  if (kind === 'host') {
-    if (!(await ccConfirmBanner(`Configure profile "${profile}" as PiFinder host? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`, null, card))) return;
+  if (kind === 'host' || kind === 'client') {
+    // Direct feedback (2026-09-14): "Die will ich an dieser Stelle nicht,
+    // die ist manipulativ. Ich will einfach nur Confirm zum Wechseln und
+    // nix ändern, dafür haben wir eine Warnung." - restorePiFinderHostProfile()/
+    // switchToPiFinderClientProfile() above already confirm the switch
+    // itself (once, plainly) - this second, detailed confirm about WHAT
+    // gets reconfigured (Mount Bridge removed, etc.) added nothing but a
+    // second gate on the same click, worded like a warning about a
+    // decision already made. The existing showstopper warnings (Mount
+    // Bridge present, extra drivers) are the agreed-on way to flag a
+    // mismatch - not a second confirm dialog in front of every switch.
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
     // Record the choice regardless of whether the profile itself needed any
     // change (the shared "nothing to change" early-return below would
-    // otherwise skip this too - e.g. clicking "PiFinder host" on a
-    // profile that's already Mount-Bridge-free needs to remember the new
-    // choice even though there's no actual driver change to make).
+    // otherwise skip this too - e.g. clicking a role card on a profile
+    // that's already Mount-Bridge-free needs to remember the new choice
+    // even though there's no actual driver change to make).
     await setPifinderRoleChoice(kind);
+    // This click's own confirm+configure IS itself a fresh, deliberate
+    // profile choice (same reasoning as onWmProfileChange()'s own comment)
+    // - loadWmProfiles() below should follow the actually-running profile
+    // from here on, not keep preferring a stale manual pick from before
+    // this click. Previously only reset for 'client', leaving a manual
+    // dropdown pick's profileTouched=true still set after a Host click -
+    // stale on the NEXT role-card click's own loadWmProfiles() call.
+    profileTouched = false;
   } else {
     // No prompt() here anymore (2026-09-11, direct feedback: mandatory
     // entry, same yellow-box style as the other showstoppers, not a
@@ -10026,6 +10111,15 @@ async function onRoleCardClick(kind) {
   await refreshWmDriverButtons();
   await loadWmProfiles();
   await refreshMountBridgeStatus();
+  // Direct feedback (2026-09-14): "prüfe nach dem Moduswechsel, ob Auswahl
+  // und Speicher übereinstimmen" - setPifinderRoleChoice() above recorded
+  // whatever was active BEFORE the driver reconfigure loop just ran; if
+  // that loop needed a restart to apply (Mount Bridge add/remove), re-sync
+  // now that loadWmProfiles() has the truly-settled active profile, so the
+  // stored memory never lags behind what's actually running.
+  if (kind === 'host' || kind === 'client') {
+    await setPifinderRoleChoice(kind);
+  }
   mbActionInFlight = false;
   clearMbActionStatus();
   setStepBusy(3, false);
