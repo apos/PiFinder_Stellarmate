@@ -472,31 +472,28 @@ def _pifinder_service_sync_with_lx200_target():
         # _autostart_cold_profile() alone.
         _note_active_profile(wm_status["active_profile"])
         driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
-        # Found live (2026-09-13), direct feedback on the GUI's own mismatch
-        # warning ("Host ist aktiv... Das ist schlicht FALSCH. Die Meldung
-        # darf nicht erscheinen"): "PiFinder Client" only has meaning while
-        # role stays 'host' (no Mount Bridge in the profile at all) - the
-        # moment a local PiFinder LX200 AND Mount Bridge are BOTH in the
-        # profile (the frontend's 'aio', always shown as "PiFinder host",
-        # never as "PiFinder Client"), the stored choice is simply obsolete,
-        # not "in conflict" - showing a warning that contradicts the
-        # already-correct green "PiFinder host" card was the actual bug, not
-        # the missing warning. Clearing it here (server-side, so it stays
-        # honest even with no GUI open, and so a remote Control host reading
-        # this device's choice via the 2b proxy never sees the stale value
-        # either) rather than just hiding the frontend banner - `None` (not
-        # "host") since nothing here observed a deliberate choice, only that
-        # "client" no longer describes this profile.
-        if (
-            driver_status.get("has_lx200") and not driver_status.get("lx200_remote")
-            and driver_status.get("has_bridge") and _pifinder_role_choice == "client"
-        ):
-            _pifinder_role_choice = None
-            _save_mount_bridge_desired_state()
-            _mb_log(
-                "pifinder_role_choice: cleared stale 'client' choice - this profile now has both "
-                "a local PiFinder LX200 and Mount Bridge, which only ever shows as 'PiFinder host'."
-            )
+        # Direct feedback (2026-09-13), superseding the previous version of
+        # this comment: "Ich ändere im Client mode die Profilauswahl -> BANG
+        # -> es springt zurück auf PiFinder Host. Das darf nicht passieren...
+        # weil wir mittlerweile den Control Host mode umgesetzt haben und
+        # damit in Folge komplett neue Anforderungen [entstanden sind]." -
+        # this used to auto-clear the "client" choice back to None the
+        # moment Mount Bridge showed up in the profile. That made sense
+        # BEFORE "Control host" existed as a real, separate role with its
+        # own remote-coupling flow - back then, local LX200 + Mount Bridge
+        # together had no other explanation than "the Client choice is
+        # simply stale". Now that Host/Client/Control host each have their
+        # own remembered-profile mechanism (_last_known_host_profile/
+        # _last_known_client_profile) and a profile can legitimately end up
+        # bridge-having for reasons unrelated to the Client choice (shared
+        # test profiles, deliberate experimentation), silently discarding
+        # that choice is no longer a safe inference - it's exactly the
+        # "derived shape silently overrules the user's explicit choice" bug
+        # the frontend side of this same fix removes today. An explicit
+        # choice persists (Grundsatz: "hat er einmal etwas eingestellt, soll
+        # es bestehen bleiben") until the user changes it themselves; the
+        # mismatch is surfaced via the 'client-has-bridge' showstopper card
+        # instead, never silently auto-resolved in either direction.
     except webmanager_client.WebManagerError:
         _sync_pifinder_service_from_cache()
         if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
@@ -1865,7 +1862,27 @@ def _note_active_profile(profile: str) -> None:
     if profile != _last_known_active_profile:
         _last_known_active_profile = profile
         changed = True
+    # Direct feedback (2026-09-13): "last_known_client_profile wurde durch
+    # den Hintergrund-Wächter mit 'Simulation PFSM' kontaminiert" - routing
+    # into the Client bucket just because _pifinder_role_choice happened to
+    # say "client" isn't enough - unlike Host (which accepts any profile),
+    # a profile with Mount Bridge structurally can never be the Client
+    # profile (see isPiFinderClientRole()'s own comment on the frontend).
+    # Recording it there anyway is exactly how this got contaminated: some
+    # OTHER path (the dropdown switch, the cold-profile autostart watchdog)
+    # made a bridge-having profile the active one while role_choice was
+    # still "client" from earlier, and this function recorded it as the
+    # Client profile with no qualification check at all. Falls through to
+    # the Host bucket instead - same reasoning as "keep it simple, trust
+    # the existing checks" the user already established for the endpoint-
+    # level version of this same qualification.
+    client_qualifies = False
     if _pifinder_role_choice == "client":
+        try:
+            client_qualifies = not webmanager_client.pifinder_driver_status(profile)["has_bridge"]
+        except webmanager_client.WebManagerError:
+            client_qualifies = False
+    if client_qualifies:
         if profile != _last_known_client_profile:
             _last_known_client_profile = profile
             changed = True
@@ -1882,6 +1899,49 @@ def _note_active_profile(profile: str) -> None:
             )
     except webmanager_client.WebManagerError as e:
         _mb_log(f"Could not enable autostart for Web Manager profile '{profile}': {e}")
+
+
+# Direct feedback (2026-09-13), live-caught via journalctl: a deliberate
+# role switch (/api/pifinder_client_profile, /api/pifinder_host_profile)
+# stops the old profile then starts the new one - a brief window with
+# NOTHING running. _autostart_cold_profile() below runs independently every
+# _mount_bridge_readiness_watchdog() tick (5s) and treats exactly that gap
+# as "profile died, self-heal it" - racing to restart the OLD profile
+# (_last_known_active_profile) while the deliberate switch is still
+# starting the NEW one. Both calls hit the Web Manager's own start/stop API
+# concurrently; found live as a raw TimeoutError from urllib in one or the
+# other (surfaced to the browser as "Failed to fetch", no useful message).
+# Direct feedback (2026-09-13): "kein kosmetischer Fix, ordentliche
+# Heuristik: Sperre aufheben wenn alle Punkte abgearbeitet sind plus
+# Timeout" - a fixed guessed buffer isn't good enough (confirmed live: the
+# race still happened with a buffer sized to look "safe" on paper). Held
+# from the moment either endpoint decides to switch until
+# _wait_for_profile_running() below has actually CONFIRMED the target is
+# running (polling the Web Manager itself, same proven pattern the
+# per-driver restart flow already uses) - or its own bounded timeout gives
+# up, so a genuinely stuck switch can't wedge this open forever either.
+_profile_switch_in_progress = False
+
+
+def _wait_for_profile_running(profile: str, timeout: float = 15.0) -> bool:
+    """Polls the Web Manager until `profile` is confirmed actually running,
+    or `timeout` elapses - same proven pattern as the per-driver restart
+    flow's own wait (see its own comment: avoids a caller's immediate
+    post-action refresh landing in the brief "not running yet" window and
+    flashing a confusing state). 15s default, not the other call site's 8s -
+    issue #385's own indiserver query times (regularly 3-7s+ live) leave
+    less margin in an 8s budget than intended when it was first chosen.
+    Returns whether it was actually confirmed running before the timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            status = webmanager_client.server_status()
+        except webmanager_client.WebManagerError:
+            status = {"running": False, "active_profile": None}
+        if status["running"] and status["active_profile"] == profile:
+            return True
+        time.sleep(0.3)
+    return False
 
 
 _cold_profile_retrier = _BackgroundRetrier()
@@ -1919,6 +1979,8 @@ def _autostart_cold_profile():
     it."""
     global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
     global _cold_profile_start_gave_up
+    if _profile_switch_in_progress:
+        return  # a deliberate Host/Client switch is already mid-flight - see that global's own comment
     if not _last_known_active_profile:
         return  # nothing ever confirmed running here - not this self-heal's job (see One-Click Setup)
     try:
@@ -4167,6 +4229,8 @@ class Handler(BaseHTTPRequestHandler):
         # function and avoids the trap entirely.
         global _hwtest_running, _mode_action_running, _reset_running, _reset_exit_code, _uninstall_running
         global _pifinder_role_choice
+        global _profile_switch_in_progress
+        global _last_known_host_profile
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -4903,6 +4967,56 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/remember_host_profile":
+            # Direct feedback (2026-09-13): "Den extra Bestätigungsklick
+            # verstehe ich nicht, Kopple das Merken an 'on change' ... bei
+            # der Auswahl des Profils. Der Klick ist überflüssig" - picking
+            # a profile in the "1. INDI WM" dropdown (onWmProfileChange())
+            # now calls this immediately, no separate role-card click/
+            # confirm needed. Follow-up feedback the same day: "natürlich
+            # musst du bei Wechsel das Profil auch starten. Wieviel Klicks
+            # soll der User denn noch machen" - remembering alone left the
+            # dropdown showing a profile that wasn't actually running at
+            # all, an even more confusing half-state. Now does both:
+            # remembers it (same as before) AND actually switches to it
+            # (stop whatever's running, start this one) - one selection,
+            # one result, matching every other switch endpoint's own
+            # stop/start/wait/lock pattern (_profile_switch_in_progress,
+            # _wait_for_profile_running()).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"success": False, "error": "missing profile"}, status=400)
+                return
+            _last_known_host_profile = profile
+            _profile_switch_in_progress = True
+            try:
+                try:
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                if srv_status["active_profile"] != profile:
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"(switching to '{profile}', selected in the profile dropdown)...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{profile}'...")
+                    try:
+                        webmanager_client.start_server(profile)
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _wait_for_profile_running(profile)
+                _save_mount_bridge_desired_state()
+                self._send_json({"success": True})
+                return
+            finally:
+                _profile_switch_in_progress = False
+
         if parsed.path == "/api/pifinder_host_profile":
             # Symmetric counterpart to /api/pifinder_client_profile below.
             # "PiFinder host" has no single fixed profile name the way
@@ -4922,111 +5036,143 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": True, "profile": None})
                 return
             target = _last_known_host_profile
+            _profile_switch_in_progress = True
             try:
-                srv_status = webmanager_client.server_status()
-            except webmanager_client.WebManagerError:
-                srv_status = {"running": False, "active_profile": None}
-            if srv_status["active_profile"] != target:
-                if srv_status["running"]:
-                    _mb_log(f"stopping profile '{srv_status['active_profile']}' "
-                            f"(switching back to '{target}' for PiFinder host)...")
+                try:
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                if srv_status["active_profile"] != target:
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"(switching back to '{target}' for PiFinder host)...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{target}'...")
                     try:
-                        webmanager_client.stop_server()
+                        webmanager_client.start_server(target)
                     except webmanager_client.WebManagerError as e:
                         self._send_json({"success": False, "error": str(e)}, status=502)
                         return
-                _mb_log(f"starting profile '{target}'...")
-                try:
-                    webmanager_client.start_server(target)
-                except webmanager_client.WebManagerError as e:
-                    self._send_json({"success": False, "error": str(e)}, status=502)
-                    return
-            self._send_json({"success": True, "profile": target})
-            return
+                    _wait_for_profile_running(target)
+                self._send_json({"success": True, "profile": target})
+                return
+            finally:
+                _profile_switch_in_progress = False
 
         if parsed.path == "/api/pifinder_client_profile":
             # "PiFinder Client" restores whatever profile is remembered for
-            # it (_last_known_client_profile - see that global's own
-            # comment) instead of mutating whatever happened to be selected
-            # in step 1. Direct feedback (2026-09-13): "der User muss frei
-            # in der Wahl sein, nur wenn es KEIN passendes Profil gibt, dann
-            # legst du INITIAL ein neues an" - symmetric to Host: the user
-            # may point this role at any profile they like, remembered
-            # going forward; PIFINDER_CLIENT_PROFILE_NAME ("PFSM Client")
-            # only ever bootstraps a fresh minimal one the very first time,
-            # when nothing has been remembered yet.
+            # it (_last_known_client_profile) IF it still qualifies (no
+            # Mount Bridge - the one thing that's structurally, never
+            # legitimately compatible with this role, see deriveProfileRole()
+            # on the frontend: LX200+bridge reads as 'aio', not 'host').
+            #
+            # Direct feedback (2026-09-13), the exact sequence: "1. Profil
+            # aktivieren, 2. dann schauen, dass alles richtig eingerichtet
+            # ist... wenn dann(!) [ein Fehler auftritt, z.B. der User
+            # wechselt im Client Modus auf ein nicht geeignetes Profil,]
+            # dann kommt die Warnung" - activation itself never shows a
+            # warning: if the remembered profile no longer qualifies, it
+            # silently falls back to the well-known default (healing that
+            # default too, if even IT somehow has Mount Bridge on it),
+            # exactly like the "nothing remembered yet" bootstrap case. The
+            # "client-has-bridge" showstopper card (collectActiveShowstoppers())
+            # still fires - but only for the live case this leaves uncovered
+            # on purpose: the user manually picking an unsuitable profile
+            # via the dropdown WHILE ALREADY on this role, an active
+            # deviation happening right now, not a leftover from before.
             #
             # ?reset=1 (the explicit "Reset to minimal Client set" button)
-            # force-replaces the CURRENTLY remembered profile's drivers back
-            # to exactly PiFinder LX200 + PiFinder Simulator - Grundsatz:
-            # "Minimal-Ansatz ist ein bewusster Klick des Users, nicht von
-            # dir", so this only ever happens on that explicit click, never
-            # silently on plain activation (anything the user has added
-            # since, even Mount Bridge, is a deliberate choice this endpoint
-            # never discards on its own initiative).
+            # still force-replaces the CURRENTLY remembered profile's
+            # drivers back to exactly PiFinder LX200 + PiFinder Simulator -
+            # Grundsatz: "Minimal-Ansatz ist ein bewusster Klick des Users,
+            # nicht von dir" for anything BEYOND Mount Bridge (other drivers
+            # the user deliberately added stay untouched unless they ask).
             global _last_known_client_profile
             qs = parse_qs(parsed.query)
             reset = qs.get("reset", ["0"])[0] == "1"
             changed = False
-            if _last_known_client_profile:
-                profile = _last_known_client_profile
-                if reset:
+            _profile_switch_in_progress = True
+            try:
+                remembered = _last_known_client_profile
+                remembered_qualifies = False
+                if remembered:
                     try:
-                        changed = webmanager_client.reset_client_profile_drivers(profile)
+                        remembered_qualifies = not webmanager_client.pifinder_driver_status(remembered)["has_bridge"]
+                    except webmanager_client.WebManagerError:
+                        remembered_qualifies = False  # profile no longer exists at all
+
+                if remembered and remembered_qualifies:
+                    profile = remembered
+                    if reset:
+                        try:
+                            changed = webmanager_client.reset_client_profile_drivers(profile)
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                        if changed:
+                            _mb_log(
+                                f"reset PiFinder Client profile '{profile}' back to "
+                                "PiFinder LX200 + PiFinder Simulator only."
+                            )
+                else:
+                    profile = webmanager_client.PIFINDER_CLIENT_PROFILE_NAME
+                    try:
+                        changed = webmanager_client.ensure_pifinder_client_profile()
+                        if webmanager_client.pifinder_driver_status(profile)["has_bridge"]:
+                            changed = webmanager_client.reset_client_profile_drivers(profile) or changed
                     except webmanager_client.WebManagerError as e:
                         self._send_json({"success": False, "error": str(e)}, status=502)
                         return
                     if changed:
+                        reason = (
+                            f"'{remembered}' no longer qualifies (Mount Bridge present)"
+                            if remembered else "first time this role has been used"
+                        )
                         _mb_log(
-                            f"reset PiFinder Client profile '{profile}' back to "
+                            f"using default PiFinder Client profile '{profile}' ({reason}) - "
                             "PiFinder LX200 + PiFinder Simulator only."
                         )
-            else:
-                profile = webmanager_client.PIFINDER_CLIENT_PROFILE_NAME
                 try:
-                    changed = webmanager_client.ensure_pifinder_client_profile()
-                except webmanager_client.WebManagerError as e:
-                    self._send_json({"success": False, "error": str(e)}, status=502)
-                    return
-                if changed:
-                    _mb_log(
-                        f"created dedicated PiFinder Client profile '{profile}' "
-                        "(PiFinder LX200 + PiFinder Simulator only) - first time this role has been used."
-                    )
-            try:
-                srv_status = webmanager_client.server_status()
-            except webmanager_client.WebManagerError:
-                srv_status = {"running": False, "active_profile": None}
-            # `changed` also needs a restart even if this was ALREADY the
-            # active profile - found live (2026-09-13): indiserver only
-            # reads a profile's driver list at its own startup, so healing
-            # the DB row alone (above) does nothing observable until it
-            # restarts. Without this, self-heal while already on this role
-            # silently updated the profile but left the stale (bloated)
-            # driver set running - exactly the "system heals it" guarantee
-            # this endpoint exists for, quietly failing in its most likely
-            # trigger case (drift discovered while already active, not just
-            # on first switching in).
-            if srv_status["active_profile"] != profile or (changed and srv_status["running"]):
-                if srv_status["running"]:
-                    _mb_log(f"stopping profile '{srv_status['active_profile']}' "
-                            f"({'applying the driver fix' if srv_status['active_profile'] == profile else f'switching to {profile!r}'})...")
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                # `changed` also needs a restart even if this was ALREADY the
+                # active profile - found live (2026-09-13): indiserver only
+                # reads a profile's driver list at its own startup, so healing
+                # the DB row alone (above) does nothing observable until it
+                # restarts. Without this, self-heal while already on this role
+                # silently updated the profile but left the stale (bloated)
+                # driver set running - exactly the "system heals it" guarantee
+                # this endpoint exists for, quietly failing in its most likely
+                # trigger case (drift discovered while already active, not just
+                # on first switching in).
+                if srv_status["active_profile"] != profile or (changed and srv_status["running"]):
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"({'applying the driver fix' if srv_status['active_profile'] == profile else f'switching to {profile!r}'})...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{profile}'...")
                     try:
-                        webmanager_client.stop_server()
+                        webmanager_client.start_server(profile)
                     except webmanager_client.WebManagerError as e:
                         self._send_json({"success": False, "error": str(e)}, status=502)
                         return
-                _mb_log(f"starting profile '{profile}'...")
-                try:
-                    webmanager_client.start_server(profile)
-                except webmanager_client.WebManagerError as e:
-                    self._send_json({"success": False, "error": str(e)}, status=502)
-                    return
-            _pifinder_role_choice = "client"
-            _last_known_client_profile = profile
-            _save_mount_bridge_desired_state()
-            self._send_json({"success": True, "profile": profile})
-            return
+                    _wait_for_profile_running(profile)
+                _pifinder_role_choice = "client"
+                _last_known_client_profile = profile
+                _save_mount_bridge_desired_state()
+                self._send_json({"success": True, "profile": profile})
+                return
+            finally:
+                _profile_switch_in_progress = False
 
         if parsed.path == "/api/pifinder_role_choice":
             # docs/concepts/pifinder_client_role_and_indi_setup_review.md,
@@ -5044,6 +5190,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": f"invalid choice '{choice}'"}, status=400)
                 return
             _pifinder_role_choice = choice
+            # Direct feedback (2026-09-13): "wechselt das Profil wieder nicht
+            # zurück, sondern bleibt auf PFSM Client stehen" - unlike Client
+            # (which records _last_known_client_profile itself, synchronously,
+            # as part of its own dedicated endpoint), choosing "host" here
+            # never recorded _last_known_host_profile directly - it relied
+            # entirely on the next _mount_bridge_readiness_watchdog() tick to
+            # notice and record it via _note_active_profile(), which only
+            # works once role_choice has ALREADY flipped to "host" (a
+            # chicken-and-egg gap on the very tick this request itself
+            # causes). Record it explicitly, right here, the same way Client
+            # already does - whatever's actually running the moment "host" is
+            # chosen becomes the profile restorePiFinderHostProfile() returns
+            # to next time.
+            if choice == "host":
+                try:
+                    srv_status = webmanager_client.server_status()
+                    if srv_status["running"] and srv_status["active_profile"]:
+                        _last_known_host_profile = srv_status["active_profile"]
+                except webmanager_client.WebManagerError:
+                    pass
             _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
