@@ -4858,6 +4858,55 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/pifinder_client_profile":
+            # "PiFinder Client" always runs its own dedicated profile
+            # (webmanager_client.PIFINDER_CLIENT_PROFILE_NAME) instead of
+            # mutating whatever happened to be selected in step 1 - direct
+            # feedback (2026-09-13): a reused/cloned dev profile could have
+            # half a dozen unrelated drivers alongside PiFinder LX200, each
+            # one more surface for indiserver's own stability issues (#385)
+            # to bite on a role that structurally needs none of them. See
+            # ensure_pifinder_client_profile()'s own comment. ?reset=1 is
+            # the explicit "Reset to minimal Client set" action - otherwise
+            # an existing profile's driver list is left as the user
+            # configured it.
+            global _pifinder_role_choice
+            qs = parse_qs(parsed.query)
+            reset = qs.get("reset", ["0"])[0] == "1"
+            profile = webmanager_client.PIFINDER_CLIENT_PROFILE_NAME
+            try:
+                changed = webmanager_client.ensure_pifinder_client_profile(reset=reset)
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            if changed:
+                _mb_log(
+                    f"{'reset' if reset else 'created'} dedicated PiFinder Client profile "
+                    f"'{profile}' (PiFinder LX200 + PiFinder Simulator only)."
+                )
+            try:
+                srv_status = webmanager_client.server_status()
+            except webmanager_client.WebManagerError:
+                srv_status = {"running": False, "active_profile": None}
+            if srv_status["active_profile"] != profile:
+                if srv_status["running"]:
+                    _mb_log(f"stopping profile '{srv_status['active_profile']}' (switching to '{profile}')...")
+                    try:
+                        webmanager_client.stop_server()
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                _mb_log(f"starting profile '{profile}'...")
+                try:
+                    webmanager_client.start_server(profile)
+                except webmanager_client.WebManagerError as e:
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+            _pifinder_role_choice = "client"
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True, "profile": profile})
+            return
+
         if parsed.path == "/api/pifinder_role_choice":
             # docs/concepts/pifinder_client_role_and_indi_setup_review.md,
             # section 3a - the one bit that tells "PiFinder host"/"PiFinder
