@@ -102,5 +102,24 @@ self_update_pifinder_stellarmate() {
 
     echo "✅ Self-update: ${branch} updated ${before:0:8} -> ${after:0:8}."
     echo "🔁 Re-executing with the freshly updated code ..."
-    exec env PIFINDER_STELLARMATE_SELF_UPDATED=1 "$0" "$@"
+    # Found live (2026-09-13): bare "$0" breaks this exec whenever the entry
+    # point was invoked as a relative path with no "/" in it (e.g. "bash
+    # pifinder_stellarmate_setup.sh" from inside the repo directory, the
+    # natural way to run it over SSH) - both `exec` and `env` do a $PATH
+    # lookup on a bare command name, which fails since the script isn't
+    # installed anywhere on $PATH: "env: 'pifinder_stellarmate_setup.sh':
+    # No such file or directory", aborting the whole run right after the
+    # self-update it just proudly reported succeeding. The GUI's own
+    # /start route never hits this (server.py always launches the entry
+    # point with an absolute path), which is why this went unnoticed there
+    # - same class of bug pifinder_stellarmate_setup.sh's own SCRIPT_PATH
+    # already exists to avoid for its venv re-exec calls, just missed here.
+    # Resolved independently (not by asking the caller to pass its own
+    # SCRIPT_PATH in) so this works identically for both documented entry
+    # points regardless of where each one's own repo root sits relative to
+    # $0 - self_update.sh runs before either does any `cd`, so $0's own
+    # directory is still resolvable from the current working directory.
+    local self_path
+    self_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    exec env PIFINDER_STELLARMATE_SELF_UPDATED=1 "$self_path" "$@"
 }
