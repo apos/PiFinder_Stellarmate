@@ -5387,6 +5387,25 @@ def main():
     ).returncode == 0
     if killed:
         _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
+    # Found live (2026-09-13, on the actual device this process feeds - not
+    # the remote-coupling case below): killing the stray process above does
+    # NOT clear PiFinder's own fake_solve_active flag on 127.0.0.1 - only
+    # _truth_injector_stop() does that, and it's only ever called from a
+    # graceful toggle-off, never from this startup path. Confirmed live: a
+    # Truth Injector left desired-on across an ungraceful restart (kill/
+    # crash/redeploy) left fake_solve_active stuck True with no process left
+    # to blame it on - PiFinder then kept serving a frozen fake position
+    # (wrong Alt, no "below horizon", stale-reading Drift) forever after,
+    # completely invisible from this GUI since the stray-process check above
+    # only looks for the process, not the flag it leaves behind. Same
+    # unconditional cleanup as the remote case below, just for this device
+    # itself.
+    _cleared_local_80 = _pifinder_disable_fake_solve("80")
+    _cleared_local_8080 = _pifinder_disable_fake_solve("8080")
+    if _cleared_local_80 or _cleared_local_8080:
+        _mb_log(
+            "cleared a stale local Injected Solve flag left stuck on from before this restart."
+        )
     threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
     # #240: readiness + self-healing for Mount Bridge itself - see its own
     # comment for the full rationale. Restore what was desired before the
@@ -5394,6 +5413,30 @@ def main():
     # watchdog, so its very first tick already has something to compare
     # against instead of a blank slate.
     _load_mount_bridge_desired_state()
+    # Found live (2026-09-13), direct feedback ("Driftanzeige ist nicht
+    # korrekt, obwohl der Treiber korrekt verbunden ist"): the stray-local-
+    # process kill above (and _truth_injector_stop()'s own disable calls)
+    # only ever clear fake_solve_active on 127.0.0.1 - a Control host whose
+    # Truth Injector was feeding a REMOTE PiFinder when this process last
+    # went down (any restart that isn't a graceful toggle-off: a redeploy,
+    # a crash, systemd restart) leaves that remote's fake_solve_active
+    # flag stuck true with nothing left to keep refreshing it. The remote
+    # PiFinder itself then keeps reporting a frozen, aging position
+    # instead of "no solve" - which Mount Bridge (coupled to that same
+    # remote) correctly reads as stale (SOLVE_FRESHNESS) but the GUI keeps
+    # showing "Full Simulation: on" as if it were still live. Same
+    # guarantee as the local case, extended to wherever this device was
+    # last actually configured to feed - _last_known_lx200_remote is the
+    # one persisted fact that says which remote that could even be.
+    if _last_known_lx200_remote:
+        _remote_host_for_cleanup = _last_known_lx200_remote.rsplit(":", 1)[0]
+        _cleared_80 = _pifinder_disable_fake_solve("80", _remote_host_for_cleanup)
+        _cleared_8080 = _pifinder_disable_fake_solve("8080", _remote_host_for_cleanup)
+        if _cleared_80 or _cleared_8080:
+            _mb_log(
+                f"sent a fake-solve-off reset to remote PiFinder '{_remote_host_for_cleanup}' on startup "
+                "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
+            )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
