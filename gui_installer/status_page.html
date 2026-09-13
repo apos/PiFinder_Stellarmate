@@ -583,6 +583,27 @@
     min-width: 180px;
     justify-content: center;
   }
+  /* Default (non-Control-host) order: just the two original lines, in their
+     original relative order - the group labels/local-pifinder-status-line/
+     remote-system-load-line stay display:none and are excluded from flow
+     regardless of their own `order` value. See #pifinder-glance-status-
+     stack's own HTML comment for why `order` (not DOM position) drives
+     this - the same elements need a different visual sequence in Control
+     host mode without duplicating markup. */
+  #pifinder-status-line { order: 1; }
+  #local-pifinder-status-line { order: 0; }
+  #system-load-line { order: 3; }
+  #remote-system-load-line { order: 4; }
+  #pifinder-glance-status-stack.ch-grouped #ch-group-label-local { order: 0; }
+  #pifinder-glance-status-stack.ch-grouped #local-pifinder-status-line { order: 1; }
+  #pifinder-glance-status-stack.ch-grouped #system-load-line { order: 2; }
+  #pifinder-glance-status-stack.ch-grouped #ch-group-label-remote { order: 3; }
+  #pifinder-glance-status-stack.ch-grouped #pifinder-status-line { order: 4; }
+  #pifinder-glance-status-stack.ch-grouped #remote-system-load-line { order: 5; }
+  /* .group-label's own margin-bottom (used elsewhere as a block heading)
+     fights this flex column's own `gap` - collapse it here so the two
+     rules don't double up the spacing. */
+  #pifinder-glance-status-stack .group-label { margin: 0; }
   #pf-keypad-style-switch { display: flex; flex-shrink: 0; }
   .pf-keypad-style-btn {
     background: #2a2a2a;
@@ -2252,24 +2273,24 @@
             </div>
             <span>PiFinder</span>
           </div>
+          <!-- Control host only (2026-09-13 mockup "Variant A", direct
+               feedback: "Local: Control Host, Remote: PiFinder Client
+               (probably group)" - picked over inline "Local:"/"Remote:"
+               prefixes on every line, which still read as one flat list).
+               Both group labels + local-pifinder-status-line +
+               remote-system-load-line stay display:none outside Control
+               host role (toggled by updateLocalPifinderStatusLine()/
+               refreshRemoteSystemLoad()); .ch-grouped on the stack reorders
+               the always-present #pifinder-status-line/#system-load-line
+               to sit under the right group via CSS `order` (see that rule's
+               own comment) rather than moving DOM nodes. -->
           <div id="pifinder-glance-status-stack">
-            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
-            <!-- Control host only (2026-09-13, direct feedback: "auf dem CH
-                 brauche ich sowohl die lokalen als auch die remote Werte") -
-                 #pifinder-status-line above already covers the mirrored
-                 (remote) PiFinder; this is this device's OWN local
-                 pifinder.service state, from the same /api/pifinder_mode
-                 poll refreshMode() already runs unconditionally (see
-                 lastRealServiceState). Normally "not running here" on a
-                 true Control host - that's expected, not a fault. -->
-            <div id="local-pifinder-status-line" style="display:none;" title="This device's own local PiFinder service, independent of the remote PiFinder shown above - a Control host normally has none of its own, which is expected, not a problem."><span class="status-dot dot-white" id="local-pifinder-status-dot"></span><span id="local-pifinder-status-text">Local: checking…</span></div>
+            <div class="group-label" id="ch-group-label-local" style="display:none;">Control Host (this device)</div>
+            <div id="local-pifinder-status-line" style="display:none;" title="This device's own local PiFinder service, independent of the remote PiFinder shown below - a Control host normally has none of its own, which is expected, not a problem."><span class="status-dot dot-white" id="local-pifinder-status-dot"></span><span id="local-pifinder-status-text">checking…</span></div>
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
-            <!-- Control host only - the remote PiFinder device's own CPU/Temp
-                 (category 2b proxy), same reasoning as local-pifinder-
-                 status-line above: #system-load-line is always THIS
-                 device's own load, easy to misread as describing the
-                 mirrored device otherwise. -->
-            <div id="remote-system-load-line" style="display:none;" title="The remote PiFinder device's own CPU load/temperature, via its Control Center (docs/concepts/control_host_hardware_badges_mirroring.md category 2b)."><span class="status-dot dot-white" id="remote-system-load-dot"></span><span id="remote-system-load-text">Remote: checking…</span></div>
+            <div class="group-label" id="ch-group-label-remote" style="display:none;">PiFinder Client</div>
+            <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+            <div id="remote-system-load-line" style="display:none;" title="The remote PiFinder device's own CPU load/temperature, via its Control Center (docs/concepts/control_host_hardware_badges_mirroring.md category 2b)."><span class="status-dot dot-white" id="remote-system-load-dot"></span><span id="remote-system-load-text">checking…</span></div>
           </div>
         </div>
         <!-- Showstopper banners (2026-09-09) - see .showstopper-card's CSS
@@ -2771,6 +2792,16 @@
           <span id="hw-details-chevron">&#9660; show</span>
         </div>
         <div id="hw-details" style="display:none;">
+          <!-- Control host only (2026-09-13, direct feedback: "eine volle
+               Control-host-Unterstützung ist nicht nötig, aber es sollte
+               klar sagen, dass das die lokale Hardware ist, nicht die
+               entfernte") - Test Hardware's own functional test
+               (rpicam-hello capture, an actual I2C read) always runs
+               against THIS device, unlike the passive Camera/IMU/GPS rows
+               below it, which are already proxied to the PiFinder Client
+               (category 2b). Deliberately not built out further per that
+               same feedback - just labeled honestly. -->
+          <div id="hwtest-ch-note" class="mb-hint" style="display:none;">Test Hardware always checks this device's (Control Host) own Camera/IMU/GPS hardware, not the PiFinder Client's. Camera/IMU below stay showing the PiFinder Client's real state either way; GPS briefly shows this device's own (usually "not reachable") reading until the next passive check corrects it.</div>
           <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
             <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
               <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
@@ -3458,17 +3489,20 @@ function updatePiFinderStatusAndWizardLink() {
     // wording rather than reusing the mode-tile's "degraded" yellow text.
     // Control host (2026-09-12, direct feedback: "PiFinder ist running ->
     // da fehlt die Info, welcher das ist" - ambiguous next to a tile that's
-    // mirroring a completely different device) - remote suffix everywhere
-    // below. lastHwCamera/lastHwImu are now proxied to the remote device's
-    // own Control Center on a Control host too (category 2b, 2026-09-13),
-    // so the "not functional" branch applies there just as correctly as
-    // locally - only its "see Simulation, Test and Power" pointer is local-
-    // only (that section manages THIS device's own hardware/Fake Mode), so
-    // it's dropped when remote instead of pointing somewhere that won't help.
-    const remoteSuffix = isControlHostRole() ? ' (remote)' : '';
+    // mirroring a completely different device). Originally an appended
+    // "(remote)" suffix - dropped in favor of the "PiFinder Client" group
+    // label above this line (2026-09-13 "Variant A": "does not match the
+    // Standard 'Remote:'" - the group label is now the one place this is
+    // said, not a per-line suffix too). lastHwCamera/lastHwImu are now
+    // proxied to the remote device's own Control Center on a Control host
+    // too (category 2b, 2026-09-13), so the "not functional" branch applies
+    // there just as correctly as locally - only its "see Simulation, Test
+    // and Power" pointer is local-only (that section manages THIS device's
+    // own hardware/Fake Mode), so it's dropped when remote instead of
+    // pointing somewhere that won't help.
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = `PiFinder is running (Fake Mode)${remoteSuffix}`;
+      textEl.textContent = 'PiFinder is running (Fake Mode)';
     } else if (lastHwCamera === false || lastHwImu === false) {
       // Reachable (web server/OLED mirror up) does not mean functional - the
       // real instance keeps running fine even with no camera/IMU attached
@@ -3476,10 +3510,10 @@ function updatePiFinderStatusAndWizardLink() {
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
       const hint = isControlHostRole() ? '' : ' - see Simulation, Test and Power';
-      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing${hint})${remoteSuffix}`;
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing${hint})`;
     } else {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = `PiFinder is running${remoteSuffix}`;
+      textEl.textContent = 'PiFinder is running';
     }
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
@@ -3516,20 +3550,41 @@ function refreshSystemLoad() {
     const tempSuffix = data.temp_c != null ? `, ${data.temp_c}°C` : '';
     // /api/system_load always reads THIS device's own os.getloadavg() - on a
     // Control host that's a different machine from the PiFinder shown right
-    // above it, so leaving it unlabeled reads as if it described the
-    // remote's load. Direct feedback (2026-09-12): "CPU/Temp info - auch
-    // hier müssen wir zwischen Remote und lokal unterscheiden." "Local:" not
-    // "This device:" (2026-09-13 follow-up: "einheitlich Remote oder Local
-    // davorstellen") - matches refreshRemoteSystemLoad()'s own "Remote:".
-    const prefix = isControlHostRole() ? 'Local: ' : '';
+    // above it. Direct feedback (2026-09-12): "CPU/Temp info - auch hier
+    // müssen wir zwischen Remote und lokal unterscheiden" - handled by the
+    // "Control Host"/"PiFinder Client" group labels (updateChGrouping())
+    // instead of a per-line text prefix (2026-09-13 "Variant A" mockup:
+    // grouping read clearer than "Local:"/"Remote:" on every line).
     if (data.high) {
       dotEl.className = 'status-dot dot-red';
-      textEl.textContent = `${prefix}High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
+      textEl.textContent = `High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
     } else {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = `${prefix}Normal (${data.percent}% CPU${tempSuffix})`;
+      textEl.textContent = `Normal (${data.percent}% CPU${tempSuffix})`;
     }
   }).catch(() => {});
+}
+
+// Toggles the "Control Host"/"PiFinder Client" group labels/ordering (see
+// #pifinder-glance-status-stack's own HTML comment) - the one place that
+// decides Control-host-grouped-or-not for all four status lines, called
+// from updateProfileRoleLine() alongside the two functions below.
+function updateChGrouping() {
+  const stack = document.getElementById('pifinder-glance-status-stack');
+  const localLabel = document.getElementById('ch-group-label-local');
+  const remoteLabel = document.getElementById('ch-group-label-remote');
+  const inCh = isControlHostRole();
+  stack.classList.toggle('ch-grouped', inCh);
+  localLabel.style.display = inCh ? '' : 'none';
+  remoteLabel.style.display = inCh ? '' : 'none';
+  if (inCh) {
+    const host = pifinderHost();
+    remoteLabel.textContent = host ? `PiFinder Client (${host})` : 'PiFinder Client';
+  }
+  // Direct feedback (2026-09-13): Test Hardware's own functional test stays
+  // local-only by design - just needs to say so clearly (see its own HTML
+  // comment).
+  document.getElementById('hwtest-ch-note').style.display = inCh ? '' : 'none';
 }
 
 // Control host only (category 2b, docs/concepts/
@@ -3550,20 +3605,20 @@ function refreshRemoteSystemLoad() {
   fetch(`/api/system_load?host=${encodeURIComponent(host)}`, { cache: 'no-store' }).then(r => r.json()).then(data => {
     if (data.percent == null) {
       dotEl.className = 'status-dot dot-white';
-      textEl.textContent = 'Remote: unavailable (remote Control Center not reachable)';
+      textEl.textContent = 'unavailable (remote Control Center not reachable)';
       return;
     }
     const tempSuffix = data.temp_c != null ? `, ${data.temp_c}°C` : '';
     if (data.high) {
       dotEl.className = 'status-dot dot-red';
-      textEl.textContent = `Remote: High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
+      textEl.textContent = `High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
     } else {
       dotEl.className = 'status-dot dot-green';
-      textEl.textContent = `Remote: Normal (${data.percent}% CPU${tempSuffix})`;
+      textEl.textContent = `Normal (${data.percent}% CPU${tempSuffix})`;
     }
   }).catch(() => {
     dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'Remote: unavailable (remote Control Center not reachable)';
+    textEl.textContent = 'unavailable (remote Control Center not reachable)';
   });
 }
 
@@ -3582,19 +3637,19 @@ function updateLocalPifinderStatusLine() {
   const textEl = document.getElementById('local-pifinder-status-text');
   if (lastPifinderMode === 'fake') {
     dotEl.className = 'status-dot dot-yellow';
-    textEl.textContent = 'Local: Fake Mode is also running here';
+    textEl.textContent = 'Fake Mode is also running here';
   } else if (lastRealServiceState === 'active' || lastRealServiceState === 'activating') {
     dotEl.className = 'status-dot dot-yellow';
-    textEl.textContent = 'Local: a PiFinder service is also running here';
+    textEl.textContent = 'a PiFinder service is also running here';
   } else if (lastRealServiceState === 'failed') {
     dotEl.className = 'status-dot dot-red';
-    textEl.textContent = 'Local: PiFinder service failed here';
+    textEl.textContent = 'PiFinder service failed here';
   } else if (lastRealServiceState === 'inactive') {
     dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'Local: no PiFinder service running here (expected for a Control host)';
+    textEl.textContent = 'no PiFinder service running here (expected)';
   } else {
     dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'Local: checking…';
+    textEl.textContent = 'checking…';
   }
 }
 
@@ -4470,7 +4525,13 @@ async function toggleTruthInjector() {
 
   let toggleError = null;
   try {
-    const resp = await fetch('/api/truth_injector_toggle', { method: 'POST' });
+    // Found live (2026-09-13, Control host testing, "Found 1"/"Found 2"):
+    // without ?host=, this always fed/checked THIS device's own PiFinder -
+    // on a Control host, the only real PiFinder is the remote client, so
+    // "Full Simulation" silently did nothing there and the toggle could
+    // never see it was already active remotely.
+    const host = pifinderHost() || '127.0.0.1';
+    const resp = await fetch(`/api/truth_injector_toggle?host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
       toggleError = result.error || 'unknown error';
@@ -9137,9 +9198,10 @@ function updateProfileRoleLine() {
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
   updatePiFinderTileLocation(role);
-  // isControlHostRole() re-derives the same role - these two lines' own
-  // visibility depends on it too, and role can change independent of the
-  // service-state/CPU-load polls that also drive their content.
+  // isControlHostRole() re-derives the same role - these three calls' own
+  // visibility/grouping depends on it too, and role can change independent
+  // of the service-state/CPU-load polls that also drive their content.
+  updateChGrouping();
   updateLocalPifinderStatusLine();
   refreshRemoteSystemLoad();
   // The status line/diagram/caption are entirely derived from Mount

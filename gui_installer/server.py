@@ -1255,6 +1255,7 @@ TRUTH_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_truth_injector.py"
 TRUTH_INJECTOR_DEFAULT_DEVICE = "PiFinder Simulator"
 _truth_injector_proc = None  # subprocess.Popen or None
 _truth_injector_device = None  # the device the currently-running (or last-run) injector actually targets
+_truth_injector_host = "127.0.0.1"  # which PiFinder it feeds - see _truth_injector_start()'s own comment
 _truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
 _truth_injector_lock = threading.Lock()
 
@@ -1263,8 +1264,8 @@ def _truth_injector_alive() -> bool:
     return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
 
 
-def _truth_injector_start(device: str):
-    global _truth_injector_proc, _truth_injector_device
+def _truth_injector_start(device: str, host: str = "127.0.0.1"):
+    global _truth_injector_proc, _truth_injector_device, _truth_injector_host
     # The one-time pkill in main() only guards against an orphan that
     # already existed when THIS Control Center instance started - it does
     # nothing for a stray instance that appears later in the same instance's
@@ -1278,13 +1279,23 @@ def _truth_injector_start(device: str):
     # never kill an instance we're still tracking - only a genuine stray one.
     subprocess.run(["pkill", "-f", str(TRUTH_INJECTOR_SCRIPT)], capture_output=True)
     _truth_injector_device = device
+    _truth_injector_host = host
+    # Found live (2026-09-13, Control host testing): this never passed
+    # --pifinder-host (the script's own default is 127.0.0.1), so "Full
+    # Simulation" always fed THIS device's own PiFinder regardless of role -
+    # on a Control host, the device actually reachable is the remote
+    # PiFinder client, not anything running here. The script itself already
+    # supported --pifinder-host; only this call site never used it.
     _truth_injector_proc = subprocess.Popen(
-        ["python3", str(TRUTH_INJECTOR_SCRIPT), "--indi-device", device, "--interval", "2.0"],
+        [
+            "python3", str(TRUTH_INJECTOR_SCRIPT),
+            "--indi-device", device, "--interval", "2.0", "--pifinder-host", host,
+        ],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
 
-def _pifinder_fake_solve_active_live() -> bool:
+def _pifinder_fake_solve_active_live(host: str = "127.0.0.1") -> bool:
     """True if PiFinder itself currently reports an injected position -
     checked live on ports 80 and 8080, independent of `_truth_injector_
     desired` (which only tracks THIS process's own Truth Injector intent).
@@ -1294,10 +1305,16 @@ def _pifinder_fake_solve_active_live() -> bool:
     mechanism (Manual one-shot seed, #205) was the one actually holding
     fake_solve_active true. A user reasonably reads "Synthetic Solve: off"
     as "nothing is injected" - this makes the toggle check the real,
-    combined ground truth instead of trusting a memory of its own intent."""
+    combined ground truth instead of trusting a memory of its own intent.
+
+    `host` - found live (2026-09-13, Control host testing, "Found 2"): this
+    always checked 127.0.0.1, so on a Control host it could never see a
+    remote PiFinder's own real fake_solve_active - the toggle always
+    concluded "off" and only ever offered to turn it on, even when it was
+    already genuinely active on the remote device."""
     for port in ("80", "8080"):
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
                 if json.loads(resp.read()).get("fake_solve_active"):
                     return True
         except Exception:
@@ -1337,7 +1354,7 @@ def _truth_injector_watchdog(interval=5):
             if _truth_injector_desired and not _truth_injector_alive():
                 _mb_log(f"PiFinder Truth Injector died unexpectedly - restarting (device: '{_truth_injector_device}')...")
                 try:
-                    _truth_injector_start(_truth_injector_device)
+                    _truth_injector_start(_truth_injector_device, _truth_injector_host)
                 except Exception as e:  # a watchdog thread must never die silently
                     _mb_log(f"  failed to restart: {e}")
 
@@ -4907,7 +4924,12 @@ class Handler(BaseHTTPRequestHandler):
             # own comment - "PiFinder Simulator" (independent truth) unless
             # a caller explicitly asks for "Telescope Simulator" (Multi-Point
             # Alignment's mount-mirroring case).
-            requested_device = parse_qs(parsed.query).get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
+            qs = parse_qs(parsed.query)
+            requested_device = qs.get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
+            requested_host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(requested_host):
+                self._send_json({"success": False, "error": f"invalid host '{requested_host}'"}, status=400)
+                return
             with _truth_injector_lock:
                 # Decide On/Off from the REAL, live combined state (2026-09-09,
                 # "OFF ist OFF") - not just `_truth_injector_desired`, which
@@ -4915,7 +4937,7 @@ class Handler(BaseHTTPRequestHandler):
                 # e.g. Manual one-shot seed (#205) is what's actually holding
                 # fake_solve_active true. A click while anything is injected
                 # always clears it - "start" only fires when truly nothing is.
-                if _truth_injector_desired or _pifinder_fake_solve_active_live():
+                if _truth_injector_desired or _pifinder_fake_solve_active_live(requested_host):
                     _truth_injector_desired = False
                     _mb_log("stopping PiFinder Truth Injector / clearing Injected Solve...")
                     try:
@@ -4930,7 +4952,7 @@ class Handler(BaseHTTPRequestHandler):
                     _mb_log(f"starting PiFinder Truth Injector (feeding '{requested_device}''s "
                              "position into PiFinder's /api/fake_solve, simulator testing only)...")
                     try:
-                        _truth_injector_start(requested_device)
+                        _truth_injector_start(requested_device, requested_host)
                     except Exception as e:
                         _truth_injector_desired = False
                         _mb_log(f"  failed: {e}")
