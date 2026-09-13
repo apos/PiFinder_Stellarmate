@@ -2163,6 +2163,24 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
         except webmanager_client.WebManagerError:
             has_bridge = None
         if has_bridge is False:
+            # Found live (2026-09-13), direct feedback: "Der PiFinder Client
+            # Status übersteht den Reboot / Reinstall nicht" - a genuine
+            # "PiFinder Client" choice means no bridge in the profile is the
+            # permanently CORRECT state, not a desync to heal - if a stale/
+            # leftover Mount Bridge driver instance from before a reboot or
+            # reinstall ever shows up as "connected" again (checks 1/2
+            # above only look at whether SOMETHING answers, not which
+            # profile it belongs to), this self-heal would otherwise re-add
+            # Bridge to the profile and undo the choice entirely (which
+            # then also silently clears pifinder_role_choice back to null
+            # via _pifinder_service_sync_with_lx200_target()'s own cleanup,
+            # since the profile now looks like 'aio' again). The 3-tick
+            # debounce above already protects an in-progress switch AWAY
+            # from Client; this protects the steady state once Client is
+            # actually chosen and stays chosen.
+            if _pifinder_role_choice == "client":
+                _mb_readiness_profile_desync_consecutive = 0
+                return
             _mb_readiness_profile_desync_consecutive += 1
             if _mb_readiness_profile_desync_consecutive >= _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL:
                 def _do_resync():

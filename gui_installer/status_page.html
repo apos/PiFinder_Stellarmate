@@ -9498,7 +9498,14 @@ function updateProfileRoleLine() {
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
   const hostMode = role === 'host';
-  document.getElementById('mb-add-mount-row').style.display = hostMode ? '' : 'none';
+  // Direct feedback (2026-09-13): "'+ Couple a mount' ... macht beim Client
+  // Modus keine Sinn" - shown unconditionally for role 'host' before, which
+  // includes the "PiFinder Client" card (identical underlying profile,
+  // isClientChoice is the only thing telling them apart) - offering to add
+  // a mount directly under a card whose whole point is "no mount here"
+  // read as contradictory. Hidden for the Client choice; switching to
+  // "PiFinder host" first (one click, already available) surfaces it again.
+  document.getElementById('mb-add-mount-row').style.display = (hostMode && !isClientChoice) ? '' : 'none';
   document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
