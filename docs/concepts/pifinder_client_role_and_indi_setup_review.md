@@ -98,6 +98,29 @@ Mockup of both the three-card row and this warning card, using the page's own ex
 No default forced automatically in either direction - matches this page's own established
 principle (never guess/never silently reinterpret a deliberate user choice).
 
+### 3c. Card wording - refined per direct feedback (2026-09-13)
+
+The mockup's first draft overclaimed both directions - fixed in the mockup (linked above), final
+wording:
+
+- **"PiFinder host"** sub: *"Mount optional (GoTo Mode)."* - not *"couples a mount here too"*: *"PiFinder Host kann selbstverständlich auch ohne mount auskommen... die Einschränkung auf
+  'couples a mount' kann leicht missinterpretiert werden"* - a mount was never mandatory for this
+  card, the wording must not imply otherwise.
+- **"PiFinder Client"** sub: *"No mount here - ready for a remote Control host."* - not *"Controlled
+  remotely by a Control host"*: *"es kann auch sein, dass es keinen CH gibt und nur der PF in
+  Betrieb ist. Das sollte man nicht so explizit sagen"* - describes the card's *readiness*/intent,
+  not an asserted, currently-active relationship with a specific other device (which this device
+  has no way to confirm anyway, per section 2's own point).
+
+### 3d. Approved, with the section 6 follow-on gap now in scope
+
+*"Das Konzept passt mit den o.g. Anpassungen... Und ja, Dein Nebenbefund muss berücksichtigt
+werden."* - the concept (sections 2-4) is approved as designed, with 3c's wording, and the
+Control-host-side gap flagged at the end of section 5 (a Control host can't yet tell a mirrored
+device's "PiFinder Client" choice apart from "PiFinder host, no mount linked yet") is now explicitly
+in scope for the implementation, not deferred. See section 5's own point 4 (added below) for what
+that requires.
+
 ## 4. INDI Setup section - what's already role-aware, what isn't
 
 `updateProfileRoleLine()` already hides/adapts a fair amount for `role === 'host'`
@@ -137,13 +160,19 @@ changes" pattern. Remaining work before it can ship:
    from 3b.
 3. The Mode & Power tile gap from section 4 (drop "(INDI/Mount Bridge)" wording for
    `pifinder_role_choice === "client"`).
-
-Related note (separate from this decision, out of scope here): the earlier, hastily-worded
-Round-2 wording fixes this session (the PiFinder tile's own role pill saying "Client Mode" for
-`role === 'host'`, and "PiFinder Client" for `role === 'ctrl'`/`'ctrl-incomplete'` describing the
-*mirrored* device) already shipped ahead of this concept being finalized - they used the best
-name available at the time and read consistently with what's designed here, but will want a
-pass once the real three-card split lands, to make sure a Control host's own tile still correctly
-distinguishes "the remote I'm mirroring chose 'PiFinder Client'" from "...chose 'PiFinder host' but
-has no mount linked yet" (both currently show identically, since the remote's own
-`pifinder_role_choice` isn't surfaced to the Control host side at all yet).
+4. **In scope per direct confirmation ("Dein Nebenbefund muss berücksichtigt werden")**: surface
+   the remote device's own `pifinder_role_choice` to a Control host mirroring it, so its PiFinder
+   tile pill can distinguish "the remote chose PiFinder Client" from "...chose PiFinder host but has
+   no mount linked yet" - both currently derive the identical remote `role === 'host'` and would
+   otherwise keep showing identically forever. Needs a way to read it across devices - likely the
+   same category 2a/2b machinery already built for Solve/GPS/Camera/IMU/orientation
+   (`docs/concepts/control_host_hardware_badges_mirroring.md`): either a thin proxy to the remote
+   PiFinder's own API (if `pifinder_role_choice` ever became visible there) or, more likely, a
+   direct Control-Center-to-Control-Center call (2b's `_cc_proxy_get()`) to the remote CC's own
+   `/state`, which already carries this field per point 1 above. The already-shipped Round-2
+   wording (the PiFinder tile's pill saying "Client Mode" for local `role === 'host'`, "PiFinder
+   Client" for `role === 'ctrl'`/`'ctrl-incomplete'` describing the *mirrored* device) was the best
+   name available before this was decided and reads consistently with the final design - it becomes
+   the *correct, permanent* wording for "the remote's choice is known and is Client"; point 4 here
+   is what makes the "no mount linked yet, choice unknown" case distinguishable instead of
+   silently reading the same.
