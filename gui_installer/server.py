@@ -508,6 +508,25 @@ def _pifinder_service_sync_with_lx200_target():
     if lx200_remote != _last_known_lx200_remote:
         _last_known_lx200_remote = lx200_remote
         _save_mount_bridge_desired_state()
+        # Control Host topology (2026-09-14): the Mount Bridge driver's own
+        # HTTP calls to PiFinder's REST API (solve freshness/orientation/
+        # mount-type/etc.) default to 127.0.0.1 - correct only when PiFinder
+        # is local. Whenever this Control Center detects the profile's
+        # PiFinder LX200 driver is REMOTE (Control Host role), push that same
+        # host to the Mount Bridge driver's PIFINDER_HTTP_HOST setting too -
+        # otherwise the driver can never reach a remote PiFinder's HTTP API
+        # at all, and things like the drift display stay permanently stale.
+        # Reset back to "127.0.0.1" when lx200_remote clears (back to local/
+        # all-in-one). Best-effort: a failure here isn't worth blocking the
+        # pifinder.service sync below over - the next tick that changes
+        # lx200_remote again retries.
+        try:
+            pifinder_http_host = lx200_remote.rsplit(":", 1)[0] if lx200_remote else "127.0.0.1"
+            indi_client.set_text(
+                "PiFinder Mount Bridge", "BRIDGE_SETTINGS", {"PIFINDER_HTTP_HOST": pifinder_http_host}
+            )
+        except Exception as e:
+            _mb_log(f"Could not push PIFINDER_HTTP_HOST ('{pifinder_http_host}') to Mount Bridge: {e}")
     if lx200_remote:
         if _real_service_active():
             try:

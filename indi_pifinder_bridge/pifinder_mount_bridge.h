@@ -94,8 +94,12 @@ class PiFinderMountBridge : public INDI::DefaultDevice
 
         // Settings: how to reach the local indiserver
         ITextVectorProperty SettingsTP;
-        IText SettingsT[2] {};
-        enum { INDISERVER_HOST, INDISERVER_PORT };
+        IText SettingsT[3] {};
+        // PIFINDER_HTTP_HOST: see fetchFreshPiFinderPosition()'s own comment
+        // in the .cpp (Control Host topology) - defaults to "127.0.0.1",
+        // pushed by the Control Center whenever it knows PiFinder actually
+        // runs on a different device.
+        enum { INDISERVER_HOST, INDISERVER_PORT, PIFINDER_HTTP_HOST };
 
         // Which devices to bridge
         ITextVectorProperty ActiveDeviceTP;
