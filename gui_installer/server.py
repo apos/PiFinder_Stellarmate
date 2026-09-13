@@ -1718,6 +1718,15 @@ _wm_unreachable_for_pifinder_sync_warned = False
 # stopped-again) resets this back to False.
 _pifinder_service_notice_dismissed = False
 
+# docs/concepts/pifinder_client_role_and_indi_setup_review.md, section 3a:
+# "PiFinder host" (GoTo Mode, mount optional) and "PiFinder Client" (no
+# mount, ready for a remote Control host) both derive the identical
+# frontend role === 'host' from the profile alone (local PiFinder LX200, no
+# Mount Bridge) - this is the one bit that tells them apart, a deliberate
+# user choice, not something derivable from the profile. "host" | "client"
+# | None (None = no explicit choice yet, e.g. a fresh install).
+_pifinder_role_choice = None
+
 # Direct request (2026-09-11): "Die gelbe Meldung nervt ungemein. Die
 # brauchen wir wirklich nur beim ersten Start. Dann nicht mehr." -
 # indi_pifinder_simulator's own STARTUP_DEFAULT_SOURCE is computed fresh on
@@ -1754,6 +1763,7 @@ def _save_mount_bridge_desired_state():
             "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
             "pifinder_service_auto_stopped_for_remote": _pifinder_service_auto_stopped_for_remote,
             "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
+            "pifinder_role_choice": _pifinder_role_choice,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1770,6 +1780,7 @@ def _load_mount_bridge_desired_state():
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
     global _maintenance_mode_profile, _sim_mismatch_ever_resolved
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    global _pifinder_role_choice
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1787,6 +1798,7 @@ def _load_mount_bridge_desired_state():
     _sim_mismatch_ever_resolved = data.get("sim_mismatch_ever_resolved", False)
     _pifinder_service_auto_stopped_for_remote = data.get("pifinder_service_auto_stopped_for_remote")
     _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
+    _pifinder_role_choice = data.get("pifinder_role_choice")
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
@@ -3354,6 +3366,26 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/pifinder_mode":
+            # Control host's own view of the mirrored device's role choice
+            # (docs/concepts/pifinder_client_role_and_indi_setup_review.md,
+            # section 5 point 4) - proxies to the remote CC's own
+            # /api/pifinder_mode (same category 2b machinery as Camera/IMU/
+            # orientation/CPU) instead of reading anything locally, since
+            # every field this endpoint returns (mode/pifinder_role_choice/
+            # etc.) describes whichever device answers it. Local behavior
+            # (no ?host=) is completely unchanged.
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                    return
+                proxied = _cc_proxy_get(host, "/api/pifinder_mode", self.headers.get("Authorization"))
+                self._send_json(proxied or {
+                    "mode": None, "transitioning": False, "error": None, "target": None,
+                    "real_service_state": None, "pifinder_role_choice": None,
+                })
+                return
             with _lock:
                 transitioning = _mode_action_running
                 error = _mode_error
@@ -3377,6 +3409,10 @@ class Handler(BaseHTTPRequestHandler):
                     # "started, just not answering /image yet" instead of a
                     # single generic message throughout.
                     "real_service_state": _real_service_state(),
+                    # "host" | "client" | None - see its own module-level
+                    # comment (docs/concepts/
+                    # pifinder_client_role_and_indi_setup_review.md, 3a).
+                    "pifinder_role_choice": _pifinder_role_choice,
                 }
             )
             return
@@ -4525,6 +4561,27 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _mb_log(f"  done.")
             _mark_mount_bridge_connect_desired()
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/pifinder_role_choice":
+            # docs/concepts/pifinder_client_role_and_indi_setup_review.md,
+            # section 3a - the one bit that tells "PiFinder host"/"PiFinder
+            # Client" apart, since both derive the identical role === 'host'
+            # from the profile alone. Bookkeeping only: never touches the
+            # actual INDI/Web Manager configuration, same reasoning as
+            # switching between "PiFinder host"/"Control host" today (see
+            # onRoleCardClick() - those don't reconfigure a profile either,
+            # they only offer the matching setup steps for whichever a user
+            # then goes on to do manually).
+            global _pifinder_role_choice
+            qs = parse_qs(parsed.query)
+            choice = qs.get("choice", [""])[0]
+            if choice not in ("host", "client"):
+                self._send_json({"success": False, "error": f"invalid choice '{choice}'"}, status=400)
+                return
+            _pifinder_role_choice = choice
+            _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
 
