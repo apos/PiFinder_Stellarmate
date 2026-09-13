@@ -2083,6 +2083,7 @@
     <h1>
       <span id="cc-title-full">PiFinder on Stellarmate Control Center</span>
       <span id="cc-title-short">Control Center</span>
+      <span id="cc-title-role-suffix"></span>
     </h1>
     <span id="cc-hostname" title="This device's hostname - tells multiple open tabs/devices apart">
       <svg id="cc-device-icon-pi" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
@@ -2317,7 +2318,7 @@
            utility class used by many unrelated section labels elsewhere on
            this page. -->
       <div class="group-label" id="mb-diagram-heading-row">
-        <span>Mount Bridge<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
+        <span>Mount Bridge<span id="mb-tile-role-suffix"></span><a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
         <div id="mb-action-status"></div>
       </div>
       <div id="mb-drift-banner">
@@ -9151,25 +9152,49 @@ function isControlHostRole() {
 function updatePiFinderTileLocation(role) {
   const locEl = document.getElementById('pifinder-tile-loc');
   const pillEl = document.getElementById('pifinder-tile-role-pill');
-  if (role === 'aio' || role === 'host') {
+  if (role === 'aio') {
+    // Has its own local mount too - genuinely self-contained, not anyone's
+    // "client" (unlike role === 'host' below), so keeps the older wording.
     locEl.textContent = cachedHostname ? `${cachedHostname} · localhost` : 'localhost';
     locEl.style.display = '';
     pillEl.textContent = 'PiFinder host';
     pillEl.style.display = '';
+  } else if (role === 'host') {
+    // Direct feedback (2026-09-13): "'PiFinder (i)': This should clearly
+    // say 'PiFinder (Client Mode)'" - "PiFinder host" read ambiguously next
+    // to the Control host card's own "host"-flavored wording (their own
+    // follow-up: "welcher Host ist hier gemeint" - confusion between the
+    // two different meanings of "host" was exactly the point). No local
+    // mount in this role - the profile shape most likely to actually be a
+    // remote Control host's own PiFinder Client (though, per docs/concepts/
+    // pifinder_client_role_and_indi_setup_review.md, this device has no way
+    // to actually confirm that - same wording either way).
+    locEl.textContent = cachedHostname ? `${cachedHostname} · localhost` : 'localhost';
+    locEl.style.display = '';
+    pillEl.textContent = 'Client Mode';
+    pillEl.style.display = '';
   } else if (role === 'ctrl' || role === 'ctrl-incomplete') {
     // Direct feedback (2026-09-12): "Der PiFinder ist nicht der Control
-    // Host, sondern der Client" - the pill always describes THIS device
-    // (unchanged), but "{remote} · remote" alone, sitting right next to it,
-    // read as if it were labeling the remote address's own role instead.
-    // "mirroring" makes the direction explicit: this (Control host) device
-    // is showing what's happening over there.
+    // Host, sondern der Client" - and again today (2026-09-13), catching
+    // that the PILL itself still had exactly this problem even after the
+    // 2026-09-12 fix only changed the location text: "this 'control host'
+    // info is wrong - must read 'remote client'". This tile is titled
+    // "PiFinder" and shows THAT device's own OLED - the pill sitting right
+    // next to "mirroring {remote}" reads as describing what's being
+    // mirrored, not this device's own role (the Settings-area role line
+    // below correctly keeps saying "Control host" for THIS device - a
+    // different element, answering "what is my own role" rather than
+    // "what is this tile showing"). Same "PiFinder Client" term as the
+    // pill a PiFinder Client device shows on its own tile for role ===
+    // 'host' above - same concept, now labeled consistently wherever it's
+    // shown.
     if (wmLx200Remote) {
       locEl.textContent = `mirroring ${wmLx200Remote}`;
       locEl.style.display = '';
     } else {
       locEl.style.display = 'none';
     }
-    pillEl.textContent = 'Control host';
+    pillEl.textContent = 'PiFinder Client';
     pillEl.style.display = '';
   } else {
     locEl.style.display = 'none';
@@ -9185,6 +9210,19 @@ function updatePiFinderTileLocation(role) {
 function updateProfileRoleLine() {
   const el = document.getElementById('mb-role-line');
   const role = deriveProfileRole();
+  // Direct feedback (2026-09-13): "auch in der Heading (PiFinder Stellarmate
+  // Control Center (Control Host / PiFinder Client)" plus the same
+  // qualifier on the Mount Bridge tile's own heading ("The same is for
+  // 'Mount Bridge'") - only for the roles that actually mean something
+  // distinct (role === 'aio' keeps unqualified headings: a genuinely
+  // self-contained device, not anyone's client, no separate Control Host
+  // to distinguish itself from).
+  document.getElementById('cc-title-role-suffix').textContent =
+    role === 'ctrl' || role === 'ctrl-incomplete' ? ' (Control Host)'
+    : role === 'host' ? ' (PiFinder Client)'
+    : '';
+  document.getElementById('mb-tile-role-suffix').textContent =
+    role === 'ctrl' || role === 'ctrl-incomplete' ? ' (Control Host)' : '';
   // Single "PiFinder host" card now covers both local-with-mount ('aio') and
   // local-without-mount ('host') - see the merged-cards comment on
   // #mb-role-cards. Whether a mount is actually coupled is a detail of that
@@ -9225,7 +9263,6 @@ function updateProfileRoleLine() {
   // the identifying part ("Control host") the same visual weight as the
   // supporting detail (IP, mount name), same idea as the Coupling status
   // line's "auto correct" vs. "(drift X')".
-  const mountName = wmActiveMount || 'mount';
   let roleName = '';
   let detail = '';
   let warn = '';
@@ -9233,12 +9270,31 @@ function updateProfileRoleLine() {
   if (role === 'aio' || role === 'host') {
     // One role name for both - see the merged-cards comment on
     // #mb-role-cards; only the detail clause says whether a mount happens
-    // to be coupled here too.
+    // to be coupled here too. wmActiveMount is only ever the mount's real,
+    // persisted ACTIVE_DEVICES link - never a placeholder (see role ===
+    // 'ctrl' below for why that distinction matters).
     roleName = 'PiFinder host';
-    detail = role === 'aio' ? `coupled to ${mountName}` : 'sharing PiFinder position only';
+    detail = role === 'aio' ? `coupled to ${wmActiveMount || 'mount'}` : 'sharing PiFinder position only';
   } else if (role === 'ctrl') {
     roleName = 'Control host';
-    detail = `coupled to ${wmLx200Remote} + ${mountName}`;
+    // Found live (2026-09-13): role === 'ctrl' only requires the Mount
+    // Bridge *driver* to be present (deriveProfileRole()'s own `bridge`
+    // flag) - it says nothing about whether a mount is actually LINKED yet
+    // (wmActiveMount). The old `${wmLx200Remote} + ${wmActiveMount ||
+    // 'mount'}` fell back to the bare, generic word "mount" whenever
+    // nothing was linked, reading as "coupled to ... + mount" - a
+    // confidently wrong claim of success where nothing was actually
+    // coupled. Direct feedback: "die Formulierung sollte sein: '+ mount
+    // not coupled'." Also downgrades the dot to white (ok = false) - the
+    // same "not fully set up yet" treatment 'ctrl-incomplete' already gets
+    // for the Mount-Bridge-driver-missing case, now applied to this
+    // mount-not-linked-yet case too.
+    if (wmActiveMount) {
+      detail = `coupled to ${wmLx200Remote} + ${wmActiveMount}`;
+    } else {
+      detail = `coupled to ${wmLx200Remote} + mount not coupled yet`;
+      ok = false;
+    }
   } else if (role === 'ctrl-incomplete') {
     roleName = 'Control host (incomplete)';
     detail = `remote PiFinder at ${wmLx200Remote}, Mount Bridge missing - click the Control host card to fix`;
