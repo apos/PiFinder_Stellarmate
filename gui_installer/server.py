@@ -1807,6 +1807,101 @@ _pifinder_service_notice_dismissed = False
 # acts on a truthy cached remote.
 _last_known_lx200_remote = None
 
+# Direct feedback (2026-09-13), on whether self-heal should also start a
+# cold Web Manager profile after a reboot: "Ein User möchte ein
+# funktionierendes System mit sinnvollen default Werten. Hat er einmal
+# etwas eingestellt und angepasst, soll es auch bestehen bleiben (Reboot,
+# Reload)... Hat er etwas sinnloses konfiguriert, soll das System es
+# heilen. Gibt es ein Problem, wird der User informiert." - a profile that
+# was genuinely running before a restart is a deliberate, already-made
+# choice, not a blank slate - the fresh-install "you haven't set anything
+# up yet, click One-Click Setup" case is different and stays exactly as
+# it was (this is None until the FIRST time a profile is ever confirmed
+# running, so a genuinely new device gets no auto-start attempts at all).
+# See _autostart_cold_profile() below for the self-heal itself.
+_last_known_active_profile = None
+
+_cold_profile_retrier = _BackgroundRetrier()
+_cold_profile_start_attempts = 0
+_cold_profile_start_cooldown_until = 0.0  # time.monotonic() deadline, not a wall-clock time
+# Surfaced via /state so the frontend can show a clear, actionable notice
+# (per the same feedback: "wird der User informiert und... sinnvolle
+# Lösungen angeboten") instead of this failing silently forever in the
+# background - see _autostart_cold_profile()'s own docstring for when
+# this gets set, and its "already running again" branch for when it
+# clears.
+_cold_profile_start_gave_up = False
+_COLD_PROFILE_START_MAX_ATTEMPTS = 3
+_COLD_PROFILE_START_COOLDOWN_SEC = 30.0
+
+
+def _autostart_cold_profile():
+    """Self-heal: if this device once had a genuinely running Web Manager
+    profile (_last_known_active_profile, persisted across restarts) and
+    the Web Manager currently reports none running at all - the common
+    "right after a reboot, before anything else got a chance to start it"
+    gap - starts that profile back up automatically instead of waiting
+    for a manual One-Click Setup click every single time. Called once per
+    _mount_bridge_readiness_watchdog() tick, independent of that loop's
+    own indiserver-status query (this only ever talks to the Web Manager,
+    never indiserver directly).
+
+    Bounded (_COLD_PROFILE_START_MAX_ATTEMPTS, a cooldown between tries)
+    so a profile that's actually broken (bad driver config, hardware
+    gone) doesn't get hammered forever - gives up after that many failed
+    attempts and surfaces it via _cold_profile_start_gave_up (see /state)
+    rather than silently retrying into eternity. A fresh problem (profile
+    goes idle again some time after a successful start) gets a fresh
+    attempt budget - only a run of CONSECUTIVE failures right now exhausts
+    it."""
+    global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
+    global _cold_profile_start_gave_up, _last_known_active_profile
+    if not _last_known_active_profile:
+        return  # nothing ever confirmed running here - not this self-heal's job (see One-Click Setup)
+    try:
+        wm_status = webmanager_client.server_status()
+    except webmanager_client.WebManagerError:
+        return  # can't even ask right now - next tick retries, no guessing
+    if wm_status.get("running") and wm_status.get("active_profile"):
+        # Genuinely running again (this profile, or a different one started
+        # some other way) - remember whichever it actually is, and reset
+        # the attempt budget so a LATER, unrelated gap gets a fresh try.
+        if wm_status["active_profile"] != _last_known_active_profile:
+            _last_known_active_profile = wm_status["active_profile"]
+            _save_mount_bridge_desired_state()
+        _cold_profile_start_attempts = 0
+        _cold_profile_start_gave_up = False
+        return
+    if _cold_profile_start_gave_up or time.monotonic() < _cold_profile_start_cooldown_until:
+        return
+
+    def _do_start():
+        global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
+        global _cold_profile_start_gave_up
+        _cold_profile_start_attempts += 1
+        _cold_profile_start_cooldown_until = time.monotonic() + _COLD_PROFILE_START_COOLDOWN_SEC
+        try:
+            webmanager_client.start_server(_last_known_active_profile)
+            _mb_log(
+                f"Web Manager profile '{_last_known_active_profile}' wasn't running - started it "
+                "automatically (it was running before a restart/reboot)."
+            )
+        except webmanager_client.WebManagerError as e:
+            _mb_log(
+                f"Auto-start of Web Manager profile '{_last_known_active_profile}' failed "
+                f"(attempt {_cold_profile_start_attempts}/{_COLD_PROFILE_START_MAX_ATTEMPTS}): {e}"
+            )
+            if _cold_profile_start_attempts >= _COLD_PROFILE_START_MAX_ATTEMPTS:
+                _cold_profile_start_gave_up = True
+                _mb_log(
+                    f"Giving up auto-starting '{_last_known_active_profile}' after "
+                    f"{_COLD_PROFILE_START_MAX_ATTEMPTS} failed attempts - open the Web Manager to "
+                    "check what's wrong (One-Click Setup below also retries manually)."
+                )
+
+    _cold_profile_retrier.trigger(_do_start)
+
+
 # docs/concepts/pifinder_client_role_and_indi_setup_review.md, section 3a:
 # "PiFinder host" (GoTo Mode, mount optional) and "PiFinder Client" (no
 # mount, ready for a remote Control host) both derive the identical
@@ -1854,6 +1949,7 @@ def _save_mount_bridge_desired_state():
             "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
             "pifinder_role_choice": _pifinder_role_choice,
             "last_known_lx200_remote": _last_known_lx200_remote,
+            "last_known_active_profile": _last_known_active_profile,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1870,7 +1966,7 @@ def _load_mount_bridge_desired_state():
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
     global _maintenance_mode_profile, _sim_mismatch_ever_resolved
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
-    global _pifinder_role_choice, _last_known_lx200_remote
+    global _pifinder_role_choice, _last_known_lx200_remote, _last_known_active_profile
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1890,6 +1986,7 @@ def _load_mount_bridge_desired_state():
     _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
     _pifinder_role_choice = data.get("pifinder_role_choice")
     _last_known_lx200_remote = data.get("last_known_lx200_remote")
+    _last_known_active_profile = data.get("last_known_active_profile")
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
@@ -2229,6 +2326,10 @@ def _mount_bridge_readiness_watchdog(interval=5):
             _pifinder_service_sync_with_lx200_target()
         except Exception as e:  # same reasoning - must never kill this thread
             _mb_log(f"pifinder.service/LX200-target sync raised unexpectedly: {e}")
+        try:
+            _autostart_cold_profile()
+        except Exception as e:  # same reasoning - must never kill this thread
+            _mb_log(f"Cold Web Manager profile auto-start raised unexpectedly: {e}")
         # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
         # as the frontend's own liveDriftConfirmsRelated (PR #395), just
         # persisted permanently instead of only for the current page/process.
@@ -3430,6 +3531,11 @@ class Handler(BaseHTTPRequestHandler):
                     "pifinder_service_auto_stopped_for_remote": (
                         _pifinder_service_auto_stopped_for_remote if not _pifinder_service_notice_dismissed else None
                     ),
+                    # _autostart_cold_profile()'s own "gave up" escalation -
+                    # only meaningful together, so the frontend can name the
+                    # profile in its notice.
+                    "cold_profile_start_gave_up": _cold_profile_start_gave_up,
+                    "last_known_active_profile": _last_known_active_profile,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
