@@ -382,6 +382,39 @@ def _stop_pifinder_service_for_remote(remote: str) -> None:
     _save_mount_bridge_desired_state()
 
 
+def _sync_pifinder_service_from_cache():
+    """Fallback for _pifinder_service_sync_with_lx200_target() for exactly
+    the gap found live (2026-09-13): right after a Control host reboots,
+    stellarmatewebmanager.service is already up and answering, but hasn't
+    started an Ekos profile yet - server_status() reports no active
+    profile for however long that takes, and the caller correctly can't
+    determine the real LX200 target during that window. Rather than
+    leaving a stray local pifinder.service running the whole time, this
+    acts on _last_known_lx200_remote - the last value this same logic
+    itself actually confirmed, persisted across restarts (see that
+    variable's own comment).
+
+    Deliberately STOP-only, mirroring the caller's own asymmetry: a cached
+    remote target stopping an already-known-pointless local service is the
+    safe direction to be wrong in if the cache has gone stale (e.g. a
+    manual switch back to local since the last confirmed check that
+    hasn't been re-confirmed yet) - restarting the service from cached
+    data would risk the opposite mistake (waking up a service the user
+    just deliberately silenced), so that direction still waits for a real,
+    live confirmation via the caller's own normal path."""
+    if _last_known_lx200_remote and _real_service_active():
+        try:
+            _stop_pifinder_service_for_remote(_last_known_lx200_remote)
+            _mb_log(
+                f"pifinder.service stopped automatically from the last confirmed state - "
+                f"PiFinder LX200 was last seen pointing at remote "
+                f"'{_last_known_lx200_remote}', and the Web Manager can't confirm the "
+                f"current target yet."
+            )
+        except Exception as e:
+            _mb_log(f"pifinder.service auto-stop (from cached state) failed: {e}")
+
+
 def _pifinder_service_sync_with_lx200_target():
     """Enforces the rule from direct feedback (2026-09-12): a local
     pifinder.service is pointless once PiFinder LX200 points at a remote
@@ -396,9 +429,13 @@ def _pifinder_service_sync_with_lx200_target():
     performed (tracked via _pifinder_service_auto_stopped_for_remote) -
     never a general "must be running whenever LX200 is local" rule, which
     would fight the separate, pre-existing Real/Fake Mode toggle (Fake Mode
-    deliberately stops this same service for an unrelated reason)."""
+    deliberately stops this same service for an unrelated reason). When the
+    Web Manager can't confirm the real target at all right now, falls back
+    to _sync_pifinder_service_from_cache() below - same conservative
+    "stop only" direction, from the last value this function itself
+    confirmed."""
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
-    global _wm_unreachable_for_pifinder_sync_warned
+    global _wm_unreachable_for_pifinder_sync_warned, _last_known_lx200_remote
     if not PIFINDER_SERVICE_UNIT.exists():
         return  # nothing installed here at all (e.g. a pure INDI-only Control Host)
     try:
@@ -415,6 +452,7 @@ def _pifinder_service_sync_with_lx200_target():
             # ONLY when there's actually something to fix right now - no
             # point warning about an unrelated, transient WM hiccup on a
             # device where the local service is already stopped anyway.
+            _sync_pifinder_service_from_cache()
             if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
                 _wm_unreachable_for_pifinder_sync_warned = True
                 _mb_log(
@@ -426,6 +464,7 @@ def _pifinder_service_sync_with_lx200_target():
         _wm_unreachable_for_pifinder_sync_warned = False
         driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
     except webmanager_client.WebManagerError:
+        _sync_pifinder_service_from_cache()
         if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
             _wm_unreachable_for_pifinder_sync_warned = True
             _mb_log(
@@ -435,6 +474,9 @@ def _pifinder_service_sync_with_lx200_target():
             )
         return  # Web Manager unreachable this tick - next tick re-checks, no guessing
     lx200_remote = driver_status.get("lx200_remote")
+    if lx200_remote != _last_known_lx200_remote:
+        _last_known_lx200_remote = lx200_remote
+        _save_mount_bridge_desired_state()
     if lx200_remote:
         if _real_service_active():
             try:
@@ -1718,6 +1760,27 @@ _wm_unreachable_for_pifinder_sync_warned = False
 # stopped-again) resets this back to False.
 _pifinder_service_notice_dismissed = False
 
+# Direct feedback (2026-09-13), live on a freshly rebooted Control host:
+# right after boot, stellarmatewebmanager.service is itself already up and
+# answering, but hasn't started an Ekos profile yet - server_status()
+# reports {"running": False, "active_profile": None} for however long that
+# takes, and _pifinder_service_sync_with_lx200_target() correctly refuses
+# to guess during that gap (same as the pre-existing "Web Manager
+# unreachable" case just above), leaving a stray local pifinder.service
+# running the whole time. But the answer usually isn't actually unknown -
+# this device was very likely already confirmed pointing at a remote LX200
+# target before the reboot, and that fact doesn't change just because the
+# profile hasn't come back up yet. This remembers the last SUCCESSFULLY
+# CONFIRMED `lx200_remote` value (via webmanager_client.pifinder_driver_
+# status(), independent of _pifinder_service_auto_stopped_for_remote above,
+# which only tracks "did *this* logic stop it") and persists it, so
+# _sync_pifinder_service_from_cache() below has something to act on even
+# before the first real check of a fresh boot succeeds. None means either
+# "never successfully checked yet" or "last confirmed local" - both cases
+# correctly mean "nothing to stop" for the cache fallback, which only ever
+# acts on a truthy cached remote.
+_last_known_lx200_remote = None
+
 # docs/concepts/pifinder_client_role_and_indi_setup_review.md, section 3a:
 # "PiFinder host" (GoTo Mode, mount optional) and "PiFinder Client" (no
 # mount, ready for a remote Control host) both derive the identical
@@ -1764,6 +1827,7 @@ def _save_mount_bridge_desired_state():
             "pifinder_service_auto_stopped_for_remote": _pifinder_service_auto_stopped_for_remote,
             "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
             "pifinder_role_choice": _pifinder_role_choice,
+            "last_known_lx200_remote": _last_known_lx200_remote,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -1780,7 +1844,7 @@ def _load_mount_bridge_desired_state():
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
     global _maintenance_mode_profile, _sim_mismatch_ever_resolved
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
-    global _pifinder_role_choice
+    global _pifinder_role_choice, _last_known_lx200_remote
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -1799,6 +1863,7 @@ def _load_mount_bridge_desired_state():
     _pifinder_service_auto_stopped_for_remote = data.get("pifinder_service_auto_stopped_for_remote")
     _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
     _pifinder_role_choice = data.get("pifinder_role_choice")
+    _last_known_lx200_remote = data.get("last_known_lx200_remote")
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
