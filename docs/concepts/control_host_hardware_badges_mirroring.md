@@ -39,7 +39,7 @@ same as `/api/pifinder_key`; the frontend passes `pifinderHost()` (same
 THIS device's own local hardware regardless of `?host=`, so folding gps into that same response
 would make the parameter look like it applies to all three when it only ever would for gps.
 
-### 2b. Genuine local hardware checks - need a real Control-Center-to-Control-Center proxy
+### 2b. Genuine local hardware checks - needed a real Control-Center-to-Control-Center proxy (done)
 
 - **Camera badge** → `_camera_hardware_present()` - runs `rpicam-hello --list-cameras`, a raw
   libcamera call against *this machine's own* camera stack. Deliberately independent of
@@ -52,52 +52,58 @@ would make the parameter look like it applies to all three when it only ever wou
   (`_pifinder_solve_status()`'s own `/api/orientation_status` call), and got the same `host` fix -
   but PiFinder's own `server.py` (`~/PiFinder/python/PiFinder/server.py`) hardcodes
   `request.remote_addr not in ("127.0.0.1", "::1")` on that specific route (and two others) as its
-  own security restriction, unrelated to PFSM. No `?host=` fix on this side can work around that -
-  it always 403s for a remote caller, `host` param or not. Getting this value for a remote PiFinder
-  needs the exact same thing as camera/imu: asking *that device's own* Control Center (where the
-  request genuinely comes from 127.0.0.1), not this one. Frontend already treats "reachable but
-  no orientation data" as a neutral grey "unavailable" rather than a self-contradicting green "?/?"
-  (2026-09-12 fix), so this doesn't currently mislead - it's just not implemented yet.
+  own security restriction, unrelated to PFSM. No `?host=` fix on this side could work around
+  that - it always 403s for a remote caller, `host` param or not.
+- **CPU/Temp** (`#system-load-line`) and **local PiFinder service status** (`#pifinder-status-line`)
+  - not originally in scope for this doc (they're not badges), but direct feedback (2026-09-13,
+  "auf dem CH brauche ich sowohl die lokalen als auch die remote Werte") extended the same need to
+  them: both only ever described THIS device, easy to misread as describing the mirrored one.
 
-Neither of these can be pointed at a remote IP the way a `host` parameter fixes a web-API proxy -
-`rpicam-hello` and a local I2C scan are only ever meaningful on the machine that actually has the
-hardware. To show the *remote* PiFinder's camera/IMU presence, the Control host's own Control
-Center needs to ask **the remote device's own Control Center** (which already computes this
-correctly for itself, via the exact same `/api/hardware_status` endpoint) - a genuine
-Control-Center-to-Control-Center call, not a parameter tweak.
+None of these can be pointed at a remote IP the way a `host` parameter fixes a web-API proxy -
+`rpicam-hello`, a local I2C scan, and `os.getloadavg()` are only ever meaningful on the machine
+they actually run on. Fixed by asking **the remote device's own Control Center** (which already
+computes each of these correctly for itself) instead of a parameter tweak.
 
-## 3. Design questions for 2b (not yet decided)
+## 3. Design questions for 2b (resolved 2026-09-13)
 
-- **Which endpoint makes the call?** Proposed: `/api/hardware_status` itself grows an optional
-  `host` parameter too, for consistency with 2a - but unlike 2a, when `host` is set it doesn't
-  read local hardware at all, it does `GET http://{host}:8765/api/hardware_status` (the remote
-  Control Center's own endpoint, not PiFinder's) and relays the result. Keeps the frontend's own
-  call site identical for every badge (`?host=...` everywhere), even though the two categories
-  work completely differently underneath.
-- **Authentication.** The remote Control Center's `/api/hardware_status` is behind
-  `_require_auth()` (HTTP Basic Auth against the stellarmate account's own password via PAM) -
-  this proxy call needs credentials for a *different device*. Options to weigh: (a) assume the
-  same stellarmate account password across every device in one PFSM fleet (plausible default,
-  matches `_PIFINDER_REMOTE_PASSWORD`'s own "smate" convention for PiFinder's Remote page), (b)
-  add a way to store/enter the remote CC's credentials once per Control host setup, (c) exempt
-  this one read-only endpoint from auth when the request itself originates from another PFSM
-  Control Center's own proxy call (harder to verify safely). No decision made here yet.
-- **Remote Control Center might not be running/reachable at all** - the PiFinder device's own CC
-  is only needed for its *own* first-time setup in the usual flow; nothing requires it to keep
-  running afterward. The proxy call needs to fail soft (badge shows "unconfirmed"/grey, not an
-  error) exactly like every other unreachable-PiFinder case already does.
-- **Where does the remote CC's address come from?** Same value already known for the OLED/Quick-
-  keys fixes (`wmLx200Remote`'s host part) - the *INDI* port (7624 by default) is unrelated to the
-  Control Center's own port (8765), so this reuses only the hostname, not the full `host:port`
-  string, same as the OLED fix already does.
+- **Which endpoint makes the call?** New shared `_cc_proxy_get(host, path, auth_header)` -
+  `GET http://{host}:8765{path}` with `timeout=5`, returns the parsed JSON or `None` on any
+  failure (fails soft, same as every other unreachable-remote case). Used by:
+  - `/api/hardware_status?host=...` - when `host` is set, proxies the *whole* remote response
+    (camera/imu/gps) instead of reading local hardware, exactly as originally proposed here. GPS
+    still also has its own direct-to-PiFinder route (`/api/gps_status?host=`, category 2a) - kept,
+    since it already worked and is one hop shorter; the two mechanisms happen to serve the same
+    badge row.
+  - `/api/system_load?host=...` - proxies to the remote CC's own `/api/system_load` when `host` is
+    given, local `_system_load_status()` otherwise (unchanged default).
+  - `_pifinder_solve_status()`'s orientation fetch - when `host` isn't `127.0.0.1`/`::1` (PiFinder's
+    own restriction, see 2b above), proxies through the remote CC's own `/api/debug_solve?port=N`
+    instead of hitting PiFinder's `/api/orientation_status` directly - the remote CC's own call to
+    that route genuinely originates from `127.0.0.1` on *its* side, sidestepping the 403 entirely.
+- **Authentication - decided: assume the same stellarmate account password across every device in
+  one PFSM fleet** (option (a) from the original list here, matching `_PIFINDER_REMOTE_PASSWORD`'s
+  own "smate" convention). Implementation needs no credential storage at all: `_require_auth()`
+  only ever checks the *password* half of Basic Auth, never the username (see its own comment) -
+  so `_cc_proxy_get()` simply forwards the incoming request's own `Authorization` header verbatim
+  to the remote CC, which authenticates it the same way its own browser client would.
+- **Remote Control Center might not be running/reachable at all** - handled: every proxied route
+  falls back to `None`/an all-null shape on any `_cc_proxy_get()` failure, and the frontend renders
+  that as a neutral "unavailable (remote Control Center not reachable)" rather than a false
+  positive/negative.
+- **Where does the remote CC's address come from?** `pifinderHost()` (same
+  `new URL(pifinderScreenUrl).hostname` `pfSendKey()`/2a already use) - reused unchanged, gated on
+  `isControlHostRole()` for the CC-to-CC calls specifically (unlike the direct-to-PiFinder 2a
+  calls, pointing `?host=` at this device's own address here would mean a pointless self-proxy).
 
-## 4. Suggested order of work
+## 4. Status
 
-1. ~~Ship 2a first (Solve + GPS `host` parameter) - mechanical, same pattern as #419, no open
-   design questions, immediate value on its own.~~ Done (2026-09-12).
-2. Decide the auth question for 2b before writing any of it - the rest of the design follows
-   once that's settled, and it's the one genuinely new piece of infrastructure this needs.
-3. 2b itself (Camera + IMU via CC-to-CC proxy) once 2 is answered.
+1. ~~Ship 2a (Solve + GPS `host` parameter).~~ Done (2026-09-12).
+2. ~~Decide the auth question for 2b.~~ Done (2026-09-13) - same-password assumption, header
+   forwarding.
+3. ~~2b itself (Camera/IMU/orientation via CC-to-CC proxy, plus CPU/Temp and local PiFinder status
+   once the need was raised).~~ Done (2026-09-13).
 
-2b (Camera/IMU) not implemented yet - concept only for that part, per direct request ("dann bitte
-das Konzept erstellen"). The auth question in section 3 above is still open.
+Everything in this doc is implemented. Still open, not part of this doc: the Test Hardware
+button's own *functional* camera/IMU test (an actual `rpicam-hello` capture / I2C read, not just
+presence) stays local-only - proxying an on-demand test run to a remote device is a bigger feature
+than mirroring a passive status read, not attempted here.

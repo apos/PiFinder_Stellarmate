@@ -2254,7 +2254,22 @@
           </div>
           <div id="pifinder-glance-status-stack">
             <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+            <!-- Control host only (2026-09-13, direct feedback: "auf dem CH
+                 brauche ich sowohl die lokalen als auch die remote Werte") -
+                 #pifinder-status-line above already covers the mirrored
+                 (remote) PiFinder; this is this device's OWN local
+                 pifinder.service state, from the same /api/pifinder_mode
+                 poll refreshMode() already runs unconditionally (see
+                 lastRealServiceState). Normally "not running here" on a
+                 true Control host - that's expected, not a fault. -->
+            <div id="local-pifinder-status-line" style="display:none;" title="This device's own local PiFinder service, independent of the remote PiFinder shown above - a Control host normally has none of its own, which is expected, not a problem."><span class="status-dot dot-white" id="local-pifinder-status-dot"></span><span id="local-pifinder-status-text">Local: checking…</span></div>
             <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
+            <!-- Control host only - the remote PiFinder device's own CPU/Temp
+                 (category 2b proxy), same reasoning as local-pifinder-
+                 status-line above: #system-load-line is always THIS
+                 device's own load, easy to misread as describing the
+                 mirrored device otherwise. -->
+            <div id="remote-system-load-line" style="display:none;" title="The remote PiFinder device's own CPU load/temperature, via its Control Center (docs/concepts/control_host_hardware_badges_mirroring.md category 2b)."><span class="status-dot dot-white" id="remote-system-load-dot"></span><span id="remote-system-load-text">Remote: checking…</span></div>
           </div>
         </div>
         <!-- Showstopper banners (2026-09-09) - see .showstopper-card's CSS
@@ -3444,21 +3459,24 @@ function updatePiFinderStatusAndWizardLink() {
     // Control host (2026-09-12, direct feedback: "PiFinder ist running ->
     // da fehlt die Info, welcher das ist" - ambiguous next to a tile that's
     // mirroring a completely different device) - remote suffix everywhere
-    // below. lastHwCamera/lastHwImu only ever reflect THIS device's own
-    // hardware (category 2b, not yet built), so the "not functional"
-    // camera/IMU branch is meaningless here too - never shown when remote,
-    // same reasoning as setHwRow()/applyHwTestRow()'s own gate.
+    // below. lastHwCamera/lastHwImu are now proxied to the remote device's
+    // own Control Center on a Control host too (category 2b, 2026-09-13),
+    // so the "not functional" branch applies there just as correctly as
+    // locally - only its "see Simulation, Test and Power" pointer is local-
+    // only (that section manages THIS device's own hardware/Fake Mode), so
+    // it's dropped when remote instead of pointing somewhere that won't help.
     const remoteSuffix = isControlHostRole() ? ' (remote)' : '';
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
       textEl.textContent = `PiFinder is running (Fake Mode)${remoteSuffix}`;
-    } else if (!isControlHostRole() && (lastHwCamera === false || lastHwImu === false)) {
+    } else if (lastHwCamera === false || lastHwImu === false) {
       // Reachable (web server/OLED mirror up) does not mean functional - the
       // real instance keeps running fine even with no camera/IMU attached
       // (same known upstream issue the mode tile already accounts for).
       // Mirror that tile's wording here instead of contradicting it.
       dotEl.className = 'status-dot dot-yellow';
-      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing - see Simulation, Test and Power)`;
+      const hint = isControlHostRole() ? '' : ' - see Simulation, Test and Power';
+      textEl.textContent = `PiFinder is running, but not functional (${missingHardwareLabel()} missing${hint})${remoteSuffix}`;
     } else {
       dotEl.className = 'status-dot dot-green';
       textEl.textContent = `PiFinder is running${remoteSuffix}`;
@@ -3500,8 +3518,10 @@ function refreshSystemLoad() {
     // Control host that's a different machine from the PiFinder shown right
     // above it, so leaving it unlabeled reads as if it described the
     // remote's load. Direct feedback (2026-09-12): "CPU/Temp info - auch
-    // hier müssen wir zwischen Remote und lokal unterscheiden."
-    const prefix = isControlHostRole() ? 'This device: ' : '';
+    // hier müssen wir zwischen Remote und lokal unterscheiden." "Local:" not
+    // "This device:" (2026-09-13 follow-up: "einheitlich Remote oder Local
+    // davorstellen") - matches refreshRemoteSystemLoad()'s own "Remote:".
+    const prefix = isControlHostRole() ? 'Local: ' : '';
     if (data.high) {
       dotEl.className = 'status-dot dot-red';
       textEl.textContent = `${prefix}High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
@@ -3510,6 +3530,72 @@ function refreshSystemLoad() {
       textEl.textContent = `${prefix}Normal (${data.percent}% CPU${tempSuffix})`;
     }
   }).catch(() => {});
+}
+
+// Control host only (category 2b, docs/concepts/
+// control_host_hardware_badges_mirroring.md) - the mirrored device's own
+// CPU/Temp, via its Control Center. Direct feedback (2026-09-13): "auf dem
+// CH brauche ich sowohl die lokalen als auch die remote Werte" - same
+// fields/thresholds as refreshSystemLoad() above, just proxied.
+function refreshRemoteSystemLoad() {
+  const row = document.getElementById('remote-system-load-line');
+  const host = isControlHostRole() ? pifinderHost() : null;
+  if (!host) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  const dotEl = document.getElementById('remote-system-load-dot');
+  const textEl = document.getElementById('remote-system-load-text');
+  fetch(`/api/system_load?host=${encodeURIComponent(host)}`, { cache: 'no-store' }).then(r => r.json()).then(data => {
+    if (data.percent == null) {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'Remote: unavailable (remote Control Center not reachable)';
+      return;
+    }
+    const tempSuffix = data.temp_c != null ? `, ${data.temp_c}°C` : '';
+    if (data.high) {
+      dotEl.className = 'status-dot dot-red';
+      textEl.textContent = `Remote: High (${data.percent}% CPU${tempSuffix}) - PiFinder/INDI may respond slowly`;
+    } else {
+      dotEl.className = 'status-dot dot-green';
+      textEl.textContent = `Remote: Normal (${data.percent}% CPU${tempSuffix})`;
+    }
+  }).catch(() => {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'Remote: unavailable (remote Control Center not reachable)';
+  });
+}
+
+// Control host only - this device's OWN local PiFinder service state,
+// independent of the mirrored remote PiFinder shown in #pifinder-status-line
+// above. Reuses the same lastRealServiceState/lastPifinderMode
+// refreshMode() already polls unconditionally - no new backend call needed.
+function updateLocalPifinderStatusLine() {
+  const row = document.getElementById('local-pifinder-status-line');
+  if (!isControlHostRole()) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  const dotEl = document.getElementById('local-pifinder-status-dot');
+  const textEl = document.getElementById('local-pifinder-status-text');
+  if (lastPifinderMode === 'fake') {
+    dotEl.className = 'status-dot dot-yellow';
+    textEl.textContent = 'Local: Fake Mode is also running here';
+  } else if (lastRealServiceState === 'active' || lastRealServiceState === 'activating') {
+    dotEl.className = 'status-dot dot-yellow';
+    textEl.textContent = 'Local: a PiFinder service is also running here';
+  } else if (lastRealServiceState === 'failed') {
+    dotEl.className = 'status-dot dot-red';
+    textEl.textContent = 'Local: PiFinder service failed here';
+  } else if (lastRealServiceState === 'inactive') {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'Local: no PiFinder service running here (expected for a Control host)';
+  } else {
+    dotEl.className = 'status-dot dot-white';
+    textEl.textContent = 'Local: checking…';
+  }
 }
 
 // PiFinder's own "Tools -> Test Mode" (callbacks.activate_debug() ->
@@ -4396,7 +4482,8 @@ async function toggleTruthInjector() {
       // (#319: pass the port - /api/fake_solve_disable rejects an empty one,
       // so without it this DELETE silently no-op'd and the flag stuck.)
       const injPort = pifinderScreenUrl ? (new URL(pifinderScreenUrl).port || '80') : '80';
-      await fetch(`/api/fake_solve_disable?port=${injPort}`, { method: 'POST' });
+      const injHost = pifinderHost();
+      await fetch(`/api/fake_solve_disable?port=${injPort}&host=${encodeURIComponent(injHost || '127.0.0.1')}`, { method: 'POST' });
     }
   } catch (e) {
     toggleError = 'could not reach the server';
@@ -4717,6 +4804,7 @@ function setKeypadStyle(style) {
 async function disableFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const btn = document.getElementById('fake-solve-off-btn');
   const textEl = document.getElementById('fake-solve-advanced-status');
   fakeSolveToggleInFlight = true;
@@ -4730,7 +4818,7 @@ async function disableFakeSolve() {
       // its next 2s tick just turns this back on (direct feedback, 2026-08-10).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    await fetch(`/api/fake_solve_disable?port=${port}`, { method: 'POST' });
+    await fetch(`/api/fake_solve_disable?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
   } catch (e) {
     // fall through to the poll loop - it reflects whatever is actually true
   }
@@ -4774,6 +4862,7 @@ async function triggerReseedFromMountBanner() {
 async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const btn = document.getElementById('fake-solve-reseed-btn');
   const textEl = document.getElementById('fake-solve-advanced-status');
   fakeSolveToggleInFlight = true;
@@ -4787,7 +4876,7 @@ async function reseedFakeSolve() {
       // this one-shot re-seed with the shadow device's own position (#323).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}`, { method: 'POST' });
+    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
       fakeSolveToggleInFlight = false;
@@ -4840,6 +4929,7 @@ async function reseedFakeSolve() {
 async function setFakeSolveManual() {
   if (!pifinderScreenUrl) return;
   const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
   const raEl = document.getElementById('fake-solve-manual-ra');
   const decEl = document.getElementById('fake-solve-manual-dec');
   const statusEl = document.getElementById('fake-solve-manual-status');
@@ -4863,7 +4953,7 @@ async function setFakeSolveManual() {
       // (#323 - found live testing #319/#322).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}`, { method: 'POST' });
+    const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
     failed = result.success !== true;
     statusEl.textContent = result.success === true ? '' : `failed (${result.error || 'unknown error'})`;
@@ -6220,6 +6310,7 @@ async function refreshMode() {
       lastRealServiceState = data.real_service_state || null;
       lastPifinderMode = data.mode || null;
       updatePiFinderStatusAndWizardLink();
+      updateLocalPifinderStatusLine();
     }
     if (data.transitioning) {
       dotEl.className = 'status-dot dot-yellow dot-unconfirmed';
@@ -6370,14 +6461,17 @@ let lastHwTestResult = { camera: null, imu: null, gps: null };
 function setHwRow(key, present) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
-  // Camera/IMU only ever check THIS device's own hardware (category 2b, not
-  // yet built) - on a Control host that's simply not the PiFinder being
-  // shown above, so showing this device's own (irrelevant) reading here
-  // would be actively wrong, not just unhelpful. Found live (2026-09-12,
-  // UTM Control host testing): "Camera und IMU stimmen nicht."
-  if ((key === 'camera' || key === 'imu') && isControlHostRole()) {
+  // Category 2b (docs/concepts/control_host_hardware_badges_mirroring.md):
+  // on a Control host, `present` already comes from refreshHardwareStatus()
+  // proxying to the remote device's own Control Center (2026-09-13) - a
+  // real value here, not this device's own (irrelevant) hardware. Only
+  // `present === null` (proxy failed - remote CC unreachable, wrong
+  // password there, or an older PFSM without this route) needs its own
+  // wording instead of the generic "check unavailable" below, since that
+  // phrase reads as a local-check problem.
+  if ((key === 'camera' || key === 'imu') && isControlHostRole() && present === null) {
     setHwDot(dotEl, 'status-dot dot-white');
-    textEl.textContent = 'not available for a remote PiFinder yet';
+    textEl.textContent = 'unavailable (remote Control Center not reachable)';
     const detailEl = document.getElementById('hw-' + key + '-detail');
     if (detailEl) detailEl.textContent = '';
     return;
@@ -6402,11 +6496,16 @@ function setHwRow(key, present) {
 
 async function refreshHardwareStatus() {
   try {
-    // camera/imu are genuinely local-only checks (this device's own
-    // rpicam-hello/I2C bus) - unaffected by pifinderScreenUrl, see
-    // docs/concepts/control_host_hardware_badges_mirroring.md category 2b
-    // (not yet built).
-    const resp = await fetch('/api/hardware_status', { cache: 'no-store' });
+    // Category 2b: on a Control host, proxy to the remote device's own
+    // Control Center (which already computes this correctly for itself)
+    // rather than reading this device's own irrelevant hardware. Gated on
+    // isControlHostRole(), not just pifinderHost() - unlike /api/gps_status
+    // below (a direct proxy to PiFinder's own API, harmless to point at
+    // this device's own hostname too), ?host= here means "ask that OTHER
+    // Control Center", so passing this device's own address would just be a
+    // pointless self-request.
+    const host = isControlHostRole() ? pifinderHost() : null;
+    const resp = await fetch(`/api/hardware_status${host ? `?host=${encodeURIComponent(host)}` : ''}`, { cache: 'no-store' });
     const data = await resp.json();
     setHwRow('camera', data.camera);
     setHwRow('imu', data.imu);
@@ -8969,10 +9068,9 @@ function deriveProfileRole() {
 // This device is a Control host with no PiFinder hardware of its own by
 // design (see the role card's own text: "No PiFinder hardware used on this
 // device") - Camera/IMU/CPU checks that only ever read THIS device's local
-// hardware (docs/concepts/control_host_hardware_badges_mirroring.md,
-// category 2b - not yet built) are therefore never meaningful here and must
-// say so honestly rather than showing this device's own (irrelevant)
-// reading as if it described the remote PiFinder.
+// hardware are therefore never meaningful here on their own; on a Control
+// host they're instead proxied to the mirrored device's own Control Center
+// (docs/concepts/control_host_hardware_badges_mirroring.md, category 2b).
 function isControlHostRole() {
   const role = deriveProfileRole();
   return role === 'ctrl' || role === 'ctrl-incomplete';
@@ -9039,6 +9137,11 @@ function updateProfileRoleLine() {
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
   updatePiFinderTileLocation(role);
+  // isControlHostRole() re-derives the same role - these two lines' own
+  // visibility depends on it too, and role can change independent of the
+  // service-state/CPU-load polls that also drive their content.
+  updateLocalPifinderStatusLine();
+  refreshRemoteSystemLoad();
   // The status line/diagram/caption are entirely derived from Mount
   // Bridge's own reported state (PiFinder/Bridge/Mount connection, drift,
   // coupling mode) - none of that is obtainable in the PiFinder-host role,
@@ -9511,13 +9614,13 @@ function applyHwTestRow(key, result) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
   const detailEl = document.getElementById('hw-' + key + '-detail');
-  // Same reasoning as setHwRow()'s own comment - the functional test
-  // (rpicam-hello/I2C scan) only ever runs against THIS device's hardware,
-  // never the remote PiFinder's.
+  // Unlike setHwRow()'s own passive present/absent read (now proxied to the
+  // remote device's own Control Center, category 2b), the deeper FUNCTIONAL
+  // test behind the "Test Hardware" button (rpicam-hello capture, an actual
+  // I2C read) has no such proxy - it always runs against THIS device's own
+  // hardware, so its richer result must never override the passive proxied
+  // reading on a Control host with a "not available" that's no longer true.
   if ((key === 'camera' || key === 'imu') && isControlHostRole()) {
-    setHwDot(dotEl, 'status-dot dot-white');
-    textEl.textContent = 'not available for a remote PiFinder yet';
-    detailEl.textContent = '';
     return;
   }
   if (!result) return;
@@ -9724,6 +9827,7 @@ ccRegisterPoll(refreshMode, 5000);
 
 refreshSystemLoad();
 ccRegisterPoll(refreshSystemLoad, 30000);
+ccRegisterPoll(refreshRemoteSystemLoad, 30000);
 
 refreshDisplayBridge();
 ccRegisterPoll(refreshDisplayBridge, 5000);
