@@ -279,49 +279,61 @@ def set_pifinder_simulator(
 
 
 def ensure_pifinder_client_profile(
-    reset: bool = False, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+    host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> bool:
-    """Makes sure PIFINDER_CLIENT_PROFILE_NAME exists with exactly the two
-    drivers the "PiFinder Client" role actually uses: PiFinder LX200 (the
-    position it shares) and PiFinder Simulator (the device Full Simulation/
-    Truth Injector testing feeds - see TRUTH_INJECTOR_DEFAULT_DEVICE's own
-    comment in server.py). See this module's PIFINDER_CLIENT_PROFILE_NAME
-    comment for why a shared, possibly driver-bloated profile is worth
-    avoiding for this specific role.
+    """Creates PIFINDER_CLIENT_PROFILE_NAME with exactly the two drivers the
+    "PiFinder Client" role actually uses (PiFinder LX200 - the position it
+    shares - and PiFinder Simulator, the device Full Simulation/Truth
+    Injector testing feeds), if it doesn't exist yet. A no-op if it already
+    does.
 
-    `reset=False` (the normal role-switch case): only CREATES the profile,
-    with exactly those two drivers, if it doesn't exist yet. An existing
-    "PFSM Client" profile's driver list is left exactly as the user last
-    configured it, even if they added more since - this is a default,
-    trusted starting point, not an enforced state.
-    `reset=True` (an explicit "Reset to minimal Client set" action):
-    force-replaces its driver list back to exactly those two, discarding
-    anything else that has crept in.
+    Direct feedback (2026-09-13): "der User muss frei in der Wahl sein, nur
+    wenn es KEIN passendes Profil gibt, dann legst du INITIAL ein neues an" -
+    this is that bootstrap ONLY: called from server.py exactly once per
+    install, the very first time "PiFinder Client" is ever activated with
+    nothing yet remembered for it (_last_known_client_profile is still
+    None). Every later activation restores whatever got remembered instead,
+    including if the user has since deliberately switched to a different
+    profile entirely - this function is never involved again after that
+    first bootstrap. See reset_client_profile_drivers() below for the
+    separate "Reset to minimal Client set" action, which works on whichever
+    profile is currently remembered, not just this default name.
 
-    Returns True if the profile was created or its drivers were changed,
-    False if it already existed and matched (or reset was not requested).
+    Returns True if the profile was created, False if it already existed.
     """
     try:
-        meta = _get_profile_meta(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
+        _get_profile_meta(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
+        return False  # already exists - nothing to bootstrap
     except WebManagerError:
-        meta = None
+        pass
+    _request("POST", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout)
+    _request(
+        "PUT", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout,
+        body={"port": 7624, "autostart": True, "autoconnect": True, "driver_source": "system"},
+    )
+    set_profile_drivers(PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, host, port, timeout)
+    return True
 
-    if meta is None:
-        _request("POST", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout)
-        _request(
-            "PUT", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout,
-            body={"port": 7624, "autostart": True, "autoconnect": True, "driver_source": "system"},
-        )
-        set_profile_drivers(PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, host, port, timeout)
+
+def reset_client_profile_drivers(
+    profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Force-replaces `profile`'s driver list back to exactly PiFinder LX200
+    + PiFinder Simulator, discarding anything else - the explicit "Reset to
+    minimal Client set" action. Takes an explicit profile name (not
+    PIFINDER_CLIENT_PROFILE_NAME specifically) because the user is free to
+    have the Client role remembering a different profile than the original
+    default (see ensure_pifinder_client_profile()'s own comment) - this
+    resets whichever one that currently is.
+
+    Returns True if anything was actually changed, False if it already
+    matched. Raises WebManagerError if `profile` doesn't exist.
+    """
+    meta = _get_profile_meta(profile, host, port, timeout)
+    current = get_profile_labels(profile, host, port, timeout)
+    if sorted(current) != sorted(PIFINDER_CLIENT_PROFILE_DRIVERS):
+        _recreate_profile_with_drivers(profile, PIFINDER_CLIENT_PROFILE_DRIVERS, meta, host, port, timeout)
         return True
-
-    if reset:
-        current = get_profile_labels(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
-        if sorted(current) != sorted(PIFINDER_CLIENT_PROFILE_DRIVERS):
-            _recreate_profile_with_drivers(
-                PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, meta, host, port, timeout
-            )
-            return True
     return False
 
 

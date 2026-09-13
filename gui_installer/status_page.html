@@ -1424,10 +1424,6 @@
   }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
-  /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
-     "Mount:"), which pushed each row's dropdown/buttons to a different
-     x position - per live feedback, give the leading label+help-icon a
-     fixed width so everything after it lines up in a column. */
   .mb-step-row {
     display: flex;
     align-items: center;
@@ -1435,11 +1431,18 @@
     column-gap: 0.5rem;
     row-gap: 0.3rem;
   }
+  /* Was a fixed 8.6rem column (sized for the longest label, "2. KStars
+     Link:") so every row's dropdown/buttons lined up at the same x
+     position - direct feedback (2026-09-13): for a short label ("4. Mount:",
+     the new "1. INDI WM:") this left a visibly wide, unused gap before the
+     actual content, worse the shorter the label. Auto width instead - each
+     row starts its content right after its own label; cross-row alignment
+     is given up in exchange. */
   .mb-row-lead {
-    flex: 0 0 8.6rem;
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
+    margin-right: 0.5rem;
   }
   /* Rows 1/2/4 all follow "label, one widget (dropdown or status text),
      button" - giving that middle widget a shared minimum width lines up
@@ -2698,10 +2701,6 @@
           <span class="mb-row-label">This device's IP:</span>
           <span id="pfhost-ip">checking&hellip;</span>
         </div>
-        <div class="mb-row" id="mb-client-reset-row" style="display:none;">
-          <span class="mb-row-label">PiFinder Client profile:</span>
-          <button id="mb-client-reset-btn" onclick="switchToPiFinderClientProfile(document.getElementById('mb-role-card-client'), true)" title="Recreates the dedicated &quot;PFSM Client&quot; profile with exactly PiFinder LX200 + PiFinder Simulator, discarding any other driver added to it since.">Reset to minimal Client set</button>
-        </div>
       </div>
 
       <!-- Hardware mode: same collapsed-summary/detail split as Role above.
@@ -2740,12 +2739,17 @@
           </div>
         </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
-        <div id="mb-setup-btn-row" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
+        <div id="mb-setup-btn-row" class="mb-row mb-step-row" style="margin-top:0.5rem;">
+          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-wm-label">1. INDI WM:</span></span>
           <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">One-Click Setup</button>
           <a class="help-link" href="/help.html#setup-indi" target="_blank" rel="noopener" title="Help">i</a>
           <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
+          <!-- Only meaningful in the Client role (its own dedicated
+               profile) - see switchToPiFinderClientProfile()'s own comment.
+               Visibility toggled in updateRoleUI(). -->
+          <button id="mb-client-reset-btn" class="ql-small-btn" style="display:none;" onclick="switchToPiFinderClientProfile(document.getElementById('mb-role-card-client'), true)" title="Recreates your PiFinder Client profile with exactly PiFinder LX200 + PiFinder Simulator, discarding any other driver added to it since.">Reset to minimal Client set</button>
           <span id="maintenance-mode-badge" class="mb-group-badge mb-group-badge-live" style="display:none;"></span>
-          <button id="maintenance-mode-toggle-btn" class="ql-small-btn maint-mode-btn" onclick="toggleMaintenanceMode()">Maintenance mode</button>
+          <button id="maintenance-mode-toggle-btn" class="ql-small-btn maint-mode-btn" style="margin-left:auto;" onclick="toggleMaintenanceMode()">Maintenance mode</button>
           <a class="help-link" href="/help.html#maintenance-mode" target="_blank" rel="noopener" title="Help">i</a>
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
@@ -4233,6 +4237,29 @@ function collectActiveShowstoppers() {
         '</div>' +
         '<div id="ctrl-remote-test-result" class="mb-drift-banner-subtext"></div>',
       buttons: [],
+    });
+  }
+  // Direct feedback (2026-09-13), Grundsatz: "1. Profil aktivieren, 2. dann
+  // schauen, dass alles richtig eingerichtet ist... wird ein Fehler
+  // angezeigt" - PiFinder Client's own profile ("PFSM Client") is never
+  // force-reset on plain activation (a deliberate driver addition must
+  // persist, see switchToPiFinderClientProfile()'s own comment) - but Mount
+  // Bridge specifically contradicts this role's own definition ("no mount
+  // here"), not just an unrelated addition: with it present,
+  // deriveProfileRole() reads 'aio' instead of 'host', silently showing
+  // "PiFinder host" as active with no explanation for why the Client
+  // choice the user just made didn't stick. Surface it instead of leaving
+  // that mismatch silent - Reset is one click away, but stays the user's
+  // decision to make, not automatic.
+  if (pifinderRoleChoice === 'client' && wmHasBridge === true) {
+    items.push({
+      id: 'client-has-bridge',
+      category: 'mount-bridge',
+      title: '"PiFinder Client" chosen, but Mount Bridge is in this profile',
+      text: 'Mount Bridge contradicts this role (no mount here by definition) - that\'s why it\'s still showing as "PiFinder host". Remove it to match the Client choice, or reset the whole profile back to just PiFinder LX200 + PiFinder Simulator.',
+      buttons: [
+        { label: 'Reset to minimal Client set', onclick: 'switchToPiFinderClientProfile(document.getElementById(\'mb-role-card-client\'), true)', action: 'reset-client-profile' },
+      ],
     });
   }
   return items;
@@ -8975,7 +9002,15 @@ async function checkKstarsLink() {
       text = `⚠ In KStars: open Profile Editor → "${wmSelectedProfile}" → enable "INDI Web Manager", port 8624 → Save.`;
     } else {
       rowClass = 'mb-row wm-link-warn';
-      text = `⚠ No KStars profile named "${wmSelectedProfile}" found yet - import/create it there first.`;
+      // Direct feedback (2026-09-13): "Das stimmt nicht, unter 1 steht
+      // 'PFSM Client (running)'" - two separate things share the word
+      // "profile" right next to each other on this page: the Web Manager's
+      // own profile (row 1 above, genuinely running) and KStars' own Ekos
+      // Profile Editor entry (this row) - a brand-new Web Manager profile
+      // has no KStars-side counterpart yet until someone creates one there,
+      // which reads as a flat contradiction without saying which "profile"
+      // is missing.
+      text = `⚠ No matching profile in KStars' own Ekos Profile Editor yet (separate from the Web Manager profile above, which is running) - create one there named "${wmSelectedProfile}" first.`;
     }
     rowIds.forEach((id) => { document.getElementById(id).className = rowClass; });
     textIds.forEach((id) => { document.getElementById(id).textContent = text; });
@@ -9595,11 +9630,24 @@ function updateProfileRoleLine() {
   document.getElementById('mb-role-card-host').classList.toggle('mb-role-active', role === 'aio' || (role === 'host' && !isClientChoice));
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
-  document.getElementById('mb-client-reset-row').style.display = isClientChoice ? '' : 'none';
   const hostMode = role === 'host';
-  document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
-  document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
-  document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
+  // Direct feedback (2026-09-13): "Genau so lassen" - confirmed as the
+  // wanted behavior (matches what's live and approved), superseding the
+  // original 2026-07-29 blanket hostMode-hide for these two ("PiFinder
+  // host role hides everything that has no meaning without a mount here").
+  // "PiFinder host" has "Mount optional" in its own role-card text -
+  // Control host and a Host that hasn't added a mount yet must look and
+  // behave the same; per-button disabled-with-a-reason states (see
+  // updateActionButtonsCouplingGate()) already cover "nothing to do yet"
+  // without hiding the whole section. "PiFinder Client" is the one genuine
+  // exception - it structurally never has a mount at all.
+  document.getElementById('mb-operate-rows').style.display = isClientChoice ? 'none' : '';
+  document.getElementById('mb-steps-4-6').style.display = isClientChoice ? 'none' : '';
+  // This row (wm-profile-select) is unconditional: every role needs to see
+  // which Web Manager profile is actually running, the one piece of ground
+  // truth everything else is read against.
+  document.getElementById('mb-setup-btn-row').style.display = '';
+  document.getElementById('mb-client-reset-btn').style.display = isClientChoice ? '' : 'none';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
   updatePiFinderTileLocation(role);
   // isControlHostRole() re-derives the same role - these three calls' own
@@ -9724,20 +9772,23 @@ async function setPifinderRoleChoice(choice) {
   }
 }
 
-// "PiFinder Client" always runs its own dedicated profile ("PFSM Client" -
-// see webmanager_client.PIFINDER_CLIENT_PROFILE_NAME) instead of the
-// add/remove-drivers-on-whatever's-selected flow the other role cards use.
-// Direct feedback (2026-09-13): a profile reused/cloned from earlier dev/
-// test work could carry half a dozen unrelated drivers alongside PiFinder
-// LX200 - each one more surface for indiserver's own stability issues
-// (#385) to bite on a role that structurally needs none of them.
+// "PiFinder Client" restores whichever profile is remembered for it
+// instead of the add/remove-drivers-on-whatever's-selected flow the other
+// role cards use - see the backend's _last_known_client_profile (server.py)
+// for why: the user is free to point this role at any profile they like,
+// remembered from then on; "PFSM Client" (webmanager_client.
+// PIFINDER_CLIENT_PROFILE_NAME) only ever bootstraps a fresh minimal one
+// the very first time, when nothing has been remembered yet - avoids a
+// profile reused/cloned from earlier dev/test work carrying half a dozen
+// unrelated drivers alongside PiFinder LX200, each one more surface for
+// indiserver's own stability issues (#385).
 // `reset=true` is the explicit "Reset to minimal Client set" action -
-// otherwise an existing "PFSM Client" profile's driver list is left as the
-// user configured it.
+// otherwise the remembered profile's driver list is left as the user
+// configured it.
 async function switchToPiFinderClientProfile(card, reset) {
   const msg = reset
-    ? 'Reset the "PFSM Client" profile back to exactly PiFinder LX200 + PiFinder Simulator, discarding anything else added to it since? The running profile is restarted.'
-    : 'Switch to the dedicated "PFSM Client" profile (PiFinder LX200 + PiFinder Simulator only - not whatever is selected in step 1)? The running profile is restarted.';
+    ? 'Reset your PiFinder Client profile back to exactly PiFinder LX200 + PiFinder Simulator, discarding anything else added to it since? The running profile is restarted.'
+    : 'Switch to your PiFinder Client profile? The running profile is restarted.';
   if (!(await ccConfirmBanner(msg, null, card))) return;
   mbActionInFlight = true;
   setStepBusy(3, true);
@@ -9759,6 +9810,32 @@ async function switchToPiFinderClientProfile(card, reset) {
   setStepBusy(3, false);
 }
 
+// Direct feedback (2026-09-13): "wir sind im Host mode - das gewählte
+// Profil ist für den Client mode reserviert... du musst dir merken, welches
+// Profil im Host modus verwendet wurde und wenn Host aktiv ist, musst du
+// wieder zurück wechseln" - symmetric to switchToPiFinderClientProfile():
+// Client always has its own fixed profile name to switch back to; Host
+// doesn't, so the backend remembers whatever was last genuinely running
+// while NOT on the dedicated Client profile (_last_known_host_profile) and
+// this just asks it to restore that. No confirm dialog (unlike Client):
+// this only ever restores something that was already running before, it
+// never reconfigures drivers or picks a new profile out of nowhere - the
+// existing per-driver confirm further down still covers the "does this
+// profile's shape actually match Host" question on whatever it restores to.
+async function restorePiFinderHostProfile() {
+  try {
+    const resp = await fetch('/api/pifinder_host_profile', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success && data.profile) {
+      await loadWmProfiles();
+      await refreshWmDriverButtons();
+    }
+  } catch (e) {
+    // best-effort - the existing per-driver flow below still works on
+    // whatever profile ends up selected either way
+  }
+}
+
 async function onRoleCardClick(kind) {
   if (mbActionInFlight) return;
   const card = document.getElementById(`mb-role-card-${kind}`);
@@ -9772,6 +9849,16 @@ async function onRoleCardClick(kind) {
   if (kind === 'client') {
     await switchToPiFinderClientProfile(card, false);
     return;
+  }
+  // Symmetric counterpart: "PiFinder host" has no single fixed profile
+  // name the way Client does, so restore whatever was last actually
+  // running for it instead - otherwise, right after having been on the
+  // dedicated "PFSM Client" profile, this card's own driver-shape check
+  // below would reconfigure THAT profile for Host use (see
+  // restorePiFinderHostProfile()'s own comment). No-op if nothing's been
+  // remembered yet or it's already active.
+  if (kind === 'host') {
+    await restorePiFinderHostProfile();
   }
   if (!wmSelectedProfile) {
     await ccNoticeBanner('Pick a profile in step 1 first.', null, card);
