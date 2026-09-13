@@ -4131,12 +4131,22 @@ function collectActiveShowstoppers() {
   // whether there's also a mount mismatch - this card no longer depends
   // on that unrelated condition to ever appear.
   if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+    // A "PiFinder Client" has no mount at all on this device (that's the
+    // role's whole point - it exists purely to be coupled BY a remote
+    // Control host) - "Sync mount from PiFinder"/"Re-seed from mount" are
+    // both meaningless here, there's nothing local to sync to or re-seed
+    // from. Keep the informational half (still true and useful - the user
+    // may not otherwise know PiFinder itself thinks it's below the
+    // horizon), drop only the actions that assume a mount exists.
+    const clientRole = isPiFinderClientRole();
     items.push({
       id: 'pifinder-horizon',
       category: 'pifinder',
       title: "PiFinder's own position is below the horizon",
-      text: `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Re-seed from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
-      buttons: [
+      text: clientRole
+        ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. Wait for a fresh solve once PiFinder is back above the horizon.`
+        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Re-seed from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
+      buttons: clientRole ? [] : [
         { label: 'Re-seed from mount', onclick: 'triggerReseedFromMountBanner()', action: 'reseed-from-mount' },
       ],
     });
@@ -9429,6 +9439,21 @@ function isControlHostRole() {
   return role === 'ctrl' || role === 'ctrl-incomplete';
 }
 
+// "PiFinder Client" is 'host' (local LX200, no Mount Bridge) PLUS the
+// persisted pifinder_role_choice - see the 'aio'/'host' split's own comment
+// on deriveProfileRole(). Factored out (2026-09-13, direct feedback: "die
+// Meldung 'Reseed from mount' darf im Client mode nicht auftauchen" reported
+// AGAIN) - collectActiveShowstoppers()'s pifinder-horizon card used to
+// compute belowHorizon purely from PIFINDER_HORIZON_STATUS with no role
+// check at all, so it kept offering "Re-seed from mount" on a device that,
+// by this very role's own definition ("No mount here"), has no mount to
+// re-seed from. Same underlying fact updateRoleUI() already used inline for
+// its card-highlight logic - shared here instead of re-deriving it a second
+// time and risking the two definitions drifting apart.
+function isPiFinderClientRole() {
+  return deriveProfileRole() === 'host' && pifinderRoleChoice === 'client';
+}
+
 // Direct feedback (2026-09-12): the PiFinder tile's OLED mirror gives no clue
 // WHICH device it's actually mirroring - obvious enough on a single-device
 // setup, genuinely ambiguous once a Control host is mirroring a PiFinder
@@ -9562,7 +9587,7 @@ function updateProfileRoleLine() {
   // the green card is the one that's actually true), not a real choice
   // left for the user to make. Removed - see pifinder-client-mismatch-card
   // removal in the same change for the retired HTML/CSS/JS.
-  const isClientChoice = role === 'host' && pifinderRoleChoice === 'client';
+  const isClientChoice = isPiFinderClientRole();
   document.getElementById('mb-role-card-host').classList.toggle('mb-role-active', role === 'aio' || (role === 'host' && !isClientChoice));
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
