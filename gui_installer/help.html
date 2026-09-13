@@ -151,7 +151,7 @@
 <h3 id="pifinder-host-what">What is this about?</h3>
 <p>The Mount Bridge tile's <strong>role cards</strong> (inside "Setup checklist &amp; diagnostics") cover three setup variants for integrating your PiFinder with INDI:</p>
 <ul>
-  <li><strong>PiFinder host</strong>: this device runs its own PiFinder, with its own mount coupling here too (GoTo Mode) - couple one with the <strong>"+ Couple a mount"</strong> button that appears once the role is set (the classic all-in-one setup, if you only have one device), or leave it mount-free for now.</li>
+  <li><strong>PiFinder host</strong>: this device runs its own PiFinder, with its own mount coupling here too (GoTo Mode, the classic all-in-one setup) - a mount is optional. Add or remove the Mount Bridge driver via the Web Manager/StellarMate App directly; the Setup checklist below picks the change up automatically, no separate button here for it.</li>
   <li><strong>PiFinder Client</strong>: this device runs its own PiFinder, with no mount here - ready for a separate control host to couple it, if one is set up. Configures the exact same profile shape as "PiFinder host" (local PiFinder LX200, no Mount Bridge) - the two cards only differ in which use case you're telling the Control Center this device is for; there is no way for a device to detect this on its own (nothing here talks to a remote device until a control host actually connects to it).</li>
   <li><strong>Control host</strong>: no PiFinder hardware - this device runs the Mount Bridge and your mount, and couples to a PiFinder on <em>another</em> device. See the <a href="#indi-only-mode">INDI-only</a> section above for installing just what a control host needs.</li>
 </ul>

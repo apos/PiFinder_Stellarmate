@@ -1139,6 +1139,14 @@
   }
   .mode-tile:hover { border-color: #444; }
   .mode-tile.tile-on { background: #1c2a1c; border-color: #4caf50; color: #eee; }
+  /* Direct feedback (2026-09-13): "eine Kontrolle, ob alle Vorbedingungen
+     erfüllt sind... Das benötigt jeder Button... gerade für diese
+     wichtigen Mode-Schalter ist das mandatory" - a plain <div> tile can't
+     use the native `disabled` attribute the way a real <button> can, so
+     this class does the same job visually (dimmed, no pointer, no hover
+     highlight) while the click handler itself (see toggleTruthInjector()'s
+     own guard) refuses to act as the actual enforcement, not just the look. */
+  .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
   .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
   .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
   .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
@@ -1310,9 +1318,15 @@
      to be the same underlying thing (local PiFinder LX200, with or without
      the Mount Bridge driver) - deriveProfileRole() already computed that
      from one boolean, the two-card split just made it look like a bigger
-     decision than it is. #mb-add-mount-row (below) offers coupling a mount
-     from inside the single remaining "PiFinder host" card instead. */
-  #mb-add-mount-row { margin: -0.3rem 0 0.8rem; }
+     decision than it is. Direct feedback (2026-09-13, reported twice):
+     a dedicated "+ Couple a mount" button for the reverse direction was
+     removed again - the Setup checklist's own Mount item (below) already
+     shows amber/green for exactly this fact, so a second, separate button
+     just for "tell the system a mount is here" was redundant clutter, not
+     a real decision. Coupling a mount to a "PiFinder host" profile now
+     happens the same way it always could outside this one shortcut: add
+     the Mount Bridge driver via the Web Manager/StellarMate App directly -
+     the checklist/role line pick it up automatically from there. */
   .mb-role-card {
     border: 1px solid #444;
     border-radius: 6px;
@@ -2667,7 +2681,7 @@
              detected fact (see that doc's section 2 for why this device
              can't actually detect "is someone remotely coupling me"). -->
         <div id="mb-role-cards">
-          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device runs its own PiFinder, with its own mount coupling here too (GoTo Mode). Configures the profile with PiFinder LX200 (local); couple a mount here too with the button below, or leave it mount-free for now.">
+          <div class="mb-role-card" id="mb-role-card-host" onclick="onRoleCardClick('host')" title="This device runs its own PiFinder, with its own mount coupling here too (GoTo Mode). Configures the profile with PiFinder LX200 (local) - a mount is optional, add or remove the Mount Bridge driver via the Web Manager/StellarMate App directly; the Setup checklist below picks it up automatically.">
             <div class="mb-role-card-title">PiFinder host</div>
             <div class="mb-role-card-sub">Mount optional (GoTo Mode).</div>
           </div>
@@ -2679,9 +2693,6 @@
             <div class="mb-role-card-title">Control host</div>
             <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
           </div>
-        </div>
-        <div id="mb-add-mount-row" style="display:none;">
-          <button id="mb-add-mount-btn" class="ql-small-btn" onclick="onRoleCardClick('aio')" title="A mount is connected to this same device - adds the PiFinder Mount Bridge driver to the profile alongside PiFinder LX200, so this device also does the coupling. Same profile, no reinstall.">+ Couple a mount</button>
         </div>
         <div class="mb-row" id="mb-thisdevice-ip-row" style="display:none;" title="Enter this address on the control host device (its Control host role card asks for it) so it can reach this PiFinder.">
           <span class="mb-row-label">This device's IP:</span>
@@ -3558,11 +3569,36 @@ function renderRemoteLinks(ips, port) {
 // whenever that probe's result changes, not just once.
 // This is the only place PiFinder's own reachability/link is shown now (the
 // separate "PiFinder is ready" access-links box was dropped as redundant).
+// Direct feedback (2026-09-13): "eine Kontrolle, ob alle Vorbedingungen
+// erfüllt sind für eine Funktion... gerade für diese wichtigen
+// Mode-Schalter ist das mandatory" - Synthetic Solve needs PiFinder itself
+// confirmed reachable to mean anything (see toggleTruthInjector()'s own
+// guard, which this visually mirrors); "PiFinder-only Fake Mode" is
+// deliberately NOT gated the same way - switching TO it is exactly what
+// you'd do while real PiFinder ISN'T reachable, so it needs the opposite
+// precondition, already handled by its own busy/error state machine
+// (refreshMode()).
+function updateSyntheticSolveGate() {
+  const ready = !!pifinderScreenUrl;
+  const simTile = document.getElementById('mode-tile-sim');
+  if (simTile) {
+    simTile.classList.toggle('mode-tile-locked', !ready);
+    simTile.title = ready
+      ? "Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button."
+      : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.";
+  }
+  const btn = document.getElementById('truth-injector-btn');
+  if (btn && !truthInjectorToggleInFlight) {
+    btn.disabled = !ready && lastTruthInjectorDesired !== true;
+  }
+}
+
 function updatePiFinderStatusAndWizardLink() {
   const dotEl = document.getElementById('pifinder-status-dot');
   const textEl = document.getElementById('pifinder-status-text');
   const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
+  updateSyntheticSolveGate();
   // The 4 hardware badges (Cam/Solve/IMU/GPS) below reflect PiFinder's own
   // live API state - with PiFinder unreachable (not installed yet, mid
   // reinstall/update, service down, ...) that state doesn't exist, so the
@@ -4112,7 +4148,11 @@ function collectActiveShowstoppers() {
       category: 'pifinder',
       title: 'No solve active - neither real nor synthetic',
       text: "No position to sync from. Turn on Synthetic Solve, or wait for a real camera solve.",
-      buttons: [{ label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()' }],
+      buttons: [{
+        label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()',
+        disabled: !pifinderScreenUrl,
+        title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.",
+      }],
     });
   }
   // Live drift overrides the frozen startup snapshot (see
@@ -4704,8 +4744,22 @@ async function toggleRealHardware() {
 }
 
 async function toggleTruthInjector() {
-  const btn = document.getElementById('truth-injector-btn');
   const turningOff = lastTruthInjectorDesired === true;
+  // Direct feedback (2026-09-13), found live: clicking "Turn on Synthetic
+  // Solve" right as everything was still starting up failed silently (no
+  // real error shown) and only worked on a second click once PiFinder had
+  // actually come up - turning this ON feeds a position into PiFinder's
+  // own /api/fake_solve, which needs PiFinder itself to already be
+  // reachable to mean anything. pifinderScreenUrl is this page's own
+  // established "PiFinder confirmed reachable" signal (see
+  // updatePiFinderStatusAndWizardLink()) - refuse up front with a clear
+  // reason instead of attempting a call that can only fail. Turning OFF
+  // has no such requirement - always allowed.
+  if (!turningOff && !pifinderScreenUrl) {
+    await ccNoticeBanner('PiFinder isn\'t confirmed reachable yet - wait for it to come up, then try again.');
+    return;
+  }
+  const btn = document.getElementById('truth-injector-btn');
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
   setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');
@@ -9498,14 +9552,6 @@ function updateProfileRoleLine() {
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
   const hostMode = role === 'host';
-  // Direct feedback (2026-09-13): "'+ Couple a mount' ... macht beim Client
-  // Modus keine Sinn" - shown unconditionally for role 'host' before, which
-  // includes the "PiFinder Client" card (identical underlying profile,
-  // isClientChoice is the only thing telling them apart) - offering to add
-  // a mount directly under a card whose whole point is "no mount here"
-  // read as contradictory. Hidden for the Client choice; switching to
-  // "PiFinder host" first (one click, already available) surfaces it again.
-  document.getElementById('mb-add-mount-row').style.display = (hostMode && !isClientChoice) ? '' : 'none';
   document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-setup-btn-row').style.display = hostMode ? 'none' : '';
@@ -9635,13 +9681,9 @@ async function setPifinderRoleChoice(choice) {
 
 async function onRoleCardClick(kind) {
   if (mbActionInFlight) return;
-  // 'aio' has no card of its own anymore (see the merged-cards comment on
-  // #mb-role-cards) - "+ Couple a mount" calls this with kind:'aio' while
-  // #mb-role-card-host is the one actually on screen, so the capability
-  // check below needs to look there instead. 'client' has its own card,
-  // but shares 'host''s underlying profile shape entirely - see
-  // setPifinderRoleChoice()'s own comment.
-  const card = document.getElementById(`mb-role-card-${kind === 'aio' ? 'host' : kind}`);
+  // 'client' has its own card, but shares 'host''s underlying profile
+  // shape entirely - see setPifinderRoleChoice()'s own comment.
+  const card = document.getElementById(`mb-role-card-${kind}`);
   if (card.classList.contains('mb-role-disabled')) {
     await ccNoticeBanner(card.title, null, card);
     return;
@@ -9652,15 +9694,7 @@ async function onRoleCardClick(kind) {
   }
   const profile = wmSelectedProfile;
   const actions = [];
-  if (kind === 'aio') {
-    // The actual clicked element here is "+ Couple a mount", not the role
-    // card `card` resolves to above (that's #mb-role-card-host, unchanged
-    // by this click) - pulse the button people actually pressed.
-    const addMountBtn = document.getElementById('mb-add-mount-btn');
-    if (!(await ccConfirmBanner(`Couple a mount to profile "${profile}"? Adds PiFinder Mount Bridge alongside PiFinder LX200 (this device's own PiFinder). The running profile is restarted to apply changes.`, null, addMountBtn))) return;
-    if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
-    if (wmHasBridge !== true) actions.push(['bridge', 'add', null]);
-  } else if (kind === 'host' || kind === 'client') {
+  if (kind === 'host' || kind === 'client') {
     const roleLabel = kind === 'client' ? 'PiFinder Client' : 'PiFinder host';
     if (!(await ccConfirmBanner(`Configure profile "${profile}" as ${roleLabel}? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`, null, card))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
