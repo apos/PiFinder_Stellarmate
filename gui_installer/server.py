@@ -2215,19 +2215,54 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
             return
 
     # --- Check 4: coupling mode matches what was last actually chosen ----
-    if _mb_desired_coupling_mode and status.get("coupling_mode") != _mb_desired_coupling_mode:
-        def _do_coupling():
-            try:
-                indi_client.set_coupling_mode(
-                    _mb_desired_coupling_mode,
-                    drift_threshold=_mb_desired_coupling_threshold,
-                    correction_action=_mb_desired_coupling_action,
-                )
-                _mb_log(f"Mount Bridge self-heal: re-applied coupling mode {_mb_desired_coupling_mode}.")
-            except indi_client.INDIClientError as e:
-                _mb_log(f"Mount Bridge self-heal: re-apply coupling mode failed: {e}")
+    if _mb_desired_coupling_mode:
+        if status.get("coupling_mode") != _mb_desired_coupling_mode:
+            def _do_coupling():
+                try:
+                    indi_client.set_coupling_mode(
+                        _mb_desired_coupling_mode,
+                        drift_threshold=_mb_desired_coupling_threshold,
+                        correction_action=_mb_desired_coupling_action,
+                    )
+                    _mb_log(f"Mount Bridge self-heal: re-applied coupling mode {_mb_desired_coupling_mode}.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: re-apply coupling mode failed: {e}")
 
-        _mb_readiness_retrier.trigger(_do_coupling)
+            _mb_readiness_retrier.trigger(_do_coupling)
+            return
+    elif status.get("coupling_mode") in ("MODE_OFF", None):
+        # Found live (2026-09-13), reported repeatedly: "was ist an
+        # 'Verify/Alert only' ist default so schwer zu verstehen" - the
+        # driver's own connect-time invariant check (pifinder_mount_bridge.cpp)
+        # only catches "literally no switch is on at all" - MODE_OFF being
+        # on is a perfectly valid switch state from ITS perspective, so it
+        # never intervenes there. And this check right here only ever
+        # re-applies a mode once _mb_desired_coupling_mode is already set -
+        # which nothing ever initializes to Verify/Alert on its own, so a
+        # device where the user never happened to click a Coupling preset
+        # via this GUI (a fresh install, a Control host/Client being
+        # tested before any manual coupling click) had NO enforcement path
+        # at all, on either side. Mount Bridge is confirmed connected at
+        # this point (checks 1/2 above already passed) - "no default"
+        # only means "nobody has recorded an opinion yet", not "the user
+        # deliberately wants Off with no memory of choosing it". Applying
+        # Verify/Alert here and recording it closes that gap for good -
+        # every later reconnect then hits the branch above instead.
+        def _do_default_coupling():
+            global _mb_desired_coupling_mode, _mb_desired_coupling_threshold
+            try:
+                indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
+                _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
+                _mb_desired_coupling_threshold = indi_client.DRIFT_THRESHOLD_DEFAULT
+                _save_mount_bridge_desired_state()
+                _mb_log(
+                    "Mount Bridge self-heal: no Coupling mode had ever been chosen via this GUI and "
+                    "the driver was at Off - defaulted to Verify/Alert only."
+                )
+            except indi_client.INDIClientError as e:
+                _mb_log(f"Mount Bridge self-heal: default-coupling attempt failed: {e}")
+
+        _mb_readiness_retrier.trigger(_do_default_coupling)
         return
 
     # --- Check 6: PiFinder Simulator's mount-follow (PR #239) stays in
