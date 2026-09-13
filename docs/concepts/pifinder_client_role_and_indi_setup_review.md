@@ -92,15 +92,25 @@ two actions:
 - **"Remove this mount coupling"** - calls the same unlink action "PiFinder host"'s own row
   already offers, restoring the "no mount" state that matches the declared "PiFinder Client" choice.
 
-Mockup of both the three-card row and this warning card, using the page's own exact CSS
-(`.mb-role-card`, `.showstopper-card`): https://claude.ai/code/artifact/b1673e9a-c933-48d7-b168-a6449ea77f52
+Mocked up using the page's own exact CSS (`.mb-role-card`, `.showstopper-card`) rather than
+described from scratch - text description here instead of a link, since the original artifact
+link this section carried isn't a durable/embeddable reference (see basic-memory/basic-memory/
+00089, section 6 - the same lesson this doc's own PR #430 hit live):
+
+- Three role cards in a row: **PiFinder host** / **PiFinder Client** / **Control host** (wording
+  for each in 3c below).
+- The mismatch warning: an amber card matching this page's existing `.showstopper-card` look (same
+  as "No solve source yet"), titled *"Mount coupled, but this device is set to 'PiFinder Client'"*,
+  body *""PiFinder Client" means no local mount - remote coupling happens on the Control host
+  instead. A mount ("LX200 OnStep") is coupled here right now, which doesn't match."*, two buttons:
+  **"Switch to 'PiFinder host'"** and **"Remove this mount coupling"**.
 
 No default forced automatically in either direction - matches this page's own established
 principle (never guess/never silently reinterpret a deliberate user choice).
 
 ### 3c. Card wording - refined per direct feedback (2026-09-13)
 
-The mockup's first draft overclaimed both directions - fixed in the mockup (linked above), final
+The mockup's first draft overclaimed both directions - fixed (see the description above), final
 wording:
 
 - **"PiFinder host"** sub: *"Mount optional (GoTo Mode)."* - not *"couples a mount here too"*: *"PiFinder Host kann selbstverständlich auch ohne mount auskommen... die Einschränkung auf
@@ -147,7 +157,7 @@ tile (a PiFinder Client never has Mount Bridge in its own profile, by definition
 ## 5. Status
 
 Decided (2026-09-13): option (c), a manual third "PiFinder Client" role card, with the state model
-and mismatch-warning behavior from section 3 above, mocked up (linked in 3b). **Not implemented
+and mismatch-warning behavior from section 3 above, mocked up (described in 3b). **Not implemented
 yet** - concept + mockup only, per this project's own "concept first, mockup first for GUI
 changes" pattern. Remaining work before it can ship:
 

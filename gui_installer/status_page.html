@@ -296,6 +296,19 @@
     margin-left: 0.6rem;
     vertical-align: middle;
   }
+  /* Same look as #pifinder-tile-loc above, but this one lives inside
+     .group-label (uppercase, letter-spacing) - text-transform: none keeps
+     the hostname/port readable instead of shouting it. */
+  #mb-tile-loc {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: normal;
+    color: #777;
+    vertical-align: middle;
+  }
   #pifinder-tile-role-pill {
     display: inline-block;
     margin-left: 0.5rem;
@@ -2318,7 +2331,7 @@
            utility class used by many unrelated section labels elsewhere on
            this page. -->
       <div class="group-label" id="mb-diagram-heading-row">
-        <span>Mount Bridge<span id="mb-tile-role-suffix"></span><a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a></span>
+        <span>Mount Bridge<span id="mb-tile-role-suffix"></span><a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help">i</a><span id="mb-tile-loc" style="display:none;" title="Mount Bridge is always a local INDI driver on this device - never remote, unlike the PiFinder it talks to."></span></span>
         <div id="mb-action-status"></div>
       </div>
       <div id="mb-drift-banner">
@@ -9223,6 +9236,21 @@ function updateProfileRoleLine() {
     : '';
   document.getElementById('mb-tile-role-suffix').textContent =
     role === 'ctrl' || role === 'ctrl-incomplete' ? ' (Control Host)' : '';
+  // Direct feedback (2026-09-13): "INDI Mount bridge title should have the
+  // same infos as PiFinder: '<Control Host> localhost'" - Mount Bridge is
+  // always a local INDI driver on THIS device (never remote, unlike the
+  // PiFinder it talks to), so this is simpler than #pifinder-tile-loc's own
+  // local/remote branching - always cachedHostname + "localhost" whenever
+  // the tile itself is shown at all (roles 'aio'/'ctrl'/'ctrl-incomplete' -
+  // hostMode below hides the whole tile for 'host', so nothing to show
+  // there).
+  const mbLocEl = document.getElementById('mb-tile-loc');
+  if (role === 'aio' || role === 'ctrl' || role === 'ctrl-incomplete') {
+    mbLocEl.textContent = cachedHostname ? ` ${cachedHostname} · localhost` : ' localhost';
+    mbLocEl.style.display = '';
+  } else {
+    mbLocEl.style.display = 'none';
+  }
   // Single "PiFinder host" card now covers both local-with-mount ('aio') and
   // local-without-mount ('host') - see the merged-cards comment on
   // #mb-role-cards. Whether a mount is actually coupled is a detail of that
