@@ -27,7 +27,19 @@ build_and_install_indi_drivers() {
     # fails with "Text file busy". Try a graceful Web Manager stop, then make
     # sure via pkill regardless of whether the server was started through the
     # Web Manager or manually.
-    if curl -s -o /dev/null http://localhost:8624/api/server/status 2>/dev/null; then
+    #
+    # Found live (2026-09-13), reported repeatedly ("nach dem Updatelauf...
+    # funktioniert das automatische Default hier immer noch nicht"): this
+    # stop was never paired with a restart, unlike bin/build_indi_onstep_fix.sh's
+    # own version of this exact same "rebuild a binary in place" problem,
+    # which already does capture-then-restore correctly. Every single
+    # Update/Reinstall run calls this function, so every one of them
+    # deterministically left the profile stopped afterward - no self-heal
+    # or "remember what was running" layer downstream of this ever got a
+    # chance to matter, because the run that's SUPPOSED to leave the
+    # device working again was the one guaranteeing it didn't, every time.
+    active_profile="$(curl -s http://localhost:8624/api/server/status 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0].get("active_profile",""))' 2>/dev/null || true)"
+    if [ -n "${active_profile}" ]; then
         curl -s -X POST http://localhost:8624/api/server/stop >/dev/null 2>&1 || true
     fi
     pkill -f indi_pifinder_lx200 2>/dev/null || true
@@ -55,5 +67,15 @@ build_and_install_indi_drivers() {
         echo "✅ StellarMate Web Manager restarted — INDI driver catalog is up to date."
     else
         add_warning "Could not restart stellarmatewebmanager.service (no GUI/VNC session?). Restart it manually so the PiFinder INDI drivers show up in its catalog: systemctl --user restart stellarmatewebmanager.service"
+    fi
+
+    # Restore whatever was actually running before this function touched
+    # anything - same reasoning/pattern as build_indi_onstep_fix.sh. A
+    # short wait first: the Web Manager daemon just restarted above and
+    # needs a moment to actually accept requests again.
+    if [ -n "${active_profile}" ]; then
+        sleep 2
+        echo "-> Restarting Web Manager profile '${active_profile}' (was running before this rebuild)..."
+        curl -s -X POST "http://localhost:8624/api/server/start/${active_profile// /%20}" >/dev/null 2>&1 || true
     fi
 }
