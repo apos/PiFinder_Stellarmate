@@ -2047,15 +2047,20 @@
      post-success self-restart (see /last_run_summary) - the fresh server
      process has no other way to tell this reload apart from a plain visit,
      so without this the user has no confirmation the run they were
-     watching actually finished. */
+     watching actually finished. Direct feedback (2026-09-13): this used to
+     sit at the bottom of the Install/Update tile, easy to miss entirely -
+     moved into #cc-header-sticky, same flush-strip-under-the-title-row
+     pattern as every other urgent banner there (#cc-readonly-banner etc.),
+     green for "succeeded" rather than their amber/blue. */
   #last-run-banner {
     background: #16301c;
     color: #bfe6c8;
-    border: 1px solid #2f6e3d;
-    padding: 0.6rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
+    border-top: 1px solid #2f6e3d;
+    padding: 0.5rem 1.5rem;
     font-size: 0.9rem;
+  }
+  @media (max-width: 767px) {
+    #last-run-banner { padding: 0.5rem 0.8rem; }
   }
   #last-run-banner-header {
     display: flex;
@@ -2073,11 +2078,44 @@
   }
   #last-run-banner button:hover { filter: brightness(1.15); }
   #last-run-banner pre {
-    margin: 0.6rem 0 0;
-    max-height: 12rem;
+    margin: 0.5rem 0 0.2rem;
+    max-height: 10rem;
     overflow-y: auto;
     font-size: 0.78rem;
     color: #9fcaa8;
+  }
+  /* Direct feedback (2026-09-13): "das CC darf erst ganz am Ende neu
+     gestartet werden... und dann muss die GUI den Status wieder
+     aufnehmen" plus "vielleicht auch [eine klare Meldung], wenn ein
+     Update gerade läuft" - the run itself already only restarts the CC at
+     the very end (see _reader_thread()/_cc_restart_pending in server.py,
+     which only fires after proc.wait() returns) and #last-run-banner above
+     already resumes/shows the result after that restart; what was missing
+     was any equally visible indication *while* a run is still going -
+     easy to miss if you weren't already looking at the Install/Update
+     tile when it started. Same flush-strip pattern, blue/neutral like
+     #stale-page-banner (informational, nothing wrong, just in progress). */
+  #cc-update-running-banner {
+    background: #1a2433;
+    color: #bcd4ee;
+    border-top: 1px solid #2c4a6e;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  @media (max-width: 767px) {
+    #cc-update-running-banner { padding: 0.5rem 0.8rem; }
+  }
+  #cc-update-running-banner .cc-run-spinner {
+    width: 0.85rem;
+    height: 0.85rem;
+    flex-shrink: 0;
+    border: 2px solid #2c4a6e;
+    border-top-color: #bcd4ee;
+    border-radius: 50%;
+    animation: mb-spin 0.8s linear infinite;
   }
   /* Full-page lock shown while the Control Center restarts itself after a
      successful setup run (see enterCcRestartingState() below) - covers and
@@ -2152,6 +2190,17 @@
     </span>
   </div>
   <button id="night-mode-toggle" onclick="toggleNightMode()" title="Night mode - all text glowing red, easier on dark-adapted eyes"><span class="nm-icon">&#9789;</span><span class="nm-label"> Night mode</span></button>
+</div>
+<div id="cc-update-running-banner" style="display:none;">
+  <span class="cc-run-spinner"></span>
+  <span id="cc-update-running-text"></span>
+</div>
+<div id="last-run-banner" style="display:none;">
+  <div id="last-run-banner-header">
+    <span>&#9989; The run you were watching before this restart finished successfully.</span>
+    <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
+  </div>
+  <pre id="last-run-banner-log"></pre>
 </div>
 <div id="cc-readonly-banner" style="display:none;">
   <span id="cc-readonly-banner-text">Control Center open elsewhere - this tab is read-only.</span>
@@ -3038,13 +3087,6 @@ sudo systemctl start pifinder</pre>
         <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
     </div>
-    <div id="last-run-banner" style="display:none;">
-      <div id="last-run-banner-header">
-        <span>&#9989; The run you were watching before this restart finished successfully.</span>
-        <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
-      </div>
-      <pre id="last-run-banner-log"></pre>
-    </div>
     <div class="collapsible-toggle" onclick="toggleCollapsibleSection('log-wrap', 'log-chevron')">
       <span>Terminal</span>
       <span id="log-chevron">&#9650; hide</span>
@@ -3276,6 +3318,27 @@ ccClaimHost();
 
 let logPosition = 0;
 let polling = false;
+// Direct feedback (2026-09-13): a run in progress needs the same
+// always-visible header treatment as the other urgent banners - every
+// `polling = ...` assignment now goes through this instead, so the header
+// banner (#cc-update-running-banner) always tracks the same state the rest
+// of the page already uses `polling` for. `action` ("fresh"/"reinstall"/
+// "update") is optional/best-effort - whatever the caller happens to have
+// on hand (a /start call's own argument, or a /state poll's `action`
+// field); a generic label is used when it isn't available.
+const RUN_ACTION_LABELS = { fresh: 'Fresh install', reinstall: 'Reinstall', update: 'Update' };
+function setPolling(running, action) {
+  polling = running;
+  const banner = document.getElementById('cc-update-running-banner');
+  if (!banner) return;
+  if (running) {
+    document.getElementById('cc-update-running-text').textContent =
+      (RUN_ACTION_LABELS[action] || 'An install/update') + ' is running - see Terminal below for live output.';
+    banner.style.display = 'flex';
+  } else {
+    banner.style.display = 'none';
+  }
+}
 let phaseLabels = [];
 let knownIps = [];
 let modeLogPosition = 0;
@@ -5598,7 +5661,7 @@ async function start(action, triggerEl) {
   logEl.classList.remove('log-placeholder');
   logEl.style.display = 'block';
   if (!polling) {
-    polling = true;
+    setPolling(true, action);
     pollLog();
   }
 }
@@ -5695,7 +5758,7 @@ async function watchForNewRun() {
         logEl.classList.remove('log-placeholder');
         logEl.style.display = 'block';
         setStatus('Running…', 'status-running');
-        polling = true;
+        setPolling(true, data.action);
         pollLog();
       }
     } catch (e) {
@@ -6199,7 +6262,7 @@ async function resetToChoices() {
   logEl.textContent = 'Terminal output will appear here once you start an installation or update.';
   logEl.classList.add('log-placeholder');
   logEl.style.display = 'none';
-  polling = false;
+  setPolling(false);
   // Re-check existing_install fresh rather than trusting the stale value
   // from before this run - a completed "fresh" install means ~/PiFinder now
   // exists where it didn't when the page first loaded. A completed run also
@@ -6253,7 +6316,7 @@ async function pollLog() {
     // unexpected loss (real reboot, server crash/stopped) or the self-
     // restart really did take longer than the retry budget. Either way,
     // this view is now frozen.
-    polling = false;
+    setPolling(false);
     showServerLostBanner();
     return;
   }
@@ -6263,7 +6326,7 @@ async function pollLog() {
     // hand off to the lock-overlay/reconnect flow instead of the normal
     // success screen, which would be showing stale-by-the-time-you-read-it
     // buttons for a process that's about to die anyway.
-    polling = false;
+    setPolling(false);
     enterCcRestartingState();
     return;
   }
@@ -6298,7 +6361,7 @@ async function pollLog() {
       // Same as after a success - go back to the choices and try again.
       document.getElementById('reset-wrap').style.display = 'block';
     }
-    polling = false;
+    setPolling(false);
   }
 }
 
@@ -6472,7 +6535,7 @@ async function init() {
   if (data.running) {
     document.getElementById('log').style.display = 'block';
     setStatus('Running…', 'status-running');
-    polling = true;
+    setPolling(true, data.action);
     pollLog();
   } else if (data.exit_code !== null) {
     document.getElementById('log').style.display = 'block';
