@@ -1139,6 +1139,14 @@
   }
   .mode-tile:hover { border-color: #444; }
   .mode-tile.tile-on { background: #1c2a1c; border-color: #4caf50; color: #eee; }
+  /* Direct feedback (2026-09-13): "eine Kontrolle, ob alle Vorbedingungen
+     erfüllt sind... Das benötigt jeder Button... gerade für diese
+     wichtigen Mode-Schalter ist das mandatory" - a plain <div> tile can't
+     use the native `disabled` attribute the way a real <button> can, so
+     this class does the same job visually (dimmed, no pointer, no hover
+     highlight) while the click handler itself (see toggleTruthInjector()'s
+     own guard) refuses to act as the actual enforcement, not just the look. */
+  .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
   .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
   .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
   .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
@@ -3558,11 +3566,36 @@ function renderRemoteLinks(ips, port) {
 // whenever that probe's result changes, not just once.
 // This is the only place PiFinder's own reachability/link is shown now (the
 // separate "PiFinder is ready" access-links box was dropped as redundant).
+// Direct feedback (2026-09-13): "eine Kontrolle, ob alle Vorbedingungen
+// erfüllt sind für eine Funktion... gerade für diese wichtigen
+// Mode-Schalter ist das mandatory" - Synthetic Solve needs PiFinder itself
+// confirmed reachable to mean anything (see toggleTruthInjector()'s own
+// guard, which this visually mirrors); "PiFinder-only Fake Mode" is
+// deliberately NOT gated the same way - switching TO it is exactly what
+// you'd do while real PiFinder ISN'T reachable, so it needs the opposite
+// precondition, already handled by its own busy/error state machine
+// (refreshMode()).
+function updateSyntheticSolveGate() {
+  const ready = !!pifinderScreenUrl;
+  const simTile = document.getElementById('mode-tile-sim');
+  if (simTile) {
+    simTile.classList.toggle('mode-tile-locked', !ready);
+    simTile.title = ready
+      ? "Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button."
+      : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.";
+  }
+  const btn = document.getElementById('truth-injector-btn');
+  if (btn && !truthInjectorToggleInFlight) {
+    btn.disabled = !ready && lastTruthInjectorDesired !== true;
+  }
+}
+
 function updatePiFinderStatusAndWizardLink() {
   const dotEl = document.getElementById('pifinder-status-dot');
   const textEl = document.getElementById('pifinder-status-text');
   const remoteEl = document.getElementById('pifinder-remote-link');
   const wizardEl = document.getElementById('wizard-link');
+  updateSyntheticSolveGate();
   // The 4 hardware badges (Cam/Solve/IMU/GPS) below reflect PiFinder's own
   // live API state - with PiFinder unreachable (not installed yet, mid
   // reinstall/update, service down, ...) that state doesn't exist, so the
@@ -4112,7 +4145,11 @@ function collectActiveShowstoppers() {
       category: 'pifinder',
       title: 'No solve active - neither real nor synthetic',
       text: "No position to sync from. Turn on Synthetic Solve, or wait for a real camera solve.",
-      buttons: [{ label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()' }],
+      buttons: [{
+        label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()',
+        disabled: !pifinderScreenUrl,
+        title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.",
+      }],
     });
   }
   // Live drift overrides the frozen startup snapshot (see
@@ -4704,8 +4741,22 @@ async function toggleRealHardware() {
 }
 
 async function toggleTruthInjector() {
-  const btn = document.getElementById('truth-injector-btn');
   const turningOff = lastTruthInjectorDesired === true;
+  // Direct feedback (2026-09-13), found live: clicking "Turn on Synthetic
+  // Solve" right as everything was still starting up failed silently (no
+  // real error shown) and only worked on a second click once PiFinder had
+  // actually come up - turning this ON feeds a position into PiFinder's
+  // own /api/fake_solve, which needs PiFinder itself to already be
+  // reachable to mean anything. pifinderScreenUrl is this page's own
+  // established "PiFinder confirmed reachable" signal (see
+  // updatePiFinderStatusAndWizardLink()) - refuse up front with a clear
+  // reason instead of attempting a call that can only fail. Turning OFF
+  // has no such requirement - always allowed.
+  if (!turningOff && !pifinderScreenUrl) {
+    await ccNoticeBanner('PiFinder isn\'t confirmed reachable yet - wait for it to come up, then try again.');
+    return;
+  }
+  const btn = document.getElementById('truth-injector-btn');
   truthInjectorToggleInFlight = true;
   btn.disabled = true;
   setHwDot(document.getElementById('truth-injector-dot'), 'status-dot dot-yellow dot-unconfirmed');

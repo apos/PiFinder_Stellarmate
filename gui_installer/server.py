@@ -463,6 +463,14 @@ def _pifinder_service_sync_with_lx200_target():
                 )
             return
         _wm_unreachable_for_pifinder_sync_warned = False
+        # Found live (2026-09-13): this tick already has a confirmed-
+        # running profile name in hand for a completely different reason -
+        # feed it to _note_active_profile() too (memory + the Web
+        # Manager's own native autostart flag), so every existing device
+        # converges on the very first ordinary tick after upgrading rather
+        # than waiting on a coincidental first hit inside
+        # _autostart_cold_profile() alone.
+        _note_active_profile(wm_status["active_profile"])
         driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
         # Found live (2026-09-13), direct feedback on the GUI's own mismatch
         # warning ("Host ist aktiv... Das ist schlicht FALSCH. Die Meldung
@@ -1821,6 +1829,30 @@ _last_known_lx200_remote = None
 # See _autostart_cold_profile() below for the self-heal itself.
 _last_known_active_profile = None
 
+
+def _note_active_profile(profile: str) -> None:
+    """Called from every place that already independently confirms a Web
+    Manager profile is genuinely running (_pifinder_service_sync_with_
+    lx200_target()'s own live check, _autostart_cold_profile() after
+    starting one) - not a self-heal check of its own, just the one spot
+    both funnel through so the memory below and the Web Manager's own
+    native autostart flag (docs: set_profile_autostart()'s own comment on
+    why that flag, not a custom Python retry loop, is the right primary
+    mechanism) always converge together instead of drifting apart."""
+    global _last_known_active_profile
+    if profile != _last_known_active_profile:
+        _last_known_active_profile = profile
+        _save_mount_bridge_desired_state()
+    try:
+        if webmanager_client.set_profile_autostart(profile, True):
+            _mb_log(
+                f"Web Manager profile '{profile}' confirmed in active use - enabled its native "
+                "autostart flag so it comes back on its own after any future reboot."
+            )
+    except webmanager_client.WebManagerError as e:
+        _mb_log(f"Could not enable autostart for Web Manager profile '{profile}': {e}")
+
+
 _cold_profile_retrier = _BackgroundRetrier()
 _cold_profile_start_attempts = 0
 _cold_profile_start_cooldown_until = 0.0  # time.monotonic() deadline, not a wall-clock time
@@ -1855,7 +1887,7 @@ def _autostart_cold_profile():
     attempt budget - only a run of CONSECUTIVE failures right now exhausts
     it."""
     global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
-    global _cold_profile_start_gave_up, _last_known_active_profile
+    global _cold_profile_start_gave_up
     if not _last_known_active_profile:
         return  # nothing ever confirmed running here - not this self-heal's job (see One-Click Setup)
     try:
@@ -1864,11 +1896,10 @@ def _autostart_cold_profile():
         return  # can't even ask right now - next tick retries, no guessing
     if wm_status.get("running") and wm_status.get("active_profile"):
         # Genuinely running again (this profile, or a different one started
-        # some other way) - remember whichever it actually is, and reset
-        # the attempt budget so a LATER, unrelated gap gets a fresh try.
-        if wm_status["active_profile"] != _last_known_active_profile:
-            _last_known_active_profile = wm_status["active_profile"]
-            _save_mount_bridge_desired_state()
+        # some other way) - remember whichever it actually is (and enable
+        # its native autostart flag, see _note_active_profile()), and
+        # reset the attempt budget so a LATER, unrelated gap gets a fresh try.
+        _note_active_profile(wm_status["active_profile"])
         _cold_profile_start_attempts = 0
         _cold_profile_start_gave_up = False
         return

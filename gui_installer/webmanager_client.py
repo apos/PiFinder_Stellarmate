@@ -288,6 +288,41 @@ def stop_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: flo
     _request("POST", "/api/server/stop", host, port, timeout, body=[])
 
 
+def set_profile_autostart(
+    profile: str, enabled: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Flips the Web Manager's own native "autostart" flag on a profile -
+    the mechanism stellarmatewebmanager.service itself already uses to
+    launch a profile's indiserver the moment IT starts (at boot), well
+    before this Control Center's own Python watchdog ever gets a chance to
+    run its first tick. Direct feedback (2026-09-13): server.py's own
+    _autostart_cold_profile() self-heal (a Python-level retry loop) is a
+    second, slower safety net for exactly the situation this flag is
+    already meant to prevent - setting it explicitly whenever a profile is
+    confirmed to be the one actually in active use closes the gap at its
+    root instead of only papering over it after the fact on every reboot.
+
+    Returns False (no-op, no request sent) if `enabled` already matches
+    the profile's current value - PUT recreates the profile's stored
+    metadata wholesale, so there is no reason to send it when nothing
+    would change. Raises WebManagerError if the profile doesn't exist or
+    the request fails; leaves autoconnect/port/driver_source exactly as
+    they already were."""
+    meta = _get_profile_meta(profile, host, port, timeout)
+    if bool(meta.get("autostart")) == enabled:
+        return False
+    _request(
+        "PUT", f"/api/profiles/{_q(profile)}", host, port, timeout,
+        body={
+            "port": meta.get("port"),
+            "autostart": enabled,
+            "autoconnect": bool(meta.get("autoconnect")),
+            "driver_source": meta.get("driver_source") or "system",
+        },
+    )
+    return True
+
+
 def pifinder_driver_status(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> dict:
