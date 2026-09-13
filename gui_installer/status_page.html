@@ -2698,6 +2698,10 @@
           <span class="mb-row-label">This device's IP:</span>
           <span id="pfhost-ip">checking&hellip;</span>
         </div>
+        <div class="mb-row" id="mb-client-reset-row" style="display:none;">
+          <span class="mb-row-label">PiFinder Client profile:</span>
+          <button id="mb-client-reset-btn" onclick="switchToPiFinderClientProfile(document.getElementById('mb-role-card-client'), true)" title="Recreates the dedicated &quot;PFSM Client&quot; profile with exactly PiFinder LX200 + PiFinder Simulator, discarding any other driver added to it since.">Reset to minimal Client set</button>
+        </div>
       </div>
 
       <!-- Hardware mode: same collapsed-summary/detail split as Role above.
@@ -9591,6 +9595,7 @@ function updateProfileRoleLine() {
   document.getElementById('mb-role-card-host').classList.toggle('mb-role-active', role === 'aio' || (role === 'host' && !isClientChoice));
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
+  document.getElementById('mb-client-reset-row').style.display = isClientChoice ? '' : 'none';
   const hostMode = role === 'host';
   document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
   document.getElementById('mb-steps-4-6').style.display = hostMode ? 'none' : '';
@@ -9719,13 +9724,53 @@ async function setPifinderRoleChoice(choice) {
   }
 }
 
+// "PiFinder Client" always runs its own dedicated profile ("PFSM Client" -
+// see webmanager_client.PIFINDER_CLIENT_PROFILE_NAME) instead of the
+// add/remove-drivers-on-whatever's-selected flow the other role cards use.
+// Direct feedback (2026-09-13): a profile reused/cloned from earlier dev/
+// test work could carry half a dozen unrelated drivers alongside PiFinder
+// LX200 - each one more surface for indiserver's own stability issues
+// (#385) to bite on a role that structurally needs none of them.
+// `reset=true` is the explicit "Reset to minimal Client set" action -
+// otherwise an existing "PFSM Client" profile's driver list is left as the
+// user configured it.
+async function switchToPiFinderClientProfile(card, reset) {
+  const msg = reset
+    ? 'Reset the "PFSM Client" profile back to exactly PiFinder LX200 + PiFinder Simulator, discarding anything else added to it since? The running profile is restarted.'
+    : 'Switch to the dedicated "PFSM Client" profile (PiFinder LX200 + PiFinder Simulator only - not whatever is selected in step 1)? The running profile is restarted.';
+  if (!(await ccConfirmBanner(msg, null, card))) return;
+  mbActionInFlight = true;
+  setStepBusy(3, true);
+  setMbActionStatus(reset ? '⏳ Resetting PiFinder Client profile…' : '⏳ Switching to PiFinder Client profile…');
+  try {
+    const resp = await fetch(`/api/pifinder_client_profile${reset ? '?reset=1' : ''}`, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+    pifinderRoleChoice = 'client';
+  } catch (e) {
+    await ccNoticeBanner('Could not switch to the PiFinder Client profile: ' + e.message);
+  }
+  pollMbLog();
+  await loadWmProfiles();
+  await refreshWmDriverButtons();
+  await refreshMountBridgeStatus();
+  mbActionInFlight = false;
+  clearMbActionStatus();
+  setStepBusy(3, false);
+}
+
 async function onRoleCardClick(kind) {
   if (mbActionInFlight) return;
-  // 'client' has its own card, but shares 'host''s underlying profile
-  // shape entirely - see setPifinderRoleChoice()'s own comment.
   const card = document.getElementById(`mb-role-card-${kind}`);
   if (card.classList.contains('mb-role-disabled')) {
     await ccNoticeBanner(card.title, null, card);
+    return;
+  }
+  // "PiFinder Client" no longer mutates whatever's selected in step 1 - it
+  // switches to its own dedicated profile instead. See
+  // switchToPiFinderClientProfile()'s own comment.
+  if (kind === 'client') {
+    await switchToPiFinderClientProfile(card, false);
     return;
   }
   if (!wmSelectedProfile) {
@@ -9734,14 +9779,13 @@ async function onRoleCardClick(kind) {
   }
   const profile = wmSelectedProfile;
   const actions = [];
-  if (kind === 'host' || kind === 'client') {
-    const roleLabel = kind === 'client' ? 'PiFinder Client' : 'PiFinder host';
-    if (!(await ccConfirmBanner(`Configure profile "${profile}" as ${roleLabel}? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`, null, card))) return;
+  if (kind === 'host') {
+    if (!(await ccConfirmBanner(`Configure profile "${profile}" as PiFinder host? Mount Bridge is removed; the mount coupling then happens on your separate control host. The running profile is restarted to apply changes.`, null, card))) return;
     if (wmLx200Remote || wmHasLx200 !== true) actions.push(['lx200', 'add', null]);
     if (wmHasBridge === true) actions.push(['bridge', 'remove', null]);
     // Record the choice regardless of whether the profile itself needed any
     // change (the shared "nothing to change" early-return below would
-    // otherwise skip this too - e.g. clicking "PiFinder Client" on a
+    // otherwise skip this too - e.g. clicking "PiFinder host" on a
     // profile that's already Mount-Bridge-free needs to remember the new
     // choice even though there's no actual driver change to make).
     await setPifinderRoleChoice(kind);

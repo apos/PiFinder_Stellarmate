@@ -56,6 +56,18 @@ PIFINDER_LX200_LABEL = "PiFinder LX200"
 PIFINDER_BRIDGE_LABEL = "PiFinder Mount Bridge"
 PIFINDER_SIMULATOR_LABEL = "PiFinder Simulator"
 
+# Direct feedback (2026-09-13): the "PiFinder Client" role card used to just
+# add/remove drivers on whatever profile happened to be selected in step 1 -
+# on a profile reused/cloned from earlier dev/test work, that could leave
+# "PiFinder Client" sharing indiserver with half a dozen unrelated drivers
+# (Astrometry, SkySafari, CCD Simulator, PlayerOne CCD, MyFocuserPro2, LX200
+# OnStep - all found live in one such profile), each one more surface for
+# indiserver's own stability issues (issue #385) to bite on a role that
+# structurally needs none of them. This role now always runs its own
+# dedicated profile instead - see ensure_pifinder_client_profile().
+PIFINDER_CLIENT_PROFILE_NAME = "PFSM Client"
+PIFINDER_CLIENT_PROFILE_DRIVERS = [PIFINDER_LX200_LABEL, PIFINDER_SIMULATOR_LABEL]
+
 
 class WebManagerError(Exception):
     """Raised for connection/HTTP failures talking to the Web Manager."""
@@ -264,6 +276,53 @@ def set_pifinder_simulator(
     See TRUTH_INJECTOR_DEFAULT_DEVICE's own comment in server.py for why Full Simulation testing
     needs this device present (an independent PiFinder-side truth, not the mount)."""
     _set_driver_membership(profile, PIFINDER_SIMULATOR_LABEL, present, host, port, timeout)
+
+
+def ensure_pifinder_client_profile(
+    reset: bool = False, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Makes sure PIFINDER_CLIENT_PROFILE_NAME exists with exactly the two
+    drivers the "PiFinder Client" role actually uses: PiFinder LX200 (the
+    position it shares) and PiFinder Simulator (the device Full Simulation/
+    Truth Injector testing feeds - see TRUTH_INJECTOR_DEFAULT_DEVICE's own
+    comment in server.py). See this module's PIFINDER_CLIENT_PROFILE_NAME
+    comment for why a shared, possibly driver-bloated profile is worth
+    avoiding for this specific role.
+
+    `reset=False` (the normal role-switch case): only CREATES the profile,
+    with exactly those two drivers, if it doesn't exist yet. An existing
+    "PFSM Client" profile's driver list is left exactly as the user last
+    configured it, even if they added more since - this is a default,
+    trusted starting point, not an enforced state.
+    `reset=True` (an explicit "Reset to minimal Client set" action):
+    force-replaces its driver list back to exactly those two, discarding
+    anything else that has crept in.
+
+    Returns True if the profile was created or its drivers were changed,
+    False if it already existed and matched (or reset was not requested).
+    """
+    try:
+        meta = _get_profile_meta(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
+    except WebManagerError:
+        meta = None
+
+    if meta is None:
+        _request("POST", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout)
+        _request(
+            "PUT", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout,
+            body={"port": 7624, "autostart": True, "autoconnect": True, "driver_source": "system"},
+        )
+        set_profile_drivers(PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, host, port, timeout)
+        return True
+
+    if reset:
+        current = get_profile_labels(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
+        if sorted(current) != sorted(PIFINDER_CLIENT_PROFILE_DRIVERS):
+            _recreate_profile_with_drivers(
+                PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, meta, host, port, timeout
+            )
+            return True
+    return False
 
 
 def server_status(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
