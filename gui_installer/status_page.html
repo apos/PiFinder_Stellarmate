@@ -1376,7 +1376,19 @@
      status pill (2026-08-10, direct feedback - see the HTML comment at this
      row's own markup) - .group-label itself stays a plain block everywhere
      else, this ID-scoped override doesn't affect other group-label rows. */
-  #mb-diagram-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }
+  /* Found live (2026-09-13, direct feedback): as a plain .group-label (the
+     same small uppercase/muted style as every other sub-section label on
+     this page, e.g. "Quick Actions") this read as belonging to the
+     PiFinder tile above it, not as its own section. Bumped to the same
+     weight as a real tile-heading (.tile-heading) - keeps .group-label's
+     flex layout, overrides only its typography. */
+  #mb-diagram-heading-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem;
+    font-size: 1.05rem;
+    text-transform: none;
+    letter-spacing: normal;
+    color: #ddd;
+  }
   .mb-row { margin-bottom: 0.5rem; color: #ccc; font-size: 0.78rem; }
   .mb-row-label { color: #888; margin-right: 0.4rem; }
   /* The 1.-5. checklist rows: label lengths differ ("KStars Link:" vs
@@ -2636,7 +2648,7 @@
            previously came for free from living inside #mode-tile itself). -->
       <div id="mb-mode-cards-block" style="display:none;">
         <div class="mode-tiles">
-          <div class="mode-tile" id="mode-tile-real" title="The neutral state whenever nothing below is faked - not something you switch on directly, it's just what's left once Full Simulation/Fake Mode are off.">
+          <div class="mode-tile" id="mode-tile-real" onclick="toggleRealHardware()" title="The neutral state whenever nothing below is faked. Click to switch back to it - turns off whichever simulation mode is currently active.">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
             <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
           </div>
@@ -4398,8 +4410,9 @@ function applyFakeModeTileState(dotClass, subText) {
 
 // "Real Hardware" isn't its own process to start/stop - it's just the
 // neutral state whenever neither Full Simulation nor whole-device Fake Mode
-// is currently on. Not clickable itself (see mode-tile-real's own title);
-// recomputed from the two tiles it depends on whenever either changes.
+// is currently on. Clicking it (toggleRealHardware() below) turns off
+// whichever of those two is on; recomputed here from the two tiles it
+// depends on whenever either changes.
 function updateRealHardwareTile() {
   const tile = document.getElementById('mode-tile-real');
   const dotEl = document.getElementById('mode-tile-real-dot');
@@ -4596,6 +4609,22 @@ refreshSimulatorStartupSource();
 //      than silently falling back to whatever the last poll happened to say.
 const TRUTH_INJECTOR_SETTLE_TIMEOUT_MS = 15000;
 const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
+
+// Found live (2026-09-13): clicking "Real Hardware" did nothing - only the
+// other two tiles were wired up, so switching back required hunting down
+// whichever tile was actually on. Consistent rule now: a click on any of
+// the three tiles changes the mode; clicking "Real Hardware" while it's
+// already the active one is simply a no-op, same as clicking an
+// already-off tile would be for the others.
+async function toggleRealHardware() {
+  const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
+  const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
+  if (simOn) {
+    await toggleTruthInjector();
+  } else if (fakeOn) {
+    await toggleMode();
+  }
+}
 
 async function toggleTruthInjector() {
   const btn = document.getElementById('truth-injector-btn');
