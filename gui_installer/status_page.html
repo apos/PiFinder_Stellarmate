@@ -1954,8 +1954,12 @@
   }
   /* Direct request (2026-09-12): informs about pifinder.service having been
      stopped automatically (see _pifinder_service_sync_with_lx200_target()
-     in server.py) - same flush-strip pattern as the other header banners. */
-  #cc-pifinder-service-notice-banner {
+     in server.py) - same flush-strip pattern as the other header banners.
+     Direct feedback (2026-09-13): "Gibt es ein Problem, wird der User
+     informiert... sinnvolle Lösungen angeboten" - #cc-cold-profile-notice-
+     banner shares this exact same look for the same reason
+     (_autostart_cold_profile()'s own "gave up" escalation). */
+  #cc-pifinder-service-notice-banner, #cc-cold-profile-notice-banner {
     background: #2a2214;
     color: #e0a030;
     border-top: 1px solid #e0a030;
@@ -1966,7 +1970,7 @@
     gap: 0.8rem;
   }
   @media (max-width: 767px) {
-    #cc-pifinder-service-notice-banner { padding: 0.5rem 0.8rem; }
+    #cc-pifinder-service-notice-banner, #cc-cold-profile-notice-banner { padding: 0.5rem 0.8rem; }
   }
   /* Same flush-strip pattern as the other header banners - replaces a
      native confirm()/alert() pair for the "Restart Control Center" action
@@ -2213,6 +2217,10 @@
 <div id="cc-pifinder-service-notice-banner" style="display:none;">
   <span id="cc-pifinder-service-notice-text"></span>
   <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
+</div>
+<div id="cc-cold-profile-notice-banner" style="display:none;">
+  <span id="cc-cold-profile-notice-text"></span>
+  <button class="ql-small-btn" onclick="document.getElementById('cc-cold-profile-notice-banner').style.display='none';">Dismiss</button>
 </div>
 <div id="cc-restart-confirm-banner" style="display:none;">
   <span id="cc-restart-confirm-text">Restart the Control Center now? Unsaved changes on this page (e.g. an edited remote address) will be lost.</span>
@@ -5862,11 +5870,29 @@ function applyPifinderServiceNotice(remote) {
     : '';
 }
 
+// Direct feedback (2026-09-13): "Gibt es ein Problem, wird der User
+// informiert... sinnvolle Lösungen angeboten" - server.py's
+// _autostart_cold_profile() tries to bring a previously-running Web
+// Manager profile back up on its own after a reboot, but gives up after
+// a few failed attempts rather than retrying forever; this is that
+// escalation surfaced where it's actually visible, not just buried in
+// the Mount Bridge log.
+function applyColdProfileStartNotice(gaveUp, profile) {
+  const banner = document.getElementById('cc-cold-profile-notice-banner');
+  const text = document.getElementById('cc-cold-profile-notice-text');
+  if (!banner || !text) return;
+  banner.style.display = gaveUp ? 'flex' : 'none';
+  text.textContent = gaveUp
+    ? `Could not auto-start Web Manager profile "${profile}" - open the Web Manager to check what's wrong, or try One-Click Setup below.`
+    : '';
+}
+
 async function pollPifinderServiceNotice() {
   try {
     const resp = await fetch('/state', { cache: 'no-store' });
     const data = await resp.json();
     applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
+    applyColdProfileStartNotice(data.cold_profile_start_gave_up, data.last_known_active_profile);
   } catch (e) {
     // transient poll failure - leave the current banner as-is, next tick retries
   }
@@ -6488,6 +6514,7 @@ async function init() {
   }
   applyMaintenanceModeState(data.maintenance_mode_since);
   applyPifinderServiceNotice(data.pifinder_service_auto_stopped_for_remote);
+  applyColdProfileStartNotice(data.cold_profile_start_gave_up, data.last_known_active_profile);
   if (data.sim_mismatch_ever_resolved === true) simMismatchEverResolved = true;
   _simMismatchStateKnown = true;
   renderNoSolveBanner();
