@@ -398,14 +398,41 @@ def _pifinder_service_sync_with_lx200_target():
     would fight the separate, pre-existing Real/Fake Mode toggle (Fake Mode
     deliberately stops this same service for an unrelated reason)."""
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    global _wm_unreachable_for_pifinder_sync_warned
     if not PIFINDER_SERVICE_UNIT.exists():
         return  # nothing installed here at all (e.g. a pure INDI-only Control Host)
     try:
         wm_status = webmanager_client.server_status()
         if not wm_status.get("running") or not wm_status.get("active_profile"):
+            # Found live (2026-09-13): this used to return silently here,
+            # every tick, for as long as the Web Manager itself happened to
+            # be unreachable/not yet reporting a profile - same underlying
+            # flakiness as issue #385, just a different symptom (this check
+            # simply never runs, rather than running slowly). A stray local
+            # pifinder.service on an actual Control host could then sit
+            # there the entire time with zero trace of why nothing was
+            # fixing it. Log once per unreachable spell (not every 5s tick)
+            # ONLY when there's actually something to fix right now - no
+            # point warning about an unrelated, transient WM hiccup on a
+            # device where the local service is already stopped anyway.
+            if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
+                _wm_unreachable_for_pifinder_sync_warned = True
+                _mb_log(
+                    "pifinder.service/LX200-target sync: Web Manager not reachable/no active "
+                    "profile right now - can't check whether this local service should be "
+                    "stopped for a remote PiFinder LX200 until it answers again."
+                )
             return
+        _wm_unreachable_for_pifinder_sync_warned = False
         driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
     except webmanager_client.WebManagerError:
+        if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
+            _wm_unreachable_for_pifinder_sync_warned = True
+            _mb_log(
+                "pifinder.service/LX200-target sync: Web Manager unreachable right now - can't "
+                "check whether this local service should be stopped for a remote PiFinder "
+                "LX200 until it answers again."
+            )
         return  # Web Manager unreachable this tick - next tick re-checks, no guessing
     lx200_remote = driver_status.get("lx200_remote")
     if lx200_remote:
@@ -1678,6 +1705,11 @@ _maintenance_mode_profile = None
 # tracks having stopped it, or when LX200 is currently remote and the
 # service is currently active.
 _pifinder_service_auto_stopped_for_remote = None
+
+# Debounce for the "Web Manager unreachable, can't check" log line in
+# _pifinder_service_sync_with_lx200_target() - one line per unreachable
+# spell, not one every 5s tick for as long as it lasts.
+_wm_unreachable_for_pifinder_sync_warned = False
 
 # Separate from the variable above on purpose: dismissing the header notice
 # must not erase the "I stopped this, remember to start it back up later"
