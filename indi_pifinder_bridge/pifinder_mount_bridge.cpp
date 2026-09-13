@@ -860,33 +860,55 @@ bool PiFinderMountBridge::updateProperties()
         // properties actually exist - see m_connectedConfigLoaded's
         // comment. Applies via the normal IUUpdateSwitch path, same as a
         // client sending it, so BridgeModeSP.s/IDSetSwitch etc. still fire
-        // correctly.
+        // correctly. Deliberately still a one-time-per-process bootstrap
+        // (unlike the invariant check below): re-reading the saved config
+        // file on every later reconnect within the same running process
+        // would silently discard any in-session change (e.g. a Coupling
+        // mode picked this session but not yet saved to disk for whatever
+        // reason) the moment the device happens to disconnect/reconnect -
+        // not the same "correct a bad hidden default" job as the check
+        // below, which is safe to repeat because it only ever acts when
+        // the invariant is already violated.
         if (!m_connectedConfigLoaded)
         {
             loadConfig(true);
             m_connectedConfigLoaded = true;
+        }
 
-            // Self-healing guarantee (2026-09-07, direct feedback): "some
-            // Coupling mode is always active, defaulting to Verify/Alert if
-            // none was ever explicitly chosen" must hold regardless of WHY
-            // it might not - a stale/corrupted saved config with every
-            // switch written Off, a partially-written config file, or any
-            // other way BridgeModeSP could end up with none of its
-            // ISR_1OFMANY switches actually On. Not something to diagnose
-            // case-by-case - just verify the invariant directly and fix it
-            // on the spot if it doesn't hold, exactly like the RA0/Dec0
-            // guards elsewhere in this file don't ask why a bad value
-            // arrived before rejecting it.
-            if (!IUFindOnSwitch(&BridgeModeSP))
-            {
-                LOG_WARN("BRIDGE_MODE had no active switch after loading its saved config - "
-                         "defaulting to Verify/Alert only and re-saving.");
-                IUResetSwitch(&BridgeModeSP);
-                BridgeModeS[MODE_VERIFY_ALERT].s = ISS_ON;
-                BridgeModeSP.s = IPS_OK;
-                IDSetSwitch(&BridgeModeSP, nullptr);
-                saveConfig(true, BridgeModeSP.name);
-            }
+        // Self-healing guarantee (2026-09-07, direct feedback): "some
+        // Coupling mode is always active, defaulting to Verify/Alert if
+        // none was ever explicitly chosen" must hold regardless of WHY
+        // it might not - a stale/corrupted saved config with every
+        // switch written Off, a partially-written config file, or any
+        // other way BridgeModeSP could end up with none of its
+        // ISR_1OFMANY switches actually On. Not something to diagnose
+        // case-by-case - just verify the invariant directly and fix it
+        // on the spot if it doesn't hold, exactly like the RA0/Dec0
+        // guards elsewhere in this file don't ask why a bad value
+        // arrived before rejecting it.
+        //
+        // Extended 2026-09-13 (direct feedback): moved out of the
+        // m_connectedConfigLoaded gate above - as written, this only ever
+        // ran on this driver PROCESS's very first connect, so a LATER
+        // disconnect/reconnect within the same still-running process
+        // skipped it entirely even though the exact same "no active
+        // switch" state could in principle still occur by then (nothing
+        // here resets BridgeModeSP's in-memory state on disconnect, but a
+        // future code path doing so, or an explicit CONFIG_LOAD reloading
+        // a corrupted file, wouldn't be caught until the whole driver
+        // process itself restarted). Idempotent and cheap (a single
+        // IUFindOnSwitch check, only acting when it's actually violated),
+        // so running it on every connect costs nothing on the common,
+        // already-healthy path.
+        if (!IUFindOnSwitch(&BridgeModeSP))
+        {
+            LOG_WARN("BRIDGE_MODE had no active switch on connect - "
+                     "defaulting to Verify/Alert only and re-saving.");
+            IUResetSwitch(&BridgeModeSP);
+            BridgeModeS[MODE_VERIFY_ALERT].s = ISS_ON;
+            BridgeModeSP.s = IPS_OK;
+            IDSetSwitch(&BridgeModeSP, nullptr);
+            saveConfig(true, BridgeModeSP.name);
         }
     }
     else
