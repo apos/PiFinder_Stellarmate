@@ -2672,22 +2672,6 @@
             <div class="mb-role-card-sub">No PiFinder hardware. Couples to remote PiFinder.</div>
           </div>
         </div>
-        <!-- Mismatch warning (3b of the concept doc above): shown only when
-             pifinderRoleChoice === 'client' but a mount got coupled anyway
-             (role flips to 'aio' - Mount Bridge present). Never a silent
-             auto-switch either way - see updateProfileRoleLine()'s own
-             comment for when this is populated/shown. -->
-        <div class="showstopper-card" id="pifinder-client-mismatch-card" style="display:none;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-          <div class="mb-drift-banner-body">
-            <div class="mb-drift-banner-title">Mount coupled, but this device is set to &quot;PiFinder Client&quot;</div>
-            <div class="mb-drift-banner-text">&quot;PiFinder Client&quot; means no local mount - remote coupling happens on the Control host instead. A mount (<span id="pifinder-client-mismatch-mount"></span>) is coupled here right now, which doesn't match.</div>
-            <div class="mb-drift-banner-actions">
-              <button class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="resolvePifinderClientMismatch('host')">Switch to &quot;PiFinder host&quot;</button>
-              <button class="mb-drift-banner-btn mb-drift-banner-btn-secondary" onclick="resolvePifinderClientMismatch('unlink')">Remove this mount coupling</button>
-            </div>
-          </div>
-        </div>
         <div id="mb-add-mount-row" style="display:none;">
           <button id="mb-add-mount-btn" class="ql-small-btn" onclick="onRoleCardClick('aio')" title="A mount is connected to this same device - adds the PiFinder Mount Bridge driver to the profile alongside PiFinder LX200, so this device also does the coupling. Same profile, no reinstall.">+ Couple a mount</button>
         </div>
@@ -9468,22 +9452,24 @@ function updateProfileRoleLine() {
   // "PiFinder host" (role 'aio', or 'host' without an explicit "client"
   // choice) vs "PiFinder Client" (role 'host' WITH that choice) - both
   // derive the identical role === 'host' from the profile alone, see
-  // pifinderRoleChoice's own comment. A mismatch (role 'aio' - a mount IS
-  // coupled - while the stored choice is still "client") shows "PiFinder
-  // host" as active here (reflecting the actual, current config) and
-  // separately flags the contradiction via the warning card below, never a
-  // silent auto-switch of either.
+  // pifinderRoleChoice's own comment. "PiFinder Client" only has meaning
+  // while role stays 'host' (no Mount Bridge in the profile) - the moment
+  // role is 'aio' (a mount IS coupled), the server itself already clears a
+  // stale "client" choice back to null (see server.py's
+  // _pifinder_service_sync_with_lx200_target()), so pifinderRoleChoice is
+  // never "client" here while role is 'aio'.
+  //
+  // Direct feedback (2026-09-13), found live: this used to ALSO show a
+  // warning card for exactly that combination ("device is set to
+  // 'PiFinder Client'") right next to this already-green "PiFinder host"
+  // card - self-contradictory on screen (the same field can't be both, and
+  // the green card is the one that's actually true), not a real choice
+  // left for the user to make. Removed - see pifinder-client-mismatch-card
+  // removal in the same change for the retired HTML/CSS/JS.
   const isClientChoice = role === 'host' && pifinderRoleChoice === 'client';
   document.getElementById('mb-role-card-host').classList.toggle('mb-role-active', role === 'aio' || (role === 'host' && !isClientChoice));
   document.getElementById('mb-role-card-client').classList.toggle('mb-role-active', isClientChoice);
   document.getElementById('mb-role-card-ctrl').classList.toggle('mb-role-active', role === 'ctrl' || role === 'ctrl-incomplete');
-  const mismatchCard = document.getElementById('pifinder-client-mismatch-card');
-  if (role === 'aio' && pifinderRoleChoice === 'client') {
-    document.getElementById('pifinder-client-mismatch-mount').textContent = wmActiveMount || 'a mount';
-    mismatchCard.style.display = '';
-  } else {
-    mismatchCard.style.display = 'none';
-  }
   const hostMode = role === 'host';
   document.getElementById('mb-add-mount-row').style.display = hostMode ? '' : 'none';
   document.getElementById('mb-operate-rows').style.display = hostMode ? 'none' : '';
@@ -9611,41 +9597,6 @@ async function setPifinderRoleChoice(choice) {
   } catch (e) {
     // best-effort - next click (or the next profile poll) retries
   }
-}
-
-// The two actions #pifinder-client-mismatch-card offers (docs/concepts/
-// pifinder_client_role_and_indi_setup_review.md, 3b) - never a silent
-// auto-switch, always one of these two explicit choices.
-async function resolvePifinderClientMismatch(action) {
-  const card = document.getElementById('pifinder-client-mismatch-card');
-  if (action === 'host') {
-    // Only the stored choice changes - the actual INDI/mount configuration
-    // (which is what made this a mismatch) is left exactly as it is, since
-    // "PiFinder host" is the role that already matches it.
-    await setPifinderRoleChoice('host');
-    card.style.display = 'none';
-    return;
-  }
-  // action === 'unlink': same raw call setWmActiveDevices() itself makes
-  // for unlinking - not that function directly, since it reads the mount
-  // dropdown's current selection to decide link-vs-unlink-vs-switch, which
-  // may not match the actually-linked mount if the dropdown was browsed
-  // without confirming; this mismatch card always means "unlink", full stop.
-  try {
-    const resp = await fetch('/api/mount_bridge_active_devices?action=unlink', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.success) {
-      await ccNoticeBanner('Could not remove the mount coupling: ' + (data.error || 'unknown error'), null, card);
-      return;
-    }
-  } catch (e) {
-    await ccNoticeBanner('Could not remove the mount coupling: ' + e.message, null, card);
-    return;
-  }
-  pollMbLog();
-  await refreshWmDriverButtons();
-  await loadWmProfiles();
-  await refreshMountBridgeStatus();
 }
 
 async function onRoleCardClick(kind) {

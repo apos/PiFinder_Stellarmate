@@ -436,6 +436,7 @@ def _pifinder_service_sync_with_lx200_target():
     confirmed."""
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
     global _wm_unreachable_for_pifinder_sync_warned, _last_known_lx200_remote
+    global _pifinder_role_choice
     if not PIFINDER_SERVICE_UNIT.exists():
         return  # nothing installed here at all (e.g. a pure INDI-only Control Host)
     try:
@@ -463,6 +464,31 @@ def _pifinder_service_sync_with_lx200_target():
             return
         _wm_unreachable_for_pifinder_sync_warned = False
         driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
+        # Found live (2026-09-13), direct feedback on the GUI's own mismatch
+        # warning ("Host ist aktiv... Das ist schlicht FALSCH. Die Meldung
+        # darf nicht erscheinen"): "PiFinder Client" only has meaning while
+        # role stays 'host' (no Mount Bridge in the profile at all) - the
+        # moment a local PiFinder LX200 AND Mount Bridge are BOTH in the
+        # profile (the frontend's 'aio', always shown as "PiFinder host",
+        # never as "PiFinder Client"), the stored choice is simply obsolete,
+        # not "in conflict" - showing a warning that contradicts the
+        # already-correct green "PiFinder host" card was the actual bug, not
+        # the missing warning. Clearing it here (server-side, so it stays
+        # honest even with no GUI open, and so a remote Control host reading
+        # this device's choice via the 2b proxy never sees the stale value
+        # either) rather than just hiding the frontend banner - `None` (not
+        # "host") since nothing here observed a deliberate choice, only that
+        # "client" no longer describes this profile.
+        if (
+            driver_status.get("has_lx200") and not driver_status.get("lx200_remote")
+            and driver_status.get("has_bridge") and _pifinder_role_choice == "client"
+        ):
+            _pifinder_role_choice = None
+            _save_mount_bridge_desired_state()
+            _mb_log(
+                "pifinder_role_choice: cleared stale 'client' choice - this profile now has both "
+                "a local PiFinder LX200 and Mount Bridge, which only ever shows as 'PiFinder host'."
+            )
     except webmanager_client.WebManagerError:
         _sync_pifinder_service_from_cache()
         if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
@@ -2159,6 +2185,7 @@ def _mount_bridge_readiness_watchdog(interval=5):
         # genuinely slow-but-fine poll doesn't spam this, but well above
         # the sub-100ms this call normally takes over loopback.
         _tick_start = time.monotonic()
+        status = None
         try:
             status = indi_client.mount_bridge_status(
                 timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
@@ -2173,10 +2200,19 @@ def _mount_bridge_readiness_watchdog(interval=5):
                     "necessarily the Mount Bridge driver."
                 )
             # No response at all from indiserver itself (not just Mount
-            # Bridge) - nothing this watchdog can usefully act on
-            # (indiserver itself is the Web Manager's concern, not this
-            # one's).
-            continue
+            # Bridge) - status stays None below, which correctly skips the
+            # two checks that actually need it (the driver self-heal and
+            # the sim-mismatch check), but must NOT skip
+            # _pifinder_service_sync_with_lx200_target() further down -
+            # found live (2026-09-13): this used to `continue` straight
+            # past it, so on a Control host where indiserver/the Web
+            # Manager profile isn't even up yet (right after a reboot -
+            # the exact gap PR #438's cache fallback was built to close),
+            # the stray-pifinder.service check never ran AT ALL, not even
+            # via its own cache fallback - it needs no live indiserver
+            # connection of its own to work (it reads the Web Manager
+            # directly, or its own persisted cache), so it has no business
+            # being skipped just because THIS unrelated query failed.
         else:
             _elapsed = time.monotonic() - _tick_start
             if _elapsed > 1.0:
@@ -2184,10 +2220,11 @@ def _mount_bridge_readiness_watchdog(interval=5):
                     f"Mount Bridge readiness watchdog: indiserver query took {_elapsed:.1f}s "
                     f"(normally well under 0.1s) - see issue #385."
                 )
-        try:
-            _mount_bridge_readiness_self_heal(status)
-        except Exception as e:  # a watchdog thread must never die silently
-            _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
+        if status is not None:
+            try:
+                _mount_bridge_readiness_self_heal(status)
+            except Exception as e:  # a watchdog thread must never die silently
+                _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
         try:
             _pifinder_service_sync_with_lx200_target()
         except Exception as e:  # same reasoning - must never kill this thread
@@ -2195,8 +2232,10 @@ def _mount_bridge_readiness_watchdog(interval=5):
         # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
         # as the frontend's own liveDriftConfirmsRelated (PR #395), just
         # persisted permanently instead of only for the current page/process.
+        # Needs a real `status` (indiserver reachable) to have a drift value
+        # to check at all.
         global _sim_mismatch_ever_resolved
-        if not _sim_mismatch_ever_resolved:
+        if status is not None and not _sim_mismatch_ever_resolved:
             drift = status.get("drift_arcmin")
             if isinstance(drift, (int, float)) and drift < 10:
                 _sim_mismatch_ever_resolved = True
