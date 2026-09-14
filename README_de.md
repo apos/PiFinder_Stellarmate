@@ -91,8 +91,22 @@ cd PiFinder_Stellarmate
 bash gui_installer/launch_setup_gui.sh
 ```
 
-Öffne die Seite anschließend im Browser — direkt auf dem Pi oder von jedem anderen Gerät im
-gleichen Netzwerk aus (keine Desktop-Sitzung auf dem Pi nötig). Details siehe
+Das Skript gibt jede Adresse aus, unter der die GUI erreichbar ist (eine Zeile pro
+Netzwerkschnittstelle), und öffnet sie automatisch im Browser:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+Öffne von jedem anderen Gerät im gleichen Netzwerk aus direkt eine dieser URLs (keine
+Desktop-Sitzung auf dem Pi nötig). Details siehe
 [Setup-GUI / Control Center](#setup-gui--control-center-empfohlen).
 
 <table>
@@ -248,9 +262,21 @@ bash gui_installer/launch_setup_gui.sh          # starten (idempotent; gibt die 
 bash gui_installer/launch_setup_gui.sh --shutdown-webserver   # stoppen
 ```
 
-`http://<pi-adresse>:8765` öffnen — beliebiger Benutzername, Passwort = dein
-`stellarmate`-Systempasswort. Oder `PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für
-ein klickbares Icon.
+Beim Starten gibt das Skript eine URL pro Netzwerkschnittstelle aus — öffne die, die von deinem
+Gerät aus erreichbar ist:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+Oder `PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für ein klickbares Icon.
 
 > **Entwicklung ohne Pi?** [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md) macht aus einem x86-
 > StellarMate-OS-Image (UTM-VM auf einem Mac) eine vollwertige Control-Host- + Simulator-

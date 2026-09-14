@@ -85,8 +85,22 @@ cd PiFinder_Stellarmate
 bash gui_installer/launch_setup_gui.sh
 ```
 
-Then open the page in a browser — on the Pi itself, or from any other device on the same network
-(no desktop session on the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-recommended) for details.
+The script prints every address the GUI is reachable under (one line per network interface) and
+opens it in a browser automatically:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+From any other device on the same network, open one of those URLs directly (no desktop session on
+the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-recommended) for details.
 
 <table>
 <tr>
@@ -239,8 +253,21 @@ bash gui_installer/launch_setup_gui.sh          # start (idempotent; prints its 
 bash gui_installer/launch_setup_gui.sh --shutdown-webserver   # stop
 ```
 
-Open `http://<pi-address>:8765` — any username, password = your `stellarmate` system password. Or
-copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon.
+Starting it prints one URL per network interface — open whichever one is reachable from your
+device:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+Or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon.
 
 > **Developing without a Pi?** [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md) turns an x86 StellarMate
 > OS image (UTM VM on a Mac) into a full control-host + simulator dev machine — the Control Center,
