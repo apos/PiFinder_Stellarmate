@@ -33,8 +33,7 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   vorhanden ist) und `PiFinder Mount Bridge` (der einzige Baustein, der überhaupt von einer zweiten,
   echten Mount weiß) — unabhängig baubar und aktivierbar, kein Einfluss aufeinander.
 - **Client/Host-Rollenmodell**: trennt „das Gerät mit der echten Mount" von „das Gerät, das der
-  Nutzer bedient" als eigenes Konzept, statt anzunehmen, dass eine Maschine immer alles übernimmt —
-  nötig, sobald eine PFSM-Installation über zwei Geräte verteilt läuft.
+  Nutzer bedient" als eigenes Konzept.
 
 ## PiFinder LX200 Treiber
 
@@ -63,19 +62,15 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
 - **Settle-Delay (3 Poll-Zyklen) vor der Verifikation** — PiFinder braucht nach der physischen
   Bewegung Zeit für einen frischen Solve.
 - **HOLDING statt einmaligem Settle-Timer**: nach einem Goto-Forward-Slew hält die Bridge das Ziel
-  aktiv weiter, statt einmal zu settlen und fertig zu sein — ein fester Timer kann nicht wissen, wie
-  lange Mount und Live-Solve tatsächlich brauchen.
+  aktiv weiter, statt einmal zu settlen und fertig zu sein.
 - **Max-Sync-Drift-Grenze**: Auto-Sync verweigert eine unplausibel große Korrektur (z. B. durch
-  einen offenen Mount-Clutch oder einen schlechten Solve), statt jedem Wert blind zu vertrauen —
-  schützt davor, die Mount-Position mit einem fehlerhaften Datenpunkt zu verfälschen.
+  einen offenen Mount-Clutch oder einen schlechten Solve).
 - **Shadow Sync**: PiFinders Position wird automatisch auf das Gerät `PiFinder Simulator`
   gespiegelt.
 - **Multi-Point Alignment**: ein einzelner Sync-Punkt verliert mit der Zeit an Genauigkeit —
   mehrere Alignment-Punkte halten das Mount-Modell über den ganzen Himmel hinweg genau, nicht nur
   nahe der Stelle, an der zuletzt gesynct wurde.
-- **Solve-Freshness-Gating**: die Coupling-Logik ignoriert einen veralteten PiFinder-Solve — auf
-  alte Daten zu reagieren würde die Mount-Position anhand einer nicht mehr aktuellen Realität
-  verfälschen.
+- **Solve-Freshness-Gating**: die Coupling-Logik ignoriert einen veralteten PiFinder-Solve.
 
 ## Testen & Betrieb
 
