@@ -65,8 +65,7 @@ Everything below follows from a small set of principles:
   mount clutch or a bad solve) instead of trusting every reading blindly — protects against
   corrupting the mount's position from a bad data point.
 - **Shadow Sync**: PiFinder's position is automatically mirrored onto the `PiFinder Simulator`
-  device — makes what PiFinder currently believes visible live, in any coupling mode, without
-  touching the real mount.
+  device.
 - **Multi-Point Alignment**: a single sync point degrades over time — several alignment points keep
   the mount model accurate across the sky instead of just near where it was taken.
 - **Solve-Freshness gating**: the coupling logic ignores a stale PiFinder solve — reacting to old
