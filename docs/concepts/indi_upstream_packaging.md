@@ -1,9 +1,12 @@
 # Concept: Upstream INDI driver packaging (indi-3rdparty submission)
 
-> **Status: concept — not yet decided/implemented.** Not yet filed as a GitHub issue. Captures the
-> initial discussion of how to make the `PiFinder LX200` / `PiFinder Mount Bridge` drivers buildable
-> by the official INDI project itself, instead of only via this repo's own build scripts — kept as
-> "considerations to act on later" rather than a committed plan (same style as
+> **Status: concept — not yet decided/implemented.** Tracked as
+> [GitHub issue #464](https://github.com/apos/PiFinder_Stellarmate/issues/464)
+> (`concept` + `pifinder` + `indi` labels) on
+> [Project #15](https://github.com/users/apos/projects/15). Captures the initial discussion of how
+> to make the `PiFinder LX200` / `PiFinder Mount Bridge` drivers buildable by the official INDI
+> project itself, instead of only via this repo's own build scripts — kept as "considerations to
+> act on later" rather than a committed plan (same style as
 > [`simulation_fidelity_and_pifinder_orientation.md`](simulation_fidelity_and_pifinder_orientation.md)).
 
 ## 1. Context
@@ -90,5 +93,4 @@ the concrete template before drafting ours.
   PRs).
 - Fix #454 (broken cmake on `stellarmate-utm`) before relying on that box as the x86 dev-bench check.
 - Relation to #347: a merged indi-3rdparty PR is the actual prerequisite for that issue's
-  Flatpak-catalog goal — worth cross-linking once this concept has its own issue.
-- No GitHub issue filed for this concept yet — open one once a direction is confirmed with the user.
+  Flatpak-catalog goal.
