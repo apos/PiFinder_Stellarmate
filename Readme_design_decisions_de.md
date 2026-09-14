@@ -32,6 +32,9 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
 - **Zwei getrennte Treiber statt einem**: `PiFinder LX200` (immer gleiche Rolle, egal ob eine Mount
   vorhanden ist) und `PiFinder Mount Bridge` (der einzige Baustein, der überhaupt von einer zweiten,
   echten Mount weiß) — unabhängig baubar und aktivierbar, kein Einfluss aufeinander.
+- **Client/Host-Rollenmodell**: trennt „das Gerät mit der echten Mount" von „das Gerät, das der
+  Nutzer bedient" als eigenes Konzept, statt anzunehmen, dass eine Maschine immer alles übernimmt —
+  nötig, sobald eine PFSM-Installation über zwei Geräte verteilt läuft.
 
 ## PiFinder LX200 Treiber
 
@@ -59,6 +62,21 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   "Hunting").
 - **Settle-Delay (3 Poll-Zyklen) vor der Verifikation** — PiFinder braucht nach der physischen
   Bewegung Zeit für einen frischen Solve.
+- **HOLDING statt einmaligem Settle-Timer**: nach einem Goto-Forward-Slew hält die Bridge das Ziel
+  aktiv weiter, statt einmal zu settlen und fertig zu sein — ein fester Timer kann nicht wissen, wie
+  lange Mount und Live-Solve tatsächlich brauchen.
+- **Max-Sync-Drift-Grenze**: Auto-Sync verweigert eine unplausibel große Korrektur (z. B. durch
+  einen offenen Mount-Clutch oder einen schlechten Solve), statt jedem Wert blind zu vertrauen —
+  schützt davor, die Mount-Position mit einem fehlerhaften Datenpunkt zu verfälschen.
+- **Shadow Sync**: PiFinders Position wird automatisch auf das Gerät `PiFinder Simulator`
+  gespiegelt — macht in jedem Coupling-Modus live sichtbar, was PiFinder gerade glaubt, ohne die
+  echte Mount anzufassen.
+- **Multi-Point Alignment + expliziter Reposition-Confirm**: ein einzelner Sync-Punkt verliert mit
+  der Zeit an Genauigkeit; mehrere Alignment-Punkte plus eine bewusste Bestätigung vor dem
+  Überschreiben des Mount-Modells — Sicherheitsschranke, keine Hintergrundaktion.
+- **Solve-Freshness-Gating**: die Coupling-Logik ignoriert einen veralteten PiFinder-Solve — auf
+  alte Daten zu reagieren würde die Mount-Position anhand einer nicht mehr aktuellen Realität
+  verfälschen.
 
 ## Testen & Betrieb
 
