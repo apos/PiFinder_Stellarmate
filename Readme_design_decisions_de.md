@@ -71,9 +71,9 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
 - **Shadow Sync**: PiFinders Position wird automatisch auf das Gerät `PiFinder Simulator`
   gespiegelt — macht in jedem Coupling-Modus live sichtbar, was PiFinder gerade glaubt, ohne die
   echte Mount anzufassen.
-- **Multi-Point Alignment + expliziter Reposition-Confirm**: ein einzelner Sync-Punkt verliert mit
-  der Zeit an Genauigkeit; mehrere Alignment-Punkte plus eine bewusste Bestätigung vor dem
-  Überschreiben des Mount-Modells — Sicherheitsschranke, keine Hintergrundaktion.
+- **Multi-Point Alignment**: ein einzelner Sync-Punkt verliert mit der Zeit an Genauigkeit —
+  mehrere Alignment-Punkte halten das Mount-Modell über den ganzen Himmel hinweg genau, nicht nur
+  nahe der Stelle, an der zuletzt gesynct wurde.
 - **Solve-Freshness-Gating**: die Coupling-Logik ignoriert einen veralteten PiFinder-Solve — auf
   alte Daten zu reagieren würde die Mount-Position anhand einer nicht mehr aktuellen Realität
   verfälschen.
