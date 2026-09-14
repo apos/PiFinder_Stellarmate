@@ -181,6 +181,11 @@ Control Center automatically, printing every reachable URL at the end:
   Login: any username, password = your stellarmate system password
 ```
 
+On a fresh StellarMate OS install that's username `stellarmate`, password `smate` — the StellarMate
+OS default, not a project secret (change it if you haven't already). See
+[Readme_ControlCenter.md](Readme_ControlCenter.md) for the Control Center itself (every tile, the
+Mount Bridge workflows, the API surface).
+
 **On a fresh venv, the script stops itself after creating it** and prints the exact activation
 command to run - a `source` inside the script's own subshell can't affect your outer shell, so this
 one manual step can't be automated away. Run the printed command, then re-run

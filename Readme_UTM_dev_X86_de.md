@@ -191,6 +191,11 @@ automatisch das Control Center, mit Ausgabe aller erreichbaren URLs am Ende:
   Login: any username, password = your stellarmate system password
 ```
 
+Auf einer frischen StellarMate-OS-Installation ist das Benutzername `stellarmate`, Passwort
+`smate` — der StellarMate-OS-Standard, kein projektspezifisches Geheimnis (ändern, falls noch nicht
+geschehen). Siehe [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md) für das Control Center
+selbst (jede Kachel, die Mount-Bridge-Workflows, die API-Oberfläche).
+
 **Bei einer frischen venv stoppt sich das Skript nach deren Erstellung selbst** und gibt den
 genauen Aktivierungsbefehl aus — ein `source` innerhalb der eigenen Subshell des Skripts kann die
 äußere Shell nicht beeinflussen, dieser eine manuelle Schritt lässt sich nicht automatisieren. Den
