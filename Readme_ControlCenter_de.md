@@ -338,10 +338,26 @@ normalen Installation manuell nichts zu tun. Zum direkten Starten:
 bash gui_installer/launch_setup_gui.sh
 ```
 
-Dann `http://<pi-adresse>:8765` im Browser öffnen — auf dem Pi selbst, oder von jedem anderen Gerät
-im selben Netzwerk (keine Desktop-Session auf dem Pi nötig; der Server bindet `0.0.0.0`). Jeder
-Benutzername funktioniert; das Passwort ist das des `stellarmate`-Systemkontos (s.
-[Authentifizierung & Sicherheitsmodell](#authentifizierung--sicherheitsmodell)).
+Das Skript gibt jede Adresse aus, unter der es erreichbar ist (eine Zeile pro
+Netzwerkschnittstelle), und öffnet sie automatisch im Browser:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+Eine dieser URLs von jedem Gerät im selben Netzwerk aus öffnen (keine Desktop-Session auf dem Pi
+nötig; der Server bindet `0.0.0.0`). Jeder Benutzername funktioniert; das Passwort ist das des
+`stellarmate`-Systemkontos (s. [Authentifizierung & Sicherheitsmodell](#authentifizierung--sicherheitsmodell))
+— auf einer frischen StellarMate-OS-Installation ist das Benutzername `stellarmate`, Passwort
+`smate`, der StellarMate-OS-Standard, kein projektspezifisches Geheimnis (ändern, falls noch nicht
+geschehen).
 
 ### Die Seite auf einen Blick
 
