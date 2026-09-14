@@ -31,8 +31,7 @@ Everything below follows from a small set of principles:
   knows a second, real mount exists) — independently buildable and enabled, no impact on each
   other.
 - **Client/Host role model**: separates "the device with the real mount" from "the device the user
-  operates" as its own concept, instead of assuming one machine always does everything — needed
-  once a PFSM install runs split across two devices.
+  operates" as its own concept.
 
 ## PiFinder LX200 Driver
 
@@ -59,17 +58,14 @@ Everything below follows from a small set of principles:
 - **Settle delay (3 poll cycles) before verifying** — PiFinder needs time after the physical move
   to produce a fresh solve.
 - **HOLDING instead of a one-shot settle timer**: after a Goto-Forward slew, the Bridge keeps
-  actively holding the target rather than settling once and being done — a fixed timer can't know
-  how long the mount and the live solve actually need.
+  actively holding the target rather than settling once and being done.
 - **Max Sync Drift limit**: auto-sync refuses an implausibly large correction (e.g. from an open
-  mount clutch or a bad solve) instead of trusting every reading blindly — protects against
-  corrupting the mount's position from a bad data point.
+  mount clutch or a bad solve).
 - **Shadow Sync**: PiFinder's position is automatically mirrored onto the `PiFinder Simulator`
   device.
 - **Multi-Point Alignment**: a single sync point degrades over time — several alignment points keep
   the mount model accurate across the sky instead of just near where it was taken.
-- **Solve-Freshness gating**: the coupling logic ignores a stale PiFinder solve — reacting to old
-  data would corrupt the mount's synced position based on a reality that's no longer current.
+- **Solve-Freshness gating**: the coupling logic ignores a stale PiFinder solve.
 
 ## Testing & Operations
 
