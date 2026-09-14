@@ -69,8 +69,7 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   einen offenen Mount-Clutch oder einen schlechten Solve), statt jedem Wert blind zu vertrauen —
   schützt davor, die Mount-Position mit einem fehlerhaften Datenpunkt zu verfälschen.
 - **Shadow Sync**: PiFinders Position wird automatisch auf das Gerät `PiFinder Simulator`
-  gespiegelt — macht in jedem Coupling-Modus live sichtbar, was PiFinder gerade glaubt, ohne die
-  echte Mount anzufassen.
+  gespiegelt.
 - **Multi-Point Alignment**: ein einzelner Sync-Punkt verliert mit der Zeit an Genauigkeit —
   mehrere Alignment-Punkte halten das Mount-Modell über den ganzen Himmel hinweg genau, nicht nur
   nahe der Stelle, an der zuletzt gesynct wurde.
