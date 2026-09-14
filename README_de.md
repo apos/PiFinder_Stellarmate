@@ -105,6 +105,10 @@ Webserver started.
    To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
 ```
 
+Auf einer frischen StellarMate-OS-Installation ist das Benutzername `stellarmate`, Passwort
+`smate` — der StellarMate-OS-Standard, kein projektspezifisches Geheimnis (ändern, falls noch
+nicht geschehen).
+
 Öffne von jedem anderen Gerät im gleichen Netzwerk aus direkt eine dieser URLs (keine
 Desktop-Sitzung auf dem Pi nötig). Details siehe
 [Setup-GUI / Control Center](#setup-gui--control-center-empfohlen).
@@ -275,6 +279,10 @@ Webserver started.
    /log and /shutdown stay reachable without login)
    To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
 ```
+
+Auf einer frischen StellarMate-OS-Installation ist das Benutzername `stellarmate`, Passwort
+`smate` — der StellarMate-OS-Standard, kein projektspezifisches Geheimnis (ändern, falls noch
+nicht geschehen).
 
 Oder `PiFinder Setup.desktop` nach `~/Desktop/` kopieren/verlinken für ein klickbares Icon.
 
