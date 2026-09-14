@@ -393,6 +393,10 @@ def mount_bridge_status(
     active_mount = active_devices.get("ACTIVE_MOUNT") or None
     settings_host = bridge_settings.get("INDISERVER_HOST") or None
     settings_port = bridge_settings.get("INDISERVER_PORT") or None
+    # Diagnostic only (2026-09-14): direct visibility into PIFINDER_HTTP_HOST
+    # while verifying the Control Host HTTP-host fix live - not otherwise
+    # consumed yet.
+    pifinder_http_host = bridge_settings.get("PIFINDER_HTTP_HOST") or None
     # "localhost" and "127.0.0.1" are the same thing here (the driver's own
     # default is the string "localhost") - comparing by string alone would
     # flag a perfectly fine setup as wrong.
@@ -477,6 +481,7 @@ def mount_bridge_status(
         "settings_host": settings_host,
         "settings_port": settings_port,
         "settings_correct": settings_correct,
+        "pifinder_http_host": pifinder_http_host,
         "target_source": target_source,
         "target_source_age_sec": float(target_source_age_raw) if target_source_age_raw not in (None, "") else None,
         "solve_freshness_max_age_sec": float(solve_freshness_max_age_raw) if solve_freshness_max_age_raw not in (None, "") else None,

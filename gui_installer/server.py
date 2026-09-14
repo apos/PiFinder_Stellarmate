@@ -508,6 +508,35 @@ def _pifinder_service_sync_with_lx200_target():
     if lx200_remote != _last_known_lx200_remote:
         _last_known_lx200_remote = lx200_remote
         _save_mount_bridge_desired_state()
+    # Control Host topology (2026-09-14): the Mount Bridge driver's own HTTP
+    # calls to PiFinder's REST API (solve freshness/orientation/mount-type/
+    # etc.) default to 127.0.0.1 - correct only when PiFinder is local.
+    # Whenever this Control Center detects the profile's PiFinder LX200
+    # driver is REMOTE (Control Host role), push that same host to the
+    # Mount Bridge driver's PIFINDER_HTTP_HOST setting too - otherwise the
+    # driver can never reach a remote PiFinder's HTTP API at all, and things
+    # like the drift display stay permanently stale. Reset back to
+    # "127.0.0.1" when lx200_remote is absent (local/all-in-one).
+    #
+    # Deliberately pushed every tick here, NOT gated on the lx200_remote-
+    # changed check above (found live, 2026-09-14): the Mount Bridge DRIVER
+    # PROCESS itself can restart independently of this Python-side value
+    # ever changing (indiserver's own self-heal after issue #385 slowness,
+    # or a plain profile bounce) - a fresh process always starts back at the
+    # C++ default (127.0.0.1), with no way for this side to know that
+    # happened without re-sending every tick. The XML round-trip is cheap
+    # (one one-line INDI text vector, same cost as ALIGN_CONFIG's own
+    # every-relevant-tick pattern) - negligible next to #385's existing
+    # multi-second indiserver query overhead. Best-effort: a failure here
+    # isn't worth blocking the pifinder.service sync below over - the very
+    # next tick retries regardless.
+    try:
+        pifinder_http_host = lx200_remote.rsplit(":", 1)[0] if lx200_remote else "127.0.0.1"
+        indi_client.set_text(
+            "PiFinder Mount Bridge", "BRIDGE_SETTINGS", {"PIFINDER_HTTP_HOST": pifinder_http_host}
+        )
+    except Exception as e:
+        _mb_log(f"Could not push PIFINDER_HTTP_HOST ('{pifinder_http_host}') to Mount Bridge: {e}")
     if lx200_remote:
         if _real_service_active():
             try:
