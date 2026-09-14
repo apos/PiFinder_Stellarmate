@@ -327,10 +327,25 @@ manually on a normal install. To launch it directly:
 bash gui_installer/launch_setup_gui.sh
 ```
 
-Then open `http://<pi-address>:8765` in a browser — on the Pi itself, or from any other device on
-the same network (no desktop session on the Pi required; the server binds `0.0.0.0`). Any username
-works; the password is the `stellarmate` system account's password (see
-[Authentication & Security Model](#authentication--security-model)).
+It prints every address it's reachable under (one line per network interface) and opens it in a
+browser automatically:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+Open one of those URLs from any device on the same network (no desktop session on the Pi required;
+the server binds `0.0.0.0`). Any username works; the password is the `stellarmate` system account's
+password (see [Authentication & Security Model](#authentication--security-model)) — on a fresh
+StellarMate OS install that's username `stellarmate`, password `smate`, the StellarMate OS default,
+not a project secret (change it if you haven't already).
 
 ### The page at a glance
 
