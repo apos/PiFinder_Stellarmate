@@ -59,6 +59,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Mount Bridge on a Control Host: every HTTP call to PiFinder's own REST API was hardcoded to `127.0.0.1`, so drift/orientation stayed permanently `Idle`/stale whenever PiFinder ran on a different device; the real remote host is now pushed to the driver on every readiness-watchdog tick (#453, PR #452)
 - PiFinder `POST /api/fake_solve` returned an arbitrary RA near the celestial pole (JNow→J2000 `atan2` degeneracy); now keeps the caller's RA for `|dec| >= 89.9` (#343; upstream brickbots/PiFinder#645)
 - Mount Bridge: Multi-Point Alignment's own GoTos misclassified as external repositions, triggering a spurious extra GoTo per alignment point (#309)
 - Mount Bridge GUI: collapsed hardware-mode summary showed a white dot for active "Real Hardware" instead of green
