@@ -48,7 +48,24 @@ self_update_pifinder_stellarmate() {
         echo "ℹ️  Self-update: detached HEAD in ${repo_dir} - skipping." >&2
         return 0
     fi
-    upstream="$(git -C "$repo_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"
+    # Found live (2026-09-15): when branch.<name>.merge/.remote are
+    # configured but the remote-tracking ref they point at no longer exists
+    # (e.g. the branch's own remote counterpart was deleted after merging,
+    # which every branch used in this session's own workflow goes through) -
+    # `git rev-parse @{u}` FAILS (exit 128) but still prints the literal,
+    # unresolved argument "@{u}" to stdout, not an empty string. Capturing
+    # only stdout (as this line used to) then read that literal "@{u}" as if
+    # it were a real branch name, silently skipping past the "no upstream"
+    # check below and later hard-aborting with a misleading "diverged from
+    # '@{u}'" error instead of the clean skip this exact situation deserves
+    # (same as a genuinely unconfigured upstream). Checking the command's
+    # own exit status - not just whether its output happens to look empty -
+    # catches this correctly.
+    if ! upstream="$(git -C "$repo_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+        echo "ℹ️  Self-update: branch '${branch}' has no resolvable upstream (removed on the" >&2
+        echo "   remote, or never configured) - skipping." >&2
+        return 0
+    fi
     if [ -z "$upstream" ]; then
         echo "ℹ️  Self-update: branch '${branch}' has no upstream configured - skipping." >&2
         return 0
