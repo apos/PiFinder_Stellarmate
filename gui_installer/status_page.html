@@ -3741,8 +3741,23 @@ function updatePiFinderStatusAndWizardLink() {
     remoteEl.innerHTML = `<a href="${base}/remote" target="_blank" rel="noopener">Remote PiFinder</a> (port: ${port}, password: <code>smate</code>)`;
     wizardEl.innerHTML = `<a href="${base}/smos" target="_blank" rel="noopener">Open local PiFinder Website with Tips</a> (port ${port})`;
   } else {
-    dotEl.className = 'status-dot dot-white';
-    textEl.textContent = 'PiFinder not detected yet';
+    // Still white for a brand-new/just-restarted probe cycle (nothing wrong
+    // yet, just hasn't answered) - only escalate to red once the SAME
+    // "not detected" state has held for PIFINDER_UNREACHABLE_WARN_MS, so a
+    // one-off blip during a restart doesn't flash a false alarm. Direct
+    // feedback (2026-09-15): a Control host whose configured remote
+    // PiFinder was actually down showed the exact same neutral wording as
+    // "haven't looked yet", with no way to tell the two apart from the GUI.
+    const unreachableMs = pifinderUnreachableSince ? Date.now() - pifinderUnreachableSince : 0;
+    if (unreachableMs >= PIFINDER_UNREACHABLE_WARN_MS) {
+      dotEl.className = 'status-dot dot-red';
+      textEl.textContent = wmLx200Remote
+        ? `PiFinder Client (${wmLx200Remote.split(':')[0]}) not reachable`
+        : 'PiFinder not reachable';
+    } else {
+      dotEl.className = 'status-dot dot-white';
+      textEl.textContent = 'PiFinder not detected yet';
+    }
     remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
   }
@@ -6526,6 +6541,14 @@ async function pollLog() {
 // same probe also doubles as the "is PiFinder actually reachable yet" signal
 // for the post-success access-links box below.
 let pifinderScreenUrl = null;
+// Wall-clock start of the current unreachable streak (null while reachable
+// or before the first probe cycle has even completed once) - lets the
+// status line distinguish "just hasn't answered yet" from "has been down a
+// while", without any extra network traffic: the existing 2s discovery
+// retry in tryPiFinderScreenUrls() already generates this signal on every
+// cycle, this only adds a timer around it. See updatePiFinderStatusAndWizardLink().
+let pifinderUnreachableSince = null;
+const PIFINDER_UNREACHABLE_WARN_MS = 15000;
 
 function piFinderProbeUrls() {
   // Control host (2026-09-12, direct feedback: "Ich würde jetzt erwarten,
@@ -6549,6 +6572,13 @@ function piFinderProbeUrls() {
 
 function tryPiFinderScreenUrls(urls, index) {
   if (index >= urls.length) {
+    // Every url in this cycle failed - the same signal the "not detected
+    // yet" text has always had, just now timed instead of discarded. Start
+    // (but don't restart) the unreachable-streak clock, and re-render so a
+    // streak that just crossed PIFINDER_UNREACHABLE_WARN_MS shows up within
+    // one 2s retry instead of waiting for some unrelated poll to happen by.
+    if (pifinderUnreachableSince === null) pifinderUnreachableSince = Date.now();
+    updatePiFinderStatusAndWizardLink();
     // Recompute fresh on every restart (2026-09-12, found live testing the
     // Control host OLED mirror) - `urls` itself is otherwise a snapshot
     // frozen at whatever moment this cycle first started. The very first
@@ -6563,6 +6593,7 @@ function tryPiFinderScreenUrls(urls, index) {
   const probe = new Image();
   probe.onload = () => {
     pifinderScreenUrl = urls[index];
+    pifinderUnreachableSince = null;
     refreshPiFinderScreen();
     updatePiFinderStatusAndWizardLink();
   };
@@ -6585,6 +6616,7 @@ function refreshPiFinderScreen() {
   const probe = new Image();
   probe.onload = () => {
     document.getElementById('pifinder-screen').src = probe.src;
+    pifinderUnreachableSince = null;
     setTimeout(refreshPiFinderScreen, 1000);
   };
   probe.onerror = () => {
