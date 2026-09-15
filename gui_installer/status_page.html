@@ -8261,7 +8261,19 @@ async function refreshMountBridgeStatus() {
   }
 }
 ccRegisterPoll(() => { if (!mbActionInFlight) refreshMountBridgeStatus(); }, 20000);
-refreshMountBridgeStatus();
+// Deferred, not called directly here (2026-09-15/16, found live via the
+// browser console - both Control host and PiFinder Client pages threw
+// "Cannot access 'wmSelectedProfile' before initialization" on every page
+// load): refreshMountBridgeStatus() -> deriveProfileRole() reads
+// wmSelectedProfile (declared further down this same script, line ~9043) -
+// a bare top-level call sitting THIS early in the file ran before the
+// script's own execution had reached that declaration yet (a `let` is in
+// its temporal dead zone until its own line actually runs). setTimeout(...,
+// 0) still fires "immediately" for a fast first update (the whole point of
+// this call, vs. waiting the full 20s for the poll above) but only once the
+// entire top-level script has finished running - after every later `let`
+// declaration it might transitively need, not just this one.
+setTimeout(refreshMountBridgeStatus, 0);
 
 // Fast, best-effort drift refresh - kept deliberately separate from the 20s
 // connection-status poll above. That poll's cadence is intentionally slow
