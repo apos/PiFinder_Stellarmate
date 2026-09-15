@@ -273,6 +273,58 @@ startup). Use UTM's own **Pause** feature (not guest-OS suspend) if you want to 
 shutting it down — that actually works, since it's the hypervisor freezing/resuming the whole VM
 from outside, not the guest OS trying to power-manage virtual hardware that doesn't really exist.
 
+## 10. Optional: WireGuard access to the device fleet
+
+Section 1's bridged NIC only reaches devices on whatever LAN the Mac happens to be bridged into right
+now — if the Mac roams to a different network, this VM loses direct access to fleet devices (e.g. a
+Pi5) that stay on the original LAN, or that are only reachable at all via a VPN mesh. If your fleet
+has such a mesh (e.g. a WireGuard server relaying between all your StellarMate devices), setting up a
+client on this VM restores that access independent of whatever the bridged NIC is currently doing.
+
+1. Install the WireGuard tools (single targeted package, not a full system upgrade — see section 3's
+   package-manager caveats):
+
+   ```bash
+   sudo pacman -S --needed wireguard-tools
+   ```
+
+2. Place your client identity (private/public keypair) and the peer/server config your VPN admin
+   issued you under `~/Config/WIREGUARD/` — this directory is intentionally outside the repo and not
+   synced with it; keys never belong in version control. A minimal client config looks like:
+
+   ```ini
+   [Interface]
+   PrivateKey = <YOUR_CLIENT_PRIVATE_KEY>
+   Address = <ASSIGNED_CLIENT_ADDRESS>/32
+   [Peer]
+   PublicKey = <VPN_SERVER_PUBLIC_KEY>
+   Endpoint = <VPN_SERVER_HOST>:<VPN_SERVER_PORT>
+   AllowedIPs = <VPN_SUBNET>/24
+   PersistentKeepalive = 25
+   ```
+
+3. If your setup provides an install helper that wraps `wg-quick` in a systemd service (recommended
+   over running `wg-quick up` by hand, so the tunnel survives reboots), run its local-install mode and
+   keep your existing keys when prompted rather than generating new ones — the server side has to
+   know your public key in advance regardless of which keys you use.
+
+4. Verify:
+
+   ```bash
+   sudo wg show          # expect a recent "latest handshake"
+   ping -c2 <SOME_HOST_ON_THE_VPN_SUBNET>
+   ```
+
+**Gotcha - handshake succeeding is not proof the tunnel actually routes traffic.** The WireGuard
+handshake is keyed purely by public key, not by IP address, so it can succeed even when your
+`Address` doesn't match what the server has on file for that key. If `wg show` reports a fresh
+handshake but every `ping` inside the VPN subnet times out (including to the VPN gateway itself),
+the most likely cause is exactly this: your local `Address` was changed (or was wrong from the
+start) without the server-side peer entry for your public key being updated to match — the server
+then silently drops packets from the address you're actually sending from. Fix is server-side (your
+VPN admin needs to update that peer's allowed source address to match), not something you can work
+around from the client.
+
 ## Known Limitations
 
 - **No real plate-solving.** `~/PiFinder/bin/cedar-detect-server` only ships as an ARM binary — on

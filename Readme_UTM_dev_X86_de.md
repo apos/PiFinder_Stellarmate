@@ -288,6 +288,62 @@ Gast-OS-Suspend) — das funktioniert tatsächlich, da dabei der Hypervisor die 
 einfriert/wieder aufweckt, statt dass das Gast-OS versucht, virtuelle Hardware zu verwalten, die es
 so gar nicht gibt.
 
+## 10. Optional: WireGuard-Zugang zur Geräteflotte
+
+Das gebrückte Netzwerkgerät aus Abschnitt 1 erreicht nur Geräte in dem LAN, in das der Mac gerade
+gebrückt ist — wechselt der Mac das Netzwerk, verliert diese VM den direkten Zugriff auf Flotten-Geräte
+(z.B. einen Pi5), die im ursprünglichen LAN bleiben, oder die überhaupt nur über ein VPN-Mesh erreichbar
+sind. Falls eure Flotte ein solches Mesh hat (z.B. ein WireGuard-Server, der zwischen allen
+StellarMate-Geräten vermittelt), stellt ein Client auf dieser VM diesen Zugriff unabhängig vom
+aktuellen Zustand des gebrückten Netzwerkgeräts wieder her.
+
+1. WireGuard-Tools installieren (gezielt ein einzelnes Paket, kein vollständiges System-Upgrade —
+   siehe die Paketmanager-Hinweise in Abschnitt 3):
+
+   ```bash
+   sudo pacman -S --needed wireguard-tools
+   ```
+
+2. Die eigene Client-Identität (privates/öffentliches Schlüsselpaar) sowie die vom VPN-Admin
+   ausgestellte Peer-/Server-Konfiguration unter `~/Config/WIREGUARD/` ablegen — dieses Verzeichnis
+   liegt bewusst außerhalb des Repos und wird nicht mitsynchronisiert; Schlüssel gehören niemals in die
+   Versionsverwaltung. Eine minimale Client-Konfiguration sieht so aus:
+
+   ```ini
+   [Interface]
+   PrivateKey = <EIGENER_CLIENT_PRIVATE_KEY>
+   Address = <ZUGEWIESENE_CLIENT_ADRESSE>/32
+   [Peer]
+   PublicKey = <VPN_SERVER_PUBLIC_KEY>
+   Endpoint = <VPN_SERVER_HOST>:<VPN_SERVER_PORT>
+   AllowedIPs = <VPN_SUBNETZ>/24
+   PersistentKeepalive = 25
+   ```
+
+3. Falls euer Setup einen Installations-Helfer bereitstellt, der `wg-quick` in einen systemd-Service
+   verpackt (empfohlen gegenüber manuellem `wg-quick up`, damit der Tunnel Neustarts übersteht), dessen
+   lokalen Installationsmodus ausführen und bei Nachfrage die vorhandenen Schlüssel behalten statt neue
+   zu erzeugen — die Serverseite muss den öffentlichen Schlüssel ohnehin vorab kennen, unabhängig davon,
+   welche Schlüssel verwendet werden.
+
+4. Prüfen:
+
+   ```bash
+   sudo wg show          # aktueller "latest handshake" erwartet
+   ping -c2 <EIN_HOST_IM_VPN_SUBNETZ>
+   ```
+
+**Falle: ein erfolgreicher Handshake ist kein Beweis, dass der Tunnel tatsächlich Traffic
+durchlässt.** Der WireGuard-Handshake wird rein über den öffentlichen Schlüssel authentifiziert, nicht
+über die IP-Adresse — er kann also auch dann gelingen, wenn die eigene `Address` nicht zu dem passt,
+was der Server für diesen Schlüssel hinterlegt hat. Zeigt `wg show` einen frischen Handshake, aber
+jeder `ping` ins VPN-Subnetz läuft ins Leere (auch zum VPN-Gateway selbst), ist genau das die
+wahrscheinlichste Ursache: die lokale `Address` wurde geändert (oder war von Anfang an falsch), ohne
+dass der serverseitige Peer-Eintrag für den eigenen öffentlichen Schlüssel entsprechend aktualisiert
+wurde — der Server verwirft dann stillschweigend Pakete von der tatsächlich verwendeten Adresse. Die
+Behebung liegt serverseitig (der VPN-Admin muss die erlaubte Quelladresse für diesen Peer anpassen),
+nicht clientseitig umgehbar.
+
 ## Bekannte Einschränkungen
 
 - **Kein echtes Plate-Solving.** `~/PiFinder/bin/cedar-detect-server` liegt nur als ARM-Binary vor —

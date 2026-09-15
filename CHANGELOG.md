@@ -114,6 +114,7 @@ All notable changes to this project are documented in this file. Format loosely 
 - New PFSM overview presentation deck (LaTeX Beamer, EN+DE, light/dark builds): badge legend, hyperlinked links slide, Web Manager/role-card/control-host slides, wiring diagram (#356, #357, #358, #359, #360, #361, #362, #363, #364, #365, #366, #376, #377)
 - New concept docs: Realmode Sky Simulation, guiding detection via Ekos Optical Train, a native Ekos module for PiFinder, Mount Bridge `EXTERNAL_HOLD` (#345, #369, #371, #373)
 - LX200/Ekos/Web Manager walkthroughs (INDI Control Panel, KStars sky-map right-click ops) and an inventory of upstream `pos_server.py`'s multi-client rework (#346, #348, #367, #368)
+- `Readme_UTM_dev_X86.md`/`_de.md`: new section on optional WireGuard access to the device fleet, for reaching a fleet device (e.g. a Pi5) when the bridged NIC isn't on the same network - anonymized, includes the "handshake succeeds but no traffic routes" AllowedIPs gotcha (2026-09-15)
 
 ### Control-host hardware badge mirroring
 
