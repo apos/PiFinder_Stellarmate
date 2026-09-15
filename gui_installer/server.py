@@ -2092,6 +2092,84 @@ def _autostart_cold_profile():
 # | None (None = no explicit choice yet, e.g. a fresh install).
 _pifinder_role_choice = None
 
+
+def _current_pifinder_mode_snapshot() -> dict:
+    """This device's own mode/role state - see /api/pifinder_mode's own
+    (former) inline comment for what each field means. Factored out
+    (2026-09-15) so _pifinder_mode_indi_mirror_watchdog() below can reuse the
+    exact same computation to push it into INDI."""
+    with _lock:
+        transitioning = _mode_action_running
+        error = _mode_error
+        target = _mode_target
+    fake_up = _fake_mode_up()
+    real_active = _real_service_active()
+    if fake_up:
+        mode = "fake"
+    elif real_active:
+        mode = "real"
+    else:
+        mode = "none"
+    return {
+        "mode": mode,
+        "transitioning": transitioning,
+        "error": error,
+        "target": target,
+        # Raw systemd state (#192) - lets the OLED-mirror wait overlay
+        # distinguish "service not started"/"failed" from "started, just not
+        # answering /image yet" instead of a single generic message
+        # throughout.
+        "real_service_state": _real_service_state(),
+        # "host" | "client" | None - see its own module-level comment
+        # (docs/concepts/pifinder_client_role_and_indi_setup_review.md, 3a).
+        "pifinder_role_choice": _pifinder_role_choice,
+    }
+
+
+# Direct request (2026-09-15): "pifinder_mode ist raus [of the INDI
+# migration], du kannst es ja als Property Zustand im INDI spiegeln -
+# brauchen wir vielleicht später für die Darstellung in EKOS oder der SMATE
+# App" - this state describes this Control Center's own process/service
+# orchestration (which systemd unit it's running, mid-mode-switch or not),
+# not a PiFinder or hardware fact, so the *control* stays entirely on the
+# existing Control-Center-to-Control-Center channel (unlike Camera/IMU/
+# System Load/Orientation above). But mirroring the current *value*
+# read-only into "PiFinder LX200"'s own PIFINDER_MODE property costs nothing
+# and means any generic INDI client (EKOS, the StellarMate App, ...) can see
+# it for free, without knowing anything about this project's own HTTP API.
+# Only pushes on change (not every tick) to avoid spamming setText updates
+# to every INDI client watching this device. Silently does nothing if there
+# is no local "PiFinder LX200" driver to write to (e.g. a pure Control Host
+# with a remote-only PiFinder LX200) - this mirror is only meaningful on the
+# device that actually runs the mode being described.
+_last_pushed_pifinder_mode_snapshot = None
+
+
+def _pifinder_mode_indi_mirror_watchdog(interval=10):
+    """Runs for the Control Center's whole lifetime. Started once from
+    main() as a daemon thread."""
+    global _last_pushed_pifinder_mode_snapshot
+    while True:
+        time.sleep(interval)
+        snapshot = _current_pifinder_mode_snapshot()
+        if snapshot == _last_pushed_pifinder_mode_snapshot:
+            continue
+        try:
+            indi_client.set_text(
+                "PiFinder LX200",
+                "PIFINDER_MODE",
+                {
+                    "MODE": snapshot["mode"] or "",
+                    "TRANSITIONING": "yes" if snapshot["transitioning"] else "no",
+                    "TARGET": snapshot["target"] or "",
+                    "REAL_SERVICE_STATE": snapshot["real_service_state"] or "",
+                    "ROLE_CHOICE": snapshot["pifinder_role_choice"] or "",
+                },
+            )
+            _last_pushed_pifinder_mode_snapshot = snapshot
+        except indi_client.INDIClientError:
+            pass  # no local "PiFinder LX200" driver here - nothing to mirror to
+
 # Direct request (2026-09-11): "Die gelbe Meldung nervt ungemein. Die
 # brauchen wir wirklich nur beim ersten Start. Dann nicht mehr." -
 # indi_pifinder_simulator's own STARTUP_DEFAULT_SOURCE is computed fresh on
@@ -2692,29 +2770,95 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
 
 def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float = 5):
     """GET another device's own Control Center (always port 8765) - category
-    2b of docs/concepts/control_host_hardware_badges_mirroring.md. Forwards
-    THIS request's own Authorization header unchanged: the auth decision
-    (direct user choice, 2026-09-12) is to assume the same stellarmate
-    account password across every device in one PFSM fleet, matching
-    _PIFINDER_REMOTE_PASSWORD's own "smate" convention for PiFinder's Remote
-    page - _require_auth() on the remote end only ever checks the password
-    half of Basic Auth (never the username, see its own comment), so the
+    2b of docs/concepts/control_host_hardware_badges_mirroring.md. First
+    forwards THIS request's own Authorization header unchanged (the original
+    2026-09-12 decision: assume the same stellarmate account password across
+    every device in one PFSM fleet - _require_auth() on the remote end only
+    ever checks the password half of Basic Auth, never the username, so the
     browser's own already-supplied header authenticates there unchanged, no
-    credential storage needed on either side. Returns the parsed JSON dict,
-    or None on any failure (unreachable, wrong password there, older PFSM
-    without this route, ...) - fails soft, same as every other
-    unreachable-remote case already does."""
-    try:
+    credential storage needed on either side).
+
+    Direct feedback (2026-09-15): that assumption silently breaks - as
+    "unavailable/not reachable", no hint why - the moment two devices in the
+    same fleet don't happen to share a password (e.g. an independently
+    provisioned VM). _PIFINDER_REMOTE_PASSWORD ("smate") is already treated
+    as a non-secret, well-known fleet default elsewhere in this exact file
+    (PiFinder's own Remote page) - worth trying automatically before giving
+    up, since it covers the common case (remote device still on the
+    install-time default) with no user interaction at all. Only retried on
+    an actual 401 from the remote end, never on a genuine timeout/network
+    failure - retrying a truly unreachable host under a different password
+    would just double the wait for no benefit.
+
+    Returns the parsed JSON dict, or None on any failure (unreachable, wrong
+    password there too, older PFSM without this route, ...) - fails soft,
+    same as every other unreachable-remote case already does."""
+    def _try(header: str | None):
         req = urllib.request.Request(f"http://{host}:8765{path}")
-        if auth_header:
-            req.add_header("Authorization", auth_header)
+        if header:
+            req.add_header("Authorization", header)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
+
+    try:
+        return _try(auth_header)
+    except urllib.error.HTTPError as e:
+        if e.code != 401:
+            return None
+    except Exception:
+        return None
+    try:
+        fallback = "Basic " + base64.b64encode(f"{AUTH_USER}:{_PIFINDER_REMOTE_PASSWORD}".encode()).decode()
+        return _try(fallback)
     except Exception:
         return None
 
 
-def _pifinder_solve_status(port: str, host: str = "127.0.0.1", auth_header: str | None = None):
+def _pifinder_lx200_indi_status(host: str) -> dict | None:
+    """Camera/IMU presence, system load, and Mount Type/Screen Direction for
+    whichever device 'PiFinder LX200' is pointed at - read straight off its
+    own INDI properties (HARDWARE_PRESENCE/PIFINDER_SYSTEM_LOAD/
+    PIFINDER_ORIENTATION, see diffs/server_py.diff + indi_pifinder/
+    lx200_pifinder.cpp) instead of the old password-protected Control-
+    Center-to-Control-Center proxy (_cc_proxy_get() above) - these are
+    read-only device/host facts, already carried transparently by INDI, same
+    as position (2026-09-15). Returns None if unreachable or on an older
+    driver build that predates these properties (all three groups empty)."""
+    try:
+        props = indi_client.get_properties(device="PiFinder LX200", host=host)
+    except indi_client.INDIClientError:
+        return None
+    device = props.get("PiFinder LX200") or {}
+    hw = device.get("HARDWARE_PRESENCE", {}).get("elements", {})
+    load = device.get("PIFINDER_SYSTEM_LOAD", {}).get("elements", {})
+    orient = device.get("PIFINDER_ORIENTATION", {}).get("elements", {})
+    if not hw and not load and not orient:
+        return None
+
+    def _tri(v):
+        return {"yes": True, "no": False}.get(v)
+
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "camera": _tri(hw.get("CAMERA_PRESENT")),
+        "imu": _tri(hw.get("IMU_PRESENT")),
+        "load1": _num(load.get("LOAD1")),
+        "load5": _num(load.get("LOAD5")),
+        "load15": _num(load.get("LOAD15")),
+        "cpu_count": _num(load.get("CPU_COUNT")),
+        "percent": _num(load.get("PERCENT")),
+        "temp_c": _num(load.get("TEMP_C")),
+        "mount_type": orient.get("MOUNT_TYPE") or None,
+        "screen_direction": orient.get("SCREEN_DIRECTION") or None,
+    }
+
+
+def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state) plus the real
     solve-freshness fields (solve_source/last_solve_attempt/last_solve_success)
@@ -2729,9 +2873,7 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1", auth_header: str 
     `host` defaults to this device's own PiFinder (docs/concepts/
     control_host_hardware_badges_mirroring.md, category 2a - same fix as
     _pifinder_send_key()'s host param, #419) - the route handler is
-    responsible for validating it before it reaches here. `auth_header` is
-    only used for the orientation fetch below, when host is remote - see its
-    own comment."""
+    responsible for validating it before it reaches here."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return None
     try:
@@ -2771,16 +2913,14 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1", auth_header: str 
             # Found live (2026-09-12): PiFinder's own server.py hardcodes
             # request.remote_addr in ("127.0.0.1", "::1") on this specific
             # route - a 403 for any remote caller, unrelated to and
-            # unfixable by our own host param (see docs/concepts/
-            # control_host_hardware_badges_mirroring.md's 2b section). Route
-            # through the REMOTE device's own Control Center instead - IT
-            # calls this same endpoint on itself (genuinely 127.0.0.1 from
-            # PiFinder's point of view there), returning the two fields we
-            # need as part of its own /api/debug_solve response.
-            proxied = _cc_proxy_get(host, f"/api/debug_solve?port={port}", auth_header)
-            if proxied:
-                pifinder_mount_type = proxied.get("pifinder_mount_type")
-                pifinder_screen_direction = proxied.get("pifinder_screen_direction")
+            # unfixable by our own host param. Read the same two fields off
+            # "PiFinder LX200"'s own PIFINDER_ORIENTATION INDI property
+            # instead (2026-09-15) - already carried transparently over the
+            # network, no Control-Center-to-Control-Center proxy needed.
+            status = _pifinder_lx200_indi_status(host)
+            if status:
+                pifinder_mount_type = status["mount_type"]
+                pifinder_screen_direction = status["screen_direction"]
         return {
             "pifinder_mount_type": pifinder_mount_type,
             "pifinder_screen_direction": pifinder_screen_direction,
@@ -3817,10 +3957,23 @@ class Handler(BaseHTTPRequestHandler):
                 if not _valid_pifinder_host(host):
                     self._send_json({"error": f"invalid host '{host}'"}, status=400)
                     return
-                proxied = _cc_proxy_get(host, "/api/system_load", self.headers.get("Authorization"))
-                self._send_json(proxied or {
-                    "load1": None, "load5": None, "load15": None, "cpu_count": None,
-                    "ratio1": None, "percent": None, "temp_c": None, "high": False,
+                # Read straight off "PiFinder LX200"'s own PIFINDER_SYSTEM_LOAD
+                # INDI property instead of the old Control-Center-to-Control-
+                # Center proxy (2026-09-15) - see _pifinder_lx200_indi_status()'s
+                # own docstring.
+                status = _pifinder_lx200_indi_status(host)
+                if status is None:
+                    self._send_json({
+                        "load1": None, "load5": None, "load15": None, "cpu_count": None,
+                        "ratio1": None, "percent": None, "temp_c": None, "high": False,
+                    })
+                    return
+                ratio1 = (status["percent"] / 100) if status["percent"] is not None else None
+                self._send_json({
+                    "load1": status["load1"], "load5": status["load5"], "load15": status["load15"],
+                    "cpu_count": status["cpu_count"], "ratio1": ratio1, "percent": status["percent"],
+                    "temp_c": status["temp_c"],
+                    "high": ratio1 is not None and ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
                 })
                 return
             self._send_json(_system_load_status())
@@ -3847,35 +4000,7 @@ class Handler(BaseHTTPRequestHandler):
                     "real_service_state": None, "pifinder_role_choice": None,
                 })
                 return
-            with _lock:
-                transitioning = _mode_action_running
-                error = _mode_error
-                target = _mode_target
-            fake_up = _fake_mode_up()
-            real_active = _real_service_active()
-            if fake_up:
-                mode = "fake"
-            elif real_active:
-                mode = "real"
-            else:
-                mode = "none"
-            self._send_json(
-                {
-                    "mode": mode,
-                    "transitioning": transitioning,
-                    "error": error,
-                    "target": target,
-                    # Raw systemd state (#192) - lets the OLED-mirror wait
-                    # overlay distinguish "service not started"/"failed" from
-                    # "started, just not answering /image yet" instead of a
-                    # single generic message throughout.
-                    "real_service_state": _real_service_state(),
-                    # "host" | "client" | None - see its own module-level
-                    # comment (docs/concepts/
-                    # pifinder_client_role_and_indi_setup_review.md, 3a).
-                    "pifinder_role_choice": _pifinder_role_choice,
-                }
-            )
+            self._send_json(_current_pifinder_mode_snapshot())
             return
 
         if parsed.path == "/api/display_bridge":
@@ -4111,20 +4236,26 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/hardware_status":
             qs = parse_qs(parsed.query)
             host = qs.get("host", [""])[0]
-            # Control host's own Camera/IMU badges (category 2b) - camera/imu
-            # are genuine local hardware checks (rpicam-hello/an I2C scan),
-            # meaningless run against anything but the machine that actually
-            # has the hardware, so a remote reading means proxying to THAT
-            # device's own Control Center (which already computes this
-            # correctly for itself) rather than a parameter tweak. Direct
-            # feedback (2026-09-13) after seeing the "not available" fallback
-            # (2026-09-12, PR #425) once too often: build the actual proxy.
+            # Control host's own Camera/IMU badges - camera/imu are genuine
+            # local hardware checks (rpicam-hello/an I2C scan), meaningless
+            # run against anything but the machine that actually has the
+            # hardware, so a remote reading means reading whichever device
+            # "PiFinder LX200" is pointed at. Read straight off its own
+            # HARDWARE_PRESENCE INDI property instead of the old Control-
+            # Center-to-Control-Center proxy (2026-09-15) - see
+            # _pifinder_lx200_indi_status()'s own docstring. gps stays out of
+            # this (see the local branch's own comment below - separate
+            # mechanism, separate route, /api/gps_status).
             if host:
                 if not _valid_pifinder_host(host):
                     self._send_json({"camera": None, "imu": None, "gps": None, "error": f"invalid host '{host}'"}, status=400)
                     return
-                proxied = _cc_proxy_get(host, "/api/hardware_status", self.headers.get("Authorization"))
-                self._send_json(proxied or {"camera": None, "imu": None, "gps": None})
+                status = _pifinder_lx200_indi_status(host)
+                self._send_json({
+                    "camera": status["camera"] if status else None,
+                    "imu": status["imu"] if status else None,
+                    "gps": None,
+                })
                 return
             # gps deliberately does NOT use _gps_hardware_present() here (a
             # direct gpsd query for physical serial/USB GPS hardware) unlike
@@ -4173,15 +4304,7 @@ class Handler(BaseHTTPRequestHandler):
             if not _valid_pifinder_host(host):
                 self._send_json({"debug_solve": None, "error": f"invalid host '{host}'"}, status=400)
                 return
-            # Forwarded to _cc_proxy_get() only when host is remote and the
-            # orientation fields need the Control-Center-to-Control-Center
-            # proxy (see _pifinder_solve_status()'s own comment) - this
-            # request already passed _require_auth() to get here, so the
-            # header is always present and valid.
-            self._send_json(
-                _pifinder_solve_status(port, host, auth_header=self.headers.get("Authorization"))
-                or {"debug_solve": None}
-            )
+            self._send_json(_pifinder_solve_status(port, host) or {"debug_solve": None})
             return
 
         if parsed.path == "/api/hardware_test_log":
@@ -5803,6 +5926,10 @@ def main():
     # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
     # own docstring.
     threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # Mirrors this device's own mode/role state into "PiFinder LX200"'s
+    # PIFINDER_MODE INDI property - see _pifinder_mode_indi_mirror_watchdog()'s
+    # own docstring.
+    threading.Thread(target=_pifinder_mode_indi_mirror_watchdog, daemon=True).start()
     # #191/#217: found live (2026-08-10) - this unit's own KillMode=process
     # (see its own comment in the .service file, needed for Uninstall's
     # --selfmove continuation) means a restart/redeploy does NOT kill this

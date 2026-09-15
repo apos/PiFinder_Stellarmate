@@ -479,6 +479,25 @@ exhaustive — see `LX200Telescope`/`INDI::Telescope` in libindi for details):
 | `ON_COORD_SET` | Switch | `TRACK` / `SLEW` (both route through `Goto()`); no `SYNC` |
 | `TELESCOPE_ABORT_MOTION` | Switch | Abort (essentially a no-op since there's no motor, but part of the base capability) |
 
+**Host/hardware status** (added 2026-09-15 — see [Concept: Control host mirroring the remote
+PiFinder's hardware/solve badges](docs/concepts/control_host_hardware_badges_mirroring.md) §5):
+read-only facts about whichever device this driver's `DEVICE_ADDRESS` points at, fetched from that
+device's own `/api/hardware_status` (PiFinder's REST API — already unauthenticated and network-
+transparent, unlike the Control Center's own HTTP API). This is what makes these facts visible on a
+remote Control Host without a password-protected proxy call, and for free in EKOS/the StellarMate
+App/any other INDI client.
+
+| Property | Type | Purpose |
+|---|---|---|
+| `HARDWARE_PRESENCE` | Text (`CAMERA_PRESENT`, `IMU_PRESENT`) | `"yes"` / `"no"` / `"unknown"` (the check itself couldn't run) |
+| `PIFINDER_SYSTEM_LOAD` | Number (`LOAD1`, `LOAD5`, `LOAD15`, `CPU_COUNT`, `PERCENT`, `TEMP_C`) | That device's own CPU load averages, core count, load as % of available CPU, and SoC temperature |
+| `PIFINDER_ORIENTATION` | Text (`MOUNT_TYPE`, `SCREEN_DIRECTION`) | Same concept as Mount Bridge's own property of the same name (below) — exists here too since this one works for a *remote* PiFinder, where Mount Bridge (always co-located with PiFinder) doesn't apply |
+| `PIFINDER_MODE` | Text, read-write (`MODE`, `TRANSITIONING`, `TARGET`, `REAL_SERVICE_STATE`, `ROLE_CHOICE`) | The Control Center's own mode/role state, mirrored here read-only for any INDI client to see — the driver itself never sets this; it's pushed by that device's own `gui_installer/server.py` whenever its mode/role state changes. Not a device fact, so control stays entirely on the Control Center's own API — this property exists purely for free visibility |
+
+Polled/pushed at a 20s cadence (`pollHardwareStatus()`), not on every fast `ReadScopeStatus()` tick
+like position — the underlying host-side checks (`rpicam-hello`, an I2C scan) can occasionally take
+several seconds, which would otherwise stall this single-threaded driver's position updates too.
+
 ### Property reference: PiFinder Mount Bridge
 
 **Controls** (on the Main Control subtab unless noted):
