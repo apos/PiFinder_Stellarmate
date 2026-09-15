@@ -2458,7 +2458,7 @@
           <div id="local-pifinder-status-line" style="display:none;" title="This device's own local PiFinder service, independent of the remote PiFinder shown below - a Control host normally has none of its own, which is expected, not a problem."><span class="status-dot dot-white" id="local-pifinder-status-dot"></span><span id="local-pifinder-status-text">checking…</span></div>
           <div id="system-load-line" title="CPU load average relative to core count - not an error, just a heads-up: a genuinely busy Pi can make PiFinder's own position server briefly slow to answer (see the LX200/Mount Bridge docs for details)."><span class="status-dot dot-white" id="system-load-dot"></span><span id="system-load-text">Checking system load…</span></div>
           <div class="group-label" id="ch-group-label-remote" style="display:none;">PiFinder Client</div>
-          <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span></div>
+          <div id="pifinder-status-line" title="Reflects the web server/OLED mirror answering - PiFinder can be &quot;running&quot; on the software side even with hardware missing (see Simulation, Test and Power below)."><span class="status-dot dot-white" id="pifinder-status-dot"></span><span id="pifinder-status-text">PiFinder not detected yet</span> <button id="pifinder-status-change-address-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button></div>
           <div id="remote-system-load-line" style="display:none;" title="The remote PiFinder device's own CPU load/temperature, via its Control Center (docs/concepts/control_host_hardware_badges_mirroring.md category 2b)."><span class="status-dot dot-white" id="remote-system-load-dot"></span><span id="remote-system-load-text">checking…</span></div>
         </div>
         <!-- Showstopper banners (2026-09-09) - see .showstopper-card's CSS
@@ -2816,6 +2816,7 @@
         <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
           <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+          <button id="wm-lx200-remote-edit-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button>
           <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
         </div>
         <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
@@ -3723,6 +3724,7 @@ function updatePiFinderStatusAndWizardLink() {
     // and Power" pointer is local-only (that section manages THIS device's
     // own hardware/Fake Mode), so it's dropped when remote instead of
     // pointing somewhere that won't help.
+    document.getElementById('pifinder-status-change-address-btn').style.display = 'none';
     if (String(port) === '8081') {
       dotEl.className = 'status-dot dot-yellow';
       textEl.textContent = 'PiFinder is running (Fake Mode)';
@@ -3749,14 +3751,20 @@ function updatePiFinderStatusAndWizardLink() {
     // PiFinder was actually down showed the exact same neutral wording as
     // "haven't looked yet", with no way to tell the two apart from the GUI.
     const unreachableMs = pifinderUnreachableSince ? Date.now() - pifinderUnreachableSince : 0;
+    const changeAddressBtn = document.getElementById('pifinder-status-change-address-btn');
     if (unreachableMs >= PIFINDER_UNREACHABLE_WARN_MS) {
       dotEl.className = 'status-dot dot-red';
       textEl.textContent = wmLx200Remote
         ? `PiFinder Client (${wmLx200Remote.split(':')[0]}) not reachable`
         : 'PiFinder not reachable';
+      // Same "reuse the existing input row" mechanism as the drivers-list
+      // button (showCtrlRemoteInputPrompt()) - only useful when there's an
+      // actual remote address configured to change.
+      changeAddressBtn.style.display = wmLx200Remote ? '' : 'none';
     } else {
       dotEl.className = 'status-dot dot-white';
       textEl.textContent = 'PiFinder not detected yet';
+      changeAddressBtn.style.display = 'none';
     }
     remoteEl.textContent = 'not available yet';
     wizardEl.textContent = 'not available yet';
@@ -4277,12 +4285,15 @@ function collectActiveShowstoppers() {
   // anzuschließen") - a remote address is mandatory, so this card cannot be
   // dismissed and stays up until one is actually applied. Replaces the old
   // prompt()-based entry in onRoleCardClick('ctrl').
-  if (deriveProfileRole() === 'bridge-only') {
+  if (deriveProfileRole() === 'bridge-only' || _ctrlRemoteForceShow) {
+    const changingExisting = !!wmLx200Remote;
     items.push({
       id: 'ctrl-remote-missing',
       category: 'mount-bridge',
-      title: 'Control host: no PiFinder configured yet',
-      text: "This device has no PiFinder hardware attached - it couples to one running on another device, over the network (no USB fallback). Enter that device's IP address (shown on its own tile once its role is set to \"PiFinder host\"), then Test before applying:",
+      title: changingExisting ? 'Control host: change the configured PiFinder address' : 'Control host: no PiFinder configured yet',
+      text: changingExisting
+        ? "Enter the correct IP address for the device running PiFinder, then Test before applying:"
+        : "This device has no PiFinder hardware attached - it couples to one running on another device, over the network (no USB fallback). Enter that device's IP address (shown on its own tile once its role is set to \"PiFinder host\"), then Test before applying:",
       extraHtml:
         '<div class="mb-drift-banner-inputrow">' +
         `<input type="text" id="ctrl-remote-input" placeholder="192.168.1.42 or host:7624" value="${wmLx200Remote || ''}">` +
@@ -6541,6 +6552,12 @@ async function pollLog() {
 // same probe also doubles as the "is PiFinder actually reachable yet" signal
 // for the post-success access-links box below.
 let pifinderScreenUrl = null;
+// Set by showCtrlRemoteInputPrompt() (the two "Change address" buttons - status
+// line + drivers row) - makes the existing 'ctrl-remote-missing' showstopper
+// card (collectActiveShowstoppers()) reappear on demand for an ALREADY-configured
+// remote that's gone unreachable, reusing its input+Test+Apply row as-is rather
+// than building a second card. Reset once a new address is actually applied.
+let _ctrlRemoteForceShow = false;
 // Wall-clock start of the current unreachable streak (null while reachable
 // or before the first probe cycle has even completed once) - lets the
 // status line distinguish "just hasn't answered yet" from "has been down a
@@ -9579,6 +9596,11 @@ function setWmDriverButton(driver, present) {
     // Names the remote target when the profile's entry is a remote one.
     const isRemote = !!wmLx200Remote;
     setBtn('wm-lx200-btn', present, isRemote ? `${label} (remote ${wmLx200Remote})` : label);
+    // Reuses the 'ctrl-remote-missing' showstopper card's own input row
+    // instead of a second one - only makes sense once a remote entry
+    // actually exists (nothing to "change" otherwise).
+    const editBtn = document.getElementById('wm-lx200-remote-edit-btn');
+    if (editBtn) editBtn.style.display = (present === true && isRemote) ? '' : 'none';
   }
   updateStepIndicators();
 }
@@ -10254,10 +10276,22 @@ async function applyCtrlRemoteAddress(triggerEl) {
     _setCtrlRemoteResult(`Could not apply: ${e.message}`, 'bad');
     return;
   }
+  _ctrlRemoteForceShow = false;
   pollMbLog();
   await refreshWmDriverButtons();
   await loadWmProfiles();
   await refreshMountBridgeStatus();
+}
+
+// Direct request (2026-09-15): "Change address" buttons on the status line
+// and on the LX200 driver row - both just reveal the existing
+// ctrl-remote-missing card (no separate dialog) and scroll/focus its input,
+// same pattern as onRoleCardClick('ctrl') uses after setting the role.
+function showCtrlRemoteInputPrompt() {
+  _ctrlRemoteForceShow = true;
+  renderNoSolveBanner();
+  document.getElementById('ctrl-remote-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('ctrl-remote-input')?.focus();
 }
 
 // Green checkmark on each step's label once its condition is actually met -
