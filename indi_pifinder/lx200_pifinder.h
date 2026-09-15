@@ -23,6 +23,7 @@
 #include "lx200telescope.h"
 
 #include <cmath>
+#include <ctime>
 
 #define LX200_TIMEOUT 5 /* FD timeout in seconds - moved here (was in the .cpp) so it's visible as a default parameter value below */
 
@@ -36,8 +37,10 @@ class LX200_PIFINDER : public LX200Telescope
         const char *getDefaultName() override;
         bool Handshake() override;
         bool initProperties() override;
+        bool updateProperties() override;
         bool ReadScopeStatus() override;
         bool Goto(double ra, double dec) override;
+        bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n) override;
 
         bool sendScopeLocation() override;
         bool sendScopeTime() override;
@@ -73,4 +76,42 @@ class LX200_PIFINDER : public LX200Telescope
         void pollCurrentTarget();
         double m_lastTargetRA = std::nan("");
         double m_lastTargetDec = std::nan("");
+
+        // Direct request (2026-09-15): Camera/IMU presence, system load and
+        // Mount Type/Screen Direction used to only reach a Control Host via
+        // a password-protected Control-Center-to-Control-Center HTTP proxy
+        // (docs/concepts/control_host_hardware_badges_mirroring.md) - these
+        // are read-only device/host facts, not admin actions, so they belong
+        // on the already network-transparent INDI layer instead, same as
+        // this driver's own position. Polled from PiFinder's own
+        // /api/hardware_status (see diffs/server_py.diff) at a slow, rate-
+        // limited cadence (pollHardwareStatus() has its own gate) - unlike
+        // position, these barely ever change and the underlying check
+        // (rpicam-hello/I2C scan) can occasionally take several seconds, so
+        // polling it every ReadScopeStatus() tick like RA/Dec would risk
+        // stalling this single-threaded driver's position updates too.
+        void pollHardwareStatus();
+        time_t m_lastHardwareStatusPoll = 0;
+
+        IText HardwarePresenceT[2] {};
+        ITextVectorProperty HardwarePresenceTP;
+
+        INumber SystemLoadN[6];
+        INumberVectorProperty SystemLoadNP;
+
+        IText PiFinderOrientationT[2] {};
+        ITextVectorProperty PiFinderOrientationTP;
+
+        // Unlike the three above, this one isn't polled by this driver at
+        // all - PiFinder itself has no notion of "which service mode is the
+        // Control Center currently running" (that's our own gui_installer/
+        // server.py's own process-orchestration state, not a PiFinder or
+        // hardware fact - see the 2026-09-15 chat discussion on why this
+        // stays IP_RW: the Control Center pushes updates here via ISNewText
+        // whenever its own mode/role state changes, this driver just stores
+        // and republishes it, so EKOS/the StellarMate App/any other INDI
+        // client can see it for free without knowing anything about our
+        // custom Control Center API.
+        IText PiFinderModeT[5] {};
+        ITextVectorProperty PiFinderModeTP;
 };

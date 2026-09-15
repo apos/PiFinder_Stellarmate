@@ -107,3 +107,47 @@ Everything in this doc is implemented. Still open, not part of this doc: the Tes
 button's own *functional* camera/IMU test (an actual `rpicam-hello` capture / I2C read, not just
 presence) stays local-only - proxying an on-demand test run to a remote device is a bigger feature
 than mirroring a passive status read, not attempted here.
+
+## 5. 2026-09-15 update: 2b migrated off the Control-Center-to-Control-Center proxy onto INDI
+
+Direct feedback, revisiting this doc after `_cc_proxy_get()`'s same-password assumption (§3) turned
+out to silently break the moment two fleet devices don't actually share a password (no error, just
+a permanently grey "unavailable" badge): *"wenn wir schon einen PF LX200 INDI Treiber haben, dann
+sollte die Camera/IMU-Badge-Mirroring-Funktion auch per INDI abbilden... INDI ist INDI
+(netzwerktransparent) und die PF API sollte es auch sein."*
+
+**The architecture question this settles**: INDI (device layer) and PiFinder's own REST API
+(application layer, port 8080) were both already network-transparent by design - no auth, work
+from any host. Only the Control Center's own HTTP API (port 8765) is (rightly) password-protected,
+since it exposes real host-admin actions (reboot, poweroff, uninstall, host-lock). §2b's badges
+were never admin actions - they're read-only device/host facts that had been routed through the
+admin-protected layer anyway, for lack of another cross-machine channel. Camera/IMU presence and
+CPU load aren't things `~/PiFinder` itself computed before, so this needed a new PiFinder-side
+endpoint (`/api/hardware_status`, `diffs/server_py.diff`) to bring the actual checks (rpicam-hello,
+an I2C scan, `os.getloadavg()`) into PiFinder's own already-open REST API - the same one
+`lx200_pifinder.cpp` already polls for `/api/current_target`. Camera/IMU/System-Load/Orientation
+now reach a Control Host as new INDI properties on "PiFinder LX200"
+(`HARDWARE_PRESENCE`/`PIFINDER_SYSTEM_LOAD`/`PIFINDER_ORIENTATION` - see Readme_PiFinder_LX200.md's
+own property reference) instead of `_cc_proxy_get()`. `gui_installer/server.py`'s own
+`_pifinder_lx200_indi_status()` replaces all three of §3's `_cc_proxy_get()` call sites for these.
+
+**`pifinder_mode` (§2's CPU/Temp-adjacent "local PiFinder service status" bullet's sibling, the
+mode/role state) deliberately did NOT migrate its *control* path** - after explicit back-and-forth
+on whether it should, landing on: unlike the others, every field this endpoint returns (`mode`,
+`transitioning`, `target`, `real_service_state`, `pifinder_role_choice`) describes this Control
+Center's own process/service orchestration, not a device or hardware fact - forcing it into an INDI
+property would mean using INDI as a general-purpose cross-machine state bus for GUI orchestration,
+not the device-fact layer it actually is. It stays on `_cc_proxy_get()` (now the only remaining
+caller) for reading/control. It DOES get a one-way, read-only mirror into "PiFinder LX200"'s new
+`PIFINDER_MODE` property (`_pifinder_mode_indi_mirror_watchdog()`, 10s cadence, only pushes on
+change) - free visibility in EKOS/the StellarMate App/any other INDI client costs nothing, even
+though the Control Center remains the only thing that can actually change it.
+
+**`_cc_proxy_get()`'s same-password assumption (§3) also got a same-session fix**, independent of
+the INDI migration and still relevant for its one remaining caller (`pifinder_mode`) and for anyone
+reverting §5: it now retries with `_PIFINDER_REMOTE_PASSWORD` ("smate" - already a non-secret,
+well-known fleet default elsewhere in this file) if the forwarded browser header 401s, before
+giving up. Only retried on an actual 401, never on a timeout/genuine unreachability.
+
+GPS (§2a) and the Solve badge (§2a) are unaffected - already thin, already-open proxies straight to
+PiFinder's own REST API, nothing to migrate.

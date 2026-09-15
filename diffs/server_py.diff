@@ -1,5 +1,5 @@
---- python/PiFinder/server.py.orig	2026-09-01 22:04:24.448891023 +0200
-+++ python/PiFinder/server.py	2026-09-01 21:50:37.086897419 +0200
+--- python/PiFinder/server.py.orig	2026-09-15 20:24:21.986812701 +0200
++++ python/PiFinder/server.py	2026-09-15 20:23:44.163356270 +0200
 @@ -6,6 +6,7 @@
  import os
  import argparse
@@ -8,7 +8,7 @@
  import multiprocessing
  from datetime import timezone
  
-@@ -109,12 +110,22 @@
+@@ -267,12 +268,22 @@
          gps_queue=None,
          shared_state=None,
          is_debug=False,
@@ -31,7 +31,7 @@
          self.ki = KeyboardInterface()
          # gps info
          self.lat = None
-@@ -253,7 +264,9 @@
+@@ -416,7 +427,9 @@
                  title=gettext("Home"),
                  software_version=software_version,
                  wifi_mode=self.network.wifi_mode(),
@@ -42,7 +42,7 @@
                  network_name=self.network.get_connected_ssid(),
                  gps_icon=gps_icon,
                  gps_text=gps_text,
-@@ -264,6 +277,28 @@
+@@ -427,6 +440,28 @@
                  dec_text=dec_text,
              )
  
@@ -71,7 +71,7 @@
          @app.route("/login", methods=["GET", "POST"])
          def login():
              if request.method == "POST":
-@@ -272,7 +307,7 @@
+@@ -435,7 +470,7 @@
                  origin_url = request.form.get("origin_url") or session.get(
                      "origin_url", "/"
                  )
@@ -80,7 +80,7 @@
                      session["authenticated"] = True
                      session.pop("origin_url", None)
                      return redirect(origin_url)
-@@ -538,6 +573,67 @@
+@@ -723,6 +758,145 @@
              self.network.set_host_name(host_name)
              return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
  
@@ -126,6 +126,84 @@
 +                }
 +            )
 +
++        @app.route("/api/hardware_status")
++        def api_hardware_status():
++            # Read-only host/hardware facts for the PiFinder LX200 INDI
++            # driver (StellarMate integration) to expose as its own
++            # properties - so a remote Control Center (and any other INDI
++            # client: EKOS, the StellarMate App, ...) can see this device's
++            # Camera/IMU presence, CPU load/temp and Mount Type/Screen
++            # Direction without a separate, auth-protected Control-Center-
++            # to-Control-Center call. Open like /api/status and
++            # /api/current_target above - these are non-sensitive host facts,
++            # not a mutation, so no loopback restriction like
++            # /api/set_mount_type's above.
++            camera_present = None
++            try:
++                result = subprocess.run(
++                    ["rpicam-hello", "--list-cameras"],
++                    capture_output=True, text=True, timeout=25,
++                )
++                camera_present = "No cameras available" not in result.stdout
++            except Exception:
++                pass
++
++            # BNO055 (the IMU PiFinder uses) answers on I2C address 0x28, or
++            # 0x29 if its ADR pin is pulled high. A fresh board.I2C() handle
++            # here (not imu_pi.py's own, already-open one - that process
++            # holds it continuously) can occasionally race a concurrent
++            # transaction from imu_pi.py's own ~30Hz polling and come back
++            # empty - retry a couple of times before concluding "not
++            # present", same reasoning as any other shared, non-exclusive
++            # I2C bus scan.
++            imu_present = None
++            try:
++                import board  # noqa: PLC0415 - optional hardware dep, only needed here
++
++                i2c = board.I2C()
++                for attempt in range(3):
++                    if not i2c.try_lock():
++                        imu_present = None
++                        break
++                    try:
++                        addrs = {hex(a) for a in i2c.scan()}
++                    finally:
++                        i2c.unlock()
++                    if addrs & {"0x28", "0x29"}:
++                        imu_present = True
++                        break
++                    imu_present = False
++                    if attempt < 2:
++                        time.sleep(0.3)
++            except Exception:
++                imu_present = None
++
++            load1, load5, load15 = os.getloadavg()
++            cpu_count = os.cpu_count() or 1
++            temp_c = None
++            try:
++                with open("/sys/class/thermal/thermal_zone0/temp") as f:
++                    temp_c = round(int(f.read().strip()) / 1000, 1)
++            except Exception:
++                pass
++
++            cfg = config.Config()
++            cfg.load_config()
++            return jsonify(
++                {
++                    "camera_present": camera_present,
++                    "imu_present": imu_present,
++                    "load1": round(load1, 2),
++                    "load5": round(load5, 2),
++                    "load15": round(load15, 2),
++                    "cpu_count": cpu_count,
++                    "percent": round((load1 / cpu_count) * 100),
++                    "temp_c": temp_c,
++                    "mount_type": cfg.get_option("mount_type"),
++                    "screen_direction": cfg.get_option("screen_direction"),
++                }
++            )
++
 +        @app.route("/api/keep_awake", methods=["POST"])
 +        def api_keep_awake():
 +            # Called repeatedly (every ~2s) by the Mount Bridge INDI driver
@@ -148,7 +226,7 @@
          @app.route("/tools/pwchange", methods=["POST"])
          @auth_required
          def password_change():
-@@ -553,7 +649,7 @@
+@@ -738,7 +912,7 @@
  
              if new_passworda == new_passwordb:
                  if sys_utils.change_password(
@@ -157,7 +235,7 @@
                  ):
                      return app.jinja_env.get_template("tools.html").render(
                          title=_("Tools"), status_message=_("Password Changed")
-@@ -1230,6 +1326,15 @@
+@@ -1463,6 +1637,15 @@
          self.app = app
  
      def run(self):
@@ -173,7 +251,7 @@
          # If the PiFinder software is running as a service
          # it can grab port 80.  If not, it needs to use 8080
          try:
-@@ -1265,10 +1370,25 @@
+@@ -1498,10 +1681,25 @@
  
  
  def run_server(

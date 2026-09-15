@@ -127,6 +127,17 @@ All notable changes to this project are documented in this file. Format loosely 
 - Solve and GPS badges made Control-host-aware (badges-mirroring, phase 2a) (#424)
 - Fixed a misleading green orientation badge on Control host; added Pi5 diagnostics (#425)
 - Built the Control-Center-to-Control-Center proxy for badge mirroring (badges-mirroring, phase 2b) (#426)
+- Migrated Camera/IMU/System-Load/Mount-Type/Screen-Direction badge mirroring off that
+  Control-Center-to-Control-Center proxy onto INDI: new `/api/hardware_status` on PiFinder's own
+  REST API, four new INDI properties on "PiFinder LX200" (`HARDWARE_PRESENCE`,
+  `PIFINDER_SYSTEM_LOAD`, `PIFINDER_ORIENTATION`, `PIFINDER_MODE`) - already network-transparent, no
+  password/fleet-same-password assumption needed for these anymore (badges-mirroring, phase 2c,
+  2026-09-15). `pifinder_mode`'s own control path stays on the proxy (it's Control Center
+  orchestration state, not a device fact) but is now also mirrored read-only into `PIFINDER_MODE`
+  for free visibility in EKOS/the StellarMate App.
+- Control host: `_cc_proxy_get()` (now only used by `pifinder_mode`) retries with the well-known
+  fleet default password before giving up, instead of silently reporting "unavailable" the moment
+  two devices don't happen to share a password (2026-09-15)
 
 ### "PiFinder Client" role
 
