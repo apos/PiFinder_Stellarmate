@@ -2320,6 +2320,15 @@ _MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING = 3
 _mb_readiness_follow_mount_consecutive_fails = 0
 _mb_readiness_follow_mount_gave_up_target = None
 
+# Direct feedback (2026-09-15): the #385 slow-query log below used to fire on
+# EVERY tick (every `interval` seconds) for as long as indiserver stayed
+# slow, which can be minutes at a time - "nervt" (annoying), drowning out
+# everything else in the panel. Logs only on the transition into/out of
+# "slow" now, not on every tick while it persists - still leaves the same
+# permanent evidence trail the original comment cared about (first
+# occurrence, and how long it lasted), just without the per-tick repeats.
+_mb_readiness_query_was_slow = False
+
 # Debounce for the profile-bookkeeping check below - found live 2026-09-12:
 # the driver can be fully running/connected/linked while the Web Manager's
 # own PERSISTED profile record no longer lists "PiFinder Mount Bridge" as a
@@ -2593,6 +2602,7 @@ def _mount_bridge_readiness_watchdog(interval=5):
     (see _mount_bridge_readiness_self_heal()'s own comment) and lets the
     next tick discover whatever still doesn't match, rather than trying to
     fix everything in one pass."""
+    global _mb_readiness_query_was_slow
     while True:
         time.sleep(interval)
         # Diagnostic timing (2026-09-11, issue #385): this call already
@@ -2621,11 +2631,15 @@ def _mount_bridge_readiness_watchdog(interval=5):
         except indi_client.INDIClientError as e:
             _elapsed = time.monotonic() - _tick_start
             if _elapsed > 1.0:
-                _mb_log(
-                    f"Mount Bridge readiness watchdog: indiserver query itself took {_elapsed:.1f}s "
-                    f"then failed ({e}) - see issue #385, this points at indiserver itself, not "
-                    "necessarily the Mount Bridge driver."
-                )
+                if not _mb_readiness_query_was_slow:
+                    _mb_readiness_query_was_slow = True
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query itself took {_elapsed:.1f}s "
+                        f"then failed ({e}) - see issue #385, this points at indiserver itself, not "
+                        "necessarily the Mount Bridge driver."
+                    )
+            else:
+                _mb_readiness_query_was_slow = False
             # No response at all from indiserver itself (not just Mount
             # Bridge) - status stays None below, which correctly skips the
             # two checks that actually need it (the driver self-heal and
@@ -2643,10 +2657,19 @@ def _mount_bridge_readiness_watchdog(interval=5):
         else:
             _elapsed = time.monotonic() - _tick_start
             if _elapsed > 1.0:
-                _mb_log(
-                    f"Mount Bridge readiness watchdog: indiserver query took {_elapsed:.1f}s "
-                    f"(normally well under 0.1s) - see issue #385."
-                )
+                if not _mb_readiness_query_was_slow:
+                    _mb_readiness_query_was_slow = True
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query took {_elapsed:.1f}s "
+                        f"(normally well under 0.1s) - see issue #385."
+                    )
+            else:
+                if _mb_readiness_query_was_slow:
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query back to normal "
+                        f"({_elapsed:.2f}s)."
+                    )
+                _mb_readiness_query_was_slow = False
         if status is not None:
             try:
                 _mount_bridge_readiness_self_heal(status)
