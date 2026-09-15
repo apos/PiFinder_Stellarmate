@@ -2997,7 +2997,7 @@
                below it, which are already proxied to the PiFinder Client
                (category 2b). Deliberately not built out further per that
                same feedback - just labeled honestly. -->
-          <div id="hwtest-ch-note" class="mb-hint" style="display:none;">Test Hardware always checks this device's (Control Host) own Camera/IMU/GPS hardware, not the PiFinder Client's. Camera/IMU below stay showing the PiFinder Client's real state either way; GPS briefly shows this device's own (usually "not reachable") reading until the next passive check corrects it.</div>
+          <div id="hwtest-ch-note" class="mb-hint" style="display:none;">Test Hardware only checks this device's own hardware, not the PiFinder Client's - Camera/IMU above already show the PiFinder Client's real, live state and don't need it.</div>
           <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
             <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
               <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
@@ -6964,17 +6964,19 @@ let lastHwTestResult = { camera: null, imu: null, gps: null };
 function setHwRow(key, present) {
   const dotEl = document.getElementById('hw-' + key + '-dot');
   const textEl = document.getElementById('hw-' + key + '-text');
-  // Category 2b (docs/concepts/control_host_hardware_badges_mirroring.md):
-  // on a Control host, `present` already comes from refreshHardwareStatus()
-  // proxying to the remote device's own Control Center (2026-09-13) - a
-  // real value here, not this device's own (irrelevant) hardware. Only
-  // `present === null` (proxy failed - remote CC unreachable, wrong
-  // password there, or an older PFSM without this route) needs its own
-  // wording instead of the generic "check unavailable" below, since that
-  // phrase reads as a local-check problem.
-  if ((key === 'camera' || key === 'imu') && isControlHostRole() && present === null) {
+  const isRemoteRow = (key === 'camera' || key === 'imu') && isControlHostRole();
+  // (docs/concepts/control_host_hardware_badges_mirroring.md §5): on a
+  // Control host, `present` already comes from refreshHardwareStatus()
+  // reading "PiFinder LX200"'s own HARDWARE_PRESENCE INDI property
+  // (2026-09-15 - migrated off the old Control-Center-to-Control-Center
+  // proxy this comment used to describe) - a real value here, not this
+  // device's own (irrelevant) hardware. Only `present === null` (the
+  // remote PiFinder LX200 unreachable, or an older driver build without
+  // this property) needs its own wording instead of the generic "check
+  // unavailable" below, since that phrase reads as a local-check problem.
+  if (isRemoteRow && present === null) {
     setHwDot(dotEl, 'status-dot dot-white');
-    textEl.textContent = 'unavailable (remote Control Center not reachable)';
+    textEl.textContent = 'unavailable (remote PiFinder LX200 not reachable)';
     const detailEl = document.getElementById('hw-' + key + '-detail');
     if (detailEl) detailEl.textContent = '';
     return;
@@ -6984,15 +6986,33 @@ function setHwRow(key, present) {
     return; // keep showing the richer, already-classified Test Hardware result
   }
   if (present === true) {
-    dotEl.className = 'status-dot dot-green';
-    textEl.textContent = 'present (not yet tested — click Test Hardware)';
+    // Direct report (2026-09-15): this used to set dotEl.className directly
+    // instead of going through setHwDot() - the only one of this function's
+    // four branches that did, and the reason the #mode-ampel-row badge icon
+    // above (kept in sync via setHwDot()'s own HW_AMPEL_ICON_IDS lookup)
+    // never reflected the passive poll's result, only a manual Test
+    // Hardware run. All four branches now go through setHwDot() so both
+    // places always agree, matching this file's own stated invariant.
+    setHwDot(dotEl, 'status-dot dot-green');
+    // "click Test Hardware" is actively wrong advice for this row on a
+    // Control host - that button only ever tests THIS device's own
+    // hardware (see #hwtest-ch-note), never the PiFinder Client's, so
+    // clicking it can't make this row any more "tested" than it already
+    // is. Direct report (2026-09-15): bare "present" alone doesn't say
+    // WHICH device it's present on - this row can mean either depending
+    // on role, and that was the whole point of distinguishing it. Name
+    // the PiFinder Client explicitly here, same as it's already named
+    // elsewhere on this page (the PIFINDER CLIENT (ip) section header).
+    textEl.textContent = isRemoteRow
+      ? `present (PiFinder Client${pifinderHost() ? ' ' + pifinderHost() : ''})`
+      : 'present (not yet tested — click Test Hardware)';
   } else if (present === false) {
-    dotEl.className = 'status-dot dot-red';
+    setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = 'not detected';
     const detailEl = document.getElementById('hw-' + key + '-detail');
     if (detailEl) detailEl.textContent = '';
   } else {
-    dotEl.className = 'status-dot dot-white';
+    setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'unknown (check unavailable)';
   }
 }
