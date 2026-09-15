@@ -287,6 +287,19 @@ _exit_code = None
 _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
+# Found live (2026-09-15): the setup script's own exit code stays 0 even when
+# it printed a "CRITICAL WARNINGS - ACTION REQUIRED" block (e.g. an INDI
+# driver build killed by the OOM killer) - individual driver
+# build/install failures are deliberately non-fatal so the rest of the run
+# can still complete. But that meant this GUI reported plain "Success" (and
+# the post-restart banner said "finished successfully") for a run that
+# actually needs the user's attention. functions.sh's own $warnings_file is
+# deleted by the script itself before this process's proc.wait() ever
+# returns, so it can't be read afterward - detected instead by watching the
+# log stream itself for the same header line the script already prints, the
+# same technique PHASE_MARKER/REBOOT_MARKER above use.
+_had_critical_warnings = False
+CRITICAL_WARNINGS_MARKER = "CRITICAL WARNINGS"
 _last_action = None  # "fresh" | "reinstall" | "update"
 _last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
 # True from the moment a successful setup-script run finishes until this
@@ -3404,9 +3417,12 @@ def _consume_result_file():
     if not RESULT_FILE.exists():
         return {"available": False}
     try:
-        written_at = json.loads(RESULT_FILE.read_text())["written_at"]
+        result = json.loads(RESULT_FILE.read_text())
+        written_at = result["written_at"]
+        had_critical_warnings = bool(result.get("had_critical_warnings"))
     except Exception:
         written_at = 0
+        had_critical_warnings = False
     finally:
         RESULT_FILE.unlink(missing_ok=True)
     if time.time() - written_at > 300:
@@ -3415,15 +3431,18 @@ def _consume_result_file():
         log_tail = LOG_FILE.read_text().splitlines()[-50:]
     except Exception:
         log_tail = []
-    return {"available": True, "log_tail": log_tail}
+    return {"available": True, "log_tail": log_tail, "had_critical_warnings": had_critical_warnings}
 
 
-def _write_result_file():
+def _write_result_file(had_critical_warnings=False):
     """Atomic write (temp file + os.replace) - a torn/partial write here
     would otherwise be readable by /last_run_summary as valid JSON garbage
-    before the fresh process even starts."""
+    before the fresh process even starts. had_critical_warnings: see
+    _had_critical_warnings' own module-level comment - lets the post-restart
+    banner distinguish a genuinely clean run from one that needs attention,
+    same as the live /log poll already does."""
     tmp = RESULT_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"written_at": time.time()}))
+    tmp.write_text(json.dumps({"written_at": time.time(), "had_critical_warnings": had_critical_warnings}))
     os.replace(tmp, RESULT_FILE)
 
 
@@ -3448,7 +3467,7 @@ def _reader_thread(proc):
     # all, so a failure here (LOG_FILE unwritable, a readline() error, ...)
     # would've left _running stuck True forever, locking out every other
     # mutex-guarded action AND blocking any retry of the run itself.
-    global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending
+    global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending, _had_critical_warnings
     # _last_mode is set by _start_run() before this thread starts and never
     # changes for the lifetime of this run - safe to read once, unlocked.
     phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
@@ -3468,6 +3487,12 @@ def _reader_thread(proc):
                     with _lock:
                         _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
                     continue  # marker is for the Reboot button, not the log panel
+                if CRITICAL_WARNINGS_MARKER in stripped:
+                    with _lock:
+                        _had_critical_warnings = True
+                    # not a `continue` - this line is real log content too,
+                    # unlike the two markers above which only ever exist to
+                    # carry a value, never meant to be read in the log panel.
                 with _lock:
                     _lines.append(stripped)
         proc.wait()
@@ -3487,7 +3512,7 @@ def _reader_thread(proc):
             # specific actions.
             if _exit_code == 0:
                 _cc_restart_pending = True
-                _write_result_file()
+                _write_result_file(had_critical_warnings=_had_critical_warnings)
     if _exit_code == 0:
         threading.Thread(target=_restart_control_center, daemon=True).start()
 
@@ -3507,7 +3532,7 @@ def _current_pifinder_stellarmate_branch():
 
 
 def _start_run(action, branch=None, mode=None):
-    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode
+    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode, _had_critical_warnings
     with _lock:
         if _running:
             return False, "A run is already in progress."
@@ -3524,6 +3549,7 @@ def _start_run(action, branch=None, mode=None):
         _exit_code = None
         _phase_index = -1
         _reboot_needed = None
+        _had_critical_warnings = False
         _last_action = action
         _last_mode = mode or "full"
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
@@ -4391,6 +4417,7 @@ class Handler(BaseHTTPRequestHandler):
                 reboot_needed = _reboot_needed
                 last_action = _last_action
                 restarting = _cc_restart_pending
+                had_critical_warnings = _had_critical_warnings
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
@@ -4404,6 +4431,11 @@ class Handler(BaseHTTPRequestHandler):
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "restarting": restarting,
+                    # See _had_critical_warnings' own module-level comment -
+                    # exit_code alone can be 0 even when the run printed a
+                    # "CRITICAL WARNINGS" block (e.g. a driver build the OOM
+                    # killer killed) that genuinely needs the user's attention.
+                    "had_critical_warnings": had_critical_warnings,
                 }
             )
             return

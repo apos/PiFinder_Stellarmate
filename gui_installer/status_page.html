@@ -278,6 +278,7 @@
   .status-idle { background: #333; color: #ccc; }
   .status-running { background: #1a3a5c; color: #7ec8ff; }
   .status-success { background: #1a4a2a; color: #7ee8a0; }
+  .status-warning { background: #4a3a1a; color: #e0a030; }
   .status-failed { background: #5c1a1a; color: #ff8f8f; }
   .tile-heading { margin: 0 0 0.5rem; font-size: 1.05rem; cursor: default; }
   /* 2026-09-12, direct feedback: the PiFinder tile's OLED mirror doesn't say
@@ -2137,6 +2138,18 @@
     cursor: pointer;
   }
   #last-run-banner button:hover { filter: brightness(1.15); }
+  /* had_critical_warnings variant - see the JS toggling this class - swaps
+     the deliberately-green "succeeded" palette above for this file's
+     standard amber warning color (#e0a030, e.g. .ql-small-btn-orange). */
+  #last-run-banner.last-run-banner-warning {
+    background: #3a2f10;
+    color: #e0c060;
+    border-top-color: #e0a030;
+  }
+  #last-run-banner.last-run-banner-warning button {
+    background: #e0a030;
+    color: #221a00;
+  }
   #last-run-banner pre {
     margin: 0.5rem 0 0.2rem;
     max-height: 10rem;
@@ -2257,7 +2270,7 @@
 </div>
 <div id="last-run-banner" style="display:none;">
   <div id="last-run-banner-header">
-    <span>&#9989; The run you were watching before this restart finished successfully.</span>
+    <span id="last-run-banner-headline">&#9989; The run you were watching before this restart finished successfully.</span>
     <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
   </div>
   <pre id="last-run-banner-log"></pre>
@@ -6525,7 +6538,18 @@ async function pollLog() {
     setTimeout(pollLog, 1000);
   } else {
     if (data.exit_code === 0) {
-      setStatus('Success', 'status-success');
+      // Direct report (2026-09-15): exit code 0 alone doesn't mean the run
+      // was clean - an individual INDI driver build/install failure (e.g.
+      // killed by the OOM killer) is deliberately non-fatal to the rest of
+      // the run, so the script still exits 0 while having printed its own
+      // "CRITICAL WARNINGS - ACTION REQUIRED" block. This showed as a plain
+      // green "Success", easy to miss the actual problem in the scrolled-by
+      // log. See had_critical_warnings' own comment in server.py.
+      if (data.had_critical_warnings) {
+        setStatus('Success (with warnings - see log)', 'status-warning');
+      } else {
+        setStatus('Success', 'status-success');
+      }
       if (data.reboot_needed === true) {
         document.getElementById('reboot-wrap').style.display = 'block';
       } else {
@@ -6685,8 +6709,22 @@ async function init() {
     const summaryResp = await fetch('/last_run_summary');
     const summary = await summaryResp.json();
     if (summary.available) {
+      // See had_critical_warnings' own comment in server.py - this header
+      // used to unconditionally say "finished successfully" even when the
+      // run it's reporting on printed a "CRITICAL WARNINGS" block (exit
+      // code 0 doesn't mean clean - an individual driver build/install
+      // failure is deliberately non-fatal to the rest of the run).
+      const headline = document.getElementById('last-run-banner-headline');
+      const banner = document.getElementById('last-run-banner');
+      if (summary.had_critical_warnings) {
+        headline.textContent = '⚠️ The run you were watching before this restart finished with warnings - see the log below.';
+        banner.classList.add('last-run-banner-warning');
+      } else {
+        headline.textContent = '✅ The run you were watching before this restart finished successfully.';
+        banner.classList.remove('last-run-banner-warning');
+      }
       document.getElementById('last-run-banner-log').textContent = (summary.log_tail || []).join('\n');
-      document.getElementById('last-run-banner').style.display = 'block';
+      banner.style.display = 'block';
     }
   } catch (e) {
     // Non-essential - never block page init on this.
