@@ -10273,6 +10273,23 @@ async function applyCtrlRemoteAddress(triggerEl) {
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'failed');
   } catch (e) {
+    // Direct report (2026-09-15): the request can fail client-side (e.g. a
+    // "Failed to fetch" network blip) while the server-side change actually
+    // went through - refreshWmDriverButtons() below then updates step 3's
+    // driver row correctly, but this card's own title/text stay frozen (see
+    // renderShowstopperGroup()'s signature-based skip, keyed only on
+    // id/text/button-disabled - "changingExisting" doesn't change across
+    // this apply, so it never re-renders and the stale error message here
+    // would otherwise sit wrong forever). Re-check the actual driver state
+    // before trusting the error.
+    await refreshWmDriverButtons();
+    if (wmLx200Remote === value) {
+      _setCtrlRemoteResult(`✓ Applied - PiFinder LX200 now points at ${value}.`, 'ok');
+      _ctrlRemoteForceShow = false;
+      await loadWmProfiles();
+      await refreshMountBridgeStatus();
+      return;
+    }
     _setCtrlRemoteResult(`Could not apply: ${e.message}`, 'bad');
     return;
   }
