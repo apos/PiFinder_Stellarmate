@@ -4224,6 +4224,62 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, status=502)
             return
 
+        if parsed.path == "/api/profile_health":
+            # Direct request (2026-09-16): "Jedes CC prüft sein Profil, ob es
+            # überhaupt ordentlich funktioniert und sich verbindet." Concrete
+            # trigger: a live-found case where a profile meant to be a clean
+            # PFSM simulation profile had picked up a PlayerOne CCD and an
+            # OnStep driver alongside the expected PiFinder ones - nothing in
+            # this codebase would have surfaced that on its own; a user had
+            # to notice it by eye. This is the local half only - each CC
+            # checking ITS OWN active profile. Reporting this to a Control
+            # Host ("CH Status"/"Client Status", centrally queried) is
+            # deliberately not wired up yet - that only matters once CH-mode
+            # testing actually starts (currently Host-mode-only per direct
+            # instruction), see basic-memory pifinder-stellarmate/00161.
+            profile = _last_known_active_profile
+            if not profile:
+                self._send_json({"checked": False, "error": "no active profile"})
+                return
+            try:
+                driver_status = webmanager_client.pifinder_driver_status(profile)
+                other = webmanager_client.other_profile_drivers(profile)
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"checked": False, "profile": profile, "error": str(e)})
+                return
+            issues = []
+            devices = {}
+            for label, present in (
+                ("PiFinder LX200", driver_status["has_lx200"] and not driver_status["lx200_remote"]),
+                ("PiFinder Mount Bridge", driver_status["has_bridge"]),
+            ):
+                if not present:
+                    continue
+                try:
+                    vector = indi_client.get_properties(
+                        device=label, timeout=indi_client.TIMEOUT_QUICK_RETRY
+                    ).get(label, {}).get("CONNECTION")
+                except Exception:
+                    vector = None
+                connected = bool(vector and vector.get("elements", {}).get("CONNECT") == "On")
+                devices[label] = connected
+                if not connected:
+                    issues.append(f"{label} is in the profile but not connected")
+            if not driver_status["has_lx200"]:
+                issues.append("PiFinder LX200 isn't in this profile at all")
+            self._send_json({
+                "checked": True,
+                "profile": profile,
+                "has_lx200": driver_status["has_lx200"],
+                "lx200_remote": driver_status["lx200_remote"],
+                "has_bridge": driver_status["has_bridge"],
+                "devices": devices,
+                "other_drivers": [d["label"] for d in other],
+                "ok": not issues,
+                "issues": issues,
+            })
+            return
+
         if parsed.path == "/api/webmanager/test_remote_pifinder":
             # Control-host role: before committing a remote PiFinder LX200
             # entry (POST .../pifinder_drivers&action=add_remote), let the
