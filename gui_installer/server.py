@@ -3054,7 +3054,7 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
         return None
 
 
-def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1"):
+def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", skip_auto_release: bool = False):
     """Turn Injected Solve on, seeded with the currently coupled mount's
     live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
     active_mount) - a one-time "start here", not a continuous mount-follow
@@ -3063,7 +3063,19 @@ def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1"):
     _pifinder_solve_status()'s own comment (docs/concepts/
     control_host_hardware_badges_mirroring.md, category 2a) - the mount
     itself is always local to THIS device (Mount Bridge is a local INDI
-    driver), only the PiFinder being seeded can be remote."""
+    driver), only the PiFinder being seeded can be remote.
+
+    `skip_auto_release` (2026-09-16, TF-6 - basic-memory pifinder-stellarmate/
+    00162/00163): the auto-release below exists ONLY to protect a real
+    camera from being permanently locked out - see its own comment. Full
+    Simulation has no real camera to protect, and there Injected Solve is
+    the sole, intended-to-be-continuous position source - auto-releasing it
+    there left PiFinder with no active solve at all, worse than before the
+    call. The caller (the one HTTP route below) sets this whenever the
+    Truth Injector was the desired state right before this call, i.e. a
+    Full Simulation context - Real Hardware's own behavior (the case the
+    auto-release was actually built for) is completely unchanged by this
+    flag defaulting to False."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False, "invalid port"
     try:
@@ -3137,12 +3149,14 @@ def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1"):
     # POST-then-immediate-DELETE with no wait left fake_solve_active=True
     # afterward. Poll for the seed actually having landed (fake_solve_active
     # confirmed True) before releasing it, bounded so a seed that never gets
-    # a usable IMU anchor at all can't hang this call forever - DELETE
-    # unconditionally once the wait ends either way, so the lock never gets
-    # left stuck on regardless of which branch was hit. Manual one-shot
-    # seed / the Truth Injector (deliberate simulation/testing, possibly
-    # with no real camera at all) intentionally do NOT do this - only this
-    # real-hardware-recovery code path.
+    # a usable IMU anchor at all can't hang this call forever - release
+    # unconditionally once the wait ends either way (skip_auto_release aside),
+    # so the lock never gets left stuck on regardless of which branch was
+    # hit. Manual one-shot seed / the Truth Injector (deliberate simulation/
+    # testing, possibly with no real camera at all) intentionally do NOT do
+    # this on their own - only this real-hardware-recovery code path, and
+    # only when skip_auto_release wasn't requested (see this function's own
+    # docstring - Full Simulation has no real camera for this to protect).
     if ok:
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline:
@@ -3153,7 +3167,8 @@ def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1"):
             except Exception:
                 pass
             time.sleep(0.1)
-        _pifinder_disable_fake_solve(port, host)
+        if not skip_auto_release:
+            _pifinder_disable_fake_solve(port, host)
     return ok, None
 
 
@@ -4882,7 +4897,15 @@ class Handler(BaseHTTPRequestHandler):
             if not _valid_pifinder_host(host):
                 self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
                 return
-            ok, err = _pifinder_enable_fake_solve_from_mount(port, host)
+            # See _pifinder_enable_fake_solve_from_mount()'s own docstring
+            # (TF-6, 2026-09-16) - the caller (reseedFakeSolve() in
+            # status_page.html) sets this whenever the Truth Injector was
+            # the desired state right before this call, i.e. Full
+            # Simulation - it already knows this itself, from the exact
+            # same flag it just used to decide whether to toggle the
+            # injector off first.
+            skip_auto_release = qs.get("skip_auto_release", [""])[0] == "true"
+            ok, err = _pifinder_enable_fake_solve_from_mount(port, host, skip_auto_release=skip_auto_release)
             self._send_json({"success": ok, "error": err})
             return
 
