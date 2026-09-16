@@ -5285,14 +5285,20 @@ async function reseedFakeSolve() {
   btn.disabled = true;
   textEl.textContent = 'Reading mount position…';
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
+  // Captured once, up front - the server can't reliably tell "was this a
+  // Full Simulation context" any other way once the toggle-off below has
+  // already flipped the desired flag server-side (TF-6, 2026-09-16, bm
+  // pifinder-stellarmate/00162/00163). This is the one place that still
+  // knows the answer at the right moment.
+  const wasFullSimulation = lastTruthInjectorDesired === true;
   try {
-    if (lastTruthInjectorDesired === true) {
+    if (wasFullSimulation) {
       // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
       // Truth Injector's next 2s tick would otherwise immediately overwrite
       // this one-shot re-seed with the shadow device's own position (#323).
       await fetch('/api/truth_injector_toggle', { method: 'POST' });
     }
-    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
+    const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}&skip_auto_release=${wasFullSimulation}`, { method: 'POST' });
     const result = await resp.json();
     if (result.success !== true) {
       fakeSolveToggleInFlight = false;
