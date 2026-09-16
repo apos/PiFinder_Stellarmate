@@ -2486,10 +2486,25 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
         _mb_readiness_profile_desync_consecutive = 0
 
     # --- Check 3: linked to the desired mount, both devices connected ----
+    # Found live (2026-09-16, #385-adjacent investigation): "not_connected"
+    # used to be lumped in with "mismatched" and both got the SAME remedy
+    # (re-link ACTIVE_DEVICES) - but re-linking only fixes "the wrong device
+    # is linked", it's a pure bookkeeping write and does nothing to an
+    # already-correctly-linked device that's simply disconnected. Against a
+    # disconnected PiFinder LX200 this produced an infinite, harmless-but-
+    # noisy "re-linked to '<mount>'" loop every tick, forever, without ever
+    # actually reconnecting anything - live-confirmed via `indi_getprop
+    # PiFinder LX200.CONNECTION.CONNECT` reading Off throughout. Per the
+    # project's own established principle (basic-memory pifinder-stellarmate/
+    # 00153, "gegen tatsächliche Zustandsbestätigung, nicht Zeitpuffer"): the
+    # fix here is not a guessed wait/timeout - it's applying the RIGHT
+    # truthful action (a real connect_device() call) for the failure this
+    # tick's live status actually shows, then letting this same function's
+    # own next 5s tick re-read the live CONNECTION state and judge the truth
+    # of whether that worked - no invented pause, no assumed success.
     if _mb_desired_mount:
         mismatched = status.get("active_mount") != _mb_desired_mount
-        not_connected = status.get("mount_connected") is not True or status.get("pifinder_connected") is not True
-        if mismatched or not_connected:
+        if mismatched:
             def _do_link():
                 try:
                     indi_client.set_mount_bridge_active_devices("PiFinder LX200", _mb_desired_mount)
@@ -2498,6 +2513,32 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                     _mb_log(f"Mount Bridge self-heal: re-link attempt failed: {e}")
 
             _mb_readiness_retrier.trigger(_do_link)
+            return
+        if status.get("pifinder_connected") is not True:
+            def _do_connect_pifinder():
+                try:
+                    indi_client.connect_device("PiFinder LX200")
+                    _mb_log(
+                        "Mount Bridge self-heal: PiFinder LX200 is correctly linked but wasn't "
+                        "connected - sent connect (next tick confirms whether it actually came up)."
+                    )
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: PiFinder LX200 connect attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_connect_pifinder)
+            return
+        if status.get("mount_connected") is not True:
+            def _do_connect_mount():
+                try:
+                    indi_client.connect_device(_mb_desired_mount)
+                    _mb_log(
+                        f"Mount Bridge self-heal: '{_mb_desired_mount}' is correctly linked but wasn't "
+                        "connected - sent connect (next tick confirms whether it actually came up)."
+                    )
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: '{_mb_desired_mount}' connect attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_connect_mount)
             return
 
     # --- Check 4: coupling mode matches what was last actually chosen ----
