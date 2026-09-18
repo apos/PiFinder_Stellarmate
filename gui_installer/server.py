@@ -2379,14 +2379,16 @@ _mb_readiness_query_was_slow = False
 
 # Direct feedback (2026-09-18, basic-memory pifinder-stellarmate/00166/00169):
 # a mount driver's TIME_UTC is only ever snooped from KStars once, at
-# connect time - never re-pushed afterward - so it silently drifts away
-# from the real (always-correct, NTP-synced) system time in any
-# sufficiently long session. 10 minutes: frequent enough that a multi-hour
-# observing/testing session never drifts far, well above the couple of
-# seconds a genuine refresh takes, so this doesn't fire on every tick once
-# it's stale (the check IS its own rate limit - right after a successful
-# refresh, the age is ~0 again, so it naturally won't re-fire for another
-# full interval).
+# connect time - never re-pushed afterward - so it's a frozen snapshot that
+# falls further and further behind the real (always-correct, NTP-synced)
+# system time as a session goes on. NOT "drift" in the Mount Bridge's usual
+# sense (a value that keeps changing and needs re-measuring) - the value
+# itself never moves at all; it's reality that moves on without it. 10
+# minutes: frequent enough that a multi-hour observing/testing session
+# never falls far behind, well above the couple of seconds a genuine
+# refresh takes, so this doesn't fire on every tick once it's stale (the
+# check IS its own rate limit - right after a successful refresh, the age
+# is ~0 again, so it naturally won't re-fire for another full interval).
 _MOUNT_TIME_STALE_THRESHOLD_SEC = 600.0
 
 # Debounce for the profile-bookkeeping check below - found live 2026-09-12:
@@ -2697,8 +2699,8 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
 
 def _refresh_stale_mount_time_if_needed(status: dict) -> None:
     """Checks the currently-linked mount's own TIME_UTC against real system
-    time and, if it's drifted past _MOUNT_TIME_STALE_THRESHOLD_SEC, pulses
-    KStars' realtime-clock toggle to force a fresh push - see
+    time and, if it's fallen more than _MOUNT_TIME_STALE_THRESHOLD_SEC
+    behind, pulses KStars' realtime-clock toggle to force a fresh push - see
     _kstars_refresh_mount_time_via_dbus()'s own docstring for why that
     specific D-Bus call, not the more obvious-looking "Set Time to Now".
     Read-only unless genuinely stale; a missing mount/property/unparseable
