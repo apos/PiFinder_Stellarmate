@@ -1707,6 +1707,18 @@ void PiFinderMountBridge::TimerHit()
     double piRA, piDec, mountRA, mountDec;
     const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
     const bool havePositions = havePiFinderPosition && m_client->getMountRADE(mountRA, mountDec);
+    // Remember the last genuinely fresh PiFinder position (no extra HTTP call -
+    // this is the same fetch every other consequential read this tick already
+    // uses) so PIFINDER_HORIZON_STATUS below can fall back to "last known, N
+    // seconds old" instead of freezing when the current tick has none - see
+    // m_lastKnownPiFinderRA's own header comment. Never read by anything that
+    // actually moves the mount.
+    if (havePiFinderPosition)
+    {
+        m_lastKnownPiFinderRA = piRA;
+        m_lastKnownPiFinderDec = piDec;
+        m_lastKnownPiFinderPositionTime = time(nullptr);
+    }
     double drift = 0.0;
     bool exceeded = false;
     if (havePositions)
@@ -1862,7 +1874,22 @@ void PiFinderMountBridge::TimerHit()
     }
 
     if (havePositions)
+    {
         IDSetNumber(&DriftStatusNP, nullptr);
+    }
+    else
+    {
+        // 2026-09-18, direct feedback (basic-memory pifinder-stellarmate/
+        // 00169): a missing fresh solve used to leave DriftStatusNP silently
+        // at whatever it last showed - e.g. a stale "Ok" from minutes ago,
+        // indistinguishable from a genuinely current, agreeing readout. Same
+        // IPS_IDLE-means-"can't verify right now" convention this file
+        // already uses elsewhere (see the HOLDING/arrival-wait branches
+        // above) - actively publish "unknown" instead of leaving a
+        // possibly-stale-but-still-green state standing unremarked.
+        DriftStatusNP.s = IPS_IDLE;
+        IDSetNumber(&DriftStatusNP, nullptr);
+    }
 
     // §8.8: independent of havePositions above - this only needs the
     // mount's own reported position, not a fresh PiFinder solve, so it
@@ -1888,6 +1915,20 @@ void PiFinderMountBridge::TimerHit()
     // above, mirrored for the other side of a Sync. piRA/piDec were already
     // fetched for havePositions/the drift readout above (havePiFinderPosition
     // guards their validity) - no second HTTP round trip.
+    //
+    // 2026-09-18, direct feedback (basic-memory pifinder-stellarmate/00169):
+    // this used to require havePiFinderPosition (a solve fresh within
+    // SolveFreshnessMaxAgeN) exactly like the drift/Sync/Goto logic above -
+    // but unlike those, this property never drives the mount, it's a pure
+    // display value. Gating it on the SAME freshness requirement meant a
+    // stale/missing solve froze it at whatever it last showed (often its 0
+    // startup default) even though PiFinder's last known position is still
+    // real information worth showing, same as MOUNT_HORIZON_STATUS just
+    // above has no freshness gate at all. Falls back to the last genuinely
+    // fresh position on record (m_lastKnownPiFinderRA/Dec) when this tick's
+    // own fetch isn't fresh - IPS_BUSY marks "stale, shown anyway" so the
+    // GUI/a future consumer can tell it apart from a currently-confirmed
+    // IPS_OK/IPS_ALERT, without inventing a new property.
     if (havePiFinderPosition)
     {
         double altitude = 90.0;
@@ -1896,6 +1937,16 @@ void PiFinderMountBridge::TimerHit()
         PiFinderHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
         IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
     }
+    else if (m_lastKnownPiFinderPositionTime > 0)
+    {
+        double altitude = 90.0;
+        isAboveHorizon(m_lastKnownPiFinderRA, m_lastKnownPiFinderDec, altitude);
+        PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusNP.s = IPS_BUSY; // stale - last known, not currently confirmed
+        IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
+    }
+    // else: never had a position at all this run - nothing to fall back to,
+    // leave the property at its untouched startup default.
 
     // Deliberately published here, AFTER handleGotoForward()/
     // handleAutoCorrectGoto()/the plain-Sync branch above have all had a

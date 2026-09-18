@@ -747,6 +747,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_lastPolledMountDec = std::nan("");
         long m_lastPolledMountTime = 0;
 
+        // 2026-09-18, direct feedback (basic-memory pifinder-stellarmate/
+        // 00169): PIFINDER_HORIZON_STATUS.ALTITUDE_DEG used to only update
+        // `if (havePiFinderPosition)` - a missing/stale solve froze it at
+        // whatever it last showed (often its 0 startup default), even
+        // though it's a pure display property that never drives the mount
+        // and could keep showing the last genuinely known position instead.
+        // Remembered here (in memory, no extra HTTP call - reuses whatever
+        // TimerHit() already fetched this tick) so the display can fall back
+        // to "last known, N seconds old" instead of freezing silently. Never
+        // used for anything that actually moves the mount (Sync/Goto/drift
+        // correction still require a currently-fresh solve, unchanged).
+        double m_lastKnownPiFinderRA = std::nan("");
+        double m_lastKnownPiFinderDec = std::nan("");
+        long m_lastKnownPiFinderPositionTime = 0;
+
         // Once a genuine external move is detected, give the mount a few
         // ticks to physically finish settling before trusting its position -
         // same reasoning/constant as SETTLE_TICKS for our own moves, since
