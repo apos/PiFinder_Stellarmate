@@ -5126,52 +5126,81 @@ class Handler(BaseHTTPRequestHandler):
             # not present in the open-source project it's based on).
             qs = parse_qs(parsed.query)
             profile = qs.get("profile", [""])[0]
-            driver = qs.get("driver", [""])[0]
-            action = qs.get("action", [""])[0]
+
             # add_remote (lx200 only): use a PiFinder LX200 running on
             # another device, via INDI's own remote-driver mechanism - see
             # docs/concepts/remote_indi_coupling_split_host.md (R-CH1).
-            valid = (
-                profile
-                and (
-                    (driver in ("lx200", "bridge", "simulator") and action in ("add", "remove"))
-                    or (driver == "lx200" and action == "add_remote")
+            def _build_change(driver: str, action: str, remote_raw):
+                """Validates one (driver, action, remote) triple and returns
+                (setter, driver_label, action). Raises ValueError with a
+                user-facing message on anything invalid - never touches the
+                server itself, just prepares the change."""
+                valid = (driver in ("lx200", "bridge", "simulator") and action in ("add", "remove")) or (
+                    driver == "lx200" and action == "add_remote"
                 )
-            )
-            if not valid:
-                self._send_json(
-                    {"success": False,
-                     "error": "expected ?profile=<name>&driver=lx200|bridge|simulator&action=add|remove"
-                              " (or driver=lx200&action=add_remote&remote=<host[:port]>)"},
-                    status=400,
-                )
-                return
-            remote_spec = None
-            if action == "add_remote":
-                remote_spec = qs.get("remote", [""])[0].strip()
-                # Hostname or IP, optional :port - becomes part of a Web
-                # Manager profile entry, so keep the shape strict.
-                if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
-                    self._send_json(
-                        {"success": False, "error": f"invalid remote host '{remote_spec}' (expected host or host:port)"},
-                        status=400,
+                if not valid:
+                    raise ValueError(
+                        f"invalid driver/action '{driver}'/'{action}' - expected "
+                        "driver=lx200|bridge|simulator&action=add|remove (or "
+                        "driver=lx200&action=add_remote&remote=<host[:port]>)"
                     )
-                    return
-                if ":" not in remote_spec:
-                    remote_spec += ":7624"
+                remote_spec = None
+                if action == "add_remote":
+                    remote_spec = (remote_raw or "").strip()
+                    # Hostname or IP, optional :port - becomes part of a Web
+                    # Manager profile entry, so keep the shape strict.
+                    if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
+                        raise ValueError(f"invalid remote host '{remote_spec}' (expected host or host:port)")
+                    if ":" not in remote_spec:
+                        remote_spec += ":7624"
 
-            if driver == "lx200":
-                lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
-                def setter(prof, _present):
-                    webmanager_client.set_pifinder_lx200_state(prof, lx200_state, remote=remote_spec)
-            elif driver == "bridge":
-                setter = webmanager_client.set_pifinder_bridge
-            else:
-                setter = webmanager_client.set_pifinder_simulator
-            driver_label = {"lx200": "PiFinder LX200", "bridge": "PiFinder Mount Bridge",
-                             "simulator": "PiFinder Simulator"}[driver]
-            if action == "add_remote":
-                driver_label = f"PiFinder LX200 (remote {remote_spec})"
+                if driver == "lx200":
+                    lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
+                    def setter(prof, _present, _lx200_state=lx200_state, _remote_spec=remote_spec):
+                        webmanager_client.set_pifinder_lx200_state(prof, _lx200_state, remote=_remote_spec)
+                elif driver == "bridge":
+                    setter = webmanager_client.set_pifinder_bridge
+                else:
+                    setter = webmanager_client.set_pifinder_simulator
+                driver_label = {"lx200": "PiFinder LX200", "bridge": "PiFinder Mount Bridge",
+                                 "simulator": "PiFinder Simulator"}[driver]
+                if action == "add_remote":
+                    driver_label = f"PiFinder LX200 (remote {remote_spec})"
+                return setter, driver_label, action
+
+            # Normally a single driver/action pair (unchanged, original
+            # shape). A role switch (onRoleCardClick() in status_page.html)
+            # can need TWO independent changes at once (e.g. "add PiFinder
+            # LX200" + "remove Mount Bridge") - originally sent as two
+            # separate requests, each with its own full stop/restart cycle
+            # of indiserver. Found live (2026-09-18, TF-7/TF-8): the SECOND
+            # restart collaterally kills and relaunches drivers untouched by
+            # that second request too, producing a visible Coupling-mode
+            # "Off" flash (a disconnected driver's missing coupling_mode is
+            # displayed identically to an explicit Off, see status_page.html
+            # ~L7398) and a window where deriveProfileRole() can read a
+            # genuinely inconsistent has_lx200/has_bridge combination. Fix:
+            # an optional `changes=driver|action|remote,...` batch param -
+            # every change in one request, ONE stop/restart cycle total.
+            changes_param = qs.get("changes", [""])[0]
+            try:
+                if changes_param:
+                    raw_changes = []
+                    for entry in changes_param.split(","):
+                        fields = entry.split("|")
+                        raw_changes.append((fields[0], fields[1] if len(fields) > 1 else "",
+                                             fields[2] if len(fields) > 2 else None))
+                else:
+                    raw_changes = [(qs.get("driver", [""])[0], qs.get("action", [""])[0],
+                                     qs.get("remote", [""])[0])]
+                if not profile or not raw_changes or any(not d for d, _a, _r in raw_changes):
+                    raise ValueError(
+                        "expected ?profile=<name>&driver=...&action=... (or &changes=driver|action|remote,...)"
+                    )
+                changes = [_build_change(driver, action, remote) for driver, action, remote in raw_changes]
+            except ValueError as e:
+                self._send_json({"success": False, "error": str(e)}, status=400)
+                return
 
             # indiserver only reads a profile's driver list at startup - a
             # driver added/removed here never takes effect on an already-
@@ -5181,7 +5210,8 @@ class Handler(BaseHTTPRequestHandler):
             # Rather than expect the user to remember "stop, change, start"
             # as three separate steps, do it automatically here whenever
             # this profile is the one currently running - one click, fully
-            # visible in the log below.
+            # visible in the log below. Exactly one stop/restart cycle for
+            # the whole batch, not one per change (see comment above).
             try:
                 srv_status = webmanager_client.server_status()
             except webmanager_client.WebManagerError:
@@ -5198,14 +5228,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 _mb_log(f"  done.")
 
-            _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
-            try:
-                setter(profile, action == "add")
-            except webmanager_client.WebManagerError as e:
-                _mb_log(f"  failed: {e}")
-                self._send_json({"success": False, "error": str(e)}, status=502)
-                return
-            _mb_log(f"  done.")
+            for setter, driver_label, action in changes:
+                _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
+                try:
+                    setter(profile, action == "add")
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
 
             if was_running:
                 _mb_log(f"restarting profile '{profile}'...")
