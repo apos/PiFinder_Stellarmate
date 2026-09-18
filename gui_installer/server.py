@@ -1286,11 +1286,22 @@ def _ekos_guide_status():
     confirmed on THIS device's installed KStars version by actually running
     guiding and polling through each phase (2026-09-18/19) - re-verify on any
     KStars upgrade or a different device.
-      12 = calibrating (confirmed live, held steady for the whole
-           calibration run)
-    Remaining phases (guiding / dithering / suspended / aborted / idle) not
-    yet confirmed - _GUIDE_HELD_STATES below is therefore still incomplete;
-    extend it only after seeing the real value on this same live setup."""
+      12 = guiding (actively guiding). CORRECTED 2026-09-19: first believed
+           to be "calibrating" - that first observation happened to start
+           just after "Calibration completed"/"Autoguiding running" had
+           already fired (11s gap in the log), so what actually got measured
+           the whole time was the guiding phase, not calibration. Caught and
+           fixed live by cross-checking a screenshot of an active guide
+           graph (real RMS values) against a fresh, repeated poll - still
+           read 12, same value that had briefly looked like "calibrating".
+       1 = idle/aborted (NOT held) - observed exactly at "Autoguiding
+           aborted" in the Guide log.
+    Calibrating's own distinct value still NOT captured (both live sessions
+    tonight reused a prior calibration on restart, never triggering a fresh
+    one while being watched) - do not guess it if guiding is ever seen stuck
+    in an actual calibration phase; poll and confirm first. Dithering/
+    suspended likewise unconfirmed. _GUIDE_HELD_STATES below is therefore
+    still incomplete for those phases specifically."""
     env = dict(os.environ)
     env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
     try:
@@ -1309,7 +1320,7 @@ def _ekos_guide_status():
 
 
 # See _ekos_guide_status()'s own docstring - incomplete, live-confirmed
-# values only. 12 = calibrating.
+# values only. 12 = guiding (actively guiding).
 _GUIDE_HELD_STATES = {12}
 _GUIDING_RELEASE_DEBOUNCE_S = 15
 
