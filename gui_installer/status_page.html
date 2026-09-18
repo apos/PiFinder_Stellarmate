@@ -10237,13 +10237,18 @@ async function onRoleCardClick(kind) {
   setStepBusy(3, true);
   setMbActionStatus('⏳ Configuring role…');
   try {
-    for (const [driver, action, remote] of actions) {
-      let url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(profile)}&driver=${driver}&action=${action}`;
-      if (remote) url += `&remote=${encodeURIComponent(remote)}`;
-      const resp = await fetch(url, { method: 'POST' });
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error || 'failed');
-    }
+    // Single batched request (server.py's `changes=driver|action|remote,...`),
+    // not one request per action - found live (2026-09-18, TF-7/TF-8): two
+    // separate requests each did their own full indiserver stop/restart,
+    // so a role switch needing both an lx200 AND a bridge change collaterally
+    // restarted (and briefly disconnected) whichever driver the OTHER
+    // request wasn't even touching, twice per click. One request now means
+    // exactly one stop/restart cycle for however many changes this role needs.
+    const changes = actions.map(([driver, action, remote]) => remote ? `${driver}|${action}|${remote}` : `${driver}|${action}`).join(',');
+    const url = `/api/webmanager/pifinder_drivers?profile=${encodeURIComponent(profile)}&changes=${encodeURIComponent(changes)}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'failed');
   } catch (e) {
     await ccNoticeBanner('Could not configure the role: ' + e.message);
   }

@@ -59,6 +59,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Mount Bridge GUI: a role switch needing two driver changes (e.g. add PiFinder LX200 + remove Mount Bridge) sent them as two separate requests, each restarting indiserver on its own - the second restart collaterally killed/relaunched drivers the request itself never touched, causing a visible Coupling-mode "Off" flash (TF-7) and a window where the role could be misdetected as "Control host, no PiFinder configured" (TF-8). Both changes now go in one batched request (`/api/webmanager/pifinder_drivers?changes=driver|action|remote,...`), one stop/restart cycle total
 - Mount Bridge on a Control Host: every HTTP call to PiFinder's own REST API was hardcoded to `127.0.0.1`, so drift/orientation stayed permanently `Idle`/stale whenever PiFinder ran on a different device; the real remote host is now pushed to the driver on every readiness-watchdog tick (#453, PR #452)
 - PiFinder `POST /api/fake_solve` returned an arbitrary RA near the celestial pole (JNow→J2000 `atan2` degeneracy); now keeps the caller's RA for `|dec| >= 89.9` (#343; upstream brickbots/PiFinder#645)
 - Mount Bridge: Multi-Point Alignment's own GoTos misclassified as external repositions, triggering a spurious extra GoTo per alignment point (#309)
