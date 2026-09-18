@@ -1276,6 +1276,114 @@ def _kstars_refresh_mount_time_via_dbus() -> tuple:
     return True, None
 
 
+def _ekos_guide_status():
+    """Ekos::GuideState as an int, or None if the Guide module isn't up /
+    Ekos isn't running / the call fails - callers must treat None as "don't
+    know, don't touch anything", never as "not guiding".
+
+    WARNING - version-specific, do not extend this set from memory: KStars
+    has renumbered this enum across releases. Values below are live-
+    confirmed on THIS device's installed KStars version by actually running
+    guiding and polling through each phase (2026-09-18/19) - re-verify on any
+    KStars upgrade or a different device.
+      12 = calibrating (confirmed live, held steady for the whole
+           calibration run)
+    Remaining phases (guiding / dithering / suspended / aborted / idle) not
+    yet confirmed - _GUIDE_HELD_STATES below is therefore still incomplete;
+    extend it only after seeing the real value on this same live setup."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Guide", "org.kde.kstars.Ekos.Guide.status"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+# See _ekos_guide_status()'s own docstring - incomplete, live-confirmed
+# values only. 12 = calibrating.
+_GUIDE_HELD_STATES = {12}
+_GUIDING_RELEASE_DEBOUNCE_S = 15
+
+
+def _guiding_hold_watchdog(interval=3):
+    """#372 (simplified) - while Ekos reports guiding active, temporarily
+    forces Coupling to Verify/Alert only (never touches the mount) so a
+    threshold-triggered Sync/Goto doesn't kick the guide star out of frame
+    and a dither doesn't get misread as an external reposition - both of
+    which the existing Mount Bridge logic would otherwise do exactly as
+    designed, just at the wrong moment. Restores whatever mode was actually
+    desired before once guiding stops (after RELEASE_DEBOUNCE_S of
+    continuous idle, so one missed/misread frame mid-session doesn't yank
+    Coupling back on right before the next guide correction).
+
+    Deliberately does NOT persist the held state (_save_mount_bridge_desired_state()
+    is never called here) - same reasoning as the original EXTERNAL_HOLD
+    concept doc: this is live, externally-driven, and meaningless to survive
+    a restart. If the Control Center restarts mid-guiding, the driver simply
+    comes back up in whatever mode was last actually saved (from before this
+    watchdog touched anything), not stuck in Verify/Alert forever.
+
+    Does nothing if Ekos/Guide isn't reachable at all (_ekos_guide_status()
+    returns None) - never guesses "not guiding" from a failed query."""
+    global _guiding_hold_saved, _guiding_hold_idle_since
+    global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+    while True:
+        time.sleep(interval)
+        gs = _ekos_guide_status()
+        if gs is None:
+            continue
+        guiding_now = gs in _GUIDE_HELD_STATES
+        if guiding_now:
+            _guiding_hold_idle_since = None
+            want_hold = True
+        elif _guiding_hold_saved is not None:
+            _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
+            want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
+        else:
+            want_hold = False
+
+        if want_hold and _guiding_hold_saved is None:
+            if _mb_desired_coupling_mode in (None, "MODE_OFF", "MODE_VERIFY_ALERT"):
+                continue  # nothing to protect against - already passive or unset
+            _guiding_hold_saved = (
+                _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action,
+            )
+            try:
+                indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
+                _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
+                _mb_desired_coupling_threshold = None
+                _mb_desired_coupling_action = None
+                _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - "
+                        f"Coupling held at Verify/Alert only (was {_guiding_hold_saved[0]}).")
+            except indi_client.INDIClientError as e:
+                _guiding_hold_saved = None
+                _mb_log(f"Guiding watchdog: could not switch to Verify/Alert: {e}")
+        elif not want_hold and _guiding_hold_saved is not None:
+            mode, threshold, action = _guiding_hold_saved
+            try:
+                indi_client.set_coupling_mode(mode, drift_threshold=threshold, correction_action=action)
+                _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action = (
+                    mode, threshold, action,
+                )
+                _mb_log(f"Guiding watchdog: guiding stopped - Coupling restored to {mode}.")
+                _guiding_hold_saved = None
+            except indi_client.INDIClientError as e:
+                # Deliberately keep _guiding_hold_saved set on failure (not a
+                # bare `finally`) - a transient INDI error here must not
+                # silently strand Coupling at Verify/Alert with nothing left
+                # that remembers what to restore it to. Retried next tick.
+                _mb_log(f"Guiding watchdog: could not restore Coupling to {mode}, will retry: {e}")
+
+
 def _ekos_start_profile(profile_name: str) -> dict:
     """Starts the given Ekos profile via org.kde.kstars.Ekos's D-Bus
     interface (setProfile + start) - unlike _ekos_indi_status() above,
@@ -1990,6 +2098,17 @@ _mb_desired_coupling_action = None
 # equivalent "deliberately wanted it broken" case for them).
 _mb_desired_connected = None
 _mb_readiness_retrier = _BackgroundRetrier()
+
+# #372 - simplified from the original EXTERNAL_HOLD driver-property concept
+# (docs/concepts/mount_bridge_external_hold.md) after direct feedback
+# (2026-09-19, live with a real guide scope/camera): a new INDI property +
+# TimerHit() observe/act split needs a driver rebuild and restart mid-session
+# to test - switching Coupling to the already-existing, already-safe
+# Verify/Alert only mode achieves the same practical goal (no Sync/Goto while
+# guiding) with no driver changes at all. None = not currently held; a tuple
+# = the (mode, threshold, action) to restore once guiding stops.
+_guiding_hold_saved = None
+_guiding_hold_idle_since = None
 
 # Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
 # lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
@@ -6827,6 +6946,9 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    # #372 (simplified) - independent of the readiness watchdog above; see
+    # _guiding_hold_watchdog()'s own docstring.
+    threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
     # an Update run from before the setup script's start->restart fix, or a
