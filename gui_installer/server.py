@@ -12,6 +12,7 @@ but the bare system python3.
 """
 
 import base64
+import datetime
 import hashlib
 import json
 import os
@@ -1228,6 +1229,53 @@ def _ekos_qdbus(*args):
     )
 
 
+def _kstars_refresh_mount_time_via_dbus() -> tuple:
+    """Forces KStars to push a fresh TIME_UTC snoop to whichever mount is
+    currently linked - using KStars' own already-correct (NTP-synced via
+    the OS, confirmed live 2026-09-18: system time, KStars' own displayed
+    clock, and a connected phone all agreed) system time. No EkosLive/phone
+    connection needed for this.
+
+    WHY this is needed at all (basic-memory pifinder-stellarmate/00166):
+    a mount driver's TIME_UTC is only ever snooped once, at connect time -
+    never re-pushed afterward - so it silently goes stale in any
+    sufficiently long session, even though KStars' own clock stays correct
+    the whole time.
+
+    WHY this specific D-Bus call (live-confirmed 2026-09-18, not the more
+    obvious-looking one): KStars' own "Set Time to Now" action
+    (time_to_now) is DISABLED via D-Bus whenever the realtime clock is
+    already running - the normal/default state - so triggering it there is
+    a silent no-op. Toggling "Run clock in realtime" (clock_realtime) off
+    and back on, however, does push a fresh TIME_UTC to connected devices
+    as an observed side effect. Two trigger() calls always return a
+    checkable QAction to its starting state regardless of what that was,
+    so this is a momentary pulse, not a lasting mode change - reads nothing
+    first, doesn't need to.
+
+    Returns (ok: bool, error: str | None)."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+
+    def _qdbus(*args):
+        return subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/kstars/MainWindow_1/actions/clock_realtime", *args],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+
+    try:
+        r1 = _qdbus("org.qtproject.Qt.QAction.trigger")
+        if r1.returncode != 0:
+            return False, f"first clock_realtime trigger failed: {r1.stderr.strip()}"
+        time.sleep(1.0)
+        r2 = _qdbus("org.qtproject.Qt.QAction.trigger")
+        if r2.returncode != 0:
+            return False, f"second clock_realtime trigger failed: {r2.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        return False, "qdbus6 call timed out"
+    return True, None
+
+
 def _ekos_start_profile(profile_name: str) -> dict:
     """Starts the given Ekos profile via org.kde.kstars.Ekos's D-Bus
     interface (setProfile + start) - unlike _ekos_indi_status() above,
@@ -2329,6 +2377,18 @@ _mb_readiness_follow_mount_gave_up_target = None
 # occurrence, and how long it lasted), just without the per-tick repeats.
 _mb_readiness_query_was_slow = False
 
+# Direct feedback (2026-09-18, basic-memory pifinder-stellarmate/00166/00169):
+# a mount driver's TIME_UTC is only ever snooped from KStars once, at
+# connect time - never re-pushed afterward - so it silently drifts away
+# from the real (always-correct, NTP-synced) system time in any
+# sufficiently long session. 10 minutes: frequent enough that a multi-hour
+# observing/testing session never drifts far, well above the couple of
+# seconds a genuine refresh takes, so this doesn't fire on every tick once
+# it's stale (the check IS its own rate limit - right after a successful
+# refresh, the age is ~0 again, so it naturally won't re-fire for another
+# full interval).
+_MOUNT_TIME_STALE_THRESHOLD_SEC = 600.0
+
 # Debounce for the profile-bookkeeping check below - found live 2026-09-12:
 # the driver can be fully running/connected/linked while the Web Manager's
 # own PERSISTED profile record no longer lists "PiFinder Mount Bridge" as a
@@ -2635,6 +2695,41 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
         _mb_readiness_follow_mount_gave_up_target = None
 
 
+def _refresh_stale_mount_time_if_needed(status: dict) -> None:
+    """Checks the currently-linked mount's own TIME_UTC against real system
+    time and, if it's drifted past _MOUNT_TIME_STALE_THRESHOLD_SEC, pulses
+    KStars' realtime-clock toggle to force a fresh push - see
+    _kstars_refresh_mount_time_via_dbus()'s own docstring for why that
+    specific D-Bus call, not the more obvious-looking "Set Time to Now".
+    Read-only unless genuinely stale; a missing mount/property/unparseable
+    timestamp is treated as "nothing to check yet", not an error - this
+    only matters once something is actually linked."""
+    active_mount = status.get("active_mount") if status else None
+    if not active_mount:
+        return
+    try:
+        props = indi_client.get_properties(device=active_mount, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
+        utc_str = props.get(active_mount, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
+        if not utc_str:
+            return
+        mount_time = datetime.datetime.fromisoformat(utc_str)
+        if mount_time.tzinfo is None:
+            mount_time = mount_time.replace(tzinfo=datetime.timezone.utc)
+        age_sec = (datetime.datetime.now(datetime.timezone.utc) - mount_time).total_seconds()
+    except (indi_client.INDIClientError, ValueError, KeyError):
+        return
+    if age_sec <= _MOUNT_TIME_STALE_THRESHOLD_SEC:
+        return
+    ok, err = _kstars_refresh_mount_time_via_dbus()
+    if ok:
+        _mb_log(
+            f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old - "
+            "pulsed KStars' realtime clock to push a fresh one (next tick confirms)."
+        )
+    else:
+        _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
+
+
 def _mount_bridge_readiness_watchdog(interval=5):
     """Same shape/cadence as _truth_injector_watchdog() above, extended to
     cover Mount Bridge itself - see docs/concepts/
@@ -2724,6 +2819,11 @@ def _mount_bridge_readiness_watchdog(interval=5):
             _autostart_cold_profile()
         except Exception as e:  # same reasoning - must never kill this thread
             _mb_log(f"Cold Web Manager profile auto-start raised unexpectedly: {e}")
+        if status is not None:
+            try:
+                _refresh_stale_mount_time_if_needed(status)
+            except Exception as e:  # same reasoning - must never kill this thread
+                _mb_log(f"Mount time freshness check raised unexpectedly: {e}")
         # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
         # as the frontend's own liveDriftConfirmsRelated (PR #395), just
         # persisted permanently instead of only for the current page/process.
