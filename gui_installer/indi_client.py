@@ -1243,10 +1243,13 @@ def set_pifinder_simulator_follow_mount(
 ) -> None:
     """Sets "PiFinder Simulator"'s FOLLOW_MOUNT_DEVICE (PR #239) - while
     named, it dead-reckon-follows that mount's real slews instead of staying
-    a fixed pin. `mount_device` empty turns following off. Only meaningful
-    while Full Simulation's truth-injector targets "PiFinder Simulator"
-    itself (server.py's readiness watchdog is the only caller, gated
-    accordingly)."""
+    a fixed pin. `mount_device` empty turns following off. server.py's
+    readiness watchdog is the only caller, keeping this in sync with
+    whichever mount is actually linked in every mode (not just Full
+    Simulation with the truth-injector targeting "PiFinder Simulator" - see
+    Check 6's own comment, broadened 2026-09-18 after a stale value from an
+    earlier Simulation session was found surviving unnoticed into Real
+    Hardware use)."""
     set_text(
         "PiFinder Simulator", "FOLLOW_MOUNT_DEVICE",
         {"MOUNT_DEVICE": mount_device},
@@ -1267,6 +1270,29 @@ def get_pifinder_simulator_follow_mount(
     if not device_props:
         return None
     return device_props.get("FOLLOW_MOUNT_DEVICE", {}).get("elements", {}).get("MOUNT_DEVICE", "")
+
+
+def get_shadow_sync_state(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> "tuple[bool, str]":
+    """Whether "PiFinder Mount Bridge"'s own Shadow Sync (mirrors PiFinder's
+    *own* position onto a shadow device, default "PiFinder Simulator" - see
+    pifinder_mount_bridge.cpp's handleShadowSync()) is currently enabled,
+    and which device it targets. Used to avoid two independent, uncoordinated
+    writers fighting over the same device's position - see
+    _mount_bridge_readiness_watchdog()'s Check 6 in server.py, which manages
+    a DIFFERENT thing (making the Simulator follow the *mount*) on the same
+    "PiFinder Simulator" device by default. Returns (False, "") if the
+    Bridge isn't reachable - treated as "not conflicting" by the caller."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder Mount Bridge")
+    if not device_props:
+        return False, ""
+    enabled = device_props.get("SHADOW_SYNC", {}).get("elements", {}).get("SHADOW_SYNC_ENABLE") == "On"
+    shadow_device = device_props.get("SHADOW_DEVICE_NAME", {}).get("elements", {}).get("SHADOW_DEVICE", "")
+    return enabled, shadow_device
 
 
 def sync_pifinder_simulator_to(
