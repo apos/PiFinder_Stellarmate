@@ -2656,11 +2656,38 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
 
     # --- Check 6: PiFinder Simulator's mount-follow (PR #239) stays in
     # lockstep with whichever mount is actually linked - no manual
-    # configuration should ever be needed for this. Only relevant while
-    # Full Simulation's truth-injector targets "PiFinder Simulator" itself
-    # (not the Multi-Point-Alignment mount-mirroring case).
-    if _truth_injector_desired and _truth_injector_device == "PiFinder Simulator" and status.get("active_mount"):
-        target = status["active_mount"]
+    # configuration should ever be needed for this.
+    #
+    # Originally gated on the Truth Injector actively targeting "PiFinder
+    # Simulator" (Full Simulation testing only) - broadened 2026-09-18
+    # (direct feedback, found live on real hardware under a real sky):
+    # FOLLOW_MOUNT_DEVICE is only ever set here, so a device that was
+    # pointed at "Telescope Simulator" during an earlier Full Simulation
+    # session stayed stuck there forever afterward, including once Real
+    # Hardware took over with a real mount linked - nothing surfaced this
+    # anywhere (the Setup checklist's own Mount step only checks the Bridge's
+    # ACTIVE_MOUNT, a completely different property on a completely
+    # different device), so the mismatch was only found by directly querying
+    # "PiFinder Simulator"'s own FOLLOW_MOUNT_DEVICE via indi_getprop. Kept
+    # in sync with the linked mount now, in every mode, since a correct
+    # position is strictly better than a stale leftover one regardless of
+    # whether anything is actively reading it.
+    #
+    # Skipped if Shadow Sync is enabled and targets the same device (default
+    # target is also "PiFinder Simulator", see handleShadowSync() in
+    # pifinder_mount_bridge.cpp) - that mechanism mirrors PiFinder's OWN
+    # position onto the shadow device from the C++ driver side, independent
+    # of this Python-side watchdog; both trying to own the same device's
+    # position at once would just have them fight each other every tick.
+    active_mount = status.get("active_mount")
+    shadow_enabled, shadow_device = False, ""
+    if active_mount:
+        try:
+            shadow_enabled, shadow_device = indi_client.get_shadow_sync_state()
+        except indi_client.INDIClientError:
+            pass
+    if active_mount and not (shadow_enabled and shadow_device == "PiFinder Simulator"):
+        target = active_mount
         try:
             current = indi_client.get_pifinder_simulator_follow_mount()
         except indi_client.INDIClientError:
