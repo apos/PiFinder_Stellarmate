@@ -1923,6 +1923,15 @@ _maintenance_mode_since = None
 # while it's on, same reasoning as _maintenance_mode_since itself).
 _maintenance_mode_profile = None
 
+# The profile's own Auto Start / Auto Connect flags, captured right before
+# maintenance mode forces both off (2026-09-19 fix - the first cut of this
+# feature never touched either flag, so the Web Manager's own boot-time
+# autostart and its post-launch autoconnect could both re-arm the profile
+# out from under maintenance mode with no code path noticing). Restored
+# verbatim when maintenance mode turns back off; None while off.
+_maintenance_mode_orig_autostart = None
+_maintenance_mode_orig_autoconnect = None
+
 # Direct request (2026-09-12): "wenn ein entfernter PiFinder läuft ... dann
 # sollte der lokale PF service ausgeschaltet werden ... Ausser, die IP ist
 # localhost. Dann sollte dieser starten." - a local pifinder.service is
@@ -2079,6 +2088,17 @@ def _note_active_profile(profile: str) -> None:
         changed = True
     if changed:
         _save_mount_bridge_desired_state()
+    if _maintenance_mode_since is not None:
+        # Found live 2026-09-19: maintenance mode explicitly turns this
+        # profile's autostart OFF (see /api/maintenance_mode_toggle) - this
+        # function running on the very next ordinary tick afterward (it's
+        # called from _pifinder_service_sync_with_lx200_target() on every
+        # tick, unconditionally) would otherwise flip it straight back ON
+        # the moment the profile is observed running at all, undoing that
+        # in seconds regardless of why it's still running. The memory
+        # bookkeeping above stays live either way - only this side effect
+        # needs to stand down while maintenance mode owns the flag.
+        return
     try:
         if webmanager_client.set_profile_autostart(profile, True):
             _mb_log(
@@ -2167,6 +2187,13 @@ def _autostart_cold_profile():
     it."""
     global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
     global _cold_profile_start_gave_up
+    if _maintenance_mode_since is not None:
+        return  # deliberately stopped - see /api/maintenance_mode_toggle. Found live 2026-09-19:
+        # this self-heal has no maintenance-mode gate of its own, so it was starting the profile
+        # straight back up (and re-enabling its autostart flag via _note_active_profile() below)
+        # within one watchdog tick of maintenance mode stopping it - the other two things this
+        # toggle stops (_mount_bridge_readiness_self_heal(), _pifinder_lx200_auto_reconnect()) were
+        # already gated; this one just never got the same treatment.
     if _profile_switch_in_progress:
         return  # a deliberate Host/Client switch is already mid-flight - see that global's own comment
     if not _last_known_active_profile:
@@ -2334,6 +2361,8 @@ def _save_mount_bridge_desired_state():
             "mb_desired_connected": _mb_desired_connected,
             "maintenance_mode_since": _maintenance_mode_since,
             "maintenance_mode_profile": _maintenance_mode_profile,
+            "maintenance_mode_orig_autostart": _maintenance_mode_orig_autostart,
+            "maintenance_mode_orig_autoconnect": _maintenance_mode_orig_autoconnect,
             "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
             "pifinder_service_auto_stopped_for_remote": _pifinder_service_auto_stopped_for_remote,
             "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
@@ -2357,6 +2386,7 @@ def _load_mount_bridge_desired_state():
     global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
     global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
     global _maintenance_mode_profile, _sim_mismatch_ever_resolved
+    global _maintenance_mode_orig_autostart, _maintenance_mode_orig_autoconnect
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
     global _pifinder_role_choice, _last_known_lx200_remote, _last_known_active_profile
     global _last_known_host_profile, _last_known_client_profile
@@ -2374,6 +2404,8 @@ def _load_mount_bridge_desired_state():
     _mb_desired_connected = data.get("mb_desired_connected")
     _maintenance_mode_since = data.get("maintenance_mode_since")
     _maintenance_mode_profile = data.get("maintenance_mode_profile")
+    _maintenance_mode_orig_autostart = data.get("maintenance_mode_orig_autostart")
+    _maintenance_mode_orig_autoconnect = data.get("maintenance_mode_orig_autoconnect")
     _sim_mismatch_ever_resolved = data.get("sim_mismatch_ever_resolved", False)
     _pifinder_service_auto_stopped_for_remote = data.get("pifinder_service_auto_stopped_for_remote")
     _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
@@ -4492,7 +4524,17 @@ class Handler(BaseHTTPRequestHandler):
             # deliberately not wired up yet - that only matters once CH-mode
             # testing actually starts (currently Host-mode-only per direct
             # instruction), see basic-memory pifinder-stellarmate/00161.
-            profile = _last_known_active_profile
+            # Live query, not _last_known_active_profile - found live
+            # 2026-09-19: "das CC spiegelt die Wahrheit wieder" - this
+            # endpoint's whole job is checking whatever profile is
+            # ACTUALLY active right now, not whichever one was last
+            # remembered (which can be a different, superseded profile,
+            # e.g. after switching to an ad-hoc test profile in Ekos).
+            try:
+                profile = webmanager_client.server_status().get("active_profile")
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"checked": False, "error": f"Web Manager unreachable: {e}"})
+                return
             if not profile:
                 self._send_json({"checked": False, "error": "no active profile"})
                 return
@@ -5843,35 +5885,48 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/maintenance_mode_toggle":
-            # Direct request (2026-09-11, revised 2026-09-12 after the first
-            # cut - disconnecting the two PFSM devices - turned out not to be
-            # enough): "Einfach EINEN Button der das INDI WM Profil (nicht
-            # den Server!) stopped, das KStars Profile stopped (nur das
-            # Profil!), den Health Service stopped." One button, three
-            # things, all reversed together on the way back off:
+            # Direct request (2026-09-11, revised 2026-09-12, revised again
+            # 2026-09-19 after live use showed devices coming back on their
+            # own while "off"): one button, three things on the way ON, all
+            # three reversed in the opposite order on the way back OFF.
+            # NOTE (2026-09-19, same day): a same-day draft of this comment
+            # also stopped/started stellarmatewebmanager.service itself
+            # (port 8624) as a fourth step - reverted live, same day, per
+            # direct correction: "Der INDI WM darf nicht gestoppt werden,
+            # nur das Profil (und Autostart/Autoconnect raus)." Stopping the
+            # Web Manager process itself was one step too many - it must
+            # stay reachable (e.g. for the Ekos Profile Editor's own
+            # save-as-Web-Manager-profile round trip) even while maintenance
+            # mode is on.
             #
-            # 1. The INDI Web Manager's *profile* (indiserver + every driver
-            #    it launched - verified live to run as direct child
-            #    processes of the stellarmatewebmanager.service cgroup, not
-            #    a separate systemd unit) via webmanager_client.stop_server()
-            #    / start_server(). This is NOT stellarmatewebmanager.service
-            #    itself (port 8624 stays up the whole time - "the server"
-            #    the user's wording distinguishes from "the profile" - so
-            #    this Control Center can still call start_server() later).
+            # 1. The profile's own Auto Start / Auto Connect flags, forced
+            #    off via webmanager_client.set_profile_autostart()/
+            #    set_profile_autoconnect(). Found live 2026-09-19: without
+            #    this, the Web Manager's own boot-time autostart or its
+            #    post-launch autoconnect could re-arm the very profile this
+            #    button just stopped, with no code path here even looking -
+            #    the two watchdog gates below only stop *this* process from
+            #    reconnecting, not the Web Manager from doing it on its own.
+            #    Original values captured first so OFF restores exactly
+            #    what was there, not a hardcoded guess.
             # 2. KStars/Ekos's *own* profile session (org.kde.kstars.Ekos.
             #    stop()/start() via _ekos_qdbus() - the same D-Bus calls
             #    _ekos_start_profile() already uses elsewhere) - stops Ekos's
             #    own INDI client without closing KStars itself.
-            # 3. This Control Center's OWN driver self-healing
-            #    (_mount_bridge_readiness_self_heal()) - gated on
-            #    _maintenance_mode_since directly, same as
-            #    _pifinder_lx200_auto_reconnect() already was. Found live
-            #    2026-09-12: that gate had only ever been added to the
-            #    LX200 watchdog, not this one, which is exactly why the
-            #    first cut of this feature (disconnect-only) didn't
-            #    actually stop things from being reconnected - Check 1 of
-            #    the self-heal restarts the Mount Bridge *driver* whenever
-            #    it's not running at all, with no maintenance-mode check.
+            # 3. The INDI Web Manager's *profile* (indiserver + every driver
+            #    it launched - verified live to run as direct child
+            #    processes of the stellarmatewebmanager.service cgroup, not
+            #    a separate systemd unit) via webmanager_client.stop_server()
+            #    / start_server(). This is NOT stellarmatewebmanager.service
+            #    itself (port 8624 stays up the whole time - see the NOTE
+            #    above - so this Control Center can still call
+            #    start_server() later, and so can anything else, like Ekos).
+            #
+            # This Control Center's OWN driver self-healing
+            # (_mount_bridge_readiness_self_heal()) is gated on
+            # _maintenance_mode_since directly, same as
+            # _pifinder_lx200_auto_reconnect() - unchanged from the first
+            # cut of this feature.
             #
             # The INDI WM profile name is captured into
             # _maintenance_mode_profile *before* stopping it, since
@@ -5886,6 +5941,7 @@ class Handler(BaseHTTPRequestHandler):
             # here, even in an unrelated branch (verified live: the interp
             # analyzes the whole function body flatly, not per-branch).
             global _maintenance_mode_since, _maintenance_mode_profile
+            global _maintenance_mode_orig_autostart, _maintenance_mode_orig_autoconnect
             turning_on = _maintenance_mode_since is None
             if turning_on:
                 try:
@@ -5897,6 +5953,19 @@ class Handler(BaseHTTPRequestHandler):
                 _maintenance_mode_since = time.time()
                 _mb_desired_connected = False
 
+                if profile:
+                    try:
+                        meta = next(
+                            (p for p in webmanager_client.list_profiles() if p.get("name") == profile), {}
+                        )
+                        _maintenance_mode_orig_autostart = bool(meta.get("autostart"))
+                        _maintenance_mode_orig_autoconnect = bool(meta.get("autoconnect"))
+                        webmanager_client.set_profile_autostart(profile, False)
+                        webmanager_client.set_profile_autoconnect(profile, False)
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"maintenance mode: could not turn off Auto Start/Auto "
+                                f"Connect on profile '{profile}': {e}")
+
                 ekos_stop = _ekos_qdbus("org.kde.kstars.Ekos.stop")
                 if ekos_stop.returncode != 0:
                     _mb_log(f"maintenance mode: KStars/Ekos stop failed or KStars not running: "
@@ -5907,12 +5976,33 @@ class Handler(BaseHTTPRequestHandler):
                 except webmanager_client.WebManagerError as e:
                     _mb_log(f"maintenance mode: could not stop INDI profile: {e}")
 
-                _mb_log("Maintenance mode ON - INDI profile and KStars/Ekos profile stopped, "
-                        "this Control Center's driver self-healing paused until turned off.")
+                _mb_log("Maintenance mode ON - Auto Start/Auto Connect off, KStars/Ekos "
+                        "profile stopped, INDI profile stopped, this Control Center's "
+                        "driver self-healing paused until turned off.")
+                # KNOWN LIMITATION (2026-09-19, direct finding, accepted per direct instruction -
+                # "KStars schliessen ist keine Option, dann kann ich keine Profile editieren"):
+                # KStars/Ekos can reconnect to the Web Manager profile entirely on its own within
+                # seconds of the stop above (its own internal reconnect logic - confirmed live via
+                # its own log: "Establishing communication with remote INDI Web Manager..." →
+                # re-creates/re-saves the profile → starts it - all without any Auto Connect
+                # checkbox involved, and without this Control Center doing anything). Nothing here
+                # can prevent that short of closing KStars entirely, which was explicitly rejected
+                # since it would also block editing profiles in the first place. If a driver looks
+                # "wrong" again moments after enabling maintenance mode, this is almost certainly
+                # why - check this log for a fresh Ekos reconnect, not a bug in this toggle.
+                _mb_log("Maintenance mode note: KStars/Ekos may reconnect and restart the INDI "
+                        "profile on its own within seconds (its own internal behavior, not "
+                        "something this Control Center can prevent without closing KStars "
+                        "entirely - see this handler's own comment). If that happens, this is "
+                        "not a bug in this toggle.")
             else:
                 if _maintenance_mode_profile:
                     try:
                         webmanager_client.start_server(_maintenance_mode_profile)
+                        if _maintenance_mode_orig_autostart:
+                            webmanager_client.set_profile_autostart(_maintenance_mode_profile, True)
+                        if _maintenance_mode_orig_autoconnect:
+                            webmanager_client.set_profile_autoconnect(_maintenance_mode_profile, True)
                     except webmanager_client.WebManagerError as e:
                         _mb_log(f"maintenance mode: could not restart INDI profile "
                                 f"'{_maintenance_mode_profile}': {e}")
@@ -5927,6 +6017,8 @@ class Handler(BaseHTTPRequestHandler):
 
                 _maintenance_mode_since = None
                 _maintenance_mode_profile = None
+                _maintenance_mode_orig_autostart = None
+                _maintenance_mode_orig_autoconnect = None
                 _mb_desired_connected = None
                 _mb_log("Maintenance mode OFF - reconnecting, normal self-healing resumed.")
             _save_mount_bridge_desired_state()
