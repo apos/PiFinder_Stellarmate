@@ -2531,6 +2531,60 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     if _maintenance_mode_since is not None:
         return
 
+    # --- Check 0: a mount is live-connected but never told to Mount Bridge -
+    # Direct feedback (2026-09-19), decision matrix: "wenn ein Mount
+    # verknuepft ist dann sowieso -> MB aktivieren oder hinzufuegen - das
+    # macht ja sonst in dem Mode gar keinen Sinn", restricted to "wenn das
+    # vorher so war" (only heal a regression, never invent config from
+    # nothing) - and confirmed live the same day that Check 1 below ALREADY
+    # does exactly that restart/reconnect/re-link chain once _mb_desired_mount
+    # is set (watched it bring a fully-detached Mount Bridge back on its own
+    # within a few ticks). The one gap that chain can't cover on its own:
+    # _mb_desired_mount is None - never configured, or cleared by profile
+    # churn - even though a real mount is genuinely connected right now.
+    # Fixes exactly that gap, minimally: detect a live-connected telescope-
+    # family driver (reusing other_profile_drivers()'s own is_telescope
+    # classification - the same one status_page.html already uses to
+    # auto-select a mount candidate in its UI, not a second invented
+    # heuristic) and simply SET _mb_desired_mount to it - Check 1 through 3
+    # below then take over exactly as they already do for the manually-
+    # configured case, no separate healing logic duplicated here. Skipped
+    # for "client" role - structurally never wants Mount Bridge at all (see
+    # Check 2.5's own opposite rule below) - and only when nothing is
+    # desired yet, so a deliberate "no mount" Host (handheld GoTo Mode)
+    # or an already-configured one is never overridden.
+    global _mb_desired_mount
+    if _pifinder_role_choice != "client" and _mb_desired_mount is None and _mb_desired_coupling_mode is None:
+        try:
+            active_profile = webmanager_client.server_status().get("active_profile")
+        except webmanager_client.WebManagerError:
+            active_profile = None
+        if active_profile:
+            try:
+                candidates = [
+                    d["label"] for d in webmanager_client.other_profile_drivers(active_profile)
+                    if d.get("is_telescope")
+                ]
+            except webmanager_client.WebManagerError:
+                candidates = []
+            for label in candidates:
+                try:
+                    vector = indi_client.get_properties(
+                        device=label, timeout=indi_client.TIMEOUT_QUICK_RETRY
+                    ).get(label, {}).get("CONNECTION")
+                except Exception:
+                    vector = None
+                if vector and vector.get("elements", {}).get("CONNECT") == "On":
+                    _mb_desired_mount = label
+                    _save_mount_bridge_desired_state()
+                    _mb_log(
+                        f"Mount Bridge self-heal: '{label}' is live-connected in profile "
+                        f"'{active_profile}' with no mount ever configured for Mount Bridge - "
+                        "set it as the desired mount so Mount Bridge gets added/started/linked "
+                        "automatically."
+                    )
+                    break
+
     # --- Check 1: responsive at all -------------------------------------
     # mount_bridge_status() itself can't distinguish "driver never started"
     # from "driver alive but unresponsive" (issue #238) - both look
@@ -4565,6 +4619,23 @@ class Handler(BaseHTTPRequestHandler):
                     issues.append(f"{label} is in the profile but not connected")
             if not driver_status["has_lx200"]:
                 issues.append("PiFinder LX200 isn't in this profile at all")
+            # Direct feedback (2026-09-19): "bei PiFinder Host MUSS die Mount
+            # Bridge an sein" - but only when a mount is actually wanted. A
+            # genuine mount-less Host (pure handheld GoTo Mode, no telescope
+            # at all) has nothing for Mount Bridge to couple to and correctly
+            # has no Bridge - flagging that as broken would be wrong. Gated
+            # on the exact same signal _mount_bridge_readiness_self_heal()'s
+            # own Check 1 already uses for "has the user ever asked Mount
+            # Bridge to do something this session" - not a new heuristic,
+            # the one already-established source of truth for that question.
+            # Can't use Mount Bridge's own live ACTIVE_DEVICES here (the
+            # whole point of this branch is that it doesn't exist at all).
+            if (_pifinder_role_choice == "host" and not driver_status["has_bridge"]
+                    and (_mb_desired_mount is not None or _mb_desired_coupling_mode is not None)):
+                issues.append(
+                    "PiFinder Mount Bridge isn't in this profile at all "
+                    "(a mount is linked/desired for Host role)"
+                )
             self._send_json({
                 "checked": True,
                 "profile": profile,
