@@ -4565,6 +4565,23 @@ class Handler(BaseHTTPRequestHandler):
                     issues.append(f"{label} is in the profile but not connected")
             if not driver_status["has_lx200"]:
                 issues.append("PiFinder LX200 isn't in this profile at all")
+            # Direct feedback (2026-09-19): "bei PiFinder Host MUSS die Mount
+            # Bridge an sein" - but only when a mount is actually wanted. A
+            # genuine mount-less Host (pure handheld GoTo Mode, no telescope
+            # at all) has nothing for Mount Bridge to couple to and correctly
+            # has no Bridge - flagging that as broken would be wrong. Gated
+            # on the exact same signal _mount_bridge_readiness_self_heal()'s
+            # own Check 1 already uses for "has the user ever asked Mount
+            # Bridge to do something this session" - not a new heuristic,
+            # the one already-established source of truth for that question.
+            # Can't use Mount Bridge's own live ACTIVE_DEVICES here (the
+            # whole point of this branch is that it doesn't exist at all).
+            if (_pifinder_role_choice == "host" and not driver_status["has_bridge"]
+                    and (_mb_desired_mount is not None or _mb_desired_coupling_mode is not None)):
+                issues.append(
+                    "PiFinder Mount Bridge isn't in this profile at all "
+                    "(a mount is linked/desired for Host role)"
+                )
             self._send_json({
                 "checked": True,
                 "profile": profile,
