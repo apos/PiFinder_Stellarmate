@@ -1449,6 +1449,71 @@ _truth_injector_host = "127.0.0.1"  # which PiFinder it feeds - see _truth_injec
 _truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
 _truth_injector_lock = threading.Lock()
 
+# test_tools/pifinder_imu_injector.py's own docstring: it exists specifically
+# to stop Mount Bridge's drift-plausibility check from flagging Full
+# Simulation's own discrete ~2s fake-solve jumps as an implausible external
+# reposition - but it was never started anywhere, only documented as
+# "independently runnable alongside" the Truth Injector. Full Simulation is
+# meant to be a complete stand-in for real hardware, not a partial one that
+# silently depends on a second, undocumented manual script - so this starts/
+# stops together with the Truth Injector itself, sharing its lock/desired
+# flag rather than needing its own toggle.
+#
+# NOT a fix for the separate "Reseed from mount lands slightly off" symptom
+# (live-investigated 2026-09-19) - that turned out to be Coupling mode
+# (Verify/Alert never actively corrects a small residual; Goto-Forward does),
+# unrelated to whether this script runs. Also NOT related to real-hardware
+# IMU dead-reckoning (imu_dead_reckoning.py, real BNO055 IMU, same process as
+# the real Integrator) - this script only ever feeds Full Simulation's own
+# synthetic position pipeline. This script's own docstring already flags that
+# its local re-anchor timer only approximates pifinder_truth_injector.py's
+# actual injection moments ("residual misalignment... never accumulates
+# beyond one such cycle") - acceptable for the false-positive-prevention
+# purpose above, not verified beyond that.
+IMU_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_imu_injector.py"
+_imu_injector_proc = None  # subprocess.Popen or None
+
+
+def _imu_injector_alive() -> bool:
+    return _imu_injector_proc is not None and _imu_injector_proc.poll() is None
+
+
+def _imu_injector_start(device: str, host: str = "127.0.0.1"):
+    """Best-effort - a missing/unreadable screen_direction (Mount Bridge not
+    connected yet) must not fail the Truth Injector start itself, since the
+    Truth Injector's own position feed is the more important half and works
+    fine without smooth IMU dead-reckoning, just with the plausibility-check
+    symptom this is meant to prevent."""
+    global _imu_injector_proc
+    subprocess.run(["pkill", "-f", str(IMU_INJECTOR_SCRIPT)], capture_output=True)
+    try:
+        screen_direction = indi_client.mount_bridge_status(host=host).get("pifinder_screen_direction")
+    except indi_client.INDIClientError:
+        screen_direction = None
+    if not screen_direction:
+        _mb_log("  PiFinder IMU Injector not started - screen_direction unavailable "
+                "(Mount Bridge not connected yet?).")
+        return
+    _imu_injector_proc = subprocess.Popen(
+        [
+            "python3", str(IMU_INJECTOR_SCRIPT),
+            "--indi-device", device, "--pifinder-host", host,
+            "--screen-direction", screen_direction,
+        ],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _imu_injector_stop():
+    global _imu_injector_proc
+    if _imu_injector_proc is not None:
+        _imu_injector_proc.terminate()
+        try:
+            _imu_injector_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _imu_injector_proc.kill()
+        _imu_injector_proc = None
+
 
 def _truth_injector_alive() -> bool:
     return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
@@ -1547,6 +1612,11 @@ def _truth_injector_watchdog(interval=5):
                     _truth_injector_start(_truth_injector_device, _truth_injector_host)
                 except Exception as e:  # a watchdog thread must never die silently
                     _mb_log(f"  failed to restart: {e}")
+            if _truth_injector_desired and not _imu_injector_alive():
+                try:
+                    _imu_injector_start(_truth_injector_device, _truth_injector_host)
+                except Exception as e:  # a watchdog thread must never die silently
+                    _mb_log(f"PiFinder IMU Injector restart failed: {e}")
 
 
 def _parse_threshold(raw: str) -> float:
@@ -6222,6 +6292,7 @@ class Handler(BaseHTTPRequestHandler):
                         _mb_log(f"  failed: {e}")
                         self._send_json({"success": False, "error": str(e)}, status=502)
                         return
+                    _imu_injector_stop()
                     _mb_log("  done.")
                 else:
                     _truth_injector_desired = True
@@ -6234,6 +6305,7 @@ class Handler(BaseHTTPRequestHandler):
                         _mb_log(f"  failed: {e}")
                         self._send_json({"success": False, "error": str(e)}, status=502)
                         return
+                    _imu_injector_start(requested_device, requested_host)
                     _mb_log("  started.")
             self._send_json({"success": True})
             return
@@ -6284,6 +6356,8 @@ def main():
     ).returncode == 0
     if killed:
         _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
+    if subprocess.run(["pkill", "-f", str(IMU_INJECTOR_SCRIPT)]).returncode == 0:
+        _mb_log("killed a stray PiFinder IMU Injector process left over from before this restart.")
     # Found live (2026-09-13, on the actual device this process feeds - not
     # the remote-coupling case below): killing the stray process above does
     # NOT clear PiFinder's own fake_solve_active flag on 127.0.0.1 - only
