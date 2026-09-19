@@ -244,3 +244,89 @@ bestätigt, keine weiteren Auffälligkeiten.
 nicht als eigener Durchlauf wiederholt, da die Root-Cause-Fixarbeit (Zeitstempel-Bug) den Großteil
 der Zeit beansprucht hat - inhaltlich aber durch TE-2/TE-3 bereits mehrfach abgedeckt.
 
+## TE-11 Nachtest (2026-09-19, Folgesitzung) - "Revert to Held Target Now" abschließend geprüft
+
+**Auftrag**: TE-11 aus obigem Durchlauf war nicht abschließend verifiziert. Ziel dieses Nachtests:
+den exakten Code-Pfad nachvollziehen, den Negativ-Fall (kein Revert anhängig) UND den Positiv-Fall
+(echter Fall-4-Revert mit Mount-Bewegung zurück zum Held Target) mit echten Log-Belegen bestätigen.
+
+**Code-Analyse** (`pifinder_mount_bridge.cpp`): `REPOSITION_CONFIRM_NO` (Button/Endpoint-Ziel) wird
+nur dann sinnvoll wirksam, wenn `m_repositionConfirmPending == true` - das wird ausschließlich durch
+Fall 4 in `handleRepositionDetection()` (Zeile ~1556) gesetzt: Mount und PiFinder weichen um mehr
+ab, als durch passive Himmelsbewegung in der seit dem letzten bestätigten Sync vergangenen Zeit
+plausibel wäre (`maxPlausibleDrift = elapsedSec * 0.35'/s`), UND ein vorheriger "confirmed good"-
+Baseline-Moment wurde seit dem letzten Modus-Wechsel/Neustart bereits beobachtet
+(`m_repositionBaselineTrusted`). Voraussetzung dafür wiederum: `BRIDGE_MODE=Goto-Forward` ODER
+(`Auto-Correct` UND `Action=Goto`) - in Verify/Alert (dem Ausgangszustand) greift Fall 4 nie.
+Zeitfenster für eine Antwort: 45s (`REPOSITION_CONFIRM_TIMEOUT_SEC`), danach automatischer Revert
+mit eigener Log-Zeile ("Reposition confirmation timed out...").
+
+**Negativ-Fall (kein Revert anhängig) - ✅ bestätigt**: `indi_setprop "PiFinder Mount
+Bridge.REPOSITION_CONFIRM.REPOSITION_CONFIRM_NO=On"` ohne anhängige Bestätigung erzeugt exakt:
+`"[WARNING] No reposition confirmation is currently pending."` (22:11:47.784). **Das erklärt
+vermutlich den ursprünglichen TE-11-Befund** - der Button/Endpoint hat wahrscheinlich korrekt
+funktioniert (sicherer No-Op), es wurde nur nach der falschen Erfolgs-Log-Zeile gesucht
+(`"Reposition declined..."` statt dieser WARN-Zeile).
+
+**Positiv-Fall (echter Fall-4-Revert) - ⚠ blockiert durch einen neu gefundenen, eigenständigen
+Bug im simulierten Mount, nicht durch Mount Bridge selbst**:
+
+1. `BRIDGE_MODE=Goto-Forward` gesetzt, Baseline-Sync lief korrekt (`"Synced mount to PiFinder's
+   current position... on entering Goto-Forward."`), Drift < 1' bestätigt.
+2. Versucht, das Mount (Telescope Simulator) direkt per `indi_setprop` auf
+   `EQUATORIAL_EOD_COORD` weit wegzusetzen (RA 10h/DEC 40°), um einen echten externen Sprung zu
+   simulieren (dieselbe Technik, die TE-2 im Hauptdurchlauf noch zuverlässig nutzte). **Ergebnis:
+   keinerlei Positionsänderung** - weder mit Dezimalwerten noch mit Sexagesimal-Strings
+   (`10:00:00`), weder über `ON_COORD_SET=SYNC` noch `=TRACK`, weder vor noch nach einem vollen
+   Treiber-Neustart über die INDI-FIFO (`stop`/`start indi_simulator_telescope`), und auch nicht
+   über Mount Bridges **eigenen**, nachweislich funktionierenden INDI-Client (`MANUAL_TRIGGER.
+   TRIGGER_SYNC_TO_COORDS` protokollierte `"Manual SYNC to explicit coords sent to mount"`, aber
+   die tatsächliche Simulator-Position blieb unverändert).
+3. Manuelle Motion-Pulses (`TELESCOPE_MOTION_NS.MOTION_NORTH`) funktionieren dagegen einwandfrei
+   (Position ändert sich sichtbar) - der Simulator ist also nicht komplett eingefroren, sondern
+   **speziell die `EQUATORIAL_EOD_COORD`-Schreiboperation (SYNC wie TRACK) wird von diesem
+   Treiber-Prozess wirkungslos angenommen**, ohne Fehler, ohne Alert-State, ohne Log-Zeile.
+
+**Neuer, eigenständiger Befund**: KStars' gebündelter `Telescope Simulator` (nicht Mount Bridge,
+nicht PiFinder-Code) nimmt `EQUATORIAL_EOD_COORD`-Neuwerte zwar protokollkonform an (State bleibt
+`Ok`, kein Fehler), setzt sie aber nicht um - reproduzierbar über einen vollständigen Treiber-
+Neustart hinweg. Das ist unabhängig vom eigentlichen, heute gefixten `ageSeconds`-Bug und
+unabhängig von Mount Bridge - vermutlich ein KStars/INDI-Upstream-Ticket, kein PiFinder_Stellarmate-
+Bug. Es blockiert aber die Konstruktion eines sauberen, kontrollierten Fall-4-Szenarios über die
+CLI, weil dafür zwingend eine echte, externe (nicht durch Mount Bridge selbst ausgelöste)
+Positionsänderung am Mount nötig ist. Ein Workaround (z.B. viele Minuten lange Motion-Pulses) ist
+mathematisch untauglich: Fall 4 verlangt eine Drift, die schneller als plausible Himmelsbewegung
+(0.35'/min... "/s, s.o.) entsteht - Motion-Pulses laufen aber selbst langsamer (~0.02'/s) als dieser
+Schwellenwert und würden daher strukturell nie als "implausibel" erkannt, egal wie lange gehalten.
+
+**Bewertung**: Der No-Op-Zweig von "Revert to Held Target Now" ist jetzt sauber mit echtem Log-Beleg
+bestätigt (die sichere, häufigere Alltagssituation). Der Erfolgs-Zweig (tatsächlicher Revert mit
+Mount-Bewegung) bleibt Code-seitig unverändert seit dem letzten bekannten funktionierenden Nachweis
+(2026-09-11, laut Docstring in `indi_client.py:1147`) und ist strukturell identisch mit dem bereits
+in TE-8/TE-10 bestätigten Sync+Track-Mechanismus (`sendMountCoordsSafe`) - aber eine frische,
+eigenständige Live-Bestätigung des Erfolgs-Zweigs selbst ist heute an diesem neuen Simulator-Bug
+gescheitert, nicht am Mount-Bridge-Code. Für eine Folgesitzung vorgemerkt: entweder den
+Telescope-Simulator-Prozess/das KStars-Profil komplett neu aufsetzen (nicht nur den einzelnen
+Treiber neustarten) und den Test wiederholen, oder testweise `LX200 OnStep` (echte Hardware) fürs
+reine Beobachten (nicht Bewegen!) heranziehen - beides nicht mehr in dieser Sitzung, da bereits
+erheblicher Zeitaufwand in dieses eine Detail geflossen ist.
+
+**Nebenbefund, ebenfalls neu und ungeklärt**: `PiFinder Mount Bridge.DEBUG.ENABLE` lässt sich
+aktuell nicht mehr per `indi_setprop` einschalten (Property nimmt den Request an, state wird `Ok`,
+Wert bleibt aber `Off`) - betrifft nur die zusätzliche `DBG_DEBUG`-Instrumentierung aus PR #494/#495,
+NICHT die normalen `LOG_INFO`/`LOG_WARN`/`LOG_ERROR`-Zeilen (die immer sichtbar sind und für den
+gesamten heutigen Nachtest ausreichten). Nicht weiter verfolgt (Zeitdruck) - für Folge-Session
+vorgemerkt, da es die Root-Cause-Instrumentierung für künftige Recherchen einschränkt.
+
+**Zustand nach diesem Nachtest**: `BRIDGE_MODE` zurück auf `Verify/Alert` (Ausgangszustand)
+gesetzt, Mount Bridge und Telescope Simulator verbunden. Telescope Simulators Positionsanzeige
+bleibt wegen des oben beschriebenen Bugs auf einem nicht-repräsentativen Wert stehen (kosmetisch,
+kein Sicherheitsrisiko, da `LX200 OnStep`/die echte Montierung nachweislich nicht betroffen ist -
+`ACTIVE_DEVICES.ACTIVE_MOUNT` von Mount Bridge war während des gesamten Nachtests durchgehend auf
+`Telescope Simulator` geprüft, nie auf die echte Montierung).
+
+**Fortlaufende Beobachtung des `ageSeconds`-Fixes**: ein leichtgewichtiger Hintergrund-Watcher
+(`test_tools/live_logs/hang_watch_20260919.log`, alle 10s ein `indi_getprop`-Liveness-Check gegen
+Mount Bridge) läuft ab 2026-09-19 22:13 weiter, um einen etwaigen Rückfall des ursprünglichen
+Hängers unabhängig von weiteren manuellen Tests zu erfassen.
+
