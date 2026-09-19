@@ -102,6 +102,21 @@ static std::unique_ptr<PiFinderSimulator> pifinder_simulator(new PiFinderSimulat
 PiFinderSimulator::PiFinderSimulator()
 {
     setVersion(1, 0);
+
+    // Must happen here, before initProperties() ever runs - INDI::Telescope's
+    // own setTelescopeConnection() doc comment requires this ("Child class
+    // should call this in the constructor before Telescope registers any
+    // connection interfaces"). Calling it from initProperties() (even before
+    // any other code there) is too late: INDI::Telescope::initProperties()
+    // already registers Serial+TCP connection plugins using the default
+    // telescopeConnection value (CONNECTION_SERIAL | CONNECTION_TCP) by the
+    // time this class's own initProperties() body runs, so a later call here
+    // can't undo the already-registered Serial/Network port UI (visible in
+    // the Control Panel's "Port Auswahl" dialog with a guessed /dev/ttyUSB0)
+    // for what is meant to be a pure in-memory value holder with no physical
+    // link at all.
+    setTelescopeConnection(CONNECTION_NONE);
+
     SetTelescopeCapability(TELESCOPE_CAN_GOTO | TELESCOPE_CAN_SYNC | TELESCOPE_CAN_ABORT, 1);
 
     // Matches what Goto()/Sync() already set - this device has a real,
@@ -118,11 +133,12 @@ const char *PiFinderSimulator::getDefaultName()
 
 bool PiFinderSimulator::initProperties()
 {
+    // setTelescopeConnection(CONNECTION_NONE) must NOT be called here - by
+    // the time this runs, INDI::Telescope::initProperties() below has
+    // already registered connection plugins from the default
+    // telescopeConnection value. See the constructor's own comment for the
+    // actual call site and why.
     INDI::Telescope::initProperties();
-
-    // No physical link of any kind - this is a pure in-memory value holder,
-    // nothing to open a serial/TCP connection to.
-    setTelescopeConnection(CONNECTION_NONE);
 
     SetParkDataType(PARK_NONE);
 
