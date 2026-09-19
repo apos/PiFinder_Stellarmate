@@ -5300,6 +5300,24 @@ async function reseedFakeSolve() {
     }
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}&skip_auto_release=${wasFullSimulation}`, { method: 'POST' });
     const result = await resp.json();
+    // Found live (2026-09-19): this toggled the Truth Injector off above to
+    // avoid the race, but never toggled it back on - Full Simulation was
+    // left silently, permanently without its position feed after every
+    // single "Re-seed from mount" click, with no error or indication
+    // anywhere. Restore whatever was true before this one-shot action,
+    // regardless of whether it succeeded - the temporary toggle-off was
+    // never meant to be a lasting side effect of a one-shot re-seed.
+    // Conditional, not a blind re-toggle (no fixed delay/timer either): ask
+    // the server for the CURRENT live state right now and only flip it if
+    // it's actually still off - toggling unconditionally would wrongly turn
+    // it back OFF if something else already re-enabled it in the meantime.
+    if (wasFullSimulation) {
+      const nowResp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+      const now = await nowResp.json();
+      if (now.desired !== true) {
+        await fetch('/api/truth_injector_toggle', { method: 'POST' });
+      }
+    }
     if (result.success !== true) {
       fakeSolveToggleInFlight = false;
       textEl.textContent = `could not re-seed (${result.error || 'unknown error'})`;
@@ -5367,8 +5385,9 @@ async function setFakeSolveManual() {
   statusEl.textContent = 'Setting…';
   applyFakeSolveAdvancedButtonStates('ql-small-btn-yellow');
   let failed = false;
+  const wasFullSimulation = lastTruthInjectorDesired === true;
   try {
-    if (lastTruthInjectorDesired === true) {
+    if (wasFullSimulation) {
       // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
       // Truth Injector's next 2s tick would otherwise immediately overwrite
       // this one-shot manual position with the shadow device's own position
@@ -5379,6 +5398,18 @@ async function setFakeSolveManual() {
     const result = await resp.json();
     failed = result.success !== true;
     statusEl.textContent = result.success === true ? '' : `failed (${result.error || 'unknown error'})`;
+    // Found live (2026-09-19), same bug as reseedFakeSolve(): the toggle-off
+    // above was never undone, silently leaving Full Simulation permanently
+    // without its position feed after every manual position set. Conditional
+    // restore (no timer): ask for the current live state and only flip it
+    // if it's actually still off, regardless of whether this set succeeded.
+    if (wasFullSimulation) {
+      const nowResp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
+      const now = await nowResp.json();
+      if (now.desired !== true) {
+        await fetch('/api/truth_injector_toggle', { method: 'POST' });
+      }
+    }
   } catch (e) {
     failed = true;
     statusEl.textContent = 'failed (unreachable)';
