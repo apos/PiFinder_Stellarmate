@@ -13,3 +13,4 @@
 /.resume_from_venv
 /.mount_bridge_desired_state.json
 __pycache__/
+/test_tools/live_logs/
