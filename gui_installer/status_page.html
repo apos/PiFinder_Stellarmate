@@ -10188,6 +10188,16 @@ async function onRoleCardClick(kind) {
   const profile = wmSelectedProfile;
   const actions = [];
   if (kind === 'host' || kind === 'client') {
+    // Found live (2026-09-19): _ctrlRemoteForceShow (set by the 'ctrl' card
+    // click / showCtrlRemoteInputPrompt() below) was never cleared when
+    // switching to a DIFFERENT role afterward - the non-dismissible
+    // 'ctrl-remote-missing' card (deliberately mandatory while actually
+    // trying to become a Control host, see its own comment above) stayed
+    // stuck forced-visible forever once shown, even after the user picked
+    // Host/Client instead and deriveProfileRole() genuinely stopped
+    // returning 'bridge-only'. Choosing a non-ctrl role is an implicit "no
+    // longer trying to become Control host" - clear the force-show here.
+    _ctrlRemoteForceShow = false;
     // Direct feedback (2026-09-14): "Die will ich an dieser Stelle nicht,
     // die ist manipulativ. Ich will einfach nur Confirm zum Wechseln und
     // nix ändern, dafür haben wir eine Warnung." - restorePiFinderHostProfile()/
