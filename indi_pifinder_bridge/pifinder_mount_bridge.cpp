@@ -236,8 +236,24 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
 
+    // DEBUG-level instrumentation (2026-09-19, "no fresh solve" stall
+    // investigation - see basic-memory pifinder-stellarmate for the full
+    // writeup). Only ever visible with this driver's own Debug switch
+    // enabled (KStars: Configure -> Logging -> Drivers -> Mount, or the
+    // matching INDI Control Panel Options-tab Debug toggle) - INDI's own
+    // DEBUGFDEVICE()/LOGF_DEBUG() machinery suppresses DBG_DEBUG entirely
+    // otherwise, same tiered convention as every other INDI driver, so this
+    // never runs at any cost in normal operation. Logs the exact reason
+    // for every "not fresh" verdict, not just the one final WARN the caller
+    // already prints - the four checks below can each fail independently
+    // and the existing log line alone can't tell them apart.
     if (res != CURLE_OK || httpCode != 200)
+    {
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): HTTP failed - curl result=%d ('%s'), httpCode=%ld",
+                     url.c_str(), static_cast<int>(res), curl_easy_strerror(res), httpCode);
         return false;
+    }
 
     try
     {
@@ -248,15 +264,33 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
         const double lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
 
         if (solveSource != "CAM" || lastSolveSuccess <= 0.0)
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - solve_source='%s' (need 'CAM'), "
+                         "last_solve_success=%.3f (need >0)",
+                         url.c_str(), solveSource.c_str(), lastSolveSuccess);
             return false;
+        }
         const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
         if (!(ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds))
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - ageSeconds=%.3f, maxAgeSeconds=%.3f "
+                         "(now=%ld, last_solve_success=%.3f)",
+                         url.c_str(), ageSeconds, maxAgeSeconds,
+                         static_cast<long>(time(nullptr)), lastSolveSuccess);
             return false;
+        }
 
         const auto &raField = solution.at("RA");
         const auto &decField = solution.at("Dec");
         if (raField.is_null() || decField.is_null())
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - RA and/or Dec null in an otherwise fresh CAM solve",
+                         url.c_str());
             return false;
+        }
 
         // Found live (2026-09-03), root-caused via LOGF_WARN instrumentation
         // at the one place that actually USES an adopted target
@@ -318,10 +352,16 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
 
         ra = jnow.rightascension;
         dec = jnow.declination;
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): accepted - ageSeconds=%.3f, RA=%.4fh, DEC=%.4f deg (JNow)",
+                     url.c_str(), static_cast<double>(time(nullptr)) - lastSolveSuccess, ra, dec);
         return true;
     }
-    catch (const nlohmann::json::exception &)
+    catch (const nlohmann::json::exception &e)
     {
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): JSON parse failed - %s (body length %zu)",
+                     url.c_str(), e.what(), body.size());
         return false;
     }
 }
@@ -1033,11 +1073,30 @@ void PiFinderMountBridge::keepPiFinderAwake()
 
 void PiFinderMountBridge::syncOrientationStatus()
 {
+    // Cooldown, same fix and same reasoning as fetchFreshPiFinderPosition()'s
+    // own (issue #238): this runs unconditionally on EVERY TimerHit() tick
+    // (see TimerHit() itself), with no early-return before its own blocking
+    // 80-then-8080 curl pair (1500ms timeout each per httpGetPiFinderOrientation()).
+    // fetchFreshPiFinderPosition() already had exactly this gap closed for
+    // its own call sites, but this one was never given the same protection -
+    // found live (2026-09-19) instrumenting the "no fresh solve" stall: a
+    // slow/unresponsive PiFinder HTTP API would make THIS call re-block the
+    // driver's single event-loop thread on every single tick, indefinitely,
+    // with no backoff - the same "30+ seconds, indistinguishable from the
+    // driver itself being hung" pattern #238 already diagnosed once, just at
+    // an un-cooled-down call site instead of the one that got fixed.
+    static time_t s_lastOrientationFailureTime = 0;
+    const time_t nowOrientation = time(nullptr);
+    if (s_lastOrientationFailureTime != 0 &&
+        difftime(nowOrientation, s_lastOrientationFailureTime) < FRESH_POSITION_FAILURE_COOLDOWN_SEC)
+        return;
+
     std::string piFinderMountType, screenDirection;
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool gotOrientation =
         httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection) ||
         httpGetPiFinderOrientation("http://" + piFinderHost + ":8080/api/orientation_status", piFinderMountType, screenDirection);
+    s_lastOrientationFailureTime = gotOrientation ? 0 : nowOrientation;
     if (!gotOrientation)
         return; // PiFinder unreachable this tick - leave the last-known values/state showing rather than blank them
 
