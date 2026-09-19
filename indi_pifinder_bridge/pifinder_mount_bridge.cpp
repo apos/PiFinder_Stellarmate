@@ -2,6 +2,7 @@
 #include "pifinder_bridge_client.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -91,6 +92,31 @@ size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
     static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
     return size * nmemb;
+}
+
+// ROOT CAUSE (found live 2026-09-19, "no fresh solve"/stale-drift
+// investigation, confirmed via the freshCamPosition() DEBUG instrumentation
+// added earlier the same night): every ageSeconds computation in this file
+// used `static_cast<double>(time(nullptr))` - whole seconds only, truncated
+// - against `last_solve_success`, a sub-second-precision epoch float from
+// Python's time.time() on PiFinder's side. Whenever a solve is injected
+// LESS THAN ONE SECOND before Mount Bridge checks it (exactly the case
+// GoTo-Forward/reposition-detection cares about most - a solve just landed,
+// is it fresh enough to act on?), the truncated integer "now" can be
+// SMALLER than the untruncated float last_solve_success from the very same
+// real instant, making ageSeconds spuriously NEGATIVE and failing the
+// `ageSeconds >= 0.0` guard - live-confirmed: "ageSeconds=-0.551 (now=
+// 1789845225, last_solve_success=1789845225.551)", a solve rejected as
+// "not fresh" that was in fact under 1 second old. Intermittent by nature
+// (only bites when the solve is very fresh, which is exactly when it's
+// most likely to fall in the "same second, later fraction" case) - this is
+// the "mal geht's, mal nicht" pattern this project has chased on and off
+// all session. Fix: a proper sub-second-precision wall clock, matching
+// what last_solve_success itself already is.
+double nowEpochSeconds()
+{
+    using namespace std::chrono;
+    return duration<double>(system_clock::now().time_since_epoch()).count();
 }
 
 // Fetches PiFinder's own /api/status and extracts solve_source +
@@ -271,14 +297,14 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
                          url.c_str(), solveSource.c_str(), lastSolveSuccess);
             return false;
         }
-        const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
+        const double ageSeconds = nowEpochSeconds() - lastSolveSuccess;
         if (!(ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds))
         {
             DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
                          "freshCamPosition(%s): rejected - ageSeconds=%.3f, maxAgeSeconds=%.3f "
-                         "(now=%ld, last_solve_success=%.3f)",
+                         "(now=%.3f, last_solve_success=%.3f)",
                          url.c_str(), ageSeconds, maxAgeSeconds,
-                         static_cast<long>(time(nullptr)), lastSolveSuccess);
+                         nowEpochSeconds(), lastSolveSuccess);
             return false;
         }
 
@@ -354,7 +380,7 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
         dec = jnow.declination;
         DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
                      "freshCamPosition(%s): accepted - ageSeconds=%.3f, RA=%.4fh, DEC=%.4f deg (JNow)",
-                     url.c_str(), static_cast<double>(time(nullptr)) - lastSolveSuccess, ra, dec);
+                     url.c_str(), nowEpochSeconds() - lastSolveSuccess, ra, dec);
         return true;
     }
     catch (const nlohmann::json::exception &e)
@@ -594,7 +620,10 @@ bool isPiFinderSolveFresh(double maxAgeSeconds, const std::string &piFinderHost)
     if (!ok || solveSource != "CAM" || lastSolveSuccess <= 0.0)
         return false;
 
-    const double ageSeconds = static_cast<double>(time(nullptr)) - lastSolveSuccess;
+    // Same truncated-integer-vs-float-epoch bug as httpGetPiFinderFreshCamPosition()'s
+    // own ageSeconds computation (see nowEpochSeconds()'s own comment) -
+    // fixed here too, same root cause, same fix.
+    const double ageSeconds = nowEpochSeconds() - lastSolveSuccess;
     return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
 }
 
