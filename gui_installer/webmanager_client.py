@@ -394,6 +394,31 @@ def set_profile_autostart(
     return True
 
 
+def set_profile_autoconnect(
+    profile: str, enabled: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Flips the Web Manager's own native "autoconnect" flag on a profile -
+    same PUT-recreates-the-whole-row mechanism as set_profile_autostart()
+    right above, leaving autostart/port/driver_source untouched.
+
+    Returns False (no-op, no request sent) if `enabled` already matches
+    the profile's current value. Raises WebManagerError if the profile
+    doesn't exist or the request fails."""
+    meta = _get_profile_meta(profile, host, port, timeout)
+    if bool(meta.get("autoconnect")) == enabled:
+        return False
+    _request(
+        "PUT", f"/api/profiles/{_q(profile)}", host, port, timeout,
+        body={
+            "port": meta.get("port"),
+            "autostart": bool(meta.get("autostart")),
+            "autoconnect": enabled,
+            "driver_source": meta.get("driver_source") or "system",
+        },
+    )
+    return True
+
+
 def pifinder_driver_status(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> dict:
