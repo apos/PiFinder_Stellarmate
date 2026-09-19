@@ -4437,6 +4437,7 @@ class Handler(BaseHTTPRequestHandler):
             for label, present in (
                 ("PiFinder LX200", driver_status["has_lx200"] and not driver_status["lx200_remote"]),
                 ("PiFinder Mount Bridge", driver_status["has_bridge"]),
+                ("PiFinder Simulator", driver_status["has_simulator"]),
             ):
                 if not present:
                     continue
@@ -4458,6 +4459,7 @@ class Handler(BaseHTTPRequestHandler):
                 "has_lx200": driver_status["has_lx200"],
                 "lx200_remote": driver_status["lx200_remote"],
                 "has_bridge": driver_status["has_bridge"],
+                "has_simulator": driver_status["has_simulator"],
                 "devices": devices,
                 "other_drivers": [d["label"] for d in other],
                 "ok": not issues,
