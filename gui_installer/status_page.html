@@ -10272,6 +10272,19 @@ async function onRoleCardClick(kind) {
     // stale on the NEXT role-card click's own loadWmProfiles() call.
     profileTouched = false;
   } else {
+    // Symmetric to the host/client branch's `_ctrlRemoteForceShow = false`
+    // above: choosing Control host is an explicit, deliberate move away
+    // from whatever Host/Client choice was active before. Found live
+    // (2026-09-20): without clearing it, a stale pifinderRoleChoice
+    // ('client' from an earlier accidental pick) survived the switch to
+    // 'ctrl' and kept isPiFinderClientRole()-gated UI stuck showing Client
+    // - the role card stayed double-highlighted alongside the now-correct
+    // "Control host" card, and the 'client-has-bridge' showstopper/its
+    // Reset button both wrongly reappeared, even though the profile's
+    // actual shape is now unambiguously 'ctrl' and needs no disambiguation
+    // (see isPiFinderClientRole()'s own comment - that's this variable's
+    // only purpose).
+    if (pifinderRoleChoice) await setPifinderRoleChoice('');
     // No prompt() here anymore (2026-09-11, direct feedback: mandatory
     // entry, same yellow-box style as the other showstoppers, not a
     // dismissible native dialog) - this just clears the way for the

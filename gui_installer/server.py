@@ -5911,10 +5911,19 @@ class Handler(BaseHTTPRequestHandler):
             # then goes on to do manually).
             qs = parse_qs(parsed.query)
             choice = qs.get("choice", [""])[0]
-            if choice not in ("host", "client"):
+            # choice="" clears it back to None - found live (2026-09-20):
+            # switching to "Control host" never called this endpoint at all
+            # (onRoleCardClick() only wires host/client here, see its own
+            # comment), so a stale "client"/"host" choice from before
+            # survived the switch and kept driving isPiFinderClientRole()-
+            # gated UI (the role card itself, the 'client-has-bridge'
+            # showstopper, its Reset button) even though the profile's
+            # actual shape had moved to the unambiguous 'ctrl'/'ctrl-
+            # incomplete' derivation, which needs no disambiguation at all.
+            if choice not in ("host", "client", ""):
                 self._send_json({"success": False, "error": f"invalid choice '{choice}'"}, status=400)
                 return
-            _pifinder_role_choice = choice
+            _pifinder_role_choice = choice or None
             # Direct feedback (2026-09-13): "wechselt das Profil wieder nicht
             # zurück, sondern bleibt auf PFSM Client stehen" - unlike Client
             # (which records _last_known_client_profile itself, synchronously,
