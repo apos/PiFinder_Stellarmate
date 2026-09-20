@@ -561,6 +561,10 @@ The section splits into what you use every session and what you set once:
 Clicking a preset before the numbered setup steps are all green doesn't fail — it runs the setup
 first (Autoconnect), then applies the mode you clicked.
 
+Changing Coupling from outside the Control Center (an INDI client, the Control Panel, a raw
+property write) doesn't stick — the Control Center actively re-applies whatever preset was last
+selected here. Use these buttons for anything meant to persist.
+
 #### Roles
 
 The three **Role** cards under *Settings* say what this device does in the wider setup — picking
