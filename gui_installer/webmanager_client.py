@@ -95,6 +95,21 @@ def _request(method: str, path: str, host: str, port: int, timeout: float, body=
             return json.loads(raw) if raw else None
     except urllib.error.URLError as e:
         raise WebManagerError(f"{method} {path} failed: {e}") from e
+    except TimeoutError as e:
+        # Found live (2026-09-20, issue #385 investigation): urlopen's own
+        # `timeout` only gets wrapped into URLError for a connect-phase
+        # timeout (server never accepted the connection) - verified live
+        # that a READ-phase timeout (the server accepts, starts responding,
+        # then stalls mid-body - exactly what a #385-adjacent Web Manager
+        # stall looks like) raises a bare TimeoutError instead, which this
+        # except clause never caught. Every caller of server_status() etc.
+        # only ever expects WebManagerError (see e.g.
+        # _pifinder_service_sync_with_lx200_target()'s own cache-fallback
+        # path in server.py) - an uncaught TimeoutError skipped that
+        # graceful handling entirely and surfaced as a generic "raised
+        # unexpectedly: timed out" in the Mount Bridge readiness watchdog
+        # instead.
+        raise WebManagerError(f"{method} {path} timed out: {e}") from e
     except json.JSONDecodeError as e:
         raise WebManagerError(f"{method} {path} returned non-JSON: {e}") from e
 
