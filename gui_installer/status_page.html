@@ -9090,6 +9090,15 @@ let wmHasBridge = null;
 // before they'd otherwise only notice via issue #385's own symptoms.
 // null = not fetched yet (refreshWmConnectRow() is the only source).
 let wmOtherDriversCount = null;
+// Same source/lifecycle as wmOtherDriversCount, the labels themselves
+// rather than just a count - lets updateStepIndicators()/
+// updateSimReadinessLine() tell a genuinely-linked-and-present mount apart
+// from a stale wmActiveMount name left over from a DIFFERENT profile that
+// no longer has that driver at all (found live 2026-09-20: the "Mount"
+// step/line showed done/green purely because Mount Bridge's own
+// ACTIVE_DEVICES still named something, with no check that the name means
+// anything in the profile actually running right now).
+let wmOtherDriverLabels = null;
 // "host" | "client" | null (2026-09-13, docs/concepts/
 // pifinder_client_role_and_indi_setup_review.md) - this device's own
 // deliberate choice between the two role cards that share the identical
@@ -9163,7 +9172,7 @@ async function loadWmProfiles() {
     if (wmSelectedProfile) {
       refreshWmDriverButtons();
       refreshWmConnectRow();
-      if (changedProfile) { checkKstarsLink(); refreshProfileHealth(); }
+      if (changedProfile) { checkKstarsLink(); refreshProfileHealth(); resetEkosAutoHeal(); }
     } else {
       setWmDriverButton('lx200', null);
       setWmDriverButton('bridge', null);
@@ -9278,6 +9287,23 @@ let wmEkosAutoHealAttempts = 0;
 let wmEkosAutoHealCooldownUntil = 0;
 const EKOS_AUTO_HEAL_MAX_ATTEMPTS = 3;
 const EKOS_AUTO_HEAL_COOLDOWN_MS = 15000;
+
+// Found live (2026-09-20): this budget was only ever reset on a genuine
+// success (checkEkosStatus() above) - never when wmSelectedProfile itself
+// changes. A budget exhausted against an old profile (e.g. one with no
+// mount driver, which Ekos could never realistically connect) silently
+// carried over to a freshly-selected, perfectly viable profile, which then
+// immediately showed the static "do it yourself" message with no real
+// attempt ever made against it - even after Mount Bridge's own,
+// unrelated/unlimited self-heal had already reconnected every driver.
+// Called from both profile-change entry points (onWmProfileChange()'s
+// direct user pick, loadWmProfiles()'s changedProfile branch for a switch
+// made elsewhere) - same two call sites checkKstarsLink()/
+// refreshProfileHealth() already use for the identical reasoning.
+function resetEkosAutoHeal() {
+  wmEkosAutoHealAttempts = 0;
+  wmEkosAutoHealCooldownUntil = 0;
+}
 
 async function checkEkosStatus() {
   const row = document.getElementById('mb-ekos-status-row');
@@ -9426,6 +9452,7 @@ async function refreshWmConnectRow() {
     noMountHint.style.display = 'none';
     refreshWmConnectAllButton();
     wmOtherDriversCount = null;
+    wmOtherDriverLabels = null;
     renderNoSolveBanner();
     return;
   }
@@ -9436,8 +9463,11 @@ async function refreshWmConnectRow() {
     const data = await resp.json();
     if (data.error || !data.drivers) throw new Error(data.error || 'no drivers');
     wmOtherDriversCount = data.drivers.length;
-    renderNoSolveBanner();
     const labels = data.drivers.map((d) => d.label);
+    wmOtherDriverLabels = labels;
+    renderNoSolveBanner();
+    updateStepIndicators();
+    updateSimReadinessLine();
     const previousValue = mountSelect.value;
     mountSelect.innerHTML = '';
     data.drivers.forEach((d) => {
@@ -9482,6 +9512,7 @@ async function refreshWmConnectRow() {
     mountBtn.disabled = true;
     noMountHint.style.display = 'none';
     wmOtherDriversCount = null;
+    wmOtherDriverLabels = null;
     renderNoSolveBanner();
   }
   refreshConnectButtons();
@@ -9653,6 +9684,7 @@ function connectWmSelectedMount() {
 async function onWmProfileChange() {
   profileTouched = true;
   wmSelectedProfile = document.getElementById('wm-profile-select').value;
+  resetEkosAutoHeal();
   wmServerRunning = wmLastRunning && wmLastActiveProfile === wmSelectedProfile;
   refreshWmServerButton();
   updateStepIndicators();
@@ -10472,6 +10504,25 @@ function showCtrlRemoteInputPrompt() {
   document.getElementById('ctrl-remote-input')?.focus();
 }
 
+// wmActiveMount is only ever a NAME, from Mount Bridge's own ACTIVE_DEVICES
+// bookkeeping property - it says nothing about whether a driver by that
+// name is actually present in the profile currently running. Found live
+// (2026-09-20): switching the Web Manager profile to one that never had a
+// mount driver left wmActiveMount pointing at a leftover name from the
+// PREVIOUS profile (Mount Bridge's own self-heal was still retrying it
+// every tick, see the matching server-side fix in
+// _mount_bridge_readiness_self_heal()'s Check 2.75) - the "Mount" step
+// still showed green/done purely because that name was non-empty, directly
+// contradicting the "No mount driver in this profile yet" text right next
+// to it. wmOtherDriverLabels null (not fetched yet) trusts the name alone,
+// same as before this fix - only an actually-fetched, non-matching list
+// counts as "not really there".
+function mountGenuinelyLinked() {
+  if (!wmActiveMount) return false;
+  if (wmOtherDriverLabels === null) return true;
+  return wmOtherDriverLabels.includes(wmActiveMount);
+}
+
 // Green checkmark on each step's label once its condition is actually met -
 // per live feedback, plain grey labels gave no sense of "am I done here yet
 // or not" at a glance.
@@ -10486,7 +10537,7 @@ function updateStepIndicators() {
   const step1Done = !!wmSelectedProfile && wmServerRunning;
   const step2Done = wmKstarsLinked === true;
   const step3Done = wmHasLx200 === true && (clientRole || wmHasBridge === true);
-  const step4Done = clientRole || !!wmActiveMount;
+  const step4Done = clientRole || mountGenuinelyLinked();
   document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
   document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', step3Done);
@@ -10569,7 +10620,7 @@ function updateSimReadinessLine() {
     ['Profile', !!wmSelectedProfile && wmServerRunning],
     ['KStars', wmKstarsLinked === true],
     ['Drivers', wmHasLx200 === true && (clientRole || wmHasBridge === true)],
-    ...(clientRole ? [] : [['Mount', !!wmActiveMount]]),
+    ...(clientRole ? [] : [['Mount', mountGenuinelyLinked()]]),
     ['Ekos', wmEkosConnected === true],
     ['Solve', !!lastSolveSource],
   ];
