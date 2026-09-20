@@ -4517,7 +4517,19 @@ class Handler(BaseHTTPRequestHandler):
                     device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
                 )
             except indi_client.INDIClientError as e:
-                status = {"running": False, "error": str(e)}
+                # Direct feedback (2026-09-20, issue #506): this used to report
+                # {"running": False, ...} - the frontend treats "running": false
+                # as a CONFIRMED fact ("false here is a confirmed answer, not a
+                # miss", see updateMbStatus()'s own comment) and blanks the
+                # whole diagram/badges accordingly. But an INDIClientError here
+                # just means this one poll couldn't reach indiserver (e.g.
+                # issue #385's periodic stall) - the driver process itself is
+                # typically still healthy the whole time (see bm 00089 §9).
+                # "running": None (neither true nor false) instead falls into
+                # the frontend's existing "genuinely couldn't tell" path
+                # (mbStatusMissStreak), which pulses the unconfirmed dot and
+                # keeps the last known state instead of wiping it.
+                status = {"running": None, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
             if status.get("running") != _mb_last_running:
                 _mb_log(
