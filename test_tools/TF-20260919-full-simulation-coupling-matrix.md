@@ -330,3 +330,101 @@ kein Sicherheitsrisiko, da `LX200 OnStep`/die echte Montierung nachweislich nich
 Mount Bridge) läuft ab 2026-09-19 22:13 weiter, um einen etwaigen Rückfall des ursprünglichen
 Hängers unabhängig von weiteren manuellen Tests zu erfassen.
 
+## TE-11 zweiter Nachtest (2026-09-20) - Fall-4-Positivzweig live bestätigt
+
+**Methodik-Hinweis**: Ab hier gilt die neue zentrale Testmethodik, siehe basic-memory
+`pifinder-stellarmate/00171_testmethodik-zentral-langtest-atomare-aenderungen-gui-first-2026-09-20.md`
+(lange Testkampagne statt Einzelschritte, Zwischenbefunde sofort in den laufenden Test integriert,
+GUI-first statt `indi_setprop`-Abkürzungen). Dieser Abschnitt fasst nur die konkreten Ergebnisse
+zusammen; das Vorgehen selbst steht im verlinkten bm-Dokument.
+
+### Root-Cause des gestrigen Blockers: nicht der Simulator, sondern CLI- vs. GUI-Zugriff
+
+Gestriger Befund ("Telescope Simulator nimmt `EQUATORIAL_EOD_COORD`-Schreibversuche an, setzt sie
+aber nie um") wurde heute präzisiert: **ein echter GUI-GoTo (Ekos) bewegt den Mount zuverlässig**
+(live verifiziert: GoTo Capella, dann GoTo Aldebaran, beide Male exakte Übereinstimmung von
+Telescope Simulator und PiFinder LX200 danach). Ein vollständiger KStars/Ekos- und INDI-WM-Profil-
+Neustart (nicht nur ein einzelner Treiber-Prozess) war dafür nötig - schwächere Reset-Stufen
+(Treiber-Neustart über FIFO, reiner `CONNECTION`-Disconnect/Connect-Zyklus) hatten das gestern
+nicht behoben. **`indi_setprop`-Schreibzugriffe auf `EQUATORIAL_EOD_COORD` bleiben dagegen weiterhin
+wirkungslos** - auch nach dem Neustart, auch mit Sexagesimal-Format, auch über Mount Bridges
+eigenen, langlebigen INDI-Client (`MANUAL_TRIGGER.TRIGGER_SYNC_TO_COORDS`). Das ist also kein
+Simulator-Bug, sondern ein reales, ungeklärtes Verhaltens-Delta zwischen programmatischem und
+GUI-seitigem INDI-Zugriff auf dieses spezifische Gerät - nicht weiter untersucht (außerhalb des
+eigentlichen Ziels), aber jetzt sauber von einem "Treiber kaputt"-Verdacht abgegrenzt.
+
+### Zweiter Stolperstein: Full-Simulation-Kopplung lässt PiFinder dem Mount folgen
+
+Ein normaler GoTo auf Telescope Simulator erzeugt in diesem Full-Simulation-Aufbau **keine**
+anhaltende Diskrepanz zu PiFinder - `PiFinder Simulator` snoopt Telescope Simulator direkt
+(`FOLLOW_MOUNT_DEVICE`, siehe TE-6 oben) und der Truth Injector zieht `PiFinder LX200` innerhalb
+weniger Sekunden nach. Ein Versuch, das künstlich zu umgehen (Truth-Injector-Prozess per
+`SIGSTOP` pausieren, damit PiFinder "nicht mitzieht"), wurde als Testmethodik **verworfen** -
+direkter User-Einwand: in der Realität würde die PiFinder-IMU/ein Solve eine echte physische
+Mount-Bewegung ohnehin sofort auffangen. Fall-4 ("Mount-Readout weicht implausibel ab") bildet
+real den Fall ab, dass sich die **Mount-eigene Positionsangabe verfälscht, ohne dass sich das
+Teleskop physisch bewegt hat** (Encoder-Fehler, Kommunikationsglitch, korrupter GoTo) - dafür ist
+nicht ein GoTo/Track das richtige Testmittel, sondern ein **Sync** (reine Neu-Etikettierung ohne
+physische Bewegung), bei dem PiFinder korrekterweise unverändert bleibt.
+
+### Der eigentliche Fall-4-Positivtest - erfolgreich, mit vollständigem Protokollbeleg
+
+Setup: `BRIDGE_MODE=Goto-Forward` über den echten CC-"GoTo"-Coupling-Button gesetzt (ein
+`indi_setprop`-Moduswechsel wurde zuvor unbemerkt von server.py's Coupling-Self-Heal
+zurückgedreht - derselbe Mechanismus wie beim TE-6-Fund zum "Auto-correct"-Button, hier erstmals
+auch gegen einen rohen INDI-Moduswechsel bestätigt, nicht nur gegen einen UI-Klick). Danach: Sync
+auf Telescope Simulator via GUI (INDI Control Panel/Handsteuerung-Analogie "Align" nach
+Sternidentifikation) auf ein weit entferntes Ziel.
+
+Vollständige, echte Protokollsequenz (`log_08-47-50.txt`, 2026-09-20):
+```
+09:12:28.344  Mount Bridge: "Confirmed external reposition (RA 5.9178h, DEC 7.3999 deg) pushed to PiFinder itself."
+09:12:28.345  Mount Bridge: "External reposition confirmed by a fresh PiFinder solve... adopted as the new held target."
+09:12:30.378  Mount Bridge: "Drift 2372.9 arcmin exceeds what passive sky motion could produce in 2s (max plausible 0.7') -
+               likely a deliberate reposition... Confirm via REPOSITION_CONFIRM within 45s..."
+09:12:56.199  Telescope Simulator: "Sync is successful."
+09:12:56.201  Mount Bridge: "Reposition declined - reverting to the held target."          ← REPOSITION_CONFIRM_NO gefeuert
+09:12:56.201  Telescope Simulator: "Slewing to RA: 4.6241 Dec: 16.5644"                     ← Ziel: Aldebaran (das aktuelle Held Target)
+09:12:56.204  Telescope Simulator: "Telescope slew is complete. Tracking..."
+09:12:56.778  Mount Bridge: "Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival."
+09:13:04.896  Mount Bridge: "Arrival verified by PiFinder solve: residual 0.2 arcmin, within threshold 5.0 - now holding."
+```
+
+**Damit ist der Fall-4-Erfolgs-Zweig ("Revert to Held Target Now" mit echter, verifizierter
+Mount-Bewegung) vollständig, live, mit lückenlosem Protokollbeleg bestätigt** - inklusive der
+tatsächlichen Slew-Bestätigung durch den Simulator selbst (`"Sync is successful."`,
+`"Telescope slew is complete. Tracking..."`), nicht nur durch Mount Bridges eigene Logzeilen.
+Zusammen mit dem bereits gestern bestätigten No-Op-Zweig ("No reposition confirmation is currently
+pending.") ist TE-11 damit **vollständig abgeschlossen**.
+
+### Ungeklärtes Nachfolge-Artefakt: Positions-Rücksprung ohne jede Kommando-Zeile
+
+Mehrere Minuten nach der verifizierten Ankunft auf Aldebaran standen Mount und PiFinder wieder auf
+dem zuvor gesyncten Capella-Wert - **ohne dass im gesamten Log (alle Geräte, nicht nur Mount
+Bridge) irgendeine Sync/Slew/Track-Zeile diesen Wechsel erklärt**. Da kein Client (weder Mount
+Bridge noch KStars/Ekos noch sonst jemand) sichtbar einen Befehl gesendet hat, deutet das auf eine
+**interne Neuberechnung innerhalb von Telescope Simulators eigenem Alignment-Subsystem** hin (ein
+gespeicherter Sync-/Referenzpunkt, der periodisch erneut angewendet wird, ohne den normalen,
+geloggten `ISNewNumber`-Pfad zu durchlaufen). Dies ist ein Artefakt des KStars-mitgelieferten
+Telescope-Simulator-Treibers, **nicht** von Mount Bridge oder PiFinder_Stellarmate-Code, und trat
+**nach** der bereits erfolgreich verifizierten Ankunft auf - beeinträchtigt also nicht die Aussage
+des eigentlichen Tests oben. Nicht weiter verfolgt (außerhalb des Projekt-Scopes) - für eine
+etwaige zukünftige Untersuchung des KStars-Alignment-Subsystems vorgemerkt, falls es je relevant
+werden sollte.
+
+### Nebenbefund
+
+Dead Reckoning (IMU-gestützte Positions-Interpolation zwischen echten Solves) funktioniert laut
+Live-Beobachtung während dieser Kampagne einwandfrei.
+
+## Gesamtfazit TE-11 (beide Nachtests, 2026-09-19 + 2026-09-20)
+
+Beide Zweige von "Revert to Held Target Now" sind jetzt vollständig, live, mit echten
+Protokollbelegen bestätigt: der No-Op-Zweig (keine Bestätigung anhängig → sicherer Warnhinweis,
+keine Aktion) und der Erfolgs-Zweig (Fall-4 ausgelöst → Revert-Klick → verifizierte Rückkehr zum
+Held Target). Der ursprünglich vermutete "Simulator-Bug" war tatsächlich ein CLI-vs-GUI-
+Zugriffs-Delta, kein Treiber-Defekt. Der finale Blocker war nicht Mount-Bridge-Code, sondern eine
+Verkettung aus (a) einem verunreinigten KStars/Ekos-Zustand, der einen vollen Neustart brauchte,
+und (b) der bereits bekannten Coupling-Mode-Selbstheilung, die auch rohe INDI-Moduswechsel
+zurückdreht, nicht nur UI-Klicks.
+
