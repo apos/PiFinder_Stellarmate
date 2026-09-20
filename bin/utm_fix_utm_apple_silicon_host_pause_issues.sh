@@ -35,12 +35,12 @@ echo "-> [1/4] Forcing the kernel to trust TSC unconditionally (tsc=reliable)...
 # systemd-boot entry is currently the default, not hardcoded, so this keeps
 # working across StellarMate OS snapshot updates (system-X.Y.Z.conf).
 LOADER_CONF="/efi/loader/loader.conf"
-if [[ ! -f "${LOADER_CONF}" ]]; then
+if ! sudo test -f "${LOADER_CONF}"; then
     echo "   ${LOADER_CONF} not found - not a systemd-boot system? Skipping."
 else
     DEFAULT_ENTRY="$(sudo awk '$1=="default"{print $2}' "${LOADER_CONF}")"
     ENTRY_FILE="/efi/loader/entries/${DEFAULT_ENTRY}"
-    if [[ ! -f "${ENTRY_FILE}" ]]; then
+    if ! sudo test -f "${ENTRY_FILE}"; then
         echo "   Default entry '${DEFAULT_ENTRY}' not found under /efi/loader/entries/. Skipping."
     elif sudo grep -q 'tsc=reliable' "${ENTRY_FILE}"; then
         echo "   Already set in ${ENTRY_FILE}. Skipping."
