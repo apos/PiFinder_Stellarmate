@@ -580,6 +580,10 @@ Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal eins
 Ein Preset zu klicken, bevor die nummerierten Setup-Schritte alle grün sind, schlägt nicht fehl —
 es führt erst das Setup aus (Autoconnect) und wendet dann den geklickten Modus an.
 
+Coupling von außerhalb des Control Centers zu ändern (ein INDI-Client, das Control Panel, ein
+roher Property-Schreibzugriff) bleibt nicht bestehen — das Control Center wendet aktiv wieder das
+zuletzt hier gewählte Preset an. Für alles, was dauerhaft gelten soll, diese Buttons verwenden.
+
 #### Rollen
 
 Die drei **Rollen**-Karten unter *Settings* legen fest, was dieses Gerät im Gesamt-Setup tut —
