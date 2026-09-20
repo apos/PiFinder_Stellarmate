@@ -2509,6 +2509,13 @@ _MOUNT_TIME_STALE_THRESHOLD_SEC = 600.0
 _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL = 3
 _mb_readiness_profile_desync_consecutive = 0
 
+# Found live (2026-09-20): (active_profile, _mb_desired_mount) tuple last
+# warned about below - a plain "warned once" bool would still re-log every
+# tick a DIFFERENT stale-mount/profile combination shows up, and would stay
+# permanently silent about a second, genuinely new occurrence after the
+# first one happened to involve the same profile.
+_mb_desired_mount_missing_from_profile_warned = None
+
 
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
@@ -2519,6 +2526,7 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     once makes a failure harder to attribute to any one of them."""
     global _mb_readiness_gave_up, _mb_readiness_consecutive_fails
     global _mb_readiness_follow_mount_consecutive_fails, _mb_readiness_follow_mount_gave_up_target
+    global _mb_desired_mount_missing_from_profile_warned
 
     # Maintenance mode (2026-09-11/12): this Control Center's own driver
     # self-healing is one of the three things maintenance mode stops (see
@@ -2702,6 +2710,40 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                     _mb_readiness_profile_desync_consecutive = 0
             return
         _mb_readiness_profile_desync_consecutive = 0
+
+    # --- Check 2.75: desired mount actually exists in the active profile -
+    # Found live (2026-09-20): _mb_desired_mount can be a leftover from a
+    # DIFFERENT, previously active profile (e.g. remembered while "PFSM UTM
+    # Simulation" was active, then the user switches to "PFSM Client", which
+    # was never meant to have a mount driver at all) - Check 3 below has no
+    # way to tell "genuinely disconnected, keep retrying" apart from
+    # "doesn't exist in this profile at all, retrying can never succeed",
+    # and kept firing indi_client.connect_device(_mb_desired_mount) every
+    # tick forever against a device indiserver has never even heard of
+    # ("property 'CONNECTION' not currently defined"). Reuses
+    # other_profile_drivers() - the same call Check 0 above already uses to
+    # find mount candidates - rather than a second, separate device-listing
+    # mechanism. Deliberately does NOT clear _mb_desired_mount itself - an
+    # explicit choice persists until the user changes it (same principle as
+    # pifinder_role_choice's own comment) - just stops retrying a connect
+    # that cannot succeed until the profile situation changes, logged once
+    # per (profile, mount) combination rather than every 5s tick.
+    if _mb_desired_mount and active_profile:
+        try:
+            other_drivers = {d["label"] for d in webmanager_client.other_profile_drivers(active_profile)}
+        except webmanager_client.WebManagerError:
+            other_drivers = None
+        if other_drivers is not None and _mb_desired_mount not in other_drivers:
+            combo = (active_profile, _mb_desired_mount)
+            if _mb_desired_mount_missing_from_profile_warned != combo:
+                _mb_desired_mount_missing_from_profile_warned = combo
+                _mb_log(
+                    f"Mount Bridge self-heal: desired mount '{_mb_desired_mount}' isn't in the "
+                    f"active profile '{active_profile}' at all - not retrying the connect until "
+                    "either the mount is added there or a different mount is chosen."
+                )
+            return
+        _mb_desired_mount_missing_from_profile_warned = None
 
     # --- Check 3: linked to the desired mount, both devices connected ----
     # Found live (2026-09-16, #385-adjacent investigation): "not_connected"
