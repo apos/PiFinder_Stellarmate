@@ -4435,6 +4435,44 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(_current_pifinder_mode_snapshot())
             return
 
+        if parsed.path == "/api/remote_mount_bridge_coupling":
+            # Control host only - whether the mirrored PiFinder's OWN device
+            # also runs its own local "PiFinder Mount Bridge" with an active,
+            # steering coupling mode. Found live (2026-09-20): a remote
+            # PiFinder in "PiFinder host" role can (by that role's own
+            # design - "with its own mount coupling here too") run a fully
+            # independent local Mount Bridge/mount at the same time this
+            # Control Host couples to the very same PiFinder - PiFinder is
+            # NOT purely read-only from a Bridge's perspective (a confirmed
+            # external reposition gets pushed back into it, see
+            # docs/concepts/mount_bridge_reposition_detection.md), so two
+            # independently-coupled Bridges can end up cross-talking through
+            # PiFinder as a shared position sink, each thinking the other's
+            # mount motion/glitch is a real external reposition of ITS OWN
+            # target. Reads "PiFinder Mount Bridge"'s own properties directly
+            # off the remote host's indiserver (2026-09-15 pattern - see
+            # _pifinder_lx200_indi_status()'s own docstring - no CC-to-CC
+            # HTTP/password needed, same as /api/system_load?host=).
+            # MODE_VERIFY_ALERT is deliberately not flagged - it never writes
+            # back to the mount or to PiFinder (TE-5, bm pifinder-stellarmate/
+            # 00162), so it carries none of this risk.
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            if not host or not _valid_pifinder_host(host):
+                self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                return
+            try:
+                status = indi_client.mount_bridge_status(host=host)
+            except indi_client.INDIClientError:
+                status = None
+            coupling_mode = status.get("coupling_mode") if status else None
+            active = bool(
+                status and status.get("running") and status.get("bridge_connected")
+                and coupling_mode in ("MODE_GOTO_FORWARD", "MODE_AUTO_CORRECT")
+            )
+            self._send_json({"active": active, "coupling_mode": coupling_mode if active else None})
+            return
+
         if parsed.path == "/api/display_bridge":
             self._send_json({"enabled": _lcd_overlay_active()})
             return

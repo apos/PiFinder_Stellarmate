@@ -3879,6 +3879,40 @@ function refreshRemoteSystemLoad() {
   });
 }
 
+// null = unknown/not fetched yet; {active, coupling_mode} once fetched -
+// see refreshRemoteMountBridgeCoupling()'s own comment.
+let remoteMountBridgeCoupling = null;
+
+// Control host only - found live (2026-09-20): the mirrored PiFinder's own
+// device can (in "PiFinder host" role, by that role's own design - "with its
+// own mount coupling here too") run a fully independent local Mount
+// Bridge/mount at the same time THIS Control Host couples to the very same
+// PiFinder. PiFinder is not purely read-only from a Bridge's perspective (a
+// confirmed external reposition gets written back into it - see
+// docs/concepts/mount_bridge_reposition_detection.md) - so two independently
+// active Bridges can cross-talk through PiFinder as a shared position sink,
+// each mistaking the other's mount motion/glitch for a real external
+// reposition of its own target. Reads the remote device's own "PiFinder
+// Mount Bridge" INDI properties directly (server-side, no CC-to-CC HTTP/
+// password - see /api/remote_mount_bridge_coupling's own comment), same
+// category-2b-successor pattern as refreshRemoteSystemLoad() above.
+function refreshRemoteMountBridgeCoupling() {
+  const host = isControlHostRole() ? pifinderHost() : null;
+  if (!host) {
+    remoteMountBridgeCoupling = null;
+    return;
+  }
+  fetch(`/api/remote_mount_bridge_coupling?host=${encodeURIComponent(host)}`, { cache: 'no-store' })
+    .then(r => r.json())
+    .then(data => {
+      remoteMountBridgeCoupling = { active: !!data.active, coupling_mode: data.coupling_mode || null };
+      renderNoSolveBanner();
+    })
+    .catch(() => {
+      remoteMountBridgeCoupling = null;
+    });
+}
+
 // Control host only - the mirrored device's own "PiFinder host"/"PiFinder
 // Client" choice (docs/concepts/pifinder_client_role_and_indi_setup_review.md,
 // section 5 point 4), via the same category 2b proxy as CPU/Temp above.
@@ -4345,6 +4379,26 @@ function collectActiveShowstoppers() {
       buttons: [
         { label: 'Reset to minimal Client set', onclick: 'switchToPiFinderClientProfile(document.getElementById(\'mb-role-card-client\'), true)', action: 'reset-client-profile' },
       ],
+    });
+  }
+  // Found live (2026-09-20): a remote PiFinder in "PiFinder host" role can
+  // run its own local Mount Bridge/mount at the same time this Control Host
+  // couples to the same PiFinder - see refreshRemoteMountBridgeCoupling()'s
+  // own comment for the actual risk (PiFinder isn't purely read-only; a
+  // confirmed external reposition writes back into it, so two independent
+  // Bridges can cross-talk through it). Informational only, no button - the
+  // fix is a manual decision on the OTHER device (switch it to "PiFinder
+  // Client", or turn its coupling to Verify/Alert only), not anything this
+  // Control Host can safely do to a device it doesn't own the Web Manager
+  // profile of.
+  if (isControlHostRole() && remoteMountBridgeCoupling && remoteMountBridgeCoupling.active) {
+    const modeLabel = remoteMountBridgeCoupling.coupling_mode === 'MODE_AUTO_CORRECT' ? 'Auto-correct (Sync)' : 'GoTo';
+    items.push({
+      id: 'remote-mount-bridge-active',
+      category: 'mount-bridge',
+      title: 'The remote PiFinder also has its own active Mount Bridge coupling',
+      text: `Its own Mount Bridge is coupled (${modeLabel}) to its own mount. Since PiFinder writes confirmed external repositions back into itself, that device's mount can end up steering this one's target through PiFinder as a shared position source. Switch the remote device to "PiFinder Client" role, or set its own coupling to Verify/Alert only, to avoid two Bridges driving off the same PiFinder.`,
+      buttons: [],
     });
   }
   return items;
@@ -9997,6 +10051,7 @@ function updateProfileRoleLine() {
   updateLocalPifinderStatusLine();
   refreshRemoteSystemLoad();
   refreshRemotePifinderRoleChoice();
+  refreshRemoteMountBridgeCoupling();
   // The status line/diagram/caption are entirely derived from Mount
   // Bridge's own reported state (PiFinder/Bridge/Mount connection, drift,
   // coupling mode) - none of that is obtainable in the PiFinder-host role,
