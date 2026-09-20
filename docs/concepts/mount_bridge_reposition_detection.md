@@ -360,3 +360,8 @@ Alignment, manual triggers) keeps today's behavior unchanged by default.
 
 - [GitHub issue #178](https://github.com/apos/PiFinder_Stellarmate/issues/178)
 - [PR #182](https://github.com/apos/PiFinder_Stellarmate/pull/182), [PR #183](https://github.com/apos/PiFinder_Stellarmate/pull/183)
+- Live-verified Fall-4 confirm/decline cycle (both the no-op guard and the actual revert-with-motion
+  branch), with full protocol evidence: `test_tools/TF-20260919-full-simulation-coupling-matrix.md`
+  (TE-11 and its 2026-09-20 follow-up). Testing methodology for this kind of live campaign:
+  `basic-memory/pifinder-stellarmate/00171_testmethodik-zentral-langtest-atomare-aenderungen-gui-first-2026-09-20.md`
+  (maintainer-local, not in this repo).

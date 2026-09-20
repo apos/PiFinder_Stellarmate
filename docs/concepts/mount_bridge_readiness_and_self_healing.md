@@ -113,3 +113,13 @@ system caught and fixed something" instead of unexplained flapping.
   succeeds (that's the whole point), loud only when it gives up (previous bullet).
 - Not addressed here at all: root-causing *why* Mount Bridge goes unresponsive in the first place
   (issue #238) - this concept treats it as a fact to recover from, not a bug to fix directly.
+
+## Related
+
+- Live-confirmed (2026-09-20): this same coupling-mode self-heal (check 4) also reverts a raw
+  `indi_setprop` `BRIDGE_MODE` change, not only a failed UI click - a manual mode change during a
+  live test must go through the real Control Center action for it to stick, see
+  `test_tools/TF-20260919-full-simulation-coupling-matrix.md`.
+- Testing methodology for live campaigns against this kind of self-healing behavior:
+  `basic-memory/pifinder-stellarmate/00171_testmethodik-zentral-langtest-atomare-aenderungen-gui-first-2026-09-20.md`
+  (maintainer-local, not in this repo).
