@@ -9922,7 +9922,23 @@ function updateProfileRoleLine() {
   // which Web Manager profile is actually running, the one piece of ground
   // truth everything else is read against.
   document.getElementById('mb-setup-btn-row').style.display = '';
-  document.getElementById('mb-client-reset-btn').style.display = isClientChoice ? '' : 'none';
+  const clientResetBtn = document.getElementById('mb-client-reset-btn');
+  clientResetBtn.style.display = isClientChoice ? '' : 'none';
+  // Direct feedback (2026-09-20): the button looked identical whether the
+  // profile actually needed resetting or not - a user staring at this one
+  // button had no way to tell "nothing to do" from "click this". Same
+  // contamination check as the 'client-has-bridge' showstopper card
+  // (collectActiveShowstoppers()) above, applied to the button itself so
+  // the fix-affordance sits exactly where the user is already looking,
+  // not only in a separate card they might not have scrolled to.
+  const clientNeedsReset = isClientChoice && (wmHasBridge === true || wmOtherDriversCount > 0);
+  clientResetBtn.classList.toggle('ql-small-btn-orange', clientNeedsReset);
+  clientResetBtn.title = clientNeedsReset
+    ? 'This profile carries more than a PiFinder Client needs' +
+      (wmHasBridge === true ? ' (Mount Bridge - no mount here by definition)' : '') +
+      (wmOtherDriversCount > 0 ? ` (${wmOtherDriversCount} other unrelated driver${wmOtherDriversCount === 1 ? '' : 's'})` : '') +
+      '. Click to recreate it with exactly PiFinder LX200 + PiFinder Simulator.'
+    : 'Recreates your PiFinder Client profile with exactly PiFinder LX200 + PiFinder Simulator, discarding any other driver added to it since.';
   document.getElementById('mb-thisdevice-ip-row').style.display = hostMode ? '' : 'none';
   updatePiFinderTileLocation(role);
   // isControlHostRole() re-derives the same role - these three calls' own
@@ -10447,10 +10463,17 @@ function showCtrlRemoteInputPrompt() {
 // per live feedback, plain grey labels gave no sense of "am I done here yet
 // or not" at a glance.
 function updateStepIndicators() {
+  // A PiFinder Client structurally never has a Mount Bridge or a local mount
+  // (see the role card's own "No mount here" text) - step3/step4 must not
+  // require them there, or this checklist could never turn green for a
+  // correctly-configured Client, only for 'aio'/'host'. Direct feedback
+  // (2026-09-20): the compact readiness line above the mode tiles showed
+  // permanent "Drivers"/"Mount" warnings on an already-clean Client profile.
+  const clientRole = isPiFinderClientRole();
   const step1Done = !!wmSelectedProfile && wmServerRunning;
   const step2Done = wmKstarsLinked === true;
-  const step3Done = wmHasLx200 === true && wmHasBridge === true;
-  const step4Done = !!wmActiveMount;
+  const step3Done = wmHasLx200 === true && (clientRole || wmHasBridge === true);
+  const step4Done = clientRole || !!wmActiveMount;
   document.getElementById('wm-step1-label').classList.toggle('mb-step-done', step1Done);
   document.getElementById('wm-step2-label').classList.toggle('mb-step-done', step2Done);
   document.getElementById('wm-step3-label').classList.toggle('mb-step-done', step3Done);
@@ -10524,11 +10547,16 @@ function updateSimReadinessLine() {
   // correct for its own real-camera-testing context but wrong here: an
   // active fake_solve IS the expected, healthy state for a simulator
   // session, only "never solved at all" should block readiness.
+  // Same Client-role exception as updateStepIndicators() above - a Client
+  // has no Mount Bridge/mount by definition, "Mount" doesn't apply to it at
+  // all (omitted, not shown green-by-default for something that doesn't
+  // exist), and "Drivers" only needs PiFinder LX200 there.
+  const clientRole = isPiFinderClientRole();
   const items = [
     ['Profile', !!wmSelectedProfile && wmServerRunning],
     ['KStars', wmKstarsLinked === true],
-    ['Drivers', wmHasLx200 === true && wmHasBridge === true],
-    ['Mount', !!wmActiveMount],
+    ['Drivers', wmHasLx200 === true && (clientRole || wmHasBridge === true)],
+    ...(clientRole ? [] : [['Mount', !!wmActiveMount]]),
     ['Ekos', wmEkosConnected === true],
     ['Solve', !!lastSolveSource],
   ];
