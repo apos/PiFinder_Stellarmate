@@ -1708,6 +1708,20 @@
   #mb-drift-badge.mb-drift-yellow #mb-drift-value { color: #f5a623; }
   #mb-drift-badge.mb-drift-red { border-color: #e53935; }
   #mb-drift-badge.mb-drift-red #mb-drift-value { color: #e53935; }
+  /* Direct feedback (2026-09-20): the frozen number plus the literal word
+     "(stale)" read as an error, with no sense that this resolves itself -
+     issue #385's indiserver stall is a known, bounded, self-healing
+     condition, not a fault. Last known value stays visible (dimmed, no
+     colour-coded alert) with a calm pulsing dot + "Reconnecting..." instead -
+     reuses .status-dot.dot-unconfirmed's own mb-status-pulse animation, not
+     a new one. */
+  #mb-drift-badge.mb-drift-reconnecting { border-color: #f5a623; }
+  #mb-drift-badge.mb-drift-reconnecting #mb-drift-value { color: #ccc; opacity: 0.6; }
+  #mb-drift-badge.mb-drift-reconnecting #mb-drift-label { color: #f5a623; }
+  #mb-drift-badge.mb-drift-reconnecting #mb-drift-label::before {
+    content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #f5a623; margin-right: 4px; animation: mb-status-pulse 1.1s ease-in-out infinite;
+  }
 
   /* §8.8 (2026-09-09): small companion badge next to Drift - value only,
      no full-size number like Drift's own (this is a much lower-stakes
@@ -2537,9 +2551,9 @@
             </div>
           </div>
         </div>
-        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera).">
+        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera). Reconnecting: no fresh solve to compute drift from right now (e.g. issue #385) - last known value shown, resolves on its own.">
           <span id="mb-drift-value">0.0'</span>
-          <span>Drift</span>
+          <span id="mb-drift-label">Drift</span>
         </div>
         <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
           <span id="mb-horizon-value">0°</span>
@@ -7333,7 +7347,7 @@ function updateDriftBadge(driftArcmin, threshold, driftState) {
     return;
   }
   badge.style.display = '';
-  badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red');
+  badge.classList.remove('mb-drift-green', 'mb-drift-yellow', 'mb-drift-red', 'mb-drift-reconnecting');
   // 2026-09-11, direct feedback (live at the scope, cloud-caused solve gap -
   // "Mount pinpoint, PiFinder pinpoint... Driftanzeige spinnt"): driftState
   // was already being passed all the way here (see applyMbDriftAndMode's
@@ -7347,10 +7361,13 @@ function updateDriftBadge(driftArcmin, threshold, driftState) {
   // colour-coded, matching the dot-unconfirmed convention used elsewhere
   // for the same driver state.
   if (driftState === 'Idle') {
-    document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin) + ' (stale)';
+    document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin);
+    document.getElementById('mb-drift-label').textContent = 'Reconnecting…';
+    badge.classList.add('mb-drift-reconnecting');
     return;
   }
   document.getElementById('mb-drift-value').textContent = formatDrift(driftArcmin);
+  document.getElementById('mb-drift-label').textContent = 'Drift';
   if (driftArcmin >= MB_FOV_LIMIT_ARCMIN) badge.classList.add('mb-drift-red');
   else if (driftArcmin > threshold) badge.classList.add('mb-drift-yellow');
   else badge.classList.add('mb-drift-green');
