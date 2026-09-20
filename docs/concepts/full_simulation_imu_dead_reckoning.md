@@ -161,3 +161,6 @@ implementation of the same physical fact that could drift out of sync with the f
 - `mount_bridge_reposition_detection.md` §9 (dual position-source fix), §10 (Fall-4 revert livelock)
 - `complete_position_simulator.md` (dead-reckoning-follow feature this reuses, `CORRECTION_AGE`)
 - `PiFinder/python/PiFinder/imu_fake.py`, `imu_pi.py`, `integrator.py` (PiFinder repo)
+- Live-observed (2026-09-20) during an unrelated Mount Bridge test campaign: dead reckoning worked
+  correctly throughout a long Full Simulation session, see
+  `test_tools/TF-20260919-full-simulation-coupling-matrix.md`.
