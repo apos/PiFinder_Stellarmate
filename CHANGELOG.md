@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Host: new warning card when the mirrored PiFinder's own device also has its own local Mount Bridge actively coupled (GoTo/Auto-correct) to its own mount - PiFinder isn't purely read-only (a confirmed external reposition gets written back into it), so two independently active Bridges can cross-talk through it, each mistaking the other's mount motion for a real external reposition of its own target
 - Mount Bridge: Sync the mount on a confirmed PiFinder Align, any Coupling mode (#313)
 - Mount Bridge: singleton guard (flock-based) against duplicate driver instances under the same indiserver (#303)
 - Extending the singleton guard to `LX200_PIFINDER`/`PiFinderSimulator` tracked as a follow-up (#306)
