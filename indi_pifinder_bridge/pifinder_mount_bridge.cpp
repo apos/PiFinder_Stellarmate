@@ -1437,8 +1437,24 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     // precisely the arrival tick where the misclassification actually happens. Alignment's own
     // SETTLING already owns verifying arrival and syncing; reposition detection has nothing useful to
     // add for either of its states.
+    //
+    // Recent-command time window (2026-09-26): the SLEWING/alignment-state
+    // checks above still miss one case - handleGotoForward()'s own #227 fix
+    // Syncs the mount to PiFinder's position BEFORE computing/sending the
+    // actual Goto (see its own comment), and a Sync is atomic, not a slew -
+    // it can move the mount's reported position in a single tick with no
+    // SLEWING state ever observed in between. Live-caught on the Pi5 (real
+    // PiFinder against Telescope Simulator, Goto-Forward coupling):
+    // REPOSITION_CONFIRM re-triggered many times per second, each of Mount
+    // Bridge's own corrections apparently misread as an external reposition.
+    // secondsSinceLastMountCommand() is already tracked for the CORRECTION_AGE
+    // display but was never consulted here - a mount move within a couple of
+    // ticks of a command we ourselves just sent is ours, whether or not a
+    // state-machine flag happened to still say SLEWING at this exact instant.
+    static constexpr double RECENT_SELF_COMMAND_WINDOW_SEC = 4.0; // ~2 ticks at the 2s polling period
     const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING ||
-                                (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE);
+                                (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE) ||
+                                m_client->secondsSinceLastMountCommand() < RECENT_SELF_COMMAND_WINDOW_SEC;
 
     // Onset/still-moving detection: compare the mount's own position against
     // the last tick's, rather than watching isMountSlewing() (see
