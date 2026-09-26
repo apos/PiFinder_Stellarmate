@@ -1,9 +1,144 @@
 --- python/PiFinder/camera_pi.py.orig
 +++ python/PiFinder/camera_pi.py
-@@ -138,6 +138,19 @@
+@@ -18,6 +18,7 @@
+ import logging
+ from PiFinder.multiproclogging import MultiprocLogging
+ import numpy as np
++import threading
+ import time
+ 
+ logger = logging.getLogger("Camera.Pi")
+@@ -30,6 +31,33 @@
+         from picamera2 import Picamera2
+ 
+         self.camera = Picamera2()
++        # Two related but distinct bugs, both found live 2026-09-26 on a Pi4
++        # after a camera swap, both 100% reproducible, independent of
++        # exposure/gain values, timing, or system state (survived a full
++        # reboot and a fresh PiFinder reinstall):
++        #
++        # 1. picamera2/libcamera is not thread-safe: a set_controls() sent
++        #    while a capture_request() is still in flight (normal exposures
++        #    easily outlast the process loop's own capture timeout, see
++        #    camera_interface.py's _capture_with_timeout) crashes the
++        #    libcamera IPA proxy outright.
++        # 2. Even a single, properly serialized (non-concurrent) live
++        #    set_controls() while the camera is running - "on-the-fly", no
++        #    stop/start - eventually crashes the same way on a later
++        #    capture. Only a stop()/set_controls()/start() cycle reliably
++        #    avoids it (see set_camera_config()/set_native_ae()).
++        #
++        # Both crash identically: libcamera FATAL "A list of V4L2 controls
++        # requires a ControlInfoMap" in the IPA proxy, which kills camera
++        # capture until the process is restarted.
++        #
++        # This lock addresses (1): every method that touches self.camera
++        # holds it for its own direct calls. set_camera_config() and
++        # set_native_ae() use a non-blocking acquire instead of blocking the
++        # whole camera-process loop for the duration of a live/stuck
++        # exposure, and additionally implement the stop/start cycle that
++        # addresses (2) - see their own comments.
++        self._camera_lock = threading.Lock()
+         self.exposure_time = exposure_time
+ 
+         # Detect camera type and load complete profile (hardware config + noise characteristics)
+@@ -51,14 +79,15 @@
+ 
+     def initialize(self) -> None:
+         """Initializes the camera and set the needed control parameters"""
+-        self.stop_camera()
+-        cam_config = self.camera.create_still_configuration(
+-            {"size": (512, 512)},
+-            raw={"size": self.profile.raw_size, "format": self.profile.format},
+-        )
+-        self.camera.configure(cam_config)
+-        self._default_controls()
+-        self.start_camera()
++        with self._camera_lock:
++            self.stop_camera()
++            cam_config = self.camera.create_still_configuration(
++                {"size": (512, 512)},
++                raw={"size": self.profile.raw_size, "format": self.profile.format},
++            )
++            self.camera.configure(cam_config)
++            self._default_controls()
++            self.start_camera()
+ 
+     def _default_controls(self) -> None:
+         self.camera.set_controls({"AeEnable": False})
+@@ -79,35 +108,40 @@
+         it to an 8 bit mono image stretched to use the maximum
+         amount of the 255 level space.
+         """
+-        _request = self.camera.capture_request()
+-        # raw is actually 16 bit
+-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+-        # tmp_image = _request.make_image("main")
+-
+-        # Log actual camera metadata for exposure verification (debug level only)
+-        metadata = _request.get_metadata()
+-        actual_exposure = metadata.get("ExposureTime", "unknown")
+-        actual_gain = metadata.get("AnalogueGain", "unknown")
+-        logger.debug(
+-            f"Captured frame - Requested: {self.exposure_time}µs/{self.gain}x gain, "
+-            f"Actual: {actual_exposure}µs/{actual_gain:.2f}x gain"
+-        )
+-        # Sensor die temperature (diagnostic only): the black level wanders
+-        # ±2 ADU night-to-night and temperature is the prime suspect. Not all
+-        # sensors report it (imx296/HQ drivers may omit or mistype the key);
+-        # temperature must never be able to break a capture.
+-        try:
+-            temp = metadata.get("SensorTemperature")
+-            self.last_sensor_temp = float(temp) if temp is not None else None
+-        except (TypeError, ValueError):
+-            self.last_sensor_temp = None
+-        # Full driver metadata for the latest frame: calibration and sweeps
+-        # need the ACTUAL ExposureTime (drivers deliver transitional frames at
+-        # other-than-requested exposures) and whatever else this sensor's
+-        # driver chooses to report.
+-        self.last_frame_metadata = metadata
++        # Held for the whole request, not just the capture_request() call: a
++        # set_controls() arriving mid-request (before release()) is exactly
++        # the sequence that crashes the IPA proxy - see the lock's own
++        # comment in __init__.
++        with self._camera_lock:
++            _request = self.camera.capture_request()
++            # raw is actually 16 bit
++            raw_capture = _request.make_array("raw").copy().view(np.uint16)
++            # tmp_image = _request.make_image("main")
++
++            # Log actual camera metadata for exposure verification (debug level only)
++            metadata = _request.get_metadata()
++            actual_exposure = metadata.get("ExposureTime", "unknown")
++            actual_gain = metadata.get("AnalogueGain", "unknown")
++            logger.debug(
++                f"Captured frame - Requested: {self.exposure_time}µs/{self.gain}x gain, "
++                f"Actual: {actual_exposure}µs/{actual_gain:.2f}x gain"
++            )
++            # Sensor die temperature (diagnostic only): the black level wanders
++            # ±2 ADU night-to-night and temperature is the prime suspect. Not all
++            # sensors report it (imx296/HQ drivers may omit or mistype the key);
++            # temperature must never be able to break a capture.
++            try:
++                temp = metadata.get("SensorTemperature")
++                self.last_sensor_temp = float(temp) if temp is not None else None
++            except (TypeError, ValueError):
++                self.last_sensor_temp = None
++            # Full driver metadata for the latest frame: calibration and sweeps
++            # need the ACTUAL ExposureTime (drivers deliver transitional frames at
++            # other-than-requested exposures) and whatever else this sensor's
++            # driver chooses to report.
++            self.last_frame_metadata = metadata
+ 
+-        _request.release()
++            _request.release()
+ 
+         # Apply camera-specific crop and rotation
+         raw_capture = self.profile.crop_and_rotate(raw_capture)
+@@ -138,6 +172,19 @@
          # covert to 32 bit int to avoid overflow
          raw_capture = raw_capture.astype(np.float32)
-
+ 
 +        # Scale-mismatch guard: with the camera's native auto-exposure
 +        # active (e.g. during "Align (Day)"), the raw stream sometimes
 +        # arrives in an unexpected 16-bit container (~65535 max) instead of
@@ -19,8 +154,158 @@
 +
          # sensor offset (bias pedestal from camera profile)
          raw_capture -= self.profile.bias_offset
-
-@@ -314,6 +327,17 @@
+ 
+@@ -165,17 +212,18 @@
+         Captures with 0µs exposure (lens cap on) to measure sensor black level.
+         Returns raw sensor values before any processing.
+         """
+-        self.camera.stop()
+-        self.camera.set_controls({"ExposureTime": 0})
+-        self.camera.start()
+-        _request = self.camera.capture_request()
+-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+-        _request.release()
+-
+-        self.camera.stop()
+-        self.camera.set_controls({"AnalogueGain": self.gain})
+-        self.camera.set_controls({"ExposureTime": self.exposure_time})
+-        self.camera.start()
++        with self._camera_lock:
++            self.camera.stop()
++            self.camera.set_controls({"ExposureTime": 0})
++            self.camera.start()
++            _request = self.camera.capture_request()
++            raw_capture = _request.make_array("raw").copy().view(np.uint16)
++            _request.release()
++
++            self.camera.stop()
++            self.camera.set_controls({"AnalogueGain": self.gain})
++            self.camera.set_controls({"ExposureTime": self.exposure_time})
++            self.camera.start()
+ 
+         # Crop like normal capture but don't process
+         if self.camera_type == "imx296":
+@@ -211,20 +259,21 @@
+         from it exactly -- while margins not written now are gone for good.
+         Live photometry is unaffected: it reads ``cam_raw()``, still the crop.
+         """
+-        _request = self.camera.capture_request()
+-        # raw is actually 16 bit
+-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+-
+-        # Log actual camera metadata for exposure verification (debug level only)
+-        metadata = _request.get_metadata()
+-        actual_exposure = metadata.get("ExposureTime", "unknown")
+-        actual_gain = metadata.get("AnalogueGain", "unknown")
+-        logger.debug(
+-            f"Captured raw frame - Requested: {self.exposure_time}µs/{self.gain}x gain, "
+-            f"Actual: {actual_exposure}µs/{actual_gain:.2f}x gain"
+-        )
++        with self._camera_lock:
++            _request = self.camera.capture_request()
++            # raw is actually 16 bit
++            raw_capture = _request.make_array("raw").copy().view(np.uint16)
++
++            # Log actual camera metadata for exposure verification (debug level only)
++            metadata = _request.get_metadata()
++            actual_exposure = metadata.get("ExposureTime", "unknown")
++            actual_gain = metadata.get("AnalogueGain", "unknown")
++            logger.debug(
++                f"Captured raw frame - Requested: {self.exposure_time}µs/{self.gain}x gain, "
++                f"Actual: {actual_exposure}µs/{actual_gain:.2f}x gain"
++            )
+ 
+-        _request.release()
++            _request.release()
+ 
+         # Expose this frame's driver metadata and its CROPPED pixels so the
+         # sweep capture can record per-image radiometry (exposure sweeps are
+@@ -283,16 +332,47 @@
+     def set_camera_config(
+         self, exposure_time: float, gain: float
+     ) -> Tuple[float, float]:
+-        # picamera2 supports changing controls on-the-fly without restart.
+-        # Setting a manual exposure always disables native auto-exposure, so a
+-        # prior `set_exp:native` (daytime align) can't keep overriding it.
+-        self.camera.set_controls({"AeEnable": False})
+-        self.camera.set_controls({"AnalogueGain": gain})
+-        self.camera.set_controls({"ExposureTime": exposure_time})
+-
+-        # Start camera if it's not already running
+-        if not self._camera_started:
+-            self.start_camera()
++        # picamera2's "on-the-fly" set_controls() while the camera is
++        # running is NOT reliable on this system: found live 2026-09-26 that
++        # even a single, properly serialized (non-concurrent) live control
++        # change eventually crashes the libcamera IPA proxy on the next
++        # capture or two ("A list of V4L2 controls requires a
++        # ControlInfoMap", FATAL - not merely a race with a concurrent
++        # capture_request(), which self._camera_lock separately guards
++        # against, see its own comment in __init__). A stop()/
++        # set_controls()/start() cycle - the same pattern capture_bias()
++        # already used, and initialize()'s own configure-then-start sequence
++        # - reliably avoided it over repeated verification cycles. Measured
++        # cost: ~50ms, negligible against real exposure times.
++        #
++        # Still guarded by the non-blocking lock: a capture can legitimately
++        # still be in flight (a long exposure, or one wedged in the driver
++        # and merely abandoned - not cancelled - by camera_interface.py's
++        # own capture timeout, whose daemon thread keeps running against the
++        # camera forever). Stopping the camera out from under that thread's
++        # capture_request() would be its own hazard. Skip this cycle instead
++        # when busy - every caller (PID/SNR auto-exposure, manual exposure
++        # changes) re-issues the same target next time, so a skipped update
++        # is picked up a beat later, not lost.
++        if self._camera_lock.acquire(blocking=False):
++            try:
++                if self._camera_started:
++                    self.camera.stop()
++                # Setting a manual exposure always disables native
++                # auto-exposure, so a prior `set_exp:native` (daytime align)
++                # can't keep overriding it.
++                self.camera.set_controls({"AeEnable": False})
++                self.camera.set_controls({"AnalogueGain": gain})
++                self.camera.set_controls({"ExposureTime": exposure_time})
++                self.camera.start()
++                self._camera_started = True
++            finally:
++                self._camera_lock.release()
++        else:
++            logger.debug(
++                "set_camera_config: camera busy (capture in flight) - "
++                "skipping this update, will retry next cycle"
++            )
+         return exposure_time, gain
+ 
+     def set_native_ae(self, enabled: bool) -> bool:
+@@ -301,9 +381,23 @@
+         Used by the daytime alignment screen so the driver picks a short
+         daylight exposure automatically. Returns True (Pi cameras support it).
+         """
+-        self.camera.set_controls({"AeEnable": enabled})
+-        if not self._camera_started:
+-            self.start_camera()
++        # Same stop/set_controls/start reasoning as set_camera_config()
++        # above - on-the-fly set_controls() while running is not reliable on
++        # this system.
++        if self._camera_lock.acquire(blocking=False):
++            try:
++                if self._camera_started:
++                    self.camera.stop()
++                self.camera.set_controls({"AeEnable": enabled})
++                self.camera.start()
++                self._camera_started = True
++            finally:
++                self._camera_lock.release()
++        else:
++            logger.debug(
++                "set_native_ae: camera busy (capture in flight) - skipping "
++                "this update, will retry next cycle"
++            )
+         return True
+ 
+     def get_cam_type(self) -> str:
+@@ -314,6 +408,17 @@
      """
      Instantiates the camera hardware
      then calls the universal image loop
@@ -37,11 +322,11 @@
 +    Kamera-Prozess nicht retten") and 00034.
      """
      MultiprocLogging.configurer(log_queue)
-
-@@ -324,7 +348,26 @@
+ 
+@@ -324,7 +429,26 @@
      if exposure_time == "auto":
          exposure_time = 400000  # Start with default 400ms
-
+ 
 -    camera_hardware = CameraPI(exposure_time)
 +    fell_back = False
 +    try:
