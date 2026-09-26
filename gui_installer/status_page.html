@@ -4108,22 +4108,55 @@ function applySolveStatus(data) {
 //
 // The real PiFinder solves every ~0.5s or faster (direct correction,
 // 2026-09-09 - the concept doc's own "1-3 solves/sec" figure was already in
-// the right ballpark, this pins it down harder). Against that, sampling via
-// the 20s refreshDebugSolve() cycle is a near-random single snapshot out of
-// ~40 actual attempts - nowhere near enough resolution for a debounce
-// count to mean anything (two 20s-apart samples both landing on a bad
-// instant, purely by chance, is entirely plausible during a generally
-// healthy session). Given its own dedicated fast poll below (2s, the same
-// cadence refreshMbDrift() already uses for the same "must catch it
-// promptly, not up to 20s late" reasoning), 5 consecutive misses covers
-// ~10s and ~20 real solve attempts - a far more meaningful sample than the
-// original 2-samples-at-20s-apart scheme it replaces.
+// the right ballpark, this pins it down harder).
 //
-// Asymmetric on purpose: slow to alarm (needs sustained absence), instant
-// to clear (any single confirmed position ends it immediately).
-const NO_SOLVE_STREAK_THRESHOLD = 5;
+// 2026-09-26 rewrite (direct feedback, live real-sky session on the Pi5):
+// this used to be a fixed "last_solve_attempt_age_sec > 5" threshold, 5
+// consecutive misses on the 2s fast poll (~10s). Direct pushback: "Wir
+// wollen doch nicht mit Timeouts arbeiten, das ist unzuverlässig" - any
+// fixed number is a guess tied to an assumed solve rate, not a direct
+// measurement of the one thing that actually matters: is a *new* attempt
+// still landing at all.
+//
+// No fixed threshold, no raw timestamp needed: last_solve_attempt_age_sec
+// is already server-computed (same-device clock, see its own comment
+// above) - a genuinely NEW attempt makes this value drop noticeably below
+// where plain elapsed poll time would have left it (a fresh attempt resets
+// the underlying timestamp close to "now"); with nothing new, it just
+// climbs by roughly the poll interval each time. So "age went down" is an
+// unambiguous, clock-skew-immune "something new just happened" signal -
+// nothing to tune. The threshold for "how long a real stall should look
+// like" is itself derived, not guessed: the median gap between the last
+// several detected fresh-attempt events, times a safety multiplier - this
+// self-calibrates to whatever this unit's own real solve cadence actually
+// is instead of assuming ~0.5s for every install/condition.
+//
+// Asymmetric on purpose: slow to alarm (needs sustained absence relative to
+// this unit's own recent rhythm), instant to clear (any fresh attempt ends
+// it immediately).
+const NO_SOLVE_STALL_MULTIPLIER = 6;    // x the recently observed cadence counts as "stalled"
+const NO_SOLVE_STALL_FLOOR_SEC = 3;     // never flag faster than this even with a very fast recent cadence
+const NO_SOLVE_STALL_DEFAULT_SEC = 10;  // used only before any real cadence history exists (e.g. just after page load)
+const NO_SOLVE_INTERVAL_HISTORY_MAX = 8;
+const NO_SOLVE_STREAK_THRESHOLD = 2;    // anti-flicker only now - the stall math above does the real debouncing
 let _noSolveStreak = 0;
 let _noSolveHasNothing = false;   // latest debounced result from /api/debug_solve
+let _prevAttemptAgeSec = null;          // last poll's last_solve_attempt_age_sec, to detect a drop
+let _lastAttemptResetAtMs = null;       // performance.now() when a fresh attempt was last detected
+let _recentAttemptIntervalsSec = [];    // rolling gaps between detected fresh-attempt events
+
+function _medianOf(arr) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function _noSolveStallThresholdSec() {
+  const typical = _medianOf(_recentAttemptIntervalsSec);
+  if (typical === null) return NO_SOLVE_STALL_DEFAULT_SEC;
+  return Math.max(typical * NO_SOLVE_STALL_MULTIPLIER, NO_SOLVE_STALL_FLOOR_SEC);
+}
 // Second, independent condition for the same banner (direct user request,
 // 2026-09-09): Full Simulation's own "sky truth" device (PiFinder
 // Simulator) landing on a real-but-unrelated star, not one near the mount
@@ -4498,7 +4531,35 @@ function updateNoSolveBanner(data) {
   // sends the ready result - no client clock involved at all.
   const attemptAgeSec = typeof data.last_solve_attempt_age_sec === 'number'
     ? data.last_solve_attempt_age_sec : null;
-  const nothingAttempting = attemptAgeSec === null || attemptAgeSec < 0 || attemptAgeSec > 5;
+
+  // Change-detection, not a fixed timeout - see this section's own header
+  // comment. performance.now() here is only ever used to measure LOCAL
+  // elapsed intervals (never compared against the server's clock), so it
+  // carries none of the absolute-clock-skew risk the fix above eliminated.
+  const nowMs = performance.now();
+  if (attemptAgeSec !== null) {
+    const freshAttemptSeen = _prevAttemptAgeSec === null || attemptAgeSec < _prevAttemptAgeSec;
+    if (freshAttemptSeen) {
+      if (_lastAttemptResetAtMs !== null) {
+        const intervalSec = (nowMs - _lastAttemptResetAtMs) / 1000;
+        // Discard an implausible first/one-off gap (e.g. right after page
+        // load, or after the banner was hidden for a while) so it can't
+        // single-handedly poison the rolling median.
+        if (intervalSec > 0 && intervalSec < 120) {
+          _recentAttemptIntervalsSec.push(intervalSec);
+          if (_recentAttemptIntervalsSec.length > NO_SOLVE_INTERVAL_HISTORY_MAX) {
+            _recentAttemptIntervalsSec.shift();
+          }
+        }
+      }
+      _lastAttemptResetAtMs = nowMs;
+    }
+    _prevAttemptAgeSec = attemptAgeSec;
+  }
+
+  const stalledSec = _lastAttemptResetAtMs === null ? null : (nowMs - _lastAttemptResetAtMs) / 1000;
+  const nothingAttempting = attemptAgeSec === null || attemptAgeSec < 0
+    || stalledSec === null || stalledSec > _noSolveStallThresholdSec();
   _noSolveHasNothing = data.fake_solve_active !== true && !isImuFallback && nothingAttempting;
   _noSolveStreak = _noSolveHasNothing ? _noSolveStreak + 1 : 0;
   renderNoSolveBanner();
