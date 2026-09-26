@@ -31,7 +31,7 @@ import time
 import urllib.error
 import urllib.request
 
-from pifinder_indi_polling import is_mount_busy, read_ra_dec
+from pifinder_indi_polling import PersistentIndiClient
 
 DEFAULT_DEVICE = "PiFinder Simulator"
 # Re-derive the local baseline (see module docstring) comfortably under
@@ -40,6 +40,16 @@ DEFAULT_DEVICE = "PiFinder Simulator"
 # with enough margin that a couple of dropped/slow polls here still land
 # safely inside one real fake-solve cycle.
 DEFAULT_REANCHOR_INTERVAL = 1.5
+# 6.7 Hz - within the 5-10 Hz range full_simulation_imu_dead_reckoning.md
+# suggests (\xa7 3.4/\xa7 5) for smooth simulated dead-reckoning. Previously
+# this loop had no cap at all (relied on indi_getprop's own subprocess
+# round-trip as an incidental throttle) - live-tested on the Pi5 (2026-09-26)
+# to be a real, continuous, unbounded load on indiserver (implicated in
+# Issue #385, see pifinder_indi_polling.py's module docstring). Now that
+# reads go over one persistent connection instead of a fresh process+socket
+# per poll, an explicit cap is needed to keep the *intended* sample rate
+# instead of an implementation-accidental one.
+DEFAULT_POLL_INTERVAL = 0.15
 IDENTITY = (1.0, 0.0, 0.0, 0.0)
 
 # ---- minimal quaternion math (scalar-first w, x, y, z) - no numpy/quaternion
@@ -156,14 +166,21 @@ def main() -> None:
     parser.add_argument("--reanchor-interval", type=float, default=DEFAULT_REANCHOR_INTERVAL,
                          help="Seconds between local-baseline resets while continuously moving "
                               "(default: %(default)s)")
-    parser.add_argument("--poll-interval", type=float, default=0.0,
-                         help="Minimum seconds between polls (default: 0 - poll as fast as "
-                              "indi_getprop's own round-trip allows; measure the achieved rate "
-                              "from this script's own printed timestamps and raise this if a "
-                              "slower, steadier cadence is wanted instead)")
+    parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL,
+                         help="Minimum seconds between polls (default: %(default)s, ~"
+                              f"{1.0 / DEFAULT_POLL_INTERVAL:.0f} Hz - within the 5-10 Hz range "
+                              "full_simulation_imu_dead_reckoning.md \xa7 3.4/\xa7 5 suggests for "
+                              "smooth dead-reckoning; a real IMU sample tighter than that buys no "
+                              "visible fidelity here). Reads now go over one persistent INDI "
+                              "connection (see PersistentIndiClient) instead of spawning "
+                              "indi_getprop per poll, so this interval reflects the *intended* "
+                              "sample rate again instead of indi_getprop's incidental round-trip "
+                              "time - raise it if 5-10 Hz is still more than this dead-reckoning "
+                              "actually needs (open question in the concept doc).")
     args = parser.parse_args()
 
     imu2cam = q_imu2cam(args.screen_direction)
+    indi = PersistentIndiClient(args.indi_host, args.indi_port)
 
     print(f"Polling '{args.indi_device}' on {args.indi_host}:{args.indi_port}, "
           f"injecting IMU samples into PiFinder at {args.pifinder_host}:{args.pifinder_port} "
@@ -174,46 +191,49 @@ def main() -> None:
     sample_count = 0
     last_rate_report = time.monotonic()
 
-    while True:
-        start = time.monotonic()
-        busy = is_mount_busy(args.indi_host, args.indi_port, args.mount_device, timeout=1.0)
-        pos = read_ra_dec(args.indi_host, args.indi_port, args.indi_device, timeout=1.0)
+    try:
+        while True:
+            start = time.monotonic()
+            busy = indi.is_busy(args.mount_device, timeout=1.0)
+            pos = indi.read_ra_dec(args.indi_device, timeout=1.0)
 
-        if busy and pos is not None:
-            ra, dec = pos
-            now = time.monotonic()
-            needs_reset = (
-                anchor is None
-                or not was_busy
-                or (now - anchor[2]) >= args.reanchor_interval
-            )
-            if needs_reset:
-                anchor = (ra, dec, now)
-                inject_fake_imu(args.pifinder_host, args.pifinder_port, IDENTITY, timeout=1.0)
+            if busy and pos is not None:
+                ra, dec = pos
+                now = time.monotonic()
+                needs_reset = (
+                    anchor is None
+                    or not was_busy
+                    or (now - anchor[2]) >= args.reanchor_interval
+                )
+                if needs_reset:
+                    anchor = (ra, dec, now)
+                    inject_fake_imu(args.pifinder_host, args.pifinder_port, IDENTITY, timeout=1.0)
+                else:
+                    q = relative_x2imu(anchor[0], anchor[1], ra, dec, imu2cam)
+                    inject_fake_imu(args.pifinder_host, args.pifinder_port, q, timeout=1.0)
+                sample_count += 1
             else:
-                q = relative_x2imu(anchor[0], anchor[1], ra, dec, imu2cam)
-                inject_fake_imu(args.pifinder_host, args.pifinder_port, q, timeout=1.0)
-            sample_count += 1
-        else:
-            # Mount still (or state unreadable) - stop injecting; imu_fake.py's
-            # own debounce (FAKE_MOVING_TIMEOUT_SEC) reports "not moving" on
-            # its own once samples stop arriving. Clear the anchor so the
-            # *next* motion starts a fresh baseline rather than reusing a
-            # stale one from possibly a while ago.
-            anchor = None
+                # Mount still (or state unreadable) - stop injecting; imu_fake.py's
+                # own debounce (FAKE_MOVING_TIMEOUT_SEC) reports "not moving" on
+                # its own once samples stop arriving. Clear the anchor so the
+                # *next* motion starts a fresh baseline rather than reusing a
+                # stale one from possibly a while ago.
+                anchor = None
 
-        was_busy = bool(busy)
+            was_busy = bool(busy)
 
-        now = time.monotonic()
-        if now - last_rate_report >= 5.0:
-            elapsed = now - last_rate_report
-            print(f"[{time.strftime('%H:%M:%S')}] {sample_count} samples in {elapsed:.1f}s "
-                  f"(~{sample_count / elapsed:.1f} Hz), busy={busy}")
-            sample_count = 0
-            last_rate_report = now
+            now = time.monotonic()
+            if now - last_rate_report >= 5.0:
+                elapsed = now - last_rate_report
+                print(f"[{time.strftime('%H:%M:%S')}] {sample_count} samples in {elapsed:.1f}s "
+                      f"(~{sample_count / elapsed:.1f} Hz), busy={busy}")
+                sample_count = 0
+                last_rate_report = now
 
-        elapsed = time.monotonic() - start
-        time.sleep(max(0.0, args.poll_interval - elapsed))
+            elapsed = time.monotonic() - start
+            time.sleep(max(0.0, args.poll_interval - elapsed))
+    finally:
+        indi.close()
 
 
 if __name__ == "__main__":
