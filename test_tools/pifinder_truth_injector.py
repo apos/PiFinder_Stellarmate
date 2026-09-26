@@ -41,7 +41,7 @@ import time
 import urllib.error
 import urllib.request
 
-from pifinder_indi_polling import read_ra_dec
+from pifinder_indi_polling import PersistentIndiClient
 
 DEFAULT_DEVICE = "PiFinder Simulator"
 DEFAULT_INTERVAL = 2.0
@@ -129,52 +129,56 @@ def main() -> None:
 
     fixed_port = args.pifinder_port
     current_port = fixed_port
+    indi = PersistentIndiClient(args.indi_host, args.indi_port)
 
     port_desc = str(fixed_port) if fixed_port else f"auto-detect {CANDIDATE_PORTS}"
     print(f"Polling '{args.indi_device}' on {args.indi_host}:{args.indi_port}, "
           f"injecting into PiFinder at {args.pifinder_host}:{port_desc} "
           f"every {args.interval}s. Ctrl-C to stop.")
 
-    while True:
-        start = time.monotonic()
+    try:
+        while True:
+            start = time.monotonic()
 
-        if current_port is None:
-            current_port = resolve_pifinder_port(args.pifinder_host)
             if current_port is None:
-                print(f"PiFinder not reachable on any of {CANDIDATE_PORTS} - retrying.")
-                elapsed = time.monotonic() - start
-                time.sleep(max(0.0, args.interval - elapsed))
-                continue
-            print(f"PiFinder found on port {current_port}.")
+                current_port = resolve_pifinder_port(args.pifinder_host)
+                if current_port is None:
+                    print(f"PiFinder not reachable on any of {CANDIDATE_PORTS} - retrying.")
+                    elapsed = time.monotonic() - start
+                    time.sleep(max(0.0, args.interval - elapsed))
+                    continue
+                print(f"PiFinder found on port {current_port}.")
 
-        pos = read_ra_dec(args.indi_host, args.indi_port, args.indi_device, timeout=3.0)
-        if pos is None:
-            print("No position available yet (device not connected?) - retrying.")
-        else:
-            ra_hours, dec_deg = pos
-            ra_deg = ra_hours * 15.0
-            ok = inject_fake_solve(args.pifinder_host, current_port, ra_deg, dec_deg, timeout=3.0)
-            if not ok:
-                status = "POST FAILED"
-                if fixed_port is None:
-                    # Port may have changed underneath us (e.g. PiFinder
-                    # restarted and came up on the other one this time) -
-                    # drop it so the next iteration re-probes instead of
-                    # hammering a dead port forever.
-                    current_port = None
+            pos = indi.read_ra_dec(args.indi_device, timeout=3.0)
+            if pos is None:
+                print("No position available yet (device not connected?) - retrying.")
             else:
-                active = read_fake_solve_active(args.pifinder_host, current_port, timeout=3.0)
-                if active is True:
-                    status = "OK"
-                elif active is False:
-                    status = "POST OK BUT fake_solve_active STILL FALSE"
+                ra_hours, dec_deg = pos
+                ra_deg = ra_hours * 15.0
+                ok = inject_fake_solve(args.pifinder_host, current_port, ra_deg, dec_deg, timeout=3.0)
+                if not ok:
+                    status = "POST FAILED"
+                    if fixed_port is None:
+                        # Port may have changed underneath us (e.g. PiFinder
+                        # restarted and came up on the other one this time) -
+                        # drop it so the next iteration re-probes instead of
+                        # hammering a dead port forever.
+                        current_port = None
                 else:
-                    status = "POST OK BUT VERIFY READ FAILED"
-            print(f"[{time.strftime('%H:%M:%S')}] RA {ra_hours:.4f}h / DEC {dec_deg:.4f} deg "
-                  f"-> port {current_port or '?'}: {status}")
+                    active = read_fake_solve_active(args.pifinder_host, current_port, timeout=3.0)
+                    if active is True:
+                        status = "OK"
+                    elif active is False:
+                        status = "POST OK BUT fake_solve_active STILL FALSE"
+                    else:
+                        status = "POST OK BUT VERIFY READ FAILED"
+                print(f"[{time.strftime('%H:%M:%S')}] RA {ra_hours:.4f}h / DEC {dec_deg:.4f} deg "
+                      f"-> port {current_port or '?'}: {status}")
 
-        elapsed = time.monotonic() - start
-        time.sleep(max(0.0, args.interval - elapsed))
+            elapsed = time.monotonic() - start
+            time.sleep(max(0.0, args.interval - elapsed))
+    finally:
+        indi.close()
 
 
 if __name__ == "__main__":

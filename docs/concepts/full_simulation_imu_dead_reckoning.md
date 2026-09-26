@@ -145,16 +145,51 @@ implementation of the same physical fact that could drift out of sync with the f
 
 1. Exact orientation-delta math (RA/Dec change -> quaternion) - needs the same screen-direction
    convention already used elsewhere in this project; not yet worked out in code.
-2. Whether `/api/fake_imu`'s cadence should be independently configurable, and what a reasonable
-   default is (§3.4 suggests 5-10 Hz as a starting point, not yet measured against how quickly
-   `IMU_MOVED_ANG_THRESHOLD`/dead-reckoning actually need fresh samples in `integrator.py`).
-3. Whether to extend `pifinder_truth_injector.py` in place or add a sibling script - the existing
-   tool's own docstring frames it as a single-purpose "read one device, inject into fake_solve"
-   tool; bolting on IMU-feeding may be better as a second, independently-runnable script sharing the
-   polling primitives, not a design decision this document makes for the implementer.
+2. ~~Whether `/api/fake_imu`'s cadence should be independently configurable, and what a reasonable
+   default is~~ - **resolved, see §6**: `--poll-interval` defaults to 0.15s (~6.7 Hz), inside the
+   5-10 Hz range this section originally suggested.
+3. ~~Whether to extend `pifinder_truth_injector.py` in place or add a sibling script~~ - **resolved**:
+   implemented as the sibling script `test_tools/pifinder_imu_injector.py`, sharing
+   `pifinder_indi_polling.py`'s primitives rather than one importing the other.
 4. This is a two-repository change - the `PiFinder` side (§3.3) needs its own PR/review there,
    independent of whatever lands in `PiFinder_Stellarmate` (§3.4). Sequencing/ownership not yet
    decided.
+
+## 6. 2026-09-26 update: the polling *implementation*, not the sampling rate, was the real problem
+
+Live-tested on the Pi5 during an unrelated Issue #385 investigation (indiserver periodic
+unresponsiveness / unbounded memory growth - see basic-memory pifinder-stellarmate, 2026-09-26 Pi5
+session). `pifinder_imu_injector.py`'s original `--poll-interval` default was `0.0` ("poll as fast as
+indi_getprop's own round-trip allows" - see the option's original help text), and both this script and
+`pifinder_truth_injector.py` read INDI properties by shelling out to the `indi_getprop` CLI **on every
+single poll** - a fresh process fork *and* a fresh TCP connect/handshake/teardown against indiserver
+each time, twice per tick for the IMU injector (mount-busy state + position), with no cap on how often
+that could happen.
+
+Consequence, confirmed live: with no real sky to point at and the mount left "tracking" for an
+extended test session, this uncapped loop measured at roughly 4-5% continuous CPU and produced a
+constant, unbounded stream of brand-new indiserver connections (visible in indiserver's own `-v` log
+as "Client N: new arrival ... read EOF ... shut down complete" repeating multiple times per second,
+indefinitely) - real, continuous load contributing to indiserver's own connection/resource churn, and
+plausibly a contributing factor (not confirmed as *the* sole cause) in the broader Issue #385
+symptoms observed the same session.
+
+**Fix** (`test_tools/pifinder_indi_polling.py`'s new `PersistentIndiClient`): one long-lived INDI
+socket per script, opened once and reused for every read via a scoped `<getProperties device=...
+name=.../>` + a small incremental `xml.parsers.expat` parse of just that reply - no process fork, no
+repeated TCP handshake, transparent reconnect-on-error so a dropped connection self-heals on the next
+call instead of wedging the script. Both `pifinder_imu_injector.py` and `pifinder_truth_injector.py`
+now use it. This did **not** change either script's purpose, CLI flags, HTTP endpoints, or math - only
+how a property read reaches the wire. `pifinder_imu_injector.py`'s `--poll-interval` default was also
+changed from `0.0` to `0.15` (~6.7 Hz, still inside this document's original 5-10 Hz suggestion) - now
+that a read is cheap, the interval reflects the *intended* sample rate again instead of an
+implementation-accidental one set by indi_getprop's own round-trip time. Live-confirmed after the
+change: CPU dropped from the low single digits (measured, see above) to <1%, and indiserver's
+connection log went from continuous per-second reconnects to exactly one stable, long-lived connection
+per script.
+
+**Scope note**: this section is about the *test tooling*'s efficiency, not the IMU-simulation design
+in §1-4, which is unchanged.
 
 ## Related
 
