@@ -244,11 +244,19 @@ bool httpGetPiFinderAlignEvent(const std::string &url, double &alignTime, double
 // untouched) unless solve_source is exactly "CAM", the solve is within
 // maxAgeSeconds, and RA/Dec both parsed - the position and the freshness/
 // source guarantee always come from one atomic snapshot.
-bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSeconds, double &ra, double &dec)
+bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSeconds, double &ra, double &dec,
+                                      bool *httpLevelFailure = nullptr)
 {
+    if (httpLevelFailure != nullptr)
+        *httpLevelFailure = false;
+
     CURL *curl = curl_easy_init();
     if (curl == nullptr)
+    {
+        if (httpLevelFailure != nullptr)
+            *httpLevelFailure = true;
         return false;
+    }
 
     std::string body;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -278,6 +286,8 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
         DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
                      "freshCamPosition(%s): HTTP failed - curl result=%d ('%s'), httpCode=%ld",
                      url.c_str(), static_cast<int>(res), curl_easy_strerror(res), httpCode);
+        if (httpLevelFailure != nullptr)
+            *httpLevelFailure = true;
         return false;
     }
 
@@ -430,11 +440,31 @@ bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinde
     if (s_lastFailureTime != 0 && difftime(now, s_lastFailureTime) < FRESH_POSITION_FAILURE_COOLDOWN_SEC)
         return false;
 
+    // 2026-09-26: the cooldown above exists for one specific situation (see
+    // its own comment, issue #238) - a PiFinder whose HTTP server itself is
+    // genuinely slow/unresponsive, where retrying every tick would block
+    // this driver's single event-loop thread back-to-back. It must NOT fire
+    // for a normal, healthy HTTP response that simply isn't a fresh CAM
+    // solve yet (an isolated CAM_FAILED frame - completely routine even on a
+    // perfectly working real camera - or the position being a hair older
+    // than maxAgeSeconds): live-caught on the Pi5 during a real-sky session,
+    // the real solve cadence is a reliable ~0.5s, so one such ordinary
+    // moment used to black out DRIFT_STATUS/auto-correct for a full 5s
+    // afterward for no reason - the very next tick's solve would have been
+    // fine. Track HTTP-level failure separately from a content-level
+    // "not fresh yet" verdict, and only arm the cooldown when BOTH URLs
+    // failed at the HTTP level (i.e. PiFinder's web server itself could not
+    // be reached at all) - a successful, healthy response that just isn't
+    // fresh yet gets re-checked on the very next tick with no penalty.
+    bool primaryHttpFailed = false;
+    bool fallbackHttpFailed = false;
     const bool ok =
-        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec) ||
-        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec);
+        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
+                                         &primaryHttpFailed) ||
+        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec,
+                                         &fallbackHttpFailed);
 
-    s_lastFailureTime = ok ? 0 : now;
+    s_lastFailureTime = (!ok && primaryHttpFailed && fallbackHttpFailed) ? now : 0;
     return ok;
 }
 
