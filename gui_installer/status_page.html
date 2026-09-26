@@ -2839,7 +2839,9 @@
           <span id="wm-mount-profile-tag"></span>
           <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
           <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+          <button id="wm-optical-train-sync-btn" class="ql-small-btn" onclick="syncOpticalTrainsToMount()" disabled title="Ekos optical trains (Mount/Guide via/etc.) keep whichever device they last had - switching the mount driver does not update them on its own. This finds every optical-train field currently set to &quot;Telescope Simulator&quot; and switches it to the mount selected above (docs/concepts/optical_train_device_sync.md).">Sync optical trains to this mount</button>
         </div>
+        <div id="wm-optical-train-sync-status" class="mb-hint" style="display:none;"></div>
         <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
         <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
 
@@ -9570,6 +9572,7 @@ function refreshWmConnectAllButton() {
 async function refreshWmConnectRow() {
   const mountSelect = document.getElementById('wm-mount-select');
   const setBtn = document.getElementById('wm-set-active-btn');
+  const trainSyncBtn = document.getElementById('wm-optical-train-sync-btn');
   const lx200Btn = document.getElementById('wm-connect-lx200-btn');
   const bridgeBtn = document.getElementById('wm-connect-bridge-btn');
   const mountBtn = document.getElementById('wm-connect-mount-btn');
@@ -9578,6 +9581,7 @@ async function refreshWmConnectRow() {
     mountSelect.innerHTML = '<option>profile not running</option>';
     mountSelect.disabled = true;
     setBtn.disabled = true;
+    trainSyncBtn.disabled = true;
     lx200Btn.disabled = true;
     bridgeBtn.disabled = true;
     mountBtn.disabled = true;
@@ -9620,6 +9624,7 @@ async function refreshWmConnectRow() {
     }
     mountSelect.disabled = labels.length === 0;
     setBtn.disabled = labels.length === 0 && !wmActiveMount;
+    trainSyncBtn.disabled = labels.length === 0;
     mountBtn.disabled = labels.length === 0;
     noMountHint.style.display = labels.length === 0 ? '' : 'none';
 
@@ -9641,6 +9646,7 @@ async function refreshWmConnectRow() {
     mountSelect.innerHTML = '<option>unavailable</option>';
     mountSelect.disabled = true;
     setBtn.disabled = true;
+    trainSyncBtn.disabled = true;
     mountBtn.disabled = true;
     noMountHint.style.display = 'none';
     wmOtherDriversCount = null;
@@ -9751,6 +9757,47 @@ async function setWmActiveDevices() {
   mbActionInFlight = false;
   clearMbActionStatus();
   setStepBusy(4, false);
+}
+
+// docs/concepts/optical_train_device_sync.md §4.2 - manual trigger for a
+// mount driver switch the automatic Full-Simulation on/off pair never sees
+// (e.g. linking a real mount driver by hand, as in the 2026-09-26 session).
+// Always syncs FROM "Telescope Simulator" TO whichever mount is currently
+// selected in the dropdown above - the common case (leaving Full Simulation
+// for real hardware). Switching the other way around (real -> simulator) is
+// already handled automatically by the Full Simulation toggle itself.
+const OPTICAL_TRAIN_SYNC_FROM_DEVICE = 'Telescope Simulator';
+
+async function syncOpticalTrainsToMount() {
+  const toDevice = document.getElementById('wm-mount-select').value;
+  const statusEl = document.getElementById('wm-optical-train-sync-status');
+  if (!toDevice) return;
+  const btn = document.getElementById('wm-optical-train-sync-btn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'syncing…';
+  statusEl.style.display = '';
+  statusEl.textContent = `Syncing optical trains from "${OPTICAL_TRAIN_SYNC_FROM_DEVICE}" to "${toDevice}"…`;
+  try {
+    const resp = await fetch(
+      `/api/optical_train_sync?from_device=${encodeURIComponent(OPTICAL_TRAIN_SYNC_FROM_DEVICE)}`
+      + `&to_device=${encodeURIComponent(toDevice)}`,
+      { method: 'POST' },
+    );
+    const data = await resp.json();
+    if (data.success) {
+      const trainNames = Object.keys(data.changed || {});
+      statusEl.textContent = trainNames.length
+        ? `Done - updated: ${trainNames.map((n) => `${n} (${data.changed[n].join(', ')})`).join('; ')}`
+        : `Nothing to do - no optical train field is currently set to "${OPTICAL_TRAIN_SYNC_FROM_DEVICE}".`;
+    } else {
+      statusEl.textContent = `Failed: ${data.error || 'unknown error'}`;
+    }
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e}`;
+  }
+  btn.disabled = false;
+  btn.textContent = originalText;
 }
 
 // Green + "Disconnect X" once a device is actually connected, per live
