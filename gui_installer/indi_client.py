@@ -1192,6 +1192,115 @@ def trigger_reposition_revert(
     set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_NO", host, port, timeout)
 
 
+# 2026-09-26, direct feedback (Real Hardware transition, live at the scope):
+# switching which mount device is actually in use (Telescope Simulator <->
+# a real mount driver like "LX200 OnStep") leaves every Ekos optical train
+# still pointing at the OLD device - found live with TWO trains both still
+# set to "Telescope Simulator" after adding the real mount driver. Not INDI
+# at all - Ekos optical trains are KStars' own concept, reached via its
+# DBus interface (org.kde.kstars.Ekos.OpticalTrain), not indiserver.
+_OPTICAL_TRAIN_DEVICE_PROPERTIES = (
+    "mount", "camera", "guider", "focuser", "filterWheel", "rotator", "dustCap", "lightBox",
+)
+
+# KStars' own placeholder for "no device selected" on any of the 8 fields
+# above - not a real device name, must never be treated as one (e.g. by a
+# caller deciding whether a field currently "has a device worth
+# remembering/swapping"). Confirmed live: an unset field's property value is
+# literally the two-character string "--", not empty/None.
+OPTICAL_TRAIN_NONE_SENTINEL = "--"
+
+
+def _qdbus(*args: str, timeout: float = 5.0) -> str:
+    """Runs qdbus6 against the local KStars instance's session bus, returns
+    stdout stripped. Raises INDIClientError on any failure (KStars not
+    running, qdbus6 missing, DBus call rejected, ...) - callers decide
+    whether that's fatal or best-effort for their own use."""
+    try:
+        result = subprocess.run(
+            ["qdbus6", "org.kde.kstars", *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        raise INDIClientError(f"qdbus6 call failed: {e}") from e
+    if result.returncode != 0:
+        raise INDIClientError(f"qdbus6 {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def list_optical_train_ids(timeout: float = 5.0) -> list:
+    """Every currently-registered Ekos optical train's DBus object id (e.g.
+    ["81", "82"]), discovered from the same top-level object list `qdbus6
+    org.kde.kstars` prints (introspection) - KStars exposes no direct "list
+    trains" call, but a train's own object path IS this id."""
+    output = _qdbus(timeout=timeout)
+    prefix = "/KStars/Ekos/OpticalTrain/"
+    return [
+        line.strip()[len(prefix):]
+        for line in output.splitlines()
+        if line.strip().startswith(prefix) and line.strip()[len(prefix):].isdigit()
+    ]
+
+
+def get_optical_train_property(train_id: str, prop: str, timeout: float = 5.0) -> str:
+    return _qdbus(
+        f"/KStars/Ekos/OpticalTrain/{train_id}", f"org.kde.kstars.Ekos.OpticalTrain.{prop}", timeout=timeout,
+    )
+
+
+def set_optical_train_property(train_id: str, prop: str, value: str, timeout: float = 5.0) -> None:
+    setter = "set" + prop[0].upper() + prop[1:]
+    _qdbus(
+        f"/KStars/Ekos/OpticalTrain/{train_id}", f"org.kde.kstars.Ekos.OpticalTrain.{setter}", value, timeout=timeout,
+    )
+
+
+def optical_train_device_properties() -> tuple:
+    """Public accessor for the 8 device-role property names (mount, camera,
+    guider, focuser, filterWheel, rotator, dustCap, lightBox) - callers
+    outside this module (server.py's Full-Simulation snapshot/restore) use
+    this instead of reaching into the underscore-prefixed module constant."""
+    return _OPTICAL_TRAIN_DEVICE_PROPERTIES
+
+
+def swap_optical_train_devices(from_device: str, to_device: str, timeout: float = 5.0) -> dict:
+    """Replaces every optical-train field (Mount, Camera, Guide-via,
+    Focuser, Filter Wheel, Rotator, Dust Cap, Light Box) whose CURRENT value
+    is exactly `from_device` with `to_device`. Checks every field generically
+    rather than assuming which one "should" hold a mount - a field can
+    validly hold the mount's own name in more than one place (e.g. "Guide
+    via" set to pulse-guide through the mount instead of a dedicated guide
+    camera - live-confirmed the same session: one train's `guider` was
+    "Telescope Simulator" too), or could just as validly hold something else
+    entirely (a real guide camera) that must be left untouched.
+
+    Returns {train_name: [changed_property, ...]} for every train that had
+    at least one field changed - empty dict if nothing matched `from_device`
+    anywhere. Best-effort per train/property: one failure doesn't abort the
+    rest - the caller gets back exactly what did change."""
+    changed: dict = {}
+    for train_id in list_optical_train_ids(timeout=timeout):
+        try:
+            name = get_optical_train_property(train_id, "name", timeout=timeout)
+        except INDIClientError:
+            name = f"train {train_id}"
+        train_changes = []
+        for prop in _OPTICAL_TRAIN_DEVICE_PROPERTIES:
+            try:
+                current = get_optical_train_property(train_id, prop, timeout=timeout)
+            except INDIClientError:
+                continue
+            if current == from_device:
+                try:
+                    set_optical_train_property(train_id, prop, to_device, timeout=timeout)
+                    train_changes.append(prop)
+                except INDIClientError:
+                    continue
+        if train_changes:
+            changed[name] = train_changes
+    return changed
+
+
 # 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
 # still-not-root-caused "process alive but unresponsive to any INDI query"
 # hang (#238) - live-verified by hand many times this same session

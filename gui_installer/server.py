@@ -1519,6 +1519,73 @@ def _truth_injector_alive() -> bool:
     return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
 
 
+def _optical_train_snapshot_and_enter_sim():
+    """Full-Simulation turning ON (docs/concepts/optical_train_device_sync.md
+    §4.1): every Ekos optical train field NOT already "Telescope Simulator"
+    gets remembered (so it can be restored later) and switched to it. Never
+    assumes which field "should" hold a mount - a field already on
+    "Telescope Simulator" is left alone and not recorded (nothing to
+    restore). Best-effort throughout: KStars/qdbus6 being unavailable must
+    never block Full Simulation itself from starting."""
+    global _optical_train_swap_memory
+    try:
+        for train_id in indi_client.list_optical_train_ids():
+            for prop in indi_client.optical_train_device_properties():
+                try:
+                    current = indi_client.get_optical_train_property(train_id, prop)
+                except indi_client.INDIClientError:
+                    continue
+                if not current or current == _OPTICAL_TRAIN_SIM_DEVICE or current == indi_client.OPTICAL_TRAIN_NONE_SENTINEL:
+                    continue
+                try:
+                    indi_client.set_optical_train_property(train_id, prop, _OPTICAL_TRAIN_SIM_DEVICE)
+                except indi_client.INDIClientError:
+                    continue
+                _optical_train_swap_memory.setdefault(train_id, {})[prop] = current
+        if _optical_train_swap_memory:
+            _save_mount_bridge_desired_state()
+            _mb_log(f"Full Simulation: swapped optical train fields to \"{_OPTICAL_TRAIN_SIM_DEVICE}\": "
+                     f"{_optical_train_swap_memory}")
+    except Exception as e:
+        _mb_log(f"warning: optical train Full-Simulation snapshot/swap failed: {e}")
+
+
+def _optical_train_restore_from_sim():
+    """Full-Simulation turning OFF (docs/concepts/optical_train_device_sync.md
+    §4.1): restore every remembered field - but only where it is STILL
+    exactly "Telescope Simulator" right now. A field the user changed to
+    something else while Full Simulation was active was a deliberate choice
+    and must not be silently overwritten; its memory entry is dropped
+    either way (there is nothing more this mechanism should do about it).
+    Best-effort: a failed individual restore keeps its own memory entry for
+    a future attempt instead of losing track of it."""
+    global _optical_train_swap_memory
+    if not _optical_train_swap_memory:
+        return
+    try:
+        remaining: dict = {}
+        for train_id, fields in _optical_train_swap_memory.items():
+            for prop, old_value in fields.items():
+                try:
+                    current = indi_client.get_optical_train_property(train_id, prop)
+                except indi_client.INDIClientError:
+                    remaining.setdefault(train_id, {})[prop] = old_value
+                    continue
+                if current != _OPTICAL_TRAIN_SIM_DEVICE:
+                    continue  # changed deliberately in between - drop the memory entry, leave it alone
+                try:
+                    indi_client.set_optical_train_property(train_id, prop, old_value)
+                except indi_client.INDIClientError:
+                    remaining.setdefault(train_id, {})[prop] = old_value
+        restored_count = sum(len(f) for f in _optical_train_swap_memory.values()) - sum(len(f) for f in remaining.values())
+        _optical_train_swap_memory = remaining
+        _save_mount_bridge_desired_state()
+        if restored_count:
+            _mb_log(f"Full Simulation: restored {restored_count} optical train field(s) from before Full Simulation.")
+    except Exception as e:
+        _mb_log(f"warning: optical train Full-Simulation restore failed: {e}")
+
+
 def _truth_injector_start(device: str, host: str = "127.0.0.1"):
     global _truth_injector_proc, _truth_injector_device, _truth_injector_host
     # The one-time pkill in main() only guards against an orphan that
@@ -1533,6 +1600,7 @@ def _truth_injector_start(device: str, host: str = "127.0.0.1"):
     # already None/dead (see _truth_injector_alive()'s callers), so this can
     # never kill an instance we're still tracking - only a genuine stray one.
     subprocess.run(["pkill", "-f", str(TRUTH_INJECTOR_SCRIPT)], capture_output=True)
+    _optical_train_snapshot_and_enter_sim()
     _truth_injector_device = device
     _truth_injector_host = host
     # Found live (2026-09-13, Control host testing): this never passed
@@ -1586,6 +1654,7 @@ def _truth_injector_stop():
         except subprocess.TimeoutExpired:
             _truth_injector_proc.kill()
         _truth_injector_proc = None
+    _optical_train_restore_from_sim()
     # Found live (2026-09-09): this only ever killed the process - PiFinder's
     # own fake_solve_active flag was never cleared, so /api/status kept
     # reporting a stale "Injected Solve" state (and the no-solve banner's own
@@ -2250,6 +2319,16 @@ def _autostart_cold_profile():
 # | None (None = no explicit choice yet, e.g. a fresh install).
 _pifinder_role_choice = None
 
+# 2026-09-26, docs/concepts/optical_train_device_sync.md: which optical-train
+# device fields the Full-Simulation on/off pair changed and must restore -
+# {train_id: {property_name: old_value}}, only entries that actually changed
+# (a field already on "Telescope Simulator" is never recorded, nothing to
+# restore for it). Persisted the same way as the _mb_desired_* fields above -
+# a Control Center restart mid-Full-Simulation must not lose track of what
+# to restore later.
+_optical_train_swap_memory: dict = {}
+_OPTICAL_TRAIN_SIM_DEVICE = "Telescope Simulator"
+
 
 def _current_pifinder_mode_snapshot() -> dict:
     """This device's own mode/role state - see /api/pifinder_mode's own
@@ -2371,6 +2450,7 @@ def _save_mount_bridge_desired_state():
             "last_known_active_profile": _last_known_active_profile,
             "last_known_host_profile": _last_known_host_profile,
             "last_known_client_profile": _last_known_client_profile,
+            "optical_train_swap_memory": _optical_train_swap_memory,
         }))
         os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
     except Exception as e:
@@ -2389,7 +2469,7 @@ def _load_mount_bridge_desired_state():
     global _maintenance_mode_orig_autostart, _maintenance_mode_orig_autoconnect
     global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
     global _pifinder_role_choice, _last_known_lx200_remote, _last_known_active_profile
-    global _last_known_host_profile, _last_known_client_profile
+    global _last_known_host_profile, _last_known_client_profile, _optical_train_swap_memory
     if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
         return
     try:
@@ -2414,6 +2494,7 @@ def _load_mount_bridge_desired_state():
     _last_known_active_profile = data.get("last_known_active_profile")
     _last_known_host_profile = data.get("last_known_host_profile")
     _last_known_client_profile = data.get("last_known_client_profile")
+    _optical_train_swap_memory = data.get("optical_train_swap_memory", {})
     _mb_log(
         "restored Mount Bridge desired state from before the last restart "
         f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
@@ -6427,6 +6508,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _mb_log("  done.")
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/optical_train_sync":
+            # Manual trigger (docs/concepts/optical_train_device_sync.md §4.2)
+            # - covers a mount driver switch the automatic Full-Simulation
+            # on/off pair (§4.1) never sees, e.g. a user directly linking a
+            # new real mount driver via KStars/the StellarMate app (the
+            # 2026-09-26 session's own real-hardware transition). Swaps every
+            # optical-train field whose CURRENT value is exactly
+            # `from_device` to `to_device` - not just "mount", see
+            # swap_optical_train_devices()'s own docstring.
+            qs = parse_qs(parsed.query)
+            from_device = qs.get("from_device", [_OPTICAL_TRAIN_SIM_DEVICE])[0]
+            to_device = qs.get("to_device", [""])[0]
+            if not to_device:
+                self._send_json({"success": False, "error": "to_device is required"}, status=400)
+                return
+            _mb_log(f"syncing optical trains: \"{from_device}\" -> \"{to_device}\"...")
+            try:
+                changed = indi_client.swap_optical_train_devices(from_device, to_device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done: {changed}" if changed else "  done: nothing matched, no train changed.")
+            self._send_json({"success": True, "changed": changed})
             return
 
         if parsed.path == "/api/mount_bridge_goto_held":
