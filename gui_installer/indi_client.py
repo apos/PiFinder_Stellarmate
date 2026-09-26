@@ -1075,6 +1075,30 @@ def sync_mount_to_pifinder_visible_position(
     ra, dec = coord.get("RA"), coord.get("DEC")
     if ra in (None, "") or dec in (None, ""):
         raise INDIClientError("PiFinder LX200's own reported position isn't available")
+
+    # 2026-09-26, direct feedback ("Wenn ich sage: Sync mount, und ein Solve
+    # war da, dann soll er das tun! Basta"): an open REPOSITION_CONFIRM
+    # (state="Busy" - Mount Bridge still waiting on a Yes/No for a detected
+    # "unexplained reposition", see handleRepositionDetection()) silently
+    # swallowed this button's own TRIGGER_SYNC_TO_COORDS below with no
+    # error and no visible effect - live-caught the same session, first
+    # noticed right at Control Center startup (a startup PiFinder/mount
+    # mismatch is the routine case, not a corner case). An explicit,
+    # user-initiated Sync click IS the confirmation; it should not also
+    # have to clear a separate pending prompt first. Auto-resolve via the
+    # same REPOSITION_CONFIRM_YES ("Adopt new position") this session's own
+    # live testing already confirmed unblocks it - best-effort: if this
+    # read/write fails for any reason, fall through and attempt the sync
+    # exactly as before rather than blocking on a diagnostic step.
+    try:
+        mb_props = get_properties(
+            device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout,
+            stop_after={"REPOSITION_CONFIRM"},
+        )
+        if mb_props.get("PiFinder Mount Bridge", {}).get("REPOSITION_CONFIRM", {}).get("state") == "Busy":
+            set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_YES", host, port, timeout)
+    except INDIClientError:
+        pass
     # No `state == "Ok"` gate here (removed 2026-09-09, direct feedback +
     # live-verified): the original assumption - that this INDI property's
     # state transitions Idle -> Ok once a real position is confirmed, same
