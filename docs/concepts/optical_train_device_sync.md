@@ -57,19 +57,28 @@ so a caller can report exactly what happened rather than a generic "done".
 Center itself ever flips between "the mount is Telescope Simulator" and "the mount is whatever it
 was before" as a deliberate, first-party action (Full Simulation on/off). Hooked in both directions:
 
-- **Start** (entering Full Simulation): before starting the injector, call
-  `swap_optical_train_devices(<current per-field values>, "Telescope Simulator")` - but since the
-  "what to swap from" isn't a single known constant (a train could have any real mount configured),
-  this direction instead **snapshots first**: for every train/field whose value is not already
-  "Telescope Simulator", record `{train_id: {field: old_value}}` into `_optical_train_swap_memory`
-  (persisted the same way `_mb_desired_*` fields already are, see `MOUNT_BRIDGE_DESIRED_STATE_FILE`),
-  *then* sets that field to "Telescope Simulator". Only entries that actually changed are recorded -
-  a field already on "Telescope Simulator" is left alone and not remembered (nothing to restore).
-  A field with nothing selected reads back as the literal two-character string `"--"` (KStars' own
-  placeholder), not empty/None - found live during testing (an unset field was otherwise treated as
-  "has a device worth remembering," swapping and later restoring a field that was never really in
-  use). Excluded via `indi_client.OPTICAL_TRAIN_NONE_SENTINEL` alongside the "already Telescope
-  Simulator" check.
+- **Start** (entering Full Simulation): reads the REAL mount's own device name from Mount Bridge's
+  own `ACTIVE_DEVICES.ACTIVE_MOUNT` INDI property first (the authoritative "what is currently
+  configured as the mount" source - Mount Bridge already tracks exactly this for its own coupling).
+  Only then **snapshots**: for every train/field whose value is EXACTLY that real mount's name,
+  record `{train_id: {field: old_value}}` into `_optical_train_swap_memory` (persisted the same way
+  `_mb_desired_*` fields already are, see `MOUNT_BRIDGE_DESIRED_STATE_FILE`), *then* sets that field
+  to "Telescope Simulator". No real mount configured (or it's already "Telescope Simulator") -
+  nothing to do, return early.
+  - **2026-09-27 bug, found live the same session**: the original version swapped ANY field not
+    already "Telescope Simulator" - not just fields matching the real mount's name. This silently
+    clobbered `camera`/`focuser`/`guider` fields legitimately pointing at their OWN, unrelated
+    simulator devices ("CCD Simulator", "Focuser Simulator", ...) - nonsensical once overwritten
+    with "Telescope Simulator" as a camera/focuser device - and then "restored" them to the real
+    mount's name on the way back out, equally wrong. Fixed by scoping to the real mount's exact name
+    (read from `ACTIVE_DEVICES.ACTIVE_MOUNT`), matching the manual path's
+    (`swap_optical_train_devices()`) already-correct by-exact-value scoping - never "anything that
+    doesn't already match the target".
+  - A field with nothing selected reads back as the literal two-character string `"--"` (KStars' own
+    placeholder), not empty/None - a separate, now-moot finding from the same testing session (the
+    real-mount-name scoping above already excludes it, since `"--"` never equals the real mount's
+    name either) but kept documented since `indi_client.OPTICAL_TRAIN_NONE_SENTINEL` still exists
+    for it.
 - **Stop** (leaving Full Simulation): for every remembered `(train_id, field, old_value)`, restore
   `old_value` **only if the field's current value is still exactly "Telescope Simulator"** - if the
   user changed it to something else while Full Simulation was active, that was a deliberate choice

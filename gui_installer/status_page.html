@@ -5363,7 +5363,7 @@ async function disableFakeSolve() {
       // Injected Solve and the Truth Injector share the same
       // fake_solve_active flag - if the injector is running, stop it too or
       // its next 2s tick just turns this back on (direct feedback, 2026-08-10).
-      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+      await fetch('/api/truth_injector_toggle?direction=off', { method: 'POST' });
     }
     await fetch(`/api/fake_solve_disable?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
   } catch (e) {
@@ -5427,7 +5427,8 @@ async function reseedFakeSolve() {
       // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
       // Truth Injector's next 2s tick would otherwise immediately overwrite
       // this one-shot re-seed with the shadow device's own position (#323).
-      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+      // direction=off: unambiguous, see the "turn back on" call below for why.
+      await fetch('/api/truth_injector_toggle?direction=off', { method: 'POST' });
     }
     const resp = await fetch(`/api/fake_solve_enable_from_mount?port=${port}&host=${encodeURIComponent(host)}&skip_auto_release=${wasFullSimulation}`, { method: 'POST' });
     const result = await resp.json();
@@ -5446,7 +5447,14 @@ async function reseedFakeSolve() {
       const nowResp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
       const now = await nowResp.json();
       if (now.desired !== true) {
-        await fetch('/api/truth_injector_toggle', { method: 'POST' });
+        // 2026-09-27, live-caught: the plain (undirected) toggle here used
+        // to read fake_solve_active_live to decide on/off - which the
+        // /api/fake_solve_enable_from_mount call just above had already set
+        // true, making this look like "something's on, so stop" instead of
+        // the intended restart. Full Simulation was left silently,
+        // permanently off after every "Re-seed from mount". direction=on
+        // says unambiguously what this call means, bypassing that check.
+        await fetch('/api/truth_injector_toggle?direction=on', { method: 'POST' });
       }
     }
     if (result.success !== true) {
@@ -5522,8 +5530,9 @@ async function setFakeSolveManual() {
       // Same fake_solve_active race as disableFakeSolve() (2026-08-10): the
       // Truth Injector's next 2s tick would otherwise immediately overwrite
       // this one-shot manual position with the shadow device's own position
-      // (#323 - found live testing #319/#322).
-      await fetch('/api/truth_injector_toggle', { method: 'POST' });
+      // (#323 - found live testing #319/#322). direction=off: unambiguous,
+      // see the "turn back on" call below for why.
+      await fetch('/api/truth_injector_toggle?direction=off', { method: 'POST' });
     }
     const resp = await fetch(`/api/fake_solve_set?port=${port}&ra=${ra}&dec=${dec}&host=${encodeURIComponent(host)}`, { method: 'POST' });
     const result = await resp.json();
@@ -5538,7 +5547,12 @@ async function setFakeSolveManual() {
       const nowResp = await fetch('/api/truth_injector_status', { cache: 'no-store' });
       const now = await nowResp.json();
       if (now.desired !== true) {
-        await fetch('/api/truth_injector_toggle', { method: 'POST' });
+        // 2026-09-27, live-caught (same root cause as reseedFakeSolve()):
+        // the plain toggle here read fake_solve_active_live, which the
+        // /api/fake_solve_set call just above had already made true, so
+        // this looked like "already on" instead of the intended restart.
+        // direction=on says unambiguously what this call means.
+        await fetch('/api/truth_injector_toggle?direction=on', { method: 'POST' });
       }
     }
   } catch (e) {
