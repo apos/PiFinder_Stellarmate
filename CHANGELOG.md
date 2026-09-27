@@ -55,6 +55,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Mount Bridge tile: "One-Click Setup" restyled from a plain small button into an LED tile matching Real Hardware/Full Simulation/Fake Mode above it - status dot, title, short explanation (#529)
 - Combined-role ("StellarMate + PiFinder") hardware warning text relativized, reflecting this session's CPU/memory root-cause fixes instead of the original, now-overstated "needs a powerful Pi... 8 GB RAM minimum" wording (#525)
 - Mount Bridge tile: manual one-shot seed moved into Quick Actions, one row, no on/off toggle - `Re-seed from mount`/`Set position` each activate Injected Solve themselves (#319)
 - Mode cards + readiness line moved from the "Simulation, Test and Power" tile into the Mount Bridge tile, between Role and Setup checklist (#267)
