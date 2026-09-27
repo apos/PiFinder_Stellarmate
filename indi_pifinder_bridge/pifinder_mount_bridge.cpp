@@ -624,8 +624,31 @@ bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, 
         const auto parsed = nlohmann::json::parse(body);
         const auto &candidates = parsed.at("candidates");
         outPoints.clear();
+        // Precess J2000 -> JNow here, once, at the source - same reasoning
+        // and same INDI::J2000toObserved() pattern already used for every
+        // other PiFinder-sourced coordinate in this file (see
+        // httpGetLastAlignFromPiFinder()/httpGetPiFinderFreshCamPosition()'s
+        // own comments: "/api/status... is J2000 - PiFinder is J2000
+        // throughout... without precessing here the bridge reads a fixed
+        // precession-sized offset"). This endpoint's own docstring
+        // ("ra, dec: degrees, J2000") confirms the same is true here, but
+        // gotoAlignPoint() previously sent these straight to
+        // sendMountCoordsSafe() unprecessed - a systematic pointing offset
+        // on every Multi-Point Alignment point equal to the accumulated
+        // precession since J2000 (tens of arcminutes by now), not random
+        // noise. Live-reported (2026-09-27): "die Sterne werden nicht exakt
+        // angefahren" - consistent with exactly this kind of fixed,
+        // systematic offset rather than a GPS/time/catalog error.
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
         for (const auto &c : candidates)
-            outPoints.emplace_back(c.at("ra").get<double>() / 15.0, c.at("dec").get<double>());
+        {
+            const double raJ2000Hours = c.at("ra").get<double>() / 15.0;
+            const double decJ2000Deg = c.at("dec").get<double>();
+            INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+            INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+            INDI::J2000toObserved(&j2000, jd, &jnow);
+            outPoints.emplace_back(jnow.rightascension, jnow.declination);
+        }
         if (outPoints.empty())
         {
             outError = "0 candidates returned";
