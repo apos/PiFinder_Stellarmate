@@ -2785,10 +2785,19 @@
           </div>
         </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
+        <!-- 2026-09-27, direct feedback: the old plain ql-small-btn was too
+             inconspicuous next to the Real Hardware/Full Simulation/Fake Mode
+             tiles above - restyled as the same LED-tile pattern (dot, title,
+             short explanation) instead of a bare button; onSetupButtonClick()
+             itself is unchanged. -->
+        <div class="mode-tiles" style="margin-top:0.5rem;">
+          <div class="mode-tile" id="mode-tile-oneclick" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-oneclick-dot"></span>One-Click Setup<a class="help-link" href="/help.html#setup-indi" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></div>
+            <div class="mode-tile-sub" id="mode-tile-oneclick-sub">runs steps 1-6 below in one click (profile, drivers, mount, connect, Ekos)</div>
+          </div>
+        </div>
         <div id="mb-setup-btn-row" class="mb-row mb-step-row" style="margin-top:0.5rem;">
           <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step1-wm-label">1. INDI WM:</span></span>
-          <button id="mb-setup-btn" class="ql-small-btn" onclick="onSetupButtonClick()" title="Runs steps 1-6 below in one click (start profile, add drivers, link mount, connect, wait for Ekos) - without applying a specific Coupling mode at the end. Any Coupling preset above would trigger this same sequence automatically if it isn't finished yet.">One-Click Setup</button>
-          <a class="help-link" href="/help.html#setup-indi" target="_blank" rel="noopener" title="Help">i</a>
           <select id="wm-profile-select" class="mb-step-widget" onchange="onWmProfileChange()" disabled><option>loading&hellip;</option></select>
           <!-- Only meaningful in the Client role (its own dedicated
                profile) - see switchToPiFinderClientProfile()'s own comment.
@@ -9048,10 +9057,12 @@ function onSetupButtonClick() {
 
 async function startAutoconnect(mode) {
   autoconnectMode = mode;
+  updateOneClickSetupTile();
   const generation = ++autoconnectGeneration;
   if (!wmSelectedProfile) {
     setAutoconnectStatus('Autoconnect: pick a profile above first.');
     autoconnectMode = null;
+    updateOneClickSetupTile();
     return;
   }
   // Drivers added BEFORE starting the server, on purpose (2026-09-06,
@@ -9220,6 +9231,7 @@ async function finishAutoconnect(mode, generation) {
   }
   setAutoconnectStatus(null);
   autoconnectMode = null;
+  updateOneClickSetupTile();
 }
 
 // Phase 2 of the Mount Bridge web integration - profile selection (UC3,
@@ -10774,6 +10786,37 @@ function updateStepIndicators() {
   updateProfileRoleLine();
   updateSimReadinessLine();
   updateProfileSourceTags();
+  updateOneClickSetupTile();
+}
+
+// 2026-09-27, direct feedback: the One-Click Setup tile's own LED, styled
+// like the Real Hardware/Full Simulation/Fake Mode tiles above it - green
+// once isFullyReadyForCoupling() agrees (same steps 1-6 check
+// onSetupButtonClick() itself already gates on), yellow while this exact
+// action is actually running, white otherwise. Deliberately isFullyReadyForCoupling()
+// here, not wmSimAllReady - the button's own scope is steps 1-6, it does not
+// require a PiFinder solve the way the Full-Simulation readiness line does.
+function updateOneClickSetupTile() {
+  const tile = document.getElementById('mode-tile-oneclick');
+  const dotEl = document.getElementById('mode-tile-oneclick-dot');
+  const subEl = document.getElementById('mode-tile-oneclick-sub');
+  if (!tile) return;
+  const busy = autoconnectMode === SETUP_ONLY;
+  const ready = isFullyReadyForCoupling();
+  let dotClass, subText;
+  if (busy) {
+    dotClass = 'dot-yellow';
+    subText = 'running…';
+  } else if (ready) {
+    dotClass = 'dot-green';
+    subText = 'already fully set up - pick a Coupling preset above';
+  } else {
+    dotClass = 'dot-white';
+    subText = 'runs steps 1-6 below in one click (profile, drivers, mount, connect, Ekos)';
+  }
+  setHwDot(dotEl, 'status-dot ' + dotClass);
+  subEl.textContent = subText;
+  tile.classList.toggle('tile-on', dotClass === 'dot-green');
 }
 
 // Direct request (2026-09-12): steps 4/5 usually show the same profile name
