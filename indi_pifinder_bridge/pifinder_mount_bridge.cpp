@@ -576,7 +576,8 @@ bool httpGetPiFinderLocation(const std::string &url, double &lat, double &lon)
 // zero-candidate response.
 bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, double minAltitude,
                                const char *direction,
-                               std::vector<std::pair<double, double>> &outPoints, std::string &outError)
+                               std::vector<std::pair<double, double>> &outPoints,
+                               std::vector<std::string> &outNames, std::string &outError)
 {
     CURL *curl = curl_easy_init();
     if (curl == nullptr)
@@ -624,6 +625,7 @@ bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, 
         const auto parsed = nlohmann::json::parse(body);
         const auto &candidates = parsed.at("candidates");
         outPoints.clear();
+        outNames.clear();
         // Precess J2000 -> JNow here, once, at the source - same reasoning
         // and same INDI::J2000toObserved() pattern already used for every
         // other PiFinder-sourced coordinate in this file (see
@@ -648,6 +650,8 @@ bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, 
             INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
             INDI::J2000toObserved(&j2000, jd, &jnow);
             outPoints.emplace_back(jnow.rightascension, jnow.declination);
+            const auto &nameField = c.at("name");
+            outNames.emplace_back(nameField.is_null() ? std::string() : nameField.get<std::string>());
         }
         if (outPoints.empty())
         {
@@ -864,6 +868,11 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&AlignProgressNP, AlignProgressN, 3, getDeviceName(), "ALIGN_PROGRESS",
                        "Alignment progress", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    IUFillText(&AlignProgressT[ALIGN_CURRENT_NAME], "CURRENT_NAME", "Current point's star name", "");
+    IUFillText(&AlignProgressT[ALIGN_SYNCED_NAMES], "SYNCED_NAMES", "Synced star names (this sequence)", "");
+    IUFillTextVector(&AlignProgressTP, AlignProgressT, 2, getDeviceName(), "ALIGN_PROGRESS_NAMES",
+                       "Alignment progress (names)", "Main Control", IP_RO, 60, IPS_IDLE);
+
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
     IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
@@ -982,6 +991,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&AlignConfigNP);
         defineProperty(&AlignDirectionSP);
         defineProperty(&AlignProgressNP);
+        defineProperty(&AlignProgressTP);
         defineProperty(&DriftThresholdNP);
         defineProperty(&MaxSyncDriftNP);
         defineProperty(&SolveFreshnessMaxAgeNP);
@@ -1065,6 +1075,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(AlignConfigNP.name);
         deleteProperty(AlignDirectionSP.name);
         deleteProperty(AlignProgressNP.name);
+        deleteProperty(AlignProgressTP.name);
         deleteProperty(DriftThresholdNP.name);
         deleteProperty(MaxSyncDriftNP.name);
         deleteProperty(SolveFreshnessMaxAgeNP.name);
@@ -3015,6 +3026,10 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     AlignProgressN[ALIGN_POINT_INDEX].value = static_cast<double>(index + 1);
     AlignProgressNP.s = IPS_BUSY;
     IDSetNumber(&AlignProgressNP, nullptr);
+    const std::string &name = (index < m_alignPointNames.size()) ? m_alignPointNames[index] : std::string();
+    IUSaveText(&AlignProgressT[ALIGN_CURRENT_NAME], name.c_str());
+    AlignProgressTP.s = IPS_BUSY;
+    IDSetText(&AlignProgressTP, nullptr);
     return true;
 }
 
@@ -3035,9 +3050,9 @@ bool PiFinderMountBridge::fetchAlignmentCandidates()
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool ok =
         httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
-                                  direction, m_alignPoints, error) ||
+                                  direction, m_alignPoints, m_alignPointNames, error) ||
         httpGetNearbyBrightStars("http://" + piFinderHost + ":8080/api/nearby_bright_stars", radius, count, minAltitude,
-                                  direction, m_alignPoints, error);
+                                  direction, m_alignPoints, m_alignPointNames, error);
     if (!ok)
     {
         LOGF_ERROR("Multi-Point Alignment: could not get candidate points from PiFinder (%s).", error.c_str());
@@ -3079,8 +3094,10 @@ void PiFinderMountBridge::startMultiPointAlignment()
               m_alignPoints.size());
     m_alignPointIndex = 0;
     m_alignSyncedCount = 0;
+    m_alignSyncedNamesList.clear();
     AlignProgressN[ALIGN_POINT_COUNT].value = static_cast<double>(m_alignPoints.size());
     AlignProgressN[ALIGN_POINT_SYNCED].value = 0;
+    IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], "");
     if (gotoAlignPoint(m_alignPointIndex))
     {
         MultiPointAlignSP.s = IPS_BUSY;
@@ -3171,6 +3188,17 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 ++m_alignSyncedCount;
                 AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
                 IDSetNumber(&AlignProgressNP, nullptr);
+                const std::string &syncedName = (m_alignPointIndex < m_alignPointNames.size())
+                                                     ? m_alignPointNames[m_alignPointIndex]
+                                                     : std::string();
+                if (!syncedName.empty())
+                {
+                    if (!m_alignSyncedNamesList.empty())
+                        m_alignSyncedNamesList += ", ";
+                    m_alignSyncedNamesList += syncedName;
+                    IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], m_alignSyncedNamesList.c_str());
+                    IDSetText(&AlignProgressTP, nullptr);
+                }
             }
             else
             {
@@ -3200,6 +3228,8 @@ void PiFinderMountBridge::advanceAlignPoint()
         IDSetSwitch(&MultiPointAlignSP, nullptr);
         AlignProgressNP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
         IDSetNumber(&AlignProgressNP, nullptr);
+        AlignProgressTP.s = AlignProgressNP.s;
+        IDSetText(&AlignProgressTP, nullptr);
         return;
     }
 

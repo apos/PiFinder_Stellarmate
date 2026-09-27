@@ -329,12 +329,30 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber AlignProgressN[3];
         enum { ALIGN_POINT_INDEX, ALIGN_POINT_COUNT, ALIGN_POINT_SYNCED };
 
+        // 2026-09-27, direct feedback: the plain point-count progress ("1/2
+        // points") gives no idea WHICH star is currently being attempted, or
+        // which ones actually got synced by the end - CURRENT_NAME mirrors
+        // the star name for m_alignPointNames[m_alignPointIndex] (empty
+        // string if PiFinder's own catalog had no name for it), updated
+        // every time gotoAlignPoint() fires a new point. SYNCED_NAMES is a
+        // comma-separated, growing list of every point's name that actually
+        // got a verified Sync so far this sequence (reset to empty at the
+        // start of each new Start) - same "only counts a real Sync, not
+        // just attempted/skipped" rule as AlignProgressN[ALIGN_POINT_SYNCED].
+        ITextVectorProperty AlignProgressTP;
+        IText AlignProgressT[2];
+        enum { ALIGN_CURRENT_NAME, ALIGN_SYNCED_NAMES };
+
         enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - populated fresh by
         // fetchAlignmentCandidates() every time Start is clicked, not
         // hardcoded. Empty until a sequence has actually been started.
         std::vector<std::pair<double, double>> m_alignPoints;
+        // Parallel to m_alignPoints (same index, same size) - each entry is
+        // that point's name from PiFinder's own catalog response, or an
+        // empty string if PiFinder returned none for it.
+        std::vector<std::string> m_alignPointNames;
         size_t m_alignPointIndex = 0;
         // How many of m_alignPoints actually got a verified Sync (not just
         // attempted/skipped) - drives both AlignProgressN[ALIGN_POINT_SYNCED]
@@ -345,6 +363,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // #217's GUI-facing follow-up, where that ambiguity would otherwise
         // show up as a false "green" result.
         size_t m_alignSyncedCount = 0;
+        // Comma-separated names accumulated as each point actually gets a
+        // verified Sync - mirrors m_alignSyncedCount but as display text
+        // (AlignProgressT[ALIGN_SYNCED_NAMES]) rather than a count.
+        std::string m_alignSyncedNamesList;
         int m_alignSettleTicksRemaining = 0;
         int m_alignFreshnessWaitTicksRemaining = 0;
 

@@ -537,6 +537,8 @@ def mount_bridge_drift(
             "align_point_index": None,
             "align_point_count": None,
             "align_point_synced": None,
+            "align_current_name": None,
+            "align_synced_names": None,
             "align_radius": None,
             "align_count": None,
             "align_min_altitude": None,
@@ -588,6 +590,12 @@ def mount_bridge_drift(
     # multi-second cadence as drift while a sequence is running.
     align_state = device_props.get("MULTI_POINT_ALIGN", {}).get("state")
     align_progress = device_props.get("ALIGN_PROGRESS", {}).get("elements", {})
+    # 2026-09-27, direct feedback: show which star is being solved right
+    # now, not just "1/2 points" - ALIGN_PROGRESS_NAMES is the driver's
+    # companion text vector to ALIGN_PROGRESS (same cadence, just names
+    # instead of numbers; empty string when PiFinder returned no name for
+    # that candidate).
+    align_progress_names = device_props.get("ALIGN_PROGRESS_NAMES", {}).get("elements", {})
     # #191/#217: found live (2026-08-10, direct feedback - "die Werte werden
     # immer wieder auf Default gesetzt") that relying solely on
     # mount_bridge_status() (gated behind role/wmServerRunning checks in the
@@ -632,6 +640,8 @@ def mount_bridge_drift(
         "align_point_index": _int_or_none(align_progress.get("POINT_INDEX")),
         "align_point_count": _int_or_none(align_progress.get("POINT_COUNT")),
         "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
+        "align_current_name": align_progress_names.get("CURRENT_NAME") or None,
+        "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,

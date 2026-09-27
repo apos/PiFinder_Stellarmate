@@ -8517,7 +8517,7 @@ function updateMountRejectWarning(active, message) {
 // triggerMultiAlignStart()), and this function reasserts the real state
 // the moment the flag clears and the next poll lands.
 let multiAlignActionInFlight = false;
-function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced) {
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames) {
   const startBtn = document.getElementById('mb-multialign-start-btn');
   const stopBtn = document.getElementById('mb-multialign-stop-btn');
   const dotEl = document.getElementById('mb-multialign-dot');
@@ -8531,16 +8531,20 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
     textEl.textContent = 'not run yet';
     return;
   }
+  // 2026-09-27, direct feedback: show which star is being solved, not just
+  // the bare point count - "1/2 points" -> "1/2 points (Vega)".
+  const currentNameSuffix = currentName ? ` (${currentName})` : '';
+  const syncedNamesSuffix = syncedNames ? ` (${syncedNames})` : '';
   if (running) {
     setHwDot(dotEl, 'status-dot dot-yellow');
-    textEl.textContent = `running - point ${pointIndex}/${pointCount} (${pointSynced} verified so far)…`;
+    textEl.textContent = `running - point ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`;
   } else if (alignState === 'Ok') {
     setHwDot(dotEl, 'status-dot dot-green');
-    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced.`;
+    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
   } else if (alignState === 'Alert') {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = pointSynced > 0
-      ? `stopped at point ${pointIndex}/${pointCount} - ${pointSynced} point(s) verified before stopping.`
+      ? `stopped at point ${pointIndex}/${pointCount} - ${pointSynced} point(s) verified before stopping${syncedNamesSuffix}.`
       : `failed - 0/${pointCount} point(s) verified (stopped, or no fresh PiFinder solve arrived).`;
   } else {
     setHwDot(dotEl, 'status-dot dot-white');
@@ -8557,7 +8561,7 @@ async function refreshMbDrift() {
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
-      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
