@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Mount Bridge: Multi-Point Alignment's progress display now shows the star names being solved/synced, not just point counts - "1/2 points" -> "1/2 points (Vega)", "completed - 2/2 point(s) verified and synced." -> "completed - 2/2 point(s) verified and synced (Vega, Capella)" (new `ALIGN_PROGRESS_NAMES` INDI property) (#526)
 - Ekos optical trains (Mount/Camera/Guider/Focuser/Filter Wheel/Rotator/Dust Cap/Light Box) now stay in sync with the active mount device instead of silently keeping stale references - a manual "Sync optical trains to this mount" action (new `/api/optical_train_sync` route + button, for a mount driver switched by hand) and an automatic one tied to the Full Simulation on/off toggle (snapshots and restores per-field, defensive against a manual change made while Full Simulation was active); every one of the 8 device-role fields is checked generically by its current value, not by assumed meaning, since e.g. "Guide via" can validly hold either a real guide camera or the mount's own name (pulse-guiding) (#519)
 - Full Simulation: the PiFinder IMU Injector (prevents Mount Bridge's drift-plausibility check from flagging Full Simulation's own discrete fake-solve jumps as an implausible external reposition) now starts/stops automatically alongside the Truth Injector, instead of needing to be run manually as an undocumented second script
 - Control Host: new warning card when the mirrored PiFinder's own device also has its own local Mount Bridge actively coupled (GoTo/Auto-correct) to its own mount - PiFinder isn't purely read-only (a confirmed external reposition gets written back into it), so two independently active Bridges can cross-talk through it, each mistaking the other's mount motion for a real external reposition of its own target
@@ -54,6 +55,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Combined-role ("StellarMate + PiFinder") hardware warning text relativized, reflecting this session's CPU/memory root-cause fixes instead of the original, now-overstated "needs a powerful Pi... 8 GB RAM minimum" wording (#525)
 - Mount Bridge tile: manual one-shot seed moved into Quick Actions, one row, no on/off toggle - `Re-seed from mount`/`Set position` each activate Injected Solve themselves (#319)
 - Mode cards + readiness line moved from the "Simulation, Test and Power" tile into the Mount Bridge tile, between Role and Setup checklist (#267)
 - Mount Bridge tile: Multi-Point Alignment moved below Setup checklist & diagnostics, pure reordering (#266)
