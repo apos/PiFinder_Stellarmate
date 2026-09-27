@@ -142,6 +142,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Documentation
 
+- New concept doc: one-click Debug Mode + Bug Report workflow - INDI DEBUG logging toggle for Mount Bridge + the active mount device, offset-based log slicing/verification against indiserver's own log, GitHub issue hand-off (#533)
 - README, install guide, and screenshots rebuilt end-to-end (EN+DE): TOC, mandatory Web Manager step, version matrix/roadmap consolidated, basic-memory references dropped, stale status headers fixed (#336, #337, #338, #339, #349, #350, #351, #352, #353, #354, #355)
 - New Control Center "Status Badges & Colours" reference, with per-badge headings and images (#341, #342)
 - New PFSM overview presentation deck (LaTeX Beamer, EN+DE, light/dark builds): badge legend, hyperlinked links slide, Web Manager/role-card/control-host slides, wiring diagram (#356, #357, #358, #359, #360, #361, #362, #363, #364, #365, #366, #376, #377)
