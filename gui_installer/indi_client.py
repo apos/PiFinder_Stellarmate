@@ -338,6 +338,8 @@ def mount_bridge_status(
             "align_count": None,
             "align_min_altitude": None,
             "align_direction": None,
+            "external_hold": None,
+            "external_hold_reason": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
@@ -356,6 +358,15 @@ def mount_bridge_status(
         "ALIGN_DIR_S": "S", "ALIGN_DIR_W": "W",
     }.get(align_direction_raw)
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
+    # #372, docs/concepts/mount_bridge_external_hold.md §4 - see
+    # mount_bridge_drift()'s identical read for why this is read live from
+    # the driver rather than mirrored from the Control Center's own watchdog
+    # state.
+    external_hold_elements = device_props.get("EXTERNAL_HOLD", {}).get("elements", {})
+    external_hold = (
+        external_hold_elements.get("HOLD_ON") == "On" if external_hold_elements else None
+    )
+    external_hold_reason = device_props.get("EXTERNAL_HOLD_REASON", {}).get("elements", {}).get("REASON") or None
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     # #178 unified GoTo button: read-only "who does the held target come
@@ -500,6 +511,8 @@ def mount_bridge_status(
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
         "align_direction": align_direction,
+        "external_hold": external_hold,
+        "external_hold_reason": external_hold_reason,
     }
 
 
@@ -539,6 +552,8 @@ def mount_bridge_drift(
             "align_point_synced": None,
             "align_current_name": None,
             "align_synced_names": None,
+            "external_hold": None,
+            "external_hold_reason": None,
             "align_radius": None,
             "align_count": None,
             "align_min_altitude": None,
@@ -604,6 +619,15 @@ def mount_bridge_drift(
     # whatever reason - added here too, on the same always-on fast poll the
     # Threshold/drift fields already trust, so reading them back is as
     # reliable as everything else on this row.
+    # #372, docs/concepts/mount_bridge_external_hold.md §4: read live from the
+    # driver's own properties, not just mirrored from whatever the Control
+    # Center's guiding watchdog last wrote - a hand-set EXTERNAL_HOLD (INDI
+    # Control Panel, testing) must show up here too.
+    external_hold_elements = device_props.get("EXTERNAL_HOLD", {}).get("elements", {})
+    external_hold = (
+        external_hold_elements.get("HOLD_ON") == "On" if external_hold_elements else None
+    )
+    external_hold_reason = device_props.get("EXTERNAL_HOLD_REASON", {}).get("elements", {}).get("REASON") or None
     align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
     # #191: preferred-direction hard filter - whichever ALIGN_DIRECTION
     # element is "On", normalized to the short form the GUI/API already use
@@ -642,6 +666,8 @@ def mount_bridge_drift(
         "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
         "align_current_name": align_progress_names.get("CURRENT_NAME") or None,
         "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
+        "external_hold": external_hold,
+        "external_hold_reason": external_hold_reason,
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
         "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
         "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
@@ -939,6 +965,39 @@ def set_coupling_mode(
         set_switch("PiFinder Mount Bridge", "CORRECTION_ACTION", element, host, port, timeout)
 
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
+
+
+def set_mount_bridge_external_hold(
+    on: bool,
+    reason: str = "",
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets Mount Bridge's EXTERNAL_HOLD switch (+ EXTERNAL_HOLD_REASON text)
+    - #372, docs/concepts/mount_bridge_external_hold.md. While held, the
+    driver keeps computing/publishing drift but skips every acting path
+    (Auto-correct's Sync/Goto, Goto-Forward, Reposition-Detection's
+    reaction, handlePiFinderAlignSync()) regardless of the selected Coupling
+    mode - the reason this exists as its own driver-side property instead of
+    the Control Center juggling BRIDGE_MODE itself: handlePiFinderAlignSync()
+    fires in every Coupling mode except MODE_OFF, so a Coupling-mode-only
+    override could not actually gate it.
+
+    Sets the reason text FIRST, then the switch - the driver's own
+    ISNewSwitch handler for EXTERNAL_HOLD logs the reason it already has by
+    the time the switch write arrives, so this order lets that log line be
+    accurate on the very first HOLD_ON.
+
+    Raises INDIClientError if EXTERNAL_HOLD isn't a currently-defined
+    property (e.g. an older Mount Bridge build without #372) - callers
+    should catch this once and stay quiet rather than retrying every poll."""
+    set_text("PiFinder Mount Bridge", "EXTERNAL_HOLD_REASON", {"REASON": reason}, host, port, timeout)
+    set_switch(
+        "PiFinder Mount Bridge", "EXTERNAL_HOLD",
+        "HOLD_ON" if on else "HOLD_OFF",
+        host, port, timeout,
+    )
 
 
 def _send_switch_and_confirm(

@@ -1338,66 +1338,47 @@ _GUIDING_RELEASE_DEBOUNCE_S = 15
 
 
 def _guiding_hold_watchdog(interval=3):
-    """#372 (simplified) - while Ekos reports guiding active, temporarily
-    forces Coupling to Verify/Alert only (never touches the mount) so a
-    threshold-triggered Sync/Goto doesn't kick the guide star out of frame
-    and a dither doesn't get misread as an external reposition - both of
-    which the existing Mount Bridge logic would otherwise do exactly as
-    designed, just at the wrong moment. Restores whatever mode was actually
-    desired before once guiding stops (after RELEASE_DEBOUNCE_S of
-    continuous idle, so one missed/misread frame mid-session doesn't yank
-    Coupling back on right before the next guide correction).
+    """#372 - while Ekos reports guiding active, sets Mount Bridge's own
+    EXTERNAL_HOLD switch so a threshold-triggered Sync/Goto doesn't kick the
+    guide star out of frame, a dither doesn't get misread as an external
+    reposition, and a PiFinder Align doesn't Sync the mount mid-guiding -
+    all three of which the driver would otherwise do exactly as designed,
+    just at the wrong moment. Releases the hold once guiding has been
+    continuously idle for RELEASE_DEBOUNCE_S (so one missed/misread frame
+    mid-session doesn't yank protection away right before the next guide
+    correction).
 
-    Deliberately does NOT persist the held state (_save_mount_bridge_desired_state()
-    is never called here) - same reasoning as the original EXTERNAL_HOLD
-    concept doc: this is live, externally-driven, and meaningless to survive
-    a restart. If the Control Center restarts mid-guiding, the driver simply
-    comes back up in whatever mode was last actually saved (from before this
-    watchdog touched anything), not stuck in Verify/Alert forever.
+    2026-09-27: originally shipped as a Control-Center-only simplification
+    that temporarily forced Coupling to MODE_VERIFY_ALERT instead of using a
+    real driver property - reverted to the concept's original design
+    (docs/concepts/mount_bridge_external_hold.md) after a follow-up review
+    found MODE_VERIFY_ALERT could not actually gate handlePiFinderAlignSync()
+    (#313), which Syncs the mount in every Coupling mode except MODE_OFF.
+    EXTERNAL_HOLD gates that path directly at the driver level instead.
 
     Does nothing if Ekos/Guide isn't reachable at all (_ekos_guide_status()
-    returns None) - never guesses "not guiding" from a failed query.
-
-    KNOWN GAPS vs. the original concept (docs/concepts/mount_bridge_external_hold.md),
-    found on 2026-09-27 review before reviving this branch - not fixed here,
-    because fixing them properly needs the concept's original driver-side
-    EXTERNAL_HOLD property, not just a Coupling-mode override:
-      - handlePiFinderAlignSync() (#313, pifinder_mount_bridge.cpp) Syncs the
-        mount on a confirmed PiFinder Align in EVERY Coupling mode except
-        MODE_OFF - including MODE_VERIFY_ALERT, an explicit 2026-09-08 owner
-        decision predating this watchdog. A PiFinder Align performed while
-        this watchdog is holding WILL still Sync the mount mid-guiding.
-      - No status-page surface (§4 of the concept) - a held Coupling looks
-        identical to a normal Verify/Alert selection on screen; the only
-        visible trace is the driver log line below.
-      - No guard against the (low-probability) case of
-        _mount_bridge_readiness_self_heal() restarting an unresponsive Mount
-        Bridge driver while this watchdog is holding.
-    Reposition-Detection's *reaction* and Auto-correct/Goto-Forward's
-    Sync/Goto are NOT gap - both are structurally inapplicable in
-    MODE_VERIFY_ALERT already (see handleRepositionDetection()'s own
-    repositionDetectionApplies gate), so forcing that mode genuinely
-    suppresses them, matching the concept's intent for those two paths."""
-    global _guiding_hold_saved, _guiding_hold_idle_since
-    global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+    returns None) - never guesses "not guiding" from a failed query. Does
+    nothing (after logging once) if EXTERNAL_HOLD isn't a currently-defined
+    property - an older Mount Bridge build without #372, or the property not
+    seen yet."""
     while True:
         time.sleep(interval)
         try:
             _guiding_hold_watchdog_tick()
         except Exception as e:
-            # Must never let this loop die (2026-09-27 review, matching the
-            # original concept's §3.3 "must not leave the Bridge stuck held"
-            # requirement) - an uncaught exception here would silently kill
-            # this daemon thread, and if that happened while
-            # _guiding_hold_saved was set, Coupling would be stranded at
-            # Verify/Alert forever with nothing left to restore it. Logging
-            # and retrying next tick keeps the watchdog self-healing instead.
+            # Must never let this loop die (§3.3's "must not leave the
+            # Bridge stuck held" requirement) - an uncaught exception here
+            # would silently kill this daemon thread, and if that happened
+            # right after engaging the hold, EXTERNAL_HOLD would stay ON
+            # forever with nothing left to release it. Logging and retrying
+            # next tick keeps the watchdog self-healing instead.
             _mb_log(f"Guiding watchdog: unexpected error, will retry next tick: {e}")
 
 
 def _guiding_hold_watchdog_tick():
-    global _guiding_hold_saved, _guiding_hold_idle_since
-    global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+    global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
+    if _guiding_hold_supported is False:
+        return  # confirmed missing on this build - already logged once, stay quiet
     gs = _ekos_guide_status()
     if gs is None:
         return
@@ -1405,51 +1386,45 @@ def _guiding_hold_watchdog_tick():
     if guiding_now:
         _guiding_hold_idle_since = None
         want_hold = True
-    elif _guiding_hold_saved is not None:
+    elif _guiding_hold_active:
         _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
         want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
     else:
         want_hold = False
 
-    if want_hold and _guiding_hold_saved is None:
-        if _mb_desired_coupling_mode in (None, "MODE_OFF", "MODE_VERIFY_ALERT"):
-            return  # nothing to protect against - already passive or unset
-        # §3.3 of the original concept: don't start a hold mid-Multi-Point-
-        # Alignment-run - that sequence's own SYNC step would get forced
-        # into Verify/Alert and silently stop actually syncing anything.
+    if want_hold and not _guiding_hold_active:
+        # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
+        # driver itself also warns and lets an already-running sequence
+        # finish rather than aborting it if this arrives anyway, but the CC
+        # side checks first so a routine guiding start doesn't collide with
+        # one in the first place.
         try:
             if indi_client.mount_bridge_drift().get("align_state") == "Busy":
                 return
         except indi_client.INDIClientError:
             pass  # can't tell either way - proceed rather than block forever
-        _guiding_hold_saved = (
-            _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action,
-        )
         try:
-            indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
-            _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
-            _mb_desired_coupling_threshold = None
-            _mb_desired_coupling_action = None
-            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - "
-                    f"Coupling held at Verify/Alert only (was {_guiding_hold_saved[0]}).")
+            indi_client.set_mount_bridge_external_hold(True, f"guiding (Ekos GuideState {gs})")
+            _guiding_hold_supported = True
+            _guiding_hold_active = True
+            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - Mount Bridge external hold engaged.")
         except indi_client.INDIClientError as e:
-            _guiding_hold_saved = None
-            _mb_log(f"Guiding watchdog: could not switch to Verify/Alert: {e}")
-    elif not want_hold and _guiding_hold_saved is not None:
-        mode, threshold, action = _guiding_hold_saved
+            if _guiding_hold_supported is None:
+                _guiding_hold_supported = False
+                _mb_log(f"Guiding watchdog: EXTERNAL_HOLD not available on this Mount Bridge build - "
+                        f"guiding protection disabled until it's rebuilt/updated ({e}).")
+    elif not want_hold and _guiding_hold_active:
         try:
-            indi_client.set_coupling_mode(mode, drift_threshold=threshold, correction_action=action)
-            _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action = (
-                mode, threshold, action,
-            )
-            _mb_log(f"Guiding watchdog: guiding stopped - Coupling restored to {mode}.")
-            _guiding_hold_saved = None
+            indi_client.set_mount_bridge_external_hold(False)
+            _guiding_hold_active = False
+            _mb_log("Guiding watchdog: guiding stopped - Mount Bridge external hold released.")
         except indi_client.INDIClientError as e:
-            # Deliberately keep _guiding_hold_saved set on failure (not a
-            # bare `finally`) - a transient INDI error here must not
-            # silently strand Coupling at Verify/Alert with nothing left
-            # that remembers what to restore it to. Retried next tick.
-            _mb_log(f"Guiding watchdog: could not restore Coupling to {mode}, will retry: {e}")
+            # Deliberately keep _guiding_hold_active True on failure - a
+            # transient INDI error here must not silently let something
+            # else (e.g. the readiness watchdog) believe the hold is
+            # already released when the driver may still have it set.
+            # Retried next tick.
+            _mb_log(f"Guiding watchdog: could not release external hold, will retry: {e}")
 
 
 def _ekos_start_profile(profile_name: str) -> dict:
@@ -2167,16 +2142,18 @@ _mb_desired_coupling_action = None
 _mb_desired_connected = None
 _mb_readiness_retrier = _BackgroundRetrier()
 
-# #372 - simplified from the original EXTERNAL_HOLD driver-property concept
-# (docs/concepts/mount_bridge_external_hold.md) after direct feedback
-# (2026-09-19, live with a real guide scope/camera): a new INDI property +
-# TimerHit() observe/act split needs a driver rebuild and restart mid-session
-# to test - switching Coupling to the already-existing, already-safe
-# Verify/Alert only mode achieves the same practical goal (no Sync/Goto while
-# guiding) with no driver changes at all. None = not currently held; a tuple
-# = the (mode, threshold, action) to restore once guiding stops.
-_guiding_hold_saved = None
+# #372, docs/concepts/mount_bridge_external_hold.md - mirrors what
+# _guiding_hold_watchdog_tick() last wrote to Mount Bridge's own
+# EXTERNAL_HOLD switch (not the sole source of truth for display purposes -
+# mount_bridge_drift()'s "external_hold" reads the driver's live property
+# directly - but needed here for idempotency and so
+# _mount_bridge_readiness_self_heal() can skip a driver restart while held).
+_guiding_hold_active = False
 _guiding_hold_idle_since = None
+# None = not yet determined, True = confirmed present, False = confirmed
+# missing (older Mount Bridge build without #372) - set on the first
+# successful/failed hold attempt, see _guiding_hold_watchdog_tick().
+_guiding_hold_supported = None
 
 # Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
 # lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
@@ -2915,6 +2892,20 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                     f"restarts within {_MB_READINESS_RESTART_WINDOW_SEC}s - still unresponsive. Not retrying "
                     "again automatically (see issue #238) - a manual look is needed."
                 )
+            return
+
+        # #372, docs/concepts/mount_bridge_external_hold.md §2.2: a restart
+        # mid-guiding-session is actively harmful (drops the mount
+        # connection for however long the restart takes, right as guiding
+        # depends on it staying still) - skip it while the guiding watchdog
+        # currently has EXTERNAL_HOLD engaged. Deliberately does not reset
+        # _mb_readiness_consecutive_fails here - if the hold clears while
+        # Mount Bridge is still genuinely unresponsive, the next tick picks
+        # up exactly where this left off instead of restarting the
+        # multi-tick confirmation window from zero.
+        if _guiding_hold_active:
+            _mb_log("Mount Bridge self-heal: driver unresponsive, but guiding is currently held (#372) - "
+                    "skipping restart until guiding stops.")
             return
 
         def _do_restart():
