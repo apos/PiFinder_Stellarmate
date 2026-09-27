@@ -1319,9 +1319,21 @@ def _ekos_guide_status():
         return None
 
 
-# See _ekos_guide_status()'s own docstring - incomplete, live-confirmed
-# values only. 12 = guiding (actively guiding).
-_GUIDE_HELD_STATES = {12}
+# Fail-safe by design (2026-09-27, re-reviewed against the original
+# EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
+# before reviving this branch): only 1 (idle/aborted) is a live-confirmed
+# SAFE state; calibrating's own GuideState value was never captured (see
+# _ekos_guide_status()'s docstring). An allow-list of "held" states (the
+# original form of this code) would leave calibration completely
+# unprotected the very first time it runs in a session - calibration always
+# precedes the first "guiding" observation, so the watchdog would have no
+# prior held state to still be draining its debounce from, and a
+# not-yet-enumerated GuideState (calibrating/dithering/suspended/reacquire)
+# would read as "not guiding" outright. Inverted to a deny-list of
+# confirmed-SAFE states instead: hold whenever Ekos reports anything other
+# than one of these, so an unrecognized state fails toward protecting the
+# session, not away from it.
+_GUIDE_SAFE_STATES = {1}  # 1 = idle/aborted, live-confirmed NOT held
 _GUIDING_RELEASE_DEBOUNCE_S = 15
 
 
@@ -1344,55 +1356,100 @@ def _guiding_hold_watchdog(interval=3):
     watchdog touched anything), not stuck in Verify/Alert forever.
 
     Does nothing if Ekos/Guide isn't reachable at all (_ekos_guide_status()
-    returns None) - never guesses "not guiding" from a failed query."""
+    returns None) - never guesses "not guiding" from a failed query.
+
+    KNOWN GAPS vs. the original concept (docs/concepts/mount_bridge_external_hold.md),
+    found on 2026-09-27 review before reviving this branch - not fixed here,
+    because fixing them properly needs the concept's original driver-side
+    EXTERNAL_HOLD property, not just a Coupling-mode override:
+      - handlePiFinderAlignSync() (#313, pifinder_mount_bridge.cpp) Syncs the
+        mount on a confirmed PiFinder Align in EVERY Coupling mode except
+        MODE_OFF - including MODE_VERIFY_ALERT, an explicit 2026-09-08 owner
+        decision predating this watchdog. A PiFinder Align performed while
+        this watchdog is holding WILL still Sync the mount mid-guiding.
+      - No status-page surface (§4 of the concept) - a held Coupling looks
+        identical to a normal Verify/Alert selection on screen; the only
+        visible trace is the driver log line below.
+      - No guard against the (low-probability) case of
+        _mount_bridge_readiness_self_heal() restarting an unresponsive Mount
+        Bridge driver while this watchdog is holding.
+    Reposition-Detection's *reaction* and Auto-correct/Goto-Forward's
+    Sync/Goto are NOT gap - both are structurally inapplicable in
+    MODE_VERIFY_ALERT already (see handleRepositionDetection()'s own
+    repositionDetectionApplies gate), so forcing that mode genuinely
+    suppresses them, matching the concept's intent for those two paths."""
     global _guiding_hold_saved, _guiding_hold_idle_since
     global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
     while True:
         time.sleep(interval)
-        gs = _ekos_guide_status()
-        if gs is None:
-            continue
-        guiding_now = gs in _GUIDE_HELD_STATES
-        if guiding_now:
-            _guiding_hold_idle_since = None
-            want_hold = True
-        elif _guiding_hold_saved is not None:
-            _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
-            want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
-        else:
-            want_hold = False
+        try:
+            _guiding_hold_watchdog_tick()
+        except Exception as e:
+            # Must never let this loop die (2026-09-27 review, matching the
+            # original concept's §3.3 "must not leave the Bridge stuck held"
+            # requirement) - an uncaught exception here would silently kill
+            # this daemon thread, and if that happened while
+            # _guiding_hold_saved was set, Coupling would be stranded at
+            # Verify/Alert forever with nothing left to restore it. Logging
+            # and retrying next tick keeps the watchdog self-healing instead.
+            _mb_log(f"Guiding watchdog: unexpected error, will retry next tick: {e}")
 
-        if want_hold and _guiding_hold_saved is None:
-            if _mb_desired_coupling_mode in (None, "MODE_OFF", "MODE_VERIFY_ALERT"):
-                continue  # nothing to protect against - already passive or unset
-            _guiding_hold_saved = (
-                _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action,
+
+def _guiding_hold_watchdog_tick():
+    global _guiding_hold_saved, _guiding_hold_idle_since
+    global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+    gs = _ekos_guide_status()
+    if gs is None:
+        return
+    guiding_now = gs not in _GUIDE_SAFE_STATES
+    if guiding_now:
+        _guiding_hold_idle_since = None
+        want_hold = True
+    elif _guiding_hold_saved is not None:
+        _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
+        want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
+    else:
+        want_hold = False
+
+    if want_hold and _guiding_hold_saved is None:
+        if _mb_desired_coupling_mode in (None, "MODE_OFF", "MODE_VERIFY_ALERT"):
+            return  # nothing to protect against - already passive or unset
+        # §3.3 of the original concept: don't start a hold mid-Multi-Point-
+        # Alignment-run - that sequence's own SYNC step would get forced
+        # into Verify/Alert and silently stop actually syncing anything.
+        try:
+            if indi_client.mount_bridge_drift().get("align_state") == "Busy":
+                return
+        except indi_client.INDIClientError:
+            pass  # can't tell either way - proceed rather than block forever
+        _guiding_hold_saved = (
+            _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action,
+        )
+        try:
+            indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
+            _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
+            _mb_desired_coupling_threshold = None
+            _mb_desired_coupling_action = None
+            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - "
+                    f"Coupling held at Verify/Alert only (was {_guiding_hold_saved[0]}).")
+        except indi_client.INDIClientError as e:
+            _guiding_hold_saved = None
+            _mb_log(f"Guiding watchdog: could not switch to Verify/Alert: {e}")
+    elif not want_hold and _guiding_hold_saved is not None:
+        mode, threshold, action = _guiding_hold_saved
+        try:
+            indi_client.set_coupling_mode(mode, drift_threshold=threshold, correction_action=action)
+            _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action = (
+                mode, threshold, action,
             )
-            try:
-                indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
-                _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
-                _mb_desired_coupling_threshold = None
-                _mb_desired_coupling_action = None
-                _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - "
-                        f"Coupling held at Verify/Alert only (was {_guiding_hold_saved[0]}).")
-            except indi_client.INDIClientError as e:
-                _guiding_hold_saved = None
-                _mb_log(f"Guiding watchdog: could not switch to Verify/Alert: {e}")
-        elif not want_hold and _guiding_hold_saved is not None:
-            mode, threshold, action = _guiding_hold_saved
-            try:
-                indi_client.set_coupling_mode(mode, drift_threshold=threshold, correction_action=action)
-                _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action = (
-                    mode, threshold, action,
-                )
-                _mb_log(f"Guiding watchdog: guiding stopped - Coupling restored to {mode}.")
-                _guiding_hold_saved = None
-            except indi_client.INDIClientError as e:
-                # Deliberately keep _guiding_hold_saved set on failure (not a
-                # bare `finally`) - a transient INDI error here must not
-                # silently strand Coupling at Verify/Alert with nothing left
-                # that remembers what to restore it to. Retried next tick.
-                _mb_log(f"Guiding watchdog: could not restore Coupling to {mode}, will retry: {e}")
+            _mb_log(f"Guiding watchdog: guiding stopped - Coupling restored to {mode}.")
+            _guiding_hold_saved = None
+        except indi_client.INDIClientError as e:
+            # Deliberately keep _guiding_hold_saved set on failure (not a
+            # bare `finally`) - a transient INDI error here must not
+            # silently strand Coupling at Verify/Alert with nothing left
+            # that remembers what to restore it to. Retried next tick.
+            _mb_log(f"Guiding watchdog: could not restore Coupling to {mode}, will retry: {e}")
 
 
 def _ekos_start_profile(profile_name: str) -> dict:
