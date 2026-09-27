@@ -1,5 +1,5 @@
---- python/PiFinder/api_extensions.py.orig
-+++ python/PiFinder/api_extensions.py
+--- python/PiFinder/api_extensions.py.orig	2026-09-27 10:46:08.307773653 +0200
++++ python/PiFinder/api_extensions.py	2026-09-27 10:45:45.048372291 +0200
 @@ -18,9 +18,11 @@
  import io
  import json
@@ -12,7 +12,7 @@
  
  from PiFinder.optics import OpticalTrainResolver
  
-@@ -31,6 +33,37 @@
+@@ -31,6 +33,86 @@
  _API_OPTICAL_TRAIN = OpticalTrainResolver()
  
  
@@ -47,10 +47,59 @@
 +    return az >= lo or az < hi  # wraps through 0/360 (N only)
 +
 +
++# #191 follow-up, direct feedback (2026-09-27): picking the `count` brightest
++# candidates outright (the previous behavior) can hand back stars that all
++# cluster in the same patch of sky - nothing here ever considered mutual
++# separation. That matters for this endpoint's actual purpose: a real
++# multi-point mount alignment model (confirmed for OnStep, see
++# PiFinder_Stellarmate's docs/concepts/mount_bridge_multistar_alignment.md
++# §4.5 - repeated Syncs do accumulate into a real model there, not just
++# overwrite the last one) needs its reference points spread across
++# different parts of the sky to fit well; a clustered or near-collinear set
++# fits a poorly-conditioned model with large extrapolation error away from
++# those points, no different from why a real 3-star hand-align is taught to
++# use widely-separated stars.
++_SPREAD_POOL_FACTOR = 4
++_SPREAD_POOL_MIN = 8
++
++
++def _select_spread_candidates(candidates: list, count: int) -> list:
++    """Greedy farthest-point (max-min angular separation) selection of up to
++    `count` candidates, restricted to a brightness-bounded pool first so a
++    very dim, hard-to-solve star is never picked purely for being far from
++    the others.
++
++    Starts from the single brightest candidate in the pool, then repeatedly
++    adds whichever remaining pool candidate maximizes its minimum angular
++    separation to everything already selected - classic max-min diversity
++    sampling - ties broken by brightness. Returns candidates in selection
++    order (brightest first, then each next-most-spread pick), not
++    re-sorted by brightness afterward.
++    """
++    if count <= 0 or not candidates:
++        return []
++    by_brightness = sorted(candidates, key=lambda c: (c["mag"] is None, c["mag"]))
++    pool_size = min(len(by_brightness), max(count * _SPREAD_POOL_FACTOR, _SPREAD_POOL_MIN))
++    pool = by_brightness[:pool_size]
++
++    selected = [pool[0]]
++    remaining = pool[1:]
++    while remaining and len(selected) < count:
++        def _min_sep_to_selected(c):
++            return min(
++                _angular_separation_deg(c["ra"], c["dec"], s["ra"], s["dec"])
++                for s in selected
++            )
++
++        remaining.sort(key=lambda c: (-_min_sep_to_selected(c), c["mag"] is None, c["mag"]))
++        selected.append(remaining.pop(0))
++    return selected
++
++
  def _json_response(data, status=200):
      """Unified JSON response format"""
      return Response(
-@@ -166,6 +199,15 @@
+@@ -166,6 +248,15 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
@@ -66,7 +115,7 @@
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -219,6 +261,198 @@
+@@ -219,6 +310,200 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
  
@@ -133,9 +182,12 @@
 +
 +        Returns {"candidates": [{"ra": deg, "dec": deg, "name": str or null,
 +        "mag": float or null, "altitude": deg, "azimuth": deg}, ...]},
-+        sorted brightest (lowest magnitude) first, already altitude- (and,
-+        if given, direction-) filtered - callers do not need to re-check
-+        visibility themselves.
++        already altitude- (and, if given, direction-) filtered - callers do
++        not need to re-check visibility themselves. Selected via
++        _select_spread_candidates() (see its own docstring) rather than
++        plain brightness ranking - brightest first, then chosen to spread
++        across the sky, not necessarily the `count` single brightest stars
++        in the search area.
 +        """
 +        try:
 +            ss = server_instance.shared_state
@@ -239,7 +291,6 @@
 +                    }
 +                )
 +
-+            candidates.sort(key=lambda c: (c["mag"] is None, c["mag"]))
 +            # Hard filter, not a preference (#191): the caller asked for a
 +            # specific sky region on purpose (e.g. "never point toward that
 +            # tree") - silently returning fewer or falling back to other
@@ -257,7 +308,7 @@
 +                    },
 +                    422,
 +                )
-+            return _json_response({"candidates": candidates[:count]})
++            return _json_response({"candidates": _select_spread_candidates(candidates, count)})
 +        except Exception as e:
 +            logger.error("api/nearby_bright_stars error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
@@ -265,7 +316,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -770,6 +1004,134 @@
+@@ -770,6 +1055,134 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
