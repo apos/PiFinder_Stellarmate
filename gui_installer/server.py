@@ -1521,21 +1521,45 @@ def _truth_injector_alive() -> bool:
 
 def _optical_train_snapshot_and_enter_sim():
     """Full-Simulation turning ON (docs/concepts/optical_train_device_sync.md
-    §4.1): every Ekos optical train field NOT already "Telescope Simulator"
-    gets remembered (so it can be restored later) and switched to it. Never
-    assumes which field "should" hold a mount - a field already on
-    "Telescope Simulator" is left alone and not recorded (nothing to
-    restore). Best-effort throughout: KStars/qdbus6 being unavailable must
-    never block Full Simulation itself from starting."""
+    §4.1): every Ekos optical train field currently set to the REAL mount
+    device (read from Mount Bridge's own ACTIVE_DEVICES.ACTIVE_MOUNT, not
+    guessed) gets remembered and switched to "Telescope Simulator".
+
+    2026-09-27 fix, live-caught the same session: the original version
+    swapped ANY field not already "Telescope Simulator" - which silently
+    clobbered `camera`/`focuser`/`guider` fields legitimately pointed at
+    their OWN simulator devices ("CCD Simulator", "Focuser Simulator", ...)
+    that have nothing to do with the mount at all, overwriting them with
+    "Telescope Simulator" (nonsensical as a camera/focuser device) and then
+    "restoring" them to the real mount's name on the way back out - equally
+    wrong. Only a field whose value is EXACTLY the current real mount's own
+    device name is a genuine mount reference; anything else (including
+    another simulator device) is left completely alone, matching the manual
+    path's (`swap_optical_train_devices()`) already-correct by-exact-value
+    scoping. Best-effort throughout: KStars/qdbus6/Mount Bridge being
+    unavailable must never block Full Simulation itself from starting."""
     global _optical_train_swap_memory
     try:
+        real_mount = None
+        try:
+            mb_props = indi_client.get_properties(device="PiFinder Mount Bridge")
+            real_mount = (
+                mb_props.get("PiFinder Mount Bridge", {})
+                .get("ACTIVE_DEVICES", {})
+                .get("elements", {})
+                .get("ACTIVE_MOUNT")
+            )
+        except indi_client.INDIClientError:
+            pass
+        if not real_mount or real_mount == _OPTICAL_TRAIN_SIM_DEVICE:
+            return  # no real mount configured (or already the simulator) - nothing to snapshot/swap
         for train_id in indi_client.list_optical_train_ids():
             for prop in indi_client.optical_train_device_properties():
                 try:
                     current = indi_client.get_optical_train_property(train_id, prop)
                 except indi_client.INDIClientError:
                     continue
-                if not current or current == _OPTICAL_TRAIN_SIM_DEVICE or current == indi_client.OPTICAL_TRAIN_NONE_SENTINEL:
+                if current != real_mount:
                     continue
                 try:
                     indi_client.set_optical_train_property(train_id, prop, _OPTICAL_TRAIN_SIM_DEVICE)
@@ -1544,8 +1568,8 @@ def _optical_train_snapshot_and_enter_sim():
                 _optical_train_swap_memory.setdefault(train_id, {})[prop] = current
         if _optical_train_swap_memory:
             _save_mount_bridge_desired_state()
-            _mb_log(f"Full Simulation: swapped optical train fields to \"{_OPTICAL_TRAIN_SIM_DEVICE}\": "
-                     f"{_optical_train_swap_memory}")
+            _mb_log(f"Full Simulation: swapped optical train fields from \"{real_mount}\" to "
+                     f"\"{_OPTICAL_TRAIN_SIM_DEVICE}\": {_optical_train_swap_memory}")
     except Exception as e:
         _mb_log(f"warning: optical train Full-Simulation snapshot/swap failed: {e}")
 
@@ -6644,6 +6668,23 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             requested_device = qs.get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
             requested_host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            # 2026-09-27, live-caught: reseedFakeSolve() toggles the injector
+            # off, does a one-shot /api/fake_solve_enable_from_mount (which
+            # itself sets fake_solve_active=true), then toggles again to turn
+            # it back on. That second toggle's own auto-detect (below) reads
+            # fake_solve_active_live - which the one-shot seed it just did
+            # already made true - and concludes "something's already on,
+            # this click means stop", turning it off instead of restarting
+            # it. Full Simulation was left silently, permanently off after
+            # every single "Re-seed from mount" click. An explicit
+            # `direction=on`/`off` bypasses the ambiguous combined-state
+            # check entirely for a caller that already knows, unambiguously,
+            # which direction it wants - the auto-detect below is for a
+            # genuine, undirected user click only.
+            direction = qs.get("direction", [""])[0]
+            if direction not in ("", "on", "off"):
+                self._send_json({"success": False, "error": f"invalid direction '{direction}'"}, status=400)
+                return
             if not _valid_pifinder_host(requested_host):
                 self._send_json({"success": False, "error": f"invalid host '{requested_host}'"}, status=400)
                 return
@@ -6654,7 +6695,13 @@ class Handler(BaseHTTPRequestHandler):
                 # e.g. Manual one-shot seed (#205) is what's actually holding
                 # fake_solve_active true. A click while anything is injected
                 # always clears it - "start" only fires when truly nothing is.
-                if _truth_injector_desired or _pifinder_fake_solve_active_live(requested_host):
+                # Skipped entirely when `direction` was given explicitly (see
+                # comment above).
+                should_stop = (
+                    direction == "off" if direction
+                    else (_truth_injector_desired or _pifinder_fake_solve_active_live(requested_host))
+                )
+                if should_stop:
                     _truth_injector_desired = False
                     _mb_log("stopping PiFinder Truth Injector / clearing Injected Solve...")
                     try:
