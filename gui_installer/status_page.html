@@ -9768,10 +9768,21 @@ async function setWmActiveDevices() {
 // already handled automatically by the Full Simulation toggle itself.
 const OPTICAL_TRAIN_SYNC_FROM_DEVICE = 'Telescope Simulator';
 
+// 2026-09-27, direct feedback: the status line stayed visible forever after
+// a click - same auto-clear-with-single-owned-timer pattern as
+// setMbActionStatus()/clearMbActionStatus() above (a bare per-call
+// setTimeout would let an older call's timer clear a newer message early).
+let opticalTrainSyncStatusAutoClearTimer = null;
+const OPTICAL_TRAIN_SYNC_STATUS_AUTO_CLEAR_MS = 8000;
+
 async function syncOpticalTrainsToMount() {
   const toDevice = document.getElementById('wm-mount-select').value;
   const statusEl = document.getElementById('wm-optical-train-sync-status');
   if (!toDevice) return;
+  if (opticalTrainSyncStatusAutoClearTimer) {
+    clearTimeout(opticalTrainSyncStatusAutoClearTimer);
+    opticalTrainSyncStatusAutoClearTimer = null;
+  }
   const btn = document.getElementById('wm-optical-train-sync-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -9798,6 +9809,10 @@ async function syncOpticalTrainsToMount() {
   }
   btn.disabled = false;
   btn.textContent = originalText;
+  opticalTrainSyncStatusAutoClearTimer = setTimeout(() => {
+    statusEl.style.display = 'none';
+    opticalTrainSyncStatusAutoClearTimer = null;
+  }, OPTICAL_TRAIN_SYNC_STATUS_AUTO_CLEAR_MS);
 }
 
 // Green + "Disconnect X" once a device is actually connected, per live
