@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -1498,6 +1499,39 @@ _mb_last_running = None  # last known /api/mount_bridge_status "running" value, 
 def _mb_log(line: str):
     with _lock:
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
+
+
+# Direct feedback (2026-09-27): the Web Manager loads driver definitions from
+# exactly one drivers.xml per profile launch (System OR Flatpak - live-
+# verified with indi_simulator_ccd: a profile containing any PiFinder driver
+# launches every driver in it from System, even with "Flatpak" selected in
+# the Driver Source dropdown, since our custom drivers only exist in the
+# System catalog). This is a structural constraint of that mechanism, not a
+# bug we can fix here - but it silently strips away whatever the Flatpak
+# build bundles that the System build doesn't. Known cases go in this list
+# so the UI can surface them generically instead of one bespoke check each
+# time a new one turns up; each entry provides its own bridge/workaround,
+# clearly labelled as a stopgap until our drivers ship in the Flatpak
+# catalog too (tracked separately, needs upstream cooperation).
+def _known_system_vs_flatpak_gaps() -> list:
+    gaps = []
+    gsc_bin = shutil.which("gsc") or (
+        "/usr/local/bin/gsc" if os.access("/usr/local/bin/gsc", os.X_OK) else None
+    )
+    gsc_data = os.path.isdir("/usr/share/GSC") and bool(os.listdir("/usr/share/GSC"))
+    gaps.append({
+        "id": "gsc",
+        "label": "Guide star catalog (GSC)",
+        "available": bool(gsc_bin and gsc_data),
+        "detail": "The System-build CCD/Guide/Telescope Simulator drivers render a blank star "
+                  "field without it (affects any real image-based feature: Ekos guiding, "
+                  "plate-solve align, autofocus - not PiFinder's own simulation, which never "
+                  "needed it). The Flatpak build bundles a working copy; a one-time copy from "
+                  "there to /usr/local/bin/gsc + /usr/share/GSC (the tool's own default catalog "
+                  "path, no environment/service changes needed) closes the gap for the System "
+                  "build too, independent of which source actually ends up running.",
+    })
+    return gaps
 
 
 # Generous - a real mount's own connect handshake (serial autobaud, TCP
@@ -4917,7 +4951,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "missing 'profile' query param"}, status=400)
                 return
             try:
-                self._send_json(webmanager_client.pifinder_driver_status(profile))
+                status = webmanager_client.pifinder_driver_status(profile)
+                # Direct feedback (2026-09-27): the Web Manager can only load
+                # ONE drivers.xml per profile (System OR Flatpak, live-verified:
+                # a profile with any PiFinder driver launches EVERY driver in
+                # it from System, regardless of the Driver Source dropdown) -
+                # our custom drivers only exist in the System catalog, so any
+                # profile that needs them can never actually benefit from
+                # Flatpak-only extras (e.g. GSC-based star simulation) no
+                # matter what the dropdown shows. Surfacing this as a general,
+                # always-checked condition rather than a one-off GSC check,
+                # since more such gaps may turn up later - see
+                # _known_system_vs_flatpak_gaps()'s own docstring.
+                status["any_pifinder_driver"] = bool(
+                    status.get("has_lx200") or status.get("has_bridge") or status.get("has_simulator")
+                )
+                status["known_gaps"] = _known_system_vs_flatpak_gaps()
+                self._send_json(status)
             except webmanager_client.WebManagerError as e:
                 self._send_json({"error": str(e)}, status=502)
             return
