@@ -4445,6 +4445,30 @@ function collectActiveShowstoppers() {
       buttons: [],
     });
   }
+  // 2026-09-27: any profile containing a PiFinder driver launches EVERY
+  // driver in it from System sources (the Web Manager loads one drivers.xml
+  // per profile, and our custom drivers only exist in the System catalog) -
+  // this silently strips whatever the Flatpak build bundles that System
+  // doesn't, no matter what the profile's own Driver Source dropdown shows.
+  // Only surfaced when at least one known gap is actually unavailable right
+  // now - each already-applied workaround (see wmKnownGaps' own
+  // _known_system_vs_flatpak_gaps() source) closes silently, no permanent
+  // banner once it's fixed.
+  if (wmAnyPifinderDriver === true) {
+    const missing = wmKnownGaps.filter((g) => !g.available);
+    if (missing.length > 0) {
+      items.push({
+        id: 'system-vs-flatpak-gap',
+        category: 'mount-bridge',
+        title: 'This profile runs entirely from System INDI drivers - some Flatpak-only extras are missing',
+        text: 'A profile with a PiFinder driver in it always launches from System sources, whatever the Driver Source dropdown says (our drivers only exist there). Known gap' +
+          (missing.length === 1 ? '' : 's') + ': ' +
+          missing.map((g) => `${g.label} - ${g.detail}`).join(' | ') +
+          ' Workaround, not the real fix - the proper one is shipping our drivers in the Flatpak catalog too.',
+        buttons: [],
+      });
+    }
+  }
   return items;
 }
 
@@ -9298,6 +9322,15 @@ let remotePifinderRoleChoice = null;
 // consulted by startAutoconnect()/ensureSimulatorDriver() to make sure Full
 // Simulation testing has its independent PiFinder-side truth device.
 let wmHasSimulator = null;
+// 2026-09-27: whether the active profile contains ANY PiFinder driver - if
+// so, the Web Manager launches EVERY driver in it from System sources, never
+// mixed, regardless of the profile's own Driver Source dropdown (our custom
+// drivers only exist in the System catalog). wmKnownGaps is the list of
+// specific, individually-checked consequences this can have (see
+// _known_system_vs_flatpak_gaps() in server.py) - each with its own
+// available flag and a workaround already applied or still needed.
+let wmAnyPifinderDriver = null;
+let wmKnownGaps = [];
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
 let wmLastRunning = false;
@@ -10940,11 +10973,15 @@ async function refreshWmDriverButtons() {
     setWmDriverButton('lx200', data.has_lx200);
     setWmDriverButton('bridge', data.has_bridge);
     wmHasSimulator = data.has_simulator;
+    wmAnyPifinderDriver = !!data.any_pifinder_driver;
+    wmKnownGaps = data.known_gaps || [];
   } catch (e) {
     wmLx200Remote = null;
     setWmDriverButton('lx200', null);
     setWmDriverButton('bridge', null);
     wmHasSimulator = null;
+    wmAnyPifinderDriver = null;
+    wmKnownGaps = [];
   }
   // Direct feedback (2026-09-13): "Keine Warnung" - the 'client-has-bridge'
   // showstopper card (and any other one keyed off wmHasBridge/wmHasLx200)
