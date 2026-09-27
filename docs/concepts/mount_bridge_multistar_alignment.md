@@ -97,6 +97,17 @@ place). Using PiFinder's own view keeps the alignment run anchored to what the u
 looking at through the finder right now, not wherever the mount's (possibly wrong) internal model
 currently believes it's pointing.
 
+**Within-catalog selection (2026-09-27, direct feedback)**: picking the `count` brightest
+candidates outright can hand back stars that all cluster in the same patch of sky, which matters
+here given §4.5's finding that OnStep genuinely builds a real multi-point model from repeated
+Syncs — a clustered/near-collinear set of reference points fits that model poorly, with large
+extrapolation error away from those points, the same reason a real hand-align is taught to use
+widely-separated stars. PiFinder's `/api/nearby_bright_stars` (`_select_spread_candidates()` in
+`api_extensions.py`, `diffs/api_extensions_py.diff`) now does greedy farthest-point (max-min
+angular separation) selection within a brightness-bounded pool instead of plain brightness
+ranking — brightest candidate first, then each next pick maximizes its minimum separation to
+everything already selected.
+
 ### 4.3 Per-point sequence flow
 
 ```mermaid
