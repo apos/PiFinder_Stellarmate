@@ -7625,7 +7625,7 @@ function setMbCaption(dotClass, shortLabel, longDetails) {
 }
 
 let wmLastCouplingMode = null;
-function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState) {
+function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftState, externalHold, externalHoldReason) {
   wmLastCouplingMode = couplingMode;
   const threshold = parseFloat(readThresholdInputRaw()) || 5;
   updateDriftBadge(driftArcmin, threshold, driftState);
@@ -7646,6 +7646,26 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     return false;
   }
   decoupleBtnEl.disabled = false;
+
+  // #372, docs/concepts/mount_bridge_external_hold.md §4: takes priority
+  // over the normal per-mode caption below - the driver stays passive
+  // regardless of which Coupling mode is selected while held, so showing
+  // that mode's usual caption here would look like nothing is wrong. Dot is
+  // white/neutral on purpose (not yellow/red) - this is an expected,
+  // deliberate pause, not a problem to flag. Drift itself keeps being
+  // computed/shown by updateDriftBadge() above - only the *acting* side
+  // (arrows, caption) reflects the pause.
+  if (externalHold) {
+    setMbArrow('mb-arrow-left', 'read');
+    setMbArrow('mb-arrow-right', 'read');
+    const reasonText = externalHoldReason || 'external hold';
+    setMbCaption('dot-white', `⏸ Paused - ${reasonText}`,
+      `Coupling is temporarily suspended (${reasonText}) - drift is still watched, but nothing is sent to the mount until this clears.`);
+    const drift = driftArcmin !== null ? ` (drift ${formatDrift(driftArcmin)})` : '';
+    document.getElementById('mount-bridge-text').textContent = `paused - ${reasonText}${drift}`;
+    return true;
+  }
+
   if (couplingMode === 'MODE_VERIFY_ALERT') {
     setMbArrow('mb-arrow-left', 'read');
     setMbArrow('mb-arrow-right', 'read');
@@ -7735,7 +7755,7 @@ function updateMbDiagram(data) {
   syncThresholdInputFromDriver(data.drift_threshold);
   syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
   syncAlignDirectionButtons(data.align_direction);
-  applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+  applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
   updateTargetSourceBadge(data.coupling_mode, data.target_source);
   updateOnStepWebLink(data.mount_web_ip);
   updateOrientationBadges(data);
@@ -8568,7 +8588,7 @@ async function refreshMbDrift() {
     const resp = await fetch('/api/mount_bridge_drift', { cache: 'no-store' });
     const data = await resp.json();
     if (data.running) {
-      applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state);
+      applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
       updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);

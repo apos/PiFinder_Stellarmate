@@ -1276,6 +1276,157 @@ def _kstars_refresh_mount_time_via_dbus() -> tuple:
     return True, None
 
 
+def _ekos_guide_status():
+    """Ekos::GuideState as an int, or None if the Guide module isn't up /
+    Ekos isn't running / the call fails - callers must treat None as "don't
+    know, don't touch anything", never as "not guiding".
+
+    WARNING - version-specific, do not extend this set from memory: KStars
+    has renumbered this enum across releases. Values below are live-
+    confirmed on THIS device's installed KStars version by actually running
+    guiding and polling through each phase (2026-09-18/19) - re-verify on any
+    KStars upgrade or a different device.
+      12 = guiding (actively guiding). CORRECTED 2026-09-19: first believed
+           to be "calibrating" - that first observation happened to start
+           just after "Calibration completed"/"Autoguiding running" had
+           already fired (11s gap in the log), so what actually got measured
+           the whole time was the guiding phase, not calibration. Caught and
+           fixed live by cross-checking a screenshot of an active guide
+           graph (real RMS values) against a fresh, repeated poll - still
+           read 12, same value that had briefly looked like "calibrating".
+       1 = idle/aborted (NOT held) - observed exactly at "Autoguiding
+           aborted" in the Guide log.
+    Calibrating's own distinct value still NOT captured (both live sessions
+    tonight reused a prior calibration on restart, never triggering a fresh
+    one while being watched) - do not guess it if guiding is ever seen stuck
+    in an actual calibration phase; poll and confirm first. Dithering/
+    suspended likewise unconfirmed. _GUIDE_HELD_STATES below is therefore
+    still incomplete for those phases specifically."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Guide", "org.kde.kstars.Ekos.Guide.status"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+# Fail-safe by design (2026-09-27, re-reviewed against the original
+# EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
+# before reviving this branch): only 1 (idle/aborted) is a live-confirmed
+# SAFE state; calibrating's own GuideState value was never captured (see
+# _ekos_guide_status()'s docstring). An allow-list of "held" states (the
+# original form of this code) would leave calibration completely
+# unprotected the very first time it runs in a session - calibration always
+# precedes the first "guiding" observation, so the watchdog would have no
+# prior held state to still be draining its debounce from, and a
+# not-yet-enumerated GuideState (calibrating/dithering/suspended/reacquire)
+# would read as "not guiding" outright. Inverted to a deny-list of
+# confirmed-SAFE states instead: hold whenever Ekos reports anything other
+# than one of these, so an unrecognized state fails toward protecting the
+# session, not away from it.
+_GUIDE_SAFE_STATES = {1}  # 1 = idle/aborted, live-confirmed NOT held
+_GUIDING_RELEASE_DEBOUNCE_S = 15
+
+
+def _guiding_hold_watchdog(interval=3):
+    """#372 - while Ekos reports guiding active, sets Mount Bridge's own
+    EXTERNAL_HOLD switch so a threshold-triggered Sync/Goto doesn't kick the
+    guide star out of frame, a dither doesn't get misread as an external
+    reposition, and a PiFinder Align doesn't Sync the mount mid-guiding -
+    all three of which the driver would otherwise do exactly as designed,
+    just at the wrong moment. Releases the hold once guiding has been
+    continuously idle for RELEASE_DEBOUNCE_S (so one missed/misread frame
+    mid-session doesn't yank protection away right before the next guide
+    correction).
+
+    2026-09-27: originally shipped as a Control-Center-only simplification
+    that temporarily forced Coupling to MODE_VERIFY_ALERT instead of using a
+    real driver property - reverted to the concept's original design
+    (docs/concepts/mount_bridge_external_hold.md) after a follow-up review
+    found MODE_VERIFY_ALERT could not actually gate handlePiFinderAlignSync()
+    (#313), which Syncs the mount in every Coupling mode except MODE_OFF.
+    EXTERNAL_HOLD gates that path directly at the driver level instead.
+
+    Does nothing if Ekos/Guide isn't reachable at all (_ekos_guide_status()
+    returns None) - never guesses "not guiding" from a failed query. Does
+    nothing (after logging once) if EXTERNAL_HOLD isn't a currently-defined
+    property - an older Mount Bridge build without #372, or the property not
+    seen yet."""
+    while True:
+        time.sleep(interval)
+        try:
+            _guiding_hold_watchdog_tick()
+        except Exception as e:
+            # Must never let this loop die (§3.3's "must not leave the
+            # Bridge stuck held" requirement) - an uncaught exception here
+            # would silently kill this daemon thread, and if that happened
+            # right after engaging the hold, EXTERNAL_HOLD would stay ON
+            # forever with nothing left to release it. Logging and retrying
+            # next tick keeps the watchdog self-healing instead.
+            _mb_log(f"Guiding watchdog: unexpected error, will retry next tick: {e}")
+
+
+def _guiding_hold_watchdog_tick():
+    global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
+    if _guiding_hold_supported is False:
+        return  # confirmed missing on this build - already logged once, stay quiet
+    gs = _ekos_guide_status()
+    if gs is None:
+        return
+    guiding_now = gs not in _GUIDE_SAFE_STATES
+    if guiding_now:
+        _guiding_hold_idle_since = None
+        want_hold = True
+    elif _guiding_hold_active:
+        _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
+        want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
+    else:
+        want_hold = False
+
+    if want_hold and not _guiding_hold_active:
+        # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
+        # driver itself also warns and lets an already-running sequence
+        # finish rather than aborting it if this arrives anyway, but the CC
+        # side checks first so a routine guiding start doesn't collide with
+        # one in the first place.
+        try:
+            if indi_client.mount_bridge_drift().get("align_state") == "Busy":
+                return
+        except indi_client.INDIClientError:
+            pass  # can't tell either way - proceed rather than block forever
+        try:
+            indi_client.set_mount_bridge_external_hold(True, f"guiding (Ekos GuideState {gs})")
+            _guiding_hold_supported = True
+            _guiding_hold_active = True
+            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - Mount Bridge external hold engaged.")
+        except indi_client.INDIClientError as e:
+            if _guiding_hold_supported is None:
+                _guiding_hold_supported = False
+                _mb_log(f"Guiding watchdog: EXTERNAL_HOLD not available on this Mount Bridge build - "
+                        f"guiding protection disabled until it's rebuilt/updated ({e}).")
+    elif not want_hold and _guiding_hold_active:
+        try:
+            indi_client.set_mount_bridge_external_hold(False)
+            _guiding_hold_active = False
+            _mb_log("Guiding watchdog: guiding stopped - Mount Bridge external hold released.")
+        except indi_client.INDIClientError as e:
+            # Deliberately keep _guiding_hold_active True on failure - a
+            # transient INDI error here must not silently let something
+            # else (e.g. the readiness watchdog) believe the hold is
+            # already released when the driver may still have it set.
+            # Retried next tick.
+            _mb_log(f"Guiding watchdog: could not release external hold, will retry: {e}")
+
+
 def _ekos_start_profile(profile_name: str) -> dict:
     """Starts the given Ekos profile via org.kde.kstars.Ekos's D-Bus
     interface (setProfile + start) - unlike _ekos_indi_status() above,
@@ -1990,6 +2141,19 @@ _mb_desired_coupling_action = None
 # equivalent "deliberately wanted it broken" case for them).
 _mb_desired_connected = None
 _mb_readiness_retrier = _BackgroundRetrier()
+
+# #372, docs/concepts/mount_bridge_external_hold.md - mirrors what
+# _guiding_hold_watchdog_tick() last wrote to Mount Bridge's own
+# EXTERNAL_HOLD switch (not the sole source of truth for display purposes -
+# mount_bridge_drift()'s "external_hold" reads the driver's live property
+# directly - but needed here for idempotency and so
+# _mount_bridge_readiness_self_heal() can skip a driver restart while held).
+_guiding_hold_active = False
+_guiding_hold_idle_since = None
+# None = not yet determined, True = confirmed present, False = confirmed
+# missing (older Mount Bridge build without #372) - set on the first
+# successful/failed hold attempt, see _guiding_hold_watchdog_tick().
+_guiding_hold_supported = None
 
 # Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
 # lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
@@ -2728,6 +2892,20 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                     f"restarts within {_MB_READINESS_RESTART_WINDOW_SEC}s - still unresponsive. Not retrying "
                     "again automatically (see issue #238) - a manual look is needed."
                 )
+            return
+
+        # #372, docs/concepts/mount_bridge_external_hold.md §2.2: a restart
+        # mid-guiding-session is actively harmful (drops the mount
+        # connection for however long the restart takes, right as guiding
+        # depends on it staying still) - skip it while the guiding watchdog
+        # currently has EXTERNAL_HOLD engaged. Deliberately does not reset
+        # _mb_readiness_consecutive_fails here - if the hold clears while
+        # Mount Bridge is still genuinely unresponsive, the next tick picks
+        # up exactly where this left off instead of restarting the
+        # multi-tick confirmation window from zero.
+        if _guiding_hold_active:
+            _mb_log("Mount Bridge self-heal: driver unresponsive, but guiding is currently held (#372) - "
+                    "skipping restart until guiding stops.")
             return
 
         def _do_restart():
@@ -6827,6 +7005,9 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    # #372 (simplified) - independent of the readiness watchdog above; see
+    # _guiding_hold_watchdog()'s own docstring.
+    threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()
     # One-time check, not a watchdog: an already-running pifinder.service
     # left over from before this Control Center's own start (e.g. surviving
     # an Update run from before the setup script's start->restart fix, or a

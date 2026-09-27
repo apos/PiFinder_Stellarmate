@@ -878,6 +878,14 @@ bool PiFinderMountBridge::initProperties()
     IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
                        "Unexplained reposition", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 
+    IUFillSwitch(&ExternalHoldS[EXTERNAL_HOLD_ON], "HOLD_ON", "Hold", ISS_OFF);
+    IUFillSwitch(&ExternalHoldS[EXTERNAL_HOLD_OFF], "HOLD_OFF", "Release", ISS_ON);
+    IUFillSwitchVector(&ExternalHoldSP, ExternalHoldS, 2, getDeviceName(), "EXTERNAL_HOLD",
+                       "External hold", "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+    IUFillText(&ExternalHoldReasonT[0], "REASON", "Reason", "");
+    IUFillTextVector(&ExternalHoldReasonTP, ExternalHoldReasonT, 1, getDeviceName(), "EXTERNAL_HOLD_REASON",
+                     "External hold reason", "Main Control", IP_RW, 60, IPS_IDLE);
+
     IUFillSwitch(&TargetSourceS[TARGET_SOURCE_PIFINDER], "TARGET_SOURCE_PIFINDER", "PiFinder", ISS_ON);
     IUFillSwitch(&TargetSourceS[TARGET_SOURCE_MOUNT], "TARGET_SOURCE_MOUNT", "Mount", ISS_OFF);
     IUFillSwitchVector(&TargetSourceSP, TargetSourceS, 2, getDeviceName(), "TARGET_SOURCE",
@@ -1005,6 +1013,8 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&PiFinderOrientationTP);
         defineProperty(&ShadowSyncSP);
         defineProperty(&RepositionConfirmSP);
+        defineProperty(&ExternalHoldSP);
+        defineProperty(&ExternalHoldReasonTP);
         defineProperty(&TargetSourceSP);
         defineProperty(&TargetSourceAgeNP);
         defineProperty(&CorrectionAgeNP);
@@ -1089,6 +1099,8 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(PiFinderOrientationTP.name);
         deleteProperty(ShadowSyncSP.name);
         deleteProperty(RepositionConfirmSP.name);
+        deleteProperty(ExternalHoldSP.name);
+        deleteProperty(ExternalHoldReasonTP.name);
         deleteProperty(TargetSourceSP.name);
         deleteProperty(TargetSourceAgeNP.name);
         deleteProperty(CorrectionAgeNP.name);
@@ -1121,6 +1133,21 @@ bool PiFinderMountBridge::Connect()
 
     LOGF_INFO("Bridging %s -> %s.", piFinderName.c_str(), mountName.c_str());
     m_didInitialSync = false;
+
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.3: EXTERNAL_HOLD
+    // is never persisted and always starts released on (re)connect - a
+    // stale HOLD_ON surviving a manual Disconnect/Reconnect (e.g. the
+    // Control Center's own watchdog crashed or was killed while holding)
+    // would otherwise silently leave every acting behavior suppressed with
+    // no obvious cause.
+    if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+        LOG_WARN("External hold was still ON from before this (re)connect - releasing it now.");
+    IUResetSwitch(&ExternalHoldSP);
+    ExternalHoldS[EXTERNAL_HOLD_OFF].s = ISS_ON;
+    ExternalHoldSP.s = IPS_IDLE;
+    IUSaveText(&ExternalHoldReasonT[0], "");
+    ExternalHoldReasonTP.s = IPS_IDLE;
+
     SetTimer(getCurrentPollingPeriod());
     return true;
 }
@@ -1854,7 +1881,15 @@ void PiFinderMountBridge::TimerHit()
     // #313 - Sync the mount on a confirmed PiFinder Align, independent of
     // Coupling mode (Off excluded). Cross-cutting, above the mode dispatch -
     // see the function's own header comment.
-    handlePiFinderAlignSync();
+    //
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.2: gated behind
+    // EXTERNAL_HOLD - this is exactly the gap a Control-Center-only
+    // Coupling-mode override (the version of this feature that shipped
+    // before the driver-side property existed) could not close on its own,
+    // since handlePiFinderAlignSync() fires in every Coupling mode except
+    // MODE_OFF, MODE_VERIFY_ALERT included.
+    if (ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON)
+        handlePiFinderAlignSync();
 
     // Drift is computed and published whenever the bridge is ready
     // (PiFinder solving, mount connected), regardless of Coupling mode -
@@ -1956,9 +1991,15 @@ void PiFinderMountBridge::TimerHit()
     // success immediately (so convergence is actually verified), and the
     // rate-based classification only activates after a genuine
     // confirmed-good baseline, not immediately after every restart.
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.2: a dither must
+    // not be read as an external reposition while held - excluded here
+    // rather than inside handleRepositionDetection() itself, same "gate at
+    // the call site, not inside the handler" shape as handlePiFinderAlignSync()
+    // above.
     const bool repositionDetectionApplies =
-        BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON ||
-        (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON);
+        ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON &&
+        (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON ||
+         (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON));
     const bool repositionHandledThisTick =
         repositionDetectionApplies && handleRepositionDetection(havePositions, piRA, piDec, mountRA, mountDec, drift);
 
@@ -1967,6 +2008,22 @@ void PiFinderMountBridge::TimerHit()
         // Fully handled above (external slew in progress/just adopted, or
         // a Fall-4 confirmation pending/just resolved) - skip the normal
         // per-mode logic so it can't act on the same drift a moment ago.
+    }
+    else if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+    {
+        // #372 §2.2: stay fully passive regardless of the selected Coupling
+        // mode - same logging-only behavior as Verify/Alert, no Sync/Goto of
+        // any kind while held. Positioned before the MODE_GOTO_FORWARD check
+        // below so handleGotoForward() never runs at all while held - a
+        // simplification versus the concept's own table, which wanted
+        // Goto-Forward's held-target *tracking* to keep running even though
+        // the actual forward is skipped; splitting that out of
+        // handleGotoForward() itself was judged not worth the added
+        // complexity for v1 (a released Goto-Forward re-baselines against
+        // PiFinder's current target quickly regardless).
+        if (havePositions && exceeded)
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f) - not acting (external hold: %s).",
+                      drift, DriftThresholdN[0].value, ExternalHoldReasonT[0].text);
     }
     else if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
@@ -3633,6 +3690,38 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IDSetSwitch(&RepositionConfirmSP, nullptr);
             return true;
         }
+
+        // #372, docs/concepts/mount_bridge_external_hold.md - set/cleared by
+        // the Control Center's guiding watchdog. Stays selected once set
+        // (BridgeModeSP-style radio pair), not a momentary action switch
+        // like RepositionConfirmSP above.
+        if (strcmp(name, ExternalHoldSP.name) == 0)
+        {
+            IUUpdateSwitch(&ExternalHoldSP, states, names, n);
+            ExternalHoldSP.s = IPS_OK;
+            IDSetSwitch(&ExternalHoldSP, nullptr);
+
+            if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+            {
+                // §2.3: the Control Center checks ALIGN_PROGRESS itself
+                // before setting HOLD_ON and won't normally send this while
+                // a run is active - if it arrives anyway (e.g. hand-set from
+                // the INDI Control Panel), let the run finish rather than
+                // force-abort it. handleMultiPointAlignment() is
+                // deliberately not gated by ExternalHoldSP at all - see its
+                // own TimerHit() call site.
+                if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+                    LOG_WARN("External hold requested while a Multi-Point Alignment run is in progress - "
+                             "letting it finish rather than aborting it.");
+                const char *reason = ExternalHoldReasonT[0].text;
+                LOGF_INFO("External hold ON - %s", (reason != nullptr && reason[0] != '\0') ? reason : "(no reason given)");
+            }
+            else
+            {
+                LOG_INFO("External hold released.");
+            }
+            return true;
+        }
     }
 
     return DefaultDevice::ISNewSwitch(dev, name, states, names, n);
@@ -3647,6 +3736,17 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             IUUpdateText(&SettingsTP, texts, names, n);
             SettingsTP.s = IPS_OK;
             IDSetText(&SettingsTP, nullptr);
+            return true;
+        }
+
+        // #372 - set by the Control Center immediately before ExternalHoldSP
+        // itself, so ISNewSwitch's own HOLD_ON log line above already has
+        // the fresh reason text by the time it reads it.
+        if (strcmp(name, ExternalHoldReasonTP.name) == 0)
+        {
+            IUUpdateText(&ExternalHoldReasonTP, texts, names, n);
+            ExternalHoldReasonTP.s = IPS_OK;
+            IDSetText(&ExternalHoldReasonTP, nullptr);
             return true;
         }
 

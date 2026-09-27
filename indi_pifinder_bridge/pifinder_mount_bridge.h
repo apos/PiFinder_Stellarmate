@@ -846,6 +846,34 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ISwitch RepositionConfirmS[2];
         enum { REPOSITION_CONFIRM_YES, REPOSITION_CONFIRM_NO };
 
+        // #372, docs/concepts/mount_bridge_external_hold.md: set by the
+        // Control Center's guiding watchdog while Ekos reports guiding
+        // active - gates every *acting* TimerHit() path (Auto-correct's
+        // Sync/Goto, Goto-Forward, Reposition-Detection's reaction,
+        // handlePiFinderAlignSync()) while leaving every *observing* one
+        // live (drift computation, DriftStatusNP, horizon/target-source
+        // bookkeeping, the passive "disagree by N arcmin" warning). Checked
+        // directly as ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON at each
+        // gate, matching this file's existing BridgeModeS/CorrectionActionS
+        // convention - no separate cached bool to keep in sync.
+        // Deliberately NOT persisted (no saveConfig() call anywhere for
+        // this property) - a live, externally-driven state, meaningless to
+        // restore across a restart; always starts HOLD_OFF on (re)connect.
+        ISwitchVectorProperty ExternalHoldSP;
+        ISwitch ExternalHoldS[2];
+        enum { EXTERNAL_HOLD_ON, EXTERNAL_HOLD_OFF };
+
+        // Free-text reason (e.g. "guiding") shown alongside the switch
+        // above - purely informational, the driver never reads its own
+        // content, only republishes what the Control Center wrote. The
+        // concept doc marked this IP_RO (read-only to an ordinary INDI
+        // client such as the Control Panel); implemented here as IP_RW
+        // instead, since INDI has no "read-only to everyone except our own
+        // Control Center" permission tier - the CC is the one thing that
+        // actually needs to set it. Cleared to "" on release.
+        ITextVectorProperty ExternalHoldReasonTP;
+        IText ExternalHoldReasonT[1];
+
         // Read-only "who does the currently held target come from" badge
         // (#178 GUI unification, 2026-08-08): with Reposition Detection
         // active, MODE_GOTO_FORWARD alone already reacts symmetrically to
