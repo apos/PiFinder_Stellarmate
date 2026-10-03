@@ -1401,8 +1401,27 @@ def _guiding_hold_watchdog(interval=3):
 
 def _guiding_hold_watchdog_tick():
     global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
+    global _guiding_hold_adopted_initial_state
     if _guiding_hold_supported is False:
         return  # confirmed missing on this build - already logged once, stay quiet
+
+    if not _guiding_hold_adopted_initial_state:
+        # Found live 2026-10-03 (see _guiding_hold_adopted_initial_state's
+        # own comment): adopt the driver's actual EXTERNAL_HOLD value on the
+        # first tick after (re)start, rather than assuming it starts
+        # released - a CC restart does not restart the driver.
+        try:
+            live = indi_client.mount_bridge_drift().get("external_hold")
+        except indi_client.INDIClientError:
+            live = None
+        if live is None:
+            return  # driver not ready / property not seen yet - retry next tick
+        _guiding_hold_adopted_initial_state = True
+        _guiding_hold_supported = True
+        _guiding_hold_active = live
+        if live:
+            _mb_log("Guiding watchdog: adopted an external hold already engaged on the driver from before this restart.")
+
     gs = _ekos_guide_status()
     if gs is None:
         return
@@ -2205,12 +2224,23 @@ _mb_readiness_retrier = _BackgroundRetrier()
 # mount_bridge_drift()'s "external_hold" reads the driver's live property
 # directly - but needed here for idempotency and so
 # _mount_bridge_readiness_self_heal() can skip a driver restart while held).
+# Starts False, but see _guiding_hold_adopted_initial_state below - this
+# default is only trusted once that adoption step has actually run.
 _guiding_hold_active = False
 _guiding_hold_idle_since = None
 # None = not yet determined, True = confirmed present, False = confirmed
 # missing (older Mount Bridge build without #372) - set on the first
 # successful/failed hold attempt, see _guiding_hold_watchdog_tick().
 _guiding_hold_supported = None
+# REGRESSION, found live 2026-10-03: a Control Center restart does NOT
+# restart the Mount Bridge driver (two separate processes) - if the driver
+# was already genuinely held when the CC restarted, a fresh
+# _guiding_hold_active=False here meant the new watchdog saw no "was held,
+# now isn't" transition to act on, and the driver stayed stuck held forever.
+# Set True once _guiding_hold_watchdog_tick() has adopted the driver's
+# actual live external_hold value into _guiding_hold_active on its first
+# tick after (re)start, instead of assuming it starts released.
+_guiding_hold_adopted_initial_state = False
 
 # Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
 # lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
