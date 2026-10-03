@@ -1284,25 +1284,37 @@ def _ekos_guide_status():
 
     WARNING - version-specific, do not extend this set from memory: KStars
     has renumbered this enum across releases. Values below are live-
-    confirmed on THIS device's installed KStars version by actually running
-    guiding and polling through each phase (2026-09-18/19) - re-verify on any
+    confirmed on THIS device's installed KStars version - re-verify on any
     KStars upgrade or a different device.
-      12 = guiding (actively guiding). CORRECTED 2026-09-19: first believed
-           to be "calibrating" - that first observation happened to start
-           just after "Calibration completed"/"Autoguiding running" had
-           already fired (11s gap in the log), so what actually got measured
-           the whole time was the guiding phase, not calibration. Caught and
-           fixed live by cross-checking a screenshot of an active guide
-           graph (real RMS values) against a fresh, repeated poll - still
-           read 12, same value that had briefly looked like "calibrating".
-       1 = idle/aborted (NOT held) - observed exactly at "Autoguiding
-           aborted" in the Guide log.
-    Calibrating's own distinct value still NOT captured (both live sessions
-    tonight reused a prior calibration on restart, never triggering a fresh
-    one while being watched) - do not guess it if guiding is ever seen stuck
-    in an actual calibration phase; poll and confirm first. Dithering/
-    suspended likewise unconfirmed. _GUIDE_HELD_STATES below is therefore
-    still incomplete for those phases specifically."""
+      12 = guiding (actively guiding). Confirmed 2026-09-18/19 by actually
+           running guiding and polling through each phase. CORRECTED
+           2026-09-19: first believed to be "calibrating" - that first
+           observation happened to start just after "Calibration completed"/
+           "Autoguiding running" had already fired (11s gap in the log), so
+           what actually got measured the whole time was the guiding phase,
+           not calibration. Caught and fixed live by cross-checking a
+           screenshot of an active guide graph (real RMS values) against a
+           fresh, repeated poll - still read 12, same value that had briefly
+           looked like "calibrating".
+       1 = idle/aborted (NOT held) - confirmed 2026-09-18/19, observed
+           exactly at "Autoguiding aborted" in the Guide log.
+       0 = idle, the Guide module's ordinary resting state when simply
+           loaded and not actively guiding (NOT held) - confirmed live
+           2026-10-03 on the real Pi5: returned repeatedly with KStars/Ekos
+           running normally and no guide sequence active. Found the hard
+           way - absent from _GUIDE_SAFE_STATES originally, this value's
+           fail-safe default (hold) kept Mount Bridge's EXTERNAL_HOLD
+           permanently engaged for days whenever Ekos simply wasn't guiding,
+           which is most of a session's actual time. See _GUIDE_SAFE_STATES'
+           own comment.
+    Calibrating's own distinct value still NOT captured (both 2026-09-18/19
+    live sessions reused a prior calibration on restart, never triggering a
+    fresh one while being watched) - do not guess it if guiding is ever seen
+    stuck in an actual calibration phase; poll and confirm first. Dithering/
+    suspended/reacquire likewise unconfirmed. _GUIDE_SAFE_STATES below is
+    therefore an incomplete SAFE list, not a complete HELD list - exactly
+    why it's a deny-list of confirmed-safe values, not an allow-list of
+    confirmed-held ones."""
     env = dict(os.environ)
     env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
     try:
@@ -1322,9 +1334,7 @@ def _ekos_guide_status():
 
 # Fail-safe by design (2026-09-27, re-reviewed against the original
 # EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
-# before reviving this branch): only 1 (idle/aborted) is a live-confirmed
-# SAFE state; calibrating's own GuideState value was never captured (see
-# _ekos_guide_status()'s docstring). An allow-list of "held" states (the
+# before reviving this branch): an allow-list of "held" states (the
 # original form of this code) would leave calibration completely
 # unprotected the very first time it runs in a session - calibration always
 # precedes the first "guiding" observation, so the watchdog would have no
@@ -1334,7 +1344,20 @@ def _ekos_guide_status():
 # confirmed-SAFE states instead: hold whenever Ekos reports anything other
 # than one of these, so an unrecognized state fails toward protecting the
 # session, not away from it.
-_GUIDE_SAFE_STATES = {1}  # 1 = idle/aborted, live-confirmed NOT held
+#
+# REGRESSION, found live 2026-10-03: this set originally held only {1}. On
+# the real Pi5, Ekos's Guide module reports 0 continuously whenever it's
+# simply loaded and not actively guiding (confirmed live: qdbus6
+# org.kde.kstars /KStars/Ekos/Guide .status returned 0 repeatedly with
+# KStars/Ekos running normally and no guide sequence active) - this is
+# GUIDE_IDLE, the module's ordinary resting state for most of a session, not
+# an unusual one. With 0 excluded from this set, the fail-safe design (by
+# design!) treated every idle moment as "must protect", permanently engaging
+# EXTERNAL_HOLD (reason "guiding (Ekos GuideState 0)") for days - Mount
+# Bridge silently stopped forwarding/correcting the whole time. Added 0 here
+# based on this live evidence, same live-confirmation bar as 1 and 12
+# below - not a guess from memory (see _ekos_guide_status()'s own warning).
+_GUIDE_SAFE_STATES = {0, 1}  # 0 = idle (not guiding), 1 = idle/aborted - both live-confirmed NOT held
 _GUIDING_RELEASE_DEBOUNCE_S = 15
 
 
