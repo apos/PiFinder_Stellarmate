@@ -20,7 +20,7 @@ A [`bats-core`](https://github.com/bats-core/bats-core) unit-test suite for the 
 - version comparison,
 - argument parsing,
 - the OS / package-manager detection abstraction (see
-  [`setup_indi_only_install_mode.md`](setup_indi_only_install_mode.md)).
+  [`setup_indi_only_install_mode.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/setup_indi_only_install_mode.md)).
 
 **Explicitly not** tested: real side effects — an actual `git clone`, a package install, systemd
 operations. Those stay **live-tested on real hardware**, as this project already does well. A mock
@@ -85,10 +85,9 @@ itself never needs bats.
 | File | Covers | Cases |
 |---|---|---|
 | `bin/tests/test_version_compare.bats` | `version_gt` / `version_eq` — incl. the numeric-vs-lexical two-digit-segment case (`1.10.0` vs `1.9.0`) and the exact call-site arguments of the real `setup.sh` regression from the originating session | 9 |
-| `bin/tests/test_os_detect.bats` | the pure functions of `bin/os_detect.sh` (manager priority, package-name table, Atomic Updates state parsing) | 15 |
+| `bin/tests/test_os_detect.bats` | the pure functions of `bin/os_detect.sh` (manager priority, package-name table incl. the nixpkgs `indilib` name, Atomic Updates state parsing) | 16 |
 
-(Counts by `@test` markers as of 2026-10-06; not re-run during the reconstruction because the vendored
-submodule is not initialised in the checkout used.)
+(25 cases in total, all passing as of 2026-10-06 via `bin/tests/run_all.sh`.)
 
 History: `9853a35` (first slice — extract and test `version_gt`/`version_eq`, a zero-risk warm-up before
 new logic), `f582b62` (vendor bats-core), `f2d3eb1` (`os_detect.sh` + its tests), `648235c` (Atomic
@@ -112,5 +111,5 @@ would have to be extracted into a sourceable, side-effect-free function before i
 
 ## 7. Related
 
-#61 / [`setup_indi_only_install_mode.md`](setup_indi_only_install_mode.md) (the OS-detection logic that
-got tests from day one) · #60 / [`remote_indi_coupling_split_host.md`](remote_indi_coupling_split_host.md).
+#61 / [`setup_indi_only_install_mode.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/setup_indi_only_install_mode.md) (the OS-detection logic that
+got tests from day one) · #60 / [`remote_indi_coupling_split_host.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/remote_indi_coupling_split_host.md).

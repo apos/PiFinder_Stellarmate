@@ -64,9 +64,10 @@ os_package_name() {
         build-tools:nix) echo "" ;;
         libindi-dev:pacman) echo "libindi" ;;
         libindi-dev:apt) echo "libindi-dev" ;;
-        # Not yet verified against the real nixpkgs package search - see
-        # the concept doc's Known Risks section.
-        libindi-dev:nix) echo "libindi" ;;
+        # nixpkgs has no "libindi" attribute - the INDI core library is
+        # "indilib" (single output; headers + libs in $out). Verified against
+        # NixOS/nixpkgs master 2026-10-06, see the concept doc's Nix section.
+        libindi-dev:nix) echo "indilib" ;;
         git:pacman) echo "git" ;;
         git:apt) echo "git" ;;
         git:nix) echo "git" ;;

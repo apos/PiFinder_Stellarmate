@@ -36,7 +36,7 @@ PiFinder host                                    Control host
 
 Builds directly on issue #37, whose already-researched stock-Debian howto is effectively the
 **PiFinder-host half** of this concept. Its install-side counterpart is
-[`setup_indi_only_install_mode.md`](setup_indi_only_install_mode.md) (#61).
+[`setup_indi_only_install_mode.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/setup_indi_only_install_mode.md) (#61).
 
 ## 2. Device role model (R-ROLE1)
 
@@ -76,7 +76,7 @@ device's own LAN IP (R-PF1) — exactly what the other device's Control-host car
 cards were merged, and **"PiFinder Client"** was added as an explicit third role card (#434) — it
 configures the same profile shape as a PiFinder host (local PiFinder LX200, no Mount Bridge) and differs
 only in telling the Control Center which use case the device is for; a device cannot detect this on its
-own. See [`pifinder_client_role_and_indi_setup_review.md`](pifinder_client_role_and_indi_setup_review.md)
+own. See [`pifinder_client_role_and_indi_setup_review.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/pifinder_client_role_and_indi_setup_review.md)
 and #416 (prevent double mount access).
 
 ## 3. Remote-driver support (R-CH1)
@@ -111,7 +111,7 @@ additionally accepts `driver=lx200&action=add_remote&remote=<host[:port]>`.
 
 1. **PiFinder device:** needs `PiFinder LX200` built and an `indiserver` hosting it. On a StellarMate
    device: role card "PiFinder host". On a stock Debian PiFinder: the manual path in #37, or the
-   INDI-only install ([`setup_indi_only_install_mode.md`](setup_indi_only_install_mode.md)) — note that
+   INDI-only install ([`setup_indi_only_install_mode.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/setup_indi_only_install_mode.md)) — note that
    today the stock PiFinder host side is **not** a ready-made script (#401).
 2. **Control host:** install via INDI-only mode, then the "Control host" role card and the PiFinder
    host's IP. The Mount Bridge and the mount driver run here.
@@ -187,12 +187,12 @@ clients steer it — found live 2026-09-12, tracked in #416.
 | Three-state remote-driver handling, Web Manager workarounds | `gui_installer/webmanager_client.py` (`set_pifinder_lx200_state`, `get_remote_drivers`) |
 | `add_remote` action, validation | `gui_installer/server.py` |
 | Role cards, role chip, PiFinder-host LAN IP, `deriveProfileRole()` | `gui_installer/status_page.html` |
-| INDI-only install (light PiFinder-host-side and Control-host install) | [`setup_indi_only_install_mode.md`](setup_indi_only_install_mode.md) |
+| INDI-only install (light PiFinder-host-side and Control-host install) | [`setup_indi_only_install_mode.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/setup_indi_only_install_mode.md) |
 
 ## 8. Related
 
 #37 (stock-Debian PiFinder howto) · #61 (INDI-only install) · #62 (test suite) · #400 (Control host on
 non-StellarMate) · #401 (`pos_server.py` safety patch for a stock PiFinder) · #416 (PiFinder host role,
 no double mount access) · #434 (PiFinder Client card) ·
-[`control_host_hardware_badges_mirroring.md`](control_host_hardware_badges_mirroring.md) ·
-[`pifinder_client_role_and_indi_setup_review.md`](pifinder_client_role_and_indi_setup_review.md).
+[`control_host_hardware_badges_mirroring.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/control_host_hardware_badges_mirroring.md) ·
+[`pifinder_client_role_and_indi_setup_review.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/pifinder_client_role_and_indi_setup_review.md).

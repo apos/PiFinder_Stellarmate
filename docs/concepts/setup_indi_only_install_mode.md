@@ -85,7 +85,7 @@ Implemented as `bin/os_detect.sh`:
 
 | Option | Verdict |
 |---|---|
-| **Flatpak / Snap** | Excluded *for this purpose*: they are application-distribution formats, not a source of the `-dev` headers needed to **compile** the drivers. They could matter for a different, later problem — shipping **prebuilt driver binaries** (cf. [`indi_upstream_packaging.md`](indi_upstream_packaging.md), #464). |
+| **Flatpak / Snap** | Excluded *for this purpose*: they are application-distribution formats, not a source of the `-dev` headers needed to **compile** the drivers. They could matter for a different, later problem — shipping **prebuilt driver binaries** (cf. [`indi_upstream_packaging.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/indi_upstream_packaging.md), #464). |
 | **Ansible `package` module** | The most established answer to exactly this abstraction problem, but adopting it means Python + Ansible as a new installer dependency and a move to the declarative playbook model — a bigger step than a handful of packages justifies. |
 | **Nix as the unified layer** (installable beside pacman/apt on any distro, identical `nixpkgs` names everywhere) | Strategically interesting given the NixOS direction, but introduces its own bootstrap dependency. **Recorded as a later option, not adopted now.** |
 | **A full OS-abstraction framework** | Rejected: the dispatch table follows the same extension pattern as Ansible's module list without taking on Ansible. |
@@ -94,17 +94,82 @@ Recommendation implemented: a small, own dispatch table (pacman/apt/nix).
 
 ## 3. Nix / NixOS
 
-Nix gets its own section because it differs in kind from pacman/apt:
+Nix gets its own section because it differs in kind from pacman/apt — and because looking it up
+against the real nixpkgs (2026-10-06) showed that the first, research-only dispatch table was **wrong
+for Nix**. PiFinder v4 is to be NixOS-based, so this is a real target, not a speculative one.
 
-- **Imperative vs. declarative.** `os_install_packages` uses `nix profile install nixpkgs#<pkg>` — the
-  *imperative* interface. On **NixOS**, the idiomatic model is the system's own *declarative*
-  configuration (`configuration.nix` / flakes), where imperatively installed profile packages are
-  discouraged. Which approach fits PiFinder v4 is **open**.
-- **Unverified package availability.** `libindi-dev:nix` maps to `libindi` and
-  `build-tools:nix` to an empty entry (nix builds normally get a C toolchain via `stdenv`; whether an
-  explicit package is needed is unchecked). Neither has been checked against the real nixpkgs package
-  search.
-- **No test hardware** for NixOS yet.
+### 3.1 What nixpkgs actually provides (verified against `NixOS/nixpkgs` master, 2026-10-06)
+
+| Attribute | What it is |
+|---|---|
+| **`indilib`** | The INDI core library + `indiserver` (version **2.2.4.2** at lookup time; `pkgs/development/libraries/science/astronomy/indilib/default.nix`). `nativeBuildInputs = [ cmake pkg-config ]`; a single default output — no separate `dev` output, headers and libraries land in the same `$out`. |
+| `indi-3rdparty` | An attribute *set*, one derivation per 3rd-party driver. |
+| `indi-with-drivers` | `buildEnv` over `indilib` + a list of driver packages (`extraDrivers`); when drivers are given it wraps `indiserver` with `INDIPREFIX` set to the environment's `$out`, so `indiserver` finds exactly those drivers. |
+| `indi-full` / `indi-full-nonfree` | `indi-with-drivers` with *all* free (resp. also non-free) 3rd-party drivers. |
+
+**Consequence — a bug in the original table:** `os_package_name libindi-dev nix` maps to `libindi`, and
+**no attribute `libindi` exists** in nixpkgs (neither in `all-packages.nix` nor as an alias). The correct
+attribute is **`indilib`**; `nix profile install nixpkgs#libindi` would fail. (Fixed in `bin/os_detect.sh`
+and covered by a test in `bin/tests/test_os_detect.bats`.) The other generic names are fine:
+`cmake` and `git` exist under the same names; `build-tools` stays empty (see 3.3).
+
+### 3.2 Imperative vs. declarative — what each means for this installer
+
+| | Imperative (`nix profile install`, what `os_install_packages` does today) | Declarative NixOS (`configuration.nix` / flake) |
+|---|---|---|
+| Mental model | Mutates a user profile, like apt/pacman | The whole system, including `environment.systemPackages` and services, is a function of the config |
+| Fit on NixOS | Works, but is the discouraged way to install system software there | The idiomatic way |
+| Fit for a one-shot installer script | Natural: the script *does* something | Awkward: a script must not edit the user's NixOS configuration on its own |
+| Compiling a driver | Needs `cmake`, `pkg-config`, `indilib` visible to the build — a plain profile install does **not** put `indilib` on `CMAKE_PREFIX_PATH` | A dev shell (`nix-shell` / `nix develop` with `mkShell`) sets this up through Nix's setup hooks |
+
+So even "install the build dependencies, then run the existing build script" does not transfer 1:1:
+the dependencies must be made visible to the build **inside a Nix environment**, not merely installed.
+
+### 3.3 Toolchain
+
+On NixOS a C/C++ toolchain comes from `stdenv` inside builds and dev shells (`mkShell` includes it);
+there is no `build-essential`/`base-devel` equivalent to install system-wide. That is why
+`build-tools:nix` is an **empty** entry — still unverified whether any explicit package is needed on a
+bare `nix profile` (outside a dev shell) and, in particular, whether `gcc` would then have to be added.
+
+### 3.4 The bigger problem: where the drivers end up
+
+The existing driver build installs by **copying into the FHS** — `sudo cp … /usr/bin/indi_pifinder_lx200`
+and a `sed -i` into `/usr/share/indi/drivers.xml` (`bin/build_indi_driver.sh`). On NixOS `/usr/bin` and
+`/usr/share` are not a mutable, conventional prefix (NixOS keeps software in the immutable `/nix/store`;
+general knowledge, not checked on a NixOS machine here). So on NixOS the build-script install step cannot
+simply be reused. Two coherent routes:
+
+1. **A Nix package for the drivers** — a derivation that builds the PiFinder LX200 / Mount Bridge /
+   Simulator drivers against `indilib` and installs binary + driver XML into its `$out`, consumed through
+   `indi-with-drivers.override { extraDrivers = [ … ]; }`. This is the NixOS-native result: the
+   environment's `indiserver` wrapper (`INDIPREFIX`) then finds the drivers by construction, with no
+   `/usr` edits and no `sudo`. It is a **declarative** install and belongs in the user's configuration
+   (or a flake this project ships), not in an imperative script.
+2. **Upstream the drivers** to INDI's `indi-3rdparty` ([#464](https://github.com/apos/PiFinder_Stellarmate/issues/464),
+   [concept](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/indi_upstream_packaging.md)).
+   nixpkgs' own `indi-full` is built from its `indi-3rdparty` set, so upstream drivers *could* reach NixOS
+   users via nixpkgs — but only after nixpkgs's own `indi-3rdparty` expression picks them up, which is a
+   separate step this project does not control.
+
+Route 1 changes what "INDI-only install mode" means on Nix: not "a script that installs and builds", but
+"a Nix expression/flake that provides the drivers". The same split — *package-manager abstraction for
+apt/pacman, a different delivery mechanism for Nix* — is likely the honest design; forcing Nix through the
+imperative path would fight the platform.
+
+### 3.5 Open decisions and next steps
+
+- ~~Fix the table~~ — done: `libindi-dev:nix` → `indilib` in `os_package_name`, with a unit test.
+- **Decide the Nix delivery model:** imperative dev-shell around the existing scripts (works on any
+  distro with Nix installed, but doesn't solve `/usr/bin` on NixOS) vs. a declarative driver package /
+  flake (the NixOS-native answer, new artefact to maintain). Needs a real NixOS machine — none is
+  available yet.
+- **Whether PiFinder v4's NixOS image already ships INDI** and how its PiFinder-side software is packaged
+  is **unknown** to this project; that decides whether the PiFinder-host side ([#37](https://github.com/apos/PiFinder_Stellarmate/issues/37),
+  [#401](https://github.com/apos/PiFinder_Stellarmate/issues/401)) is a Nix package, a flake, or a `configuration.nix` snippet.
+- **Nix as the unified layer** (the option recorded in §2.4) becomes more attractive precisely because of
+  the NixOS direction — the decision in §2.4 (later, not now) should be revisited once PiFinder v4's
+  packaging is known.
 
 ## 4. pacman specifics on StellarMate
 
@@ -154,7 +219,7 @@ package-manager abstraction (`os_detect.sh`); **R3** is not identifiable from th
 - **apt: design-verified only.** Implemented from the research in #37's draft howto and the
   remote-coupling concept; not run on real Debian/Ubuntu/Astroberry hardware. `os_install_packages`
   prints a "not yet live-verified" warning when it takes this path.
-- **nix: design-verified only**, same warning — and the open points of §3.
+- **nix: design-verified only**, same warning — and the open points of §3, the package name is corrected to `indilib`, but nothing has run on NixOS.
 - Unit tests cover the pure decision functions only; real package installs stay live-tested.
 
 ## 7. Known risks / open points
@@ -180,4 +245,4 @@ package-manager abstraction (`os_detect.sh`); **R3** is not identifiable from th
 
 #60 (remote coupling, motivation) · #62 (test suite) · #37 (stock-Debian PiFinder howto) · #400 /
 #401 / #416 (non-StellarMate Control host, stock-PiFinder safety patch, PiFinder-host role) · #464
-(upstream driver packaging) · [`indi_upstream_packaging.md`](indi_upstream_packaging.md).
+(upstream driver packaging) · [`indi_upstream_packaging.md`](https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/indi_upstream_packaging.md).
