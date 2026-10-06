@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-06
+
+> Released deliberately early, before everything could be tested under a real sky: field-tested in PiFinder
+> host mode; Control host mode is tested in basic form but not yet fully reliable; no HowTo/video guide yet.
+> Known issue: the Control Center's port 8765 collides with Ekos's native MCP server (and thus Ekos's AI
+> assistant "Stella") - [#481](https://github.com/apos/PiFinder_Stellarmate/issues/481).
+
 ### Added
 
 - Mount Bridge: a mount's `TIME_UTC` is only snooped from KStars once, at connect time, so it silently drifts from the real (NTP-synced) clock in any long session. The Control Center's readiness watchdog now pulses KStars' own `clock_realtime` D-Bus action (off/on) once the property is more than 10 minutes stale, which forces a fresh push - no phone/EkosLive re-trigger needed (#483)
