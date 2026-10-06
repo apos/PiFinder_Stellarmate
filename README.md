@@ -4,6 +4,22 @@
 
 ![PiFinder mounted on a telescope under the night sky](docs/images/readme/PiFinder.jpg)
 
+> ### 🚀 **Release note — v2.0.0**
+>
+> v2.0 is released deliberately early, **before everything could be tested under a real sky**:
+>
+> * Tested under the sky in **PiFinder host mode**.
+> * **Control host mode** is tested in basic form, but not yet fully reliable.
+> * Core features work: **GoTo** works seamlessly from SMOS/KStars/PiFinder, and **Multi-Point
+>   Alignment** is possible.
+> * A basic HowTo / usage description or video guide is **not yet available**.
+>
+> **⚠️ Known issue ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** the Control
+> Center's port **8765** collides with the new native MCP server in KStars/Ekos (same default port).
+> Until this is changed, **do not enable Ekos's MCP server on a PFSM device — and Ekos's AI assistant
+> "Stella" is not usable** (it relies on that same port). Other open issues are tracked in the
+> [GitHub Project](https://github.com/users/apos/projects/15).
+
 ## Summary
 
 This project installs, patches, and integrates the [PiFinder](https://www.pifinder.io/)
@@ -399,14 +415,20 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
 
 **Version 2.x — consolidate what exists**
 
-- Harden and test the current feature set end-to-end (Mount Bridge coupling, Full Simulation, the
-  Control Center) — the bulk of this is already in `CHANGELOG.md`'s `[Unreleased]` section.
+- Harden and test the current feature set end-to-end under real skies (Mount Bridge coupling, Full
+  Simulation, the Control Center) — v2.0.0 shipped the bulk of it (see `CHANGELOG.md`), but only
+  PiFinder host mode has been field-tested so far; Control host mode needs to become fully reliable.
+- Change the Control Center's port away from 8765 so it no longer collides with Ekos's native MCP
+  server and AI assistant "Stella"
+  ([issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
+- A basic HowTo / usage description and a video guide.
 - Contribute selected changes back upstream to [PiFinder](https://github.com/brickbots/PiFinder)
   (which patches — still to be decided) — process and candidate list:
   [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
   [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
-- A guiding watcher — suspend Mount Bridge coupling while guiding/dithering is active. First step:
-  a Control Center watchdog + a `Mount Bridge EXTERNAL_HOLD` switch. Concept:
+- Guiding watcher — suspend Mount Bridge coupling while guiding/dithering is active. First step
+  **shipped in v2.0.0** (a Control Center watchdog + a `Mount Bridge EXTERNAL_HOLD` switch); lost-star
+  / dithering detection remains. Concept:
   [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
   ([issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); background in
   [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /

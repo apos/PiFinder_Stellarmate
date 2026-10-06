@@ -4,6 +4,22 @@
 
 ![PiFinder am Teleskop unter Sternenhimmel](docs/images/readme/PiFinder.jpg)
 
+> ### 🚀 **Release-Hinweis — v2.0.0**
+>
+> v2.0 erscheint bewusst früh, **bevor alles unter echtem Himmel getestet werden konnte**:
+>
+> * Unter dem Himmel getestet im **PiFinder-Host-Modus**.
+> * Der **Control-Host-Modus** ist grundlegend getestet, aber noch nicht durchgehend zuverlässig.
+> * Kernfunktionen laufen: **GoTo** funktioniert nahtlos aus SMOS/KStars/PiFinder, und
+>   **Multi-Point-Alignment** ist möglich.
+> * Eine grundlegende HowTo-/Bedienungsanleitung bzw. ein Video-Guide ist **noch nicht verfügbar**.
+>
+> **⚠️ Bekanntes Problem ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** Der
+> Port **8765** des Control Centers kollidiert mit dem neuen nativen MCP-Server in KStars/Ekos
+> (gleicher Default-Port). Bis das geändert ist, **den MCP-Server von Ekos auf einem PFSM-Gerät nicht
+> aktivieren — und Ekos' KI-Assistent „Stella" ist nicht nutzbar** (er nutzt denselben Port). Weitere
+> offene Punkte stehen im [GitHub-Projekt](https://github.com/users/apos/projects/15).
+
 ## Zusammenfassung
 
 Dieses Projekt installiert, patcht und integriert das [PiFinder](https://www.pifinder.io/)-Plate-
@@ -409,15 +425,21 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
 
 **Version 2.x — konsolidieren, was da ist**
 
-- Den aktuellen Funktionsumfang durchgehend härten und testen (Mount-Bridge-Coupling, Full
-  Simulation, das Control Center) — das meiste davon steht bereits im Abschnitt `[Unreleased]` von
-  `CHANGELOG.md`.
+- Den aktuellen Funktionsumfang durchgehend unter echtem Himmel härten und testen (Mount-Bridge-
+  Coupling, Full Simulation, das Control Center) — v2.0.0 hat das meiste davon ausgeliefert (siehe
+  `CHANGELOG.md`), im Feld getestet ist bisher aber nur der PiFinder-Host-Modus; der Control-Host-
+  Modus muss noch durchgehend zuverlässig werden.
+- Den Port des Control Centers von 8765 wegverlegen, damit er nicht mehr mit dem nativen MCP-Server
+  und dem KI-Assistenten „Stella" von Ekos kollidiert
+  ([Issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
+- Eine grundlegende HowTo-/Bedienungsanleitung und ein Video-Guide.
 - Ausgewählte Änderungen zurück ins Upstream-Projekt [PiFinder](https://github.com/brickbots/PiFinder)
   spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:
   [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
   [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
-- Ein Guiding-Watcher — die Mount-Bridge-Kopplung pausieren, solange Guiding/Dithering läuft.
-  Erster Schritt: ein Control-Center-Watchdog + eine `Mount Bridge EXTERNAL_HOLD`-Switch. Konzept:
+- Guiding-Watcher — die Mount-Bridge-Kopplung pausieren, solange Guiding/Dithering läuft. Erster
+  Schritt **mit v2.0.0 ausgeliefert** (ein Control-Center-Watchdog + eine `Mount Bridge
+  EXTERNAL_HOLD`-Switch); Lost-Star-/Dithering-Erkennung steht noch aus. Konzept:
   [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
   ([Issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); Hintergrund in
   [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /
