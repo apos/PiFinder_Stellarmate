@@ -54,6 +54,19 @@ DEFAULT_TIMEOUT = 5.0
 
 PIFINDER_LX200_LABEL = "PiFinder LX200"
 PIFINDER_BRIDGE_LABEL = "PiFinder Mount Bridge"
+PIFINDER_SIMULATOR_LABEL = "PiFinder Simulator"
+
+# Direct feedback (2026-09-13): the "PiFinder Client" role card used to just
+# add/remove drivers on whatever profile happened to be selected in step 1 -
+# on a profile reused/cloned from earlier dev/test work, that could leave
+# "PiFinder Client" sharing indiserver with half a dozen unrelated drivers
+# (Astrometry, SkySafari, CCD Simulator, PlayerOne CCD, MyFocuserPro2, LX200
+# OnStep - all found live in one such profile), each one more surface for
+# indiserver's own stability issues (issue #385) to bite on a role that
+# structurally needs none of them. This role now always runs its own
+# dedicated profile instead - see ensure_pifinder_client_profile().
+PIFINDER_CLIENT_PROFILE_NAME = "PFSM Client"
+PIFINDER_CLIENT_PROFILE_DRIVERS = [PIFINDER_LX200_LABEL, PIFINDER_SIMULATOR_LABEL]
 
 
 class WebManagerError(Exception):
@@ -82,6 +95,21 @@ def _request(method: str, path: str, host: str, port: int, timeout: float, body=
             return json.loads(raw) if raw else None
     except urllib.error.URLError as e:
         raise WebManagerError(f"{method} {path} failed: {e}") from e
+    except TimeoutError as e:
+        # Found live (2026-09-20, issue #385 investigation): urlopen's own
+        # `timeout` only gets wrapped into URLError for a connect-phase
+        # timeout (server never accepted the connection) - verified live
+        # that a READ-phase timeout (the server accepts, starts responding,
+        # then stalls mid-body - exactly what a #385-adjacent Web Manager
+        # stall looks like) raises a bare TimeoutError instead, which this
+        # except clause never caught. Every caller of server_status() etc.
+        # only ever expects WebManagerError (see e.g.
+        # _pifinder_service_sync_with_lx200_target()'s own cache-fallback
+        # path in server.py) - an uncaught TimeoutError skipped that
+        # graceful handling entirely and surfaced as a generic "raised
+        # unexpectedly: timed out" in the Mount Bridge readiness watchdog
+        # instead.
+        raise WebManagerError(f"{method} {path} timed out: {e}") from e
     except json.JSONDecodeError as e:
         raise WebManagerError(f"{method} {path} returned non-JSON: {e}") from e
 
@@ -256,6 +284,74 @@ def set_pifinder_bridge(
     _set_driver_membership(profile, PIFINDER_BRIDGE_LABEL, present, host, port, timeout)
 
 
+def set_pifinder_simulator(
+    profile: str, present: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> None:
+    """Adds/removes only 'PiFinder Simulator' - every other driver in the profile is left untouched.
+    See TRUTH_INJECTOR_DEFAULT_DEVICE's own comment in server.py for why Full Simulation testing
+    needs this device present (an independent PiFinder-side truth, not the mount)."""
+    _set_driver_membership(profile, PIFINDER_SIMULATOR_LABEL, present, host, port, timeout)
+
+
+def ensure_pifinder_client_profile(
+    host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Creates PIFINDER_CLIENT_PROFILE_NAME with exactly the two drivers the
+    "PiFinder Client" role actually uses (PiFinder LX200 - the position it
+    shares - and PiFinder Simulator, the device Full Simulation/Truth
+    Injector testing feeds), if it doesn't exist yet. A no-op if it already
+    does.
+
+    Direct feedback (2026-09-13): "der User muss frei in der Wahl sein, nur
+    wenn es KEIN passendes Profil gibt, dann legst du INITIAL ein neues an" -
+    this is that bootstrap ONLY: called from server.py exactly once per
+    install, the very first time "PiFinder Client" is ever activated with
+    nothing yet remembered for it (_last_known_client_profile is still
+    None). Every later activation restores whatever got remembered instead,
+    including if the user has since deliberately switched to a different
+    profile entirely - this function is never involved again after that
+    first bootstrap. See reset_client_profile_drivers() below for the
+    separate "Reset to minimal Client set" action, which works on whichever
+    profile is currently remembered, not just this default name.
+
+    Returns True if the profile was created, False if it already existed.
+    """
+    try:
+        _get_profile_meta(PIFINDER_CLIENT_PROFILE_NAME, host, port, timeout)
+        return False  # already exists - nothing to bootstrap
+    except WebManagerError:
+        pass
+    _request("POST", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout)
+    _request(
+        "PUT", f"/api/profiles/{_q(PIFINDER_CLIENT_PROFILE_NAME)}", host, port, timeout,
+        body={"port": 7624, "autostart": True, "autoconnect": True, "driver_source": "system"},
+    )
+    set_profile_drivers(PIFINDER_CLIENT_PROFILE_NAME, PIFINDER_CLIENT_PROFILE_DRIVERS, host, port, timeout)
+    return True
+
+
+def reset_client_profile_drivers(
+    profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Force-replaces `profile`'s driver list back to exactly PiFinder LX200
+    + PiFinder Simulator, discarding anything else - the explicit "Reset to
+    minimal Client set" action. Takes an explicit profile name (not
+    PIFINDER_CLIENT_PROFILE_NAME specifically) because the user is free to
+    have the Client role remembering a different profile than the original
+    default (see ensure_pifinder_client_profile()'s own comment) - this
+    resets whichever one that currently is.
+
+    Returns True if anything was actually changed, False if it already
+    matched. Raises WebManagerError if `profile` doesn't exist.
+    """
+    meta = _get_profile_meta(profile, host, port, timeout)
+    current = get_profile_labels(profile, host, port, timeout)
+    if sorted(current) != sorted(PIFINDER_CLIENT_PROFILE_DRIVERS):
+        _recreate_profile_with_drivers(profile, PIFINDER_CLIENT_PROFILE_DRIVERS, meta, host, port, timeout)
+        return True
+    return False
+
+
 def server_status(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """{"running": bool, "active_profile": str}."""
     result = _request("GET", "/api/server/status", host, port, timeout) or []
@@ -278,6 +374,66 @@ def stop_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: flo
     _request("POST", "/api/server/stop", host, port, timeout, body=[])
 
 
+def set_profile_autostart(
+    profile: str, enabled: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Flips the Web Manager's own native "autostart" flag on a profile -
+    the mechanism stellarmatewebmanager.service itself already uses to
+    launch a profile's indiserver the moment IT starts (at boot), well
+    before this Control Center's own Python watchdog ever gets a chance to
+    run its first tick. Direct feedback (2026-09-13): server.py's own
+    _autostart_cold_profile() self-heal (a Python-level retry loop) is a
+    second, slower safety net for exactly the situation this flag is
+    already meant to prevent - setting it explicitly whenever a profile is
+    confirmed to be the one actually in active use closes the gap at its
+    root instead of only papering over it after the fact on every reboot.
+
+    Returns False (no-op, no request sent) if `enabled` already matches
+    the profile's current value - PUT recreates the profile's stored
+    metadata wholesale, so there is no reason to send it when nothing
+    would change. Raises WebManagerError if the profile doesn't exist or
+    the request fails; leaves autoconnect/port/driver_source exactly as
+    they already were."""
+    meta = _get_profile_meta(profile, host, port, timeout)
+    if bool(meta.get("autostart")) == enabled:
+        return False
+    _request(
+        "PUT", f"/api/profiles/{_q(profile)}", host, port, timeout,
+        body={
+            "port": meta.get("port"),
+            "autostart": enabled,
+            "autoconnect": bool(meta.get("autoconnect")),
+            "driver_source": meta.get("driver_source") or "system",
+        },
+    )
+    return True
+
+
+def set_profile_autoconnect(
+    profile: str, enabled: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Flips the Web Manager's own native "autoconnect" flag on a profile -
+    same PUT-recreates-the-whole-row mechanism as set_profile_autostart()
+    right above, leaving autostart/port/driver_source untouched.
+
+    Returns False (no-op, no request sent) if `enabled` already matches
+    the profile's current value. Raises WebManagerError if the profile
+    doesn't exist or the request fails."""
+    meta = _get_profile_meta(profile, host, port, timeout)
+    if bool(meta.get("autoconnect")) == enabled:
+        return False
+    _request(
+        "PUT", f"/api/profiles/{_q(profile)}", host, port, timeout,
+        body={
+            "port": meta.get("port"),
+            "autostart": bool(meta.get("autostart")),
+            "autoconnect": enabled,
+            "driver_source": meta.get("driver_source") or "system",
+        },
+    )
+    return True
+
+
 def pifinder_driver_status(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> dict:
@@ -288,6 +444,10 @@ def pifinder_driver_status(
     - lx200_remote: "host:port" if it's a remote entry, None if local/absent
       (labels alone can't tell - see get_remote_drivers())
     - has_bridge: PiFinder Mount Bridge in the profile (always local)
+    - has_simulator: PiFinder Simulator in the profile (always local) - the
+      independent PiFinder-side truth device Full Simulation testing needs,
+      not the mount (see other_profile_drivers()'s own comment on why it's
+      excluded there)
     """
     labels = get_profile_labels(profile, host, port, timeout)
     remote_specs = get_remote_drivers(profile, host, port, timeout)
@@ -298,6 +458,7 @@ def pifinder_driver_status(
         "has_lx200": PIFINDER_LX200_LABEL in labels or lx200_remote is not None,
         "lx200_remote": lx200_remote,
         "has_bridge": PIFINDER_BRIDGE_LABEL in labels,
+        "has_simulator": PIFINDER_SIMULATOR_LABEL in labels,
     }
 
 
@@ -319,26 +480,33 @@ def driver_families(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout:
 def other_profile_drivers(
     profile: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT
 ) -> list:
-    """Phase 3 (UC5): every driver label in the profile except the two
-    PiFinder ones - candidates for "which one is the mount", queried live
-    rather than hardcoded. Each entry also flags is_telescope (family ==
-    "Telescopes" per driver_families() above) so the caller can auto-select
-    an unambiguous single candidate instead of always asking the user.
+    """Phase 3 (UC5): every driver label in the profile except the PiFinder
+    ones - candidates for "which one is the mount", queried live rather than
+    hardcoded. Each entry also flags is_telescope (family == "Telescopes"
+    per driver_families() above) so the caller can auto-select an
+    unambiguous single candidate instead of always asking the user.
 
-    Known exception: "PiFinder LX200" is *also* family "Telescopes" (it
-    implements INDI::Telescope to emulate an LX200 mount) - already
-    excluded above by label, same as PiFinder Mount Bridge, so this needs
-    no special case for it. Two residual cases this can't resolve on its
-    own: (a) more than one Telescope-family driver in the profile (e.g. a
-    leftover Telescope Simulator alongside the user's real mount) - can't
-    tell which is genuinely in use; (b) a driver mislabeled by its own
-    INDI skeleton file (family is whatever the driver author declared, not
-    independently verified). Both fall back to manual selection - see
-    is_telescope's only caller, status_page.html's mount-dropdown logic."""
+    Known exceptions: "PiFinder LX200" and "PiFinder Simulator" are *also*
+    family "Telescopes" (both implement INDI::Telescope - the former to
+    emulate an LX200 mount, the latter as a settable PiFinder-side "sky
+    truth" for testing, see basic-memory pifinder-stellarmate/00092) -
+    already excluded above by label, same as PiFinder Mount Bridge, so this
+    needs no special case for either. Found live (2026-08-07): before
+    PIFINDER_SIMULATOR_LABEL was added here, "PiFinder Simulator" showed up
+    as a selectable mount candidate even though it's the opposite role - the
+    PiFinder-side truth source, never the thing being corrected.
+
+    Two residual cases this can't resolve on its own: (a) more than one
+    Telescope-family driver in the profile (e.g. a Telescope Simulator
+    alongside the user's real mount) - can't tell which is genuinely in use;
+    (b) a driver mislabeled by its own INDI skeleton file (family is
+    whatever the driver author declared, not independently verified). Both
+    fall back to manual selection - see is_telescope's only caller,
+    status_page.html's mount-dropdown logic."""
     labels = get_profile_labels(profile, host, port, timeout)
     families = driver_families(host, port, timeout)
     return [
         {"label": label, "is_telescope": families.get(label) == "Telescopes"}
         for label in labels
-        if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL)
+        if label not in (PIFINDER_LX200_LABEL, PIFINDER_BRIDGE_LABEL, PIFINDER_SIMULATOR_LABEL)
     ]

@@ -27,6 +27,7 @@ echo "-> Building..."
 cmake --build "${BUILD_DIR}"
 
 echo "-> Installing driver executable..."
+stop_indi_driver_and_wait "indi_pifinder_lx200"
 sudo cp "${BUILD_DIR}/indi_pifinder_lx200" /usr/bin/indi_pifinder_lx200
 sudo chmod +x /usr/bin/indi_pifinder_lx200
 
@@ -43,9 +44,8 @@ else
 fi
 
 echo ""
-echo "Done. If the driver was already running, stop it first (e.g. via the"
-echo "StellarMate Webmanager) before installing, or the cp above will fail"
-echo "with 'Text file busy'."
+echo "Done. (Any already-running instance was stopped automatically before"
+echo "installing, to avoid a 'Text file busy' cp failure.)"
 echo ""
 echo "The StellarMate Webmanager caches its driver catalog at its own startup -"
 echo "restart it to see a newly-added driver (must run from the GUI/VNC"

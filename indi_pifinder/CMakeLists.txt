@@ -14,12 +14,16 @@ include(GNUInstallDirs)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(INDI REQUIRED libindi)
+pkg_check_modules(CURL REQUIRED libcurl)
+pkg_check_modules(NLOHMANN_JSON REQUIRED nlohmann_json)
 
 add_executable(indi_pifinder_lx200 lx200_pifinder.cpp)
 
 target_include_directories(indi_pifinder_lx200 PRIVATE
     ${INDI_INCLUDE_DIRS}
     ${INDI_INCLUDE_DIRS}/mounts
+    ${CURL_INCLUDE_DIRS}
+    ${NLOHMANN_JSON_INCLUDE_DIRS}
 )
 
 target_compile_definitions(indi_pifinder_lx200 PRIVATE _XOPEN_SOURCE=700 HAVE_LIBNOVA)
@@ -28,6 +32,7 @@ target_link_libraries(indi_pifinder_lx200
     indidriver
     indilx200
     nova
+    ${CURL_LIBRARIES}
 )
 
 configure_file(indi_pifinder_lx200_driver.xml.in indi_pifinder_lx200_driver.xml @ONLY)

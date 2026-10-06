@@ -1,0 +1,102 @@
+--- python/tests/test_last_align_stamp.py.orig
++++ python/tests/test_last_align_stamp.py
+@@ -0,0 +1,99 @@
++"""Regression guard for PiFinder_Stellarmate #313: a confirmed solve-based
++Align (ui/align.py::align_on_radec) records RA/Dec + a timestamp into
++shared_state via set_last_align(), and nothing else does.
++"""
++
++import queue
++
++import pytest
++
++import PiFinder.i18n  # noqa: F401  - installs the gettext _() builtin align.py uses
++from PiFinder.state import SharedStateObj
++from PiFinder.types.positioning import AlignedResult
++from PiFinder.ui.align import align_on_radec
++
++pytestmark = pytest.mark.unit
++
++
++class _FakeConfig:
++    def __init__(self):
++        self.options = {}
++
++    def set_option(self, k, v):
++        self.options[k] = v
++
++    def get_option(self, k, default=None):
++        return self.options.get(k, default)
++
++
++class _ResponseQueue:
++    """align_on_radec() first *drains* align_response (block=False until
++    Empty), then polls it for the real reply. So the reply must only appear
++    after that initial drain - mirror that instead of pre-filling a Queue.
++    ``result=None`` never delivers a reply (exercises the timeout path).
++    """
++
++    def __init__(self, result):
++        self._result = result
++        self._drained = False
++
++    def get(self, block=False):
++        if not self._drained:
++            self._drained = True
++            raise queue.Empty
++        if self._result is None:
++            raise queue.Empty
++        r, self._result = self._result, None
++        return r
++
++    def put(self, item):  # pragma: no cover - align_on_radec doesn't put here
++        pass
++
++
++def _queues_returning(result):
++    return {
++        "align_command": queue.Queue(),
++        "align_response": _ResponseQueue(result),
++        "console": queue.Queue(),
++    }
++
++
++def test_successful_align_stamps_ra_dec_and_time():
++    ss = SharedStateObj()
++    assert ss.last_align_time() is None
++
++    ok = align_on_radec(
++        83.822, -5.391, _queues_returning(AlignedResult(y_target=260.0, x_target=245.0)),
++        _FakeConfig(), ss,
++    )
++
++    assert ok is True
++    assert ss.last_align_ra() == pytest.approx(83.822)
++    assert ss.last_align_dec() == pytest.approx(-5.391)
++    assert ss.last_align_time() is not None
++
++
++def test_failed_align_does_not_stamp():
++    ss = SharedStateObj()
++    # as_target_pixel()[0] == -1 is align.py's own failure sentinel
++    ok = align_on_radec(
++        10.0, 20.0, _queues_returning(AlignedResult(y_target=-1.0, x_target=-1.0)),
++        _FakeConfig(), ss,
++    )
++    assert ok is False
++    assert ss.last_align_time() is None
++
++
++def test_align_timeout_does_not_stamp():
++    ss = SharedStateObj()
++    ok = align_on_radec(10.0, 20.0, _queues_returning(None), _FakeConfig(), ss)
++    assert ok is False
++    assert ss.last_align_time() is None
++
++
++def test_reset_reticle_to_center_path_does_not_stamp():
++    """UIAlign.key_number(1) writes target_pixel directly (blind reset, no
++    sky confirmation) - it must NOT look like a confirmed Align."""
++    ss = SharedStateObj()
++    ss.set_target_pixel((256, 256))
++    assert ss.last_align_time() is None

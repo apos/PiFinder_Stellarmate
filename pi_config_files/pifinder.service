@@ -24,6 +24,19 @@ SupplementaryGroups=kmem gpio spi i2c video input
 # of staying "failed" until someone notices and restarts it by hand.
 Restart=on-failure
 RestartSec=2
+# Mild deprioritization, not a hard cap: PiFinder's own solver spawns a CPU-
+# hungry worker pool (found live 2026-08-03 investigating #139 - a 4-core
+# Pi 4 hit load average 9+ with 10+ solver workers running, and pos_server.py's
+# LX200 socket went genuinely unresponsive to :GR#/:GD# for several seconds
+# at a time as a result, independent of anything the INDI driver does - see
+# #148 for the more precise upstream fix this doesn't replace). Nice=5 and a
+# below-default CPUWeight ask the scheduler to favor everything else (Control
+# Center, indiserver, the OS itself) when the CPU is actually contended,
+# without capping PiFinder below full-core use whenever it isn't. Tune the
+# numbers here directly if needed - see bin/functions.sh's own comment on
+# why they're not duplicated as a shell variable there.
+Nice=5
+CPUWeight=50
 
 [Install]
 WantedBy=basic.target

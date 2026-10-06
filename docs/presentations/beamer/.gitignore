@@ -1,0 +1,19 @@
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.blg
+*.bcf
+*.bbl
+*.run.xml
+
+# keep the rendered deck tracked, ignore any other stray PDFs
+*.pdf
+!PFSM_overview.pdf
+!PFSM_overview_light.pdf

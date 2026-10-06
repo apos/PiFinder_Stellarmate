@@ -4,9 +4,52 @@
 
 ![PiFinder mounted on a telescope under the night sky](docs/images/readme/PiFinder.jpg)
 
-This project provides a set of scripts to seamlessly install, patch, and integrate the [PiFinder](https://www.pifinder.io/) software into a [Stellarmate](https://www.stellarmate.com/) environment. It automates the entire setup process, ensuring that PiFinder works correctly alongside Stellarmate's existing services.
+> ### 🚀 **Release note — v2.0.0**
+>
+> v2.0 is released deliberately early, **before everything could be tested under a real sky**:
+>
+> * Tested under the sky in **PiFinder host mode**.
+> * **Control host mode** is tested in basic form, but not yet fully reliable.
+> * Core features work: **GoTo** works seamlessly from SMOS/KStars/PiFinder, and **Multi-Point
+>   Alignment** is possible.
+> * A basic HowTo / usage description or video guide is **not yet available**.
+>
+> **⚠️ Known issue ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** the Control
+> Center's port **8765** collides with the new native MCP server in KStars/Ekos (same default port).
+> Until this is changed, **do not enable Ekos's MCP server on a PFSM device — and Ekos's AI assistant
+> "Stella" is not usable** (it relies on that same port). Other open issues are tracked in the
+> [GitHub Project](https://github.com/users/apos/projects/15).
 
-The primary goal is to allow users to leverage the powerful plate-solving and object-finding capabilities of PiFinder on a device that is also running Stellarmate for astrophotography, EAA, and full equipment control.
+## Summary
+
+This project installs, patches, and integrates the [PiFinder](https://www.pifinder.io/)
+plate-solving push-to system into a [StellarMate](https://www.stellarmate.com/) setup, so a single
+Raspberry Pi runs PiFinder's plate-solving and object-finding **alongside** StellarMate for
+astrophotography, EAA, and full equipment control. The setup script automates the whole process.
+
+**The building blocks, and why:**
+
+- **Raspberry Pi** — the platform both PiFinder and StellarMate already target.
+- **PiFinder** — a Python-based push-to solver with a **global-shutter camera** (clean plate-solves
+  even while the mount is moving). Open source in both hardware and software, which is what makes
+  integrating it feasible at all: the setup patches it in place instead of forking it.
+- **StellarMate** — a well-maintained community project with an open-source core and a strong app
+  ecosystem (StellarMate App, KStars/Ekos, INDI Web Manager) for driving a full imaging rig.
+- **INDI** — the glue between the two. Both sides already speak it: PiFinder exposes its solved
+  position as an INDI telescope, and the optional **Mount Bridge** couples that to any
+  INDI-supported motorised mount — no mount-specific protocol, no custom code per mount.
+
+**Fundamental principles:**
+
+- Keep the original PiFinder software as untouched as possible.
+- Decouple the different components so they can be used independently.
+- Work with any INDI-compatible mount rather than tying the project to a particular manufacturer.
+- Reuse the existing capabilities of KStars, Ekos, INDI, and SkySafari.
+- Keep the integration lightweight and focused rather than duplicating functionality already
+  provided by the INDI ecosystem.
+
+(The INDI-integration-specific elaboration of these — build choices, driver architecture — lives in
+[Readme_design_decisions.md](Readme_design_decisions.md).)
 
 > ### ⚠️ **Disclaimer**
 >
@@ -14,13 +57,37 @@ The primary goal is to allow users to leverage the powerful plate-solving and ob
 > * Use these scripts at your own risk. The author is not responsible for any damage to your hardware or software.
 > * This process has been tested with the PiFinder version specified in `version.txt`.
 
-> ### ✅ **Current Version — v1.3.1**
+> ### ✅ **Current Pinned Versions**
 >
-> * Built and verified for **PiFinder software 2.6.0** on **StellarMate OS 2.2.1** (Arch Linux).
-> * **Raspberry Pi 4**: Fully supported — camera ✅, plate solve ✅, IMU ✅, GPS ✅. Tested under real night sky (2026-07-12).
-> * **Raspberry Pi 5**: Supported — GPS ✅, Web UI ✅, OLED ✅. (A months-long "OLED stays dark" issue was traced to a defective HAT unit, not a Pi5/software limitation — resolved 2026-07-17 by swapping the physical HAT board.) **Keyboard ⚠️**: on the test unit, a Geekworm X1203 UPS shield shares GPIO 16 with the keypad matrix's column 0 (keys 7/4/1/LEFT), permanently disabling that whole column — a real hardware resource conflict between the two add-on boards, not a Pi5 or software limitation, and specific to setups with that UPS shield attached. Camera requires a 15-pin FFC CSI adapter cable (Pi4 uses 22-pin) — not yet installed on the test unit.
-> * **INDI integration**: standalone LX200 driver + optional real-mount coupling ("Mount Bridge"), verified end-to-end against a real Skywatcher EQ5/OnStepX mount, all four Coupling presets — see [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md) and [CHANGELOG.md](CHANGELOG.md).
-> * **New in this release**: the Control Center now restarts itself automatically after a successful Install/Update run, so it always serves the code that run just landed on. Every "still checking" indicator across the Control Center (Mode status, hardware tests, Mount Bridge, external hardware toggles) now shares one consistent pulsing-yellow-dot pattern instead of several different ad-hoc ones, and the Mount Bridge tile is now role-aware — a PiFinder-host device no longer shows a misleading "not coupled" diagram for a driver it was never meant to have. See [CHANGELOG.md](CHANGELOG.md) for the full list.
+> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.3.0** (Arch Linux) via `version.txt` /
+>   `pifinder_stellarmate_setup.sh` — a fixed release tag, not the upstream `release` branch's moving
+>   HEAD. Fully tested on Pi 4, Pi 5, and the x86 dev/simulator host —
+>   [Version Compatibility](#version-compatibility) has the details.
+> * **Pi 5 keyboard ⚠️** — a Geekworm X1203 UPS shield shares GPIO 16 with keypad column 0 (keys
+>   7/4/1/LEFT), disabling that column. Hardware conflict between the two add-on boards, only with
+>   that shield attached; a [numpad bridge](Readme_KeyboardBridge.md) sidesteps it.
+> * **INDI integration** — standalone LX200 driver + optional Mount Bridge coupling, verified
+>   end-to-end against a real Skywatcher EQ5 / OnStepX mount. See
+>   [Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md).
+> * **Control Center** — installs/updates, hardware checklist, Real / Full-Simulation / Fake-Mode
+>   switching, the Mount Bridge, and Reboot/Shutdown, in one local web page. See
+>   [Readme_ControlCenter.md](Readme_ControlCenter.md); shipped changes in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Key Features & Changes](#key-features--changes)
+3. [Hardware Requirements](#hardware-requirements)
+4. [Installation](#installation)
+5. [After Installation: PiFinder's "PFSM" Page](#after-installation-pifinders-pfsm-page)
+6. [Using the INDI Driver](#using-the-indi-driver)
+7. [SMOS Updates](#smos-updates)
+8. [Version Compatibility](#version-compatibility)
+9. [Roadmap](#roadmap)
+10. [Uninstallation](#uninstallation)
+11. [See Also](#see-also)
 
 ---
 
@@ -34,14 +101,49 @@ cd PiFinder_Stellarmate
 bash gui_installer/launch_setup_gui.sh
 ```
 
-Then open the page in a browser — on the Pi itself, or from any other device on the same network
-(no desktop session on the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-recommended) for details.
+The script prints every address the GUI is reachable under (one line per network interface) and
+opens it in a browser automatically:
+
+```
+Starting setup GUI webserver...
+Webserver started.
+   Setup GUI reachable at:
+     http://192.168.1.23:8765/
+   Login: any username, password = your stellarmate system password
+   (protects the page itself plus Reinstall/Update/Reboot; /state,
+   /log and /shutdown stay reachable without login)
+   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
+
+On a fresh StellarMate OS install that's username `stellarmate`, password `smate` — the StellarMate
+OS default, not a project secret (change it if you haven't already).
+
+From any other device on the same network, open one of those URLs directly (no desktop session on
+the Pi required). See [Setup GUI / Control Center](#setup-gui--control-center-recommended) for details.
 
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/readme/Setup_via_remote_browser.png"><img src="docs/images/readme/Setup_via_remote_browser.png" width="700"></a><br>
-<sub>The Setup GUI opened remotely, from another device on the network</sub>
+<a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="460"></a><br>
+<sub>The Control Center, opened from any browser on the network — no desktop session on the Pi needed (Full Simulation shown)</sub>
+</td>
+</tr>
+</table>
+
+**Stable vs. Beta**: the clone above checks out `main` (**Stable**, the latest tagged release) by
+default. The Control Center's own **Install or Update** tile has a **PFSM Source Branch** dropdown
+to switch to `dev` (**Beta**, the moving development branch) - or back to `main` - for any
+install/reinstall/update it runs from then on, no manual `git checkout` needed:
+
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_stable.png"><img src="docs/images/readme/cc_branch_stable.png" width="380"></a><br>
+<sub><b>main (stable)</b> selected</sub>
+</td>
+<td align="center" width="50%">
+<a href="docs/images/readme/cc_branch_beta.png"><img src="docs/images/readme/cc_branch_beta.png" width="380"></a><br>
+<sub><b>dev (beta)</b> selected</sub>
 </td>
 </tr>
 </table>
@@ -54,7 +156,17 @@ cd PiFinder_Stellarmate
 ./pifinder_stellarmate_setup.sh
 ```
 
+No dropdown here - switch branches with git itself before running the script, e.g.
+`git clone -b dev https://github.com/apos/PiFinder_Stellarmate.git` for **Beta**, or
+`git checkout main` / `git checkout dev` in an existing checkout.
+
 Full details: [Installation](#installation).
+
+> **⚠️ Mandatory next step, either way: create an equipment profile in the Web Manager.**
+> A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari — the drivers
+> only exist in the StellarMate Web Manager's own catalog, and there is no profile for them until
+> you create one, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars).
+> See [Readme_PiFinder_LX200.md — Step 2](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
 
 ---
 
@@ -101,7 +213,12 @@ The setup process is designed to be straightforward. It will guide you through a
 ### Prerequisites
 
 *   A Raspberry Pi 4 or Pi 5 with PiFinder hardware (hat, screen, camera, etc.).
-*   Stellarmate OS 2.1.1 (Arch Linux) installed and running.
+*   **A current StellarMate OS (SMOS) installation — the only supported base.** Pinned to and tested
+    against StellarMate OS 2.3.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
+    version differs from this tested pin. **Installing onto a stock PiFinder OS image is not
+    supported** — this project's entire premise is the StellarMate integration (INDI, KStars/Ekos,
+    the Web Manager, the app), none of which a stock PiFinder OS provides, so there would be nothing
+    for it to integrate with.
 *   Basic familiarity with the Linux command line.
 
 ### Setup Steps
@@ -125,7 +242,7 @@ The setup process is designed to be straightforward. It will guide you through a
     *   **If no PiFinder is found:** The script will clone the official PiFinder repository and apply all the necessary patches.
     *   **If PiFinder is found:** You will be prompted to either:
         *   **1. Reinstall from scratch:** This will completely delete the existing PiFinder directory and perform a fresh installation.
-        *   **2. Update:** This will reset your local PiFinder to the official `release` branch version and re-apply all patches.
+        *   **2. Update:** This will reset your local PiFinder to this project's pinned release tag (see `version.txt`) and re-apply all patches.
 
 4.  **Python Virtual Environment (First Run Only):**
     The first time you run the script on a fresh system, it will stop after creating a Python virtual environment (`.venv`). You must activate it manually and re-run the script to complete the installation of dependencies. The script will provide the exact commands to run, which will look like this:
@@ -140,80 +257,65 @@ The setup process is designed to be straightforward. It will guide you through a
 
 ### Setup GUI / Control Center (recommended)
 
-If you'd rather not watch raw terminal output, `gui_installer/` provides a small local web page —
-the "PiFinder on Stellarmate Control Center" — that runs the same setup script with a live,
-auto-scrolling status view in your browser, including automatically handling the "activate the venv
-and rerun" step and the reinstall/update choice via buttons (each asks for confirmation first), so
-nothing needs to be typed at a prompt. Separate **Reset** (wipes just `~/PiFinder`'s Python
-virtual environment/build state) and **Uninstall** (removes everything this project installed,
-including this repo checkout itself) buttons are also available - see
-[Readme_ControlCenter.md](Readme_ControlCenter.md#reset--uninstall) for the full scope difference.
-Beyond installing/updating, it also doubles as an ongoing
-dashboard: a mode-status tile shows whether PiFinder is running for real or in a decoupled
-fake-hardware instance for dev/testing (with a one-click switch and a per-component hardware
-checklist — camera/IMU/GPS, checked directly against the hardware rather than trusting PiFinder's own
-software state), a "Solve Simulation" toggle for PiFinder's own Test Mode, a "Toggle Display" button
-for an optional secondary small SPI display (see `test_tools/`), and always-available Reboot/Shutdown
-buttons for the whole Pi. A **Mount Bridge** tile folds the Coupling Dial setup (Web Manager profile,
-drivers, mount link, connect, and four one-click Coupling presets — Verify/Alert only,
-Auto-correct (Sync), Auto-correct (Goto & Track), Goto-Forward) into a single guided checklist,
-including an "Autoconnect" mode that drives the whole thing automatically once you pick a Coupling
-preset, or an explicit "Setup" button to run that same setup deliberately first. Run it with:
-```bash
-bash gui_installer/launch_setup_gui.sh
-```
-or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon. It's
-the same installer underneath — useful mainly if you're repeating installs/reinstalls often (e.g.
-while testing).
+Rather than watching raw terminal output, `gui_installer/` provides a small local web page — the
+**PiFinder on Stellarmate Control Center** — that runs the same setup script with a live status view
+in the browser (Reinstall / Update / Reset / Uninstall as buttons, each confirming first), and then
+doubles as an ongoing dashboard: the hardware checklist, Real / Full-Simulation / Fake-Mode
+switching, the INDI **Mount Bridge** (Coupling presets, one-shot sync actions, guided setup), and
+Reboot / Shutdown.
 
-The launcher is idempotent and always prints where things stand — running it again while the
-server is already up just reports that instead of starting a second one:
+Full documentation — architecture, every tile, the Mount Bridge sync workflows, the API surface — is
+in **[Readme_ControlCenter.md](Readme_ControlCenter.md)** ([Deutsche Version](Readme_ControlCenter_de.md)).
+
+```bash
+bash gui_installer/launch_setup_gui.sh          # start (idempotent; prints its URLs)
+bash gui_installer/launch_setup_gui.sh --shutdown-webserver   # stop
 ```
-$ bash gui_installer/launch_setup_gui.sh
+
+Starting it prints one URL per network interface — open whichever one is reachable from your
+device:
+
+```
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.0.105:8765/
-     http://10.250.250.1:8765/
+     http://192.168.1.23:8765/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
    To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
+```
 
-$ bash gui_installer/launch_setup_gui.sh
-Setup GUI webserver is already running.
-   Setup GUI reachable at:
-     http://192.168.0.105:8765/
-     http://10.250.250.1:8765/
-   Login: any username, password = your stellarmate system password
-   (protects the page itself plus Reinstall/Update/Reboot; /state,
-   /log and /shutdown stay reachable without login)
-   To stop: gui_installer/launch_setup_gui.sh --shutdown-webserver
-```
-To stop the background web server again:
-```bash
-bash gui_installer/launch_setup_gui.sh --shutdown-webserver
-```
+On a fresh StellarMate OS install that's username `stellarmate`, password `smate` — the StellarMate
+OS default, not a project secret (change it if you haven't already).
+
+Or copy/symlink `PiFinder Setup.desktop` into `~/Desktop/` for a clickable icon.
+
+> **Developing without a Pi?** [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md) turns an x86 StellarMate
+> OS image (UTM VM on a Mac) into a full control-host + simulator dev machine — the Control Center,
+> the setup scripts, and the Mount Bridge coupling logic run against the **PiFinder Simulator** and
+> **Injected Solve** ([Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)), no hardware
+> needed.
 
 <table>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_install_update.png"><img src="docs/images/pfinder_lx200/pfsm_cc_install_update.png" width="380"></a><br>
-<sub>Install/Update: live progress, terminal output, and Reboot/Close controls in one tile</sub>
+<a href="docs/images/readme/cc_install_running.png"><img src="docs/images/readme/cc_install_running.png" width="380"></a><br>
+<sub>Install or Update: a 10-step progress bar, a per-phase checklist, and the setup script's live terminal output in one tile</sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png"><img src="docs/images/pfinder_lx200/pfsm_cc_pifinder_status.png" width="380"></a><br>
-<sub>Quick Links: PiFinder status plus direct links (remote page, PFSM page, this page, GitHub docs)</sub>
+<a href="docs/images/readme/cc_mode_tile.png"><img src="docs/images/readme/cc_mode_tile.png" width="380"></a><br>
+<sub>Simulation, Test and Power: Synthetic Solve, the direct-against-hardware checklist, and collapsible service/power actions</sub>
 </td>
 </tr>
 <tr>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mode_and_power.png" width="380"></a><br>
-<sub>Mode & Power: Real/Fake Mode switch, hardware checklist, PiFinder service and Pi power controls</sub>
+<a href="docs/images/readme/cc_mount_bridge_baseline.png"><img src="docs/images/readme/cc_mount_bridge_baseline.png" width="380"></a><br>
+<sub>The PiFinder tile: OLED mirror and quick keys, the Cam/Solve/IMU/GPS badges, and the Mount Bridge connection diagram (drift, altitude, coupling)</sub>
 </td>
 <td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png"><img src="docs/images/pfinder_lx200/pfsm_cc_mount_bridge.png" width="380"></a><br>
-<sub>Mount Bridge: connection diagram, Coupling presets, and the guided setup checklist</sub>
+<a href="docs/images/readme/cc_mount_bridge_coupling.png"><img src="docs/images/readme/cc_mount_bridge_coupling.png" width="380"></a><br>
+<sub>The INDI Mount Bridge tile: Quick Actions, the Coupling presets, and the guided setup checklist (collapsed)</sub>
 </td>
 </tr>
 </table>
@@ -292,13 +394,63 @@ bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --sync-memory
 
 > **Note:** `rclone` is installed automatically by `restore_after_smos_update.sh`. The Nextcloud remote must be pre-configured in `~/.config/rclone/rclone.conf` (remote name: `nextcloud`, WebDAV).
 
-### Version Compatibility
+## Version Compatibility
 
-| PiFinder | SMOS | Pi 4 | Pi 5 |
-|---|---|---|---|
-| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending |
-| 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) |
-| 2.5.1 | 2.1.1 | ✅ tested | — |
+The single source of truth for which PiFinder / StellarMate OS / Raspberry Pi combinations this
+project has been tested against. Other docs in this repo link here rather than repeating it.
+
+| PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (dev / simulator) |
+|---|---|---|---|---|
+| 2.6.3 | 2.3.0 | ✅ fully tested | ✅ fully tested | ✅ tested — install, Control Center, Mount Bridge vs. the PiFinder Simulator (no real plate-solving; see [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)) |
+| 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending | — |
+| 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) | — |
+| 2.5.1 | 2.1.1 | ✅ tested | — | — |
+
+## Roadmap
+
+Tracked, prioritized work — issues, test cases, next steps — lives in the
+**[GitHub Project](https://github.com/users/apos/projects/15)**
+([roadmap view](https://github.com/users/apos/projects/15/views/4)). Shipped changes are in
+**[CHANGELOG.md](CHANGELOG.md)**. The direction:
+
+**Version 2.x — consolidate what exists**
+
+- Harden and test the current feature set end-to-end under real skies (Mount Bridge coupling, Full
+  Simulation, the Control Center) — v2.0.0 shipped the bulk of it (see `CHANGELOG.md`), but only
+  PiFinder host mode has been field-tested so far; Control host mode needs to become fully reliable.
+- Change the Control Center's port away from 8765 so it no longer collides with Ekos's native MCP
+  server and AI assistant "Stella"
+  ([issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
+- A basic HowTo / usage description and a video guide.
+- Contribute selected changes back upstream to [PiFinder](https://github.com/brickbots/PiFinder)
+  (which patches — still to be decided) — process and candidate list:
+  [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
+  [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
+- Guiding watcher — suspend Mount Bridge coupling while guiding/dithering is active. First step
+  **shipped in v2.0.0** (a Control Center watchdog + a `Mount Bridge EXTERNAL_HOLD` switch); lost-star
+  / dithering detection remains. Concept:
+  [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
+  ([issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); background in
+  [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /
+  [#324](https://github.com/apos/PiFinder_Stellarmate/issues/324)).
+
+**Version 3.x — integrate**
+
+- Deeper StellarMate integration, in coordination with the SMOS project —
+  [issue #35](https://github.com/apos/PiFinder_Stellarmate/issues/35) (requirements analysis),
+  [issue #36](https://github.com/apos/PiFinder_Stellarmate/issues/36) (vision).
+- Surface the essential actions directly in the PiFinder app UI instead of only a link to the
+  Control Center — mainly the Quick Actions, Coupling mode, INDI setup, Multi-Point Alignment, and
+  Test Hardware. Concept:
+  [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
+  §7 ([issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
+- A native **Ekos module** for PiFinder — the same controls as a first-class KStars tab, in
+  coordination with the KStars maintainer. Concept:
+  [`docs/concepts/ekos_pifinder_module.md`](docs/concepts/ekos_pifinder_module.md)
+  ([issue #370](https://github.com/apos/PiFinder_Stellarmate/issues/370)).
+- A "real" simulator — plate-solving against the GSC catalog rather than an injected position.
+  Concept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
+  ([issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
 
 ## Uninstallation
 
@@ -328,10 +480,26 @@ repo it's uninstalling.
 
 ## See Also
 
-*   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — full INDI/Mount-Bridge documentation: illustrated setup guide, LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
-*   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, API reference, strategic roadmap. ([Deutsche Version](Readme_ControlCenter_de.md))
-*   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — full Keyboard Bridge (numpad-as-keypad) documentation: architecture, key mapping, self-healing design, roadmap. ([Deutsche Version](Readme_KeyboardBridge_de.md))
-*   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions.
-*   **[CHANGELOG.md](CHANGELOG.md)** — release history.
+*   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, Mount Bridge & Sync workflows, API reference. ([Deutsche Version](Readme_ControlCenter_de.md))
+*   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — the INDI layer: illustrated step-by-step setup (Web Manager equipment profile, INDI Control Panel, KStars/Ekos, SkySafari), LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
+*   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — the numpad-as-keypad bridge: architecture, key mapping, self-healing design. ([Deutsche Version](Readme_KeyboardBridge_de.md))
+*   **[Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)** — set up an x86 StellarMate OS VM (UTM on a Mac) as a hardware-free control-host + simulator dev machine. ([Deutsche Version](Readme_UTM_dev_X86_de.md))
+*   **[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md)** — the PiFinder Simulator / Injected Solve, for testing the Mount Bridge without a real mount or clear sky.
+*   **[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md)** — how KStars draws the PiFinder devices on the sky map, and what each device's right-click Goto/Sync/Abort operations actually do. ([Deutsche Version](Readme_PiFinder_in_KStars_de.md))
+*   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions. ([Deutsche Version](Readme_design_decisions_de.md))
+*   **[CHANGELOG.md](CHANGELOG.md)** — release history · **[GitHub Project](https://github.com/users/apos/projects/15)** — tracked roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
 *   **[CONTRIBUTING.md](CONTRIBUTING.md)** — submodule setup after cloning, running the shell-script test suite.
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>
+
+<p align="center">
+  <a href="https://www.youtube.com/heyapos" target="_blank" rel="noopener"><img src="docs/images/readme/HeyApos_Wortmarke_logo_thumb.png" alt="HeyApos" height="60"></a>
+  &nbsp;&nbsp;
+  <a href="https://avvp.de" target="_blank" rel="noopener"><img src="docs/images/readme/avvp_2019_logo_wortmarke_pos_Transparent.png" alt="AVVP" height="60"></a>
+</p>

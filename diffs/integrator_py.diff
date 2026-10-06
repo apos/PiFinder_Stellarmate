@@ -1,0 +1,274 @@
+diff --git a/python/PiFinder/integrator.py b/python/PiFinder/integrator.py
+index a2b2a85a..1c72e848 100644
+--- a/python/PiFinder/integrator.py
++++ b/python/PiFinder/integrator.py
+@@ -37,6 +37,7 @@ from __future__ import annotations
+ 
+ import copy
+ import logging
++import math
+ import queue
+ import time
+ from typing import Optional
+@@ -53,6 +54,7 @@ import PiFinder.pointing_model.quaternion_transforms as qt
+ from PiFinder.telemetry import TelemetryManager
+ from PiFinder.types.positioning import (
+     FailedSolve,
++    FakeSolve,
+     ImuSample,
+     Pointing,
+     PointingAxis,
+@@ -67,6 +69,42 @@ logger = logging.getLogger("IMU.Integrator")
+ # Use IMU tracking if the angle moved is above this deadband.
+ IMU_MOVED_ANG_THRESHOLD = np.deg2rad(0.06)
+ 
++# How long to retry for a usable IMU sample when seeding a fake-solve
++# anchor (see _valid_imu_anchor) before giving up and logging a warning.
++FAKE_SOLVE_ANCHOR_RETRIES = 10
++FAKE_SOLVE_ANCHOR_RETRY_DELAY = 0.05  # seconds
++
++
++def _valid_imu_anchor(imu_sample) -> Optional[quaternion.quaternion]:
++    """Extract a usable anchor quaternion from an IMU sample, or None.
++
++    A degenerate anchor (missing sample, NaN quaternion, or a
++    near-zero-magnitude quaternion) breaks dead-reckoning silently
++    downstream: ``ImuDeadReckoning.solve()`` no-ops on a NaN
++    ``q_x2imu``, and ``.normalized()`` on a zero-magnitude quaternion
++    produces NaN - either way ``is_initialized()`` stays False forever
++    until the next anchor, with nothing in the log to explain why.
++    Found live: a fake-solve injection went through with exactly this
++    kind of anchor and dead-reckoning never engaged for the rest of
++    the session. Validate here so the caller can retry / warn instead.
++    """
++    if imu_sample is None:
++        return None
++    q = imu_sample.quat
++    if math.isnan(q.w) or math.isnan(q.x) or math.isnan(q.y) or math.isnan(q.z):
++        return None
++    if abs(q) < 1e-6:
++        return None
++    return q
++
++# Fake-solve simulation (see fake_solve_active): angular *rate* (not
++# cumulative angle) above which the telescope is considered "being
++# moved by hand", below which it's "settled" - mimics a real solve
++# landing right after a user stops slewing. Needs real-world tuning;
++# picked to sit clearly above hand-tremor/sensor-noise rates and
++# clearly below even a slow deliberate pan.
++FAKE_SOLVE_SETTLE_RATE_THRESHOLD = np.deg2rad(2.0)  # rad/s
++
+ 
+ def integrator(
+     shared_state,
+@@ -76,6 +114,7 @@ def integrator(
+     is_debug=False,
+     command_queue=None,
+     camera_command_queue=None,
++    fake_solve_command_queue=None,
+ ):
+     MultiprocLogging.configurer(log_queue)
+     if is_debug:
+@@ -97,6 +136,12 @@ def integrator(
+         # Epoch of the last estimate we published; gate re-publishing on it.
+         last_published_time = time.time()
+ 
++        # Fake-solve simulation motion tracking (see fake_solve_active) -
++        # previous IMU sample and whether we were moving last loop, used to
++        # detect a moving -> settled transition.
++        fake_solve_prev_imu: Optional[ImuSample] = None
++        fake_solve_was_moving = False
++
+         was_replaying = False
+         telemetry = TelemetryManager(
+             cfg, shared_state, console_queue, camera_command_queue
+@@ -109,6 +154,78 @@ def integrator(
+ 
+             pointing_updated = False
+ 
++            # 0. Drain fake-solve injection commands (a one-time "point here"
++            # seed, distinct from the settle-triggered re-anchor in 2b
++            # below). Applied directly in this process, not via
++            # solver_queue: that queue also carries real solve results,
++            # and the exclusivity guard below (which must drop those while
++            # fake_solve_active) cannot tell a real SuccessfulSolve apart
++            # from one that started life as a FakeSolve once both are the
++            # same message type in the same queue - found live: a second
++            # fake-solve injection went through solver_queue and was
++            # silently dropped by the guard, since fake_solve_active was
++            # already True from the first one. Applying here instead makes
++            # every fake-solve state change (initial seed + settle
++            # re-anchor) go through the same in-process path, and the
++            # exclusivity guard only ever has to reason about solver_queue.
++            if fake_solve_command_queue is not None:
++                while True:
++                    try:
++                        fake_command = fake_solve_command_queue.get(block=False)
++                    except queue.Empty:
++                        break
++                    if isinstance(fake_command, FakeSolve):
++                        now = time.time()
++                        pointing = Pointing(RA=fake_command.ra, Dec=fake_command.dec, Roll=0.0)
++
++                        imu_anchor = _valid_imu_anchor(shared_state.imu())
++                        retries = 0
++                        while (
++                            imu_anchor is None
++                            and retries < FAKE_SOLVE_ANCHOR_RETRIES
++                        ):
++                            time.sleep(FAKE_SOLVE_ANCHOR_RETRY_DELAY)
++                            imu_anchor = _valid_imu_anchor(shared_state.imu())
++                            retries += 1
++
++                        if imu_anchor is None:
++                            logger.warning(
++                                "Fake solve injected without a usable IMU "
++                                "anchor (RA=%.4f, Dec=%.4f) after %d retries "
++                                "- dead-reckoning will not track until the "
++                                "next fake-solve injection or settle "
++                                "re-anchor",
++                                fake_command.ra,
++                                fake_command.dec,
++                                retries,
++                            )
++                        else:
++                            logger.info(
++                                "Fake solve injected: RA=%.4f, Dec=%.4f",
++                                fake_command.ra,
++                                fake_command.dec,
++                            )
++
++                        shared_state.set_fake_solve_active(True)
++                        estimate = _apply_successful_solve(
++                            estimate,
++                            SuccessfulSolve(
++                                camera=pointing,
++                                aligned=pointing,
++                                imu_anchor=imu_anchor,
++                                last_solve_attempt=now,
++                                last_solve_success=now,
++                            ),
++                            idr,
++                        )
++                        pointing_updated = True
++                    else:
++                        logger.warning(
++                            "Unknown fake-solve command (type=%s): %r",
++                            type(fake_command).__name__,
++                            fake_command,
++                        )
++
+             # 1. Pull the next message — from the replay stream when
+             #    replaying, otherwise from the solver queue.
+             solve_result: Optional[SolveResult] = None
+@@ -140,7 +257,17 @@ def integrator(
+                 except queue.Empty:
+                     pass
+ 
+-            if isinstance(solve_result, SuccessfulSolve):
++            # While fake-solve simulation is active, it is authoritative and
++            # exclusive: real queue-sourced solve results (a genuine camera
++            # solve, or one against the debug_solve canned image - either
++            # way, "real" from this process's point of view) are drained
++            # (above) but never applied. Without this guard, the very next
++            # real solve success silently overwrites the simulated position -
++            # found live during testing. Only the settle-detection block
++            # (2b, below) is allowed to update the estimate while active.
++            if shared_state.fake_solve_active():
++                pass
++            elif isinstance(solve_result, SuccessfulSolve):
+                 telemetry.record_solve(
+                     solve_result, predicted=estimate.pointing.aligned.estimate
+                 )
+@@ -188,6 +315,68 @@ def integrator(
+                 if _advance_with_imu(estimate, idr, imu):
+                     pointing_updated = True
+ 
++            # 2b. Fake-solve simulation: mimic a human moving a telescope by
++            # hand (see docs/concepts/pifinder_fake_solve_simulation.md) -
++            # while active, watch the *rate* of real IMU motion (not the
++            # cumulative angle-since-anchor _advance_with_imu above already
++            # uses) to tell "currently being slewed" apart from "settled".
++            # On the moving -> settled transition, treat the current
++            # (already dead-reckoned) estimate as a fresh "solve" - exactly
++            # what happens for real once a user stops panning and the
++            # solver catches up on the next frame. Reuses
++            # _apply_successful_solve() unmodified: the only difference
++            # from a real solve is where camera/aligned came from.
++            if shared_state.fake_solve_active() and imu and not telemetry.replaying:
++                if fake_solve_prev_imu is None:
++                    # First sample since fake mode was armed (or since the
++                    # process started) - nothing to compare against yet.
++                    fake_solve_prev_imu = imu
++                else:
++                    # Only evaluate motion - and only advance
++                    # fake_solve_prev_imu - on a genuinely *new* IMU sample.
++                    # The integrator loop can run several times per IMU
++                    # sample; comparing a sample against itself always gives
++                    # dt == 0. Bug found live: this used to reassign
++                    # fake_solve_prev_imu unconditionally every loop tick, so
++                    # dt was almost never > 0 and the rate was never
++                    # computed - the settle transition effectively never
++                    # fired on a real, sustained hand-move.
++                    dt = imu.timestamp - fake_solve_prev_imu.timestamp
++                    if dt > 0:
++                        angular_rate = (
++                            qt.get_quat_angular_diff(
++                                fake_solve_prev_imu.quat, imu.quat
++                            )
++                            / dt
++                        )
++                        is_moving = angular_rate > FAKE_SOLVE_SETTLE_RATE_THRESHOLD
++                        if (
++                            fake_solve_was_moving
++                            and not is_moving
++                            and estimate.imu_anchor is not None
++                            and estimate.pointing.camera.estimate is not None
++                            and estimate.pointing.aligned.estimate is not None
++                        ):
++                            now = time.time()
++                            logger.info(
++                                "Fake solve: motion settled, treating current "
++                                "estimate as a fresh solve"
++                            )
++                            estimate = _apply_successful_solve(
++                                estimate,
++                                SuccessfulSolve(
++                                    camera=estimate.pointing.camera.estimate,
++                                    aligned=estimate.pointing.aligned.estimate,
++                                    imu_anchor=imu.quat,
++                                    last_solve_attempt=now,
++                                    last_solve_success=now,
++                                ),
++                                idr,
++                            )
++                            pointing_updated = True
++                        fake_solve_was_moving = is_moving
++                        fake_solve_prev_imu = imu
++
+             # 3. Publish if we updated something newer than what we last sent.
+             if (
+                 pointing_updated
+@@ -281,10 +470,21 @@ def _apply_failed_solve(
+     failed while the IMU sat in its deadband — even though dead-reckoning
+     still knows where we point. ``estimate_time`` is likewise left intact;
+     a fresh epoch only attaches when the IMU actually advances the cells.
++
++    ``last_solve_success`` is only overwritten when the incoming result
++    actually has one: the solver process tracks its own local
++    ``last_solve_success`` (only ever set by a *real* camera solve) and
++    that is what every ``FailedSolve`` carries. A fake-solve simulation
++    (see ``fake_solve_active``) can advance ``estimate.last_solve_success``
++    from *outside* the solver's own real-solve bookkeeping - without this
++    guard, the very next real failed attempt would silently regress it
++    back to the solver's own (still-``None``, if the sky was never really
++    solved this session) value.
+     """
+     estimate.diagnostics = result.diagnostics
+     estimate.last_solve_attempt = result.last_solve_attempt
+-    estimate.last_solve_success = result.last_solve_success
++    if result.last_solve_success is not None:
++        estimate.last_solve_success = result.last_solve_success
+     estimate.solve_source = SolveSource.CAMERA_FAILED
+     return estimate
+ 

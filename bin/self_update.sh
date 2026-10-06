@@ -48,7 +48,24 @@ self_update_pifinder_stellarmate() {
         echo "ℹ️  Self-update: detached HEAD in ${repo_dir} - skipping." >&2
         return 0
     fi
-    upstream="$(git -C "$repo_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"
+    # Found live (2026-09-15): when branch.<name>.merge/.remote are
+    # configured but the remote-tracking ref they point at no longer exists
+    # (e.g. the branch's own remote counterpart was deleted after merging,
+    # which every branch used in this session's own workflow goes through) -
+    # `git rev-parse @{u}` FAILS (exit 128) but still prints the literal,
+    # unresolved argument "@{u}" to stdout, not an empty string. Capturing
+    # only stdout (as this line used to) then read that literal "@{u}" as if
+    # it were a real branch name, silently skipping past the "no upstream"
+    # check below and later hard-aborting with a misleading "diverged from
+    # '@{u}'" error instead of the clean skip this exact situation deserves
+    # (same as a genuinely unconfigured upstream). Checking the command's
+    # own exit status - not just whether its output happens to look empty -
+    # catches this correctly.
+    if ! upstream="$(git -C "$repo_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+        echo "ℹ️  Self-update: branch '${branch}' has no resolvable upstream (removed on the" >&2
+        echo "   remote, or never configured) - skipping." >&2
+        return 0
+    fi
     if [ -z "$upstream" ]; then
         echo "ℹ️  Self-update: branch '${branch}' has no upstream configured - skipping." >&2
         return 0
@@ -102,5 +119,24 @@ self_update_pifinder_stellarmate() {
 
     echo "✅ Self-update: ${branch} updated ${before:0:8} -> ${after:0:8}."
     echo "🔁 Re-executing with the freshly updated code ..."
-    exec env PIFINDER_STELLARMATE_SELF_UPDATED=1 "$0" "$@"
+    # Found live (2026-09-13): bare "$0" breaks this exec whenever the entry
+    # point was invoked as a relative path with no "/" in it (e.g. "bash
+    # pifinder_stellarmate_setup.sh" from inside the repo directory, the
+    # natural way to run it over SSH) - both `exec` and `env` do a $PATH
+    # lookup on a bare command name, which fails since the script isn't
+    # installed anywhere on $PATH: "env: 'pifinder_stellarmate_setup.sh':
+    # No such file or directory", aborting the whole run right after the
+    # self-update it just proudly reported succeeding. The GUI's own
+    # /start route never hits this (server.py always launches the entry
+    # point with an absolute path), which is why this went unnoticed there
+    # - same class of bug pifinder_stellarmate_setup.sh's own SCRIPT_PATH
+    # already exists to avoid for its venv re-exec calls, just missed here.
+    # Resolved independently (not by asking the caller to pass its own
+    # SCRIPT_PATH in) so this works identically for both documented entry
+    # points regardless of where each one's own repo root sits relative to
+    # $0 - self_update.sh runs before either does any `cd`, so $0's own
+    # directory is still resolvable from the current working directory.
+    local self_path
+    self_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    exec env PIFINDER_STELLARMATE_SELF_UPDATED=1 "$self_path" "$@"
 }

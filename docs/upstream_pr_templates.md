@@ -16,7 +16,8 @@ isolated worktree, not the live, patched `~/PiFinder` checkout. PR 1 in particul
 filed.
 
 Recommended order: **PR 1 → PR 2 → PR 3**, each depending on the previous being merged (or at least
-open) on `main`. PRs 4–7 are independent of that chain and of each other.
+open) on `main`. PRs 4–10 are independent of that chain and of each other (PR 8 and PR 10 both
+touch `pos_server.py` but are independent changes — file as separate commits).
 
 ---
 
@@ -309,6 +310,168 @@ post-solve sleep policy.
 > - Is re-entering `warmup` (rather than a lighter recovery state) the right response to losing an
 >   established solve, or too aggressive?
 > - Any existing telemetry/user reports this should be weighed against?
+
+---
+
+## PR 8 — Bugfix: `pos_server.py` returns a wrong-format placeholder instead of "no position yet"
+
+**Depends on**: nothing. **Priority: high** — this is a real, reproducible cause of a mount slewing to
+RA0h/Dec0deg on any LX200-speaking consumer (this project's own Mount Bridge, LX200 OnStep, and
+presumably any other software driving a mount off PiFinder's LX200-emulated position).
+
+Found while root-causing a recurring "mount lands at RA0/Dec0" incident (basic-memory
+`pifinder-stellarmate/00107`/`00108`) that this project's own `diffs/pos_server_py.diff` already
+fixes. Re-verify the exact line numbers/context still match current `main` before filing (this
+project's copy was last checked against a live checkout at commit `beb34519`, not necessarily the
+current tip).
+
+### Suggested title
+`Fix: get_telescope_ra/get_telescope_dec return a malformed placeholder instead of signaling "no position yet"`
+
+### Suggested body
+
+> ## What's broken
+>
+> `pos_server.py`'s `get_telescope_ra()`/`get_telescope_dec()` (the LX200 `:GR#`/`:GD#` handlers) both
+> return the literal string `"+00*00'01"` whenever `solution.has_pointing()` is False (no valid
+> pointing yet - e.g. right after startup, before the first solve lands). Two problems with this:
+>
+> 1. It's a syntactically valid, near-zero coordinate rather than a genuine "no position" signal - any
+>    downstream LX200 client (a real mount driver, an app like SkySafari, this project's own INDI
+>    Mount Bridge integration) parses it as PiFinder actually pointing near RA=0h/Dec=0deg, and can act
+>    on it as if it were real - including slewing a mount there.
+> 2. It's the wrong format for `get_telescope_ra()` specifically - `"+00*00'01"` is a declination-style
+>    string (`+DD*MM'SS`), not the `HH:MM:SS` format an RA response is supposed to be in. A client
+>    parsing this as RA gets something even more nonsensical than a plain zero.
+>
+> ## How I found it
+>
+> Chasing a live, reproducible incident where a simulated mount repeatedly slewed to RA0/Dec0 whenever
+> PiFinder briefly had no fresh solve (e.g. right after a restart). Traced it to this placeholder being
+> read by an LX200 consumer and treated as a real, if stale, position.
+>
+> ## The fix
+>
+> Return `None` instead in both functions - `handle_client()` already treats a falsy return as "send
+> nothing back", which a well-behaved LX200 client (this project's own `LX200_PIFINDER::ReadScopeStatus()`,
+> for instance) already handles as a read/communication failure rather than a real coordinate, since the
+> expected trailing `#` terminator never arrives.
+>
+> ```python
+> def get_telescope_ra(shared_state, _):
+>     solution = shared_state.solution()
+>     dt = shared_state.datetime()
+>     if not solution or not dt or not solution.has_pointing():
+>         return None
+>     ...
+>
+> def get_telescope_dec(shared_state, _):
+>     solution = shared_state.solution()
+>     dt = shared_state.datetime()
+>     if not solution or not dt or not solution.has_pointing():
+>         return None
+>     ...
+> ```
+>
+> ## Open questions for maintainers
+>
+> - Is there an existing convention elsewhere in `pos_server.py` for "no data yet" LX200 responses that
+>   this should follow instead of a bare `None`?
+> - Should SkySafari (this server's primary documented client, per the module docstring) be specifically
+>   tested against this change - does it handle a dropped/no-terminator response gracefully, or does it
+>   need something more RFC-compliant for "unknown position"?
+
+---
+
+## PR 9 — Bugfix: `POST /api/fake_solve` returns an arbitrary RA near the celestial pole
+
+**Depends on**: nothing. **Priority: medium** — silently wrong data with no error, but only near the
+pole. Filed as [brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645); the fix
+is already in `diffs/api_extensions_py.diff`.
+
+### Suggested title
+
+`Fix: /api/fake_solve returns an arbitrary RA when dec is near the celestial pole`
+
+### Suggested body
+
+> ## What's broken
+>
+> `api_fake_solve()` converts the injected JNow RA/Dec to J2000 through a skyfield Cartesian vector,
+> then recovers RA via `.radec()` (an `atan2` over the vector's X/Y components). Near the pole those
+> components shrink toward zero, so floating-point noise — not the caller's RA — determines the
+> result. Injecting `dec=90` with two different RA values returns the same wrong RA both times;
+> `dec=45` round-trips correctly.
+>
+> ## The fix
+>
+> Near the pole, keep the caller's original (uncorrected-for-precession) RA instead of the
+> ill-conditioned recomputed one. Dec stays accurate to the true pole.
+>
+> ```python
+> if abs(dec_jnow) >= 89.9:
+>     ra = ra_jnow
+> ```
+>
+> right after `ra`/`dec` are computed, before `FakeSolve(ra=ra, dec=dec)` is queued.
+
+---
+
+## PR 10 — `pos_server.py` serves only one LX200 client at a time
+
+**Depends on**: nothing. Independent of PR 8, though both touch `pos_server.py` — file them as
+separate commits. **Priority: medium/high** — a hard limitation for any multi-client setup, not a
+bug with a workaround.
+
+The rework is already in `diffs/pos_server_py.diff`; the full design (per-shared-resource
+concurrency analysis, eventuality table, test plan) is in
+`docs/concepts/pos_server_multi_client_architecture.md`. Re-verify line numbers/context against
+current `main` before filing — this project's copy was last generated against a live checkout.
+
+### Suggested title
+
+`pos_server.py: serve LX200 clients concurrently (one thread per connection)`
+
+### Suggested body
+
+> ## What's limited
+>
+> `run_server()`'s accept loop calls `handle_client()` inline, so `pos_server.py` (port 4030) serves
+> exactly one client at a time. A second connection gets no response at all — not even a
+> communication error — until the first one disconnects.
+>
+> The module docstring names SkySafari as *the* client, but in practice several independent clients
+> connect, potentially at once:
+>
+> | Client | How it connects |
+> |---|---|
+> | SkySafari (iOS/iPadOS) | directly, LX200/TCP to :4030 |
+> | Stellarium | directly, LX200/TCP to :4030 (also sends the ACK byte) |
+> | KStars / Ekos (or any INDI client) | indirectly — an INDI telescope driver that is itself a client of :4030 |
+>
+> "SkySafari on the phone while KStars runs on the laptop" is an ordinary setup and it currently
+> doesn't work.
+>
+> ## The change
+>
+> - `run_server()` spawns one daemon thread per accepted connection (`listen(1)` → `listen(5)`).
+> - The module-globals that held per-connection state (`is_stellarium`,
+>   `stellarium_latitude`/`stellarium_longitude`, `sr_result`) become `threading.local()`. This also
+>   removes the last connection-unscoped part of a cross-client `:Sr`/`:Sd` pairing hazard.
+> - The `sequence` counter is lock-guarded (two simultaneous GoTo pushes).
+> - A passive connection cap (N per IP, M global) so a broken reconnect loop can't exhaust the
+>   process. (An earlier attempt to *actively* drop an older same-IP connection was removed — real
+>   independent clients can share an IP, e.g. two local INDI drivers.)
+>
+> Behavior is unchanged for a single client.
+>
+> ## Open questions for maintainers
+>
+> - Acceptable to bump the `listen()` backlog and add a thread per connection here, or would you
+>   prefer `selectors`/asyncio?
+> - Where should the connection-cap constants live (module constants, `config.json`)?
+> - Is there appetite for concurrent clients at all, or is single-client considered sufficient for the
+>   documented SkySafari use case?
 
 ---
 

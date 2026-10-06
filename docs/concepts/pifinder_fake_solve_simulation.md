@@ -1,11 +1,11 @@
 # Concept: PiFinder Fake-Solve Simulation (Safe, Weather-Independent Mount Bridge Testing)
 
-> **Status: concept — not yet implemented.** Written via this project's `cpt` (concept)
-> convention — see `basic-memory/basic-memory/00020_bm-cpt-command-system.md` and
-> `00021_bm-documentation-depth-standard.md` for the standard this document follows. Tracked as
+> **Status: implemented and in active use** (`/api/fake_solve`, exercised throughout this project's
+> other Full-Simulation tooling and docs). Tracked as
 > [GitHub issue #106](https://github.com/apos/PiFinder_Stellarmate/issues/106) (`concept` +
-> `pifinder` labels) on [Project #15](https://github.com/users/apos/projects/15) — update that
-> issue if this concept is promoted, revised, or dropped.
+> `pifinder` labels, kept open) on [Project #15](https://github.com/users/apos/projects/15) — a real
+> bug (a degenerate IMU anchor silently killing dead-reckoning for the rest of the session) was
+> found and fixed via live testing, see [issue #116](https://github.com/apos/PiFinder_Stellarmate/issues/116).
 
 ## 1. Overview
 
@@ -123,8 +123,8 @@ diverge from real behavior; it feeds the *one* real pipeline a synthetic input.
   avoid (a simulation that behaves subtly differently from reality, hiding the real bug) is
   avoided by injecting at the earliest possible point (`solver_queue`) and changing nothing
   downstream.
-- **Follow the established `diffs/` patching convention** ([[00004_setup-mechanism]] /
-  `docs/upstream_patch_inventory.md`), not a standalone fork feature developed in isolation. The
+- **Follow the established `diffs/` patching convention** (`docs/upstream_patch_inventory.md`),
+  not a standalone fork feature developed in isolation. The
   existing `debug_solve` feature (itself an upstream-PR candidate, `docs/upstream_patch_inventory.md`
   §1.1) is the direct precedent to follow: a `SharedStateObj` flag, a direct `ui_command`
   trigger path in `main.py`, and a `POST` API endpoint in `api_extensions.py`.
@@ -187,7 +187,7 @@ realistic dynamic conditions, which neither #79 nor #107 do.
 ## 8. Installation / Dependencies
 
 Ships the same way `debug_solve` does — as `diffs/*.diff` file(s) against upstream PiFinder,
-applied by `bin/patch_PiFinder_installation_files.sh` (see [[00004_setup-mechanism]]). Concretely,
+applied by `bin/patch_PiFinder_installation_files.sh` (see `docs/upstream_patch_inventory.md`). Concretely,
 likely touches:
 
 - `PiFinder/integrator.py` or a new command queue module (the fake-solve command path — exact
@@ -201,16 +201,16 @@ likely touches:
 
 No new external dependencies. Once implemented, gets its own entry in
 `docs/upstream_patch_inventory.md` §1 (potentially-relevant-to-upstream, following the `debug_solve`
-precedent exactly) and a ready-to-file template in `docs/upstream_pr_templates.md`, per
-[[basic-memory/00018_bm-upstream-pr-strategy]].
+precedent exactly) and a ready-to-file template in `docs/upstream_pr_templates.md`.
 
 ## 9. Test Strategy
 
-- **Baseline verification** (per [[basic-memory/00018_bm-upstream-pr-strategy]]): before writing
-  any patch, confirm in a fresh, isolated worktree off `apos/PiFinder`'s `release` branch (the
-  branch that actually matches this project's pinned `version.txt` — currently `2.6.0` — see
-  [[00085_pifinder-version-pinning-release-vs-main]]) that the injection point behaves as
-  documented in §4, not as assumed.
+- **Baseline verification, directly against `~/PiFinder`** (this is standard local StellarMate
+  development, **not** the separate/rare upstream-PR-preparation process described in
+  `docs/upstream_pr_templates.md`, which does not apply here): before writing any
+  patch, confirm on the live, already-working `~/PiFinder` checkout (has venv/submodules/catalogs
+  already set up — no second environment needed) that the injection point behaves as documented in
+  §4, not as assumed.
 - **Functional verification**: `py_compile`/lint at minimum; live functional testing via the
   `pifinder-remote` skill (headless PiFinder instance, driven via simulated keypresses, state read
   back via its API) to actually prove a fake-aligned position dead-reckons correctly under
@@ -234,8 +234,8 @@ precedent exactly) and a ready-to-file template in `docs/upstream_pr_templates.m
   assumption that setting one flag suffices everywhere.
 - **Upstream-relevance not yet decided**: likely a genuinely useful capability for anyone
   integrating PiFinder with external hardware (same reasoning as `debug_solve`'s own upstream case),
-  but not confirmed against `brickbots/PiFinder`'s current `main` — per
-  [[basic-memory/00018_bm-upstream-pr-strategy]], this must be freshly baseline-verified in an
+  but not confirmed against `brickbots/PiFinder`'s current `main` — per the process in
+  `docs/upstream_pr_templates.md`, this must be freshly baseline-verified in an
   isolated worktree before any PR is even drafted, regardless of how obvious it seems from this
   concept's vantage point.
 - **IMU-anchor-not-yet-available edge case** (see §4) needs a concrete decision, not left implicit.
@@ -254,9 +254,10 @@ this concept exists specifically to unblock safe, repeatable iteration on both.
 
 1. ~~Read `integrator.py`/`solver.py` properly~~ — **done**, see §4 and
    [#109](https://github.com/apos/PiFinder_Stellarmate/issues/109).
-2. **Isolated worktree off `apos/PiFinder`'s `release` branch** (2.6.0), baseline-verify current
-   `solver_queue`/integrator behavior matches this document's assumptions.
-3. **Implement** the fake-solve injection + trigger, as `diffs/*.diff` file(s), following the
+2. **Baseline-verify directly against `~/PiFinder`** (the live, working checkout — not a fresh
+   clone/worktree) that `solver_queue`/integrator behavior matches this document's assumptions.
+3. **Implement** the fake-solve injection + trigger, directly in `~/PiFinder`, then extract as
+   `diffs/*.diff` file(s) for `PiFinder_Stellarmate`, following the
    `debug_solve` precedent's file-by-file shape exactly (§8).
 4. **Functionally verify** via the `pifinder-remote` skill — prove a fake-aligned position
    dead-reckons correctly under simulated movement, and that every consumer's "simulated" signal is
@@ -264,6 +265,6 @@ this concept exists specifically to unblock safe, repeatable iteration on both.
 5. **Deploy locally** via `bin/patch_PiFinder_installation_files.sh`, use it immediately to
    reproduce and verify fixes for #79 and #107 indoors.
 6. **Once stable**, add the `docs/upstream_patch_inventory.md` §1 entry +
-   `docs/upstream_pr_templates.md` template, and only then — after an explicit approval gate, per
-   [[basic-memory/00018_bm-upstream-pr-strategy]] — draft and open the actual upstream PR against
+   `docs/upstream_pr_templates.md` template, and only then — after an explicit approval gate — draft
+   and open the actual upstream PR against
    `brickbots/PiFinder`'s `main`.

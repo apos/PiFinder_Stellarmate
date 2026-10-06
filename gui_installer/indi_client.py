@@ -27,6 +27,7 @@ with a strict incremental XML parser; verified live against a real
 property and 25 others) before being written here as this module.
 """
 import socket
+import subprocess
 import time
 import xml.parsers.expat
 from typing import Optional
@@ -34,7 +35,22 @@ from xml.sax.saxutils import escape as _xml_escape
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7624
-DEFAULT_TIMEOUT = 3.0
+
+# Named timeout tiers, consolidated here instead of scattered ad hoc literals
+# across server.py/indi_client.py (each value already existed somewhere before
+# this - this only gives them one shared name and place, not new numbers).
+# Pick the tier that matches *why* a call is timed the way it is, not just
+# "whatever number happened to work":
+DEFAULT_TIMEOUT = 3.0        # interactive: a user just clicked something and is watching for a result
+TIMEOUT_BACKGROUND_POLL = 7.0        # passive, periodic UI polling - indiserver occasionally answers slowly
+                                      # under load, and flapping the UI over that is worse than a slow number
+                                      # (see /api/mount_bridge_status's own long-standing comment)
+DEVICE_TIMEOUT_BACKGROUND_POLL = 3.0  # the extra per-device lookups nested inside that same background poll
+TIMEOUT_FAST_POLL = 2.0        # tight-cadence, best-effort readouts where a single miss just skips one
+                                # update (e.g. mount_bridge_drift()) - never gates a button's enabled state
+TIMEOUT_QUICK_RETRY = 1.0      # short-lived polling loop with its own retry/backoff already built around it
+                                # (e.g. waiting for a just-restarted driver to answer) - a slow individual
+                                # attempt should fail fast so the loop can just try again
 
 _VECTOR_TAGS = {
     "defTextVector": "text",
@@ -53,6 +69,7 @@ def get_properties(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     timeout: float = DEFAULT_TIMEOUT,
+    stop_after: Optional[set] = None,
 ) -> dict:
     """
     Opens a short-lived connection to indiserver, sends getProperties for
@@ -68,6 +85,16 @@ def get_properties(
     is all this read-only status feature needs (Phase 1). It does not need
     to distinguish a fresh define from a later update (setXxxVector) since
     it never keeps the connection open long enough to see one.
+
+    `stop_after` (2026-08-30): an optional set of property names for `device`
+    - once all of them have been seen, return immediately instead of relying
+    on the general SETTLE_GAP quiet-period below. Only useful together with
+    `device`, for a caller that knows in advance it only needs a handful of
+    specific, early-defined base properties (e.g. just CONNECTION) from a
+    device that might otherwise stream continuous live updates for OTHER
+    properties (a tracking mount's coordinates) fast enough that a
+    quiet-period never naturally occurs - see mount_bridge_status()'s two
+    per-device connection-state lookups for exactly this case.
     """
     result: dict = {}
     current: dict = {}
@@ -144,21 +171,53 @@ def get_properties(
         # get_properties() call against an already-connected "Telescope
         # Simulator" hung indefinitely under the old silence-based version
         # of this function - fixed by capping total read time instead,
-        # regardless of how much traffic keeps arriving.
+        # regardless of how much traffic keeps arriving. This deadline
+        # remains the ultimate safety net below - it's what still protects
+        # against exactly that old hang.
+        #
+        # SETTLE_GAP (2026-08-30, direct feedback: "so kann man doch nicht
+        # ernsthaft ins Rennen gehen" - measured live, exact 7.01s/13.01s
+        # timings, see basic-memory pifinder-stellarmate): before this, the
+        # loop above always ran until the FULL deadline even on a completely
+        # successful, fast reply - a live device's connection never gives it
+        # a "not chunk" EOF to stop on early (indiserver keeps it open), so
+        # every single call against an actively-connected device burned its
+        # entire timeout budget for no reason. mount_bridge_status() chains
+        # up to three such calls (7s + 3s + 3s), which is exactly where the
+        # measured 13.01s came from. Over loopback, indiserver sends a
+        # device's whole defXxxVector burst in one or two TCP segments,
+        # essentially instantly - once we've received at least one complete
+        # element, a short SETTLE_GAP of genuine silence reliably means "that
+        # burst has finished," not "the device went quiet forever" (Mount
+        # Bridge/a tracking mount's *live* setXxxVector updates afterward are
+        # spaced by its own polling period, far longer than this gap). If
+        # nothing at all has arrived yet, this still waits out the full
+        # remaining deadline exactly as before - only the already-got-data
+        # case gets faster, the already-documented no-data timeout is
+        # unchanged.
+        SETTLE_GAP = 0.4
         deadline = time.monotonic() + timeout
+        got_any_element = False
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                sock.settimeout(remaining)
+                wait_for = min(remaining, SETTLE_GAP) if got_any_element else remaining
+                sock.settimeout(wait_for)
                 try:
                     chunk = sock.recv(65536)
                 except socket.timeout:
-                    break
+                    if got_any_element:
+                        break  # settled - the initial burst is done
+                    continue  # nothing at all yet - keep waiting out the full deadline
                 if not chunk:
                     break
                 parser.Parse(chunk, False)
+                if result:
+                    got_any_element = True
+                if stop_after and device and stop_after.issubset(result.get(device, {}).keys()):
+                    break  # got everything this caller asked for - no need to wait for a quiet gap at all
         except xml.parsers.expat.ExpatError as e:
             raise INDIClientError(f"Malformed INDI XML from indiserver: {e}") from e
         except OSError as e:
@@ -208,6 +267,20 @@ def mount_bridge_status(
         element is "On", normalized to set_coupling_mode()'s own short-form
         vocabulary - only meaningful when coupling_mode is MODE_AUTO_CORRECT
       - "drift_arcmin": float or None - current DRIFT_STATUS reading
+      - "drift_threshold": float or None - current DRIFT_THRESHOLD reading -
+        added 2026-08-06: status_page.html's own Threshold input field had
+        no way to ever learn the driver's actual current value (a page
+        reload always showed its hardcoded HTML default, 5, regardless of
+        what was really set) - found live to cause the field showing a
+        stale value that a later coupling-preset click would then push,
+        silently overwriting a real, different threshold the driver
+        already had.
+      - "target_source_age_sec": float or None - seconds since TARGET_SOURCE
+        last actually changed (see pifinder_mount_bridge.h's own comment) -
+        added 2026-08-31 for the Control Center's drift-guidance banner.
+      - "solve_freshness_max_age_sec": float or None - the driver's own
+        SOLVE_FRESHNESS max-age setting, i.e. what isPiFinderSolveFresh()
+        itself compares against - added 2026-08-31, same purpose.
       - "settings_host"/"settings_port": str or None - BRIDGE_SETTINGS'
         own INDISERVER_HOST/PORT, i.e. where the *driver itself* thinks
         indiserver is - not necessarily this function's own host/port args
@@ -218,6 +291,16 @@ def mount_bridge_status(
         default) - a quick "is Mount Bridge pointed at the right things"
         sanity check, surfaced in the tile per user request rather than
         only being visible via the INDI Control Panel.
+      - "mount_web_ip": str or None - the mount device's own DEVICE_ADDRESS.
+        ADDRESS, i.e. the IP the mount driver itself connects to, but only
+        when CONNECTION_MODE says that connection is CONNECTION_TCP (a
+        serial/USB-connected mount has no IP at all here). This is the same
+        IP the mount's own onboard web UI listens on (OnStep's WiFi module
+        serves both its LX200 command port and its web interface from the
+        same address) - added 2026-08-09 for the Control Center's "open all
+        the important links at once" button, no separate INDI round-trip
+        needed since mt_props below already has the mount's full property
+        set from the connection-state lookup just above it.
     All fields besides "running" are None (or False for settings_correct)
     if the device isn't running/known. `device_timeout` is shorter than
     `timeout` for the two extra per-device lookups (kept modest since this
@@ -237,25 +320,94 @@ def mount_bridge_status(
             "coupling_mode": None,
             "correction_action": None,
             "drift_arcmin": None,
+            "drift_threshold": None,
             "settings_host": None,
             "settings_port": None,
             "settings_correct": False,
+            "target_source": None,
+            "target_source_age_sec": None,
+            "solve_freshness_max_age_sec": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
+            "mount_web_ip": None,
+            "mount_type_raw": None,
+            "pifinder_mount_type": None,
+            "pifinder_screen_direction": None,
+            "orientation_state": None,
+            "align_radius": None,
+            "align_count": None,
+            "align_min_altitude": None,
+            "align_direction": None,
+            "external_hold": None,
+            "external_hold_reason": None,
         }
 
     active_devices = device_props.get("ACTIVE_DEVICES", {}).get("elements", {})
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
-    drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    drift_status_prop = device_props.get("DRIFT_STATUS", {})
+    drift_status = drift_status_prop.get("elements", {})
+    drift_threshold_elements = device_props.get("DRIFT_THRESHOLD", {}).get("elements", {})
+    align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
+    # #191: preferred-direction hard filter - whichever ALIGN_DIRECTION
+    # element is "On", normalized to the short form the GUI/API already use
+    # elsewhere (matches direction= on /api/nearby_bright_stars directly).
+    align_direction_elements = device_props.get("ALIGN_DIRECTION", {}).get("elements", {})
+    align_direction_raw = next((n for n, v in align_direction_elements.items() if v == "On"), None)
+    align_direction = {
+        "ALIGN_DIR_ANY": "ANY", "ALIGN_DIR_N": "N", "ALIGN_DIR_E": "E",
+        "ALIGN_DIR_S": "S", "ALIGN_DIR_W": "W",
+    }.get(align_direction_raw)
     bridge_settings = device_props.get("BRIDGE_SETTINGS", {}).get("elements", {})
+    # #372, docs/concepts/mount_bridge_external_hold.md §4 - see
+    # mount_bridge_drift()'s identical read for why this is read live from
+    # the driver rather than mirrored from the Control Center's own watchdog
+    # state.
+    external_hold_elements = device_props.get("EXTERNAL_HOLD", {}).get("elements", {})
+    external_hold = (
+        external_hold_elements.get("HOLD_ON") == "On" if external_hold_elements else None
+    )
+    external_hold_reason = device_props.get("EXTERNAL_HOLD_REASON", {}).get("elements", {}).get("REASON") or None
 
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
+    # #178 unified GoTo button: read-only "who does the held target come
+    # from" badge (TARGET_SOURCE_PIFINDER/TARGET_SOURCE_MOUNT) - see
+    # docs/concepts/mount_bridge_reposition_detection.md.
+    target_source_elements = device_props.get("TARGET_SOURCE", {}).get("elements", {})
+    target_source_raw = next((name for name, val in target_source_elements.items() if val == "On"), None)
+    target_source = {"TARGET_SOURCE_PIFINDER": "pifinder", "TARGET_SOURCE_MOUNT": "mount"}.get(target_source_raw)
+    # See TARGET_SOURCE_AGE's own comment in pifinder_mount_bridge.h/.cpp -
+    # how long target_source has held its current value, so a client can
+    # tell "just now" (still mid a manual PushTo, expect drift) from "days
+    # ago" (a stale badge, drift is drift). None until the driver has ever
+    # actually changed it this run.
+    target_source_age_elements = device_props.get("TARGET_SOURCE_AGE", {}).get("elements", {})
+    target_source_age_raw = target_source_age_elements.get("AGE_SEC")
+    # Same idea as isPiFinderSolveFresh() in pifinder_mount_bridge.cpp - the
+    # driver's own configured SOLVE_FRESHNESS max-age, read back so the
+    # Control Center can apply the exact same freshness gate the driver
+    # itself uses for auto-correct, instead of guessing a second constant
+    # that could silently drift out of sync with it.
+    solve_freshness_elements = device_props.get("SOLVE_FRESHNESS", {}).get("elements", {})
+    solve_freshness_max_age_raw = solve_freshness_elements.get("MAX_AGE_SEC")
+    # Mount refused a Goto/Sync outright (elevation/cable-wrap/axis limit) -
+    # distinct from ordinary drift, see MOUNT_REJECT's own comment in
+    # pifinder_mount_bridge.cpp. IPS_ALERT means still active.
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    drift_threshold_raw = drift_threshold_elements.get("THRESHOLD_ARCMIN")
     active_pifinder = active_devices.get("ACTIVE_PIFINDER") or None
     active_mount = active_devices.get("ACTIVE_MOUNT") or None
     settings_host = bridge_settings.get("INDISERVER_HOST") or None
     settings_port = bridge_settings.get("INDISERVER_PORT") or None
+    # Diagnostic only (2026-09-14): direct visibility into PIFINDER_HTTP_HOST
+    # while verifying the Control Host HTTP-host fix live - not otherwise
+    # consumed yet.
+    pifinder_http_host = bridge_settings.get("PIFINDER_HTTP_HOST") or None
     # "localhost" and "127.0.0.1" are the same thing here (the driver's own
     # default is the string "localhost") - comparing by string alone would
     # flag a perfectly fine setup as wrong.
@@ -267,13 +419,62 @@ def mount_bridge_status(
 
     pifinder_connected = None
     if active_pifinder:
-        pf_props = get_properties(device=active_pifinder, host=host, port=port, timeout=device_timeout)
+        # stop_after: only CONNECTION is actually read below - without this,
+        # a chatty device (this is the LX200 driver, not itself usually
+        # chatty, but shares this code path with the mount lookup below)
+        # could otherwise force waiting out the full SETTLE_GAP/deadline
+        # instead of returning the moment this one early-defined base
+        # property has arrived.
+        pf_props = get_properties(
+            device=active_pifinder, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION"},
+        )
         pifinder_connected = _connection_state(pf_props.get(active_pifinder))
 
     mount_connected = None
+    mount_web_ip = None
+    mount_type_raw = None
     if active_mount:
-        mt_props = get_properties(device=active_mount, host=host, port=port, timeout=device_timeout)
-        mount_connected = _connection_state(mt_props.get(active_mount))
+        # stop_after: CONNECTION/CONNECTION_MODE/TELESCOPE_MOUNT_TYPE are
+        # standard INDI::Telescope base properties basically every driver
+        # defines regardless of connection type. Deliberately NOT including
+        # DEVICE_ADDRESS here even though it's also read below - unlike the
+        # other three, it's genuinely conditional (only meaningful/defined
+        # for a TCP-capable mount, see the CONNECTION_TCP check below) -
+        # requiring it would make this fast path unreachable for any
+        # serial/USB-connected mount. Picked up opportunistically instead if
+        # it happens to arrive in the same read; mount_web_ip staying None
+        # for one poll on a TCP mount is a minor, already-tolerated "not
+        # queryable yet" case, not a functional regression. Genuinely needed
+        # here at all: an actively-tracked mount continuously streams
+        # EQUATORIAL_EOD_COORD (and, mid-coupling-correction, GOTO/SYNC-
+        # triggered updates) fast enough that the general SETTLE_GAP
+        # quiet-period may never naturally occur - this exact case is what
+        # originally produced the observed 13.01s worst-case
+        # (mount_bridge_status()'s own chained timeouts) even after adding
+        # SETTLE_GAP above.
+        mt_props = get_properties(
+            device=active_mount, host=host, port=port, timeout=device_timeout,
+            stop_after={"CONNECTION", "CONNECTION_MODE", "TELESCOPE_MOUNT_TYPE"},
+        )
+        mt_device_props = mt_props.get(active_mount)
+        mount_connected = _connection_state(mt_device_props)
+        if mt_device_props:
+            mount_connection_mode = mt_device_props.get("CONNECTION_MODE", {}).get("elements", {})
+            if mount_connection_mode.get("CONNECTION_TCP") == "On":
+                mount_web_ip = mt_device_props.get("DEVICE_ADDRESS", {}).get("elements", {}).get("ADDRESS") or None
+            # TELESCOPE_MOUNT_TYPE - standard INDI::Telescope switch, whichever
+            # element is "On" (MOUNT_ALTAZ/MOUNT_EQ_FORK/MOUNT_EQ_GEM). Reused
+            # for the "Mount" orientation badge (2026-08-09) - already fetched
+            # above for the connection-state check, no extra INDI round-trip.
+            mount_type_elements = mt_device_props.get("TELESCOPE_MOUNT_TYPE", {}).get("elements", {})
+            mount_type_raw = next((name for name, val in mount_type_elements.items() if val == "On"), None)
+
+    # PiFinder's own Mount Type/PiFinder Type status, pushed by the driver's
+    # own syncOrientationStatus() (PIFINDER_ORIENTATION property) - see
+    # docs/concepts/simulation_fidelity_and_pifinder_orientation.md §6.
+    orientation_elements = device_props.get("PIFINDER_ORIENTATION", {}).get("elements", {})
+    orientation_prop = device_props.get("PIFINDER_ORIENTATION", {})
 
     return {
         "running": True,
@@ -284,17 +485,41 @@ def mount_bridge_status(
         "mount_connected": mount_connected,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        # See mount_bridge_drift()'s matching field for why this exists.
+        "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+        "drift_threshold": float(drift_threshold_raw) if drift_threshold_raw not in (None, "") else None,
         "settings_host": settings_host,
         "settings_port": settings_port,
         "settings_correct": settings_correct,
+        "pifinder_http_host": pifinder_http_host,
+        "target_source": target_source,
+        "target_source_age_sec": float(target_source_age_raw) if target_source_age_raw not in (None, "") else None,
+        "solve_freshness_max_age_sec": float(solve_freshness_max_age_raw) if solve_freshness_max_age_raw not in (None, "") else None,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
+        "mount_web_ip": mount_web_ip,
+        "mount_type_raw": mount_type_raw,
+        "pifinder_mount_type": orientation_elements.get("MOUNT_TYPE") or None,
+        "pifinder_screen_direction": orientation_elements.get("SCREEN_DIRECTION") or None,
+        "orientation_state": orientation_prop.get("state"),
+        # #191/#217: pre-fills the Multi-Point Alignment config fields on
+        # load, same reasoning as drift_threshold above - without this a
+        # page reload always showed the HTML defaults regardless of what
+        # was actually saved/set on the driver.
+        "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
+        "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
+        "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
+        "align_direction": align_direction,
+        "external_hold": external_hold,
+        "external_hold_reason": external_hold_reason,
     }
 
 
 def mount_bridge_drift(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
-    timeout: float = 2.0,
+    timeout: float = TIMEOUT_FAST_POLL,
 ) -> dict:
     """
     Lightweight companion to mount_bridge_status(): only "PiFinder Mount
@@ -314,21 +539,143 @@ def mount_bridge_drift(
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
-        return {"running": False, "coupling_mode": None, "correction_action": None, "drift_arcmin": None}
+        return {
+            "running": False,
+            "coupling_mode": None,
+            "correction_action": None,
+            "drift_arcmin": None,
+            "mount_reject_active": False,
+            "mount_reject_message": None,
+            "align_state": None,
+            "align_point_index": None,
+            "align_point_count": None,
+            "align_point_synced": None,
+            "align_current_name": None,
+            "align_synced_names": None,
+            "external_hold": None,
+            "external_hold_reason": None,
+            "align_radius": None,
+            "align_count": None,
+            "align_min_altitude": None,
+            "align_direction": None,
+            "mount_altitude_deg": None,
+            "mount_below_horizon": None,
+            "pifinder_altitude_deg": None,
+            "pifinder_below_horizon": None,
+        }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
-    drift_status = device_props.get("DRIFT_STATUS", {}).get("elements", {})
+    drift_status_prop = device_props.get("DRIFT_STATUS", {})
+    drift_status = drift_status_prop.get("elements", {})
+    # §8.8 (docs/concepts/session_start_position_reconciliation.md): not
+    # defined at all on an older driver build (pre-this-fix) - elements.get()
+    # below then yields None throughout, same as "no reading yet", not an
+    # error. IPS_ALERT is the driver's own signal for "at/below the horizon
+    # safety margin" (see HORIZON_SAFETY_MARGIN_DEG in the C++ source) -
+    # trust that directly rather than re-deriving a threshold here.
+    mount_horizon_prop = device_props.get("MOUNT_HORIZON_STATUS", {})
+    mount_horizon_elements = mount_horizon_prop.get("elements", {})
+    mount_altitude_raw = mount_horizon_elements.get("ALTITUDE_DEG")
+    mount_altitude_deg = float(mount_altitude_raw) if mount_altitude_raw not in (None, "") else None
+    mount_below_horizon = (mount_horizon_prop.get("state") == "Alert") if mount_altitude_deg is not None else None
+    # PiFinder's own altitude - same idea as MountHorizonStatusNP above, the
+    # other side of a Sync. Lets the GUI pre-empt "Sync mount from PiFinder"
+    # before the driver refuses it (direct feedback: a night-field user
+    # won't see the driver log's refusal message).
+    pifinder_horizon_prop = device_props.get("PIFINDER_HORIZON_STATUS", {})
+    pifinder_horizon_elements = pifinder_horizon_prop.get("elements", {})
+    pifinder_altitude_raw = pifinder_horizon_elements.get("ALTITUDE_DEG")
+    pifinder_altitude_deg = float(pifinder_altitude_raw) if pifinder_altitude_raw not in (None, "") else None
+    pifinder_below_horizon = (pifinder_horizon_prop.get("state") == "Alert") if pifinder_altitude_deg is not None else None
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
     drift_raw = drift_status.get("DRIFT_ARCMIN")
+    mount_reject_prop = device_props.get("MOUNT_REJECT", {})
+    mount_reject_active = mount_reject_prop.get("state") == "Alert"
+    mount_reject_message = mount_reject_prop.get("elements", {}).get("MESSAGE") or None
+
+    # #191/#217: Multi-Point Alignment's own coarse state (MULTI_POINT_ALIGN
+    # itself has no numeric elements worth reading - it's a Start/Stop
+    # switch pair, "align_state" here is its *vector* state Idle/Busy/Ok/
+    # Alert) plus ALIGN_PROGRESS's poll-friendly point-by-point numbers -
+    # added alongside drift/coupling_mode in this same fast-poll companion
+    # (not mount_bridge_status()) because progress changes on the same
+    # multi-second cadence as drift while a sequence is running.
+    align_state = device_props.get("MULTI_POINT_ALIGN", {}).get("state")
+    align_progress = device_props.get("ALIGN_PROGRESS", {}).get("elements", {})
+    # 2026-09-27, direct feedback: show which star is being solved right
+    # now, not just "1/2 points" - ALIGN_PROGRESS_NAMES is the driver's
+    # companion text vector to ALIGN_PROGRESS (same cadence, just names
+    # instead of numbers; empty string when PiFinder returned no name for
+    # that candidate).
+    align_progress_names = device_props.get("ALIGN_PROGRESS_NAMES", {}).get("elements", {})
+    # #191/#217: found live (2026-08-10, direct feedback - "die Werte werden
+    # immer wieder auf Default gesetzt") that relying solely on
+    # mount_bridge_status() (gated behind role/wmServerRunning checks in the
+    # frontend, 20s cadence) left the config fields stuck on their HTML
+    # defaults whenever that slower poll's own gating didn't fire for
+    # whatever reason - added here too, on the same always-on fast poll the
+    # Threshold/drift fields already trust, so reading them back is as
+    # reliable as everything else on this row.
+    # #372, docs/concepts/mount_bridge_external_hold.md §4: read live from the
+    # driver's own properties, not just mirrored from whatever the Control
+    # Center's guiding watchdog last wrote - a hand-set EXTERNAL_HOLD (INDI
+    # Control Panel, testing) must show up here too.
+    external_hold_elements = device_props.get("EXTERNAL_HOLD", {}).get("elements", {})
+    external_hold = (
+        external_hold_elements.get("HOLD_ON") == "On" if external_hold_elements else None
+    )
+    external_hold_reason = device_props.get("EXTERNAL_HOLD_REASON", {}).get("elements", {}).get("REASON") or None
+    align_config_elements = device_props.get("ALIGN_CONFIG", {}).get("elements", {})
+    # #191: preferred-direction hard filter - whichever ALIGN_DIRECTION
+    # element is "On", normalized to the short form the GUI/API already use
+    # elsewhere (matches direction= on /api/nearby_bright_stars directly).
+    align_direction_elements = device_props.get("ALIGN_DIRECTION", {}).get("elements", {})
+    align_direction_raw = next((n for n, v in align_direction_elements.items() if v == "On"), None)
+    align_direction = {
+        "ALIGN_DIR_ANY": "ANY", "ALIGN_DIR_N": "N", "ALIGN_DIR_E": "E",
+        "ALIGN_DIR_S": "S", "ALIGN_DIR_W": "W",
+    }.get(align_direction_raw)
+
+    def _int_or_none(raw):
+        return int(float(raw)) if raw not in (None, "") else None
 
     return {
         "running": True,
         "coupling_mode": coupling_mode,
         "correction_action": correction_action,
+        "mount_reject_active": mount_reject_active,
+        "mount_reject_message": mount_reject_message,
+        # DRIFT_STATUS's own INDI state (Ok/Busy/Alert/Idle) - in
+        # MODE_AUTO_CORRECT specifically, the driver sets Busy while
+        # actually sending a correction vs. Alert when drift exceeds the
+        # threshold but is gated by #79's solve-freshness check (still
+        # "wrong", just not something the driver will act on yet). Exposed
+        # so the GUI can tell those two apart instead of assuming "exceeded
+        # threshold" always means "correcting now" - found live (2026-08-05)
+        # showing "Correcting the mount now" while the driver silently
+        # skipped every attempt because PiFinder's last solve was minutes
+        # old.
+        "drift_state": drift_status_prop.get("state"),
         "drift_arcmin": float(drift_raw) if drift_raw not in (None, "") else None,
+        "align_state": align_state,
+        "align_point_index": _int_or_none(align_progress.get("POINT_INDEX")),
+        "align_point_count": _int_or_none(align_progress.get("POINT_COUNT")),
+        "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
+        "align_current_name": align_progress_names.get("CURRENT_NAME") or None,
+        "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
+        "external_hold": external_hold,
+        "external_hold_reason": external_hold_reason,
+        "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
+        "align_count": float(align_config_elements["POINT_COUNT"]) if align_config_elements.get("POINT_COUNT") not in (None, "") else None,
+        "align_min_altitude": float(align_config_elements["MIN_ALTITUDE_DEG"]) if align_config_elements.get("MIN_ALTITUDE_DEG") not in (None, "") else None,
+        "align_direction": align_direction,
+        "mount_altitude_deg": mount_altitude_deg,
+        "mount_below_horizon": mount_below_horizon,
+        "pifinder_altitude_deg": pifinder_altitude_deg,
+        "pifinder_below_horizon": pifinder_below_horizon,
     }
 
 
@@ -444,7 +791,7 @@ PIFINDER_LX200_TCP_PORT = "4030"  # pos_server.py's fixed LX200 port - see Readm
 def ensure_pifinder_lx200_tcp(
     host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT,
     check_timeout: float = 1.5,
-) -> None:
+) -> bool:
     """Forces "PiFinder LX200"'s own connection onto TCP 127.0.0.1:4030
     (pos_server.py) rather than the INDI/LX200Telescope base class's default
     of a serial port. Found live (2026-07-25): left at its default, this
@@ -467,7 +814,17 @@ def ensure_pifinder_lx200_tcp(
     accepts connection-parameter changes while disconnected, so this
     disconnects first if needed and leaves the device disconnected - the
     caller (see server.py's /api/mount_bridge_connect) does the actual
-    CONNECT afterwards."""
+    CONNECT afterwards.
+
+    Returns True if the connection settings were wrong and had to be
+    corrected, False if they were already right - found live (2026-09-11)
+    that a profile's PiFinder LX200 can sit on the base-class Serial default
+    for a long time if it was never connected through this Control Center
+    before (e.g. right after a fresh install/reinstall), silently, until
+    something - here, Ekos's own Auto Connect - tries to use it and fails.
+    Callers should surface a `True` return as a visible warning rather than
+    swallow it, per the same "detect it happened and say so" requirement
+    this function's TCP-forcing behaviour itself was built for."""
     props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder LX200")
     if not device_props:
@@ -481,7 +838,7 @@ def ensure_pifinder_lx200_tcp(
         and address.get("PORT") == PIFINDER_LX200_TCP_PORT
     )
     if already_correct:
-        return
+        return False
 
     if _connection_state(device_props):
         set_switch("PiFinder LX200", "CONNECTION", "DISCONNECT", host, port, check_timeout)
@@ -507,6 +864,7 @@ def ensure_pifinder_lx200_tcp(
         {"ADDRESS": PIFINDER_LX200_TCP_HOST, "PORT": PIFINDER_LX200_TCP_PORT},
         host, port, check_timeout,
     )
+    return True
 
 
 def set_mount_bridge_active_devices(
@@ -609,6 +967,137 @@ def set_coupling_mode(
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
 
 
+def set_mount_bridge_external_hold(
+    on: bool,
+    reason: str = "",
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets Mount Bridge's EXTERNAL_HOLD switch (+ EXTERNAL_HOLD_REASON text)
+    - #372, docs/concepts/mount_bridge_external_hold.md. While held, the
+    driver keeps computing/publishing drift but skips every acting path
+    (Auto-correct's Sync/Goto, Goto-Forward, Reposition-Detection's
+    reaction, handlePiFinderAlignSync()) regardless of the selected Coupling
+    mode - the reason this exists as its own driver-side property instead of
+    the Control Center juggling BRIDGE_MODE itself: handlePiFinderAlignSync()
+    fires in every Coupling mode except MODE_OFF, so a Coupling-mode-only
+    override could not actually gate it.
+
+    Sets the reason text FIRST, then the switch - the driver's own
+    ISNewSwitch handler for EXTERNAL_HOLD logs the reason it already has by
+    the time the switch write arrives, so this order lets that log line be
+    accurate on the very first HOLD_ON.
+
+    Raises INDIClientError if EXTERNAL_HOLD isn't a currently-defined
+    property (e.g. an older Mount Bridge build without #372) - callers
+    should catch this once and stay quiet rather than retrying every poll."""
+    set_text("PiFinder Mount Bridge", "EXTERNAL_HOLD_REASON", {"REASON": reason}, host, port, timeout)
+    set_switch(
+        "PiFinder Mount Bridge", "EXTERNAL_HOLD",
+        "HOLD_ON" if on else "HOLD_OFF",
+        host, port, timeout,
+    )
+
+
+def _send_switch_and_confirm(
+    device: str,
+    vector_name: str,
+    on_element: str,
+    watch_devices: set,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    settle_gap: float = 1.5,
+) -> None:
+    """Like set_switch(), but additionally watches the driver's own
+    <message> log (basic-memory 00090 Regel 3's technique) for `settle_gap`
+    seconds after sending, on one persistent connection, and raises
+    INDIClientError with the driver's own text if any device in
+    `watch_devices` logs an error-looking message in that window.
+
+    Added 2026-09-09, direct feedback: set_switch() alone only confirms the
+    command was SENT, not that the mount actually accepted it - a real
+    OnStep meridian/pier-side Sync refusal was being reported to the GUI as
+    "success" because nothing checked the actual outcome ("Das kann doch
+    nicht sein, dass ich in der GUI ein Sync hinbekomme und du nicht").
+
+    Deliberately not "wait for an explicit success message" - many
+    drivers/actions don't emit one for a routine command. Only an
+    error-looking message (case-insensitive "error"/"fail" in the text) is
+    treated as failure; silence within the window is the expected good
+    case, same as set_switch()'s own fire-and-forget contract otherwise."""
+    props = get_properties(device=device, host=host, port=port, timeout=timeout)
+    vector = props.get(device, {}).get(vector_name)
+    if not vector:
+        raise INDIClientError(
+            f"{device}: property {vector_name!r} not currently defined "
+            "(device may not be connected yet, or the name is wrong)"
+        )
+    elements = list(vector["elements"].keys())
+    if on_element not in elements:
+        raise INDIClientError(f"{device}.{vector_name}: unknown element {on_element!r} (known: {elements})")
+
+    lines = [f'<newSwitchVector device="{_xml_escape(device)}" name="{_xml_escape(vector_name)}">']
+    for el in elements:
+        state = "On" if el == on_element else "Off"
+        lines.append(f'<oneSwitch name="{_xml_escape(el)}">{state}</oneSwitch>')
+    lines.append("</newSwitchVector>")
+    message = "\n".join(lines)
+
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+    except OSError as e:
+        raise INDIClientError(f"Could not connect to indiserver at {host}:{port}: {e}") from e
+
+    error_holder: dict = {}
+    msg_attrs: dict = {}
+
+    def start_element(name, attrs):
+        if name == "message":
+            msg_attrs.clear()
+            msg_attrs.update(attrs)
+
+    def end_element(name):
+        if name == "message" and "text" not in error_holder:
+            dev = msg_attrs.get("device", "")
+            msg = msg_attrs.get("message", "")
+            if dev in watch_devices:
+                low = msg.lower()
+                if "error" in low or "fail" in low:
+                    error_holder["text"] = f"{dev}: {msg}"
+
+    parser = xml.parsers.expat.ParserCreate()
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.Parse(b"<indiwrapper>", False)
+
+    try:
+        sock.sendall(b'<getProperties version="1.7"/>')
+        sock.sendall(message.encode())
+        deadline = time.monotonic() + settle_gap
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or "text" in error_holder:
+                break
+            sock.settimeout(remaining)
+            try:
+                chunk = sock.recv(65536)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            try:
+                parser.Parse(chunk, False)
+            except xml.parsers.expat.ExpatError:
+                continue
+    finally:
+        sock.close()
+
+    if "text" in error_holder:
+        raise INDIClientError(error_holder["text"])
+
+
 def trigger_manual_sync(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
@@ -620,3 +1109,467 @@ def trigger_manual_sync(
     hand (no Goto involved at all), where none of the Coupling presets would
     otherwise react."""
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_SYNC_NOW", host, port, timeout)
+
+
+def trigger_goto_home(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Native OnStep Home (TELESCOPE_HOME.GO) - distinct from Park: OnStep's
+    own reference/index position (its "0h RA at the pole" mechanical
+    reference), not a user-saved parking spot. Bypasses Mount Bridge
+    entirely (no isAboveHorizon() gate on this path)."""
+    set_switch("LX200 OnStep", "TELESCOPE_HOME", "GO", host, port, timeout)
+
+
+def sync_mount_to_pifinder_visible_position(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Below-horizon recovery action (2026-09-09, direct feedback): syncs the
+    mount to whatever "PiFinder LX200" is CURRENTLY reporting - the exact
+    same live value KStars/SkySafari already display - with no freshness/
+    source judgment at all. Deliberately does NOT touch trigger_manual_sync()
+    above (that stays fresh-CAM-solve-gated for normal operation, #227);
+    this reads the plain live INDI mirror itself and feeds it into the
+    driver's SYNC_TO_COORDS/TRIGGER_SYNC_TO_COORDS primitive, which the
+    driver executes with no freshness check of its own either - the whole
+    point being "what the user can see is what gets synced to."
+    Raises INDIClientError if PiFinder LX200's position isn't available."""
+    props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
+    coord_prop = props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {})
+    coord = coord_prop.get("elements", {})
+    ra, dec = coord.get("RA"), coord.get("DEC")
+    if ra in (None, "") or dec in (None, ""):
+        raise INDIClientError("PiFinder LX200's own reported position isn't available")
+
+    # 2026-09-26, direct feedback ("Wenn ich sage: Sync mount, und ein Solve
+    # war da, dann soll er das tun! Basta"): an open REPOSITION_CONFIRM
+    # (state="Busy" - Mount Bridge still waiting on a Yes/No for a detected
+    # "unexplained reposition", see handleRepositionDetection()) silently
+    # swallowed this button's own TRIGGER_SYNC_TO_COORDS below with no
+    # error and no visible effect - live-caught the same session, first
+    # noticed right at Control Center startup (a startup PiFinder/mount
+    # mismatch is the routine case, not a corner case). An explicit,
+    # user-initiated Sync click IS the confirmation; it should not also
+    # have to clear a separate pending prompt first. Auto-resolve via the
+    # same REPOSITION_CONFIRM_YES ("Adopt new position") this session's own
+    # live testing already confirmed unblocks it - best-effort: if this
+    # read/write fails for any reason, fall through and attempt the sync
+    # exactly as before rather than blocking on a diagnostic step.
+    try:
+        mb_props = get_properties(
+            device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout,
+            stop_after={"REPOSITION_CONFIRM"},
+        )
+        if mb_props.get("PiFinder Mount Bridge", {}).get("REPOSITION_CONFIRM", {}).get("state") == "Busy":
+            set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_YES", host, port, timeout)
+    except INDIClientError:
+        pass
+    # No `state == "Ok"` gate here (removed 2026-09-09, direct feedback +
+    # live-verified): the original assumption - that this INDI property's
+    # state transitions Idle -> Ok once a real position is confirmed, same
+    # as the #107 pattern elsewhere - does NOT hold for "PiFinder LX200".
+    # Confirmed live: even with a fully valid, deliberately injected solve
+    # (fake_solve_active=True, solve_state=True, matching RA/Dec) the state
+    # stayed "Idle". This property is the generic INDI LX200 driver's own
+    # internal notion of "has this telescope wrapper itself been Synced",
+    # not a reflection of PiFinder's solve validity - unrelated to what this
+    # function needs to know. The RA/Dec-present check above is the only
+    # meaningful guard; whether that value is *fresh* is deliberately not
+    # this function's concern (see the module-level docstring above it) -
+    # same as a manual Sync in KStars' own INDI panel.
+    set_number("PiFinder Mount Bridge", "SYNC_TO_COORDS", {"RA": float(ra), "DEC": float(dec)}, host, port, timeout)
+    # _send_switch_and_confirm (not plain set_switch, 2026-09-09 direct
+    # feedback): watches "PiFinder Mount Bridge" AND "LX200 OnStep" - a
+    # rejection can come from either (our own horizon-safety refusal, or
+    # the mount's own firmware refusing the Sync, e.g. a pier-side
+    # conflict) - both must surface as a real error here, not silent
+    # reported success.
+    _send_switch_and_confirm(
+        "PiFinder Mount Bridge",
+        "MANUAL_TRIGGER",
+        "TRIGGER_SYNC_TO_COORDS",
+        watch_devices={"PiFinder Mount Bridge", "LX200 OnStep"},
+        host=host,
+        port=port,
+        timeout=timeout,
+    )
+    # 2026-09-11, direct feedback ("Die (echten) Solves sind da. Aber der
+    # PiFinder Simulator bleibt zurück"): same gap as "Re-seed from mount"
+    # had before sync_pifinder_simulator_to() was added for it (2026-09-09)
+    # - this function moves the MOUNT to match PiFinder LX200, but
+    # "PiFinder Simulator" is a wholly separate INDI device neither this nor
+    # the mount Sync can reach on its own. Now that mount and PiFinder LX200
+    # agree (the Sync above just succeeded), bring the simulator to the same
+    # place too - best-effort, never fails this function if it's not loaded.
+    sync_pifinder_simulator_to(float(ra) * 15.0, float(dec), host, port, timeout)
+
+
+def trigger_goto_held(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: sends the mount back to the held ORIGINAL_TARGET
+    (MANUAL_TRIGGER's TRIGGER_GOTO_HELD element) - unlike trigger_manual_sync
+    above, this does NOT read PiFinder's current live position at all, so it
+    still works when that position is itself the problem (mount bumped,
+    friction-clutch slip, overbalance - PiFinder is rigidly mounted to the
+    OTA and moves with any of those)."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_GOTO_HELD", host, port, timeout)
+
+
+def trigger_align_held(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """One-shot: sends the held ORIGINAL_TARGET to PiFinder itself
+    (MANUAL_TRIGGER's TRIGGER_ALIGN_HELD element, via
+    PiFinderBridgeClient::sendPiFinderCoords()) - unlike trigger_goto_held
+    above, this corrects PiFinder's own belief about "what am I pushed-to"
+    rather than the mount, closing the gap where a later Mount Bridge
+    restart would otherwise re-read PiFinder's still-wrong target as its
+    recovery baseline and slew the mount right back to it."""
+    set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_ALIGN_HELD", host, port, timeout)
+
+
+def trigger_reposition_revert(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Immediately fires REPOSITION_CONFIRM's "No" branch (`RepositionConfirmSP`
+    REPOSITION_CONFIRM_NO, "Revert to held target") - already-existing,
+    already-working driver logic (pifinder_mount_bridge.cpp ~3307-3336):
+    Sync mount to PiFinder's current live position, then Track to the held
+    target, routed through the normal SLEWING/SETTLING state machine so real
+    convergence is verified. Live-verified 2026-09-11: this specific path -
+    Sync+Track sent to the MOUNT device, never to PiFinder's own LX200
+    mirror - does NOT touch PiFinder's own PushTo counter/target at all
+    (confirmed by watching PiFinder's own PUSH N display during an
+    automatic firing of this same code via the 45s timeout path - it did
+    not increment).
+
+    Previously only reachable by waiting up to 45s for
+    REPOSITION_CONFIRM's own timeout, or via the raw INDI Control Panel -
+    invisible from the Control Center GUI. This is the GUI-side trigger for
+    the exact same, already-safe mechanism - no driver change involved."""
+    set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_NO", host, port, timeout)
+
+
+# 2026-09-26, direct feedback (Real Hardware transition, live at the scope):
+# switching which mount device is actually in use (Telescope Simulator <->
+# a real mount driver like "LX200 OnStep") leaves every Ekos optical train
+# still pointing at the OLD device - found live with TWO trains both still
+# set to "Telescope Simulator" after adding the real mount driver. Not INDI
+# at all - Ekos optical trains are KStars' own concept, reached via its
+# DBus interface (org.kde.kstars.Ekos.OpticalTrain), not indiserver.
+_OPTICAL_TRAIN_DEVICE_PROPERTIES = (
+    "mount", "camera", "guider", "focuser", "filterWheel", "rotator", "dustCap", "lightBox",
+)
+
+# KStars' own placeholder for "no device selected" on any of the 8 fields
+# above - not a real device name, must never be treated as one (e.g. by a
+# caller deciding whether a field currently "has a device worth
+# remembering/swapping"). Confirmed live: an unset field's property value is
+# literally the two-character string "--", not empty/None.
+OPTICAL_TRAIN_NONE_SENTINEL = "--"
+
+
+def _qdbus(*args: str, timeout: float = 5.0) -> str:
+    """Runs qdbus6 against the local KStars instance's session bus, returns
+    stdout stripped. Raises INDIClientError on any failure (KStars not
+    running, qdbus6 missing, DBus call rejected, ...) - callers decide
+    whether that's fatal or best-effort for their own use."""
+    try:
+        result = subprocess.run(
+            ["qdbus6", "org.kde.kstars", *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        raise INDIClientError(f"qdbus6 call failed: {e}") from e
+    if result.returncode != 0:
+        raise INDIClientError(f"qdbus6 {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def list_optical_train_ids(timeout: float = 5.0) -> list:
+    """Every currently-registered Ekos optical train's DBus object id (e.g.
+    ["81", "82"]), discovered from the same top-level object list `qdbus6
+    org.kde.kstars` prints (introspection) - KStars exposes no direct "list
+    trains" call, but a train's own object path IS this id."""
+    output = _qdbus(timeout=timeout)
+    prefix = "/KStars/Ekos/OpticalTrain/"
+    return [
+        line.strip()[len(prefix):]
+        for line in output.splitlines()
+        if line.strip().startswith(prefix) and line.strip()[len(prefix):].isdigit()
+    ]
+
+
+def get_optical_train_property(train_id: str, prop: str, timeout: float = 5.0) -> str:
+    return _qdbus(
+        f"/KStars/Ekos/OpticalTrain/{train_id}", f"org.kde.kstars.Ekos.OpticalTrain.{prop}", timeout=timeout,
+    )
+
+
+def set_optical_train_property(train_id: str, prop: str, value: str, timeout: float = 5.0) -> None:
+    setter = "set" + prop[0].upper() + prop[1:]
+    _qdbus(
+        f"/KStars/Ekos/OpticalTrain/{train_id}", f"org.kde.kstars.Ekos.OpticalTrain.{setter}", value, timeout=timeout,
+    )
+
+
+def optical_train_device_properties() -> tuple:
+    """Public accessor for the 8 device-role property names (mount, camera,
+    guider, focuser, filterWheel, rotator, dustCap, lightBox) - callers
+    outside this module (server.py's Full-Simulation snapshot/restore) use
+    this instead of reaching into the underscore-prefixed module constant."""
+    return _OPTICAL_TRAIN_DEVICE_PROPERTIES
+
+
+def swap_optical_train_devices(from_device: str, to_device: str, timeout: float = 5.0) -> dict:
+    """Replaces every optical-train field (Mount, Camera, Guide-via,
+    Focuser, Filter Wheel, Rotator, Dust Cap, Light Box) whose CURRENT value
+    is exactly `from_device` with `to_device`. Checks every field generically
+    rather than assuming which one "should" hold a mount - a field can
+    validly hold the mount's own name in more than one place (e.g. "Guide
+    via" set to pulse-guide through the mount instead of a dedicated guide
+    camera - live-confirmed the same session: one train's `guider` was
+    "Telescope Simulator" too), or could just as validly hold something else
+    entirely (a real guide camera) that must be left untouched.
+
+    Returns {train_name: [changed_property, ...]} for every train that had
+    at least one field changed - empty dict if nothing matched `from_device`
+    anywhere. Best-effort per train/property: one failure doesn't abort the
+    rest - the caller gets back exactly what did change."""
+    changed: dict = {}
+    for train_id in list_optical_train_ids(timeout=timeout):
+        try:
+            name = get_optical_train_property(train_id, "name", timeout=timeout)
+        except INDIClientError:
+            name = f"train {train_id}"
+        train_changes = []
+        for prop in _OPTICAL_TRAIN_DEVICE_PROPERTIES:
+            try:
+                current = get_optical_train_property(train_id, prop, timeout=timeout)
+            except INDIClientError:
+                continue
+            if current == from_device:
+                try:
+                    set_optical_train_property(train_id, prop, to_device, timeout=timeout)
+                    train_changes.append(prop)
+                except INDIClientError:
+                    continue
+        if train_changes:
+            changed[name] = train_changes
+    return changed
+
+
+# 2026-09-01, basic-memory pifinder-stellarmate/00106/#240: recovery for the
+# still-not-root-caused "process alive but unresponsive to any INDI query"
+# hang (#238) - live-verified by hand many times this same session
+# (indiFIFO stop/start reliably recovers it). Restarts only Mount Bridge
+# itself via indiserver's own FIFO control channel, the same mechanism
+# StellarMate's Web Manager uses to add/remove drivers - much smaller blast
+# radius than restarting the whole profile (webmanager_client.stop_server()/
+# start_server()), since PiFinder/mount drivers are left untouched.
+MOUNT_BRIDGE_FIFO_PATH = "/tmp/indiFIFO"
+
+
+MOUNT_BRIDGE_PROCESS_NAME = "indi_pifinder_mount_bridge"
+# How long to wait for the old process to actually exit before giving up and
+# starting a new one anyway - see restart_mount_bridge_driver()'s own comment
+# for why this wait exists at all.
+_MOUNT_BRIDGE_STOP_WAIT_SEC = 5.0
+_MOUNT_BRIDGE_STOP_POLL_INTERVAL_SEC = 0.2
+
+
+def _mount_bridge_pids() -> list:
+    try:
+        out = subprocess.run(["pgrep", "-f", MOUNT_BRIDGE_PROCESS_NAME],
+                              capture_output=True, text=True, timeout=3)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+    return [line for line in out.stdout.split() if line]
+
+
+def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_sec: float = 2.0) -> None:
+    """Stop/start "PiFinder Mount Bridge" via the indiFIFO control channel.
+    Purely a driver-process bounce - callers are responsible for reconnecting
+    and re-linking afterwards (see server.py's readiness watchdog, which does
+    both as separate, independently-retried checks).
+
+    Found live (2026-09-03): indiserver's FIFO "start" has no idempotency of
+    its own - it blindly launches another instance regardless of whether one
+    under the same device name is already running or still mid-shutdown.
+    The original stop-then-sleep(settle_sec)-then-start here assumed that
+    fixed delay was always enough for the old process to actually exit, but
+    a manual stop/start race (or this function being invoked again before
+    the previous call's process had fully gone) left TWO
+    indi_pifinder_mount_bridge processes both claiming "PiFinder Mount
+    Bridge" at once - a genuinely broken, double-answering device, not just
+    wasted resources. Now actively confirms the old process is gone (or
+    force-kills any that linger past the wait) before ever sending "start",
+    so this function always leaves exactly one instance running - a real
+    singleton guarantee, not a hopeful delay."""
+    with open(fifo_path, "w") as f:
+        f.write('stop indi_pifinder_mount_bridge "PiFinder Mount Bridge"\n')
+
+    deadline = time.monotonic() + max(settle_sec, _MOUNT_BRIDGE_STOP_WAIT_SEC)
+    while time.monotonic() < deadline and _mount_bridge_pids():
+        time.sleep(_MOUNT_BRIDGE_STOP_POLL_INTERVAL_SEC)
+
+    # Belt and suspenders: whatever's still there after the wait (indiFIFO's
+    # own stop not landing, or a stray instance from outside this function
+    # entirely) gets force-killed by process name - not by the PID(s) seen
+    # above, since a new one could have raced in during the wait.
+    remaining = _mount_bridge_pids()
+    if remaining:
+        subprocess.run(["pkill", "-9", "-f", MOUNT_BRIDGE_PROCESS_NAME], capture_output=True)
+        time.sleep(0.5)
+
+    with open(fifo_path, "w") as f:
+        f.write('start indi_pifinder_mount_bridge -n "PiFinder Mount Bridge"\n')
+
+
+def set_pifinder_simulator_follow_mount(
+    mount_device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Sets "PiFinder Simulator"'s FOLLOW_MOUNT_DEVICE (PR #239) - while
+    named, it dead-reckon-follows that mount's real slews instead of staying
+    a fixed pin. `mount_device` empty turns following off. server.py's
+    readiness watchdog is the only caller, keeping this in sync with
+    whichever mount is actually linked in every mode (not just Full
+    Simulation with the truth-injector targeting "PiFinder Simulator" - see
+    Check 6's own comment, broadened 2026-09-18 after a stale value from an
+    earlier Simulation session was found surviving unnoticed into Real
+    Hardware use)."""
+    set_text(
+        "PiFinder Simulator", "FOLLOW_MOUNT_DEVICE",
+        {"MOUNT_DEVICE": mount_device},
+        host, port, timeout,
+    )
+
+
+def get_pifinder_simulator_follow_mount(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> Optional[str]:
+    """Current FOLLOW_MOUNT_DEVICE value, or None if "PiFinder Simulator"
+    isn't currently loaded/reachable at all (distinct from "" - loaded but
+    deliberately not following anything)."""
+    props = get_properties(device="PiFinder Simulator", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder Simulator")
+    if not device_props:
+        return None
+    return device_props.get("FOLLOW_MOUNT_DEVICE", {}).get("elements", {}).get("MOUNT_DEVICE", "")
+
+
+def get_shadow_sync_state(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> "tuple[bool, str]":
+    """Whether "PiFinder Mount Bridge"'s own Shadow Sync (mirrors PiFinder's
+    *own* position onto a shadow device, default "PiFinder Simulator" - see
+    pifinder_mount_bridge.cpp's handleShadowSync()) is currently enabled,
+    and which device it targets. Used to avoid two independent, uncoordinated
+    writers fighting over the same device's position - see
+    _mount_bridge_readiness_watchdog()'s Check 6 in server.py, which manages
+    a DIFFERENT thing (making the Simulator follow the *mount*) on the same
+    "PiFinder Simulator" device by default. Returns (False, "") if the
+    Bridge isn't reachable - treated as "not conflicting" by the caller."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
+    device_props = props.get("PiFinder Mount Bridge")
+    if not device_props:
+        return False, ""
+    enabled = device_props.get("SHADOW_SYNC", {}).get("elements", {}).get("SHADOW_SYNC_ENABLE") == "On"
+    shadow_device = device_props.get("SHADOW_DEVICE_NAME", {}).get("elements", {}).get("SHADOW_DEVICE", "")
+    return enabled, shadow_device
+
+
+def sync_pifinder_simulator_to(
+    ra_deg: float,
+    dec_deg: float,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Directly INDI-Syncs "PiFinder Simulator" itself to `ra_deg`/`dec_deg`
+    (JNow, degrees - converted to hours for RA here).
+
+    Added 2026-09-09, direct feedback ("Auch schon ein gutes Dutzend mal
+    bemängelt"): "Re-seed from mount" only ever called PiFinder's own
+    /api/fake_solve REST endpoint, which updates PiFinder's REAL solve
+    pipeline (and through it, the separate "PiFinder LX200" INDI mirror) -
+    it has no way to reach "PiFinder Simulator" at all, a wholly separate
+    INDI device/driver process. So "Re-seed PiFinder from the mount" only
+    ever moved half of what its own label promises; PiFinder Simulator
+    stayed wherever it started, looking unrelated to the mount even right
+    after a successful re-seed. Unlike the real mount's own
+    sendMountCoordsSafe(), PiFinder Simulator is a pure test fixture with
+    no horizon-safety concern of its own - a plain INDI::Telescope Sync
+    via its standard ON_COORD_SET/EQUATORIAL_EOD_COORD properties (same
+    ones queried in get_pifinder_simulator_follow_mount()'s sibling
+    functions) is sufficient, no custom driver primitive needed like the
+    real mount's SYNC_TO_COORDS.
+
+    Best-effort: silently does nothing if "PiFinder Simulator" isn't
+    currently loaded/connected (e.g. Real Hardware mode) - this is a
+    convenience for simulator/test setups, not something that should ever
+    block or fail the real mount's own re-seed."""
+    try:
+        set_switch("PiFinder Simulator", "ON_COORD_SET", "SYNC", host, port, timeout)
+        set_number(
+            "PiFinder Simulator", "EQUATORIAL_EOD_COORD",
+            {"RA": ra_deg / 15.0, "DEC": dec_deg},
+            host, port, timeout,
+        )
+    except INDIClientError:
+        pass
+
+
+def trigger_abort_mount(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Emergency stop: sends TELESCOPE_ABORT_MOTION to the active mount right
+    now (ABORT_MOUNT's ABORT_MOUNT_NOW element) - works regardless of which
+    Coupling mode (or Off) is active, and independent of whether PiFinder's
+    own side is ready/available. See #179."""
+    set_switch("PiFinder Mount Bridge", "ABORT_MOUNT", "ABORT_MOUNT_NOW", host, port, timeout)
+
+
+def trigger_multipoint_align_start(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Starts a #191 Multi-Point Alignment sequence (MULTI_POINT_ALIGN's
+    ALIGN_START element): fetches fresh candidate points from PiFinder's own
+    /api/nearby_bright_stars and works through them one at a time (Goto,
+    wait for arrival, wait for a fresh PiFinder solve, Sync). Independent of
+    Coupling mode - works whether Coupling is Off or any other preset."""
+    set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_START", host, port, timeout)
+
+
+def trigger_multipoint_align_stop(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Aborts an in-progress #191 Multi-Point Alignment sequence
+    (MULTI_POINT_ALIGN's ALIGN_STOP element) - reuses the same ABORT_MOUNT
+    path as the emergency-stop button, so any current mount motion also
+    stops immediately, not just the sequence's own bookkeeping."""
+    set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_STOP", host, port, timeout)

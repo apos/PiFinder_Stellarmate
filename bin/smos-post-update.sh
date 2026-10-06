@@ -21,6 +21,27 @@
 
 set -e
 
+source "$(dirname "$0")/functions.sh"
+
+# Pi-only, by construction (see "Supported hardware" above): _detect_external_storage()
+# below pattern-matches /dev/sda1+/dev/sda2 as "Pi4 USB SSD external storage" with no
+# way to tell a system's own primary disk apart from a genuine secondary drive - on a
+# typical x86 install (root disk is /dev/sda with exactly those two partitions), this
+# would misidentify the machine's OWN live root volume as external storage and proceed
+# to mount/patch/relabel it accordingly. Found live (2026-09-06, stellarmate-utm):
+# confirmed via lsblk that this exact collision applies here. get_hw_model() returns an
+# empty string on non-Pi systems (no /proc/device-tree/model) - hard-fail here rather
+# than risk touching live boot config on the wrong device. Applies to every mode
+# (including --sync-memory): its own rclone-install fallback has the same wrong
+# mirror.archlinuxarm.org/aarch64 assumption as install_extra_packages() below, and this
+# UTM's own basic-memory sync already goes through sync_basic_memory.sh directly (see
+# basic-memory pifinder-stellarmate/00003), not this wrapper.
+if [ -z "$(get_hw_model)" ]; then
+    echo "!! This script manages Pi4/Pi5 NVMe/USB-SSD/SD dual-boot storage and must not"
+    echo "   run on a non-Pi (x86) system - no /proc/device-tree/model found."
+    exit 1
+fi
+
 if [ "$EUID" -ne 0 ]; then
     echo "!! This script requires root privileges (blkid/fstab/config.txt/pacman need root)."
     echo "   Please run with sudo: sudo bash $(basename "$0") $*"

@@ -4,13 +4,13 @@
 
 > ### ✅ Built & verified against
 >
-> * **PiFinder software 2.6.0**
-> * **StellarMate OS 2.2.1** (Arch Linux)
 > * **libindi 2.2.2** (system package — no INDI source checkout needed)
-> * Real hardware: Raspberry Pi 4 + PiFinder unit + **Skywatcher EQ5 with an OnStepX controller** (`indi_lx200_OnStep` 1.27)
+> * Verified against a real mount: **Skywatcher EQ5 + OnStepX** (`indi_lx200_OnStep` 1.27)
 >
-> If you're on different versions, the concepts below still apply, but property names/behavior of
-> third-party mount drivers (like OnStep) may differ slightly between libindi releases.
+> If you're on a different libindi release, the concepts below still apply, but property
+> names/behavior of third-party mount drivers (like OnStep) may differ slightly. For the tested
+> PiFinder / StellarMate OS / Pi combinations, see the
+> [Version Compatibility table in README.md](README.md#version-compatibility).
 
 > ### ⚠️ Mandatory: this only works through the StellarMate Web Manager
 >
@@ -38,6 +38,7 @@ SkySafari, and (optionally) a real motorized mount. It is a companion to the mai
 5. [Code, Deployment & Strategy](#code-deployment--strategy)
 6. [Known Limitations & Troubleshooting](#known-limitations--troubleshooting)
 7. [Version Compatibility](#version-compatibility)
+8. [Screenshot Reference](#screenshot-reference)
 
 ---
 
@@ -135,10 +136,11 @@ real mount are coupled:
 | **Off** | No coupling at all. Pure push-to. | Dobson, no motor. |
 | **Verify/Alert only** | Continuously compares PiFinder's solved position to the mount's reported position; logs a warning if they disagree by more than the configured threshold. Never writes to the mount. | Astrophotography: a passive "is my mount still correctly aligned?" sanity check. |
 | **Auto-correct on drift** | Same comparison, but if drift exceeds the threshold, automatically sends a `Sync` or `Goto/Track` (configurable via `CORRECTION_ACTION`) to the mount. | Manual push-to-then-correct workflows: you slew by hand until PiFinder shows on-target, the Bridge picks up the resulting drift and straightens the mount out afterwards. |
-| **Goto-Forward** *(new)* | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and, if still outside the threshold, syncs the mount and re-sends the Goto - repeating (bounded) until it lands within threshold or gives up. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
+| **Goto-Forward** | Event-driven: the moment PiFinder receives a **new** GoTo/push-to target (from its own UI, from KStars, or from SkySafari→PiFinder), the Bridge immediately sends a real `Goto` to the mount. After the mount finishes slewing, it waits for a fresh PiFinder solve and, if still outside the threshold, syncs the mount and re-sends the Goto - repeating (bounded) until it lands within threshold or gives up. | Standalone visual use: PiFinder is the single GoTo interface, the mount just executes. |
 
-There's also a **Manual (one-shot)** control (`MANUAL_TRIGGER`: "Sync Now" / "Goto Now") that works
-regardless of the selected mode — useful for a single manual correction without switching modes.
+There's also a **Manual (one-shot)** control (`MANUAL_TRIGGER`) that fires a single Sync or Goto
+regardless of the selected mode, for a one-off correction without switching modes — see the
+[property reference](#property-reference-pifinder-mount-bridge) for the full list of triggers.
 
 ---
 
@@ -185,67 +187,135 @@ This must run from the actual GUI/VNC desktop session, not from a plain SSH sess
 > Manager directly (not through KStars) and build the profile here — this is the *only* place the
 > PiFinder drivers exist.
 
-Open `http://<pi-address>:8624` in a browser.
+Open `http://<pi-address>:8624` in a browser. The whole Web Manager is a single page:
 
-- **Driver Source**: **"System INDI Drivers"** — this is the only tab/source the PiFinder drivers
-  show up under in the Web Manager. They are not listed anywhere else, and not visible from Ekos's
-  own driver catalog at all (see the warning at the top of this document).
-- Under "Telescopes": add **PiFinder LX200**, and optionally your real mount's driver
-  (e.g. "LX200 OnStep")
-- Under "Auxiliary": add **PiFinder Mount Bridge** (only if you want it)
-- Save the profile, click **Start**
+| Control | What it does |
+|---|---|
+| **Equipment Profile** dropdown | Selects the profile to edit / run |
+| 💾 save / **−** (next to it) | Save edits to the selected profile / delete it |
+| **New Profile** field + **+** | Create a new, empty profile with that name |
+| **Auto Start** / **Auto Connect** | Start this profile when the Web Manager boots / connect all its devices once the server is up |
+| **Drivers** ("N items selected") | The multi-select of drivers this profile runs |
+| **Port** | `indiserver` port (default **`7624`**) |
+| **Driver Source** | Which driver catalog the list is read from — must be **"System INDI Drivers"** |
+| **Remote Drivers** | `driver@host` entries for drivers on another box — not needed here |
+| **Stop** / **Start** + icon row (power, restart, network, 👁) | Start/stop the `indiserver` for the selected profile; 👁 opens the INDI Control Panel |
+| **Server Status** | Live list of the drivers the running server has loaded |
+
+**Build the profile:**
+
+> The Control Center's **Settings → Role** cards (All-in-one / PiFinder host / Control host) build
+> this driver list for you — see
+> [Readme_ControlCenter.md → Roles](Readme_ControlCenter.md#roles). Do it by hand here if you
+> prefer, or aren't using the Control Center.
+
+1. Type a name into **New Profile** → **+**.
+2. Open **Drivers** and tick **PiFinder LX200**, optionally your real mount's driver
+   (e.g. *LX200 OnStep*), and — for mount coupling — **PiFinder Mount Bridge**. Add
+   *PiFinder Simulator* / *Telescope Simulator* only for a hardware-free test setup.
+3. Leave **Port** at `7624`. Set **Driver Source** to **System INDI Drivers**.
+4. Click 💾 **save**, then **Start**.
+
+**Driver Source** must be **"System INDI Drivers"**: the PiFinder drivers are installed as system
+INDI drivers (`/usr/share/indi/`). The other options ("KStars Flatpak – Stable / Nightly") read a
+Flatpak KStars' bundled catalog, which does not contain them — select one of those and the
+PiFinder drivers disappear from the Drivers list. They are not visible from Ekos's own driver
+catalog either (see the warning at the top of this document).
 
 <table>
 <tr>
-<td align="center">
-<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="600"></a><br>
-<sub>StellarMate Web Manager: profile "PiFinder OnStepX Bridge" with the drivers PiFinder Mount Bridge, LX200 OnStep, PiFinder LX200, and Server Status showing all three online — Driver Source set to "System INDI Drivers"</sub>
+<td align="center" width="55%">
+<a href="docs/images/pfinder_lx200/webmanager_overview.png"><img src="docs/images/pfinder_lx200/webmanager_overview.png" width="440"></a><br>
+<sub>Web Manager: profile "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status</sub>
+</td>
+<td align="center" width="45%">
+<a href="docs/images/pfinder_lx200/webmanager_drivers_list.png"><img src="docs/images/pfinder_lx200/webmanager_drivers_list.png" width="330"></a><br>
+<sub>Drivers multi-select — the PiFinder drivers appear here, and only here</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="55%">
+<a href="docs/images/pfinder_lx200/webmanager_driver_source.png"><img src="docs/images/pfinder_lx200/webmanager_driver_source.png" width="440"></a><br>
+<sub>Driver Source: use "System INDI Drivers"; the Flatpak catalogs lack the PiFinder drivers</sub>
+</td>
+<td align="center" width="45%">
+<a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="330"></a><br>
+<sub>A real-mount profile: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, all online</sub>
 </td>
 </tr>
 </table>
 
 ### Step 3: INDI Control Panel — connect the devices
 
-The tab strip at the top shows all three devices side by side once the profile is running.
+Open it from KStars: **Tools → Devices → INDI Control Panel** (`Ctrl+I`); it also opens on its
+own when the profile starts. There is one top-level tab per driver in the profile:
 
-Connect **PiFinder LX200**:
-- Tab "PiFinder LX200" → Connection
-- Connection Mode: **TCP**, Address `127.0.0.1`, Port **`4030`**
-- Click "Connect"
+| Tab | Role | Connect it? |
+|---|---|---|
+| **PiFinder LX200** | PiFinder's solved position, as an INDI telescope | Yes — the core integration |
+| **PiFinder Mount Bridge** | Couples PiFinder to a real mount | Only with a motorized mount |
+| your mount's driver (e.g. *LX200 OnStep*) | The real mount | As usual for that mount |
+| *PiFinder Simulator*, *Telescope Simulator*, *SkySafari*, … | Optional test / bridge drivers | See the [Simulator guide](Readme_PiFinder_Simulator.md) and [Step 5](#step-5-connecting-skysafari) |
 
-Then check the "Main Control" tab — it's also directly visible there that "On Set" only offers
-**Track/Slew**, no Sync (see [What happens on a GoTo](#what-happens-on-a-goto-to-pifinder-lx200)).
+#### PiFinder LX200
 
-Connect **your real mount** (OnStepX example): pick the serial port or TCP connection as
-appropriate, then "Connect".
+1. **Connection** subtab: Connection Mode **Network**, Connection Type **TCP**, Server address
+   `127.0.0.1` port **`4030`** → **Set**.
+2. **Main Control** subtab → **Connect**. *On Set* then shows only **Track / Slew**, no Sync
+   (see [Why no `TELESCOPE_CAN_SYNC`?](#why-no-telescope_can_sync)); *Eq. Coordinates* shows the
+   live solved position.
 
-Connect **PiFinder Mount Bridge** (if used):
-- Tab "PiFinder Mount Bridge" → subtab "Options" → "Active devices" → set `PiFinder` and `Mount`
-  to the correct device names (e.g. "PiFinder LX200" / "LX200 OnStep")
-- Click "Connect" (Main Control tab)
-- Then set "Coupling" to the mode you want (see the table above)
-
-Click any thumbnail below for the full-size screenshot:
+The **Options**, **Motion Control**, **Site Management** and **Guide** subtabs are inherited from
+the LX200 base class. They are shown but inert: PiFinder has no motor, and it takes time and
+location from its own GPS (the driver logs `updateTime called, ignoring` /
+`updateLocation called, ignoring`).
 
 <table>
 <tr>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png" width="380"></a><br>
-<sub>All three tabs; PiFinder LX200 → Connection (TCP 127.0.0.1:4030)</sub>
+<sub>PiFinder LX200 → Connection: Network / TCP, 127.0.0.1 : 4030</sub>
 </td>
 <td align="center" width="50%">
 <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="380"></a><br>
-<sub>PiFinder LX200 → Main Control: only Track/Slew, no Sync</sub>
+<sub>PiFinder LX200 → Main Control: Track / Slew only, no Sync</sub>
 </td>
 </tr>
+</table>
+
+#### Your real mount
+
+Connect it the way you normally would for that driver — serial port or TCP, then **Connect**.
+Nothing PiFinder-specific here.
+
+#### PiFinder Mount Bridge
+
+1. **Options** subtab → **Active devices**: set `PiFinder` to the PiFinder LX200 device name and
+   `Mount` to your mount's device name (e.g. *PiFinder LX200* / *LX200 OnStep*). The **Settings**
+   row above points the Bridge's embedded client at the local `indiserver` — leave it at
+   `localhost` : `7624`.
+2. **Main Control** subtab → **Connect**, then set **Coupling** to the mode you want
+   ([Coupling Dial](#the-mount-bridge-coupling-dial)). This tab also carries the one-shot
+   triggers, the drift threshold and live drift status, the Multi-Point Alignment run, and the
+   unexplained-reposition prompt — see the
+   [property reference](#property-reference-pifinder-mount-bridge).
+3. **Shadow Sync** subtab: mirrors each mount command the Bridge sends onto a second,
+   non-driving device (default *PiFinder Simulator*), so a simulated PiFinder can track a real
+   mount. Auto-arms when the shadow device is present; only relevant for the simulator setups.
+
+<table>
 <tr>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="380"></a><br>
-<sub>Mount Bridge → Options: Active devices set</sub>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control: Coupling, correction action, triggers, alignment</sub>
 </td>
-<td align="center" width="50%">
-<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="380"></a><br>
-<sub>Mount Bridge → Main Control: Coupling, Manual trigger, Drift status</sub>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="300"></a><br>
+<sub>Mount Bridge → Options: Active devices + indiserver Settings</sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png" width="300"></a><br>
+<sub>Mount Bridge → Shadow Sync: mirror commands onto a non-driving device</sub>
 </td>
 </tr>
 </table>
@@ -260,33 +330,56 @@ doesn't launch or look up anything locally at all: it's purely a network client 
 `indiserver` that the Web Manager already started, so it doesn't matter which driver catalog Ekos
 itself has.
 
-- Ekos Profile Editor → **Mode: Remote Host** (not "Local"!), Host `localhost`, Port **`7624`**
-  (the `indiserver` port from the Web Manager profile)
-- Also enable **"INDI Web Manager"**, Port **`8624`** — this lets Ekos talk to the Web Manager's
-  own API (so its Start/Stop controls act on the remote profile), and the **"Scan"** button can
-  auto-discover it on the network instead of typing the host manually
-- Click "Start" → Ekos connects to the running server → every device already connected appears
-  automatically in the INDI Control Panel / Mount tab
+**In the Ekos tab** (Tools → Ekos, `Ctrl+K`):
+
+1. **1. Select Profile** — pick your profile in the dropdown. The buttons next to it: **+** new,
+   **✏** edit, **✗** delete, **⛶** set default, **🪄** wizard.
+2. **✏ edit** opens the **Profile Editor**:
+   - **Mode: Remote Host** (not "Local"!), Host `localhost`, Port **`7624`** — the `indiserver`
+     port from the Web Manager profile.
+   - **Auto Connect** on: connect all devices as soon as Ekos starts.
+   - **INDI Web Manager** (checkbox + Port `8624`) — optional. Tick it and Ekos's own Start/Stop
+     buttons act on the *remote* Web Manager profile, and **Scan** can find the box on the
+     network. Leave it off and Ekos is a pure network client of an `indiserver` you start
+     elsewhere (the Web Manager, or the Control Center).
+   - **Select Devices** — in Remote Host mode this only lists drivers Ekos itself would launch;
+     for a PiFinder setup it can stay effectively empty (the PiFinder drivers are **not** here
+     and don't need to be — they run under the Web Manager). Click **Save**.
+3. **2. Start & Stop Ekos** — the **▶ / ■** button starts/stops the session. On start, every
+   device the remote server already has connected shows up in the Mount / Capture / … modules
+   and the INDI Control Panel.
+4. **3. Connect & Disconnect Devices** — force a reconnect of all devices without restarting Ekos.
+
+<table>
+<tr>
+<td align="center" width="60%">
+<a href="docs/images/pfinder_lx200/ekos_select_profile.png"><img src="docs/images/pfinder_lx200/ekos_select_profile.png" width="480"></a><br>
+<sub>Ekos: Select Profile → Start &amp; Stop Ekos → Connect &amp; Disconnect Devices (session stopped)</sub>
+</td>
+<td align="center" width="40%">
+<a href="docs/images/pfinder_lx200/ekos_profile_editor.png"><img src="docs/images/pfinder_lx200/ekos_profile_editor.png" width="330"></a><br>
+<sub>Profile Editor: Mode "Remote Host", localhost:7624, Auto Connect</sub>
+</td>
+</tr>
+</table>
 
 Right-clicking a star shows both devices as separate targets in the context menu — the red
 crosshair markers show where PiFinder is currently "looking" versus where the mount actually is
 (deliberately far apart here, for illustration). The "PiFinder LX200" submenu expanded shows only
 **Goto / Abort / Find Telescope**, no Sync (see
-[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)). Click any thumbnail for the full-size
-screenshot:
+[Why no TELESCOPE_CAN_SYNC?](#why-no-telescope_can_sync)). The full sky-map view and every
+right-click operation is covered in
+[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md). Click any thumbnail for the
+full-size screenshot:
 
 <table>
 <tr>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png"><img src="docs/images/pfinder_lx200/kstars_indi_remote_webmanager.png" width="260"></a><br>
-<sub>Ekos Profile Editor: Mode "Remote Host", Host localhost, Port 7624, INDI Web Manager enabled</sub>
-</td>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="260"></a><br>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="300"></a><br>
 <sub>Sky map: PiFinder and mount as separate target devices in the context menu</sub>
 </td>
-<td align="center" width="33%">
-<a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="260"></a><br>
+<td align="center" width="50%">
+<a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="300"></a><br>
 <sub>"PiFinder LX200" submenu: only Goto, Abort, Find Telescope</sub>
 </td>
 </tr>
@@ -383,24 +476,131 @@ exhaustive — see `LX200Telescope`/`INDI::Telescope` in libindi for details):
 | `DEVICE_ADDRESS` | Text | TCP target address/port (default `127.0.0.1:4030`) |
 | `EQUATORIAL_EOD_COORD` | Number (read-only for display, written on Goto) | Current RA/DEC |
 | `TARGET_EOD_COORD` | Number (managed by the base class itself) | Last commanded GoTo target — **this** is the property the Mount Bridge snoops to detect new push-to requests (see below) |
-| `ON_COORD_SET` | Switch | Only `TRACK` available (no `SYNC`, no separate `SLEW`) |
+| `ON_COORD_SET` | Switch | `TRACK` / `SLEW` (both route through `Goto()`); no `SYNC` |
 | `TELESCOPE_ABORT_MOTION` | Switch | Abort (essentially a no-op since there's no motor, but part of the base capability) |
+
+**Host/hardware status** (added 2026-09-15 — see [Concept: Control host mirroring the remote
+PiFinder's hardware/solve badges](docs/concepts/control_host_hardware_badges_mirroring.md) §5):
+read-only facts about whichever device this driver's `DEVICE_ADDRESS` points at, fetched from that
+device's own `/api/hardware_status` (PiFinder's REST API — already unauthenticated and network-
+transparent, unlike the Control Center's own HTTP API). This is what makes these facts visible on a
+remote Control Host without a password-protected proxy call, and for free in EKOS/the StellarMate
+App/any other INDI client.
+
+| Property | Type | Purpose |
+|---|---|---|
+| `HARDWARE_PRESENCE` | Text (`CAMERA_PRESENT`, `IMU_PRESENT`) | `"yes"` / `"no"` / `"unknown"` (the check itself couldn't run) |
+| `PIFINDER_SYSTEM_LOAD` | Number (`LOAD1`, `LOAD5`, `LOAD15`, `CPU_COUNT`, `PERCENT`, `TEMP_C`) | That device's own CPU load averages, core count, load as % of available CPU, and SoC temperature |
+| `PIFINDER_ORIENTATION` | Text (`MOUNT_TYPE`, `SCREEN_DIRECTION`) | Same concept as Mount Bridge's own property of the same name (below) — exists here too since this one works for a *remote* PiFinder, where Mount Bridge (always co-located with PiFinder) doesn't apply |
+| `PIFINDER_MODE` | Text, read-write (`MODE`, `TRANSITIONING`, `TARGET`, `REAL_SERVICE_STATE`, `ROLE_CHOICE`) | The Control Center's own mode/role state, mirrored here read-only for any INDI client to see — the driver itself never sets this; it's pushed by that device's own `gui_installer/server.py` whenever its mode/role state changes. Not a device fact, so control stays entirely on the Control Center's own API — this property exists purely for free visibility |
+
+Polled/pushed at a 20s cadence (`pollHardwareStatus()`), not on every fast `ReadScopeStatus()` tick
+like position — the underlying host-side checks (`rpicam-hello`, an I2C scan) can occasionally take
+several seconds, which would otherwise stall this single-threaded driver's position updates too.
 
 ### Property reference: PiFinder Mount Bridge
 
-| Property | Type | Elements | Purpose |
-|---|---|---|---|
-| `BRIDGE_SETTINGS` | Text | `INDISERVER_HOST`, `INDISERVER_PORT` | Where the internal client finds the `indiserver` (default `localhost:7624`) |
-| `ACTIVE_DEVICES` | Text | `ACTIVE_PIFINDER`, `ACTIVE_MOUNT` | Which two devices are snooped |
-| `BRIDGE_MODE` | Switch (1oM) | `MODE_OFF`, `MODE_VERIFY_ALERT`, `MODE_AUTO_CORRECT`, `MODE_GOTO_FORWARD` | Coupling degree, see table above |
-| `CORRECTION_ACTION` | Switch (1oM) | `ACTION_SYNC`, `ACTION_GOTO` | What `MODE_AUTO_CORRECT` does when drift is exceeded |
-| `MANUAL_TRIGGER` | Switch | `TRIGGER_SYNC_NOW`, `TRIGGER_GOTO_NOW` | Immediate action, independent of mode |
-| `DRIFT_THRESHOLD` | Number | `THRESHOLD_ARCMIN` (default 5.0) | Threshold for drift alert/correction |
-| `DRIFT_STATUS` | Number (read-only) | `DRIFT_ARCMIN` | Currently computed angular distance PiFinder↔mount |
+**Controls** (on the Main Control subtab unless noted):
 
-The Bridge sends **only** generic INDI standard properties to the mount: `EQUATORIAL_EOD_COORD`
-(target RA/DEC) + `ON_COORD_SET` (switch `SYNC` or `TRACK`) — never a mount-specific command.
-That's the core design that makes the Bridge generic across any INDI mount.
+| Property | Type | Purpose |
+|---|---|---|
+| `BRIDGE_SETTINGS` | Text *(Options)* | `indiserver` host/port for the embedded client (default `localhost:7624`) |
+| `ACTIVE_DEVICES` | Text *(Options)* | Which PiFinder and Mount devices are snooped |
+| `SHADOW_DEVICE_NAME` / `SHADOW_SYNC` | Text / Switch *(Shadow Sync)* | Second, non-driving device to mirror mount commands onto, and its on/off toggle |
+| `BRIDGE_MODE` | Switch (1oM) | Coupling: `MODE_OFF` / `MODE_VERIFY_ALERT` / `MODE_AUTO_CORRECT` / `MODE_GOTO_FORWARD` — see [Coupling Dial](#the-mount-bridge-coupling-dial) |
+| `CORRECTION_ACTION` | Switch (1oM) | What Auto-correct does on drift: `ACTION_SYNC` or `ACTION_GOTO` (Goto/Track) |
+| `MANUAL_TRIGGER` | Switch (≤1) | One-shot, any mode: `TRIGGER_SYNC_NOW`, `TRIGGER_GOTO_NOW`, `TRIGGER_GOTO_HELD` (re-send the held original target), `TRIGGER_ALIGN_HELD`, `TRIGGER_SYNC_TO_COORDS` |
+| `SYNC_TO_COORDS` | Number | RA/DEC (JNow) used by `TRIGGER_SYNC_TO_COORDS` |
+| `ABORT_MOUNT` | Switch | Emergency stop — sends an abort to the mount |
+| `MULTI_POINT_ALIGN` | Switch (≤1) | Start / Stop an automated multi-point alignment run ([#191](https://github.com/apos/PiFinder_Stellarmate/issues/191)) |
+| `ALIGN_CONFIG` / `ALIGN_DIRECTION` | Number / Switch (1oM) | That run's search radius, point count, min altitude; preferred sky region (Any/N/E/S/W) |
+| `REPOSITION_CONFIRM` | Switch (≤1) | Answer to an unexplained-reposition prompt: adopt the new position, or revert to the held target |
+| `DRIFT_THRESHOLD` | Number | Drift beyond this (arcmin, default 5.0) triggers an alert / correction |
+| `MAX_SYNC_DRIFT` | Number | Sanity limit: an auto-Sync above this (arcmin, default 120) is refused |
+| `SOLVE_FRESHNESS` | Number | Max solve age (s, default 5) an auto-correction will act on |
+
+**Read-only status:**
+
+| Property | Shows |
+|---|---|
+| `DRIFT_STATUS` | Current PiFinder↔mount angular separation (arcmin) |
+| `MOUNT_HORIZON_STATUS` | Mount altitude (deg); the drift computation freezes while the mount is below the horizon |
+| `TARGET_SOURCE` (+ `…_AGE`, `CORRECTION_AGE`) | Whether the Bridge is currently following PiFinder or the mount, and how long since that / the last self-sent command |
+| `ORIGINAL_TARGET` (+ `…_DRIFT`) | J2000 RA/DEC of the last genuinely new GoTo target, and current drift from it |
+| `ALIGN_PROGRESS` | Multi-point run: current point / total / verified |
+| `MOUNT_REJECT` | Populated when the mount refuses a Goto/Sync (axis or elevation limit) |
+| `PIFINDER_ORIENTATION` | PiFinder's own mount-type / screen-direction, snooped from the PiFinder device |
+
+To the mount the Bridge sends **only** generic INDI standard properties — `EQUATORIAL_EOD_COORD`
+(target RA/DEC) + `ON_COORD_SET` (`SYNC` or `TRACK`), never a mount-specific command. That is the
+core design that makes it work with any INDI mount.
+
+### In practice: which controls you actually touch
+
+The tables above are the full surface. Day to day it comes down to a handful - highlighted in red
+on the actual tab below, with a realistic example value for each:
+
+| Where | Control | Example | When |
+|---|---|---|---|
+| PiFinder LX200 → Connection | Network / TCP, Server + Port | `127.0.0.1` : `4030` (the defaults - rarely need to change) | Once, at setup |
+| PiFinder LX200 → Main Control | **Connect** | - | Every session (or let Auto Connect do it) |
+| Mount Bridge → Options | **Configuration** | Click **Save** after any change below | After changing anything you want to survive a restart (applies to every driver, not just this one) |
+| Mount Bridge → Options | **Active devices** | PiFinder = `PiFinder LX200`, Mount = your mount's device name (e.g. `LX200 OnStep`) | Once, at setup |
+| Mount Bridge → Main Control | **Connect**, then **Coupling** | `Verify/Alert only` to start safe; `Goto-Forward` for full push-to-drives-the-mount | Every session - Coupling is the one dial you change by intent |
+| Mount Bridge → Main Control | **Drift Threshold** | `5.0` arcmin (default) | Rarely - tighten / loosen the drift alarm |
+| Mount Bridge → Main Control | **Manual (one-shot)** | Pick `Sync Now` or `Goto Held Target` from the dropdown | Recovery after a bump or a refused slew |
+
+Each highlighted crop below links to the **full, unedited desktop screenshot it came from** -
+whole screen, real INDI log messages included, not just the panel in isolation. The crop is only a
+callout, not a replacement for seeing the real thing (full screenshots are also all cataloged in
+[Screenshot Reference](#screenshot-reference)).
+
+<table>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/lx200_connection_highlight.png" width="300"></a><br>
+<sub>PiFinder LX200 → Connection <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/lx200_main_connect_highlight.png" width="300"></a><br>
+<sub>PiFinder LX200 → Main Control <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/mount_bridge_options_configuration_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Options → Configuration <em>(click for full screen)</em></sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/mount_bridge_options_activedevices_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Options → Active devices <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_connectcoupling_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Connect / Coupling <em>(click for full screen)</em></sub>
+</td>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_driftthreshold_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Drift Threshold <em>(click for full screen, scrolled)</em></sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/mount_bridge_main_manualtrigger_highlight.png" width="300"></a><br>
+<sub>Mount Bridge → Main Control → Manual (one-shot) <em>(click for full screen)</em></sub>
+</td>
+</tr>
+</table>
+
+Everything else is read-only status or an inherited base-class control that does nothing for
+PiFinder (see [Step 3](#step-3-indi-control-panel--connect-the-devices)).
+
+**Can you group or rearrange properties in the INDI Control Panel?** No. The layout is fixed by
+each driver: one tab per device, then that driver's own property groups as subtabs (*Main
+Control*, *Connection*, *Options*, …). There is no way to make custom groups, hide rows, or
+reorder them. Two things soften it: **Options → Configuration → Save** makes a driver reappear
+with your values already set, and **Ekos** surfaces the few properties that matter mid-session in
+its own module GUIs (Mount, Capture, Focus, Align), so the raw panel is rarely needed during a run.
 
 ### Data flow: Auto-Correct / Verify-Alert (drift polling)
 
@@ -449,12 +649,10 @@ from that corrected model) should land closer. This repeats - re-verify, sync + 
 still outside the threshold - up to `MAX_SETTLE_RETRIES` (3) attempts before giving up and logging
 a warning, so a genuinely noisy solve can't chase itself forever.
 
-Why does the Bridge snoop `TARGET_EOD_COORD` instead of a property of its own? `INDI::Telescope`
-(the base class of every LX200-style driver, including `PiFinder LX200`) already publishes this
-property **automatically** on every successful `Goto()` call (see `inditelescope.cpp`,
-`ISNewNumber()`) — regardless of whether the driver itself has a motor. Adding a custom property to
-the PiFinder driver turned out to be unnecessary (a first attempt even collided with this existing
-property, see [Known bugs](#bugs-found-during-development)).
+The Bridge snoops `TARGET_EOD_COORD` rather than a property of its own because `INDI::Telescope`
+(the base class of every LX200-style driver, including `PiFinder LX200`) publishes it automatically
+on every successful `Goto()` call (see `inditelescope.cpp`, `ISNewNumber()`), regardless of whether
+the driver has a motor. A custom property would only duplicate — and collide with — that one.
 
 ---
 
@@ -471,7 +669,7 @@ StellarMate device):
 - **Binary size**: 13.5 MB → **80 KB**
 - **Build time**: full INDI tree → **seconds** (only one `.cpp` file)
 - **No `indi-source` dependency** — only system headers/libs (`pkg-config libindi`)
-- **No conflict with `pacman`** — no longer overwrites `/usr/bin/indi_lx200generic`, which belongs
+- **No conflict with `pacman`** — does not overwrite `/usr/bin/indi_lx200generic`, which belongs
   to the system package
 
 This required the modern `LX200Telescope` base class's API to be nearly identical to the old
@@ -507,24 +705,16 @@ Staged, from safest to most realistic:
 3. **Real hardware** (real PiFinder + real EQ5/OnStepX): final verification of all modes (Sync,
    Goto, Goto-Forward) with actual, visible mount movement.
 
-### Bugs found during development
+### Implementation gotchas
 
-For traceability, and as a warning for similar future changes:
-
-1. **Symlink name mismatch** (old driver): the binary's name didn't match the name expected in
-   `drivers.xml` — the driver failed to load.
-2. **`tty_read()` instead of `tty_nread_section()`**: 6–10s lag per position update (see above,
-   [LX200 commands](#lx200-commands-pifinder-lx200--pifinders-own-server)).
-3. **`TARGET_EOD_COORD` name collision**: a first attempt at building the Goto-Forward feature via
-   a new property collided with the identically-named property already provided by
-   `INDI::Telescope` (different element names: `RA`/`DEC` vs. the self-chosen `TARGET_RA`/
-   `TARGET_DEC`) — leading to `IDSetNumber` errors ("No INumber 'TARGET_RA'"). Fix: removed the
-   custom property entirely, used the existing base-class property instead.
-4. **`loadConfig()` on every client connection**: `PiFinderMountBridge::ISGetProperties()` called
-   `loadConfig(true)` on **every** new client connection (every `indi_getprop` call, every reopen
-   of the INDI Control Panel) — silently overwriting the just-chosen Coupling mode with the
-   last-saved one. Fixed with an `m_configLoaded` flag so `loadConfig()` only actually loads
-   anything on the very first call.
+- The driver binary's name must match the name in `drivers.xml`, or it won't load.
+- Read PiFinder's LX200 replies with `tty_nread_section()`, not `tty_read()` — the latter adds
+  6–10 s of lag per position update.
+- Don't add a custom `TARGET_*` property to forward Goto targets — `INDI::Telescope` already
+  publishes `TARGET_EOD_COORD` (elements `RA`/`DEC`); snoop that.
+- `PiFinderMountBridge::ISGetProperties()` must not call `loadConfig()` on every client connection —
+  it would overwrite the current Coupling mode with the last-saved one on every `indi_getprop` or
+  INDI Control Panel reopen. An `m_configLoaded` flag limits it to the first call.
 
 ---
 
@@ -551,13 +741,108 @@ For traceability, and as a warning for similar future changes:
 
 ## Version Compatibility
 
+The PiFinder / StellarMate OS / Raspberry Pi test matrix is maintained in one place — the
+[Version Compatibility table in README.md](README.md#version-compatibility). INDI-specific
+particulars for this driver:
+
 | Component | Version |
 |---|---|
-| PiFinder | 2.6.0 |
-| StellarMate OS | 2.2.1 (Arch Linux) |
-| libindi | 2.2.2 |
-| Tested mount/driver | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
-| Hardware | Raspberry Pi 4 |
+| libindi | 2.2.2 (system package) |
+| Tested mount / driver | Skywatcher EQ5 + OnStepX, `indi_lx200_OnStep` 1.27 |
 
-See also the "Version Compatibility" table in the [main README](README.md) for the base PiFinder
-installation.
+---
+
+## Screenshot Reference
+
+Every screenshot in this document, grouped by where it comes from - plus the full-desktop INDI
+Control Panel captures for `PiFinder Simulator`/`Telescope Simulator` (below), since those were
+taken in the same session as this document's own tabs. Their detailed setup walkthrough and KStars
+right-click behavior still live in [Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md) and
+[Readme_PiFinder_in_KStars.md](Readme_PiFinder_in_KStars.md), not duplicated here.
+
+**The practically-relevant fields, highlighted** (also shown inline in
+[In practice: which controls you actually touch](#in-practice-which-controls-you-actually-touch))
+
+| Screenshot | Shows |
+|---|---|
+| <img src="docs/images/pfinder_lx200/lx200_connection_highlight.png" width="120"> | PiFinder LX200 → Connection: Network / TCP, Server + Port |
+| <img src="docs/images/pfinder_lx200/lx200_main_connect_highlight.png" width="120"> | PiFinder LX200 → Main Control: Connect |
+| <img src="docs/images/pfinder_lx200/mount_bridge_options_configuration_highlight.png" width="120"> | Mount Bridge → Options: Configuration (Load/Save/Default/Purge) |
+| <img src="docs/images/pfinder_lx200/mount_bridge_options_activedevices_highlight.png" width="120"> | Mount Bridge → Options: Active devices |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_connectcoupling_highlight.png" width="120"> | Mount Bridge → Main Control: Connect + Coupling |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_driftthreshold_highlight.png" width="120"> | Mount Bridge → Main Control: Drift Threshold |
+| <img src="docs/images/pfinder_lx200/mount_bridge_main_manualtrigger_highlight.png" width="120"> | Mount Bridge → Main Control: Manual (one-shot) |
+
+**Web Manager** (`http://<pi-address>:8624`)
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/webmanager_overview.png"><img src="docs/images/pfinder_lx200/webmanager_overview.png" width="120"></a> | Profile "PFSM UTM Simulation" — Drivers, Port, Driver Source, Server Status |
+| <a href="docs/images/pfinder_lx200/webmanager_drivers_list.png"><img src="docs/images/pfinder_lx200/webmanager_drivers_list.png" width="120"></a> | Drivers multi-select — where the PiFinder drivers appear |
+| <a href="docs/images/pfinder_lx200/webmanager_driver_source.png"><img src="docs/images/pfinder_lx200/webmanager_driver_source.png" width="120"></a> | Driver Source set to "System INDI Drivers" |
+| <a href="docs/images/pfinder_lx200/webmanager_profile.png"><img src="docs/images/pfinder_lx200/webmanager_profile.png" width="120"></a> | A real-mount profile: PiFinder Mount Bridge + LX200 OnStep + PiFinder LX200, all online |
+
+**Ekos**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/ekos_select_profile.png"><img src="docs/images/pfinder_lx200/ekos_select_profile.png" width="120"></a> | Select Profile → Start/Stop Ekos → Connect/Disconnect Devices |
+| <a href="docs/images/pfinder_lx200/ekos_profile_editor.png"><img src="docs/images/pfinder_lx200/ekos_profile_editor.png" width="120"></a> | Profile Editor: Mode "Remote Host", `localhost:7624`, Auto Connect |
+
+**INDI Control Panel — PiFinder LX200 tab (full tab, close crop)**
+
+These two predate the full-desktop pass below and are kept for a tight, zoomed-in view of just the
+panel; see the next section for the same tabs with the whole screen and real log messages.
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_connection.png" width="120"></a> | Connection subtab: Network / TCP, `127.0.0.1:4030` |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_LX200_main.png" width="120"></a> | Main Control subtab: Track / Slew only, no Sync |
+
+**INDI Control Panel — PiFinder Mount Bridge tab (full tab, close crop)**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_main.png" width="120"></a> | Main Control subtab: Coupling, correction action, manual triggers, alignment |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_options.png" width="120"></a> | Options subtab: Active devices + indiserver Settings |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_tabs_PiFinder_Mount_Bridge_shadow.png" width="120"></a> | Shadow Sync subtab: mirror commands onto a non-driving device |
+
+**INDI Control Panel — full desktop, every tab, real INDI log messages included**
+
+Whole-screen captures (Ubuntu desktop, taskbar, the actual KStars window) with the message log at
+the bottom left showing genuine live output at capture time - not a staged/idealized state.
+`PiFinder Simulator` and `Telescope Simulator` are included here since they're part of the same
+INDI Control Panel session, even though the rest of their documentation lives in
+[Readme_PiFinder_Simulator.md](Readme_PiFinder_Simulator.md).
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_connection.png" width="120"></a> | PiFinder LX200 → Connection - log shows a real `CMD read ERROR -4` / `Failed to get RA from PiFinder` episode |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_LX200_main.png" width="120"></a> | PiFinder LX200 → Main Control |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_1.png" width="120"></a> | Mount Bridge → Main Control, top (Connection, Coupling, Manual one-shot, Multi-Point Alignment) |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_main_2.png" width="120"></a> | Mount Bridge → Main Control, scrolled down (Drift Threshold, Auto-Sync limit, status) - log shows a real drift warning |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_options.png" width="120"></a> | Mount Bridge → Options |
+| <a href="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_shadow.png"><img src="docs/images/pfinder_lx200/indi_control_panel_full_PiFinder_Mount_Bridge_shadow.png" width="120"></a> | Mount Bridge → Shadow Sync |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_PiFinder_Simulator_main.png" width="120"></a> | PiFinder Simulator → Main Control |
+| <a href="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png"><img src="docs/images/pfinder_simulator/indi_control_panel_full_Telescope_Simulator_main.png" width="120"></a> | Telescope Simulator → Main Control |
+
+**KStars sky map**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_both_mount_and_pifinder.png" width="120"></a> | PiFinder and mount as separate target devices in the right-click context menu |
+| <a href="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png"><img src="docs/images/pfinder_lx200/kstars_context_menu_PiFinder_LX200.png" width="120"></a> | "PiFinder LX200" submenu: only Goto, Abort, Find Telescope |
+
+**SkySafari**
+
+| Screenshot | Shows |
+|---|---|
+| <a href="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png"><img src="docs/images/pfinder_lx200/skysafari_ip_port_Meade_LXClassic.png" width="120"></a> | Network connection settings: telescope type, IP address, port `9624` |
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

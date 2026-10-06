@@ -1,6 +1,21 @@
---- python/PiFinder/state.py.orig	2026-07-19 12:48:00.610345725 +0200
-+++ python/PiFinder/state.py	2026-07-19 12:44:48.863085131 +0200
-@@ -303,6 +303,12 @@
+--- python/PiFinder/state.py.orig
++++ python/PiFinder/state.py
+@@ -273,6 +273,14 @@
+ class SharedStateObj:
+     def __init__(self) -> None:
+         self.__power_state = 1  # 0 = sleep state, 1 = awake state
++        # Timestamp of the last externally-requested "keep awake" (e.g. the
++        # Mount Bridge actively coordinating a GoTo - see
++        # register_external_activity()'s docstring). None = never requested.
++        # Separate from the main process's own PowerManager.last_activity
++        # (keypad/IMU), which an external web-server-process caller has no
++        # access to - main.py's update() loop reads this alongside its own
++        # activity timer instead.
++        self.__external_activity_ts: Optional[float] = None
+         # self.__solve_state
+         # None = No solve attempted yet
+         # True = Valid solve data from either IMU or Camera
+@@ -306,6 +314,32 @@
          self.__arch = None
          self.__camera_align = False
          self.__camera_type = "imx296"  # Default, will be set by camera process
@@ -10,18 +25,92 @@
 +        # camera_interface.py's capture loop, with no way for anything else
 +        # (UI, web API) to read back whether it was currently on or off.
 +        self.__debug_solve: bool = False
-         self.__cam_raw = None
-         # Are we prepared to do alt/az math
-         # We need gps lock and datetime
-@@ -368,6 +374,12 @@
-     def set_camera_type(self, v: str):
-         self.__camera_type = v
++        # Whether the integrator is currently simulating telescope motion
++        # from real IMU data (see FakeSolve/integrator.py's settle
++        # detection) - distinct from debug_solve, which fakes the camera
++        # image, not the position pipeline.
++        self.__fake_solve_active: bool = False
++        # Last confirmed solve-based PiFinder Align (ui/align.py's
++        # align_on_radec() success path): wall-clock time plus the J2000
++        # RA/Dec (degrees) the user just centered in the telescope's own
++        # eyepiece. None = no such Align since this process started.
++        # Surfaced in /api/status; an external consumer (PiFinder_Stellarmate's
++        # Mount Bridge) polls last_align_time and, on a change, syncs the
++        # mount's own coordinate belief to (ra, dec) - the scope has not
++        # moved, only PiFinder's calibration improved, so a plain Sync is the
++        # correct mount reaction regardless of Coupling mode. Deliberately NOT
++        # set by the "reset reticle to center" path (align.py
++        # UIAlign.key_number(1)) or the manual daytime align (align_daytime.py),
++        # neither of which is a confirmed sky position. See set_last_align().
++        self.__last_align_time: Optional[float] = None
++        self.__last_align_ra: Optional[float] = None
++        self.__last_align_dec: Optional[float] = None
+         # Configured lens, the half of the optical train nothing can detect.
+         # None means "not stated", which resolves to the sensor's shipped lens
+         # -- that is what lets installs predating this setting keep working.
+@@ -360,6 +394,23 @@
+                 f"Invalid value for set_power_state: {v}. power_state not changed."
+             )
+ 
++    def external_activity_ts(self):
++        return self.__external_activity_ts
++
++    def register_external_activity(self):
++        """
++        Called from outside the main process (e.g. the web server, on behalf
++        of the Mount Bridge actively coordinating a GoTo) to request that
++        PiFinder stay awake and keep producing full-cadence solves, the same
++        as real keypad/IMU activity would. Does NOT wake the screen or
++        directly flip power_state itself - main.py's update() loop is the
++        only place that decides sleep/wake, it just also honors this
++        timestamp alongside its own last_activity. Callers must keep calling
++        this periodically (not just once) for as long as they need PiFinder
++        awake - a single call only buys until the current sleep timeout.
++        """
++        self.__external_activity_ts = time.time()
++
+     def arch(self):
+         return self.__arch
+ 
+@@ -414,6 +465,42 @@
+     def set_optical_train_known(self, v: bool):
+         self.__optical_train_known = bool(v)
  
 +    def debug_solve(self) -> bool:
 +        return self.__debug_solve
 +
 +    def set_debug_solve(self, v: bool):
 +        self.__debug_solve = v
++
++    def fake_solve_active(self) -> bool:
++        return self.__fake_solve_active
++
++    def set_fake_solve_active(self, v: bool):
++        self.__fake_solve_active = v
++
++    def last_align_time(self) -> Optional[float]:
++        return self.__last_align_time
++
++    def last_align_ra(self) -> Optional[float]:
++        return self.__last_align_ra
++
++    def last_align_dec(self) -> Optional[float]:
++        return self.__last_align_dec
++
++    def set_last_align(self, ra: float, dec: float) -> None:
++        """Record a confirmed solve-based PiFinder Align. ``ra``/``dec`` are
++        the J2000 catalog coordinates (degrees) of the object the user just
++        centered in the telescope's own eyepiece - i.e. where the telescope
++        is now known to be truly pointed. Called only from
++        ``ui/align.py::align_on_radec()`` on success, so every real align
++        entry point (the Align screen, "align on this object" from the
++        object list) is covered while the non-solve paths (reset-to-center,
++        manual daytime align) are not. Stamps all three fields together so a
++        reader never sees a fresh timestamp with stale coordinates.
++        """
++        self.__last_align_ra = float(ra)
++        self.__last_align_dec = float(dec)
++        self.__last_align_time = time.time()
 +
      def sats(self):
          return self.__sats

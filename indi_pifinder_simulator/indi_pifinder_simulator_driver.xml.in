@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<driversList>
+    <devGroup group="Telescopes">
+        <device label="PiFinder Simulator" manufacturer="PiFinder">
+            <driver name="PiFinder Simulator">indi_pifinder_simulator</driver>
+            <version>1.0</version>
+        </device>
+    </devGroup>
+</driversList>

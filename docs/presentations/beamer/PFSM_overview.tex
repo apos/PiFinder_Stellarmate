@@ -1,0 +1,588 @@
+%% PiFinder_Stellarmate — overview deck, built on the AVVP Beamer template
+%% (github.com/apos/beamer_template_AVVP_eV).  Vendored: tex/, fonts/, pics/.
+%% Build:  latexmk -lualatex PFSM_overview.tex      (twice, for the agenda bar)
+%%   or:   lualatex PFSM_overview  &&  lualatex PFSM_overview
+\documentclass[12pt,english,aspectratio=1609]{beamer}
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{luainputenc}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{setspace}
+\PassOptionsToPackage{normalem}{ulem}
+\usepackage{ulem}
+
+\makeatletter
+\providecommand{\tabularnewline}{\\}
+\newcommand{\lyxdot}{.}
+\newcommand\makebeamertitle{\frame{\maketitle}}%
+\AtBeginDocument{%
+  \let\origtableofcontents=\tableofcontents
+  \def\tableofcontents{\@ifnextchar[{\origtableofcontents}{\gobbletableofcontents}}
+  \def\gobbletableofcontents#1{\origtableofcontents}
+}
+\input{tex/avvp_beamer_preamble.tex}
+\usetikzlibrary{arrows.meta,positioning}
+\makeatother
+
+\usepackage{babel}
+
+% screenshots live in the repo's docs tree — no copies needed
+\graphicspath{%
+  {img/}%
+  {../pptx/assets/}%
+  {../../images/readme/}%
+  {../../images/pfinder_lx200/}%
+  {../../images/pfinder_simulator/}%
+  {../../images/logo/}%
+}
+
+\newcommand{\code}[1]{{\ttfamily #1}}
+\beamerdefaultoverlayspecification{}   % show everything at once; overview deck, not a talk-reveal
+
+% English deck -> override the template's German auto-labels
+\def\AVVPSubAgendaTitle{Where we are}
+\def\AVVPMainAgendaTitle{Agenda}
+
+% colour external URLs; leave internal nav links (footer title, agenda bar) at their surrounding colour
+\hypersetup{colorlinks=true,urlcolor=AVVPBlue,linkcolor=.,citecolor=.,filecolor=.}
+
+% Dark by default. Build the LIGHT version with:
+%   lualatex -jobname=PFSM_overview_light "\def\PFSMlightbuild{}\input{PFSM_overview}"
+\newif\ifPFSMlight
+\ifdefined\PFSMlightbuild\PFSMlighttrue\fi
+
+\begin{document}
+
+\ifPFSMlight
+  \AVVPLightMode
+  \AVVPFootlineLight
+  \AVVPBgFillWidth{pics/AVVPBg_light.png}{0}{0}
+\else
+  \AVVPDarkMode
+  \AVVPFootlineDark
+  \AVVPBgFillWidth{pics/AVVPBg_dark.png}{0}{0}
+\fi
+
+\title[PiFinder\_Stellarmate]{PFSM — Plate-solving push-to,\\
+on a full imaging rig}
+\subtitle{What PFSM adds between the two —\\
+for PiFinder and StellarMate developers}
+\author[Axel Pospischil]{Axel Pospischil\enskip(github.com/apos)}
+\date[github.com/apos]{Community project — not affiliated with PiFinder or StellarMate}
+
+\makebeamertitle
+
+\AVVPAgendaOnlySections   % 3 top-level sections in the footer bar; agenda interstitial per section, not per subsection
+
+\begin{frame}{Agenda}
+\tableofcontents{}
+\end{frame}
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+\subsection{For newcomers}
+
+\begin{frame}[t]{Two problems, one telescope}
+\begin{columns}[T]
+\column{6cm}
+\textbf{Where am I pointing?}
+\begin{itemize}
+\item A Dobson or push-to EQ has no encoders.
+\item The software has no idea where the tube looks.
+\end{itemize}
+\column{6cm}
+\textbf{Drive the whole rig}
+\begin{itemize}
+\item Camera, mount, guiding, focus.
+\item All need one control layer: INDI, KStars/Ekos, an app.
+\end{itemize}
+\end{columns}
+\vspace{1.0em}
+\begin{center}
+\begin{tikzpicture}[
+  hub/.style={draw=AVVPBlue, line width=1pt, circle, fill=AVVPBg, text=white,
+              minimum size=1.9cm, align=center, font=\footnotesize, inner sep=2pt},
+  sat/.style={draw=AVVPGrey!70!white, line width=0.8pt, rounded corners=2pt, fill=AVVPBg,
+              text=AVVPGrey!70!white, minimum width=2.1cm, minimum height=0.8cm,
+              align=center, font=\scriptsize},
+  link/.style={AVVPGrey!70!white, line width=0.8pt},
+  unc/.style={AVVPSpark, dashed, line width=0.9pt, -{Stealth[length=1.8mm]}}
+]
+% left: an uncertain pointing direction
+\node[hub] (scope) at (0,0) {Telescope};
+\draw[unc] (scope) -- ++(55:1.9);
+\draw[unc] (scope) -- ++(15:1.7);
+\draw[unc] (scope) -- ++(85:1.6);
+\node[AVVPSpark, font=\Large\bfseries] at (1.05,1.15) {?};
+\node[below=0.35cm of scope, font=\scriptsize, text=AVVPGrey] {no position feedback};
+% right: one control layer, many devices
+\node[hub] (ctrl) at (6.6,0.05) {Control\\layer};
+\node[sat] (cam) at (4.6,1.25)  {Camera};
+\node[sat] (mnt) at (8.6,1.25)  {Mount};
+\node[sat] (gui) at (4.6,-1.15) {Guiding};
+\node[sat] (foc) at (8.6,-1.15) {Focus};
+\draw[link] (ctrl) -- (cam);
+\draw[link] (ctrl) -- (mnt);
+\draw[link] (ctrl) -- (gui);
+\draw[link] (ctrl) -- (foc);
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+\begin{frame}[t]{Each project owns one half}
+\begin{columns}[T]
+\column{6cm}
+\textbf{PiFinder}
+\begin{itemize}
+\item Global-shutter camera + plate-solver.
+\item Live sky position + push-to arrows.
+\item Python, open hardware \& software.
+\end{itemize}
+\column{6cm}
+\textbf{StellarMate}
+\begin{itemize}
+\item INDI — the device-driver standard.
+\item KStars / Ekos — capture \& automation.
+\item The StellarMate phone / tablet app.
+\end{itemize}
+\end{columns}
+\vspace{1.2em}
+\begin{center}
+\begin{tikzpicture}[
+  chip/.style={draw=AVVPBlue, line width=0.8pt, rounded corners=2pt, fill=AVVPBg,
+               text=white, minimum width=1.75cm, minimum height=1.15cm, align=center,
+               font=\tiny, inner sep=3pt},
+  arr/.style={-{Stealth[length=1.8mm,width=1.3mm]}, AVVPBlue, line width=0.7pt},
+  icon/.style={line width=0.8pt, AVVPBlue}
+]
+% --- icon glyphs, drawn to a common ~0.7cm footprint ---
+\newcommand{\iconCamera}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.3,-0.18) rectangle (0.3,0.18);
+  \draw[icon] (-0.1,0.18) rectangle (0.1,0.26);
+  \draw[icon] (0,0) circle (0.11);
+\end{tikzpicture}}
+\newcommand{\iconSolve}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon] (0,0) circle (0.27);
+  \draw[icon] (0,0) circle (0.12);
+  \draw[icon,line width=0.6pt] (-0.34,0) -- (0.34,0);
+  \draw[icon,line width=0.6pt] (0,-0.34) -- (0,0.34);
+\end{tikzpicture}}
+\newcommand{\iconStar}{\begin{tikzpicture}[baseline=-0.1cm]
+  \foreach \a in {0,45,90,135}{\draw[icon,line width=0.7pt]
+    ({0.28*cos(\a)},{0.28*sin(\a)}) -- ({-0.28*cos(\a)},{-0.28*sin(\a)});}
+  \filldraw[AVVPSpark] (0,0) circle (0.05);
+\end{tikzpicture}}
+\newcommand{\iconPlug}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.22,-0.16) rectangle (0.22,0.08);
+  \draw[icon,line width=1.0pt] (-0.1,0.08) -- (-0.1,0.27);
+  \draw[icon,line width=1.0pt] (0.1,0.08) -- (0.1,0.27);
+\end{tikzpicture}}
+\newcommand{\iconMonitor}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=1pt] (-0.3,0.0) rectangle (0.3,0.32);
+  \draw[icon] (0,0) -- (0,-0.14);
+  \draw[icon] (-0.14,-0.14) -- (0.14,-0.14);
+\end{tikzpicture}}
+\newcommand{\iconPhone}{\begin{tikzpicture}[baseline=-0.1cm]
+  \draw[icon,rounded corners=2pt] (-0.16,-0.3) rectangle (0.16,0.3);
+  \draw[icon,line width=0.6pt] (-0.08,-0.22) -- (0.08,-0.22);
+\end{tikzpicture}}
+% --- PiFinder: a straight pipeline ---
+\node[chip] (cam)   at (0,0)    {\iconCamera\\[1pt]Camera};
+\node[chip] (solve) at (2.15,0) {\iconSolve\\[1pt]Plate-solver};
+\node[chip] (pos)   at (4.3,0)  {\iconStar\\[1pt]Sky position};
+\draw[arr] (cam) -- (solve);
+\draw[arr] (solve) -- (pos);
+% --- StellarMate: two front ends, one INDI hub ---
+\node[chip] (indi)   at (7.3,0)      {\iconPlug\\[1pt]INDI};
+\node[chip] (kstars) at (10.0,0.68)  {\iconMonitor\\[1pt]KStars/Ekos};
+\node[chip] (app)    at (10.0,-0.68) {\iconPhone\\[1pt]App};
+\draw[arr] (kstars) -- (indi);
+\draw[arr] (app) -- (indi);
+\draw[-{Stealth[length=2mm,width=1.4mm]}, AVVPSpark, dashed, line width=0.9pt] (pos) -- (indi);
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+\begin{frame}[t]{PFSM is the wiring. INDI is the connector.}
+\begin{itemize}
+\item \textbf{PiFinder} exposes its solved position as an INDI telescope.
+\item \textbf{Mount Bridge} couples that to any INDI mount (optional).
+\item \textbf{Your rig} — KStars / Ekos, the mount, the app — stays unchanged.
+\end{itemize}
+\medskip{}
+PiFinder is patched in place, never forked. The mount side is generic INDI.
+\vspace{0.6em}
+\begin{center}
+\begin{tikzpicture}[
+  node distance=2.0cm and 2.3cm,
+  box/.style={draw=AVVPBlue, line width=0.9pt, rounded corners=3pt, fill=AVVPBg,
+              text=white, minimum width=3.5cm, minimum height=1.3cm, align=center,
+              font=\footnotesize, inner sep=7pt},
+  boxopt/.style={box, draw=AVVPSpark, dashed},
+  boxrig/.style={box, draw=AVVPGrey!70!white},
+  lbl/.style={font=\tiny, text=AVVPGrey},
+  arr/.style={-{Stealth[length=2.2mm,width=1.6mm]}, AVVPBlue, line width=0.9pt},
+  arropt/.style={arr, AVVPSpark, dashed},
+  arrrig/.style={arr, AVVPGrey!70!white}
+]
+\node[box]              (pf) {\textbf{PiFinder}\\[2pt]INDI telescope};
+\node[boxopt, right=of pf] (mb) {\textbf{Mount Bridge}\\[2pt]optional};
+\node[box, right=of mb] (mt) {\textbf{Your mount's}\\[2pt]driver — generic INDI};
+\node[boxrig, below=1.3cm of mb] (rig) {\textbf{Your rig}\\[2pt]KStars/Ekos, the app — unchanged};
+\draw[arr]    (pf) -- (mb) node[midway, yshift=7pt, lbl] {solved position};
+\draw[arropt] (mb) -- (mt) node[midway, yshift=7pt, lbl] {EQUATORIAL\_EOD\_COORD};
+\draw[arrrig] (rig) -- (mt.south);
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+% ============================================================
+\subsection{Project summary \& focus}
+% ============================================================
+
+\begin{frame}[t]{What PFSM is}
+\begin{itemize}
+\item \textbf{A setup script} — installs \& patches PiFinder onto StellarMate OS.
+\item \textbf{\code{diffs/*.diff} patches} — applied to a stock checkout via \code{patch(1)}.
+\item \textbf{Three INDI drivers} — LX200, Mount Bridge, Simulator.
+\item \textbf{A web Control Center} — stdlib-only, port 8765.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[t]{What PFSM is not}
+\begin{itemize}
+\item \textbf{Not a fork of PiFinder} — patches re-applied every update, kept minimal.
+\item \textbf{Not a fork of StellarMate} — stock INDI, Web Manager, KStars.
+\item \textbf{Not a replacement for the INDI Control Panel} — it stays for advanced work.
+\item \textbf{Not PiFinder-version-specific} — talks only to the stable \code{/api/*}.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Why INDI}
+\textbf{Both sides already speak it.}
+\begin{itemize}
+\item PiFinder exposes its position as an INDI telescope.
+\item The Mount Bridge couples that to any INDI mount — no per-mount code.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Versions \& platforms}
+\textbf{PiFinder 2.6.3 \quad$\cdot$\quad StellarMate OS 2.3.0}
+\begin{itemize}
+\item Pi 4 — fully tested.
+\item Pi 5 — fully tested.
+\item UTM x86 — install + Control Center + Mount Bridge vs.\ the Simulator (no real solving).
+\end{itemize}
+\medskip{}
+Pinned to a fixed release tag, not the upstream \emph{release} branch.
+\end{frame}
+
+\begin{frame}[t]{Prerequisites}
+\begin{itemize}
+\item \textbf{A current StellarMate OS (SMOS) installation} — the only supported base.
+\item \textbf{Not supported: a stock PiFinder OS image.} Doesn't make sense either — PFSM's entire
+      premise is the StellarMate integration (INDI, KStars/Ekos, the Web Manager, the app), and a
+      stock PiFinder OS has none of that to integrate with.
+\end{itemize}
+\end{frame}
+
+% ============================================================
+\section{Implementation}
+% ============================================================
+
+\subsection{Control Center}
+
+\begin{frame}[t]{Why a Control Center}
+\begin{columns}[T]
+\column{0.34\textwidth}
+\begin{itemize}
+\item Watch an install from a phone at the scope.
+\item Switch Fake Mode $\leftrightarrow$ the real service.
+\item Check camera / IMU / GPS are really detected.
+\item Reboot the Pi without SSH.
+\end{itemize}
+\column{0.64\textwidth}
+\vspace*{-11mm}\hfill\includegraphics[height=0.92\textheight,keepaspectratio]{cc_full_page}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{Stdlib only — by necessity}
+\begin{columns}[T]
+\column{0.34\textwidth}
+\begin{itemize}
+\item It bootstraps the very venv that PiFinder needs, so it can't depend on one.
+\item \code{http.server} on \code{:8765}, polled every 1--2\,s.
+\item HTTP Basic auth against the system account (PAM).
+\end{itemize}
+\column{0.64\textwidth}
+\vspace*{-11mm}\hfill\includegraphics[height=0.92\textheight,keepaspectratio]{cc_full_page}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{Traffic-light badges}
+\begin{center}
+\includegraphics[width=0.92\linewidth,keepaspectratio]{badge_row}
+\end{center}
+\begin{itemize}
+\item \textbf{White} — not applicable yet.
+\item \textbf{Green} — verified functional.
+\item \textbf{Yellow} — degraded / estimate.
+\item \textbf{Red} — broken or wrong.
+\end{itemize}
+The rule: verify real state, never ``the process is alive''.
+\end{frame}
+
+\begin{frame}[t]{Coupling, without the INDI panel}
+\begin{columns}[T]
+\column{0.40\textwidth}
+\begin{itemize}
+\item Quick Actions — one-shots.
+\item Coupling presets — one click.
+\item Settings — set once, hidden.
+\end{itemize}
+\column{0.56\textwidth}
+\includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{cc_mount_bridge_coupling}
+\end{columns}
+\end{frame}
+
+% ============================================================
+\subsection{PF LX200 \& Mount Bridge}
+% ============================================================
+
+\begin{frame}[t]{Three building blocks}
+\begin{enumerate}
+\item \textbf{PiFinder LX200} — INDI telescope. Reports the solved position; a GoTo becomes a push-to. Required.
+\item \textbf{PiFinder Mount Bridge} — optional. Snoops PiFinder + the mount and couples them. Generic INDI only.
+\item \textbf{Your mount's driver} — not ours. Only for a motorised mount.
+\end{enumerate}
+\medskip{}
+\begin{center}
+\includegraphics[width=0.82\linewidth,keepaspectratio]{mb_diagram}
+\end{center}
+\end{frame}
+
+\begin{frame}[t]{The Web Manager — a ``Remote'' profile}
+\begin{columns}[T]
+\column{0.42\textwidth}
+\begin{itemize}
+\item PFSM's INDI drivers live \textbf{only} in the StellarMate Web Manager (\code{:8624}) — the Equipment Profile is built there.
+\item KStars / Ekos then connects in \textbf{Remote Host} mode, never ``Local''.
+\item The one real difference from a stock StellarMate setup.
+\end{itemize}
+\column{0.56\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{webmanager_full}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{One weak PiFinder, one strong box}
+Pick the \textbf{role} at setup:
+\smallskip{}
+\begin{center}
+\includegraphics[width=\linewidth,keepaspectratio]{cc_roles}
+\end{center}
+\medskip{}
+\begin{itemize}
+\item \textbf{Control host} — a strong StellarMate PC runs INDI, Ekos, guiding and capture; the low-power PiFinder Pi over the LAN only supplies its solved position.
+\item \textbf{INDI-only install} (\code{--mode=indi\_only}) — the Control-host case: just the INDI deps + the two PFSM drivers, no PiFinder clone or venv.
+\end{itemize}
+\vspace{0.2em}
+\begin{center}
+\includegraphics[width=0.9\linewidth,keepaspectratio]{cc_install}
+\end{center}
+\end{frame}
+
+\begin{frame}[t]{PiFinder LX200}
+\begin{columns}[T]
+\column{0.34\textwidth}
+\begin{itemize}
+\item Talks LX200 to PiFinder's \code{pos\_server.py} (TCP 4030).
+\item Reports the solved position each poll; a GoTo is only a push-to.
+\item No Sync — PiFinder measures the truth every frame.
+\end{itemize}
+\column{0.64\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.74\textheight,keepaspectratio]{lx200_cp}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{The Coupling Dial}
+\begin{columns}[T]
+\column{0.44\textwidth}
+\begin{enumerate}
+\item \textbf{Off}\\ pure push-to
+\item \textbf{Verify / Alert only}\\ warn on drift, hands off
+\item \textbf{Auto-correct on drift}\\ Sync past the threshold
+\item \textbf{Goto-Forward}\\ real Goto, then settle \& refine
+\end{enumerate}
+\column{0.54\textwidth}
+\includegraphics[width=\linewidth,height=0.66\textheight,keepaspectratio]{cc_map}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{Generic INDI, nothing mount-specific}
+Only \code{EQUATORIAL\_EOD\_COORD} + \code{ON\_COORD\_SET} — never a mount command.
+\begin{columns}[T]
+\column{0.33\textwidth}
+\begin{itemize}
+\item Multi-Point Alignment (\#191) — automated multi-star run.
+\item Reposition detection — adopt or revert a move.
+\item Shadow Sync — mirror onto a non-driving device.
+\end{itemize}
+\column{0.65\textwidth}
+\hfill\includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{kstars_menu}
+\end{columns}
+\end{frame}
+
+% ============================================================
+\subsection{PF Simulator}
+% ============================================================
+
+\begin{frame}[t]{A mount side and a PiFinder side}
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{Mount side}\\[0.3em]
+Stock INDI Telescope Simulator — Sync or GoTo like a real mount.
+\vspace{2.6em}
+
+\includegraphics[width=\linewidth,keepaspectratio]{sim_mount_c}
+\column{0.48\textwidth}
+\textbf{PiFinder side}
+\begin{itemize}
+\item \textbf{Simulator} — holds a settable RA/Dec.
+\item \textbf{Truth Injector} — POSTs to \code{/api/fake\_solve}.
+\end{itemize}
+\vspace{1.4em}
+
+\includegraphics[width=\linewidth,keepaspectratio]{sim_pf_c}
+\end{columns}
+\end{frame}
+
+\begin{frame}[t]{Simulator details}
+\begin{itemize}
+\item \textbf{Sync == Goto} — no motion to model; the RA/Dec just becomes the held value.
+\item \textbf{Inject every cycle} — keeps PiFinder's solve timestamp fresh.
+\item \textbf{\code{FOLLOW\_MOUNT\_DEVICE}} (\#239) — optionally dead-reckon along a mount's slews.
+\end{itemize}
+\medskip{}
+Next (v3.x): render a GSC star field and run PiFinder's real solver on it — issue \#344.
+\end{frame}
+
+% ============================================================
+\section{Contribute}
+% ============================================================
+
+\subsection{Upstream: PiFinder}
+
+\begin{frame}[t]{PiFinder — patches that aren't PFSM-specific}
+\code{docs/upstream\_patch\_inventory.md}
+\begin{itemize}
+\item \textbf{Multi-client \code{pos\_server.py}} — a thread per connection. It served one client at a time; SkySafari, Stellarium, KStars and our LX200 driver all want it at once. \code{(docs/concepts/pos\_server\_multi\_client\_architecture.md)}
+\item Test Mode toggle + status readback — a reliable API trigger.
+\item Camera-process resilience — fall back to the debug camera instead of crashing.
+\item \code{all\_ips()} — show every network address, not just the default route.
+\item LX200 ``no position yet'' — return \code{None}, not a parseable fake coordinate.
+\item Near-pole \code{/api/fake\_solve} RA — filed as \code{brickbots/PiFinder\#645}.
+\end{itemize}
+Ready-to-file PR text: \code{docs/upstream\_pr\_templates.md}.
+\end{frame}
+
+\subsection{App: StellarMate}
+
+\begin{frame}[t]{StellarMate — extending the SMOS app for PFSM}
+What a thin integration needs:
+\begin{itemize}
+\item Start / stop the selected INDI profile.
+\item Add / remove just the PiFinder drivers.
+\item Pick ``the mount'' from the loaded drivers.
+\item Three Coupling presets, in PiFinder's words.
+\end{itemize}
+The coupling logic is already framework-agnostic Python — a thin adapter ports it.\\
+Concept: \code{docs/concepts/mount\_bridge\_web\_integration.md}.
+\end{frame}
+
+\begin{frame}[t]{CC feature $\rightarrow$ app screen}
+\begin{columns}[T]
+\column{0.40\textwidth}
+\begin{itemize}
+\item Status badges $\rightarrow$ a read-only status card.
+\item Coupling presets $\rightarrow$ a segmented control.
+\item Quick Actions $\rightarrow$ buttons on that card.
+\end{itemize}
+APIs already exist: \code{/api/mount\_bridge\_*}, or the INDI properties directly.
+\column{0.56\textwidth}
+\includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{cc_map}
+\end{columns}
+\end{frame}
+
+% ============================================================
+\section*{Summary}
+% ============================================================
+
+\begin{frame}[t]{Roadmap \& where to jump in}
+\begin{columns}[T]
+\column{6cm}
+\textbf{v2.x — consolidate}
+\begin{itemize}
+\item Harden \& test what exists.
+\item Send selected patches upstream.
+\item A guiding watcher.
+\end{itemize}
+\column{6cm}
+\textbf{v3.x — integrate}
+\begin{itemize}
+\item Deeper SMOS integration (\#35, \#36).
+\item PFSM actions in the PiFinder app (\#43).
+\item A ``real'' GSC-solving simulator (\#344).
+\end{itemize}
+\end{columns}
+\vskip1em
+\code{github.com/apos/PiFinder\_Stellarmate} \quad$\cdot$\quad GitHub Project 15
+\end{frame}
+
+\begin{frame}[t]{Two takeaways}
+\begin{enumerate}
+\item \textbf{PiFinder devs} — a triaged inventory of patches that belong upstream, PR text already written.
+\item \textbf{StellarMate devs} — the SMOS app could drive basic PFSM use with a thin adapter over existing APIs.
+\end{enumerate}
+\vskip0pt plus.5fill
+\begin{itemize}
+\item Outlook
+\begin{itemize}
+\item Real-sky solver simulation (\#344).
+\item Selected patches back to \code{brickbots/PiFinder}.
+\item App-side coupling controls.
+\end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}[plain]{}
+\begin{center}
+\vfill
+{\AVVPTitleFont\color{AVVPBlue}\Large Thanks — and clear skies.}\\[1.6em]
+\includegraphics[width=0.5\paperwidth,keepaspectratio]{\ifPFSMlight PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg\else PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg\fi}\\[1.2em]
+{\small \ifPFSMlight\color{AVVPBg}\else\color{white}\fi\textcopyright{} github.com/apos 2026}\\[0.4em]
+{\footnotesize \textcolor{AVVPGrey}{Unofficial community project — not affiliated with StellarMate or PiFinder.}}
+\vfill
+\end{center}
+\end{frame}
+
+\appendix
+
+\section*{Appendix}
+
+\subsection*{Links}
+\begin{frame}[t]{Links}
+\begin{itemize}
+\item \href{https://github.com/apos/PiFinder_Stellarmate}{\code{github.com/apos/PiFinder\_Stellarmate}} — repo, README, docs.
+\item \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/upstream_patch_inventory.md}{\code{docs/upstream\_patch\_inventory.md}} \; / \;
+      \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/upstream_pr_templates.md}{\code{docs/upstream\_pr\_templates.md}}
+\item \href{https://github.com/apos/PiFinder_Stellarmate/blob/dev/docs/concepts/mount_bridge_web_integration.md}{\code{docs/concepts/mount\_bridge\_web\_integration.md}}
+\item \href{https://github.com/brickbots/PiFinder}{\code{brickbots/PiFinder}} — upstream \quad$\cdot$\quad
+      \href{https://github.com/brickbots/PiFinder/issues/645}{issue \#645} (near-pole RA)
+\item \href{https://github.com/users/apos/projects/15}{GitHub Project 15} — tracked roadmap.
+\end{itemize}
+\end{frame}
+
+\end{document}

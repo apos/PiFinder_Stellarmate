@@ -7,10 +7,27 @@ pifinder_stellarmate_bin="${pifinder_stellarmate_dir}/bin"
 pifinder_dir="${pifinder_home}/PiFinder"
 pifinder_data_dir="${pifinder_home}/PiFinder_data"
 python_venv="${pifinder_dir}/python/.venv"
-pifinder_config_dir="${pifinder_home}/.config"
-kstarsrc_source="${pifinder_config_dir}/kstarsrc"
-kstarsrc_target="${pifinder_config_dir}/kstarsrc"
+# KStars ships as a Flatpak on StellarMate OS (org.kde.kstars) - its config
+# lives in the Flatpak app-data sandbox, not ~/.config. Verified live
+# 2026-08-03: no native kstars package/binary on SMOS, kstarsrc only exists
+# under this path after running KStars once.
+kstarsrc_source="${pifinder_home}/.var/app/org.kde.kstars/config/kstarsrc"
+kstarsrc_target="${pifinder_home}/.var/app/org.kde.kstars/config/kstarsrc"
 indi_pifinder_dir="${pifinder_stellarmate_dir}/indi_pifinder"
+
+#####################################
+# pifinder.service scheduling priority
+#####################################
+# Nice=/CPUWeight= live directly in pi_config_files/pifinder.service - not
+# duplicated as a variable here. Deliberately: nothing else needs to KNOW
+# the actual number - the Control Center's own staleness check
+# (_pifinder_service_settings_stale() in gui_installer/server.py) compares
+# the unit's currently-*configured* value against the *actually-running*
+# process's real priority, so it keeps working correctly no matter what
+# that number is changed to in the future, without a second copy to keep
+# in sync. Change the number in pi_config_files/pifinder.service itself if
+# it ever needs tuning (found live 2026-08-03 investigating #139 - see that
+# file's own comment for the underlying finding).
 
 
 
@@ -21,6 +38,11 @@ main_py="${pifinder_dir}/python/PiFinder/main.py"
 state_py="${pifinder_dir}/python/PiFinder/state.py"
 camera_interface_py="${pifinder_dir}/python/PiFinder/camera_interface.py"
 api_extensions_py="${pifinder_dir}/python/PiFinder/api_extensions.py"
+integrator_py="${pifinder_dir}/python/PiFinder/integrator.py"
+imu_pi_py="${pifinder_dir}/python/PiFinder/imu_pi.py"
+imu_fake_py="${pifinder_dir}/python/PiFinder/imu_fake.py"
+pos_server_py="${pifinder_dir}/python/PiFinder/pos_server.py"
+positioning_py="${pifinder_dir}/python/PiFinder/types/positioning.py"
 gps_py="${pifinder_dir}/python/PiFinder/gps_gpsd.py"
 solver_py="${pifinder_dir}/python/PiFinder/solver.py"
 init_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/__init__.py"
@@ -34,6 +56,8 @@ menu_py="${pifinder_dir}/python/PiFinder/ui/menu_structure.py"
 catalogs_py="${pifinder_dir}/python/PiFinder/catalogs.py"
 tetra3_main_py="${pifinder_dir}/python/PiFinder/tetra3/tetra3/main.py"
 status_py="${pifinder_dir}/python/PiFinder/ui/status.py"
+align_py="${pifinder_dir}/python/PiFinder/ui/align.py"
+object_details_py="${pifinder_dir}/python/PiFinder/ui/object_details.py"
 sys_utils_py="${pifinder_dir}/python/PiFinder/sys_utils.py"
 sys_utils_fake_py="${pifinder_dir}/python/PiFinder/sys_utils_fake.py"
 index_tpl="${pifinder_dir}/python/views/index.tpl"
@@ -190,6 +214,22 @@ check_user_exists() {
 
 
 ############################################################
+# Returns the Raspberry Pi model string (e.g. "Raspberry Pi 5 Model B Rev 1.0"),
+# or an empty string on non-Pi systems - /proc/device-tree/model is a Pi
+# firmware/kernel concept and simply doesn't exist on an x86 Control-host
+# development machine (see docs/concepts/setup_indi_only_install_mode.md and
+# basic-memory/pifinder-stellarmate/00098). Centralized here so every caller
+# gets the same non-fatal, quiet behavior instead of each one hitting a raw
+# "No such file or directory" from the redirect.
+get_hw_model() {
+  if [ -r /proc/device-tree/model ]; then
+    tr -d '\0' < /proc/device-tree/model 2>/dev/null
+  else
+    echo ""
+  fi
+}
+
+############################################################
 is_venv_active() {
   local venv_path="$1"
 
@@ -283,6 +323,34 @@ stop_fake_mode_if_running() {
   echo "✅ Fake Mode stopped."
 }
 
+# Kills a specific INDI driver process (if running) and waits, with a
+# timeout, until it's actually gone - so the caller's `sudo cp` to /usr/bin
+# doesn't fail with "Text file busy". Must run immediately before each
+# individual build_indi_*.sh script's own cp step, not just once up front
+# in build_and_install_indi_drivers() before all three builds - the
+# cmake configure+build in between takes long enough for StellarMate Web
+# Manager to notice the killed driver and auto-relaunch it if a profile is
+# actively connected. Reproduced live (2026-09-07): the LX200 driver (built
+# first, right after the initial kill) installed fine, but Mount Bridge and
+# Simulator (built afterwards) both failed with "Text file busy" despite
+# the same kill having run moments earlier for all three.
+stop_indi_driver_and_wait() {
+  local process_name="$1"
+  local max_wait_seconds="${2:-5}"
+
+  pkill -f "${process_name}" 2>/dev/null || true
+
+  local elapsed=0
+  while pgrep -f "${process_name}" &>/dev/null && (( elapsed < max_wait_seconds * 2 )); do
+    sleep 0.5
+    elapsed=$((elapsed + 1))
+  done
+
+  if pgrep -f "${process_name}" &>/dev/null; then
+    echo "⚠️  ${process_name} still running after ${max_wait_seconds}s - install may fail with 'Text file busy'."
+  fi
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"
@@ -297,6 +365,16 @@ apply_patch_or_warn() {
 install_requirements() {
   local requirements_file="$1"
   echo "Installing Python Requirements from '${requirements_file}'..."
+  # Found live (2026-09-05, SMOS 2.3.0/aarch64): Arch Linux ARM's own Python
+  # package has CXX=/usr/lib/distcc/bin/g++ baked into sysconfig (a build-farm
+  # artifact from however upstream compiled it - distcc isn't installed or
+  # configured on an actual device). Any pip package that compiles a C++
+  # extension and falls back to sysconfig's CXX for its compiler (e.g.
+  # OpenEXR's scikit-build-core, a picamera2 dependency) fails outright, which
+  # aborts pip's ENTIRE requirements install - not just that one package (see
+  # the identical pandas-on-2.6.3 class of failure, basic-memory
+  # pifinder-stellarmate/00109). Override with the real, present compiler.
+  export CXX=g++ CC=gcc
   # nice -n 15: reduce CPU priority to prevent system overload during compilation
   # ionice -c 3: idle I/O class so system stays responsive during long builds
   nice -n 15 ionice -c 3 pip install -r "${requirements_file}"

@@ -12,19 +12,22 @@ but the bare system python3.
 """
 
 import base64
+import datetime
 import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import subprocess
 import threading
 import time
 import urllib.request
+import http.cookiejar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
 import indi_client
@@ -43,6 +46,12 @@ REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
+# Installed by pifinder_stellarmate_setup.sh's "Configuring hardware &
+# services" phase - existing is a sharper "was setup ever completed far
+# enough to run PiFinder" signal than PIFINDER_DIR alone (see
+# _startup_hardware_test()'s own comment: the checkout can exist while a
+# run still died before ever reaching this phase).
+PIFINDER_SERVICE_UNIT = Path("/etc/systemd/system/pifinder.service")
 GPSD_PORT = 2947
 # Thumbnails, not the full-resolution originals used elsewhere (e.g. the
 # README) - these are only ever shown small on this page (128px/78px tall),
@@ -51,9 +60,26 @@ GPSD_PORT = 2947
 PIFINDER_IMAGE = REPO_ROOT / "docs" / "images" / "readme" / "PiFinder_thumb.jpg"
 AVVP_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "avvp_2019_logo_wortmarke_neg_thumb.png"
 HEYAPOS_LOGO = REPO_ROOT / "docs" / "images" / "readme" / "HeyApos_Wortmarke_logo_thumb.png"
-# PiFinder's own splash bitmap (shown by pifinder_splash.service before the
-# main app is up) - only exists once PiFinder has actually been installed.
-PIFINDER_WELCOME_IMAGE = PIFINDER_DIR / "images" / "welcome.png"
+# Negative/for-dark-background variant - matches this page's own #111 body background.
+PROJECT_LOGO = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_Wortmarke_Negativ_fuer-dunklen-hg.png"
+# Just the round penguin mark, cropped from PROJECT_LOGO and pre-shrunk to
+# 96x96 (#268: sticky header icon, shown at ~22px - only needs enough
+# resolution for retina, not the full wordmark's 950x179).
+PROJECT_ICON = REPO_ROOT / "docs" / "images" / "logo" / "PiFinder-Stellarmate_icon_negativ_fuer-dunklen-hg.png"
+# OLED-mirror placeholder images (2026-09-12, direct feedback: "Das ist nicht
+# vom Device abhängig!") - bundled directly with this checkout, not read from
+# ~/PiFinder/images/welcome.png the way this used to work. That file only
+# ever exists once PiFinder itself has been cloned, and the red-tinted
+# version used to be generated on the fly via PiFinder's own venv (Pillow) -
+# meaning a device with no PiFinder installed yet (or no venv built yet) had
+# no placeholder to show at all, just a blank black tile. Both are now static
+# assets: blue is PiFinder's own upstream splash exactly as cloned; red is
+# the same image pre-converted to red-channel-only, matching the real OLED's
+# actual rendering (see displays.py's RED_RGB color mask) - see
+# status_page.html's updatePiFinderStatusAndWizardLink() for which one shows
+# when, driven by the same live state the wait-overlay text already uses.
+PIFINDER_WELCOME_IMAGE_BLUE = GUI_DIR / "pifinder_welcome_blue.png"
+PIFINDER_WELCOME_IMAGE_RED = GUI_DIR / "pifinder_welcome_red.png"
 LOG_FILE = REPO_ROOT / ".gui_setup.log"
 # Written just before a successful run's self-restart (see
 # _restart_control_center()) so the fresh process can tell the reloaded page
@@ -67,6 +93,18 @@ LOG_FILE = REPO_ROOT / ".gui_setup.log"
 RESULT_FILE = REPO_ROOT / ".gui_setup.result"
 STATUS_PAGE = GUI_DIR / "status_page.html"
 HELP_PAGE = GUI_DIR / "help.html"
+# 2026-09-01, basic-memory pifinder-stellarmate/00106, issue #240: unlike
+# RESULT_FILE (deliberately NOT meant to survive - see its own comment) or
+# the Truth Injector's own "always starts back OFF" guarantee (main(), the
+# pkill next to _truth_injector_watchdog's start), Mount Bridge's desired
+# state (link, coupling mode, connect-intent - see _mb_desired_mount's own
+# comment block) has no such "must reset" reason behind it: it's just
+# in-memory bookkeeping for the readiness watchdog that happened to not
+# survive a restart. Found live: a Control Center restart (this project's
+# own redeploy workflow, but equally a StellarMate reboot or a future OTA
+# update) silently discarded it, so the very watchdog meant to catch
+# "doesn't match what was asked for" had nothing left to compare against.
+MOUNT_BRIDGE_DESIRED_STATE_FILE = REPO_ROOT / ".mount_bridge_desired_state.json"
 
 
 def _page_version() -> str:
@@ -139,6 +177,84 @@ REBOOT_MARKER = "###REBOOT_NEEDED### "
 
 _lock = threading.Lock()
 
+# Single-host lock (2026-09-11, direct feedback): the Control Center has no
+# concept of "who is currently in control" - PAM Basic Auth is one shared
+# credential for everyone, ThreadingHTTPServer genuinely runs concurrent
+# requests from different clients in parallel, and mbActionInFlight
+# (status_page.html) is a per-tab JS variable that protects nothing against
+# a second, independent browser session. Concretely risky on a Control host:
+# the same CC is commonly open both locally on that device and remotely
+# (e.g. a Mac browser over the LAN) - two clients issuing driver/profile
+# mutations around the same time is exactly the kind of unnecessary,
+# self-inflicted load/race this project has already been chasing (see the
+# pollMbLog() duplicate-render race, and the #238 investigation this
+# followed). Model: one client at a time holds a lease ("host") and may
+# mutate; every other client is read-only. A lease-based single-writer lock
+# (not a hard, permanent claim) so a crashed/closed tab doesn't lock
+# everyone out forever - see HOST_LEASE_TIMEOUT_SEC below.
+_host_lock = threading.Lock()
+_host_client_id = None       # str, or None if no one currently holds the lease
+_host_last_heartbeat = 0.0   # time.monotonic() of the last claim/heartbeat
+HOST_LEASE_TIMEOUT_SEC = 15.0  # a client heartbeats every 5s (status_page.html) - 15s tolerates a couple of missed beats (a slow poll, a brief network blip) without prematurely freeing the lease
+
+
+def _host_lease_active_locked():
+    """Caller must hold _host_lock. True if a (non-expired) lease exists."""
+    return _host_client_id is not None and (time.monotonic() - _host_last_heartbeat) < HOST_LEASE_TIMEOUT_SEC
+
+
+def _host_status(client_id):
+    with _host_lock:
+        active = _host_lease_active_locked()
+        return {
+            "host_active": active,
+            "is_host": active and client_id is not None and client_id == _host_client_id,
+        }
+
+
+def _host_claim(client_id):
+    """True if `client_id` now holds the lease - either no one else held it,
+    the previous lease expired, or it's the same client re-claiming (a page
+    reload keeps its stored id, so this is idempotent for that case)."""
+    global _host_client_id, _host_last_heartbeat
+    with _host_lock:
+        if _host_lease_active_locked() and _host_client_id != client_id:
+            return False
+        _host_client_id = client_id
+        _host_last_heartbeat = time.monotonic()
+        return True
+
+
+def _host_heartbeat(client_id):
+    global _host_last_heartbeat
+    with _host_lock:
+        if _host_client_id != client_id:
+            return False
+        _host_last_heartbeat = time.monotonic()
+        return True
+
+
+def _host_release(client_id):
+    global _host_client_id
+    with _host_lock:
+        if _host_client_id == client_id:
+            _host_client_id = None
+            return True
+        return False
+
+
+def _host_take_control(client_id):
+    """The emergency override ("Take control" button) - unconditionally
+    hands the lease to `client_id`, even if another client's lease is still
+    live. For the case the lease-expiry alone doesn't cover: the previous
+    host's tab is still open (so its own heartbeat would otherwise keep
+    renewing) but that session is gone/stuck/unreachable - a human decides
+    this, not a timeout."""
+    global _host_client_id, _host_last_heartbeat
+    with _host_lock:
+        _host_client_id = client_id
+        _host_last_heartbeat = time.monotonic()
+
 # Failed-auth rate limiting - see _require_auth(). Found live (2026-07-25): a
 # browser tab with stale/wrong cached Basic Auth credentials, combined with
 # several independent polling loops on this page, retried a wrong password
@@ -173,6 +289,19 @@ _exit_code = None
 _process = None
 _phase_index = -1  # furthest phase reached so far, -1 = none yet
 _reboot_needed = None  # None = unknown yet, True/False once the run reports it
+# Found live (2026-09-15): the setup script's own exit code stays 0 even when
+# it printed a "CRITICAL WARNINGS - ACTION REQUIRED" block (e.g. an INDI
+# driver build killed by the OOM killer) - individual driver
+# build/install failures are deliberately non-fatal so the rest of the run
+# can still complete. But that meant this GUI reported plain "Success" (and
+# the post-restart banner said "finished successfully") for a run that
+# actually needs the user's attention. functions.sh's own $warnings_file is
+# deleted by the script itself before this process's proc.wait() ever
+# returns, so it can't be read afterward - detected instead by watching the
+# log stream itself for the same header line the script already prints, the
+# same technique PHASE_MARKER/REBOOT_MARKER above use.
+_had_critical_warnings = False
+CRITICAL_WARNINGS_MARKER = "CRITICAL WARNINGS"
 _last_action = None  # "fresh" | "reinstall" | "update"
 _last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
 # True from the moment a successful setup-script run finishes until this
@@ -206,10 +335,23 @@ _MODE_SETTLE_INTERVAL = 1
 # historical port-80-busy fallback 8080, or the fake-hardware instance on
 # FAKE_MODE_PORT) - used to validate the ?port= the frontend passes when
 # proxying to PiFinder's own /api/debug_solve, so this never becomes an
-# open proxy to an arbitrary host/port. Always dials 127.0.0.1 regardless
-# of which IP the browser used to reach this page - this server and
-# PiFinder always run on the same Pi.
+# open proxy to an arbitrary host/port. Dials 127.0.0.1 by default - see
+# _valid_pifinder_host() below for the Control host case (a remote PiFinder,
+# not on this same device).
 _ALLOWED_PIFINDER_PORTS = {"80", "8080", str(FAKE_MODE_PORT)}
+
+# Shared by every route that accepts an optional ?host= for a remote
+# PiFinder (Control host role - docs/concepts/
+# control_host_hardware_badges_mirroring.md, category 2a: Solve/GPS/Quick
+# keys/OLED mirror all reuse this exact hostname/IP shape, first validated
+# for #419). Same regex everywhere rather than trusting each route handler
+# to remember to check it - an unchecked host would make this an open proxy
+# to an arbitrary host.
+_PIFINDER_HOST_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def _valid_pifinder_host(host: str) -> bool:
+    return bool(_PIFINDER_HOST_RE.fullmatch(host))
 
 
 def _fake_mode_up() -> bool:
@@ -231,6 +373,223 @@ def _real_service_failed() -> bool:
     return subprocess.run(
         ["systemctl", "is-failed", "--quiet", "pifinder.service"]
     ).returncode == 0
+
+
+def _stop_pifinder_service_for_remote(remote: str) -> None:
+    """Shared by _pifinder_service_sync_with_lx200_target() (automatic,
+    watchdog-driven) and /api/pifinder_service_stop_for_remote (manual,
+    applyCtrlRemoteAddress()'s own confirm() flow) - a single place that
+    stops the service AND records why, so the header notice and the later
+    auto-restart-once-LX200-goes-local-again logic work the same regardless
+    of which path triggered the stop. Raises on a systemctl failure - each
+    caller decides how to report that in its own context (an _mb_log() line
+    for the background watchdog, a JSON error response for the manual
+    endpoint)."""
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True, text=True, timeout=10)
+    result = subprocess.run(
+        ["sudo", "systemctl", "stop", "pifinder.service"], capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "systemctl stop failed")
+    _pifinder_service_auto_stopped_for_remote = remote
+    _pifinder_service_notice_dismissed = False
+    _save_mount_bridge_desired_state()
+
+
+def _sync_pifinder_service_from_cache():
+    """Fallback for _pifinder_service_sync_with_lx200_target() for exactly
+    the gap found live (2026-09-13): right after a Control host reboots,
+    stellarmatewebmanager.service is already up and answering, but hasn't
+    started an Ekos profile yet - server_status() reports no active
+    profile for however long that takes, and the caller correctly can't
+    determine the real LX200 target during that window. Rather than
+    leaving a stray local pifinder.service running the whole time, this
+    acts on _last_known_lx200_remote - the last value this same logic
+    itself actually confirmed, persisted across restarts (see that
+    variable's own comment).
+
+    Deliberately STOP-only, mirroring the caller's own asymmetry: a cached
+    remote target stopping an already-known-pointless local service is the
+    safe direction to be wrong in if the cache has gone stale (e.g. a
+    manual switch back to local since the last confirmed check that
+    hasn't been re-confirmed yet) - restarting the service from cached
+    data would risk the opposite mistake (waking up a service the user
+    just deliberately silenced), so that direction still waits for a real,
+    live confirmation via the caller's own normal path."""
+    if _last_known_lx200_remote and _real_service_active():
+        try:
+            _stop_pifinder_service_for_remote(_last_known_lx200_remote)
+            _mb_log(
+                f"pifinder.service stopped automatically from the last confirmed state - "
+                f"PiFinder LX200 was last seen pointing at remote "
+                f"'{_last_known_lx200_remote}', and the Web Manager can't confirm the "
+                f"current target yet."
+            )
+        except Exception as e:
+            _mb_log(f"pifinder.service auto-stop (from cached state) failed: {e}")
+
+
+def _pifinder_service_sync_with_lx200_target():
+    """Enforces the rule from direct feedback (2026-09-12): a local
+    pifinder.service is pointless once PiFinder LX200 points at a remote
+    device instead of this one (nothing here needs it, and on a camera-less
+    x86 Control Host it may just be error-looping) - and should come back
+    once LX200 goes local again. Called once per
+    _mount_bridge_readiness_watchdog() tick, same cadence as the other
+    self-heal checks.
+
+    Deliberately conservative in the "start" direction: only ever restarts
+    pifinder.service as the reverse of a stop THIS function itself
+    performed (tracked via _pifinder_service_auto_stopped_for_remote) -
+    never a general "must be running whenever LX200 is local" rule, which
+    would fight the separate, pre-existing Real/Fake Mode toggle (Fake Mode
+    deliberately stops this same service for an unrelated reason). When the
+    Web Manager can't confirm the real target at all right now, falls back
+    to _sync_pifinder_service_from_cache() below - same conservative
+    "stop only" direction, from the last value this function itself
+    confirmed."""
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    global _wm_unreachable_for_pifinder_sync_warned, _last_known_lx200_remote
+    global _pifinder_role_choice
+    if not PIFINDER_SERVICE_UNIT.exists():
+        return  # nothing installed here at all (e.g. a pure INDI-only Control Host)
+    try:
+        wm_status = webmanager_client.server_status()
+        if not wm_status.get("running") or not wm_status.get("active_profile"):
+            # Found live (2026-09-13): this used to return silently here,
+            # every tick, for as long as the Web Manager itself happened to
+            # be unreachable/not yet reporting a profile - same underlying
+            # flakiness as issue #385, just a different symptom (this check
+            # simply never runs, rather than running slowly). A stray local
+            # pifinder.service on an actual Control host could then sit
+            # there the entire time with zero trace of why nothing was
+            # fixing it. Log once per unreachable spell (not every 5s tick)
+            # ONLY when there's actually something to fix right now - no
+            # point warning about an unrelated, transient WM hiccup on a
+            # device where the local service is already stopped anyway.
+            _sync_pifinder_service_from_cache()
+            if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
+                _wm_unreachable_for_pifinder_sync_warned = True
+                _mb_log(
+                    "pifinder.service/LX200-target sync: Web Manager not reachable/no active "
+                    "profile right now - can't check whether this local service should be "
+                    "stopped for a remote PiFinder LX200 until it answers again."
+                )
+            return
+        _wm_unreachable_for_pifinder_sync_warned = False
+        # Found live (2026-09-13): this tick already has a confirmed-
+        # running profile name in hand for a completely different reason -
+        # feed it to _note_active_profile() too (memory + the Web
+        # Manager's own native autostart flag), so every existing device
+        # converges on the very first ordinary tick after upgrading rather
+        # than waiting on a coincidental first hit inside
+        # _autostart_cold_profile() alone.
+        _note_active_profile(wm_status["active_profile"])
+        driver_status = webmanager_client.pifinder_driver_status(wm_status["active_profile"])
+        # Direct feedback (2026-09-13), superseding the previous version of
+        # this comment: "Ich ändere im Client mode die Profilauswahl -> BANG
+        # -> es springt zurück auf PiFinder Host. Das darf nicht passieren...
+        # weil wir mittlerweile den Control Host mode umgesetzt haben und
+        # damit in Folge komplett neue Anforderungen [entstanden sind]." -
+        # this used to auto-clear the "client" choice back to None the
+        # moment Mount Bridge showed up in the profile. That made sense
+        # BEFORE "Control host" existed as a real, separate role with its
+        # own remote-coupling flow - back then, local LX200 + Mount Bridge
+        # together had no other explanation than "the Client choice is
+        # simply stale". Now that Host/Client/Control host each have their
+        # own remembered-profile mechanism (_last_known_host_profile/
+        # _last_known_client_profile) and a profile can legitimately end up
+        # bridge-having for reasons unrelated to the Client choice (shared
+        # test profiles, deliberate experimentation), silently discarding
+        # that choice is no longer a safe inference - it's exactly the
+        # "derived shape silently overrules the user's explicit choice" bug
+        # the frontend side of this same fix removes today. An explicit
+        # choice persists (Grundsatz: "hat er einmal etwas eingestellt, soll
+        # es bestehen bleiben") until the user changes it themselves; the
+        # mismatch is surfaced via the 'client-has-bridge' showstopper card
+        # instead, never silently auto-resolved in either direction.
+    except webmanager_client.WebManagerError:
+        _sync_pifinder_service_from_cache()
+        if _real_service_active() and not _wm_unreachable_for_pifinder_sync_warned:
+            _wm_unreachable_for_pifinder_sync_warned = True
+            _mb_log(
+                "pifinder.service/LX200-target sync: Web Manager unreachable right now - can't "
+                "check whether this local service should be stopped for a remote PiFinder "
+                "LX200 until it answers again."
+            )
+        return  # Web Manager unreachable this tick - next tick re-checks, no guessing
+    lx200_remote = driver_status.get("lx200_remote")
+    if lx200_remote != _last_known_lx200_remote:
+        _last_known_lx200_remote = lx200_remote
+        _save_mount_bridge_desired_state()
+    # Control Host topology (2026-09-14): the Mount Bridge driver's own HTTP
+    # calls to PiFinder's REST API (solve freshness/orientation/mount-type/
+    # etc.) default to 127.0.0.1 - correct only when PiFinder is local.
+    # Whenever this Control Center detects the profile's PiFinder LX200
+    # driver is REMOTE (Control Host role), push that same host to the
+    # Mount Bridge driver's PIFINDER_HTTP_HOST setting too - otherwise the
+    # driver can never reach a remote PiFinder's HTTP API at all, and things
+    # like the drift display stay permanently stale. Reset back to
+    # "127.0.0.1" when lx200_remote is absent (local/all-in-one).
+    #
+    # Deliberately pushed every tick here, NOT gated on the lx200_remote-
+    # changed check above (found live, 2026-09-14): the Mount Bridge DRIVER
+    # PROCESS itself can restart independently of this Python-side value
+    # ever changing (indiserver's own self-heal after issue #385 slowness,
+    # or a plain profile bounce) - a fresh process always starts back at the
+    # C++ default (127.0.0.1), with no way for this side to know that
+    # happened without re-sending every tick. The XML round-trip is cheap
+    # (one one-line INDI text vector, same cost as ALIGN_CONFIG's own
+    # every-relevant-tick pattern) - negligible next to #385's existing
+    # multi-second indiserver query overhead. Best-effort: a failure here
+    # isn't worth blocking the pifinder.service sync below over - the very
+    # next tick retries regardless.
+    try:
+        pifinder_http_host = lx200_remote.rsplit(":", 1)[0] if lx200_remote else "127.0.0.1"
+        indi_client.set_text(
+            "PiFinder Mount Bridge", "BRIDGE_SETTINGS", {"PIFINDER_HTTP_HOST": pifinder_http_host}
+        )
+    except Exception as e:
+        _mb_log(f"Could not push PIFINDER_HTTP_HOST ('{pifinder_http_host}') to Mount Bridge: {e}")
+    if lx200_remote:
+        if _real_service_active():
+            try:
+                _stop_pifinder_service_for_remote(lx200_remote)
+                _mb_log(
+                    f"pifinder.service stopped automatically - PiFinder LX200 now points at "
+                    f"remote '{lx200_remote}', a local PiFinder isn't needed."
+                )
+            except Exception as e:
+                _mb_log(f"pifinder.service auto-stop failed: {e}")
+    elif _pifinder_service_auto_stopped_for_remote is not None:
+        try:
+            subprocess.run(["sudo", "systemctl", "start", "pifinder.service"], capture_output=True, text=True, timeout=15)
+            _mb_log(
+                f"pifinder.service restarted automatically - PiFinder LX200 is local again "
+                f"(was stopped for remote '{_pifinder_service_auto_stopped_for_remote}')."
+            )
+        except Exception as e:
+            _mb_log(f"pifinder.service auto-start failed: {e}")
+        _pifinder_service_auto_stopped_for_remote = None
+        _save_mount_bridge_desired_state()
+
+
+def _real_service_state() -> str:
+    """pifinder.service's raw systemd ActiveState string (active,
+    activating, inactive, failed, deactivating, ...) - added 2026-08-09
+    (#192) so the frontend's OLED-mirror wait overlay can say something
+    concrete about *why* it's still waiting instead of a generic message
+    the whole time. Deliberately not --quiet: without it, `systemctl
+    is-active` prints the state to stdout regardless of exit code (a
+    non-0 exit just means "not active", the printed state still tells you
+    which of inactive/failed/activating/deactivating it actually is)."""
+    result = subprocess.run(
+        ["systemctl", "is-active", "pifinder.service"],
+        capture_output=True,
+        text=True,
+    )
+    return (result.stdout or "").strip() or "unknown"
 
 
 def _lcd_overlay_active() -> bool:
@@ -319,9 +678,19 @@ def _camera_hardware_present():
     PiFinder's own software layer, is the only way to catch that case.
     """
     try:
+        # 25s, not the original 10s: found live 2026-08-03 with a genuinely
+        # present, working camera still showing "unconfirmed" (grey, not
+        # red) right after an install/update run - rpicam-hello enumerating
+        # under a heavily loaded Pi (compiling INDI drivers etc., load >8 on
+        # 4 cores) took longer than 10s, so this call's own timeout fired
+        # and got caught below, returning None ("inconclusive") instead of
+        # True. This is a background poll (every 20s, see
+        # refreshHardwareStatusAndDependents() in status_page.html), so a
+        # slower worst case here doesn't block the UI - it just delays that
+        # one badge's next update.
         result = subprocess.run(
             ["rpicam-hello", "--list-cameras"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=25,
         )
     except Exception:
         return None
@@ -355,19 +724,32 @@ def _imu_hardware_present():
     whether PiFinder is currently running: I2C bus scanning is a shared,
     non-exclusive operation (unlike the keypad's GPIO lines), so this is safe
     to run alongside a live pifinder.service.
+
+    Retries a couple of times before concluding "not present" - found live
+    2026-08-04 that a single miss can happen even with a genuinely present,
+    working IMU: try_lock() only serializes within this one process, not
+    bus-wide against PiFinder's own IMU reader polling the same device at
+    ~30Hz, so an unlucky scan can occasionally race a concurrent transaction
+    and come back empty. A momentary miss isn't a "not detected" verdict on
+    its own; only every attempt missing is.
     """
     if not PIFINDER_VENV_PY.exists():
         return None
-    try:
-        result = subprocess.run(
-            [str(PIFINDER_VENV_PY), "-c", _IMU_SCAN_SCRIPT],
-            capture_output=True, text=True, timeout=10,
-        )
-    except Exception:
-        return None
-    if result.returncode != 0 or "LOCK_FAILED" in result.stdout:
-        return None
-    return any(addr in result.stdout for addr in _BNO055_I2C_ADDRESSES)
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                [str(PIFINDER_VENV_PY), "-c", _IMU_SCAN_SCRIPT],
+                capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or "LOCK_FAILED" in result.stdout:
+            return None
+        if any(addr in result.stdout for addr in _BNO055_I2C_ADDRESSES):
+            return True
+        if attempt < 2:
+            time.sleep(0.3)
+    return False
 
 
 def _gps_hardware_present():
@@ -404,15 +786,20 @@ def _gps_hardware_present():
         return None
 
 
-def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT))):
+def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
     """GETs PiFinder's own /api/status from whichever of `ports` answers
     first (real service on 80/8080, or the fake-hardware instance). Returns
     the parsed dict, or None if none of them are reachable. Shared by the
     camera functional test (reading PiFinder's own CAM_FAILED signal instead
-    of fighting it for the camera device) and the GPS status snapshot."""
+    of fighting it for the camera device) and the GPS status snapshot.
+
+    `host` - see _pifinder_solve_status()'s own comment. Only meaningful for
+    the GPS caller (a remote PiFinder's own /api/status) - the camera
+    functional test always calls this locally, its own hardware can't be
+    anywhere else."""
     for port in ports:
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
                 return json.loads(resp.read())
         except Exception:
             continue
@@ -693,17 +1080,20 @@ def _imu_functional_test(log):
     return {"status": "error", "error_type": "python", "detail": detail}
 
 
-def _gps_status_snapshot(log):
+def _gps_status_snapshot(log, host: str = "127.0.0.1"):
     """Reads PiFinder's own already-existing GPS/location handling via its
     /api/status endpoint - deliberately not re-implemented here (the user's
     own framing: StellarMate/PiFinder already do this, we just want to see
     the result). Returns the `location` dict PiFinder reports (lat/lon/
-    altitude/timezone/lock/...), or None if PiFinder isn't reachable."""
+    altitude/timezone/lock/...), or None if PiFinder isn't reachable.
+
+    `host` - see _pifinder_solve_status()'s own comment (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a)."""
     log(
         "GPS: reading location/time status from PiFinder's own /api/status "
         "(reuses PiFinder's existing GPS handling, not re-implemented here) ..."
     )
-    status = _pifinder_status_snapshot()
+    status = _pifinder_status_snapshot(host=host)
     if status is None:
         log("GPS: PiFinder's API isn't reachable right now (Real or Fake Mode must be running).")
         return None
@@ -726,6 +1116,15 @@ def _gps_status_snapshot(log):
 _hwtest_running = False  # True while a Test Hardware run is in flight
 _hwtest_lines = []  # progress log, shown in the shared Terminal tile
 _hwtest_result = {"camera": None, "imu": None, "gps": None}
+# Set at the start of every run (manual click, page-load pickup, and the
+# startup auto-run) so /api/hardware_test_log can report elapsed_seconds -
+# found live 2026-09-04: with no timing feedback at all, a run stuck behind
+# the camera/IMU probes' own worst-case timeouts (each up to ~25-40s
+# sequentially - see _camera_hardware_present()/_imu_hardware_present()'s own
+# comments) just shows a static "Running…" with no way to tell it apart from
+# being stuck, especially confusing right after the startup auto-run fires
+# on its own following a post-install Control Center restart (see main()).
+_hwtest_started_at = None
 
 _reset_running = False  # True while a Reset run is in flight
 _reset_lines = []  # progress log, shown in the shared Terminal tile
@@ -822,6 +1221,319 @@ def _ekos_indi_status() -> dict:
     return {"kstars_running": True, "connected": status == 2}
 
 
+def _ekos_qdbus(*args):
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    return subprocess.run(
+        ["qdbus6", "org.kde.kstars", "/KStars/Ekos", *args],
+        env=env, capture_output=True, text=True, timeout=5,
+    )
+
+
+def _kstars_refresh_mount_time_via_dbus() -> tuple:
+    """Forces KStars to push a fresh TIME_UTC snoop to whichever mount is
+    currently linked - using KStars' own already-correct (NTP-synced via
+    the OS, confirmed live 2026-09-18: system time, KStars' own displayed
+    clock, and a connected phone all agreed) system time. No EkosLive/phone
+    connection needed for this.
+
+    WHY this is needed at all (basic-memory pifinder-stellarmate/00166):
+    a mount driver's TIME_UTC is only ever snooped once, at connect time -
+    never re-pushed afterward - so it silently goes stale in any
+    sufficiently long session, even though KStars' own clock stays correct
+    the whole time.
+
+    WHY this specific D-Bus call (live-confirmed 2026-09-18, not the more
+    obvious-looking one): KStars' own "Set Time to Now" action
+    (time_to_now) is DISABLED via D-Bus whenever the realtime clock is
+    already running - the normal/default state - so triggering it there is
+    a silent no-op. Toggling "Run clock in realtime" (clock_realtime) off
+    and back on, however, does push a fresh TIME_UTC to connected devices
+    as an observed side effect. Two trigger() calls always return a
+    checkable QAction to its starting state regardless of what that was,
+    so this is a momentary pulse, not a lasting mode change - reads nothing
+    first, doesn't need to.
+
+    Returns (ok: bool, error: str | None)."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+
+    def _qdbus(*args):
+        return subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/kstars/MainWindow_1/actions/clock_realtime", *args],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+
+    try:
+        r1 = _qdbus("org.qtproject.Qt.QAction.trigger")
+        if r1.returncode != 0:
+            return False, f"first clock_realtime trigger failed: {r1.stderr.strip()}"
+        time.sleep(1.0)
+        r2 = _qdbus("org.qtproject.Qt.QAction.trigger")
+        if r2.returncode != 0:
+            return False, f"second clock_realtime trigger failed: {r2.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        return False, "qdbus6 call timed out"
+    return True, None
+
+
+def _ekos_guide_status():
+    """Ekos::GuideState as an int, or None if the Guide module isn't up /
+    Ekos isn't running / the call fails - callers must treat None as "don't
+    know, don't touch anything", never as "not guiding".
+
+    WARNING - version-specific, do not extend this set from memory: KStars
+    has renumbered this enum across releases. Values below are live-
+    confirmed on THIS device's installed KStars version - re-verify on any
+    KStars upgrade or a different device.
+      12 = guiding (actively guiding). Confirmed 2026-09-18/19 by actually
+           running guiding and polling through each phase. CORRECTED
+           2026-09-19: first believed to be "calibrating" - that first
+           observation happened to start just after "Calibration completed"/
+           "Autoguiding running" had already fired (11s gap in the log), so
+           what actually got measured the whole time was the guiding phase,
+           not calibration. Caught and fixed live by cross-checking a
+           screenshot of an active guide graph (real RMS values) against a
+           fresh, repeated poll - still read 12, same value that had briefly
+           looked like "calibrating".
+       1 = idle/aborted (NOT held) - confirmed 2026-09-18/19, observed
+           exactly at "Autoguiding aborted" in the Guide log.
+       0 = idle, the Guide module's ordinary resting state when simply
+           loaded and not actively guiding (NOT held) - confirmed live
+           2026-10-03 on the real Pi5: returned repeatedly with KStars/Ekos
+           running normally and no guide sequence active. Found the hard
+           way - absent from _GUIDE_SAFE_STATES originally, this value's
+           fail-safe default (hold) kept Mount Bridge's EXTERNAL_HOLD
+           permanently engaged for days whenever Ekos simply wasn't guiding,
+           which is most of a session's actual time. See _GUIDE_SAFE_STATES'
+           own comment.
+    Calibrating's own distinct value still NOT captured (both 2026-09-18/19
+    live sessions reused a prior calibration on restart, never triggering a
+    fresh one while being watched) - do not guess it if guiding is ever seen
+    stuck in an actual calibration phase; poll and confirm first. Dithering/
+    suspended/reacquire likewise unconfirmed. _GUIDE_SAFE_STATES below is
+    therefore an incomplete SAFE list, not a complete HELD list - exactly
+    why it's a deny-list of confirmed-safe values, not an allow-list of
+    confirmed-held ones."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Guide", "org.kde.kstars.Ekos.Guide.status"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+# Fail-safe by design (2026-09-27, re-reviewed against the original
+# EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
+# before reviving this branch): an allow-list of "held" states (the
+# original form of this code) would leave calibration completely
+# unprotected the very first time it runs in a session - calibration always
+# precedes the first "guiding" observation, so the watchdog would have no
+# prior held state to still be draining its debounce from, and a
+# not-yet-enumerated GuideState (calibrating/dithering/suspended/reacquire)
+# would read as "not guiding" outright. Inverted to a deny-list of
+# confirmed-SAFE states instead: hold whenever Ekos reports anything other
+# than one of these, so an unrecognized state fails toward protecting the
+# session, not away from it.
+#
+# REGRESSION, found live 2026-10-03: this set originally held only {1}. On
+# the real Pi5, Ekos's Guide module reports 0 continuously whenever it's
+# simply loaded and not actively guiding (confirmed live: qdbus6
+# org.kde.kstars /KStars/Ekos/Guide .status returned 0 repeatedly with
+# KStars/Ekos running normally and no guide sequence active) - this is
+# GUIDE_IDLE, the module's ordinary resting state for most of a session, not
+# an unusual one. With 0 excluded from this set, the fail-safe design (by
+# design!) treated every idle moment as "must protect", permanently engaging
+# EXTERNAL_HOLD (reason "guiding (Ekos GuideState 0)") for days - Mount
+# Bridge silently stopped forwarding/correcting the whole time. Added 0 here
+# based on this live evidence, same live-confirmation bar as 1 and 12
+# below - not a guess from memory (see _ekos_guide_status()'s own warning).
+_GUIDE_SAFE_STATES = {0, 1}  # 0 = idle (not guiding), 1 = idle/aborted - both live-confirmed NOT held
+_GUIDING_RELEASE_DEBOUNCE_S = 15
+
+
+def _guiding_hold_watchdog(interval=3):
+    """#372 - while Ekos reports guiding active, sets Mount Bridge's own
+    EXTERNAL_HOLD switch so a threshold-triggered Sync/Goto doesn't kick the
+    guide star out of frame, a dither doesn't get misread as an external
+    reposition, and a PiFinder Align doesn't Sync the mount mid-guiding -
+    all three of which the driver would otherwise do exactly as designed,
+    just at the wrong moment. Releases the hold once guiding has been
+    continuously idle for RELEASE_DEBOUNCE_S (so one missed/misread frame
+    mid-session doesn't yank protection away right before the next guide
+    correction).
+
+    2026-09-27: originally shipped as a Control-Center-only simplification
+    that temporarily forced Coupling to MODE_VERIFY_ALERT instead of using a
+    real driver property - reverted to the concept's original design
+    (docs/concepts/mount_bridge_external_hold.md) after a follow-up review
+    found MODE_VERIFY_ALERT could not actually gate handlePiFinderAlignSync()
+    (#313), which Syncs the mount in every Coupling mode except MODE_OFF.
+    EXTERNAL_HOLD gates that path directly at the driver level instead.
+
+    Does nothing if Ekos/Guide isn't reachable at all (_ekos_guide_status()
+    returns None) - never guesses "not guiding" from a failed query. Does
+    nothing (after logging once) if EXTERNAL_HOLD isn't a currently-defined
+    property - an older Mount Bridge build without #372, or the property not
+    seen yet."""
+    while True:
+        time.sleep(interval)
+        try:
+            _guiding_hold_watchdog_tick()
+        except Exception as e:
+            # Must never let this loop die (§3.3's "must not leave the
+            # Bridge stuck held" requirement) - an uncaught exception here
+            # would silently kill this daemon thread, and if that happened
+            # right after engaging the hold, EXTERNAL_HOLD would stay ON
+            # forever with nothing left to release it. Logging and retrying
+            # next tick keeps the watchdog self-healing instead.
+            _mb_log(f"Guiding watchdog: unexpected error, will retry next tick: {e}")
+
+
+def _guiding_hold_watchdog_tick():
+    global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
+    global _guiding_hold_adopted_initial_state
+    if _guiding_hold_supported is False:
+        return  # confirmed missing on this build - already logged once, stay quiet
+
+    if not _guiding_hold_adopted_initial_state:
+        # Found live 2026-10-03 (see _guiding_hold_adopted_initial_state's
+        # own comment): adopt the driver's actual EXTERNAL_HOLD value on the
+        # first tick after (re)start, rather than assuming it starts
+        # released - a CC restart does not restart the driver.
+        try:
+            live = indi_client.mount_bridge_drift().get("external_hold")
+        except indi_client.INDIClientError:
+            live = None
+        if live is None:
+            return  # driver not ready / property not seen yet - retry next tick
+        _guiding_hold_adopted_initial_state = True
+        _guiding_hold_supported = True
+        _guiding_hold_active = live
+        if live:
+            _mb_log("Guiding watchdog: adopted an external hold already engaged on the driver from before this restart.")
+
+    gs = _ekos_guide_status()
+    if gs is None:
+        return
+    guiding_now = gs not in _GUIDE_SAFE_STATES
+    if guiding_now:
+        _guiding_hold_idle_since = None
+        want_hold = True
+    elif _guiding_hold_active:
+        _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
+        want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
+    else:
+        want_hold = False
+
+    if want_hold and not _guiding_hold_active:
+        # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
+        # driver itself also warns and lets an already-running sequence
+        # finish rather than aborting it if this arrives anyway, but the CC
+        # side checks first so a routine guiding start doesn't collide with
+        # one in the first place.
+        try:
+            if indi_client.mount_bridge_drift().get("align_state") == "Busy":
+                return
+        except indi_client.INDIClientError:
+            pass  # can't tell either way - proceed rather than block forever
+        try:
+            indi_client.set_mount_bridge_external_hold(True, f"guiding (Ekos GuideState {gs})")
+            _guiding_hold_supported = True
+            _guiding_hold_active = True
+            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - Mount Bridge external hold engaged.")
+        except indi_client.INDIClientError as e:
+            if _guiding_hold_supported is None:
+                _guiding_hold_supported = False
+                _mb_log(f"Guiding watchdog: EXTERNAL_HOLD not available on this Mount Bridge build - "
+                        f"guiding protection disabled until it's rebuilt/updated ({e}).")
+    elif not want_hold and _guiding_hold_active:
+        try:
+            indi_client.set_mount_bridge_external_hold(False)
+            _guiding_hold_active = False
+            _mb_log("Guiding watchdog: guiding stopped - Mount Bridge external hold released.")
+        except indi_client.INDIClientError as e:
+            # Deliberately keep _guiding_hold_active True on failure - a
+            # transient INDI error here must not silently let something
+            # else (e.g. the readiness watchdog) believe the hold is
+            # already released when the driver may still have it set.
+            # Retried next tick.
+            _mb_log(f"Guiding watchdog: could not release external hold, will retry: {e}")
+
+
+def _ekos_start_profile(profile_name: str) -> dict:
+    """Starts the given Ekos profile via org.kde.kstars.Ekos's D-Bus
+    interface (setProfile + start) - unlike _ekos_indi_status() above,
+    this DOES drive Ekos's own GUI, on purpose: found live 2026-08-04 that
+    "go click Start/Connect in KStars yourself" was a hard blocker for
+    Autoconnect, even though the profile name is already known here (same
+    Web Manager profile the user already picked in this tile) and Ekos
+    exposes exactly the needed calls (verified live via `qdbus6
+    org.kde.kstars /KStars/Ekos org.kde.kstars.Ekos.getProfiles`).
+
+    Only backs off while INDI is genuinely, currently connected
+    (indiStatus == 2) - something is already going on (maybe the user's own
+    unrelated KStars work) and yanking their live session out from under
+    them would be wrong. Deliberately checks indiStatus here, not
+    ekosStatus: found live (2026-08-05) that ekosStatus stays stuck at
+    Success (2) even after the underlying INDI session was stopped
+    externally (via the Web Manager's own Stop, not Ekos's Stop button),
+    which permanently blocked every later Setup click from ever attempting
+    a restart - Ekos never reset ekosStatus back to Idle on its own. If
+    ekosStatus indicates a stale loaded-but-disconnected profile in that
+    situation, stop() is called first to tear it down cleanly before
+    reloading, rather than calling start() over it and risking a second,
+    conflicting indiserver/driver launch alongside whatever's left running.
+
+    Only ever called from the explicit, user-initiated Autoconnect flow,
+    never from a passive/background poll - same reasoning
+    _ekos_indi_status() already documents, just not an absolute "never
+    touch Ekos" rule.
+
+    Returns {"attempted": bool, "reason": str|None} - "attempted": False
+    with a reason means the caller should fall back to the manual
+    instructions, not that anything failed loudly.
+    """
+    try:
+        status_result = _ekos_qdbus("org.kde.kstars.Ekos.ekosStatus")
+    except (OSError, subprocess.TimeoutExpired):
+        return {"attempted": False, "reason": "KStars/Ekos not reachable via D-Bus"}
+    if status_result.returncode != 0:
+        return {"attempted": False, "reason": "KStars not running"}
+    try:
+        ekos_status = int(status_result.stdout.strip())
+    except ValueError:
+        return {"attempted": False, "reason": "unexpected ekosStatus value"}
+
+    try:
+        indi_result = _ekos_qdbus("org.kde.kstars.Ekos.indiStatus")
+        indi_status = int(indi_result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        indi_status = None
+    if indi_status == 2:
+        return {"attempted": False, "reason": "Ekos already has a session in progress"}
+
+    try:
+        if ekos_status != 0:
+            _ekos_qdbus("org.kde.kstars.Ekos.stop")
+        set_result = _ekos_qdbus("org.kde.kstars.Ekos.setProfile", profile_name)
+        if set_result.returncode != 0 or set_result.stdout.strip() != "true":
+            return {"attempted": False, "reason": f"profile '{profile_name}' not found in Ekos"}
+        _ekos_qdbus("org.kde.kstars.Ekos.start")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"attempted": False, "reason": str(e)}
+    return {"attempted": True, "reason": None}
+
+
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
@@ -829,6 +1541,1898 @@ _mb_last_running = None  # last known /api/mount_bridge_status "running" value, 
 def _mb_log(line: str):
     with _lock:
         _mb_lines.append(f"{time.strftime('%H:%M:%S')} {line}")
+
+
+# Direct feedback (2026-09-27): the Web Manager loads driver definitions from
+# exactly one drivers.xml per profile launch (System OR Flatpak - live-
+# verified with indi_simulator_ccd: a profile containing any PiFinder driver
+# launches every driver in it from System, even with "Flatpak" selected in
+# the Driver Source dropdown, since our custom drivers only exist in the
+# System catalog). This is a structural constraint of that mechanism, not a
+# bug we can fix here - but it silently strips away whatever the Flatpak
+# build bundles that the System build doesn't. Known cases go in this list
+# so the UI can surface them generically instead of one bespoke check each
+# time a new one turns up; each entry provides its own bridge/workaround,
+# clearly labelled as a stopgap until our drivers ship in the Flatpak
+# catalog too (tracked separately, needs upstream cooperation).
+def _known_system_vs_flatpak_gaps() -> list:
+    gaps = []
+    gsc_bin = shutil.which("gsc") or (
+        "/usr/local/bin/gsc" if os.access("/usr/local/bin/gsc", os.X_OK) else None
+    )
+    gsc_data = os.path.isdir("/usr/share/GSC") and bool(os.listdir("/usr/share/GSC"))
+    gaps.append({
+        "id": "gsc",
+        "label": "Guide star catalog (GSC)",
+        "available": bool(gsc_bin and gsc_data),
+        "detail": "The System-build CCD/Guide/Telescope Simulator drivers render a blank star "
+                  "field without it (affects any real image-based feature: Ekos guiding, "
+                  "plate-solve align, autofocus - not PiFinder's own simulation, which never "
+                  "needed it). The Flatpak build bundles a working copy; a one-time copy from "
+                  "there to /usr/local/bin/gsc + /usr/share/GSC (the tool's own default catalog "
+                  "path, no environment/service changes needed) closes the gap for the System "
+                  "build too, independent of which source actually ends up running.",
+    })
+    return gaps
+
+
+# Generous - a real mount's own connect handshake (serial autobaud, TCP
+# handshake to a network mount) can take a few seconds, longer than the
+# ~0.1s a healthy indiserver query normally takes elsewhere on this page.
+_CONNECT_CONFIRM_TIMEOUT = 8.0
+
+
+def _confirm_device_connected(device: str, timeout: float = _CONNECT_CONFIRM_TIMEOUT):
+    """Polls `device`'s own CONNECTION property after connect_device() has
+    already sent the CONNECT switch - that call only confirms indiserver
+    *accepted* the command, not that the device actually came up (see
+    indi_client.set_switch()'s own docstring: it fires the switch and
+    returns, it never waits for a resulting state). Direct feedback
+    (2026-09-13, Control host Mount setup): "wie ist die IP des Mount - wenn
+    die nicht stimmt, fällt hier alles zusammen... muss man das abfragen,
+    wenn es nicht funktioniert? So, wie es auch INDI und die SMOS Handy-App
+    machen." Found live reading the code: today this endpoint reports
+    success the instant the switch is sent, regardless of whether the
+    device ever actually connects - a wrong serial port/network address for
+    a real mount would show "Connected" here even though nothing is
+    actually connected.
+
+    Returns (True, None) once CONNECT is confirmed On with state Ok, or
+    (False, detail) if the property instead reports Alert (the driver's own
+    reported failure - wrong connection settings is the most common cause)
+    or never resolves within `timeout` (still Busy, or indiserver stopped
+    answering)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            vector = indi_client.get_properties(
+                device=device, timeout=indi_client.TIMEOUT_QUICK_RETRY
+            ).get(device, {}).get("CONNECTION")
+        except Exception:
+            vector = None
+        if vector:
+            if vector.get("elements", {}).get("CONNECT") == "On" and vector.get("state") == "Ok":
+                return True, None
+            if vector.get("state") == "Alert":
+                return False, (
+                    f"{device} reported a connection failure - check its connection "
+                    "settings (serial port/baud rate, or network host/IP) in the INDI "
+                    "Control Panel"
+                )
+        time.sleep(0.3)
+    return False, (
+        f"{device} hasn't confirmed connecting within {timeout:.0f}s - check its "
+        "connection settings (serial port/baud rate, or network host/IP) in the "
+        "INDI Control Panel"
+    )
+
+
+# #191/#217, corrected 2026-08-30 (direct feedback: "wie kann denn der
+# Solve-Injector einen Wert liefern, wenn der PiFinder Simulator nichts
+# liefert. Dafür haben wir Ihn doch!!!!"): PiFinder Truth Injector toggle -
+# feeds a device's own position into PiFinder's /api/fake_solve on an
+# interval (see test_tools/pifinder_truth_injector.py). WHICH device matters
+# a great deal and is not interchangeable:
+#   - "PiFinder Simulator" (the default here) - an INDEPENDENT simulated
+#     truth for where PiFinder itself is physically pointed, unrelated to
+#     the mount. This is what General Mount-Bridge coupling testing
+#     (Auto-Correct/Goto-Forward - the "Full Simulation" tile's whole point)
+#     needs: without an independent PiFinder position, there is nothing for
+#     Mount Bridge to meaningfully detect/correct drift against - the
+#     "drift" would just be artificial round-trip noise from mirroring the
+#     mount back into itself.
+#   - The COUPLED MOUNT (mount_bridge_status()'s own "active_mount" -
+#     "Telescope Simulator" only while that happens to be what's configured
+#     for testing, exactly as any other real mount driver name would be in
+#     production) - deliberately used ONLY for Multi-Point Alignment's
+#     solve-freshness-gate testing (#191/#217), which genuinely wants
+#     PiFinder to mirror wherever the mount currently points (see
+#     mount_bridge_multistar_alignment.md) - pass that device name
+#     explicitly via the toggle endpoint's own query param for that specific
+#     case; it is NOT the general-purpose default, and it must never be a
+#     literal "Telescope Simulator" hardcoded anywhere - this has to work
+#     with any INDI mount, the simulator is just one test case among many,
+#     not a special-cased target (direct feedback, 2026-08-30).
+# Found live (2026-08-30): this constant was still "Telescope Simulator"
+# when the "Full Simulation" tile was built to reuse this same toggle -
+# that made "Full Simulation" mirror the mount into itself instead of
+# testing real coupling against an independent truth, which is almost
+# certainly what produced that session's "TelSim jumps away then instantly
+# snaps back to a near-identical position" pattern (see basic-memory
+# pifinder-stellarmate) - a feedback loop chasing its own tail, not real
+# drift-correction being exercised.
+#
+# Deliberately a tracked subprocess.Popen, NOT a systemd unit like
+# KEYBOARD_BRIDGE_SERVICE above: that one is meant to survive reboots (its
+# whole point), this one must NOT - it's test-only and would silently
+# corrupt a real observing session if it ever auto-started outside an
+# explicit simulator test. Scoped to this Control Center process's own
+# lifetime; a Control Center restart always starts back OFF.
+TRUTH_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_truth_injector.py"
+TRUTH_INJECTOR_DEFAULT_DEVICE = "PiFinder Simulator"
+_truth_injector_proc = None  # subprocess.Popen or None
+_truth_injector_device = None  # the device the currently-running (or last-run) injector actually targets
+_truth_injector_host = "127.0.0.1"  # which PiFinder it feeds - see _truth_injector_start()'s own comment
+_truth_injector_desired = False  # True once the user has toggled it on - the watchdog below re-starts it if it dies while this is still True
+_truth_injector_lock = threading.Lock()
+
+# test_tools/pifinder_imu_injector.py's own docstring: it exists specifically
+# to stop Mount Bridge's drift-plausibility check from flagging Full
+# Simulation's own discrete ~2s fake-solve jumps as an implausible external
+# reposition - but it was never started anywhere, only documented as
+# "independently runnable alongside" the Truth Injector. Full Simulation is
+# meant to be a complete stand-in for real hardware, not a partial one that
+# silently depends on a second, undocumented manual script - so this starts/
+# stops together with the Truth Injector itself, sharing its lock/desired
+# flag rather than needing its own toggle.
+#
+# NOT a fix for the separate "Reseed from mount lands slightly off" symptom
+# (live-investigated 2026-09-19) - that turned out to be Coupling mode
+# (Verify/Alert never actively corrects a small residual; Goto-Forward does),
+# unrelated to whether this script runs. Also NOT related to real-hardware
+# IMU dead-reckoning (imu_dead_reckoning.py, real BNO055 IMU, same process as
+# the real Integrator) - this script only ever feeds Full Simulation's own
+# synthetic position pipeline. This script's own docstring already flags that
+# its local re-anchor timer only approximates pifinder_truth_injector.py's
+# actual injection moments ("residual misalignment... never accumulates
+# beyond one such cycle") - acceptable for the false-positive-prevention
+# purpose above, not verified beyond that.
+IMU_INJECTOR_SCRIPT = REPO_ROOT / "test_tools" / "pifinder_imu_injector.py"
+_imu_injector_proc = None  # subprocess.Popen or None
+
+
+def _imu_injector_alive() -> bool:
+    return _imu_injector_proc is not None and _imu_injector_proc.poll() is None
+
+
+def _imu_injector_start(device: str, host: str = "127.0.0.1"):
+    """Best-effort - a missing/unreadable screen_direction (Mount Bridge not
+    connected yet) must not fail the Truth Injector start itself, since the
+    Truth Injector's own position feed is the more important half and works
+    fine without smooth IMU dead-reckoning, just with the plausibility-check
+    symptom this is meant to prevent."""
+    global _imu_injector_proc
+    subprocess.run(["pkill", "-f", str(IMU_INJECTOR_SCRIPT)], capture_output=True)
+    try:
+        screen_direction = indi_client.mount_bridge_status(host=host).get("pifinder_screen_direction")
+    except indi_client.INDIClientError:
+        screen_direction = None
+    if not screen_direction:
+        _mb_log("  PiFinder IMU Injector not started - screen_direction unavailable "
+                "(Mount Bridge not connected yet?).")
+        return
+    _imu_injector_proc = subprocess.Popen(
+        [
+            "python3", str(IMU_INJECTOR_SCRIPT),
+            "--indi-device", device, "--pifinder-host", host,
+            "--screen-direction", screen_direction,
+        ],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _imu_injector_stop():
+    global _imu_injector_proc
+    if _imu_injector_proc is not None:
+        _imu_injector_proc.terminate()
+        try:
+            _imu_injector_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _imu_injector_proc.kill()
+        _imu_injector_proc = None
+
+
+def _truth_injector_alive() -> bool:
+    return _truth_injector_proc is not None and _truth_injector_proc.poll() is None
+
+
+def _optical_train_snapshot_and_enter_sim():
+    """Full-Simulation turning ON (docs/concepts/optical_train_device_sync.md
+    §4.1): every Ekos optical train field currently set to the REAL mount
+    device (read from Mount Bridge's own ACTIVE_DEVICES.ACTIVE_MOUNT, not
+    guessed) gets remembered and switched to "Telescope Simulator".
+
+    2026-09-27 fix, live-caught the same session: the original version
+    swapped ANY field not already "Telescope Simulator" - which silently
+    clobbered `camera`/`focuser`/`guider` fields legitimately pointed at
+    their OWN simulator devices ("CCD Simulator", "Focuser Simulator", ...)
+    that have nothing to do with the mount at all, overwriting them with
+    "Telescope Simulator" (nonsensical as a camera/focuser device) and then
+    "restoring" them to the real mount's name on the way back out - equally
+    wrong. Only a field whose value is EXACTLY the current real mount's own
+    device name is a genuine mount reference; anything else (including
+    another simulator device) is left completely alone, matching the manual
+    path's (`swap_optical_train_devices()`) already-correct by-exact-value
+    scoping. Best-effort throughout: KStars/qdbus6/Mount Bridge being
+    unavailable must never block Full Simulation itself from starting."""
+    global _optical_train_swap_memory
+    try:
+        real_mount = None
+        try:
+            mb_props = indi_client.get_properties(device="PiFinder Mount Bridge")
+            real_mount = (
+                mb_props.get("PiFinder Mount Bridge", {})
+                .get("ACTIVE_DEVICES", {})
+                .get("elements", {})
+                .get("ACTIVE_MOUNT")
+            )
+        except indi_client.INDIClientError:
+            pass
+        if not real_mount or real_mount == _OPTICAL_TRAIN_SIM_DEVICE:
+            return  # no real mount configured (or already the simulator) - nothing to snapshot/swap
+        for train_id in indi_client.list_optical_train_ids():
+            for prop in indi_client.optical_train_device_properties():
+                try:
+                    current = indi_client.get_optical_train_property(train_id, prop)
+                except indi_client.INDIClientError:
+                    continue
+                if current != real_mount:
+                    continue
+                try:
+                    indi_client.set_optical_train_property(train_id, prop, _OPTICAL_TRAIN_SIM_DEVICE)
+                except indi_client.INDIClientError:
+                    continue
+                _optical_train_swap_memory.setdefault(train_id, {})[prop] = current
+        if _optical_train_swap_memory:
+            _save_mount_bridge_desired_state()
+            _mb_log(f"Full Simulation: swapped optical train fields from \"{real_mount}\" to "
+                     f"\"{_OPTICAL_TRAIN_SIM_DEVICE}\": {_optical_train_swap_memory}")
+    except Exception as e:
+        _mb_log(f"warning: optical train Full-Simulation snapshot/swap failed: {e}")
+
+
+def _optical_train_restore_from_sim():
+    """Full-Simulation turning OFF (docs/concepts/optical_train_device_sync.md
+    §4.1): restore every remembered field - but only where it is STILL
+    exactly "Telescope Simulator" right now. A field the user changed to
+    something else while Full Simulation was active was a deliberate choice
+    and must not be silently overwritten; its memory entry is dropped
+    either way (there is nothing more this mechanism should do about it).
+    Best-effort: a failed individual restore keeps its own memory entry for
+    a future attempt instead of losing track of it."""
+    global _optical_train_swap_memory
+    if not _optical_train_swap_memory:
+        return
+    try:
+        remaining: dict = {}
+        for train_id, fields in _optical_train_swap_memory.items():
+            for prop, old_value in fields.items():
+                try:
+                    current = indi_client.get_optical_train_property(train_id, prop)
+                except indi_client.INDIClientError:
+                    remaining.setdefault(train_id, {})[prop] = old_value
+                    continue
+                if current != _OPTICAL_TRAIN_SIM_DEVICE:
+                    continue  # changed deliberately in between - drop the memory entry, leave it alone
+                try:
+                    indi_client.set_optical_train_property(train_id, prop, old_value)
+                except indi_client.INDIClientError:
+                    remaining.setdefault(train_id, {})[prop] = old_value
+        restored_count = sum(len(f) for f in _optical_train_swap_memory.values()) - sum(len(f) for f in remaining.values())
+        _optical_train_swap_memory = remaining
+        _save_mount_bridge_desired_state()
+        if restored_count:
+            _mb_log(f"Full Simulation: restored {restored_count} optical train field(s) from before Full Simulation.")
+    except Exception as e:
+        _mb_log(f"warning: optical train Full-Simulation restore failed: {e}")
+
+
+def _truth_injector_start(device: str, host: str = "127.0.0.1"):
+    global _truth_injector_proc, _truth_injector_device, _truth_injector_host
+    # The one-time pkill in main() only guards against an orphan that
+    # already existed when THIS Control Center instance started - it does
+    # nothing for a stray instance that appears later in the same instance's
+    # lifetime (e.g. one launched by hand for a live test, as happened live
+    # 2026-09-03: an old orphaned injector kept running after a fresh one was
+    # started by toggling Full Simulation back on, and both fed PiFinder
+    # duplicate/racing fake_solve POSTs every 2s at once - a real, confusing
+    # source of jitter in a drift-correction-timing investigation). Every
+    # caller of this function only reaches here when _truth_injector_proc is
+    # already None/dead (see _truth_injector_alive()'s callers), so this can
+    # never kill an instance we're still tracking - only a genuine stray one.
+    subprocess.run(["pkill", "-f", str(TRUTH_INJECTOR_SCRIPT)], capture_output=True)
+    _optical_train_snapshot_and_enter_sim()
+    _truth_injector_device = device
+    _truth_injector_host = host
+    # Found live (2026-09-13, Control host testing): this never passed
+    # --pifinder-host (the script's own default is 127.0.0.1), so "Full
+    # Simulation" always fed THIS device's own PiFinder regardless of role -
+    # on a Control host, the device actually reachable is the remote
+    # PiFinder client, not anything running here. The script itself already
+    # supported --pifinder-host; only this call site never used it.
+    _truth_injector_proc = subprocess.Popen(
+        [
+            "python3", str(TRUTH_INJECTOR_SCRIPT),
+            "--indi-device", device, "--interval", "2.0", "--pifinder-host", host,
+        ],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _pifinder_fake_solve_active_live(host: str = "127.0.0.1") -> bool:
+    """True if PiFinder itself currently reports an injected position -
+    checked live on ports 80 and 8080, independent of `_truth_injector_
+    desired` (which only tracks THIS process's own Truth Injector intent).
+    Added 2026-09-09, direct feedback ("OFF ist OFF - Basta"): the Synthetic
+    Solve toggle used to decide On/Off purely from `_truth_injector_desired`
+    - correct for ITS OWN feature, but misleading whenever a DIFFERENT
+    mechanism (Manual one-shot seed, #205) was the one actually holding
+    fake_solve_active true. A user reasonably reads "Synthetic Solve: off"
+    as "nothing is injected" - this makes the toggle check the real,
+    combined ground truth instead of trusting a memory of its own intent.
+
+    `host` - found live (2026-09-13, Control host testing, "Found 2"): this
+    always checked 127.0.0.1, so on a Control host it could never see a
+    remote PiFinder's own real fake_solve_active - the toggle always
+    concluded "off" and only ever offered to turn it on, even when it was
+    already genuinely active on the remote device."""
+    for port in ("80", "8080"):
+        try:
+            with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
+                if json.loads(resp.read()).get("fake_solve_active"):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def _truth_injector_stop():
+    global _truth_injector_proc
+    if _truth_injector_proc is not None:
+        _truth_injector_proc.terminate()
+        try:
+            _truth_injector_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _truth_injector_proc.kill()
+        _truth_injector_proc = None
+    _optical_train_restore_from_sim()
+    # Found live (2026-09-09): this only ever killed the process - PiFinder's
+    # own fake_solve_active flag was never cleared, so /api/status kept
+    # reporting a stale "Injected Solve" state (and the no-solve banner's own
+    # debounce never saw the real gap) indefinitely after stopping. DELETE
+    # /api/fake_solve is idempotent/harmless if it was already off.
+    _pifinder_disable_fake_solve("80")
+    _pifinder_disable_fake_solve("8080")
+
+
+def _truth_injector_watchdog(interval=5):
+    """'Muss dann zuverlässig laufen' (direct feedback, 2026-08-10): once
+    toggled on, the injector must not silently stay dead if its process
+    exits for any reason - same reliability bar as
+    _pifinder_lx200_reconnect_watchdog() above, same reasoning. Restarts
+    against whichever device it was last running against
+    (_truth_injector_device), not a fixed constant - see that variable's own
+    comment for why the device matters."""
+    while True:
+        time.sleep(interval)
+        with _truth_injector_lock:
+            if _truth_injector_desired and not _truth_injector_alive():
+                _mb_log(f"PiFinder Truth Injector died unexpectedly - restarting (device: '{_truth_injector_device}')...")
+                try:
+                    _truth_injector_start(_truth_injector_device, _truth_injector_host)
+                except Exception as e:  # a watchdog thread must never die silently
+                    _mb_log(f"  failed to restart: {e}")
+            if _truth_injector_desired and not _imu_injector_alive():
+                try:
+                    _imu_injector_start(_truth_injector_device, _truth_injector_host)
+                except Exception as e:  # a watchdog thread must never die silently
+                    _mb_log(f"PiFinder IMU Injector restart failed: {e}")
+
+
+def _parse_threshold(raw: str) -> float:
+    """European keyboards/locales often produce a comma decimal separator
+    (e.g. "0,5") - Python's float() only accepts a period and raises
+    ValueError otherwise. The frontend already normalizes this before
+    sending (see status_page.html's readThresholdInputRaw()), but this is a
+    public HTTP endpoint - normalize here too as a backstop for any other
+    caller. Raises ValueError on genuinely invalid input, same as float()."""
+    return float(raw.replace(",", "."))
+
+
+class _BackgroundRetrier:
+    """Fire-and-forget 'run this in a background thread, but never run two
+    attempts at once' helper - extracted from #118's original hand-rolled
+    in-flight-flag + threading.Thread pattern so a future feature needing
+    the same shape ("keep retrying an action from a polling loop without
+    stacking concurrent attempts") can reuse it instead of reimplementing
+    the guard by hand. Deliberately minimal: it does not schedule its own
+    retries - the caller's own polling loop (e.g. a watchdog's `while True:
+    time.sleep(interval)`) is what re-triggers a fresh attempt each tick;
+    this only guards against overlapping ones."""
+
+    def __init__(self):
+        self._in_flight = False
+        self._lock = threading.Lock()
+
+    @property
+    def in_flight(self) -> bool:
+        return self._in_flight
+
+    def trigger(self, action_fn) -> bool:
+        """Starts action_fn() in a background daemon thread unless an
+        earlier call's thread is still running. Returns True if a new
+        attempt was started, False if one was already in flight (the
+        caller's own next polling tick will just call trigger() again).
+        action_fn takes no arguments; any exception it raises is swallowed
+        (log inside action_fn if you want to know about failures)."""
+        with self._lock:
+            if self._in_flight:
+                return False
+            self._in_flight = True
+
+        def _run():
+            try:
+                action_fn()
+            finally:
+                with self._lock:
+                    self._in_flight = False
+
+        threading.Thread(target=_run, daemon=True).start()
+        return True
+
+
+# Found live investigating #139: a 4-core Pi 4 at or above this 1-minute-
+# load-average-per-core ratio was observed making PiFinder's own position
+# server (pos_server.py) genuinely unresponsive to LX200 queries for several
+# seconds at a time - not a bug anywhere, just a busy CPU. Deliberately
+# coarse: a signal for a human to notice, not a claim that anything is
+# actually broken (see /api/system_load and #139's own writeup).
+_SYSTEM_LOAD_HIGH_RATIO = 1.5
+
+
+def _cpu_temp_c():
+    """SoC temperature in Celsius, or None if unreadable (non-Pi hardware,
+    permissions, ...) - /sys/class/thermal is universal across Pi models
+    and needs no subprocess (unlike vcgencmd)."""
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return round(int(f.read().strip()) / 1000, 1)
+    except Exception:
+        return None
+
+
+def _system_load_status() -> dict:
+    """CPU load average (1/5/15 min, from os.getloadavg()) relative to core
+    count, plus SoC temperature. "high" only means "worth a human glancing
+    at" - see _SYSTEM_LOAD_HIGH_RATIO's own comment. "percent" (load1 as a
+    percentage of total available CPU, uncapped - >100% means genuinely
+    oversubscribed, not a display bug) is what the UI actually shows now;
+    "a load average of 9.7" meant nothing to most users without also
+    knowing the core count to divide by themselves."""
+    load1, load5, load15 = os.getloadavg()
+    cpu_count = os.cpu_count() or 1
+    ratio1 = load1 / cpu_count
+    return {
+        "load1": round(load1, 2),
+        "load5": round(load5, 2),
+        "load15": round(load15, 2),
+        "cpu_count": cpu_count,
+        "ratio1": round(ratio1, 2),
+        "percent": round(ratio1 * 100),
+        "temp_c": _cpu_temp_c(),
+        "high": ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
+    }
+
+
+def _pifinder_service_settings_stale():
+    """True if pifinder.service's actually-running process's scheduling
+    priority doesn't match what's currently configured for the unit -
+    meaning it was started before the config last changed (e.g. an Update
+    run that left an already-running instance untouched before
+    pifinder_stellarmate_setup.sh's own start->restart fix - see that
+    change's own comment) and needs a restart to pick up the current
+    settings. Compares against the unit's OWN currently-loaded value
+    rather than a hardcoded expected number, so this keeps working no
+    matter what Nice= (or any future scheduling directive) is actually set
+    to - nothing here needs to know the number itself.
+    Returns None if pifinder.service isn't running or the check itself
+    failed (nothing to report, not a mismatch)."""
+    try:
+        shown = subprocess.run(
+            ["systemctl", "show", "pifinder.service", "--property=Nice,MainPID"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        # Deliberately NOT --value with a comma-separated property list -
+        # found live: systemctl does not guarantee returning --value output
+        # in the order the properties were requested in, so a positional
+        # unpack silently paired the wrong values together. Self-labeled
+        # "Key=Value" lines (systemctl's default format) sidestep that
+        # entirely regardless of what order they come back in.
+        values = dict(line.split("=", 1) for line in shown.strip().splitlines() if "=" in line)
+        configured_nice = values.get("Nice")
+        main_pid = values.get("MainPID")
+        if configured_nice is None or main_pid is None or int(main_pid) <= 0:
+            return None
+        actual_nice = subprocess.run(
+            ["ps", "-o", "ni=", "-p", main_pid],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if not actual_nice:
+            return None
+        return int(actual_nice) != int(configured_nice)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
+# #118: pos_server.py restarting (PiFinder service restart/crash-recovery/
+# redeploy) silently breaks "PiFinder LX200"'s already-open TCP connection -
+# CONNECTION stays On but ReadScopeStatus() keeps serving the frozen
+# pre-restart RA/Dec forever, with nothing surfacing the failure. An
+# in-driver fix was attempted and confirmed NOT to self-heal live (see
+# #139, which tracks that alternative separately); this is the approved
+# Control-Center-side fix instead: detect the restart from here and redo
+# the same disconnect/connect cycle already confirmed live by hand via
+# indi_setprop (#118's documented workaround).
+_pifinder_lx200_healed_for_start = None  # pifinder.service start time we last confirmed LX200 connected against
+_pifinder_lx200_reconnect_retrier = _BackgroundRetrier()
+
+
+def _pifinder_service_start_monotonic():
+    """pifinder.service's ActiveEnterTimestampMonotonic (microseconds since
+    boot), or None if the service isn't running / systemctl can't answer.
+    Monotonic rather than the wall-clock timestamp - a plain integer,
+    always comparable, and immune to wall-clock/timezone parsing edge
+    cases; changes exactly once per service (re)start, which is all that's
+    needed here."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "show", "pifinder.service", "--property=ActiveEnterTimestampMonotonic", "--value"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return int(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        return None
+
+
+def _pifinder_lx200_auto_reconnect(status: dict) -> None:
+    """Called every _pifinder_lx200_reconnect_watchdog() tick: whenever
+    pifinder.service's own start time has moved on since we last confirmed
+    "PiFinder LX200" freshly connected, force a reconnect to redo the TCP
+    handshake. Deliberately keeps retrying every tick - not just once -
+    until a fresh connect is actually confirmed: found live (2026-08-03)
+    that pos_server.py isn't necessarily listening again the moment
+    pifinder.service's own start time changes (PiFinder itself can still be
+    mid-startup for camera/IMU init), so a single disconnect+connect attempt
+    right after detecting the restart can itself fail and leave the driver
+    *honestly* disconnected - gating retries on "still looks connected"
+    would then never retry again. Once _pifinder_lx200_healed_for_start
+    catches up to the current start time, this goes quiet again; only a
+    genuinely new restart (a further-advanced start time) reawakens it.
+    Runs the actual attempt in a background thread (via _BackgroundRetrier)
+    so a detected restart never blocks the watchdog loop; its in-flight
+    guard means a still-pending attempt is left alone rather than stacking
+    a second one."""
+    global _pifinder_lx200_healed_for_start
+    if _maintenance_mode_since is not None:
+        return
+    if status.get("active_pifinder") != "PiFinder LX200":
+        return
+    current_start = _pifinder_service_start_monotonic()
+    if current_start is None:
+        return
+    if _pifinder_lx200_healed_for_start is None:
+        # First observation since this Control Center process started -
+        # assume whatever's currently connected is already healthy rather
+        # than forcing a reconnect for no reason on every restart of the
+        # Control Center itself.
+        _pifinder_lx200_healed_for_start = current_start
+        return
+    if current_start == _pifinder_lx200_healed_for_start:
+        return
+    was_connected = status.get("pifinder_connected") is True
+
+    def _do_reconnect():
+        global _pifinder_lx200_healed_for_start
+        try:
+            if was_connected:
+                # Frozen-stale case: CONNECTION was already On, so DISCONNECT
+                # first (mirrors the manual indi_setprop workaround from #118).
+                indi_client.disconnect_device("PiFinder LX200")
+                time.sleep(1.0)
+            indi_client.connect_device("PiFinder LX200")
+            time.sleep(1.0)
+            fresh = indi_client.get_properties(device="PiFinder LX200").get("PiFinder LX200", {})
+            now_connected = fresh.get("CONNECTION", {}).get("elements", {}).get("CONNECT") == "On"
+            if now_connected:
+                _pifinder_lx200_healed_for_start = current_start
+                _mb_log("PiFinder LX200 auto-reconnect after pifinder.service restart succeeded")
+            else:
+                _mb_log(
+                    "PiFinder LX200 auto-reconnect attempt did not take yet "
+                    "(pos_server.py likely still starting) - will retry"
+                )
+        except indi_client.INDIClientError as e:
+            _mb_log(f"PiFinder LX200 auto-reconnect after pifinder.service restart failed: {e}")
+
+    started = _pifinder_lx200_reconnect_retrier.trigger(_do_reconnect)
+    if started:
+        _mb_log(
+            f"pifinder.service restarted (monotonic start {_pifinder_lx200_healed_for_start} -> "
+            f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
+            "attempting reconnect (#118)"
+        )
+
+
+def _pifinder_lx200_reconnect_watchdog(interval=20):
+    """Runs for the Control Center's whole lifetime, independent of whether
+    anyone has this web page open - #118's staleness bites just as easily
+    during a KStars/Ekos-only session that never touches this GUI. Started
+    once from main() as a daemon thread. Same 20s cadence as the frontend's
+    own /api/mount_bridge_status poll (not tied to it - see that handler's
+    own comment for why device_timeout is kept short by default here)."""
+    while True:
+        time.sleep(interval)
+        try:
+            status = indi_client.mount_bridge_status()
+        except indi_client.INDIClientError:
+            continue
+        if not status.get("running"):
+            continue
+        try:
+            _pifinder_lx200_auto_reconnect(status)
+        except Exception as e:  # a watchdog thread must never die silently
+            _mb_log(f"auto-reconnect watchdog raised unexpectedly: {e}")
+
+
+# 2026-09-01, basic-memory pifinder-stellarmate/00106, issue #240, docs/
+# concepts/mount_bridge_readiness_and_self_healing.md: "So ein 'Readiness'
+# und 'Self-Healing' Prozess sollte nach jeder Benutzerinteraktion
+# stattfinden" - direct user feedback after a session full of Mount Bridge
+# flapping/hangs and reconnect actions racing ahead of the driver actually
+# being ready. Tracks what the user most recently, explicitly asked for
+# (set by the /api/mount_bridge_active_devices and /api/mount_bridge_coupling
+# handlers above on success) so a watchdog can tell "this doesn't match what
+# was asked for" apart from "nothing has been configured yet this session" -
+# None in either case means the latter, not "should be Off/unlinked".
+_mb_desired_mount = None
+_mb_desired_coupling_mode = None
+_mb_desired_coupling_threshold = None
+_mb_desired_coupling_action = None
+# None until the user has explicitly connected/disconnected Mount Bridge
+# itself via /api/mount_bridge_connect this session - True/False afterwards.
+# Direct user feedback, 2026-09-01: "was ist, wenn jemand bewusst einen
+# Disconnect macht (kann ja notwendig sein)" - check 2 below must respect an
+# explicit False and NOT fight it, unlike every other check here (which only
+# ever restore something the user themselves asked for, so there's no
+# equivalent "deliberately wanted it broken" case for them).
+_mb_desired_connected = None
+_mb_readiness_retrier = _BackgroundRetrier()
+
+# #372, docs/concepts/mount_bridge_external_hold.md - mirrors what
+# _guiding_hold_watchdog_tick() last wrote to Mount Bridge's own
+# EXTERNAL_HOLD switch (not the sole source of truth for display purposes -
+# mount_bridge_drift()'s "external_hold" reads the driver's live property
+# directly - but needed here for idempotency and so
+# _mount_bridge_readiness_self_heal() can skip a driver restart while held).
+# Starts False, but see _guiding_hold_adopted_initial_state below - this
+# default is only trusted once that adoption step has actually run.
+_guiding_hold_active = False
+_guiding_hold_idle_since = None
+# None = not yet determined, True = confirmed present, False = confirmed
+# missing (older Mount Bridge build without #372) - set on the first
+# successful/failed hold attempt, see _guiding_hold_watchdog_tick().
+_guiding_hold_supported = None
+# REGRESSION, found live 2026-10-03: a Control Center restart does NOT
+# restart the Mount Bridge driver (two separate processes) - if the driver
+# was already genuinely held when the CC restarted, a fresh
+# _guiding_hold_active=False here meant the new watchdog saw no "was held,
+# now isn't" transition to act on, and the driver stayed stuck held forever.
+# Set True once _guiding_hold_watchdog_tick() has adopted the driver's
+# actual live external_hold value into _guiding_hold_active on its first
+# tick after (re)start, instead of assuming it starts released.
+_guiding_hold_adopted_initial_state = False
+
+# Direct request (2026-09-11): "etwas, um das KStars Profil ausgeschaltet zu
+# lassen, damit ich z.B. Änderungen an den Treibern machen kann" - developing
+# against the Mount Bridge/PiFinder LX200 drivers (rebuild + redeploy) is
+# fought by two independent, otherwise-desirable automatic mechanisms: this
+# file's own Mount Bridge readiness watchdog (Check 2, _mb_desired_connected)
+# and _pifinder_lx200_auto_reconnect() below. Reuses the exact same
+# disconnect/connect primitives and _mb_desired_connected gate the manual
+# Setup-checklist buttons already use (/api/mount_bridge_connect) - this is a
+# convenience that does both devices at once and remembers it as a named,
+# visible mode, not a new reconnection mechanism of its own. ISO timestamp
+# string (not None) means active; used both for the "since HH:MM" badge and
+# as the gate itself, so there is only ever one source of truth for whether
+# it's on. Persisted (see _save_mount_bridge_desired_state()) so it survives
+# a Control Center restart - a driver rebuild often involves exactly that.
+# Unix timestamp (float, from time.time()) when set, not an ISO string -
+# consistent with this file's other time.time()/time.monotonic() use.
+_maintenance_mode_since = None
+
+# The INDI Web Manager profile that was active when maintenance mode was
+# turned on - server_status() reports no active_profile once stop_server()
+# has been called, so this is the only place the name survives for turning
+# maintenance mode back off (including across a Control Center restart
+# while it's on, same reasoning as _maintenance_mode_since itself).
+_maintenance_mode_profile = None
+
+# The profile's own Auto Start / Auto Connect flags, captured right before
+# maintenance mode forces both off (2026-09-19 fix - the first cut of this
+# feature never touched either flag, so the Web Manager's own boot-time
+# autostart and its post-launch autoconnect could both re-arm the profile
+# out from under maintenance mode with no code path noticing). Restored
+# verbatim when maintenance mode turns back off; None while off.
+_maintenance_mode_orig_autostart = None
+_maintenance_mode_orig_autoconnect = None
+
+# Direct request (2026-09-12): "wenn ein entfernter PiFinder läuft ... dann
+# sollte der lokale PF service ausgeschaltet werden ... Ausser, die IP ist
+# localhost. Dann sollte dieser starten." - a local pifinder.service is
+# pointless (and on a camera-less x86 Control Host, potentially just an
+# error-loop) once PiFinder LX200 points at a remote device instead of this
+# one; _pifinder_service_sync_with_lx200_target() below enforces this every
+# watchdog tick. Holds the remote "host:port" spec while THIS logic is the
+# reason pifinder.service is currently stopped - None means either it was
+# never auto-stopped, or LX200 has gone back local since (in which case this
+# same logic already restarted it and cleared this back to None). Never
+# touches a service that's off for an unrelated reason (e.g. the user's own
+# Fake Mode choice) - only ever acts when this variable itself already
+# tracks having stopped it, or when LX200 is currently remote and the
+# service is currently active.
+_pifinder_service_auto_stopped_for_remote = None
+
+# Debounce for the "Web Manager unreachable, can't check" log line in
+# _pifinder_service_sync_with_lx200_target() - one line per unreachable
+# spell, not one every 5s tick for as long as it lasts.
+_wm_unreachable_for_pifinder_sync_warned = False
+
+# Separate from the variable above on purpose: dismissing the header notice
+# must not erase the "I stopped this, remember to start it back up later"
+# memory that variable also carries - only hides the banner until the next
+# fresh auto-stop (a NEW remote value, or stopped-then-restarted-then-
+# stopped-again) resets this back to False.
+_pifinder_service_notice_dismissed = False
+
+# Direct feedback (2026-09-13), live on a freshly rebooted Control host:
+# right after boot, stellarmatewebmanager.service is itself already up and
+# answering, but hasn't started an Ekos profile yet - server_status()
+# reports {"running": False, "active_profile": None} for however long that
+# takes, and _pifinder_service_sync_with_lx200_target() correctly refuses
+# to guess during that gap (same as the pre-existing "Web Manager
+# unreachable" case just above), leaving a stray local pifinder.service
+# running the whole time. But the answer usually isn't actually unknown -
+# this device was very likely already confirmed pointing at a remote LX200
+# target before the reboot, and that fact doesn't change just because the
+# profile hasn't come back up yet. This remembers the last SUCCESSFULLY
+# CONFIRMED `lx200_remote` value (via webmanager_client.pifinder_driver_
+# status(), independent of _pifinder_service_auto_stopped_for_remote above,
+# which only tracks "did *this* logic stop it") and persists it, so
+# _sync_pifinder_service_from_cache() below has something to act on even
+# before the first real check of a fresh boot succeeds. None means either
+# "never successfully checked yet" or "last confirmed local" - both cases
+# correctly mean "nothing to stop" for the cache fallback, which only ever
+# acts on a truthy cached remote.
+_last_known_lx200_remote = None
+
+# Direct feedback (2026-09-13), on whether self-heal should also start a
+# cold Web Manager profile after a reboot: "Ein User möchte ein
+# funktionierendes System mit sinnvollen default Werten. Hat er einmal
+# etwas eingestellt und angepasst, soll es auch bestehen bleiben (Reboot,
+# Reload)... Hat er etwas sinnloses konfiguriert, soll das System es
+# heilen. Gibt es ein Problem, wird der User informiert." - a profile that
+# was genuinely running before a restart is a deliberate, already-made
+# choice, not a blank slate - the fresh-install "you haven't set anything
+# up yet, click One-Click Setup" case is different and stays exactly as
+# it was (this is None until the FIRST time a profile is ever confirmed
+# running, so a genuinely new device gets no auto-start attempts at all).
+# See _autostart_cold_profile() below for the self-heal itself.
+_last_known_active_profile = None
+# Direct feedback (2026-09-13): "auch hier den selben Mechanismus zum
+# Speichern, der User muss frei in der Wahl sein" - Host and Client each
+# remember whatever profile was last genuinely running while that role
+# choice was active, exactly symmetrically - neither is hard-pinned to a
+# fixed name. webmanager_client.PIFINDER_CLIENT_PROFILE_NAME ("PFSM
+# Client") is only ever used to bootstrap _last_known_client_profile the
+# very first time Client is activated with nothing remembered yet; after
+# that, the user may point Client at any profile they like and this just
+# remembers it. Live-caught the same day: switching roles without
+# restoring the OTHER role's own remembered profile first left whichever
+# profile happened to be active selected - reconfiguring it for the new
+# role's driver shape would have corrupted a profile that belongs to the
+# role being left.
+_last_known_host_profile = None
+_last_known_client_profile = None
+
+
+def _is_client_reserved_profile(profile: str) -> bool:
+    """True for the one profile Client owns - never a legitimate Host memory.
+
+    Direct feedback (2026-09-13), live-caught: clicking "PiFinder host" while
+    "PFSM Client" was the only (and currently running) profile on the device
+    recorded _last_known_host_profile = "PFSM Client" anyway - its driver
+    shape is identical to Host's, so the per-driver reconfigure step found
+    "nothing to change" and only the role-choice/memory bookkeeping actually
+    fired. Both writers of _last_known_host_profile (this function's own
+    elif below, and /api/pifinder_role_choice's direct record) must refuse
+    the client-reserved profile specifically - checked against both the
+    fixed bootstrap name (covers a fresh install where nothing's connected
+    the two yet) and whatever's actually remembered for Client now (covers
+    the user having pointed Client at a renamed/different profile since)."""
+    return profile == webmanager_client.PIFINDER_CLIENT_PROFILE_NAME or profile == _last_known_client_profile
+
+
+def _note_active_profile(profile: str) -> None:
+    """Called from every place that already independently confirms a Web
+    Manager profile is genuinely running (_pifinder_service_sync_with_
+    lx200_target()'s own live check, _autostart_cold_profile() after
+    starting one) - not a self-heal check of its own, just the one spot
+    both funnel through so the memory below and the Web Manager's own
+    native autostart flag (docs: set_profile_autostart()'s own comment on
+    why that flag, not a custom Python retry loop, is the right primary
+    mechanism) always converge together instead of drifting apart.
+
+    Routes into the Client or Host memory (see _last_known_host_profile's
+    own comment) based on the CURRENT role choice at the moment this
+    profile is confirmed active - not on whether its name happens to match
+    the original "PFSM Client" default, since the user is free to have
+    pointed either role at any profile they like."""
+    global _last_known_active_profile, _last_known_host_profile, _last_known_client_profile
+    changed = False
+    if profile != _last_known_active_profile:
+        _last_known_active_profile = profile
+        changed = True
+    # Direct feedback (2026-09-13): "last_known_client_profile wurde durch
+    # den Hintergrund-Wächter mit 'Simulation PFSM' kontaminiert" - routing
+    # into the Client bucket just because _pifinder_role_choice happened to
+    # say "client" isn't enough - unlike Host (which accepts any profile),
+    # a profile with Mount Bridge structurally can never be the Client
+    # profile (see isPiFinderClientRole()'s own comment on the frontend).
+    # Recording it there anyway is exactly how this got contaminated: some
+    # OTHER path (the dropdown switch, the cold-profile autostart watchdog)
+    # made a bridge-having profile the active one while role_choice was
+    # still "client" from earlier, and this function recorded it as the
+    # Client profile with no qualification check at all. Falls through to
+    # the Host bucket instead - same reasoning as "keep it simple, trust
+    # the existing checks" the user already established for the endpoint-
+    # level version of this same qualification.
+    # Direct feedback (2026-09-13), live-caught: "Change to Host mode
+    # wechselt nicht zurück zum richtigen Profil (oder stimmt der Speicher
+    # nicht?)" - root cause was this function's own fallback. Whenever
+    # role_choice == "client" but the active profile didn't qualify (has a
+    # bridge), the old code fell through to the same "elif" that Host relies
+    # on to accept any profile - silently overwriting _last_known_host_
+    # profile with whatever was transiently active during CLIENT mode (e.g.
+    # a stray dropdown pick), even though the user never chose Host at all.
+    # Host's "accept any profile" only makes sense when the CURRENT choice
+    # actually is Host (or unset) - never as a catch-all for "Client chose
+    # something that doesn't qualify". That anomalous case already gets its
+    # own live warning (the "profile carries more than it needs" showstopper)
+    # and isn't anyone's canonical profile - nothing to remember here.
+    if _pifinder_role_choice == "client":
+        try:
+            client_qualifies = not webmanager_client.pifinder_driver_status(profile)["has_bridge"]
+        except webmanager_client.WebManagerError:
+            client_qualifies = False
+        if client_qualifies and profile != _last_known_client_profile:
+            _last_known_client_profile = profile
+            changed = True
+    elif not _is_client_reserved_profile(profile) and profile != _last_known_host_profile:
+        _last_known_host_profile = profile
+        changed = True
+    if changed:
+        _save_mount_bridge_desired_state()
+    if _maintenance_mode_since is not None:
+        # Found live 2026-09-19: maintenance mode explicitly turns this
+        # profile's autostart OFF (see /api/maintenance_mode_toggle) - this
+        # function running on the very next ordinary tick afterward (it's
+        # called from _pifinder_service_sync_with_lx200_target() on every
+        # tick, unconditionally) would otherwise flip it straight back ON
+        # the moment the profile is observed running at all, undoing that
+        # in seconds regardless of why it's still running. The memory
+        # bookkeeping above stays live either way - only this side effect
+        # needs to stand down while maintenance mode owns the flag.
+        return
+    try:
+        if webmanager_client.set_profile_autostart(profile, True):
+            _mb_log(
+                f"Web Manager profile '{profile}' confirmed in active use - enabled its native "
+                "autostart flag so it comes back on its own after any future reboot."
+            )
+    except webmanager_client.WebManagerError as e:
+        _mb_log(f"Could not enable autostart for Web Manager profile '{profile}': {e}")
+
+
+# Direct feedback (2026-09-13), live-caught via journalctl: a deliberate
+# role switch (/api/pifinder_client_profile, /api/pifinder_host_profile)
+# stops the old profile then starts the new one - a brief window with
+# NOTHING running. _autostart_cold_profile() below runs independently every
+# _mount_bridge_readiness_watchdog() tick (5s) and treats exactly that gap
+# as "profile died, self-heal it" - racing to restart the OLD profile
+# (_last_known_active_profile) while the deliberate switch is still
+# starting the NEW one. Both calls hit the Web Manager's own start/stop API
+# concurrently; found live as a raw TimeoutError from urllib in one or the
+# other (surfaced to the browser as "Failed to fetch", no useful message).
+# Direct feedback (2026-09-13): "kein kosmetischer Fix, ordentliche
+# Heuristik: Sperre aufheben wenn alle Punkte abgearbeitet sind plus
+# Timeout" - a fixed guessed buffer isn't good enough (confirmed live: the
+# race still happened with a buffer sized to look "safe" on paper). Held
+# from the moment either endpoint decides to switch until
+# _wait_for_profile_running() below has actually CONFIRMED the target is
+# running (polling the Web Manager itself, same proven pattern the
+# per-driver restart flow already uses) - or its own bounded timeout gives
+# up, so a genuinely stuck switch can't wedge this open forever either.
+_profile_switch_in_progress = False
+
+
+def _wait_for_profile_running(profile: str, timeout: float = 15.0) -> bool:
+    """Polls the Web Manager until `profile` is confirmed actually running,
+    or `timeout` elapses - same proven pattern as the per-driver restart
+    flow's own wait (see its own comment: avoids a caller's immediate
+    post-action refresh landing in the brief "not running yet" window and
+    flashing a confusing state). 15s default, not the other call site's 8s -
+    issue #385's own indiserver query times (regularly 3-7s+ live) leave
+    less margin in an 8s budget than intended when it was first chosen.
+    Returns whether it was actually confirmed running before the timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            status = webmanager_client.server_status()
+        except webmanager_client.WebManagerError:
+            status = {"running": False, "active_profile": None}
+        if status["running"] and status["active_profile"] == profile:
+            return True
+        time.sleep(0.3)
+    return False
+
+
+_cold_profile_retrier = _BackgroundRetrier()
+_cold_profile_start_attempts = 0
+_cold_profile_start_cooldown_until = 0.0  # time.monotonic() deadline, not a wall-clock time
+# Surfaced via /state so the frontend can show a clear, actionable notice
+# (per the same feedback: "wird der User informiert und... sinnvolle
+# Lösungen angeboten") instead of this failing silently forever in the
+# background - see _autostart_cold_profile()'s own docstring for when
+# this gets set, and its "already running again" branch for when it
+# clears.
+_cold_profile_start_gave_up = False
+_COLD_PROFILE_START_MAX_ATTEMPTS = 3
+_COLD_PROFILE_START_COOLDOWN_SEC = 30.0
+
+
+def _autostart_cold_profile():
+    """Self-heal: if this device once had a genuinely running Web Manager
+    profile (_last_known_active_profile, persisted across restarts) and
+    the Web Manager currently reports none running at all - the common
+    "right after a reboot, before anything else got a chance to start it"
+    gap - starts that profile back up automatically instead of waiting
+    for a manual One-Click Setup click every single time. Called once per
+    _mount_bridge_readiness_watchdog() tick, independent of that loop's
+    own indiserver-status query (this only ever talks to the Web Manager,
+    never indiserver directly).
+
+    Bounded (_COLD_PROFILE_START_MAX_ATTEMPTS, a cooldown between tries)
+    so a profile that's actually broken (bad driver config, hardware
+    gone) doesn't get hammered forever - gives up after that many failed
+    attempts and surfaces it via _cold_profile_start_gave_up (see /state)
+    rather than silently retrying into eternity. A fresh problem (profile
+    goes idle again some time after a successful start) gets a fresh
+    attempt budget - only a run of CONSECUTIVE failures right now exhausts
+    it."""
+    global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
+    global _cold_profile_start_gave_up
+    if _maintenance_mode_since is not None:
+        return  # deliberately stopped - see /api/maintenance_mode_toggle. Found live 2026-09-19:
+        # this self-heal has no maintenance-mode gate of its own, so it was starting the profile
+        # straight back up (and re-enabling its autostart flag via _note_active_profile() below)
+        # within one watchdog tick of maintenance mode stopping it - the other two things this
+        # toggle stops (_mount_bridge_readiness_self_heal(), _pifinder_lx200_auto_reconnect()) were
+        # already gated; this one just never got the same treatment.
+    if _profile_switch_in_progress:
+        return  # a deliberate Host/Client switch is already mid-flight - see that global's own comment
+    if not _last_known_active_profile:
+        return  # nothing ever confirmed running here - not this self-heal's job (see One-Click Setup)
+    try:
+        wm_status = webmanager_client.server_status()
+    except webmanager_client.WebManagerError:
+        return  # can't even ask right now - next tick retries, no guessing
+    if wm_status.get("running") and wm_status.get("active_profile"):
+        # Genuinely running again (this profile, or a different one started
+        # some other way) - remember whichever it actually is (and enable
+        # its native autostart flag, see _note_active_profile()), and
+        # reset the attempt budget so a LATER, unrelated gap gets a fresh try.
+        _note_active_profile(wm_status["active_profile"])
+        _cold_profile_start_attempts = 0
+        _cold_profile_start_gave_up = False
+        return
+    if _cold_profile_start_gave_up or time.monotonic() < _cold_profile_start_cooldown_until:
+        return
+
+    def _do_start():
+        global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
+        global _cold_profile_start_gave_up
+        _cold_profile_start_attempts += 1
+        _cold_profile_start_cooldown_until = time.monotonic() + _COLD_PROFILE_START_COOLDOWN_SEC
+        try:
+            webmanager_client.start_server(_last_known_active_profile)
+            _mb_log(
+                f"Web Manager profile '{_last_known_active_profile}' wasn't running - started it "
+                "automatically (it was running before a restart/reboot)."
+            )
+        except webmanager_client.WebManagerError as e:
+            _mb_log(
+                f"Auto-start of Web Manager profile '{_last_known_active_profile}' failed "
+                f"(attempt {_cold_profile_start_attempts}/{_COLD_PROFILE_START_MAX_ATTEMPTS}): {e}"
+            )
+            if _cold_profile_start_attempts >= _COLD_PROFILE_START_MAX_ATTEMPTS:
+                _cold_profile_start_gave_up = True
+                _mb_log(
+                    f"Giving up auto-starting '{_last_known_active_profile}' after "
+                    f"{_COLD_PROFILE_START_MAX_ATTEMPTS} failed attempts - open the Web Manager to "
+                    "check what's wrong (One-Click Setup below also retries manually)."
+                )
+
+    _cold_profile_retrier.trigger(_do_start)
+
+
+# docs/concepts/pifinder_client_role_and_indi_setup_review.md, section 3a:
+# "PiFinder host" (GoTo Mode, mount optional) and "PiFinder Client" (no
+# mount, ready for a remote Control host) both derive the identical
+# frontend role === 'host' from the profile alone (local PiFinder LX200, no
+# Mount Bridge) - this is the one bit that tells them apart, a deliberate
+# user choice, not something derivable from the profile. "host" | "client"
+# | None (None = no explicit choice yet, e.g. a fresh install).
+_pifinder_role_choice = None
+
+# 2026-09-26, docs/concepts/optical_train_device_sync.md: which optical-train
+# device fields the Full-Simulation on/off pair changed and must restore -
+# {train_id: {property_name: old_value}}, only entries that actually changed
+# (a field already on "Telescope Simulator" is never recorded, nothing to
+# restore for it). Persisted the same way as the _mb_desired_* fields above -
+# a Control Center restart mid-Full-Simulation must not lose track of what
+# to restore later.
+_optical_train_swap_memory: dict = {}
+_OPTICAL_TRAIN_SIM_DEVICE = "Telescope Simulator"
+
+
+def _current_pifinder_mode_snapshot() -> dict:
+    """This device's own mode/role state - see /api/pifinder_mode's own
+    (former) inline comment for what each field means. Factored out
+    (2026-09-15) so _pifinder_mode_indi_mirror_watchdog() below can reuse the
+    exact same computation to push it into INDI."""
+    with _lock:
+        transitioning = _mode_action_running
+        error = _mode_error
+        target = _mode_target
+    fake_up = _fake_mode_up()
+    real_active = _real_service_active()
+    if fake_up:
+        mode = "fake"
+    elif real_active:
+        mode = "real"
+    else:
+        mode = "none"
+    return {
+        "mode": mode,
+        "transitioning": transitioning,
+        "error": error,
+        "target": target,
+        # Raw systemd state (#192) - lets the OLED-mirror wait overlay
+        # distinguish "service not started"/"failed" from "started, just not
+        # answering /image yet" instead of a single generic message
+        # throughout.
+        "real_service_state": _real_service_state(),
+        # "host" | "client" | None - see its own module-level comment
+        # (docs/concepts/pifinder_client_role_and_indi_setup_review.md, 3a).
+        "pifinder_role_choice": _pifinder_role_choice,
+    }
+
+
+# Direct request (2026-09-15): "pifinder_mode ist raus [of the INDI
+# migration], du kannst es ja als Property Zustand im INDI spiegeln -
+# brauchen wir vielleicht später für die Darstellung in EKOS oder der SMATE
+# App" - this state describes this Control Center's own process/service
+# orchestration (which systemd unit it's running, mid-mode-switch or not),
+# not a PiFinder or hardware fact, so the *control* stays entirely on the
+# existing Control-Center-to-Control-Center channel (unlike Camera/IMU/
+# System Load/Orientation above). But mirroring the current *value*
+# read-only into "PiFinder LX200"'s own PIFINDER_MODE property costs nothing
+# and means any generic INDI client (EKOS, the StellarMate App, ...) can see
+# it for free, without knowing anything about this project's own HTTP API.
+# Only pushes on change (not every tick) to avoid spamming setText updates
+# to every INDI client watching this device. Silently does nothing if there
+# is no local "PiFinder LX200" driver to write to (e.g. a pure Control Host
+# with a remote-only PiFinder LX200) - this mirror is only meaningful on the
+# device that actually runs the mode being described.
+_last_pushed_pifinder_mode_snapshot = None
+
+
+def _pifinder_mode_indi_mirror_watchdog(interval=10):
+    """Runs for the Control Center's whole lifetime. Started once from
+    main() as a daemon thread."""
+    global _last_pushed_pifinder_mode_snapshot
+    while True:
+        time.sleep(interval)
+        snapshot = _current_pifinder_mode_snapshot()
+        if snapshot == _last_pushed_pifinder_mode_snapshot:
+            continue
+        try:
+            indi_client.set_text(
+                "PiFinder LX200",
+                "PIFINDER_MODE",
+                {
+                    "MODE": snapshot["mode"] or "",
+                    "TRANSITIONING": "yes" if snapshot["transitioning"] else "no",
+                    "TARGET": snapshot["target"] or "",
+                    "REAL_SERVICE_STATE": snapshot["real_service_state"] or "",
+                    "ROLE_CHOICE": snapshot["pifinder_role_choice"] or "",
+                },
+            )
+            _last_pushed_pifinder_mode_snapshot = snapshot
+        except indi_client.INDIClientError:
+            pass  # no local "PiFinder LX200" driver here - nothing to mirror to
+
+# Direct request (2026-09-11): "Die gelbe Meldung nervt ungemein. Die
+# brauchen wir wirklich nur beim ersten Start. Dann nicht mehr." -
+# indi_pifinder_simulator's own STARTUP_DEFAULT_SOURCE is computed fresh on
+# every restart of THAT PROCESS (a simulation-only device, restarted often
+# during a long dev/test session - self-heal cycles, manual reconnects,
+# indiserver restarts), so PR #395's live-drift check re-derives "still a
+# mismatch?" correctly per-restart but the card can still flash back on
+# right after each one, before drift has been freshly confirmed small
+# again. This tracks "has this ever actually been resolved this
+# installation" permanently (survives every driver/Control Center restart,
+# not just the current process/page load) - once true, never goes back to
+# false short of deleting MOUNT_BRIDGE_DESIRED_STATE_FILE (a fresh
+# install). Set the first time the readiness watchdog observes a small
+# drift (same <10' threshold as the frontend's own liveDriftConfirmsRelated)
+# - piggybacks on that already-running poll, no extra INDI round-trip.
+_sim_mismatch_ever_resolved = False
+
+
+def _save_mount_bridge_desired_state():
+    """Best-effort atomic write (temp file + os.replace, same pattern as
+    _write_result_file()) - a save failure here must not fail the API call
+    that triggered it, since the live change already took effect either
+    way; only the restart-survival gets lost."""
+    try:
+        tmp = MOUNT_BRIDGE_DESIRED_STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({
+            "mb_desired_mount": _mb_desired_mount,
+            "mb_desired_coupling_mode": _mb_desired_coupling_mode,
+            "mb_desired_coupling_threshold": _mb_desired_coupling_threshold,
+            "mb_desired_coupling_action": _mb_desired_coupling_action,
+            "mb_desired_connected": _mb_desired_connected,
+            "maintenance_mode_since": _maintenance_mode_since,
+            "maintenance_mode_profile": _maintenance_mode_profile,
+            "maintenance_mode_orig_autostart": _maintenance_mode_orig_autostart,
+            "maintenance_mode_orig_autoconnect": _maintenance_mode_orig_autoconnect,
+            "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
+            "pifinder_service_auto_stopped_for_remote": _pifinder_service_auto_stopped_for_remote,
+            "pifinder_service_notice_dismissed": _pifinder_service_notice_dismissed,
+            "pifinder_role_choice": _pifinder_role_choice,
+            "last_known_lx200_remote": _last_known_lx200_remote,
+            "last_known_active_profile": _last_known_active_profile,
+            "last_known_host_profile": _last_known_host_profile,
+            "last_known_client_profile": _last_known_client_profile,
+            "optical_train_swap_memory": _optical_train_swap_memory,
+        }))
+        os.replace(tmp, MOUNT_BRIDGE_DESIRED_STATE_FILE)
+    except Exception as e:
+        _mb_log(f"warning: could not persist Mount Bridge desired state: {e}")
+
+
+def _load_mount_bridge_desired_state():
+    """Called once at startup, before the readiness watchdog starts - restores
+    what _save_mount_bridge_desired_state() wrote, so a Control Center
+    restart doesn't leave the watchdog with nothing to compare against (see
+    MOUNT_BRIDGE_DESIRED_STATE_FILE's own comment). Missing/corrupt file
+    just means "nothing configured yet", the same as a fresh install."""
+    global _mb_desired_mount, _mb_desired_coupling_mode, _mb_desired_coupling_threshold
+    global _mb_desired_coupling_action, _mb_desired_connected, _maintenance_mode_since
+    global _maintenance_mode_profile, _sim_mismatch_ever_resolved
+    global _maintenance_mode_orig_autostart, _maintenance_mode_orig_autoconnect
+    global _pifinder_service_auto_stopped_for_remote, _pifinder_service_notice_dismissed
+    global _pifinder_role_choice, _last_known_lx200_remote, _last_known_active_profile
+    global _last_known_host_profile, _last_known_client_profile, _optical_train_swap_memory
+    if not MOUNT_BRIDGE_DESIRED_STATE_FILE.exists():
+        return
+    try:
+        data = json.loads(MOUNT_BRIDGE_DESIRED_STATE_FILE.read_text())
+    except Exception as e:
+        _mb_log(f"warning: could not load persisted Mount Bridge desired state: {e}")
+        return
+    _mb_desired_mount = data.get("mb_desired_mount")
+    _mb_desired_coupling_mode = data.get("mb_desired_coupling_mode")
+    _mb_desired_coupling_threshold = data.get("mb_desired_coupling_threshold")
+    _mb_desired_coupling_action = data.get("mb_desired_coupling_action")
+    _mb_desired_connected = data.get("mb_desired_connected")
+    _maintenance_mode_since = data.get("maintenance_mode_since")
+    _maintenance_mode_profile = data.get("maintenance_mode_profile")
+    _maintenance_mode_orig_autostart = data.get("maintenance_mode_orig_autostart")
+    _maintenance_mode_orig_autoconnect = data.get("maintenance_mode_orig_autoconnect")
+    _sim_mismatch_ever_resolved = data.get("sim_mismatch_ever_resolved", False)
+    _pifinder_service_auto_stopped_for_remote = data.get("pifinder_service_auto_stopped_for_remote")
+    _pifinder_service_notice_dismissed = data.get("pifinder_service_notice_dismissed", False)
+    _pifinder_role_choice = data.get("pifinder_role_choice")
+    _last_known_lx200_remote = data.get("last_known_lx200_remote")
+    _last_known_active_profile = data.get("last_known_active_profile")
+    _last_known_host_profile = data.get("last_known_host_profile")
+    _last_known_client_profile = data.get("last_known_client_profile")
+    _optical_train_swap_memory = data.get("optical_train_swap_memory", {})
+    _mb_log(
+        "restored Mount Bridge desired state from before the last restart "
+        f"(mount={_mb_desired_mount!r}, coupling={_mb_desired_coupling_mode!r}, "
+        f"connected={_mb_desired_connected!r}, maintenance_mode_since={_maintenance_mode_since!r})."
+    )
+
+# Restart-storm guard for check 1 (unresponsive driver) - see the concept
+# doc's own "Restart storms" open question. If restarting genuinely doesn't
+# help (root cause of #238 still unknown), this stops trying after a
+# handful of attempts within one cooldown window and logs loudly instead of
+# retrying forever every tick.
+_MB_READINESS_MAX_RESTARTS_PER_WINDOW = 3
+_MB_READINESS_RESTART_WINDOW_SEC = 120
+_mb_readiness_restart_times: list = []
+_mb_readiness_gave_up = False
+
+# Debounce for check 1 - found live 2026-09-03 chasing the "vierter Fund"-
+# style symptoms (very late/no drift correction, a mount jump to RA0/Dec0):
+# gdb-attaching BOTH indiserver and Mount Bridge at the exact instant a
+# status poll timed out showed both processes cleanly idle (indiserver in
+# libev's ev_run()/epoll_wait(), Mount Bridge's two threads in select()) -
+# no deadlock, no stuck code path anywhere. On a resource-constrained VM
+# (UTM/Apple Silicon) running KStars+EKOS+several INDI drivers+test tooling
+# at once, a single momentary scheduling stall past mount_bridge_status()'s
+# own 7s/3s timeouts is plausible and harmless on its own - but check 1
+# used to act on ONE such poll immediately, restarting a driver that was
+# never actually broken. Every restart wipes ALL of Mount Bridge's
+# in-memory tracking state (trusted drift baseline, last-forwarded target,
+# reposition-detection history) and forces a cold Sync+re-forward Goto from
+# scratch - repeated every few minutes, that alone plausibly explains both
+# the "reacts far slower than PiFinder's own solve rate" complaint and is a
+# strong contributing factor to the RA0/Dec0 jumps. Now requires this many
+# CONSECUTIVE not-running ticks (5s apart) before concluding the driver is
+# actually stuck rather than just momentarily slow to answer.
+_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
+_mb_readiness_consecutive_fails = 0
+
+# Debounce for check 6 - found live 2026-09-05: an "PiFinder Simulator" INDI
+# driver build that predates FOLLOW_MOUNT_DEVICE (introduced afafbf0,
+# 2026-09-01) reports the device as present but the property as permanently
+# absent (get_pifinder_simulator_follow_mount() returns "" instead of the
+# desired mount, since it's reading a property the old binary never
+# defines) - the write in _do_follow() below is then a silent no-op against
+# that same missing property. Without a limit, check 6 retried this
+# unwinnable action every single 5s tick forever, filling the Mount Bridge
+# log panel with "set PiFinder Simulator to follow ..." lines that never
+# actually change anything. This mirrors check 1's give-up pattern above,
+# but keyed on the specific mount name rather than a time window: a build
+# that's simply stale for THIS mount stays quiet after the first warning,
+# while a genuinely new target (user re-links to a different mount) gets a
+# fresh set of attempts rather than staying silenced by an unrelated
+# earlier give-up.
+_MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING = 3
+_mb_readiness_follow_mount_consecutive_fails = 0
+_mb_readiness_follow_mount_gave_up_target = None
+
+# Direct feedback (2026-09-15): the #385 slow-query log below used to fire on
+# EVERY tick (every `interval` seconds) for as long as indiserver stayed
+# slow, which can be minutes at a time - "nervt" (annoying), drowning out
+# everything else in the panel. Logs only on the transition into/out of
+# "slow" now, not on every tick while it persists - still leaves the same
+# permanent evidence trail the original comment cared about (first
+# occurrence, and how long it lasted), just without the per-tick repeats.
+_mb_readiness_query_was_slow = False
+
+# Direct feedback (2026-09-18, basic-memory pifinder-stellarmate/00166/00169):
+# a mount driver's TIME_UTC is only ever snooped from KStars once, at
+# connect time - never re-pushed afterward - so it's a frozen snapshot that
+# falls further and further behind the real (always-correct, NTP-synced)
+# system time as a session goes on. NOT "drift" in the Mount Bridge's usual
+# sense (a value that keeps changing and needs re-measuring) - the value
+# itself never moves at all; it's reality that moves on without it. 10
+# minutes: frequent enough that a multi-hour observing/testing session
+# never falls far behind, well above the couple of seconds a genuine
+# refresh takes, so this doesn't fire on every tick once it's stale (the
+# check IS its own rate limit - right after a successful refresh, the age
+# is ~0 again, so it naturally won't re-fire for another full interval).
+_MOUNT_TIME_STALE_THRESHOLD_SEC = 600.0
+
+# Debounce for the profile-bookkeeping check below - found live 2026-09-12:
+# the driver can be fully running/connected/linked while the Web Manager's
+# own PERSISTED profile record no longer lists "PiFinder Mount Bridge" as a
+# driver (root cause not fully pinned down - the removal path is a delete-
+# and-recreate of the whole profile, see webmanager_client.py's module
+# docstring, and nothing on that path is logged with who/what triggered it).
+# deriveProfileRole() then reads the profile as plain "PiFinder host" (no
+# mount) and the whole coupling UI disappears, even though the driver is
+# demonstrably alive and doing real work. Same reasoning as check 1's
+# debounce: a driver just (re)added to the profile may not show up via the
+# Web Manager's own /labels endpoint on the very next tick, and this must
+# never fight a genuine, in-progress removal (switching to "PiFinder host"
+# on purpose) while the old process is still shutting down.
+_MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL = 3
+_mb_readiness_profile_desync_consecutive = 0
+
+# Found live (2026-09-20): (active_profile, _mb_desired_mount) tuple last
+# warned about below - a plain "warned once" bool would still re-log every
+# tick a DIFFERENT stale-mount/profile combination shows up, and would stay
+# permanently silent about a second, genuinely new occurrence after the
+# first one happened to involve the same profile.
+_mb_desired_mount_missing_from_profile_warned = None
+
+
+def _mount_bridge_readiness_self_heal(status: dict) -> None:
+    """One evaluation pass, called every _mount_bridge_readiness_watchdog()
+    tick. Checks are ordered per the concept doc's table and this only ever
+    acts on the FIRST mismatch found - a driver restart (check 1) makes
+    every later check meaningless for this same tick anyway (nothing is
+    connected/linked immediately after), and piling up several repairs at
+    once makes a failure harder to attribute to any one of them."""
+    global _mb_readiness_gave_up, _mb_readiness_consecutive_fails
+    global _mb_readiness_follow_mount_consecutive_fails, _mb_readiness_follow_mount_gave_up_target
+    global _mb_desired_mount_missing_from_profile_warned
+
+    # Maintenance mode (2026-09-11/12): this Control Center's own driver
+    # self-healing is one of the three things maintenance mode stops (see
+    # /api/maintenance_mode_toggle's own comment) - found live 2026-09-12
+    # that this gate had only ever been added to
+    # _pifinder_lx200_auto_reconnect(), not here, which is exactly why
+    # disconnecting devices alone didn't stop them from being reconnected:
+    # Check 1 below restarts the Mount Bridge driver whenever it isn't
+    # running at all, with no maintenance-mode awareness.
+    if _maintenance_mode_since is not None:
+        return
+
+    # --- Check 0: a mount is live-connected but never told to Mount Bridge -
+    # Direct feedback (2026-09-19), decision matrix: "wenn ein Mount
+    # verknuepft ist dann sowieso -> MB aktivieren oder hinzufuegen - das
+    # macht ja sonst in dem Mode gar keinen Sinn", restricted to "wenn das
+    # vorher so war" (only heal a regression, never invent config from
+    # nothing) - and confirmed live the same day that Check 1 below ALREADY
+    # does exactly that restart/reconnect/re-link chain once _mb_desired_mount
+    # is set (watched it bring a fully-detached Mount Bridge back on its own
+    # within a few ticks). The one gap that chain can't cover on its own:
+    # _mb_desired_mount is None - never configured, or cleared by profile
+    # churn - even though a real mount is genuinely connected right now.
+    # Fixes exactly that gap, minimally: detect a live-connected telescope-
+    # family driver (reusing other_profile_drivers()'s own is_telescope
+    # classification - the same one status_page.html already uses to
+    # auto-select a mount candidate in its UI, not a second invented
+    # heuristic) and simply SET _mb_desired_mount to it - Check 1 through 3
+    # below then take over exactly as they already do for the manually-
+    # configured case, no separate healing logic duplicated here. Skipped
+    # for "client" role - structurally never wants Mount Bridge at all (see
+    # Check 2.5's own opposite rule below) - and only when nothing is
+    # desired yet, so a deliberate "no mount" Host (handheld GoTo Mode)
+    # or an already-configured one is never overridden.
+    global _mb_desired_mount
+    if _pifinder_role_choice != "client" and _mb_desired_mount is None and _mb_desired_coupling_mode is None:
+        try:
+            active_profile = webmanager_client.server_status().get("active_profile")
+        except webmanager_client.WebManagerError:
+            active_profile = None
+        if active_profile:
+            try:
+                candidates = [
+                    d["label"] for d in webmanager_client.other_profile_drivers(active_profile)
+                    if d.get("is_telescope")
+                ]
+            except webmanager_client.WebManagerError:
+                candidates = []
+            for label in candidates:
+                try:
+                    vector = indi_client.get_properties(
+                        device=label, timeout=indi_client.TIMEOUT_QUICK_RETRY
+                    ).get(label, {}).get("CONNECTION")
+                except Exception:
+                    vector = None
+                if vector and vector.get("elements", {}).get("CONNECT") == "On":
+                    _mb_desired_mount = label
+                    _save_mount_bridge_desired_state()
+                    _mb_log(
+                        f"Mount Bridge self-heal: '{label}' is live-connected in profile "
+                        f"'{active_profile}' with no mount ever configured for Mount Bridge - "
+                        "set it as the desired mount so Mount Bridge gets added/started/linked "
+                        "automatically."
+                    )
+                    break
+
+    # --- Check 1: responsive at all -------------------------------------
+    # mount_bridge_status() itself can't distinguish "driver never started"
+    # from "driver alive but unresponsive" (issue #238) - both look
+    # identical from here (no properties came back in time), and both get
+    # the same self-heal (start/restart is a safe no-op-if-already-fine
+    # operation either way). Only acts once the user has actually asked for
+    # Mount Bridge to do something this session - otherwise a system that
+    # simply doesn't use Mount Bridge at all would get "restarted" for no
+    # reason on every tick.
+    if not status.get("running"):
+        if _mb_desired_mount is None and _mb_desired_coupling_mode is None:
+            _mb_readiness_consecutive_fails = 0
+            return
+        _mb_readiness_consecutive_fails += 1
+        if _mb_readiness_consecutive_fails < _MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART:
+            # See _MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART's own
+            # comment - a single slow poll isn't trusted as "actually stuck"
+            # yet, the next tick(s) will confirm or clear it.
+            return
+        now = time.monotonic()
+        recent = [t for t in _mb_readiness_restart_times if now - t < _MB_READINESS_RESTART_WINDOW_SEC]
+        _mb_readiness_restart_times[:] = recent
+        if len(recent) >= _MB_READINESS_MAX_RESTARTS_PER_WINDOW:
+            if not _mb_readiness_gave_up:
+                _mb_readiness_gave_up = True
+                _mb_log(
+                    f"Mount Bridge self-heal: gave up after {_MB_READINESS_MAX_RESTARTS_PER_WINDOW} driver "
+                    f"restarts within {_MB_READINESS_RESTART_WINDOW_SEC}s - still unresponsive. Not retrying "
+                    "again automatically (see issue #238) - a manual look is needed."
+                )
+            return
+
+        # #372, docs/concepts/mount_bridge_external_hold.md §2.2: a restart
+        # mid-guiding-session is actively harmful (drops the mount
+        # connection for however long the restart takes, right as guiding
+        # depends on it staying still) - skip it while the guiding watchdog
+        # currently has EXTERNAL_HOLD engaged. Deliberately does not reset
+        # _mb_readiness_consecutive_fails here - if the hold clears while
+        # Mount Bridge is still genuinely unresponsive, the next tick picks
+        # up exactly where this left off instead of restarting the
+        # multi-tick confirmation window from zero.
+        if _guiding_hold_active:
+            _mb_log("Mount Bridge self-heal: driver unresponsive, but guiding is currently held (#372) - "
+                    "skipping restart until guiding stops.")
+            return
+
+        def _do_restart():
+            try:
+                indi_client.restart_mount_bridge_driver()
+                _mb_log("Mount Bridge self-heal: driver was unresponsive - restarted it.")
+            except OSError as e:
+                _mb_log(f"Mount Bridge self-heal: restart attempt failed: {e}")
+
+        if _mb_readiness_retrier.trigger(_do_restart):
+            _mb_readiness_restart_times.append(now)
+            _mb_readiness_consecutive_fails = 0
+        return
+    _mb_readiness_gave_up = False
+    _mb_readiness_consecutive_fails = 0
+
+    # --- Check 2: connected ----------------------------------------------
+    if not status.get("bridge_connected") and _mb_desired_connected is not False:
+        def _do_connect():
+            try:
+                indi_client.connect_device("PiFinder Mount Bridge")
+                _mb_log("Mount Bridge self-heal: was disconnected - reconnected.")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"Mount Bridge self-heal: reconnect attempt failed: {e}")
+
+        _mb_readiness_retrier.trigger(_do_connect)
+        return
+    if not status.get("bridge_connected"):
+        # Either still not connected (self-heal above just fired and needs
+        # a tick to land), or the user deliberately disconnected
+        # (_mb_desired_connected is False) - either way, checks 3/4/6 below
+        # all need a connected Mount Bridge to mean anything and would just
+        # fail/no-op against a disconnected one.
+        return
+
+    # --- Check 2.5: profile bookkeeping matches live reality -------------
+    # See _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL's own comment for
+    # the incident this covers. Only reachable once checks 1/2 above already
+    # confirmed the driver is genuinely running AND connected - i.e. this
+    # never fires against a driver that's actually gone, only against one
+    # that's demonstrably fine but the profile's own record disagrees.
+    global _mb_readiness_profile_desync_consecutive
+    try:
+        active_profile = webmanager_client.server_status().get("active_profile")
+    except webmanager_client.WebManagerError:
+        active_profile = None
+    if active_profile:
+        try:
+            has_bridge = webmanager_client.pifinder_driver_status(active_profile).get("has_bridge")
+        except webmanager_client.WebManagerError:
+            has_bridge = None
+        if has_bridge is False:
+            # Found live (2026-09-13), direct feedback: "Der PiFinder Client
+            # Status übersteht den Reboot / Reinstall nicht" - a genuine
+            # "PiFinder Client" choice means no bridge in the profile is the
+            # permanently CORRECT state, not a desync to heal - if a stale/
+            # leftover Mount Bridge driver instance from before a reboot or
+            # reinstall ever shows up as "connected" again (checks 1/2
+            # above only look at whether SOMETHING answers, not which
+            # profile it belongs to), this self-heal would otherwise re-add
+            # Bridge to the profile and undo the choice entirely (which
+            # then also silently clears pifinder_role_choice back to null
+            # via _pifinder_service_sync_with_lx200_target()'s own cleanup,
+            # since the profile now looks like 'aio' again). The 3-tick
+            # debounce above already protects an in-progress switch AWAY
+            # from Client; this protects the steady state once Client is
+            # actually chosen and stays chosen.
+            if _pifinder_role_choice == "client":
+                _mb_readiness_profile_desync_consecutive = 0
+                return
+            _mb_readiness_profile_desync_consecutive += 1
+            if _mb_readiness_profile_desync_consecutive >= _MB_READINESS_PROFILE_DESYNC_TICKS_BEFORE_HEAL:
+                def _do_resync():
+                    try:
+                        webmanager_client.set_pifinder_bridge(active_profile, True)
+                        _mb_log(
+                            "Mount Bridge self-heal: driver is live/connected but profile "
+                            f"'{active_profile}' no longer listed it - re-added it there "
+                            "(bookkeeping only, did not touch the running driver)."
+                        )
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"Mount Bridge self-heal: re-adding to profile failed: {e}")
+
+                if _mb_readiness_retrier.trigger(_do_resync):
+                    _mb_readiness_profile_desync_consecutive = 0
+            return
+        _mb_readiness_profile_desync_consecutive = 0
+
+    # --- Check 2.75: desired mount actually exists in the active profile -
+    # Found live (2026-09-20): _mb_desired_mount can be a leftover from a
+    # DIFFERENT, previously active profile (e.g. remembered while "PFSM UTM
+    # Simulation" was active, then the user switches to "PFSM Client", which
+    # was never meant to have a mount driver at all) - Check 3 below has no
+    # way to tell "genuinely disconnected, keep retrying" apart from
+    # "doesn't exist in this profile at all, retrying can never succeed",
+    # and kept firing indi_client.connect_device(_mb_desired_mount) every
+    # tick forever against a device indiserver has never even heard of
+    # ("property 'CONNECTION' not currently defined"). Reuses
+    # other_profile_drivers() - the same call Check 0 above already uses to
+    # find mount candidates - rather than a second, separate device-listing
+    # mechanism. Deliberately does NOT clear _mb_desired_mount itself - an
+    # explicit choice persists until the user changes it (same principle as
+    # pifinder_role_choice's own comment) - just stops retrying a connect
+    # that cannot succeed until the profile situation changes, logged once
+    # per (profile, mount) combination rather than every 5s tick.
+    if _mb_desired_mount and active_profile:
+        try:
+            other_drivers = {d["label"] for d in webmanager_client.other_profile_drivers(active_profile)}
+        except webmanager_client.WebManagerError:
+            other_drivers = None
+        if other_drivers is not None and _mb_desired_mount not in other_drivers:
+            combo = (active_profile, _mb_desired_mount)
+            if _mb_desired_mount_missing_from_profile_warned != combo:
+                _mb_desired_mount_missing_from_profile_warned = combo
+                _mb_log(
+                    f"Mount Bridge self-heal: desired mount '{_mb_desired_mount}' isn't in the "
+                    f"active profile '{active_profile}' at all - not retrying the connect until "
+                    "either the mount is added there or a different mount is chosen."
+                )
+            return
+        _mb_desired_mount_missing_from_profile_warned = None
+
+    # --- Check 3: linked to the desired mount, both devices connected ----
+    # Found live (2026-09-16, #385-adjacent investigation): "not_connected"
+    # used to be lumped in with "mismatched" and both got the SAME remedy
+    # (re-link ACTIVE_DEVICES) - but re-linking only fixes "the wrong device
+    # is linked", it's a pure bookkeeping write and does nothing to an
+    # already-correctly-linked device that's simply disconnected. Against a
+    # disconnected PiFinder LX200 this produced an infinite, harmless-but-
+    # noisy "re-linked to '<mount>'" loop every tick, forever, without ever
+    # actually reconnecting anything - live-confirmed via `indi_getprop
+    # PiFinder LX200.CONNECTION.CONNECT` reading Off throughout. Per the
+    # project's own established principle (basic-memory pifinder-stellarmate/
+    # 00153, "gegen tatsächliche Zustandsbestätigung, nicht Zeitpuffer"): the
+    # fix here is not a guessed wait/timeout - it's applying the RIGHT
+    # truthful action (a real connect_device() call) for the failure this
+    # tick's live status actually shows, then letting this same function's
+    # own next 5s tick re-read the live CONNECTION state and judge the truth
+    # of whether that worked - no invented pause, no assumed success.
+    if _mb_desired_mount:
+        mismatched = status.get("active_mount") != _mb_desired_mount
+        if mismatched:
+            def _do_link():
+                try:
+                    indi_client.set_mount_bridge_active_devices("PiFinder LX200", _mb_desired_mount)
+                    _mb_log(f"Mount Bridge self-heal: re-linked to '{_mb_desired_mount}'.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: re-link attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_link)
+            return
+        if status.get("pifinder_connected") is not True:
+            def _do_connect_pifinder():
+                try:
+                    indi_client.connect_device("PiFinder LX200")
+                    _mb_log(
+                        "Mount Bridge self-heal: PiFinder LX200 is correctly linked but wasn't "
+                        "connected - sent connect (next tick confirms whether it actually came up)."
+                    )
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: PiFinder LX200 connect attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_connect_pifinder)
+            return
+        if status.get("mount_connected") is not True:
+            def _do_connect_mount():
+                try:
+                    indi_client.connect_device(_mb_desired_mount)
+                    _mb_log(
+                        f"Mount Bridge self-heal: '{_mb_desired_mount}' is correctly linked but wasn't "
+                        "connected - sent connect (next tick confirms whether it actually came up)."
+                    )
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: '{_mb_desired_mount}' connect attempt failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_connect_mount)
+            return
+
+    # --- Check 4: coupling mode matches what was last actually chosen ----
+    if _mb_desired_coupling_mode:
+        if status.get("coupling_mode") != _mb_desired_coupling_mode:
+            def _do_coupling():
+                try:
+                    indi_client.set_coupling_mode(
+                        _mb_desired_coupling_mode,
+                        drift_threshold=_mb_desired_coupling_threshold,
+                        correction_action=_mb_desired_coupling_action,
+                    )
+                    _mb_log(f"Mount Bridge self-heal: re-applied coupling mode {_mb_desired_coupling_mode}.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: re-apply coupling mode failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_coupling)
+            return
+    elif status.get("coupling_mode") in ("MODE_OFF", None):
+        # Found live (2026-09-13), reported repeatedly: "was ist an
+        # 'Verify/Alert only' ist default so schwer zu verstehen" - the
+        # driver's own connect-time invariant check (pifinder_mount_bridge.cpp)
+        # only catches "literally no switch is on at all" - MODE_OFF being
+        # on is a perfectly valid switch state from ITS perspective, so it
+        # never intervenes there. And this check right here only ever
+        # re-applies a mode once _mb_desired_coupling_mode is already set -
+        # which nothing ever initializes to Verify/Alert on its own, so a
+        # device where the user never happened to click a Coupling preset
+        # via this GUI (a fresh install, a Control host/Client being
+        # tested before any manual coupling click) had NO enforcement path
+        # at all, on either side. Mount Bridge is confirmed connected at
+        # this point (checks 1/2 above already passed) - "no default"
+        # only means "nobody has recorded an opinion yet", not "the user
+        # deliberately wants Off with no memory of choosing it". Applying
+        # Verify/Alert here and recording it closes that gap for good -
+        # every later reconnect then hits the branch above instead.
+        def _do_default_coupling():
+            global _mb_desired_coupling_mode, _mb_desired_coupling_threshold
+            try:
+                indi_client.set_coupling_mode("MODE_VERIFY_ALERT")
+                _mb_desired_coupling_mode = "MODE_VERIFY_ALERT"
+                _mb_desired_coupling_threshold = indi_client.DRIFT_THRESHOLD_DEFAULT
+                _save_mount_bridge_desired_state()
+                _mb_log(
+                    "Mount Bridge self-heal: no Coupling mode had ever been chosen via this GUI and "
+                    "the driver was at Off - defaulted to Verify/Alert only."
+                )
+            except indi_client.INDIClientError as e:
+                _mb_log(f"Mount Bridge self-heal: default-coupling attempt failed: {e}")
+
+        _mb_readiness_retrier.trigger(_do_default_coupling)
+        return
+
+    # --- Check 6: PiFinder Simulator's mount-follow (PR #239) stays in
+    # lockstep with whichever mount is actually linked - no manual
+    # configuration should ever be needed for this.
+    #
+    # Originally gated on the Truth Injector actively targeting "PiFinder
+    # Simulator" (Full Simulation testing only) - broadened 2026-09-18
+    # (direct feedback, found live on real hardware under a real sky):
+    # FOLLOW_MOUNT_DEVICE is only ever set here, so a device that was
+    # pointed at "Telescope Simulator" during an earlier Full Simulation
+    # session stayed stuck there forever afterward, including once Real
+    # Hardware took over with a real mount linked - nothing surfaced this
+    # anywhere (the Setup checklist's own Mount step only checks the Bridge's
+    # ACTIVE_MOUNT, a completely different property on a completely
+    # different device), so the mismatch was only found by directly querying
+    # "PiFinder Simulator"'s own FOLLOW_MOUNT_DEVICE via indi_getprop. Kept
+    # in sync with the linked mount now, in every mode, since a correct
+    # position is strictly better than a stale leftover one regardless of
+    # whether anything is actively reading it.
+    #
+    # Skipped if Shadow Sync is enabled and targets the same device (default
+    # target is also "PiFinder Simulator", see handleShadowSync() in
+    # pifinder_mount_bridge.cpp) - that mechanism mirrors PiFinder's OWN
+    # position onto the shadow device from the C++ driver side, independent
+    # of this Python-side watchdog; both trying to own the same device's
+    # position at once would just have them fight each other every tick.
+    active_mount = status.get("active_mount")
+    shadow_enabled, shadow_device = False, ""
+    if active_mount:
+        try:
+            shadow_enabled, shadow_device = indi_client.get_shadow_sync_state()
+        except indi_client.INDIClientError:
+            pass
+    if active_mount and not (shadow_enabled and shadow_device == "PiFinder Simulator"):
+        target = active_mount
+        try:
+            current = indi_client.get_pifinder_simulator_follow_mount()
+        except indi_client.INDIClientError:
+            current = None
+        if current is not None and current != target:
+            if target != _mb_readiness_follow_mount_gave_up_target:
+                # Either the first mismatch ever seen, or the desired mount
+                # changed since we last gave up on a *different* one -
+                # either way this is a fresh situation, retry it properly.
+                _mb_readiness_follow_mount_gave_up_target = None
+                _mb_readiness_follow_mount_consecutive_fails = 0
+            _mb_readiness_follow_mount_consecutive_fails += 1
+            if _mb_readiness_follow_mount_consecutive_fails >= _MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING:
+                if _mb_readiness_follow_mount_gave_up_target != target:
+                    _mb_readiness_follow_mount_gave_up_target = target
+                    _mb_log(
+                        "Mount Bridge self-heal: PiFinder Simulator still won't follow "
+                        f"'{target}' after {_MB_READINESS_FOLLOW_MOUNT_FAILS_BEFORE_WARNING} attempts - "
+                        "FOLLOW_MOUNT_DEVICE may be missing on this driver build (rebuild via "
+                        "bin/build_indi_simulator.sh). Not retrying again automatically for this mount."
+                    )
+                return
+
+            def _do_follow():
+                try:
+                    indi_client.set_pifinder_simulator_follow_mount(target)
+                    _mb_log(f"Mount Bridge self-heal: set PiFinder Simulator to follow '{target}'.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: setting follow-mount failed: {e}")
+
+            _mb_readiness_retrier.trigger(_do_follow)
+            return
+        _mb_readiness_follow_mount_consecutive_fails = 0
+        _mb_readiness_follow_mount_gave_up_target = None
+
+
+def _refresh_stale_mount_time_if_needed(status: dict) -> None:
+    """Checks the currently-linked mount's own TIME_UTC against real system
+    time and, if it's fallen more than _MOUNT_TIME_STALE_THRESHOLD_SEC
+    behind, pulses KStars' realtime-clock toggle to force a fresh push - see
+    _kstars_refresh_mount_time_via_dbus()'s own docstring for why that
+    specific D-Bus call, not the more obvious-looking "Set Time to Now".
+    Read-only unless genuinely stale; a missing mount/property/unparseable
+    timestamp is treated as "nothing to check yet", not an error - this
+    only matters once something is actually linked."""
+    active_mount = status.get("active_mount") if status else None
+    if not active_mount:
+        return
+    try:
+        props = indi_client.get_properties(device=active_mount, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
+        utc_str = props.get(active_mount, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
+        if not utc_str:
+            return
+        mount_time = datetime.datetime.fromisoformat(utc_str)
+        if mount_time.tzinfo is None:
+            mount_time = mount_time.replace(tzinfo=datetime.timezone.utc)
+        age_sec = (datetime.datetime.now(datetime.timezone.utc) - mount_time).total_seconds()
+    except (indi_client.INDIClientError, ValueError, KeyError):
+        return
+    if age_sec <= _MOUNT_TIME_STALE_THRESHOLD_SEC:
+        return
+    ok, err = _kstars_refresh_mount_time_via_dbus()
+    if ok:
+        _mb_log(
+            f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old - "
+            "pulsed KStars' realtime clock to push a fresh one (next tick confirms)."
+        )
+    else:
+        _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
+
+
+def _mount_bridge_readiness_watchdog(interval=5):
+    """Same shape/cadence as _truth_injector_watchdog() above, extended to
+    cover Mount Bridge itself - see docs/concepts/
+    mount_bridge_readiness_and_self_healing.md for the full design and
+    per-check rationale. Deliberately checks only ONE thing wrong per tick
+    (see _mount_bridge_readiness_self_heal()'s own comment) and lets the
+    next tick discover whatever still doesn't match, rather than trying to
+    fix everything in one pass."""
+    global _mb_readiness_query_was_slow
+    while True:
+        time.sleep(interval)
+        # Diagnostic timing (2026-09-11, issue #385): this call already
+        # happens every tick regardless - just measuring how long it took
+        # costs nothing extra (no new connection, no added load, unlike a
+        # separate dedicated probe loop would). Live-caught this same day:
+        # the driver process itself stays perfectly healthy throughout
+        # (confirmed via /proc/<pid>/status sampling) while indiserver
+        # itself goes silent to every client - including a totally
+        # unrelated ad-hoc test connection - for ~28s roughly every ~5min,
+        # discovered only by someone happening to be watching with a
+        # hand-rolled timing script at the right moment. Logging it here
+        # permanently means the NEXT occurrence (in this VM, on a Pi5, or
+        # in the field) leaves this evidence on its own, for anyone to find
+        # later - no one has to be actively investigating when it happens.
+        # Threshold chosen well under TIMEOUT_BACKGROUND_POLL (7s) so a
+        # genuinely slow-but-fine poll doesn't spam this, but well above
+        # the sub-100ms this call normally takes over loopback.
+        _tick_start = time.monotonic()
+        status = None
+        try:
+            status = indi_client.mount_bridge_status(
+                timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
+            )
+        except indi_client.INDIClientError as e:
+            _elapsed = time.monotonic() - _tick_start
+            if _elapsed > 1.0:
+                if not _mb_readiness_query_was_slow:
+                    _mb_readiness_query_was_slow = True
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query itself took {_elapsed:.1f}s "
+                        f"then failed ({e}) - see issue #385, this points at indiserver itself, not "
+                        "necessarily the Mount Bridge driver."
+                    )
+            else:
+                _mb_readiness_query_was_slow = False
+            # No response at all from indiserver itself (not just Mount
+            # Bridge) - status stays None below, which correctly skips the
+            # two checks that actually need it (the driver self-heal and
+            # the sim-mismatch check), but must NOT skip
+            # _pifinder_service_sync_with_lx200_target() further down -
+            # found live (2026-09-13): this used to `continue` straight
+            # past it, so on a Control host where indiserver/the Web
+            # Manager profile isn't even up yet (right after a reboot -
+            # the exact gap PR #438's cache fallback was built to close),
+            # the stray-pifinder.service check never ran AT ALL, not even
+            # via its own cache fallback - it needs no live indiserver
+            # connection of its own to work (it reads the Web Manager
+            # directly, or its own persisted cache), so it has no business
+            # being skipped just because THIS unrelated query failed.
+        else:
+            _elapsed = time.monotonic() - _tick_start
+            if _elapsed > 1.0:
+                if not _mb_readiness_query_was_slow:
+                    _mb_readiness_query_was_slow = True
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query took {_elapsed:.1f}s "
+                        f"(normally well under 0.1s) - see issue #385."
+                    )
+            else:
+                if _mb_readiness_query_was_slow:
+                    _mb_log(
+                        f"Mount Bridge readiness watchdog: indiserver query back to normal "
+                        f"({_elapsed:.2f}s)."
+                    )
+                _mb_readiness_query_was_slow = False
+        if status is not None:
+            try:
+                _mount_bridge_readiness_self_heal(status)
+            except Exception as e:  # a watchdog thread must never die silently
+                _mb_log(f"Mount Bridge readiness watchdog raised unexpectedly: {e}")
+        try:
+            _pifinder_service_sync_with_lx200_target()
+        except Exception as e:  # same reasoning - must never kill this thread
+            _mb_log(f"pifinder.service/LX200-target sync raised unexpectedly: {e}")
+        try:
+            _autostart_cold_profile()
+        except Exception as e:  # same reasoning - must never kill this thread
+            _mb_log(f"Cold Web Manager profile auto-start raised unexpectedly: {e}")
+        if status is not None:
+            try:
+                _refresh_stale_mount_time_if_needed(status)
+            except Exception as e:  # same reasoning - must never kill this thread
+                _mb_log(f"Mount time freshness check raised unexpectedly: {e}")
+        # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
+        # as the frontend's own liveDriftConfirmsRelated (PR #395), just
+        # persisted permanently instead of only for the current page/process.
+        # Needs a real `status` (indiserver reachable) to have a drift value
+        # to check at all.
+        global _sim_mismatch_ever_resolved
+        if status is not None and not _sim_mismatch_ever_resolved:
+            drift = status.get("drift_arcmin")
+            if isinstance(drift, (int, float)) and drift < 10:
+                _sim_mismatch_ever_resolved = True
+                _save_mount_bridge_desired_state()
+                _mb_log("Sim-mismatch warning resolved for good this install (drift confirmed small) - won't show again.")
 
 
 def _run_hardware_test():
@@ -846,10 +3450,11 @@ def _run_hardware_test():
     # until the whole service is restarted, and the startup auto-run (see
     # _startup_hardware_test() below) can then hit the exact same failure
     # again on the very next start.
-    global _hwtest_running, _hwtest_result
+    global _hwtest_running, _hwtest_result, _hwtest_started_at
     with _lock:
         _hwtest_lines.clear()
         _hwtest_result = {"camera": None, "imu": None, "gps": None}
+        _hwtest_started_at = time.monotonic()
     try:
         _hwtest_log("=== Test Hardware: starting Camera / IMU / GPS checks ===")
         camera_result = _camera_functional_test(_hwtest_log)
@@ -865,7 +3470,7 @@ def _run_hardware_test():
             _hwtest_running = False
 
 
-def _startup_hardware_test(timeout=120, interval=2):
+def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
     """Runs at Control Center startup (see main()). pifinder-control-center.
     service has no ordering dependency on pifinder.service (deliberately -
     the Control Center must be able to start standalone, e.g. before PiFinder
@@ -877,16 +3482,157 @@ def _startup_hardware_test(timeout=120, interval=2):
     clicked the button by hand (live-reproduced across two reboots - see
     basic-memory pifinder-stellarmate/00048). Poll for PiFinder to answer
     first, then run the real test - if it never comes up within `timeout`,
-    run anyway (accurately reports "not running" rather than waiting forever)."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
-            break
-        time.sleep(interval)
+    run anyway (accurately reports "not running" rather than waiting forever).
+
+    Found live (2026-08-09, #188) after a full Pi reboot (not just a Control
+    Center restart): PiFinder can take noticeably longer than this initial
+    `timeout` to become reachable, competing with everything else the whole
+    system is starting at once (X11, KStars, indiserver, ...) - the original
+    design's own tradeoff ("run anyway, accurately reports not-running") then
+    left a stale "PiFinder API unreachable" result sitting there with nothing
+    to self-correct it once PiFinder actually did come up moments later,
+    same symptom as before the 00048 fix just with a longer boot this time.
+    Self-heals now: if the first attempt still couldn't reach PiFinder, keep
+    quietly re-running the test every extended_retry_interval seconds,
+    indefinitely, stopping as soon as PiFinder answers - each check is cheap
+    (one HTTP call plus, once reachable, the same lightweight camera/imu/gps
+    checks the button itself triggers) and this loop's whole purpose is
+    stopping itself the moment it succeeds, so there's no real cost to not
+    giving up after some arbitrary window - the alternative (silently
+    staying stale forever after a slow-but-real boot) is worse than a few
+    more harmless checks."""
+    # Found live 2026-09-04 on stellarmate-utm: on a device with no
+    # ~/PiFinder at all yet (never installed, between Uninstall and the next
+    # install, or a setup run that died before reaching "Configuring
+    # hardware & services" - never installing pifinder.service at all), this
+    # poll loop burned its full `timeout` (2 minutes) every single time
+    # before falling through to the fast "not running" result. Neither case
+    # can ever make PiFinder answer, so waiting for it isn't "give it a
+    # moment to boot", it's a guaranteed, pointless full-timeout stall.
+    #
+    # Checking the systemd unit's own existence (not just the checkout
+    # directory) is the sharper signal a partially-failed install needs:
+    # ~/PiFinder can exist (cloned, patched) while the run still died before
+    # ever installing pifinder.service - directory presence alone would have
+    # kept waiting the full timeout in exactly that case too.
+    #
+    # Deliberately NOT also bailing early on _real_service_failed() inside
+    # the loop below: pifinder.service runs with Restart=on-failure (the
+    # PWM-sysfs boot race fix, see 00087) - a "failed" reading can be
+    # transient, self-healing moments later via systemd's own restart, and
+    # bailing on the first sighting of it would abandon a real recovery in
+    # progress. The unit-existence check above is a safe, permanent "can
+    # this ever come up" signal; mid-flight ActiveState readings are not.
+    if PIFINDER_DIR.exists() and PIFINDER_SERVICE_UNIT.exists():
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if _pifinder_status_snapshot(ports=("80", "8080")) is not None or _fake_mode_up():
+                break
+            time.sleep(interval)
     _run_hardware_test()
 
+    while True:
+        with _lock:
+            still_unreachable = _hwtest_result.get("gps") is None
+        if not still_unreachable:
+            break
+        time.sleep(extended_retry_interval)
+        if _pifinder_status_snapshot(ports=("80", "8080")) is None and not _fake_mode_up():
+            continue  # still not reachable - no point re-running the test yet
+        _run_hardware_test()
 
-def _pifinder_solve_status(port: str):
+
+def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float = 5):
+    """GET another device's own Control Center (always port 8765) - category
+    2b of docs/concepts/control_host_hardware_badges_mirroring.md. First
+    forwards THIS request's own Authorization header unchanged (the original
+    2026-09-12 decision: assume the same stellarmate account password across
+    every device in one PFSM fleet - _require_auth() on the remote end only
+    ever checks the password half of Basic Auth, never the username, so the
+    browser's own already-supplied header authenticates there unchanged, no
+    credential storage needed on either side).
+
+    Direct feedback (2026-09-15): that assumption silently breaks - as
+    "unavailable/not reachable", no hint why - the moment two devices in the
+    same fleet don't happen to share a password (e.g. an independently
+    provisioned VM). _PIFINDER_REMOTE_PASSWORD ("smate") is already treated
+    as a non-secret, well-known fleet default elsewhere in this exact file
+    (PiFinder's own Remote page) - worth trying automatically before giving
+    up, since it covers the common case (remote device still on the
+    install-time default) with no user interaction at all. Only retried on
+    an actual 401 from the remote end, never on a genuine timeout/network
+    failure - retrying a truly unreachable host under a different password
+    would just double the wait for no benefit.
+
+    Returns the parsed JSON dict, or None on any failure (unreachable, wrong
+    password there too, older PFSM without this route, ...) - fails soft,
+    same as every other unreachable-remote case already does."""
+    def _try(header: str | None):
+        req = urllib.request.Request(f"http://{host}:8765{path}")
+        if header:
+            req.add_header("Authorization", header)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+
+    try:
+        return _try(auth_header)
+    except urllib.error.HTTPError as e:
+        if e.code != 401:
+            return None
+    except Exception:
+        return None
+    try:
+        fallback = "Basic " + base64.b64encode(f"{AUTH_USER}:{_PIFINDER_REMOTE_PASSWORD}".encode()).decode()
+        return _try(fallback)
+    except Exception:
+        return None
+
+
+def _pifinder_lx200_indi_status(host: str) -> dict | None:
+    """Camera/IMU presence, system load, and Mount Type/Screen Direction for
+    whichever device 'PiFinder LX200' is pointed at - read straight off its
+    own INDI properties (HARDWARE_PRESENCE/PIFINDER_SYSTEM_LOAD/
+    PIFINDER_ORIENTATION, see diffs/server_py.diff + indi_pifinder/
+    lx200_pifinder.cpp) instead of the old password-protected Control-
+    Center-to-Control-Center proxy (_cc_proxy_get() above) - these are
+    read-only device/host facts, already carried transparently by INDI, same
+    as position (2026-09-15). Returns None if unreachable or on an older
+    driver build that predates these properties (all three groups empty)."""
+    try:
+        props = indi_client.get_properties(device="PiFinder LX200", host=host)
+    except indi_client.INDIClientError:
+        return None
+    device = props.get("PiFinder LX200") or {}
+    hw = device.get("HARDWARE_PRESENCE", {}).get("elements", {})
+    load = device.get("PIFINDER_SYSTEM_LOAD", {}).get("elements", {})
+    orient = device.get("PIFINDER_ORIENTATION", {}).get("elements", {})
+    if not hw and not load and not orient:
+        return None
+
+    def _tri(v):
+        return {"yes": True, "no": False}.get(v)
+
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "camera": _tri(hw.get("CAMERA_PRESENT")),
+        "imu": _tri(hw.get("IMU_PRESENT")),
+        "load1": _num(load.get("LOAD1")),
+        "load5": _num(load.get("LOAD5")),
+        "load15": _num(load.get("LOAD15")),
+        "cpu_count": _num(load.get("CPU_COUNT")),
+        "percent": _num(load.get("PERCENT")),
+        "temp_c": _num(load.get("TEMP_C")),
+        "mount_type": orient.get("MOUNT_TYPE") or None,
+        "screen_direction": orient.get("SCREEN_DIRECTION") or None,
+    }
+
+
+def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
     """GET the currently-reachable PiFinder instance's own /api/status and
     pull out debug_solve (Tools -> Test Mode's on/off state) plus the real
     solve-freshness fields (solve_source/last_solve_attempt/last_solve_success)
@@ -896,11 +3642,16 @@ def _pifinder_solve_status(port: str):
     solve_source is "CAM" (fresh plate-solve), "CAM_FAILED" (attempted, no
     star match - normal indoors/no sky view, not itself a hardware problem),
     or "IMU" (currently dead-reckoning between solves). See
-    PiFinder/types/positioning.py's SolveSource enum."""
+    PiFinder/types/positioning.py's SolveSource enum.
+
+    `host` defaults to this device's own PiFinder (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a - same fix as
+    _pifinder_send_key()'s host param, #419) - the route handler is
+    responsible for validating it before it reaches here."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return None
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3) as resp:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=3) as resp:
             data = json.loads(resp.read())
         # solve_source/last_solve_attempt/last_solve_success live under
         # data["solution"], not top-level (only debug_solve is top-level) -
@@ -908,8 +3659,59 @@ def _pifinder_solve_status(port: str):
         # stayed grey/"unknown" through a real, confirmed plate-solve because
         # this always read None from the wrong path.
         solution = data.get("solution") or {}
+        # PiFinder's own Mount Type + PiFinder Type (Settings -> Mount Type /
+        # Settings -> Advanced -> PiFinder Type), read directly from
+        # PiFinder's own /api/orientation_status - deliberately NOT sourced
+        # from Mount Bridge's PIFINDER_ORIENTATION INDI property, which only
+        # exists while Mount Bridge is running/connected. The PiFinder
+        # orientation ampel badge must show whenever PiFinder hardware
+        # itself is present, regardless of Mount Bridge/coupling state
+        # (direct feedback, 2026-08-09: "the PiFinder badge MUST be visible
+        # when Hardware ist present, not only, when coupling is enable").
+        # Best-effort: an older PiFinder without this route, or a transient
+        # failure, just leaves both fields None - never breaks the rest of
+        # this (already independently useful) response.
+        pifinder_mount_type = None
+        pifinder_screen_direction = None
+        if host in ("127.0.0.1", "::1"):
+            try:
+                with urllib.request.urlopen(
+                    f"http://{host}:{port}/api/orientation_status", timeout=3
+                ) as resp:
+                    orientation = json.loads(resp.read())
+                pifinder_mount_type = orientation.get("mount_type")
+                pifinder_screen_direction = orientation.get("screen_direction")
+            except Exception:
+                pass
+        else:
+            # Found live (2026-09-12): PiFinder's own server.py hardcodes
+            # request.remote_addr in ("127.0.0.1", "::1") on this specific
+            # route - a 403 for any remote caller, unrelated to and
+            # unfixable by our own host param. Read the same two fields off
+            # "PiFinder LX200"'s own PIFINDER_ORIENTATION INDI property
+            # instead (2026-09-15) - already carried transparently over the
+            # network, no Control-Center-to-Control-Center proxy needed.
+            status = _pifinder_lx200_indi_status(host)
+            if status:
+                pifinder_mount_type = status["mount_type"]
+                pifinder_screen_direction = status["screen_direction"]
         return {
+            "pifinder_mount_type": pifinder_mount_type,
+            "pifinder_screen_direction": pifinder_screen_direction,
             "debug_solve": data.get("debug_solve"),
+            # Fake-Solve (see #106/#128) - a synthetic RA/Dec injected via
+            # PiFinder's /api/fake_solve, with real IMU dead-reckoning taking
+            # over from there. Deliberately separate from debug_solve above
+            # (which only swaps in a canned test image for the camera) and
+            # from solve_source below (real solve health) - must never be
+            # displayed as if it were a real "CAM" solve, see #128.
+            "fake_solve_active": data.get("fake_solve_active"),
+            # RA/Dec of the currently-tracked (injected + dead-reckoned)
+            # position, shown alongside the active/off state - "active" alone
+            # doesn't say much for what's meant to be a real, usable
+            # simulator (User feedback, #128).
+            "fake_solve_ra": solution.get("RA"),
+            "fake_solve_dec": solution.get("Dec"),
             "solve_source": data.get("solve_source", solution.get("solve_source")),
             "last_solve_attempt": data.get(
                 "last_solve_attempt", solution.get("last_solve_attempt")
@@ -917,24 +3719,323 @@ def _pifinder_solve_status(port: str):
             "last_solve_success": data.get(
                 "last_solve_success", solution.get("last_solve_success")
             ),
+            # 2026-09-11, direct feedback ("Es sollte immer die Zeit im Raspberry
+            # Pi... gelten! Die Browser-Zeit kann durch alles mögliche
+            # beeinflusst sein. Und StellarMate läuft auf dem Device, das ist
+            # die Referenz!"): status_page.html used to compute this itself as
+            # Date.now()/1000 - last_solve_attempt - mixing the VIEWING
+            # DEVICE's clock (laptop/phone, arbitrary skew) with a timestamp
+            # PiFinder stamped using THIS Pi's own clock. Both PiFinder and
+            # this server run on the same device, so time.time() here is
+            # always the correct reference - computed once, server-side,
+            # instead of trusting whatever clock happens to be viewing.
+            "last_solve_attempt_age_sec": (
+                time.time() - last_solve_attempt_raw
+                if isinstance(last_solve_attempt_raw := data.get(
+                    "last_solve_attempt", solution.get("last_solve_attempt")
+                ), (int, float))
+                else None
+            ),
+            # Same reasoning/fix as last_solve_attempt_age_sec above, for the
+            # sibling "how long ago did a real solve last *succeed*" check
+            # (applySolveStatus()'s "stale" detection).
+            "last_solve_success_age_sec": (
+                time.time() - last_solve_success_raw
+                if isinstance(last_solve_success_raw := data.get(
+                    "last_solve_success", solution.get("last_solve_success")
+                ), (int, float))
+                else None
+            ),
         }
     except Exception:
         return None
 
 
-def _pifinder_toggle_debug_solve(port: str) -> bool:
-    """POST to PiFinder's own /api/debug_solve - toggles Tools -> Test Mode
-    directly via PiFinder's ui_queue, bypassing menu navigation/keyboard_queue
-    (which drops keypresses unreliably - see basic-memory/pifinder-stellarmate/
-    00021 for how this was found)."""
+def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", skip_auto_release: bool = False):
+    """Turn Injected Solve on, seeded with the currently coupled mount's
+    live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
+    active_mount) - a one-time "start here", not a continuous mount-follow
+    (that's the larger #130 concept, not yet built). Returns
+    (success: bool, error: str or None). `host` - see
+    _pifinder_solve_status()'s own comment (docs/concepts/
+    control_host_hardware_badges_mirroring.md, category 2a) - the mount
+    itself is always local to THIS device (Mount Bridge is a local INDI
+    driver), only the PiFinder being seeded can be remote.
+
+    `skip_auto_release` (2026-09-16, TF-6 - basic-memory pifinder-stellarmate/
+    00162/00163): the auto-release below exists ONLY to protect a real
+    camera from being permanently locked out - see its own comment. Full
+    Simulation has no real camera to protect, and there Injected Solve is
+    the sole, intended-to-be-continuous position source - auto-releasing it
+    there left PiFinder with no active solve at all, worse than before the
+    call. The caller (the one HTTP route below) sets this whenever the
+    Truth Injector was the desired state right before this call, i.e. a
+    Full Simulation context - Real Hardware's own behavior (the case the
+    auto-release was actually built for) is completely unchanged by this
+    flag defaulting to False."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False, "invalid port"
+    try:
+        status = indi_client.mount_bridge_status()
+    except Exception as e:
+        return False, f"could not reach Mount Bridge: {e}"
+    active_mount = status.get("active_mount")
+    if not active_mount:
+        return False, "no mount configured in Mount Bridge"
+    # Live-found (2026-09-11, TE for #374): active_mount is just the
+    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
+    # (e.g. right after a Control Center restart) it can already be set
+    # while the device itself isn't connected yet. get_properties() below
+    # then either errors (caught, visible) or - the actually-observed,
+    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
+    # indiserver is still holding from before the reconnect, silently
+    # seeding the re-seed from an old position instead of the live one.
+    # mount_connected is the device's own live CONNECTION.CONNECT read, not
+    # a persisted name - check it explicitly before trusting the position.
+    if not status.get("mount_connected"):
+        return False, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
+    try:
+        props = indi_client.get_properties(device=active_mount)
+        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
+        dec_deg = float(eq["DEC"])
+    except Exception as e:
+        return False, f"could not read {active_mount}'s position: {e}"
+    try:
+        body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+        req = urllib.request.Request(
+            f"http://{host}:{port}/api/fake_solve",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            ok = resp.status == 200
+    except Exception as e:
+        return False, str(e)
+    # 2026-09-09, direct feedback: the REST call above only ever reached
+    # PiFinder's real solve pipeline ("PiFinder LX200"'s INDI mirror) -
+    # "PiFinder Simulator" is a separate INDI device it can't touch at all.
+    # Best-effort, never fails this whole re-seed if the simulator isn't
+    # loaded (Real Hardware mode) - see sync_pifinder_simulator_to()'s own
+    # docstring.
+    indi_client.sync_pifinder_simulator_to(ra_deg, dec_deg)
+    # Live-found on real hardware (2026-09-11, direct field feedback):
+    # POST /api/fake_solve doesn't just seed a starting position - per
+    # integrator.py's own "while fake-solve simulation is active, it is
+    # authoritative and exclusive" guard, it makes PiFinder silently drop
+    # every subsequent REAL camera solve too, forever, until something
+    # explicitly clears it. This docstring already calls the re-seed "a
+    # one-time 'start here'", but the implementation never actually
+    # released that lock - so a real-hardware recovery click permanently
+    # disabled real solving, surfacing (misleadingly) as "Full Simulation"
+    # turning itself on: "Full Simulation hat sich automatisch eingeschaltet
+    # ... genau das wollten wir doch auf dem echten PiFinder verhindert."
+    #
+    # First attempt (also live-caught, before it shipped): an immediate
+    # DELETE right after the POST above returns is itself a race.
+    # api_fake_solve() only *enqueues* the FakeSolve command
+    # (fake_solve_command_queue) - integrator.py's own loop drains and
+    # applies it (including up to FAKE_SOLVE_ANCHOR_RETRIES *
+    # FAKE_SOLVE_ANCHOR_RETRY_DELAY, ~0.5s worst case, while it waits for a
+    # usable IMU anchor) on its own schedule, asynchronously. A DELETE that
+    # lands before that drain sets fake_solve_active back to False for a
+    # moment, then the Integrator's own delayed processing of the already-
+    # queued command sets it right back to True - silently re-locking
+    # exactly what this was meant to release. Confirmed live: a bare
+    # POST-then-immediate-DELETE with no wait left fake_solve_active=True
+    # afterward. Poll for the seed actually having landed (fake_solve_active
+    # confirmed True) before releasing it, bounded so a seed that never gets
+    # a usable IMU anchor at all can't hang this call forever - release
+    # unconditionally once the wait ends either way (skip_auto_release aside),
+    # so the lock never gets left stuck on regardless of which branch was
+    # hit. Manual one-shot seed / the Truth Injector (deliberate simulation/
+    # testing, possibly with no real camera at all) intentionally do NOT do
+    # this on their own - only this real-hardware-recovery code path, and
+    # only when skip_auto_release wasn't requested (see this function's own
+    # docstring - Full Simulation has no real camera for this to protect).
+    if ok:
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(f"http://{host}:{port}/api/status", timeout=2) as resp:
+                    if json.loads(resp.read()).get("fake_solve_active") is True:
+                        break
+            except Exception:
+                pass
+            time.sleep(0.1)
+        if not skip_auto_release:
+            _pifinder_disable_fake_solve(port, host)
+    return ok, None
+
+
+def _pifinder_disable_fake_solve(port: str, host: str = "127.0.0.1") -> bool:
+    """DELETE to PiFinder's own /api/fake_solve - turns Fake-Solve back off,
+    resuming normal real-camera solving."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/debug_solve", method="POST", data=b""
+            f"http://{host}:{port}/api/fake_solve", method="DELETE"
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status == 200
+    except Exception:
+        return False
+
+
+def _pifinder_set_fake_solve(port: str, ra_deg: float, dec_deg: float, host: str = "127.0.0.1"):
+    """POST an explicit RA/Dec (degrees, JNow) straight to PiFinder's own
+    /api/fake_solve - independent of any coupled mount, unlike
+    _pifinder_enable_fake_solve_from_mount() above. Turns Injected Solve on
+    if it wasn't already, or re-seeds it to this exact position if it was
+    (#205 - the GUI had no way to set/nudge a specific position without
+    direct API access). Returns (success: bool, error: str or None)."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False, "invalid port"
+    if not (0 <= ra_deg <= 360) or not (-90 <= dec_deg <= 90):
+        return False, "RA/Dec out of range"
+    try:
+        body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+        req = urllib.request.Request(
+            f"http://{host}:{port}/api/fake_solve",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200, None
+    except Exception as e:
+        return False, str(e)
+
+
+def _pifinder_toggle_debug_solve(port: str, host: str = "127.0.0.1") -> bool:
+    """POST to PiFinder's own /api/debug_solve - toggles Tools -> Test Mode
+    directly via PiFinder's ui_queue, bypassing menu navigation/keyboard_queue
+    (which drops keypresses unreliably - see basic-memory/pifinder-stellarmate/
+    00021 for how this was found). `host` - see _pifinder_solve_status()'s
+    own comment."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return False
+    try:
+        req = urllib.request.Request(
+            f"http://{host}:{port}/api/debug_solve", method="POST", data=b""
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+# The exact key codes PiFinder's own remote.html sends to /key_callback -
+# LNG_* is that page's "arm Long, then press a key" combo, reproduced here
+# so the Control Center's compact keypad (PiFinder tile "Quick keys") drives
+# PiFinder through the identical, already-battle-tested code path instead of
+# inventing a second key-mapping convention.
+_ALLOWED_PIFINDER_KEY_CODES = {
+    # PLUS/MINUS deliberately have no LNG_ counterpart here: PiFinder's own
+    # server.py button_dict only defines ALT_PLUS/ALT_MINUS, never
+    # LNG_PLUS/LNG_MINUS (checked live in PiFinder/python/PiFinder/server.py,
+    # 2026-09-03) - forwarding an LNG_PLUS/LNG_MINUS code would just hit an
+    # unmapped int("LNG_PLUS") on PiFinder's side and 500. Plain PLUS/MINUS
+    # (this keypad's only +/- affordance, no Long combo) are fully supported.
+    "LEFT", "UP", "DOWN", "RIGHT", "SQUARE", "PLUS", "MINUS",
+    "LNG_LEFT", "LNG_UP", "LNG_DOWN", "LNG_RIGHT", "LNG_SQUARE",
+}
+
+
+# /key_callback is a browser-facing route on PiFinder's side, gated by its
+# own @auth_required (Flask session cookie) - unlike /api/debug_solve, which
+# is explicitly exempted there as a machine-to-machine call (see that
+# route's own comment in PiFinder/server.py). A plain proxy POST here with
+# no cookie gets silently 302-redirected to /login and urlopen happily
+# reports 200 for the login PAGE it followed to - found live 2026-08-04:
+# the Quick keys looked like they worked (no error anywhere) but never
+# actually pressed anything. Fix: log in first (same account + password
+# this Control Center's own auth already uses - see AUTH_USER/the comment
+# above it), keep the resulting session cookie only for the one key press.
+# "smate" is this project's documented default Remote-page password (shown
+# in the Quick Links row) - if a user changed their stellarmate account
+# password from that default, this login attempt fails and _pifinder_send_key
+# returns False (Quick keys quietly stop working, same as PiFinder being
+# unreachable for any other reason - no crash).
+_PIFINDER_REMOTE_PASSWORD = "smate"
+
+# Logging in is expensive - PAM's own password verification alone measured
+# ~5s live on this hardware (crypt() cost, not a bug) - paying that on every
+# single key press made the Quick keys feel completely unresponsive (found
+# live 2026-08-04 right after adding the login step above: presses "worked"
+# but took ~5s each, several seconds behind a burst of clicks). Cache one
+# opener (with its session cookie) per port and reuse it; only pay the
+# login cost again if a cached session turns out to be gone/expired.
+_pifinder_key_openers: dict[tuple[str, str], urllib.request.OpenerDirector] = {}
+_pifinder_key_openers_lock = threading.Lock()
+
+
+def _pifinder_login(port: str, host: str = "127.0.0.1") -> urllib.request.OpenerDirector | None:
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+    login_req = urllib.request.Request(
+        f"http://{host}:{port}/login",
+        method="POST",
+        data=urlencode({"password": _PIFINDER_REMOTE_PASSWORD}).encode(),
+    )
+    opener.open(login_req, timeout=10)
+    if not any(c.name == "session" for c in cookie_jar):
+        return None  # wrong password (account password changed from the default)
+    return opener
+
+
+def _pifinder_send_key(port: str, code: str, host: str = "127.0.0.1") -> bool:
+    """POST to PiFinder's own /key_callback - same endpoint remote.html's
+    buttonClicked() uses, so a press from this Control Center's compact
+    keypad behaves identically to one from PiFinder's own remote page.
+
+    host (2026-09-12, direct feedback: Control host's Quick keys did nothing
+    against a remote PiFinder) defaults to this device's own PiFinder, same
+    as every call site before this - only the Control host role, which now
+    knows the remote PiFinder's address, ever passes something else. The
+    opener cache is keyed on (host, port) together, not port alone, so a
+    remote and a local PiFinder that happen to share a port number never
+    collide."""
+    if port not in _ALLOWED_PIFINDER_PORTS or code not in _ALLOWED_PIFINDER_KEY_CODES:
+        return False
+    cache_key = (host, port)
+    key_req_data = json.dumps({"button": code}).encode()
+    try:
+        with _pifinder_key_openers_lock:
+            opener = _pifinder_key_openers.get(cache_key)
+            if opener is None:
+                opener = _pifinder_login(port, host)
+                if opener is None:
+                    return False
+                _pifinder_key_openers[cache_key] = opener
+        key_req = urllib.request.Request(
+            f"http://{host}:{port}/key_callback",
+            method="POST",
+            data=key_req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with opener.open(key_req, timeout=8) as resp:
+            if resp.status == 200 and "/login" not in resp.url:
+                return True
+        # Cached session no longer valid (PiFinder restarted, cookie
+        # expired, ...) - drop it and try exactly once more with a fresh
+        # login rather than silently failing from here on.
+        with _pifinder_key_openers_lock:
+            _pifinder_key_openers.pop(cache_key, None)
+            opener = _pifinder_login(port, host)
+            if opener is None:
+                return False
+            _pifinder_key_openers[cache_key] = opener
+        key_req = urllib.request.Request(
+            f"http://{host}:{port}/key_callback",
+            method="POST",
+            data=key_req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with opener.open(key_req, timeout=8) as resp:
+            return resp.status == 200 and "/login" not in resp.url
     except Exception:
         return False
 
@@ -1043,6 +4144,24 @@ def _run_fake_mode_action_inner(action):
     # finally block, not here - see its comment.
 
 
+def _get_device_type():
+    """Coarse device classification for the header's device icon (#268) -
+    same source and classification as bin/functions.sh's get_hw_model()
+    (/proc/device-tree/model, empty on x86 which has no device tree), kept
+    in sync with that shell function rather than reinventing detection."""
+    try:
+        model = Path("/proc/device-tree/model").read_text(errors="ignore").strip("\x00").strip()
+    except Exception:
+        model = ""
+    if "Raspberry Pi 5" in model:
+        return "pi5"
+    if "Raspberry Pi 4" in model:
+        return "pi4"
+    if model:
+        return "pi_other"
+    return "x86"
+
+
 def _get_all_ips():
     """Every non-loopback IPv4 address on this machine, for the remote-access links."""
     try:
@@ -1074,9 +4193,12 @@ def _consume_result_file():
     if not RESULT_FILE.exists():
         return {"available": False}
     try:
-        written_at = json.loads(RESULT_FILE.read_text())["written_at"]
+        result = json.loads(RESULT_FILE.read_text())
+        written_at = result["written_at"]
+        had_critical_warnings = bool(result.get("had_critical_warnings"))
     except Exception:
         written_at = 0
+        had_critical_warnings = False
     finally:
         RESULT_FILE.unlink(missing_ok=True)
     if time.time() - written_at > 300:
@@ -1085,15 +4207,18 @@ def _consume_result_file():
         log_tail = LOG_FILE.read_text().splitlines()[-50:]
     except Exception:
         log_tail = []
-    return {"available": True, "log_tail": log_tail}
+    return {"available": True, "log_tail": log_tail, "had_critical_warnings": had_critical_warnings}
 
 
-def _write_result_file():
+def _write_result_file(had_critical_warnings=False):
     """Atomic write (temp file + os.replace) - a torn/partial write here
     would otherwise be readable by /last_run_summary as valid JSON garbage
-    before the fresh process even starts."""
+    before the fresh process even starts. had_critical_warnings: see
+    _had_critical_warnings' own module-level comment - lets the post-restart
+    banner distinguish a genuinely clean run from one that needs attention,
+    same as the live /log poll already does."""
     tmp = RESULT_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"written_at": time.time()}))
+    tmp.write_text(json.dumps({"written_at": time.time(), "had_critical_warnings": had_critical_warnings}))
     os.replace(tmp, RESULT_FILE)
 
 
@@ -1118,7 +4243,7 @@ def _reader_thread(proc):
     # all, so a failure here (LOG_FILE unwritable, a readline() error, ...)
     # would've left _running stuck True forever, locking out every other
     # mutex-guarded action AND blocking any retry of the run itself.
-    global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending
+    global _running, _exit_code, _phase_index, _reboot_needed, _cc_restart_pending, _had_critical_warnings
     # _last_mode is set by _start_run() before this thread starts and never
     # changes for the lifetime of this run - safe to read once, unlocked.
     phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
@@ -1138,6 +4263,12 @@ def _reader_thread(proc):
                     with _lock:
                         _reboot_needed = stripped[len(REBOOT_MARKER):] == "true"
                     continue  # marker is for the Reboot button, not the log panel
+                if CRITICAL_WARNINGS_MARKER in stripped:
+                    with _lock:
+                        _had_critical_warnings = True
+                    # not a `continue` - this line is real log content too,
+                    # unlike the two markers above which only ever exist to
+                    # carry a value, never meant to be read in the log panel.
                 with _lock:
                     _lines.append(stripped)
         proc.wait()
@@ -1157,7 +4288,7 @@ def _reader_thread(proc):
             # specific actions.
             if _exit_code == 0:
                 _cc_restart_pending = True
-                _write_result_file()
+                _write_result_file(had_critical_warnings=_had_critical_warnings)
     if _exit_code == 0:
         threading.Thread(target=_restart_control_center, daemon=True).start()
 
@@ -1177,7 +4308,7 @@ def _current_pifinder_stellarmate_branch():
 
 
 def _start_run(action, branch=None, mode=None):
-    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode
+    global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode, _had_critical_warnings
     with _lock:
         if _running:
             return False, "A run is already in progress."
@@ -1194,6 +4325,7 @@ def _start_run(action, branch=None, mode=None):
         _exit_code = None
         _phase_index = -1
         _reboot_needed = None
+        _had_critical_warnings = False
         _last_action = action
         _last_mode = mode or "full"
         cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
@@ -1201,6 +4333,23 @@ def _start_run(action, branch=None, mode=None):
             cmd.append(f"--branch={branch}")
         if mode and mode != "full":
             cmd.append(f"--mode={mode}")
+        # PFSM_CC_MANAGED_RUN tells the script's own final "restart the
+        # Control Center" line (see its own comment) that THIS run is being
+        # tracked by _reader_thread()/_cc_restart_pending below - it must
+        # skip its own restart and leave that to the already-correct, graceful
+        # mechanism (which waits for proc.wait(), writes the result file, and
+        # tells the frontend via "restarting": true) rather than racing it.
+        # Found live (2026-09-12): the script's unconditional restart killed
+        # this very Python process's _reader_thread mid-readline (before
+        # proc.wait() ever returned), so _cc_restart_pending never got set -
+        # the freshly restarted process came up with phase_index/running/
+        # exit_code all reset, and the frontend just saw the run vanish into
+        # "Idle" instead of the proper restarting/success handoff. A run
+        # started outside the Control Center (plain CLI/SSH) has no such
+        # process to race against - PFSM_CC_MANAGED_RUN is simply absent
+        # there, so the script's own restart still fires unconditionally,
+        # same guarantee as before.
+        env = dict(os.environ, PFSM_CC_MANAGED_RUN="1")
         _process = subprocess.Popen(
             cmd,
             cwd=str(REPO_ROOT),
@@ -1208,6 +4357,7 @@ def _start_run(action, branch=None, mode=None):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=env,
         )
         threading.Thread(target=_reader_thread, args=(_process,), daemon=True).start()
     return True, None
@@ -1390,6 +4540,37 @@ class Handler(BaseHTTPRequestHandler):
         self._send_401()
         return False
 
+    def _client_id(self):
+        """The requesting client's self-chosen id (status_page.html:
+        CC_CLIENT_ID, a UUID stored in localStorage) - the fetch() wrapper
+        near the top of that file's <script> sends it as a header on every
+        request; the /api/host/* endpoints also accept it as a query param
+        since navigator.sendBeacon() (used to release the lease on page
+        unload) can't set custom headers."""
+        header = self.headers.get("X-CC-Client-Id")
+        if header:
+            return header
+        qs = parse_qs(urlparse(self.path).query)
+        return qs.get("client_id", [""])[0] or None
+
+    def _require_host(self):
+        """Gate for mutating (POST) endpoints - see _host_lock's own module-
+        level comment. Sends its own error response and returns False if
+        this request's client doesn't currently hold the lease; caller
+        should return immediately in that case."""
+        client_id = self._client_id()
+        if not client_id:
+            self._send_json({"success": False, "error": "missing client id - reload the page"}, status=428)
+            return False
+        if not _host_status(client_id)["is_host"]:
+            self._send_json(
+                {"success": False, "error": "This Control Center is currently controlled by another client - "
+                                             "use “Take control” if that session is gone."},
+                status=409,
+            )
+            return False
+        return True
+
     def _send_json(self, obj, status=200):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
@@ -1404,7 +4585,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, path, content_type):
+    def _send_file(self, path, content_type, no_cache=False):
         if not path.is_file():
             self.send_error(404)
             return
@@ -1412,6 +4593,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if no_cache:
+            # Found live (2026-09-12): a 404 response (this route genuinely
+            # didn't exist yet on an older, not-yet-restarted process) can
+            # get cached by the browser and keep being served on a plain
+            # reload even once the route exists - same class of staleness
+            # as "/"'s own Cache-Control above, just for an image route
+            # instead of the page itself. Not applied to every _send_file()
+            # call - most of them (logos etc.) never change and benefit from
+            # the default caching.
+            self.send_header("Cache-Control", "no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1433,6 +4624,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/last_run_summary":
             self._send_json(_consume_result_file())
+            return
+
+        if parsed.path == "/api/host/status":
+            self._send_json(_host_status(self._client_id()))
             return
 
         if parsed.path == "/":
@@ -1466,8 +4661,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(HEYAPOS_LOGO, "image/png")
             return
 
-        if parsed.path == "/pifinder_welcome.png":
-            self._send_file(PIFINDER_WELCOME_IMAGE, "image/png")
+        if parsed.path == "/project_logo.png":
+            self._send_file(PROJECT_LOGO, "image/png")
+            return
+
+        if parsed.path == "/project_icon.png":
+            self._send_file(PROJECT_ICON, "image/png")
+            return
+
+        if parsed.path == "/pifinder_welcome_blue.png":
+            self._send_file(PIFINDER_WELCOME_IMAGE_BLUE, "image/png", no_cache=True)
+            return
+
+        if parsed.path == "/pifinder_welcome_red.png":
+            self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
             return
 
         if parsed.path == "/state":
@@ -1495,6 +4702,33 @@ class Handler(BaseHTTPRequestHandler):
                     "setup_script_path": str(SETUP_SCRIPT),
                     "ips": _get_all_ips(),
                     "port": PORT,
+                    # #268: shown prominently in the sticky header - lets
+                    # multiple open tabs/devices be told apart at a glance,
+                    # not just by IP in the URL bar.
+                    "hostname": socket.gethostname(),
+                    "device_type": _get_device_type(),
+                    "maintenance_mode_since": _maintenance_mode_since,
+                    "sim_mismatch_ever_resolved": _sim_mismatch_ever_resolved,
+                    "pifinder_service_auto_stopped_for_remote": (
+                        _pifinder_service_auto_stopped_for_remote if not _pifinder_service_notice_dismissed else None
+                    ),
+                    # _autostart_cold_profile()'s own "gave up" escalation -
+                    # only meaningful together, so the frontend can name the
+                    # profile in its notice.
+                    "cold_profile_start_gave_up": _cold_profile_start_gave_up,
+                    "last_known_active_profile": _last_known_active_profile,
+                    # Found live (2026-09-13): missing here the whole time -
+                    # every "/state says X is None" diagnostic read during
+                    # tonight's per-role-profile-memory debugging was reading
+                    # a field that was simply absent from this response, not
+                    # necessarily reflecting the real in-memory/persisted
+                    # value (cross-checked against .mount_bridge_desired_
+                    # state.json directly, which had correct non-None values
+                    # at the same moment this endpoint reported them as
+                    # missing).
+                    "pifinder_role_choice": _pifinder_role_choice,
+                    "last_known_host_profile": _last_known_host_profile,
+                    "last_known_client_profile": _last_known_client_profile,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "current_branch": _current_pifinder_stellarmate_branch(),
@@ -1512,22 +4746,101 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/system_load":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            # Control host's own CPU/Temp proxy (category 2b) - direct
+            # feedback (2026-09-13): "auf dem CH brauche ich sowohl die
+            # lokalen als auch die remote Werte" - this route stays local-only
+            # when host is omitted (the common case, and this device's own
+            # reading in the Control host case too), only proxies when the
+            # frontend explicitly asks for the mirrored device's own load.
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                    return
+                # Read straight off "PiFinder LX200"'s own PIFINDER_SYSTEM_LOAD
+                # INDI property instead of the old Control-Center-to-Control-
+                # Center proxy (2026-09-15) - see _pifinder_lx200_indi_status()'s
+                # own docstring.
+                status = _pifinder_lx200_indi_status(host)
+                if status is None:
+                    self._send_json({
+                        "load1": None, "load5": None, "load15": None, "cpu_count": None,
+                        "ratio1": None, "percent": None, "temp_c": None, "high": False,
+                    })
+                    return
+                ratio1 = (status["percent"] / 100) if status["percent"] is not None else None
+                self._send_json({
+                    "load1": status["load1"], "load5": status["load5"], "load15": status["load15"],
+                    "cpu_count": status["cpu_count"], "ratio1": ratio1, "percent": status["percent"],
+                    "temp_c": status["temp_c"],
+                    "high": ratio1 is not None and ratio1 >= _SYSTEM_LOAD_HIGH_RATIO,
+                })
+                return
+            self._send_json(_system_load_status())
+            return
+
         if parsed.path == "/api/pifinder_mode":
-            with _lock:
-                transitioning = _mode_action_running
-                error = _mode_error
-                target = _mode_target
-            fake_up = _fake_mode_up()
-            real_active = _real_service_active()
-            if fake_up:
-                mode = "fake"
-            elif real_active:
-                mode = "real"
-            else:
-                mode = "none"
-            self._send_json(
-                {"mode": mode, "transitioning": transitioning, "error": error, "target": target}
+            # Control host's own view of the mirrored device's role choice
+            # (docs/concepts/pifinder_client_role_and_indi_setup_review.md,
+            # section 5 point 4) - proxies to the remote CC's own
+            # /api/pifinder_mode (same category 2b machinery as Camera/IMU/
+            # orientation/CPU) instead of reading anything locally, since
+            # every field this endpoint returns (mode/pifinder_role_choice/
+            # etc.) describes whichever device answers it. Local behavior
+            # (no ?host=) is completely unchanged.
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                    return
+                proxied = _cc_proxy_get(host, "/api/pifinder_mode", self.headers.get("Authorization"))
+                self._send_json(proxied or {
+                    "mode": None, "transitioning": False, "error": None, "target": None,
+                    "real_service_state": None, "pifinder_role_choice": None,
+                })
+                return
+            self._send_json(_current_pifinder_mode_snapshot())
+            return
+
+        if parsed.path == "/api/remote_mount_bridge_coupling":
+            # Control host only - whether the mirrored PiFinder's OWN device
+            # also runs its own local "PiFinder Mount Bridge" with an active,
+            # steering coupling mode. Found live (2026-09-20): a remote
+            # PiFinder in "PiFinder host" role can (by that role's own
+            # design - "with its own mount coupling here too") run a fully
+            # independent local Mount Bridge/mount at the same time this
+            # Control Host couples to the very same PiFinder - PiFinder is
+            # NOT purely read-only from a Bridge's perspective (a confirmed
+            # external reposition gets pushed back into it, see
+            # docs/concepts/mount_bridge_reposition_detection.md), so two
+            # independently-coupled Bridges can end up cross-talking through
+            # PiFinder as a shared position sink, each thinking the other's
+            # mount motion/glitch is a real external reposition of ITS OWN
+            # target. Reads "PiFinder Mount Bridge"'s own properties directly
+            # off the remote host's indiserver (2026-09-15 pattern - see
+            # _pifinder_lx200_indi_status()'s own docstring - no CC-to-CC
+            # HTTP/password needed, same as /api/system_load?host=).
+            # MODE_VERIFY_ALERT is deliberately not flagged - it never writes
+            # back to the mount or to PiFinder (TE-5, bm pifinder-stellarmate/
+            # 00162), so it carries none of this risk.
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            if not host or not _valid_pifinder_host(host):
+                self._send_json({"error": f"invalid host '{host}'"}, status=400)
+                return
+            try:
+                status = indi_client.mount_bridge_status(host=host)
+            except indi_client.INDIClientError:
+                status = None
+            coupling_mode = status.get("coupling_mode") if status else None
+            active = bool(
+                status and status.get("running") and status.get("bridge_connected")
+                and coupling_mode in ("MODE_GOTO_FORWARD", "MODE_AUTO_CORRECT")
             )
+            self._send_json({"active": active, "coupling_mode": coupling_mode if active else None})
             return
 
         if parsed.path == "/api/display_bridge":
@@ -1569,9 +4882,24 @@ class Handler(BaseHTTPRequestHandler):
                 # correcting the mount at the same moment this poll came back
                 # empty). Not a real disconnect, just this poll's own
                 # patience being too short for an otherwise-healthy system.
-                status = indi_client.mount_bridge_status(timeout=7.0, device_timeout=3.0)
+                status = indi_client.mount_bridge_status(
+                    timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                    device_timeout=indi_client.DEVICE_TIMEOUT_BACKGROUND_POLL,
+                )
             except indi_client.INDIClientError as e:
-                status = {"running": False, "error": str(e)}
+                # Direct feedback (2026-09-20, issue #506): this used to report
+                # {"running": False, ...} - the frontend treats "running": false
+                # as a CONFIRMED fact ("false here is a confirmed answer, not a
+                # miss", see updateMbStatus()'s own comment) and blanks the
+                # whole diagram/badges accordingly. But an INDIClientError here
+                # just means this one poll couldn't reach indiserver (e.g.
+                # issue #385's periodic stall) - the driver process itself is
+                # typically still healthy the whole time (see bm 00089 §9).
+                # "running": None (neither true nor false) instead falls into
+                # the frontend's existing "genuinely couldn't tell" path
+                # (mbStatusMissStreak), which pulses the unconfirmed dot and
+                # keeps the last known state instead of wiping it.
+                status = {"running": None, "error": str(e)}
                 _mb_log(f"status check failed: {e}")
             if status.get("running") != _mb_last_running:
                 _mb_log(
@@ -1582,6 +4910,30 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 _mb_last_running = status.get("running")
             self._send_json(status)
+            return
+
+        if parsed.path == "/api/simulator_startup_source":
+            # Read-only snapshot of "PiFinder Simulator"'s own
+            # STARTUP_DEFAULT_SOURCE text property (indi_pifinder_simulator's
+            # maybeApplyStartupDefault(), 2026-09-09) - lets the no-solve
+            # banner warn when the Full-Simulation "sky truth" device landed
+            # nowhere near the mount (no snoop yet, or nothing safe found
+            # nearby) rather than silently looking fine because *a* real star
+            # was picked. Only meaningful in Full Simulation - "PiFinder
+            # Simulator" doesn't exist as a device otherwise, so a failed
+            # read here (device not present) is the normal, expected case on
+            # Real Hardware, not an error.
+            try:
+                props = indi_client.get_properties(device="PiFinder Simulator", timeout=3.0)
+                source = (
+                    props.get("PiFinder Simulator", {})
+                    .get("STARTUP_DEFAULT_SOURCE", {})
+                    .get("elements", {})
+                    .get("SOURCE")
+                )
+                self._send_json({"source": source})
+            except Exception:
+                self._send_json({"source": None})
             return
 
         if parsed.path == "/api/mount_bridge_drift":
@@ -1600,6 +4952,26 @@ class Handler(BaseHTTPRequestHandler):
             except indi_client.INDIClientError as e:
                 drift = {"running": False, "error": str(e)}
             self._send_json(drift)
+            return
+
+        if parsed.path == "/api/truth_injector_status":
+            # Polled by the toggle button's own status dot - reports the
+            # user's last desired state plus whether the process is
+            # actually, currently alive right now, so the GUI can show
+            # "should be on but died" (red) distinctly from "on and
+            # confirmed alive" (green), not just a single on/off bit.
+            # "device" (2026-08-30): which device it's actually feeding from
+            # right now - None until first started this process lifetime.
+            # Surfacing this was the missing piece that would have caught
+            # live that "Full Simulation" was mirroring the mount instead of
+            # using an independent PiFinder truth, instead of that only
+            # being found by tracing server logs after the fact.
+            with _truth_injector_lock:
+                self._send_json({
+                    "desired": _truth_injector_desired,
+                    "alive": _truth_injector_alive(),
+                    "device": _truth_injector_device,
+                })
             return
 
         if parsed.path == "/api/webmanager/profiles":
@@ -1632,7 +5004,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "missing 'profile' query param"}, status=400)
                 return
             try:
-                self._send_json(webmanager_client.pifinder_driver_status(profile))
+                status = webmanager_client.pifinder_driver_status(profile)
+                # Direct feedback (2026-09-27): the Web Manager can only load
+                # ONE drivers.xml per profile (System OR Flatpak, live-verified:
+                # a profile with any PiFinder driver launches EVERY driver in
+                # it from System, regardless of the Driver Source dropdown) -
+                # our custom drivers only exist in the System catalog, so any
+                # profile that needs them can never actually benefit from
+                # Flatpak-only extras (e.g. GSC-based star simulation) no
+                # matter what the dropdown shows. Surfacing this as a general,
+                # always-checked condition rather than a one-off GSC check,
+                # since more such gaps may turn up later - see
+                # _known_system_vs_flatpak_gaps()'s own docstring.
+                status["any_pifinder_driver"] = bool(
+                    status.get("has_lx200") or status.get("has_bridge") or status.get("has_simulator")
+                )
+                status["known_gaps"] = _known_system_vs_flatpak_gaps()
+                self._send_json(status)
             except webmanager_client.WebManagerError as e:
                 self._send_json({"error": str(e)}, status=502)
             return
@@ -1653,6 +5041,125 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"drivers": webmanager_client.other_profile_drivers(profile)})
             except webmanager_client.WebManagerError as e:
                 self._send_json({"error": str(e)}, status=502)
+            return
+
+        if parsed.path == "/api/profile_health":
+            # Direct request (2026-09-16): "Jedes CC prüft sein Profil, ob es
+            # überhaupt ordentlich funktioniert und sich verbindet." Concrete
+            # trigger: a live-found case where a profile meant to be a clean
+            # PFSM simulation profile had picked up a PlayerOne CCD and an
+            # OnStep driver alongside the expected PiFinder ones - nothing in
+            # this codebase would have surfaced that on its own; a user had
+            # to notice it by eye. This is the local half only - each CC
+            # checking ITS OWN active profile. Reporting this to a Control
+            # Host ("CH Status"/"Client Status", centrally queried) is
+            # deliberately not wired up yet - that only matters once CH-mode
+            # testing actually starts (currently Host-mode-only per direct
+            # instruction), see basic-memory pifinder-stellarmate/00161.
+            # Live query, not _last_known_active_profile - found live
+            # 2026-09-19: "das CC spiegelt die Wahrheit wieder" - this
+            # endpoint's whole job is checking whatever profile is
+            # ACTUALLY active right now, not whichever one was last
+            # remembered (which can be a different, superseded profile,
+            # e.g. after switching to an ad-hoc test profile in Ekos).
+            try:
+                profile = webmanager_client.server_status().get("active_profile")
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"checked": False, "error": f"Web Manager unreachable: {e}"})
+                return
+            if not profile:
+                self._send_json({"checked": False, "error": "no active profile"})
+                return
+            try:
+                driver_status = webmanager_client.pifinder_driver_status(profile)
+                other = webmanager_client.other_profile_drivers(profile)
+            except webmanager_client.WebManagerError as e:
+                self._send_json({"checked": False, "profile": profile, "error": str(e)})
+                return
+            issues = []
+            devices = {}
+            for label, present in (
+                ("PiFinder LX200", driver_status["has_lx200"] and not driver_status["lx200_remote"]),
+                ("PiFinder Mount Bridge", driver_status["has_bridge"]),
+                ("PiFinder Simulator", driver_status["has_simulator"]),
+            ):
+                if not present:
+                    continue
+                try:
+                    vector = indi_client.get_properties(
+                        device=label, timeout=indi_client.TIMEOUT_QUICK_RETRY
+                    ).get(label, {}).get("CONNECTION")
+                except Exception:
+                    vector = None
+                connected = bool(vector and vector.get("elements", {}).get("CONNECT") == "On")
+                devices[label] = connected
+                if not connected:
+                    issues.append(f"{label} is in the profile but not connected")
+            if not driver_status["has_lx200"]:
+                issues.append("PiFinder LX200 isn't in this profile at all")
+            # Direct feedback (2026-09-19): "bei PiFinder Host MUSS die Mount
+            # Bridge an sein" - but only when a mount is actually wanted. A
+            # genuine mount-less Host (pure handheld GoTo Mode, no telescope
+            # at all) has nothing for Mount Bridge to couple to and correctly
+            # has no Bridge - flagging that as broken would be wrong. Gated
+            # on the exact same signal _mount_bridge_readiness_self_heal()'s
+            # own Check 1 already uses for "has the user ever asked Mount
+            # Bridge to do something this session" - not a new heuristic,
+            # the one already-established source of truth for that question.
+            # Can't use Mount Bridge's own live ACTIVE_DEVICES here (the
+            # whole point of this branch is that it doesn't exist at all).
+            if (_pifinder_role_choice == "host" and not driver_status["has_bridge"]
+                    and (_mb_desired_mount is not None or _mb_desired_coupling_mode is not None)):
+                issues.append(
+                    "PiFinder Mount Bridge isn't in this profile at all "
+                    "(a mount is linked/desired for Host role)"
+                )
+            self._send_json({
+                "checked": True,
+                "profile": profile,
+                "has_lx200": driver_status["has_lx200"],
+                "lx200_remote": driver_status["lx200_remote"],
+                "has_bridge": driver_status["has_bridge"],
+                "has_simulator": driver_status["has_simulator"],
+                "devices": devices,
+                "other_drivers": [d["label"] for d in other],
+                "ok": not issues,
+                "issues": issues,
+            })
+            return
+
+        if parsed.path == "/api/webmanager/test_remote_pifinder":
+            # Control-host role: before committing a remote PiFinder LX200
+            # entry (POST .../pifinder_drivers&action=add_remote), let the
+            # user verify the address actually has a PiFinder LX200 driver
+            # answering there - a plain TCP-reachability check alone can't
+            # tell "wrong device/its profile isn't started" from "nothing at
+            # this address at all" (direct feedback: "der Test soll auch
+            # prüfen, ob dort ein PiFinder LX200 lauscht"). Read-only - GET,
+            # not a driver/profile change.
+            qs = parse_qs(parsed.query)
+            remote = qs.get("remote", [""])[0].strip()
+            if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote):
+                self._send_json(
+                    {"reachable": False, "device_found": False,
+                     "error": f"invalid remote host '{remote}' (expected host or host:port)"},
+                    status=400,
+                )
+                return
+            test_host, _, test_port_s = remote.partition(":")
+            test_port = int(test_port_s) if test_port_s else 7624
+            try:
+                props = indi_client.get_properties(
+                    device="PiFinder LX200", host=test_host, port=test_port,
+                    timeout=indi_client.DEFAULT_TIMEOUT,
+                )
+            except indi_client.INDIClientError as e:
+                # Covers both "nothing listening there" (connection refused/
+                # timed out) and "something answered but not INDI" (parse
+                # error) - either way, not reachable as a PiFinder host.
+                self._send_json({"reachable": False, "device_found": False, "error": str(e)})
+                return
+            self._send_json({"reachable": True, "device_found": "PiFinder LX200" in props, "error": None})
             return
 
         if parsed.path == "/api/kstars_webmanager_link":
@@ -1680,19 +5187,77 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/hardware_status":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", [""])[0]
+            # Control host's own Camera/IMU badges - camera/imu are genuine
+            # local hardware checks (rpicam-hello/an I2C scan), meaningless
+            # run against anything but the machine that actually has the
+            # hardware, so a remote reading means reading whichever device
+            # "PiFinder LX200" is pointed at. Read straight off its own
+            # HARDWARE_PRESENCE INDI property instead of the old Control-
+            # Center-to-Control-Center proxy (2026-09-15) - see
+            # _pifinder_lx200_indi_status()'s own docstring. gps stays out of
+            # this (see the local branch's own comment below - separate
+            # mechanism, separate route, /api/gps_status).
+            if host:
+                if not _valid_pifinder_host(host):
+                    self._send_json({"camera": None, "imu": None, "gps": None, "error": f"invalid host '{host}'"}, status=400)
+                    return
+                status = _pifinder_lx200_indi_status(host)
+                self._send_json({
+                    "camera": status["camera"] if status else None,
+                    "imu": status["imu"] if status else None,
+                    "gps": None,
+                })
+                return
+            # gps deliberately does NOT use _gps_hardware_present() here (a
+            # direct gpsd query for physical serial/USB GPS hardware) unlike
+            # camera/imu above - PFSM devices normally have no physical GPS
+            # chip at all and get their location from StellarMate/KStars
+            # instead (see _gps_status_snapshot()'s own docstring: "don't
+            # reimplement what PiFinder already does"). Using the physical
+            # check here made this passive ~20s poll flip the Control
+            # Center's GPS row to a misleading "not detected" on every page
+            # load - even while PiFinder itself, fed via the KStars bridge,
+            # was reporting a real lock - until the user clicked "Test
+            # Hardware" by hand to get the correct, PiFinder-sourced result
+            # (found live 2026-09-06). Reusing _gps_status_snapshot() here
+            # makes the passive poll and the Test Hardware button agree
+            # always, not just after an explicit click.
             self._send_json(
                 {
                     "camera": _camera_hardware_present(),
                     "imu": _imu_hardware_present(),
-                    "gps": _gps_hardware_present(),
+                    "gps": _gps_status_snapshot(lambda *_a: None),
                 }
             )
+            return
+
+        # Control host's own GPS badge (docs/concepts/
+        # control_host_hardware_badges_mirroring.md, category 2a) - a
+        # separate route from /api/hardware_status above rather than folding
+        # it into that one's own ?host= handling: gps is a thin proxy
+        # straight to PiFinder's own /api/status (like Solve), while
+        # /api/hardware_status's ?host= is a genuine Control-Center-to-
+        # Control-Center proxy (category 2b) - two different mechanisms
+        # that happen to serve the same badge row.
+        if parsed.path == "/api/gps_status":
+            qs = parse_qs(parsed.query)
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"gps": None, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"gps": _gps_status_snapshot(lambda *_a: None, host=host)})
             return
 
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json(_pifinder_solve_status(port) or {"debug_solve": None})
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"debug_solve": None, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json(_pifinder_solve_status(port, host) or {"debug_solve": None})
             return
 
         if parsed.path == "/api/hardware_test_log":
@@ -1703,8 +5268,22 @@ class Handler(BaseHTTPRequestHandler):
                 new_position = len(_hwtest_lines)
                 running = _hwtest_running
                 result = _hwtest_result
+                started_at = _hwtest_started_at
+            # Computed server-side (monotonic clock) rather than sending a
+            # raw timestamp for the client to diff against its own clock -
+            # avoids any client/server clock-skew edge case, and works
+            # identically whether this client started the run itself or is
+            # just picking up an already-running one on page load (e.g. the
+            # startup auto-run after a post-install Control Center restart).
+            elapsed_seconds = round(time.monotonic() - started_at) if (running and started_at is not None) else None
             self._send_json(
-                {"lines": new_lines, "position": new_position, "running": running, "result": result}
+                {
+                    "lines": new_lines,
+                    "position": new_position,
+                    "running": running,
+                    "result": result,
+                    "elapsed_seconds": elapsed_seconds,
+                }
             )
             return
 
@@ -1765,6 +5344,7 @@ class Handler(BaseHTTPRequestHandler):
                 reboot_needed = _reboot_needed
                 last_action = _last_action
                 restarting = _cc_restart_pending
+                had_critical_warnings = _had_critical_warnings
                 phases = PHASES_INDI_ONLY if _last_mode == "indi_only" else PHASES
             self._send_json(
                 {
@@ -1778,6 +5358,11 @@ class Handler(BaseHTTPRequestHandler):
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "restarting": restarting,
+                    # See _had_critical_warnings' own module-level comment -
+                    # exit_code alone can be 0 even when the run printed a
+                    # "CRITICAL WARNINGS" block (e.g. a driver build the OOM
+                    # killer killed) that genuinely needs the user's attention.
+                    "had_critical_warnings": had_critical_warnings,
                 }
             )
             return
@@ -1785,7 +5370,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        # _pifinder_role_choice: found live (2026-09-13) - two separate
+        # `global _pifinder_role_choice` statements deeper in this function
+        # (one per handler branch that sets it) is itself a SyntaxError in
+        # Python if any assignment to that name occurs, in source order,
+        # between them - not caught by ast.parse() (which doesn't run the
+        # symbol-table pass that raises it), only by actually compiling the
+        # file. One declaration here, before every branch, covers the whole
+        # function and avoids the trap entirely.
         global _hwtest_running, _mode_action_running, _reset_running, _reset_exit_code, _uninstall_running
+        global _pifinder_role_choice
+        global _profile_switch_in_progress
+        global _last_known_host_profile
+        global _last_known_client_profile
         parsed = urlparse(self.path)
 
         # /shutdown stays open: PiFinder's PFSM page (a different
@@ -1794,6 +5391,41 @@ class Handler(BaseHTTPRequestHandler):
         # credentials. Shutting the installer down isn't destructive, unlike
         # /start and /reboot below, which do require auth.
         if parsed.path != "/shutdown" and not self._require_auth():
+            return
+
+        # Single-host lock (see _host_lock's module-level comment): every
+        # mutating request must come from the client currently holding the
+        # lease, except the handful of paths below that manage the lease
+        # itself (claiming it is obviously not gated behind already holding
+        # it) and /shutdown (already exempt from auth above, same reasoning -
+        # not destructive, and the cross-origin PiFinder page has no way to
+        # carry a client id either).
+        _HOST_EXEMPT_PATHS = {
+            "/shutdown", "/api/host/claim", "/api/host/heartbeat",
+            "/api/host/release", "/api/host/take_control",
+        }
+        if parsed.path not in _HOST_EXEMPT_PATHS and not self._require_host():
+            return
+
+        if parsed.path == "/api/host/claim":
+            self._send_json({"success": True, "is_host": _host_claim(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/heartbeat":
+            self._send_json({"success": _host_heartbeat(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/release":
+            self._send_json({"success": _host_release(self._client_id())})
+            return
+
+        if parsed.path == "/api/host/take_control":
+            client_id = self._client_id()
+            if not client_id:
+                self._send_json({"success": False, "error": "missing client id - reload the page"}, status=428)
+                return
+            _host_take_control(client_id)
+            self._send_json({"success": True, "is_host": True})
             return
 
         if parsed.path == "/start":
@@ -1826,6 +5458,29 @@ class Handler(BaseHTTPRequestHandler):
                 return
             started, error = _start_run(action, branch or None, mode)
             self._send_json({"started": started, "error": error})
+            return
+
+        if parsed.path == "/api/restart_control_center":
+            # Manual trigger for the same restart path a successful install/
+            # update run already uses (see _restart_control_center() and
+            # _cc_restart_pending's own comments) - lets a manually-updated
+            # checkout (e.g. a terminal `git pull`) get picked up without
+            # waiting for the next install run, and doubles as a quick
+            # recovery button if the page seems stuck. Guarded the same way
+            # reboot/shutdown/uninstall are - restarting this process out
+            # from under a real run would abort it uncleanly.
+            global _cc_restart_pending
+            with _lock:
+                if _running or _mode_action_running or _hwtest_running or _reset_running or _uninstall_running:
+                    self._send_json(
+                        {"restarting": False, "error": "An install/update run, mode switch, hardware test, reset, or uninstall is in progress - wait for it to finish first."},
+                        status=409,
+                    )
+                    return
+                _cc_restart_pending = True
+                _write_result_file()
+            self._send_json({"restarting": True})
+            threading.Thread(target=_restart_control_center, daemon=True).start()
             return
 
         if parsed.path == "/reboot":
@@ -1933,6 +5588,16 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
             try:
+                # daemon-reload first: systemd caches a unit's parsed config
+                # in memory and does NOT re-read a changed file on disk on
+                # its own before start/restart (only warns "Unit file
+                # changed on disk" in its log) - without this, a button
+                # click right after an update could restart the OLD,
+                # already-loaded config instead of whatever's actually in
+                # /etc/systemd/system/pifinder.service right now (found live
+                # investigating #139's Nice=/CPUWeight= rollout - see that
+                # change's own commit for the underlying finding).
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True, text=True, timeout=10)
                 result = subprocess.run(
                     ["sudo", "systemctl", action, "pifinder.service"],
                     capture_output=True, text=True, timeout=30,
@@ -1946,10 +5611,111 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/pifinder_service_stop_for_remote":
+            # Direct request (2026-09-12): the manual Control-host remote-
+            # address flow (applyCtrlRemoteAddress()'s own confirm()) needs
+            # to stop pifinder.service for the exact same reason
+            # _pifinder_service_sync_with_lx200_target() does it
+            # automatically in the background - found live testing the
+            # watchdog feature itself: a stop via the plain
+            # /api/pifinder_service?action=stop endpoint above left
+            # _pifinder_service_auto_stopped_for_remote unset, so neither
+            # the header notice nor the later auto-restart-once-LX200-goes-
+            # local-again logic ever engaged for a manually-triggered stop.
+            # This endpoint is the single place both paths now go through -
+            # the watchdog calls the same stop+record logic internally
+            # rather than duplicating it.
+            qs = parse_qs(parsed.query)
+            remote = qs.get("remote", [""])[0]
+            if not remote:
+                self._send_json({"success": False, "error": "missing 'remote' query param"}, status=400)
+                return
+            try:
+                _stop_pifinder_service_for_remote(remote)
+            except subprocess.TimeoutExpired:
+                self._send_json({"success": False, "error": "systemctl stop pifinder.service timed out"}, status=502)
+                return
+            except RuntimeError as e:
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(
+                f"pifinder.service stopped (requested) - PiFinder LX200 now points at remote '{remote}', "
+                "a local PiFinder isn't needed."
+            )
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/debug_solve":
             qs = parse_qs(parsed.query)
             port = qs.get("port", [""])[0]
-            self._send_json({"success": _pifinder_toggle_debug_solve(port)})
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_toggle_debug_solve(port, host)})
+            return
+
+        if parsed.path == "/api/pifinder_key":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            key = qs.get("key", [""])[0]
+            # Control host role only (2026-09-12) - the frontend passes this
+            # whenever pifinderScreenUrl points at a remote host; same
+            # hostname/IP shape already validated for the Control host
+            # card's own remote address elsewhere, so reject anything else
+            # rather than build an arbitrary-host request from unchecked
+            # input.
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_send_key(port, key, host)})
+            return
+
+        if parsed.path == "/api/fake_solve_disable":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json({"success": _pifinder_disable_fake_solve(port, host)})
+            return
+
+        if parsed.path == "/api/fake_solve_enable_from_mount":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            # See _pifinder_enable_fake_solve_from_mount()'s own docstring
+            # (TF-6, 2026-09-16) - the caller (reseedFakeSolve() in
+            # status_page.html) sets this whenever the Truth Injector was
+            # the desired state right before this call, i.e. Full
+            # Simulation - it already knows this itself, from the exact
+            # same flag it just used to decide whether to toggle the
+            # injector off first.
+            skip_auto_release = qs.get("skip_auto_release", [""])[0] == "true"
+            ok, err = _pifinder_enable_fake_solve_from_mount(port, host, skip_auto_release=skip_auto_release)
+            self._send_json({"success": ok, "error": err})
+            return
+
+        if parsed.path == "/api/fake_solve_set":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "error": f"invalid host '{host}'"}, status=400)
+                return
+            try:
+                ra_deg = float(qs.get("ra", [""])[0])
+                dec_deg = float(qs.get("dec", [""])[0])
+            except (ValueError, IndexError):
+                self._send_json({"success": False, "error": "ra/dec must be numeric degrees"}, status=400)
+                return
+            ok, err = _pifinder_set_fake_solve(port, ra_deg, dec_deg, host)
+            self._send_json({"success": ok, "error": err})
             return
 
         if parsed.path == "/api/hardware_test":
@@ -2050,49 +5816,81 @@ class Handler(BaseHTTPRequestHandler):
             # not present in the open-source project it's based on).
             qs = parse_qs(parsed.query)
             profile = qs.get("profile", [""])[0]
-            driver = qs.get("driver", [""])[0]
-            action = qs.get("action", [""])[0]
+
             # add_remote (lx200 only): use a PiFinder LX200 running on
             # another device, via INDI's own remote-driver mechanism - see
             # docs/concepts/remote_indi_coupling_split_host.md (R-CH1).
-            valid = (
-                profile
-                and (
-                    (driver in ("lx200", "bridge") and action in ("add", "remove"))
-                    or (driver == "lx200" and action == "add_remote")
+            def _build_change(driver: str, action: str, remote_raw):
+                """Validates one (driver, action, remote) triple and returns
+                (setter, driver_label, action). Raises ValueError with a
+                user-facing message on anything invalid - never touches the
+                server itself, just prepares the change."""
+                valid = (driver in ("lx200", "bridge", "simulator") and action in ("add", "remove")) or (
+                    driver == "lx200" and action == "add_remote"
                 )
-            )
-            if not valid:
-                self._send_json(
-                    {"success": False,
-                     "error": "expected ?profile=<name>&driver=lx200|bridge&action=add|remove"
-                              " (or driver=lx200&action=add_remote&remote=<host[:port]>)"},
-                    status=400,
-                )
-                return
-            remote_spec = None
-            if action == "add_remote":
-                remote_spec = qs.get("remote", [""])[0].strip()
-                # Hostname or IP, optional :port - becomes part of a Web
-                # Manager profile entry, so keep the shape strict.
-                if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
-                    self._send_json(
-                        {"success": False, "error": f"invalid remote host '{remote_spec}' (expected host or host:port)"},
-                        status=400,
+                if not valid:
+                    raise ValueError(
+                        f"invalid driver/action '{driver}'/'{action}' - expected "
+                        "driver=lx200|bridge|simulator&action=add|remove (or "
+                        "driver=lx200&action=add_remote&remote=<host[:port]>)"
                     )
-                    return
-                if ":" not in remote_spec:
-                    remote_spec += ":7624"
+                remote_spec = None
+                if action == "add_remote":
+                    remote_spec = (remote_raw or "").strip()
+                    # Hostname or IP, optional :port - becomes part of a Web
+                    # Manager profile entry, so keep the shape strict.
+                    if not re.fullmatch(r"[A-Za-z0-9._-]+(:\d{1,5})?", remote_spec):
+                        raise ValueError(f"invalid remote host '{remote_spec}' (expected host or host:port)")
+                    if ":" not in remote_spec:
+                        remote_spec += ":7624"
 
-            if driver == "lx200":
-                lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
-                def setter(prof, _present):
-                    webmanager_client.set_pifinder_lx200_state(prof, lx200_state, remote=remote_spec)
-            else:
-                setter = webmanager_client.set_pifinder_bridge
-            driver_label = "PiFinder LX200" if driver == "lx200" else "PiFinder Mount Bridge"
-            if action == "add_remote":
-                driver_label = f"PiFinder LX200 (remote {remote_spec})"
+                if driver == "lx200":
+                    lx200_state = {"add": "local", "remove": "absent", "add_remote": "remote"}[action]
+                    def setter(prof, _present, _lx200_state=lx200_state, _remote_spec=remote_spec):
+                        webmanager_client.set_pifinder_lx200_state(prof, _lx200_state, remote=_remote_spec)
+                elif driver == "bridge":
+                    setter = webmanager_client.set_pifinder_bridge
+                else:
+                    setter = webmanager_client.set_pifinder_simulator
+                driver_label = {"lx200": "PiFinder LX200", "bridge": "PiFinder Mount Bridge",
+                                 "simulator": "PiFinder Simulator"}[driver]
+                if action == "add_remote":
+                    driver_label = f"PiFinder LX200 (remote {remote_spec})"
+                return setter, driver_label, action
+
+            # Normally a single driver/action pair (unchanged, original
+            # shape). A role switch (onRoleCardClick() in status_page.html)
+            # can need TWO independent changes at once (e.g. "add PiFinder
+            # LX200" + "remove Mount Bridge") - originally sent as two
+            # separate requests, each with its own full stop/restart cycle
+            # of indiserver. Found live (2026-09-18, TF-7/TF-8): the SECOND
+            # restart collaterally kills and relaunches drivers untouched by
+            # that second request too, producing a visible Coupling-mode
+            # "Off" flash (a disconnected driver's missing coupling_mode is
+            # displayed identically to an explicit Off, see status_page.html
+            # ~L7398) and a window where deriveProfileRole() can read a
+            # genuinely inconsistent has_lx200/has_bridge combination. Fix:
+            # an optional `changes=driver|action|remote,...` batch param -
+            # every change in one request, ONE stop/restart cycle total.
+            changes_param = qs.get("changes", [""])[0]
+            try:
+                if changes_param:
+                    raw_changes = []
+                    for entry in changes_param.split(","):
+                        fields = entry.split("|")
+                        raw_changes.append((fields[0], fields[1] if len(fields) > 1 else "",
+                                             fields[2] if len(fields) > 2 else None))
+                else:
+                    raw_changes = [(qs.get("driver", [""])[0], qs.get("action", [""])[0],
+                                     qs.get("remote", [""])[0])]
+                if not profile or not raw_changes or any(not d for d, _a, _r in raw_changes):
+                    raise ValueError(
+                        "expected ?profile=<name>&driver=...&action=... (or &changes=driver|action|remote,...)"
+                    )
+                changes = [_build_change(driver, action, remote) for driver, action, remote in raw_changes]
+            except ValueError as e:
+                self._send_json({"success": False, "error": str(e)}, status=400)
+                return
 
             # indiserver only reads a profile's driver list at startup - a
             # driver added/removed here never takes effect on an already-
@@ -2102,7 +5900,8 @@ class Handler(BaseHTTPRequestHandler):
             # Rather than expect the user to remember "stop, change, start"
             # as three separate steps, do it automatically here whenever
             # this profile is the one currently running - one click, fully
-            # visible in the log below.
+            # visible in the log below. Exactly one stop/restart cycle for
+            # the whole batch, not one per change (see comment above).
             try:
                 srv_status = webmanager_client.server_status()
             except webmanager_client.WebManagerError:
@@ -2119,14 +5918,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 _mb_log(f"  done.")
 
-            _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
-            try:
-                setter(profile, action == "add")
-            except webmanager_client.WebManagerError as e:
-                _mb_log(f"  failed: {e}")
-                self._send_json({"success": False, "error": str(e)}, status=502)
-                return
-            _mb_log(f"  done.")
+            for setter, driver_label, action in changes:
+                _mb_log(f"{'add' if action != 'remove' else 'remove'} {driver_label} {'to' if action != 'remove' else 'from'} profile '{profile}'...")
+                try:
+                    setter(profile, action == "add")
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"  failed: {e}")
+                    self._send_json({"success": False, "error": str(e)}, status=502)
+                    return
+                _mb_log(f"  done.")
 
             if was_running:
                 _mb_log(f"restarting profile '{profile}'...")
@@ -2175,7 +5975,23 @@ class Handler(BaseHTTPRequestHandler):
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
+            # Persist to the driver's own config file (CONFIG_PROCESS.CONFIG_SAVE) -
+            # set_text() above only changes the *live* property. Without this, any
+            # later reconnect (driver restart, Ekos profile restart, ...) silently
+            # reloads whatever ACTIVE_MOUNT was saved on disk from a much earlier
+            # session, undoing this selection with no indication anything reverted -
+            # found live (#158) chasing a "Mount is source" test that kept reading
+            # from a stale mount device not even in the current profile. Best-effort:
+            # the live selection above already took effect either way, so a save
+            # failure here is logged, not fatal to the request.
+            try:
+                indi_client.set_switch("PiFinder Mount Bridge", "CONFIG_PROCESS", "CONFIG_SAVE")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  warning: active-devices selection applied but not saved to disk: {e}")
             _mb_log(f"  done.")
+            global _mb_desired_mount
+            _mb_desired_mount = None if unlink else mount
+            _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
 
@@ -2213,6 +6029,15 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
                 _mb_log(f"  done.")
+                if device == "PiFinder Mount Bridge":
+                    # A deliberate disconnect (2026-09-01, direct user
+                    # feedback: "was ist, wenn jemand bewusst einen
+                    # Disconnect macht - kann ja notwendig sein") must NOT
+                    # be fought by the readiness watchdog's check 2 - see
+                    # _mb_desired_connected's own comment.
+                    global _mb_desired_connected
+                    _mb_desired_connected = False
+                    _save_mount_bridge_desired_state()
                 self._send_json({"success": True})
                 return
 
@@ -2263,7 +6088,7 @@ class Handler(BaseHTTPRequestHandler):
                 # of a flat sleep.
                 deadline = time.monotonic() + 5.0
                 while time.monotonic() < deadline:
-                    if indi_client.get_properties(device=device, timeout=1.0).get(device):
+                    if indi_client.get_properties(device=device, timeout=indi_client.TIMEOUT_QUICK_RETRY).get(device):
                         break
                     time.sleep(0.3)
                 _mb_log(f"  restarted. retrying...")
@@ -2288,7 +6113,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if device == "PiFinder LX200":
                 try:
-                    indi_client.ensure_pifinder_lx200_tcp()
+                    if indi_client.ensure_pifinder_lx200_tcp():
+                        _mb_log(
+                            "PiFinder LX200: connection settings were wrong "
+                            "(not TCP 127.0.0.1:4030) - corrected."
+                        )
                 except indi_client.INDIClientError as e:
                     if "not currently defined" not in str(e) or not profile:
                         _mb_log(f"could not verify PiFinder LX200's connection settings: {e}")
@@ -2297,21 +6126,487 @@ class Handler(BaseHTTPRequestHandler):
                     if not restart_and_retry(indi_client.ensure_pifinder_lx200_tcp):
                         return  # restart_and_retry() already sent the error response
 
+            def _mark_mount_bridge_connect_desired():
+                if device == "PiFinder Mount Bridge":
+                    global _mb_desired_connected
+                    _mb_desired_connected = True
+                    _save_mount_bridge_desired_state()
+
             _mb_log(f"connecting '{device}'...")
             try:
                 indi_client.connect_device(device)
-                _mb_log(f"  done.")
-                self._send_json({"success": True})
-                return
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 if "not currently defined" not in str(e) or not profile:
                     self._send_json({"success": False, "error": str(e)}, status=502)
                     return
+                if not restart_and_retry(lambda: indi_client.connect_device(device)):
+                    return  # restart_and_retry() already sent the error response
 
-            if not restart_and_retry(lambda: indi_client.connect_device(device)):
-                return  # restart_and_retry() already sent the error response
+            # The switch send above only confirms indiserver accepted the
+            # command - poll the device's own CONNECTION property for the
+            # actual outcome (see _confirm_device_connected()'s own comment:
+            # a wrong serial port/network address otherwise still reported
+            # as "Connected").
+            ok, detail = _confirm_device_connected(device)
+            if not ok:
+                _mb_log(f"  {device}: {detail}")
+                self._send_json({"success": False, "error": detail}, status=502)
+                return
+            _mb_log(f"  done.")
+            _mark_mount_bridge_connect_desired()
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/remember_host_profile":
+            # Direct feedback (2026-09-13): "Den extra Bestätigungsklick
+            # verstehe ich nicht, Kopple das Merken an 'on change' ... bei
+            # der Auswahl des Profils. Der Klick ist überflüssig" - picking
+            # a profile in the "1. INDI WM" dropdown (onWmProfileChange())
+            # now calls this immediately, no separate role-card click/
+            # confirm needed. Follow-up feedback the same day: "natürlich
+            # musst du bei Wechsel das Profil auch starten. Wieviel Klicks
+            # soll der User denn noch machen" - remembering alone left the
+            # dropdown showing a profile that wasn't actually running at
+            # all, an even more confusing half-state. Now does both:
+            # remembers it (same as before) AND actually switches to it
+            # (stop whatever's running, start this one) - one selection,
+            # one result, matching every other switch endpoint's own
+            # stop/start/wait/lock pattern (_profile_switch_in_progress,
+            # _wait_for_profile_running()).
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"success": False, "error": "missing profile"}, status=400)
+                return
+            # Direct feedback (2026-09-14): "Wird überhaupt geprüft, ob die
+            # Auswahl mit dem gespeicherten Wert übereinstimmt, nachdem der
+            # Modus gewählt wurde?" - it wasn't: this endpoint (named for
+            # when it only ever served Host, before Client got the same
+            # "whatever's selected wins" treatment) always wrote
+            # _last_known_host_profile, regardless of which role was
+            # actually active - picking a profile from the dropdown while
+            # Client was the current choice silently recorded it as Host's
+            # memory instead. Simple, symmetric fix: write into whichever
+            # role is currently chosen, same as every other write site now.
+            if _pifinder_role_choice == "client":
+                _last_known_client_profile = profile
+            else:
+                _last_known_host_profile = profile
+            _profile_switch_in_progress = True
+            try:
+                try:
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                if srv_status["active_profile"] != profile:
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"(switching to '{profile}', selected in the profile dropdown)...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{profile}'...")
+                    try:
+                        webmanager_client.start_server(profile)
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _wait_for_profile_running(profile)
+                _save_mount_bridge_desired_state()
+                self._send_json({"success": True})
+                return
+            finally:
+                _profile_switch_in_progress = False
+
+        if parsed.path == "/api/pifinder_host_profile":
+            # Symmetric counterpart to /api/pifinder_client_profile below.
+            # "PiFinder host" has no single fixed profile name the way
+            # Client does - it can be whatever the user set up - so instead
+            # it restores _last_known_host_profile (see that global's own
+            # comment): whatever was last genuinely running while NOT on
+            # the dedicated Client profile. Direct feedback (2026-09-13):
+            # "wenn Host aktiv ist, musst du wieder zurück wechseln" -
+            # without this, switching to "PiFinder host" right after having
+            # been on "PFSM Client" left PFSM Client itself selected, and
+            # the existing per-driver add/remove flow would then reconfigure
+            # THAT profile for Host use - corrupting the one profile that's
+            # supposed to stay Client-only. A no-op (never sends a stop/
+            # start) if nothing has ever been remembered yet, or if the
+            # remembered profile is already the active one.
+            if not _last_known_host_profile:
+                self._send_json({"success": True, "profile": None})
+                return
+            target = _last_known_host_profile
+            _profile_switch_in_progress = True
+            try:
+                try:
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                if srv_status["active_profile"] != target:
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"(switching back to '{target}' for PiFinder host)...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{target}'...")
+                    try:
+                        webmanager_client.start_server(target)
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _wait_for_profile_running(target)
+                self._send_json({"success": True, "profile": target})
+                return
+            finally:
+                _profile_switch_in_progress = False
+
+        if parsed.path == "/api/pifinder_client_profile":
+            # "PiFinder Client" restores whatever profile is remembered for
+            # it (_last_known_client_profile) IF it still qualifies (no
+            # Mount Bridge - the one thing that's structurally, never
+            # legitimately compatible with this role, see deriveProfileRole()
+            # on the frontend: LX200+bridge reads as 'aio', not 'host').
+            #
+            # Direct feedback (2026-09-13), the exact sequence: "1. Profil
+            # aktivieren, 2. dann schauen, dass alles richtig eingerichtet
+            # ist... wenn dann(!) [ein Fehler auftritt, z.B. der User
+            # wechselt im Client Modus auf ein nicht geeignetes Profil,]
+            # dann kommt die Warnung" - activation itself never shows a
+            # warning: if the remembered profile no longer qualifies, it
+            # silently falls back to the well-known default (healing that
+            # default too, if even IT somehow has Mount Bridge on it),
+            # exactly like the "nothing remembered yet" bootstrap case. The
+            # "client-has-bridge" showstopper card (collectActiveShowstoppers())
+            # still fires - but only for the live case this leaves uncovered
+            # on purpose: the user manually picking an unsuitable profile
+            # via the dropdown WHILE ALREADY on this role, an active
+            # deviation happening right now, not a leftover from before.
+            #
+            # ?reset=1 (the explicit "Reset to minimal Client set" button)
+            # still force-replaces the CURRENTLY remembered profile's
+            # drivers back to exactly PiFinder LX200 + PiFinder Simulator -
+            # Grundsatz: "Minimal-Ansatz ist ein bewusster Klick des Users,
+            # nicht von dir" for anything BEYOND Mount Bridge (other drivers
+            # the user deliberately added stay untouched unless they ask).
+            qs = parse_qs(parsed.query)
+            reset = qs.get("reset", ["0"])[0] == "1"
+            changed = False
+            _profile_switch_in_progress = True
+            try:
+                remembered = _last_known_client_profile
+                remembered_qualifies = False
+                if remembered:
+                    try:
+                        remembered_qualifies = not webmanager_client.pifinder_driver_status(remembered)["has_bridge"]
+                    except webmanager_client.WebManagerError:
+                        remembered_qualifies = False  # profile no longer exists at all
+
+                if remembered and remembered_qualifies:
+                    profile = remembered
+                    if reset:
+                        try:
+                            changed = webmanager_client.reset_client_profile_drivers(profile)
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                        if changed:
+                            _mb_log(
+                                f"reset PiFinder Client profile '{profile}' back to "
+                                "PiFinder LX200 + PiFinder Simulator only."
+                            )
+                else:
+                    profile = webmanager_client.PIFINDER_CLIENT_PROFILE_NAME
+                    try:
+                        changed = webmanager_client.ensure_pifinder_client_profile()
+                        if webmanager_client.pifinder_driver_status(profile)["has_bridge"]:
+                            changed = webmanager_client.reset_client_profile_drivers(profile) or changed
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    if changed:
+                        reason = (
+                            f"'{remembered}' no longer qualifies (Mount Bridge present)"
+                            if remembered else "first time this role has been used"
+                        )
+                        _mb_log(
+                            f"using default PiFinder Client profile '{profile}' ({reason}) - "
+                            "PiFinder LX200 + PiFinder Simulator only."
+                        )
+                try:
+                    srv_status = webmanager_client.server_status()
+                except webmanager_client.WebManagerError:
+                    srv_status = {"running": False, "active_profile": None}
+                # `changed` also needs a restart even if this was ALREADY the
+                # active profile - found live (2026-09-13): indiserver only
+                # reads a profile's driver list at its own startup, so healing
+                # the DB row alone (above) does nothing observable until it
+                # restarts. Without this, self-heal while already on this role
+                # silently updated the profile but left the stale (bloated)
+                # driver set running - exactly the "system heals it" guarantee
+                # this endpoint exists for, quietly failing in its most likely
+                # trigger case (drift discovered while already active, not just
+                # on first switching in).
+                if srv_status["active_profile"] != profile or (changed and srv_status["running"]):
+                    if srv_status["running"]:
+                        _mb_log(f"stopping profile '{srv_status['active_profile']}' "
+                                f"({'applying the driver fix' if srv_status['active_profile'] == profile else f'switching to {profile!r}'})...")
+                        try:
+                            webmanager_client.stop_server()
+                        except webmanager_client.WebManagerError as e:
+                            self._send_json({"success": False, "error": str(e)}, status=502)
+                            return
+                    _mb_log(f"starting profile '{profile}'...")
+                    try:
+                        webmanager_client.start_server(profile)
+                    except webmanager_client.WebManagerError as e:
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _wait_for_profile_running(profile)
+                _pifinder_role_choice = "client"
+                _last_known_client_profile = profile
+                _save_mount_bridge_desired_state()
+                self._send_json({"success": True, "profile": profile})
+                return
+            finally:
+                _profile_switch_in_progress = False
+
+        if parsed.path == "/api/pifinder_role_choice":
+            # docs/concepts/pifinder_client_role_and_indi_setup_review.md,
+            # section 3a - the one bit that tells "PiFinder host"/"PiFinder
+            # Client" apart, since both derive the identical role === 'host'
+            # from the profile alone. Bookkeeping only: never touches the
+            # actual INDI/Web Manager configuration, same reasoning as
+            # switching between "PiFinder host"/"Control host" today (see
+            # onRoleCardClick() - those don't reconfigure a profile either,
+            # they only offer the matching setup steps for whichever a user
+            # then goes on to do manually).
+            qs = parse_qs(parsed.query)
+            choice = qs.get("choice", [""])[0]
+            # choice="" clears it back to None - found live (2026-09-20):
+            # switching to "Control host" never called this endpoint at all
+            # (onRoleCardClick() only wires host/client here, see its own
+            # comment), so a stale "client"/"host" choice from before
+            # survived the switch and kept driving isPiFinderClientRole()-
+            # gated UI (the role card itself, the 'client-has-bridge'
+            # showstopper, its Reset button) even though the profile's
+            # actual shape had moved to the unambiguous 'ctrl'/'ctrl-
+            # incomplete' derivation, which needs no disambiguation at all.
+            if choice not in ("host", "client", ""):
+                self._send_json({"success": False, "error": f"invalid choice '{choice}'"}, status=400)
+                return
+            _pifinder_role_choice = choice or None
+            # Direct feedback (2026-09-13): "wechselt das Profil wieder nicht
+            # zurück, sondern bleibt auf PFSM Client stehen" - unlike Client
+            # (which records _last_known_client_profile itself, synchronously,
+            # as part of its own dedicated endpoint), choosing "host" here
+            # never recorded _last_known_host_profile directly - it relied
+            # entirely on the next _mount_bridge_readiness_watchdog() tick to
+            # notice and record it via _note_active_profile(), which only
+            # works once role_choice has ALREADY flipped to "host" (a
+            # chicken-and-egg gap on the very tick this request itself
+            # causes). Record it explicitly, right here, the same way Client
+            # already does - whatever's actually running the moment "host" is
+            # chosen becomes the profile restorePiFinderHostProfile() returns
+            # to next time.
+            # Direct feedback (2026-09-13): "Der User muss die Wahl haben! Die
+            # Warnungen genügen als Hinweis." - restated the original,
+            # unchanged requirement after this session's dedicated-Client-
+            # profile mechanism had drifted away from it: this endpoint only
+            # ever fires as part of a deliberate, confirmed role-card click
+            # (onRoleCardClick()) - whatever profile is actually active at
+            # that moment IS the user's choice, recorded as-is, symmetrically
+            # for both roles. No qualification/reserved-profile gate here on
+            # purpose - the existing showstopper warnings (Mount Bridge
+            # present, extra drivers) are the agreed-on safety net for a
+            # pick that doesn't fit, not a silent override. That gate still
+            # applies to _note_active_profile() below, which runs
+            # unattended (the background readiness watchdog, not a click)
+            # and has no confirm dialog of its own to rely on instead.
+            try:
+                srv_status = webmanager_client.server_status()
+                active = srv_status["active_profile"] if srv_status["running"] else None
+            except webmanager_client.WebManagerError:
+                active = None
+            if active and choice == "host":
+                _last_known_host_profile = active
+            elif active and choice == "client":
+                _last_known_client_profile = active
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/maintenance_mode_toggle":
+            # Direct request (2026-09-11, revised 2026-09-12, revised again
+            # 2026-09-19 after live use showed devices coming back on their
+            # own while "off"): one button, three things on the way ON, all
+            # three reversed in the opposite order on the way back OFF.
+            # NOTE (2026-09-19, same day): a same-day draft of this comment
+            # also stopped/started stellarmatewebmanager.service itself
+            # (port 8624) as a fourth step - reverted live, same day, per
+            # direct correction: "Der INDI WM darf nicht gestoppt werden,
+            # nur das Profil (und Autostart/Autoconnect raus)." Stopping the
+            # Web Manager process itself was one step too many - it must
+            # stay reachable (e.g. for the Ekos Profile Editor's own
+            # save-as-Web-Manager-profile round trip) even while maintenance
+            # mode is on.
+            #
+            # 1. The profile's own Auto Start / Auto Connect flags, forced
+            #    off via webmanager_client.set_profile_autostart()/
+            #    set_profile_autoconnect(). Found live 2026-09-19: without
+            #    this, the Web Manager's own boot-time autostart or its
+            #    post-launch autoconnect could re-arm the very profile this
+            #    button just stopped, with no code path here even looking -
+            #    the two watchdog gates below only stop *this* process from
+            #    reconnecting, not the Web Manager from doing it on its own.
+            #    Original values captured first so OFF restores exactly
+            #    what was there, not a hardcoded guess.
+            # 2. KStars/Ekos's *own* profile session (org.kde.kstars.Ekos.
+            #    stop()/start() via _ekos_qdbus() - the same D-Bus calls
+            #    _ekos_start_profile() already uses elsewhere) - stops Ekos's
+            #    own INDI client without closing KStars itself.
+            # 3. The INDI Web Manager's *profile* (indiserver + every driver
+            #    it launched - verified live to run as direct child
+            #    processes of the stellarmatewebmanager.service cgroup, not
+            #    a separate systemd unit) via webmanager_client.stop_server()
+            #    / start_server(). This is NOT stellarmatewebmanager.service
+            #    itself (port 8624 stays up the whole time - see the NOTE
+            #    above - so this Control Center can still call
+            #    start_server() later, and so can anything else, like Ekos).
+            #
+            # This Control Center's OWN driver self-healing
+            # (_mount_bridge_readiness_self_heal()) is gated on
+            # _maintenance_mode_since directly, same as
+            # _pifinder_lx200_auto_reconnect() - unchanged from the first
+            # cut of this feature.
+            #
+            # The INDI WM profile name is captured into
+            # _maintenance_mode_profile *before* stopping it, since
+            # server_status() reports no active_profile once stopped - the
+            # only place the name survives for turning this back off
+            # (including across a Control Center restart while it's on).
+            #
+            # _mb_desired_connected is already declared global earlier in
+            # this same do_POST method (the /api/mount_bridge_connect
+            # disconnect branch above) - Python raises "assigned to before
+            # global declaration" if it's redeclared global a second time
+            # here, even in an unrelated branch (verified live: the interp
+            # analyzes the whole function body flatly, not per-branch).
+            global _maintenance_mode_since, _maintenance_mode_profile
+            global _maintenance_mode_orig_autostart, _maintenance_mode_orig_autoconnect
+            turning_on = _maintenance_mode_since is None
+            if turning_on:
+                try:
+                    profile = webmanager_client.server_status().get("active_profile")
+                except webmanager_client.WebManagerError as e:
+                    profile = None
+                    _mb_log(f"maintenance mode: could not read active INDI profile: {e}")
+                _maintenance_mode_profile = profile
+                _maintenance_mode_since = time.time()
+                _mb_desired_connected = False
+
+                if profile:
+                    try:
+                        meta = next(
+                            (p for p in webmanager_client.list_profiles() if p.get("name") == profile), {}
+                        )
+                        _maintenance_mode_orig_autostart = bool(meta.get("autostart"))
+                        _maintenance_mode_orig_autoconnect = bool(meta.get("autoconnect"))
+                        webmanager_client.set_profile_autostart(profile, False)
+                        webmanager_client.set_profile_autoconnect(profile, False)
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"maintenance mode: could not turn off Auto Start/Auto "
+                                f"Connect on profile '{profile}': {e}")
+
+                ekos_stop = _ekos_qdbus("org.kde.kstars.Ekos.stop")
+                if ekos_stop.returncode != 0:
+                    _mb_log(f"maintenance mode: KStars/Ekos stop failed or KStars not running: "
+                            f"{ekos_stop.stderr.strip() or ekos_stop.stdout.strip()}")
+
+                try:
+                    webmanager_client.stop_server()
+                except webmanager_client.WebManagerError as e:
+                    _mb_log(f"maintenance mode: could not stop INDI profile: {e}")
+
+                _mb_log("Maintenance mode ON - Auto Start/Auto Connect off, KStars/Ekos "
+                        "profile stopped, INDI profile stopped, this Control Center's "
+                        "driver self-healing paused until turned off.")
+                # KNOWN LIMITATION (2026-09-19, direct finding, accepted per direct instruction -
+                # "KStars schliessen ist keine Option, dann kann ich keine Profile editieren"):
+                # KStars/Ekos can reconnect to the Web Manager profile entirely on its own within
+                # seconds of the stop above (its own internal reconnect logic - confirmed live via
+                # its own log: "Establishing communication with remote INDI Web Manager..." →
+                # re-creates/re-saves the profile → starts it - all without any Auto Connect
+                # checkbox involved, and without this Control Center doing anything). Nothing here
+                # can prevent that short of closing KStars entirely, which was explicitly rejected
+                # since it would also block editing profiles in the first place. If a driver looks
+                # "wrong" again moments after enabling maintenance mode, this is almost certainly
+                # why - check this log for a fresh Ekos reconnect, not a bug in this toggle.
+                _mb_log("Maintenance mode note: KStars/Ekos may reconnect and restart the INDI "
+                        "profile on its own within seconds (its own internal behavior, not "
+                        "something this Control Center can prevent without closing KStars "
+                        "entirely - see this handler's own comment). If that happens, this is "
+                        "not a bug in this toggle.")
+            else:
+                if _maintenance_mode_profile:
+                    try:
+                        webmanager_client.start_server(_maintenance_mode_profile)
+                        if _maintenance_mode_orig_autostart:
+                            webmanager_client.set_profile_autostart(_maintenance_mode_profile, True)
+                        if _maintenance_mode_orig_autoconnect:
+                            webmanager_client.set_profile_autoconnect(_maintenance_mode_profile, True)
+                    except webmanager_client.WebManagerError as e:
+                        _mb_log(f"maintenance mode: could not restart INDI profile "
+                                f"'{_maintenance_mode_profile}': {e}")
+                else:
+                    _mb_log("maintenance mode: no INDI profile name was captured - "
+                            "start it manually from the Setup checklist above.")
+
+                ekos_start = _ekos_qdbus("org.kde.kstars.Ekos.start")
+                if ekos_start.returncode != 0:
+                    _mb_log(f"maintenance mode: KStars/Ekos start failed or KStars not running: "
+                            f"{ekos_start.stderr.strip() or ekos_start.stdout.strip()}")
+
+                _maintenance_mode_since = None
+                _maintenance_mode_profile = None
+                _maintenance_mode_orig_autostart = None
+                _maintenance_mode_orig_autoconnect = None
+                _mb_desired_connected = None
+                _mb_log("Maintenance mode OFF - reconnecting, normal self-healing resumed.")
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True, "maintenance_mode_since": _maintenance_mode_since})
+            return
+
+        if parsed.path == "/api/pifinder_service_notice_dismiss":
+            # Only hides the header banner - does NOT clear
+            # _pifinder_service_auto_stopped_for_remote itself, which
+            # _pifinder_service_sync_with_lx200_target() still needs intact
+            # to know it's the one that should restart pifinder.service once
+            # PiFinder LX200 goes local again (see that variable's own
+            # comment).
+            global _pifinder_service_notice_dismissed
+            _pifinder_service_notice_dismissed = True
+            _save_mount_bridge_desired_state()
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/ekos_start_profile":
+            # Explicit, user-initiated only (Autoconnect step 5) - see
+            # _ekos_start_profile()'s own docstring for why this is safe to
+            # do here despite _ekos_indi_status() elsewhere deliberately
+            # never touching Ekos from a passive poll.
+            qs = parse_qs(parsed.query)
+            profile = qs.get("profile", [""])[0]
+            if not profile:
+                self._send_json({"attempted": False, "reason": "missing 'profile' query param"}, status=400)
+                return
+            self._send_json(_ekos_start_profile(profile))
             return
 
         if parsed.path == "/api/mount_bridge_coupling":
@@ -2340,7 +6635,7 @@ class Handler(BaseHTTPRequestHandler):
             threshold_arg = qs.get("threshold", [""])[0]
             action_arg = qs.get("action", [""])[0]
             try:
-                threshold = float(threshold_arg) if threshold_arg else None
+                threshold = _parse_threshold(threshold_arg) if threshold_arg else None
             except ValueError:
                 self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
                 return
@@ -2359,6 +6654,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
+            global _mb_desired_coupling_mode, _mb_desired_coupling_threshold, _mb_desired_coupling_action
+            _mb_desired_coupling_mode = mode_map[mode_arg]
+            _mb_desired_coupling_threshold = threshold
+            _mb_desired_coupling_action = action_arg or None
+            _save_mount_bridge_desired_state()
             self._send_json({"success": True})
             return
 
@@ -2375,7 +6675,7 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             threshold_arg = qs.get("threshold", [""])[0]
             try:
-                threshold = float(threshold_arg)
+                threshold = _parse_threshold(threshold_arg)
             except ValueError:
                 self._send_json({"success": False, "error": f"invalid threshold '{threshold_arg}'"}, status=400)
                 return
@@ -2387,6 +6687,64 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log(f"  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_align_config":
+            # #191/#217: search radius/point count/min altitude for
+            # candidate selection - these already existed as INDI properties
+            # (AlignConfigNP) but had no GUI control at all until now (direct
+            # feedback, 2026-08-10). Same one-field-at-a-time pattern as
+            # /api/mount_bridge_threshold above.
+            qs = parse_qs(parsed.query)
+            try:
+                values = {}
+                if "radius" in qs:
+                    values["RADIUS_DEG"] = _parse_threshold(qs["radius"][0])
+                if "count" in qs:
+                    values["POINT_COUNT"] = _parse_threshold(qs["count"][0])
+                if "min_altitude" in qs:
+                    values["MIN_ALTITUDE_DEG"] = _parse_threshold(qs["min_altitude"][0])
+            except ValueError as e:
+                self._send_json({"success": False, "error": f"invalid value: {e}"}, status=400)
+                return
+            if not values:
+                self._send_json({"success": False, "error": "no radius/count/min_altitude given"}, status=400)
+                return
+            _mb_log(f"setting alignment point selection ({values})...")
+            try:
+                indi_client.set_number("PiFinder Mount Bridge", "ALIGN_CONFIG", values)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_align_direction":
+            # #191: preferred-direction hard filter for candidate selection -
+            # found live under real sky (direct feedback, 2026-08-10):
+            # "vom Zenith aus wandert der PiFinder sonst gerne mal in eine
+            # Region, die z.B. nicht geeignet ist" (e.g. a real obstruction
+            # in one azimuth quadrant that min_altitude alone can't model).
+            qs = parse_qs(parsed.query)
+            direction = qs.get("direction", [""])[0].strip().upper()
+            element = {
+                "ANY": "ALIGN_DIR_ANY", "N": "ALIGN_DIR_N", "E": "ALIGN_DIR_E",
+                "S": "ALIGN_DIR_S", "W": "ALIGN_DIR_W",
+            }.get(direction)
+            if element is None:
+                self._send_json({"success": False, "error": f"invalid direction '{direction}' (expected ANY/N/E/S/W)"}, status=400)
+                return
+            _mb_log(f"setting alignment preferred direction to '{direction}'...")
+            try:
+                indi_client.set_switch("PiFinder Mount Bridge", "ALIGN_DIRECTION", element)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
             self._send_json({"success": True})
             return
 
@@ -2404,6 +6762,250 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
             _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_goto_home":
+            # Native OnStep Home (TELESCOPE_HOME.GO) - bypasses Mount Bridge,
+            # works even while below horizon (§8.8 showstopper action).
+            _mb_log("sending mount to its native Home position...")
+            try:
+                indi_client.trigger_goto_home()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_reposition_revert":
+            # 2026-09-11, direct feedback: exposes REPOSITION_CONFIRM_NO
+            # ("Revert to held target") - already-existing, already-safe
+            # driver logic, previously only reachable by waiting up to 45s
+            # or via the raw INDI Control Panel. See
+            # trigger_reposition_revert()'s own docstring for why this is
+            # PushTo-safe (verified live, doesn't touch PiFinder's own
+            # push-to counter/target).
+            _mb_log("reverting to the held target now...")
+            try:
+                indi_client.trigger_reposition_revert()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_sync_to_pifinder_visible":
+            # Below-horizon recovery action (§8.8 showstopper) - syncs the
+            # mount to whatever PiFinder LX200 is CURRENTLY showing, no
+            # freshness/source check (see sync_mount_to_pifinder_visible_
+            # position()'s own docstring for why this is a deliberately
+            # separate primitive from /api/mount_bridge_manual_sync).
+            _mb_log("syncing mount to PiFinder's currently visible position...")
+            try:
+                indi_client.sync_mount_to_pifinder_visible_position()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/optical_train_sync":
+            # Manual trigger (docs/concepts/optical_train_device_sync.md §4.2)
+            # - covers a mount driver switch the automatic Full-Simulation
+            # on/off pair (§4.1) never sees, e.g. a user directly linking a
+            # new real mount driver via KStars/the StellarMate app (the
+            # 2026-09-26 session's own real-hardware transition). Swaps every
+            # optical-train field whose CURRENT value is exactly
+            # `from_device` to `to_device` - not just "mount", see
+            # swap_optical_train_devices()'s own docstring.
+            qs = parse_qs(parsed.query)
+            from_device = qs.get("from_device", [_OPTICAL_TRAIN_SIM_DEVICE])[0]
+            to_device = qs.get("to_device", [""])[0]
+            if not to_device:
+                self._send_json({"success": False, "error": "to_device is required"}, status=400)
+                return
+            _mb_log(f"syncing optical trains: \"{from_device}\" -> \"{to_device}\"...")
+            try:
+                changed = indi_client.swap_optical_train_devices(from_device, to_device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log(f"  done: {changed}" if changed else "  done: nothing matched, no train changed.")
+            self._send_json({"success": True, "changed": changed})
+            return
+
+        if parsed.path == "/api/mount_bridge_goto_held":
+            # Manual, immediate one-shot: sends the mount to the held
+            # ORIGINAL_TARGET, not PiFinder's current live position (see
+            # trigger_goto_held()'s own docstring) - the recovery action for
+            # when the mount was physically disturbed (bumped, a
+            # friction-clutch slip, overbalance) and PiFinder's own live
+            # solve reflects that same disturbance, not the original intent.
+            _mb_log("sending mount back to the held target...")
+            try:
+                indi_client.trigger_goto_held()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_align_held":
+            # Manual, immediate one-shot: sends the held ORIGINAL_TARGET to
+            # PiFinder itself (see trigger_align_held()'s own docstring) -
+            # unlike goto_held above, this corrects PiFinder's own belief
+            # about "what am I pushed-to" rather than the mount, so a later
+            # Mount Bridge restart doesn't re-read PiFinder's still-wrong
+            # target as its recovery baseline and slew the mount right back.
+            _mb_log("sending held target to PiFinder...")
+            try:
+                indi_client.trigger_align_held()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_abort":
+            # Emergency stop - see #179. Two steps, in this order:
+            # 1. ABORT_MOUNT stops the mount's *current* physical motion
+            #    immediately.
+            # 2. Coupling -> Off (same as Decouple/onDecoupleClick()) stops
+            #    Mount Bridge from re-triggering another correction on its
+            #    next poll tick - found live 2026-08-07: sending ABORT
+            #    alone stopped the mount for a moment, then Auto-correct/
+            #    Goto-Forward just synced and re-slewed it right back
+            #    toward the same target, since nothing about the drift/mode
+            #    that caused the original correction had changed. A stop
+            #    button that only pauses for one tick isn't a stop button.
+            _mb_log("EMERGENCY STOP: sending ABORT to the mount...")
+            try:
+                indi_client.trigger_abort_mount()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  decoupling (Coupling -> Off) so nothing re-triggers another correction...")
+            try:
+                indi_client.set_coupling_mode("MODE_OFF")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_multialign_start":
+            # #191/#217: kicks off a Multi-Point Alignment sequence. Fresh
+            # candidates are fetched by the driver itself on every Start
+            # (fetchAlignmentCandidates()) - nothing to pass from here.
+            # Independent of Coupling mode, same as Manual Sync/Abort above.
+            _mb_log("starting Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_start()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  started - see the Alignment progress readout for per-point status.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_multialign_stop":
+            # #217: verified live against Telescope Simulator that this
+            # correctly aborts an in-progress sequence at the INDI level
+            # (stopMultiPointAlignment() -> abortMount()) - the earlier
+            # "can't abort" report traced to this button not existing in the
+            # GUI at all, not to a backend fault.
+            _mb_log("stopping Multi-Point Alignment...")
+            try:
+                indi_client.trigger_multipoint_align_stop()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/truth_injector_toggle":
+            global _truth_injector_desired
+            # device: optional override, see TRUTH_INJECTOR_DEFAULT_DEVICE's
+            # own comment - "PiFinder Simulator" (independent truth) unless
+            # a caller explicitly asks for "Telescope Simulator" (Multi-Point
+            # Alignment's mount-mirroring case).
+            qs = parse_qs(parsed.query)
+            requested_device = qs.get("device", [TRUTH_INJECTOR_DEFAULT_DEVICE])[0]
+            requested_host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            # 2026-09-27, live-caught: reseedFakeSolve() toggles the injector
+            # off, does a one-shot /api/fake_solve_enable_from_mount (which
+            # itself sets fake_solve_active=true), then toggles again to turn
+            # it back on. That second toggle's own auto-detect (below) reads
+            # fake_solve_active_live - which the one-shot seed it just did
+            # already made true - and concludes "something's already on,
+            # this click means stop", turning it off instead of restarting
+            # it. Full Simulation was left silently, permanently off after
+            # every single "Re-seed from mount" click. An explicit
+            # `direction=on`/`off` bypasses the ambiguous combined-state
+            # check entirely for a caller that already knows, unambiguously,
+            # which direction it wants - the auto-detect below is for a
+            # genuine, undirected user click only.
+            direction = qs.get("direction", [""])[0]
+            if direction not in ("", "on", "off"):
+                self._send_json({"success": False, "error": f"invalid direction '{direction}'"}, status=400)
+                return
+            if not _valid_pifinder_host(requested_host):
+                self._send_json({"success": False, "error": f"invalid host '{requested_host}'"}, status=400)
+                return
+            with _truth_injector_lock:
+                # Decide On/Off from the REAL, live combined state (2026-09-09,
+                # "OFF ist OFF") - not just `_truth_injector_desired`, which
+                # only remembers THIS toggle's own intent and stays False if
+                # e.g. Manual one-shot seed (#205) is what's actually holding
+                # fake_solve_active true. A click while anything is injected
+                # always clears it - "start" only fires when truly nothing is.
+                # Skipped entirely when `direction` was given explicitly (see
+                # comment above).
+                should_stop = (
+                    direction == "off" if direction
+                    else (_truth_injector_desired or _pifinder_fake_solve_active_live(requested_host))
+                )
+                if should_stop:
+                    _truth_injector_desired = False
+                    _mb_log("stopping PiFinder Truth Injector / clearing Injected Solve...")
+                    try:
+                        _truth_injector_stop()
+                    except Exception as e:
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _imu_injector_stop()
+                    _mb_log("  done.")
+                else:
+                    _truth_injector_desired = True
+                    _mb_log(f"starting PiFinder Truth Injector (feeding '{requested_device}''s "
+                             "position into PiFinder's /api/fake_solve, simulator testing only)...")
+                    try:
+                        _truth_injector_start(requested_device, requested_host)
+                    except Exception as e:
+                        _truth_injector_desired = False
+                        _mb_log(f"  failed: {e}")
+                        self._send_json({"success": False, "error": str(e)}, status=502)
+                        return
+                    _imu_injector_start(requested_device, requested_host)
+                    _mb_log("  started.")
             self._send_json({"success": True})
             return
 
@@ -2428,6 +7030,100 @@ def main():
     # needed here: nothing else can possibly be running yet this early.
     _hwtest_running = True
     threading.Thread(target=_startup_hardware_test, daemon=True).start()
+    # #118: auto-heal "PiFinder LX200"'s silent stale-connection bug after a
+    # pifinder.service restart - see _pifinder_lx200_reconnect_watchdog()'s
+    # own docstring.
+    threading.Thread(target=_pifinder_lx200_reconnect_watchdog, daemon=True).start()
+    # Mirrors this device's own mode/role state into "PiFinder LX200"'s
+    # PIFINDER_MODE INDI property - see _pifinder_mode_indi_mirror_watchdog()'s
+    # own docstring.
+    threading.Thread(target=_pifinder_mode_indi_mirror_watchdog, daemon=True).start()
+    # #191/#217: found live (2026-08-10) - this unit's own KillMode=process
+    # (see its own comment in the .service file, needed for Uninstall's
+    # --selfmove continuation) means a restart/redeploy does NOT kill this
+    # process's subprocess children, only the main process itself. A Truth
+    # Injector left running from a previous instance survives as an orphan,
+    # invisible to this fresh instance's own _truth_injector_desired=False -
+    # directly contradicting this feature's own documented guarantee
+    # ("always starts back OFF... never persists across reboots") and, worse,
+    # silently keeps feeding PiFinder a synthetic solve indefinitely with no
+    # visible control anywhere. Enforce the guarantee for real: kill any
+    # stray instance by command line before the watchdog (which only manages
+    # processes THIS instance itself started) takes over.
+    killed = subprocess.run(
+        ["pkill", "-f", "test_tools/pifinder_truth_injector.py"],
+    ).returncode == 0
+    if killed:
+        _mb_log("killed a stray PiFinder Truth Injector process left over from before this restart.")
+    if subprocess.run(["pkill", "-f", str(IMU_INJECTOR_SCRIPT)]).returncode == 0:
+        _mb_log("killed a stray PiFinder IMU Injector process left over from before this restart.")
+    # Found live (2026-09-13, on the actual device this process feeds - not
+    # the remote-coupling case below): killing the stray process above does
+    # NOT clear PiFinder's own fake_solve_active flag on 127.0.0.1 - only
+    # _truth_injector_stop() does that, and it's only ever called from a
+    # graceful toggle-off, never from this startup path. Confirmed live: a
+    # Truth Injector left desired-on across an ungraceful restart (kill/
+    # crash/redeploy) left fake_solve_active stuck True with no process left
+    # to blame it on - PiFinder then kept serving a frozen fake position
+    # (wrong Alt, no "below horizon", stale-reading Drift) forever after,
+    # completely invisible from this GUI since the stray-process check above
+    # only looks for the process, not the flag it leaves behind. Same
+    # unconditional cleanup as the remote case below, just for this device
+    # itself.
+    _cleared_local_80 = _pifinder_disable_fake_solve("80")
+    _cleared_local_8080 = _pifinder_disable_fake_solve("8080")
+    if _cleared_local_80 or _cleared_local_8080:
+        _mb_log(
+            "cleared a stale local Injected Solve flag left stuck on from before this restart."
+        )
+    threading.Thread(target=_truth_injector_watchdog, daemon=True).start()
+    # #240: readiness + self-healing for Mount Bridge itself - see its own
+    # comment for the full rationale. Restore what was desired before the
+    # last restart (MOUNT_BRIDGE_DESIRED_STATE_FILE) BEFORE starting the
+    # watchdog, so its very first tick already has something to compare
+    # against instead of a blank slate.
+    _load_mount_bridge_desired_state()
+    # Found live (2026-09-13), direct feedback ("Driftanzeige ist nicht
+    # korrekt, obwohl der Treiber korrekt verbunden ist"): the stray-local-
+    # process kill above (and _truth_injector_stop()'s own disable calls)
+    # only ever clear fake_solve_active on 127.0.0.1 - a Control host whose
+    # Truth Injector was feeding a REMOTE PiFinder when this process last
+    # went down (any restart that isn't a graceful toggle-off: a redeploy,
+    # a crash, systemd restart) leaves that remote's fake_solve_active
+    # flag stuck true with nothing left to keep refreshing it. The remote
+    # PiFinder itself then keeps reporting a frozen, aging position
+    # instead of "no solve" - which Mount Bridge (coupled to that same
+    # remote) correctly reads as stale (SOLVE_FRESHNESS) but the GUI keeps
+    # showing "Full Simulation: on" as if it were still live. Same
+    # guarantee as the local case, extended to wherever this device was
+    # last actually configured to feed - _last_known_lx200_remote is the
+    # one persisted fact that says which remote that could even be.
+    if _last_known_lx200_remote:
+        _remote_host_for_cleanup = _last_known_lx200_remote.rsplit(":", 1)[0]
+        _cleared_80 = _pifinder_disable_fake_solve("80", _remote_host_for_cleanup)
+        _cleared_8080 = _pifinder_disable_fake_solve("8080", _remote_host_for_cleanup)
+        if _cleared_80 or _cleared_8080:
+            _mb_log(
+                f"sent a fake-solve-off reset to remote PiFinder '{_remote_host_for_cleanup}' on startup "
+                "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
+            )
+    threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    # #372 (simplified) - independent of the readiness watchdog above; see
+    # _guiding_hold_watchdog()'s own docstring.
+    threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()
+    # One-time check, not a watchdog: an already-running pifinder.service
+    # left over from before this Control Center's own start (e.g. surviving
+    # an Update run from before the setup script's start->restart fix, or a
+    # manual `systemctl start` from outside this GUI) won't self-correct on
+    # its own - just log it once so it's visible instead of silently stale.
+    # Deliberately not auto-restarted: this only reports, it never
+    # interrupts a possibly-active observing session on its own initiative.
+    if _pifinder_service_settings_stale():
+        _mb_log(
+            "pifinder.service is running with a stale scheduling priority (doesn't match the "
+            "currently configured Nice=/CPUWeight=) - restart it (Mode tile or the Control Center "
+            "itself) to apply the current settings."
+        )
     _server.serve_forever()
 
 

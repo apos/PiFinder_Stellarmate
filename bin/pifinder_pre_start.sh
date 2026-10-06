@@ -3,6 +3,23 @@
 # Runs as ExecStartPre in pifinder.service (as root)
 # Ensures all groups, permissions, and overlays are present
 
+# groupadd/usermod require /etc/group and /etc/passwd to be well-formed,
+# newline-terminated files. A missing trailing newline on the last line makes
+# shadow-utils misreport "Non-text file" / "cannot open ...: Cannot allocate
+# memory" (not a real ENOMEM) and silently no-op instead of creating the
+# group/updating the user. Already fixed in pifinder_stellarmate_setup.sh
+# (#270) and restore_after_smos_update.sh (#276) - this script runs the
+# identical groupadd/usermod calls at every single boot (ExecStartPre) and
+# had the same gap, reproduced live on a real Pi5 reboot (2026-09-05):
+# spi/gpio groups silently never got (re)created, pifinder.service
+# crash-looped forever with systemd's own "216/GROUP" exit code.
+for f in /etc/group /etc/passwd; do
+    if [ -n "$(tail -c 1 "$f")" ]; then
+        echo "⚠️  $f is missing its trailing newline - fixing before groupadd/usermod."
+        printf '\n' >> "$f"
+    fi
+done
+
 # Create groups if they don't exist
 getent group spi  > /dev/null 2>&1 || groupadd spi
 getent group gpio > /dev/null 2>&1 || groupadd gpio
@@ -65,6 +82,29 @@ _mask_user_unit "pipewire.socket"
 _mask_user_unit "pipewire-pulse.socket"
 chown -R "${PIFINDER_USER}:${PIFINDER_USER}" "${SYSTEMD_USER_DIR}"
 
+# Baloo (KDE's file indexer): disable permanently. Found live (2026-09-06,
+# Pi4) chewing CPU right after login/boot on a device that already has OOM
+# headroom problems (see indi_pifinder_mount_bridge build OOM-kills,
+# 00116) - nothing on this astro computer benefits from desktop file-content
+# search. `balooctl6 disable` must run as the real user (it writes to their
+# own $HOME/.config/baloofilerc), not root, hence the sudo -u below even
+# though this whole script otherwise runs as root. Config lives under
+# /home, so it already survives a BTRFS reset on its own - this check is
+# just to also cover a first boot after a fresh SMOS install/user, where
+# the file doesn't exist yet and Baloo defaults to enabled.
+if command -v balooctl6 &>/dev/null; then
+    BALOO_RC="/home/${PIFINDER_USER}/.config/baloofilerc"
+    if [ -f "${BALOO_RC}" ] && grep -q '^Indexing-Enabled=false$' "${BALOO_RC}"; then
+        echo "✅ Baloo file indexer already disabled - OK"
+    else
+        sudo -u "${PIFINDER_USER}" balooctl6 disable &>/dev/null \
+            && echo "✅ Baloo file indexer disabled" \
+            || echo "⚠️  Could not disable Baloo file indexer"
+    fi
+else
+    echo "✅ balooctl6 not present - OK"
+fi
+
 # Remove pipewire-libcamera - it accesses the camera directly, bypassing WirePlumber
 if pacman -Q pipewire-libcamera &>/dev/null; then
     pacman -R --noconfirm pipewire-libcamera 2>/dev/null \
@@ -121,12 +161,24 @@ if echo "$HW_MODEL" | grep -q "Raspberry Pi 5"; then
         echo ">> [Pi5] liblgpio.so: OK"
     fi
 
-    # Install rpi-lgpio into the venv if it isn't importable
-    # Installed from local packages/ - no internet needed
+    # Install rpi-lgpio into the venv if it's missing OR if the real
+    # RPi.GPIO package (from requirements_additional.txt, installed via the
+    # main requirements.txt) has silently overwritten it - both packages
+    # provide files under site-packages/RPi/GPIO/, so `import RPi.GPIO`
+    # alone always succeeds either way and can't tell them apart. The real
+    # package doesn't know the Pi5 SoC (RP1) and raises "Cannot determine
+    # SOC peripheral base address" only later, at GPIO.setup() time - not at
+    # import time - so it silently passes an import-only check. rpi-lgpio
+    # uniquely exposes a `lgpio` attribute on the GPIO module itself; check
+    # that instead of just importability. No hardware access here (no pin
+    # claimed), so this is safe to run on every service start. Found live
+    # (2026-09-05, Pi5): pifinder.service fell back to DisplayHeadless (dark
+    # OLED) for hours because this check only ever looked at importability.
     if [ -f "${PIFINDER_VENV}/bin/python" ]; then
-        if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO" &>/dev/null; then
-            echo ">> [Pi5] rpi-lgpio missing - installing from packages/..."
-            if "${PIFINDER_VENV}/bin/pip" install --quiet \
+        if ! "${PIFINDER_VENV}/bin/python" -c "import RPi.GPIO as G; assert hasattr(G, 'lgpio')" &>/dev/null; then
+            echo ">> [Pi5] rpi-lgpio missing/overwritten by real RPi.GPIO - reinstalling from packages/..."
+            "${PIFINDER_VENV}/bin/pip" uninstall --quiet -y RPi.GPIO 2>/dev/null
+            if "${PIFINDER_VENV}/bin/pip" install --quiet --force-reinstall \
                 --no-index --find-links="${PIFINDER_SM_DIR}/packages/" \
                 rpi-lgpio lgpio; then
                 echo ">> [Pi5] rpi-lgpio: installed."

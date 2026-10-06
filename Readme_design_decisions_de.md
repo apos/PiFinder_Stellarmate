@@ -32,6 +32,8 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
 - **Zwei getrennte Treiber statt einem**: `PiFinder LX200` (immer gleiche Rolle, egal ob eine Mount
   vorhanden ist) und `PiFinder Mount Bridge` (der einzige Baustein, der überhaupt von einer zweiten,
   echten Mount weiß) — unabhängig baubar und aktivierbar, kein Einfluss aufeinander.
+- **Client/Host-Rollenmodell**: trennt „das Gerät mit der echten Mount" von „das Gerät, das der
+  Nutzer bedient" als eigenes Konzept.
 
 ## PiFinder LX200 Treiber
 
@@ -59,6 +61,16 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   "Hunting").
 - **Settle-Delay (3 Poll-Zyklen) vor der Verifikation** — PiFinder braucht nach der physischen
   Bewegung Zeit für einen frischen Solve.
+- **HOLDING statt einmaligem Settle-Timer**: nach einem Goto-Forward-Slew hält die Bridge das Ziel
+  aktiv weiter, statt einmal zu settlen und fertig zu sein.
+- **Max-Sync-Drift-Grenze**: Auto-Sync verweigert eine unplausibel große Korrektur (z. B. durch
+  einen offenen Mount-Clutch oder einen schlechten Solve).
+- **Shadow Sync**: PiFinders Position wird automatisch auf das Gerät `PiFinder Simulator`
+  gespiegelt.
+- **Multi-Point Alignment**: ein einzelner Sync-Punkt verliert mit der Zeit an Genauigkeit —
+  mehrere Alignment-Punkte halten das Mount-Modell über den ganzen Himmel hinweg genau, nicht nur
+  nahe der Stelle, an der zuletzt gesynct wurde.
+- **Solve-Freshness-Gating**: die Coupling-Logik ignoriert einen veralteten PiFinder-Solve.
 
 ## Testen & Betrieb
 
@@ -66,3 +78,11 @@ Alles Folgende ergibt sich aus einer kleinen Menge an Prinzipien:
   Risiko schrittweise erhöht, nie ungetestet auf echter Hardware.
 - **Dokumentation zweisprachig, Englisch als Primärsprache** (die Projektseite ist Englisch),
   Deutsch als Zweitversion mit Sprach-Switcher.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

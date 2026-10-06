@@ -129,7 +129,41 @@ behavior is untouched.
 instance in parallel with a real one (e.g. for dev/testing, exactly why this project needed it — see
 `test_tools/fake_mode.sh`), without needing to patch the source to do it.
 
-### 1.6 Not proposed, flagged for awareness: GPS-location update condition removed
+### 1.6 LX200 "no position yet" placeholder (`pos_server.py`)
+
+**File**: `diffs/pos_server_py.diff` — this diff also carries the concurrency rework in §1.9;
+the two are independent and should be filed as separate commits/PRs upstream.
+
+`get_telescope_ra()`/`get_telescope_dec()` (the `:GR#`/`:GD#` LX200 handlers) returned a fixed
+`"+00*00'01"` placeholder whenever PiFinder had no valid pointing yet, instead of signaling "no
+position available" - a syntactically valid, near-zero coordinate that any LX200 consumer (this
+project's own Mount Bridge, LX200 OnStep, SkySafari) could parse as a real position and act on,
+including slewing a mount there. `get_telescope_ra()`'s placeholder was additionally the wrong format
+entirely (a Dec-style `+DD*MM'SS` string returned from an RA handler expected to produce `HH:MM:SS`).
+Now returns `None`, which `handle_client()` already turns into "send nothing back" - a genuine
+communication-failure signal a well-behaved LX200 client already handles correctly, rather than a
+fake coordinate.
+
+**Why upstream-relevant**: a real, reproducible bug affecting any LX200-speaking consumer, not a
+StellarMate-specific concern - see PR 8 in `docs/upstream_pr_templates.md`.
+
+**Second, independent fix in the same file/diff (2026-09-03)**: `parse_sd_command()`'s `sr_result` is
+a module-level global, set by `parse_sr_command()` (`:Sr`, RA) and read by `parse_sd_command()` (`:Sd`,
+Dec) to pair the two into a GoTo - but never scoped per-connection and never cleared after use. A
+`:Sr` from one transaction (a dropped connection, an interleaved client, or one that just never sends
+a matching `:Sd`) stayed set indefinitely, ready to be silently paired with a LATER, unrelated `:Sd`'s
+Dec into a GoTo neither call ever asked for together. Now consumed exactly once (`ra_result, sr_result
+= sr_result, None`) regardless of whether the pairing succeeds. Found auditing this file for the
+RA0/Dec0 root-cause investigation (00107/00108) after the user asked specifically whether a
+KStars/SkySafari-originated PushTo goes through this same server (yes).
+
+Found and traced back to this fix (already correctly committed as `diffs/pos_server_py.diff`, applied
+unconditionally right after `integrator_py.diff`) while root-causing a recurring "mount lands at
+RA0/Dec0" incident - see basic-memory `pifinder-stellarmate/00107`/`00108`. (A first pass mistakenly
+concluded this diff file was missing from the repo entirely - it was not; a broad `find` command's
+truncated output was misread. Corrected before anything was committed on that false premise.)
+
+### 1.7 Not proposed, flagged for awareness: GPS-location update condition removed
 
 **File**: `diffs/main_py.diff` (the hunk removing the `location.error_in_m == 0 or
 float(gps_content["error_in_m"]) < float(location.error_in_m)` condition).
@@ -142,6 +176,71 @@ why it was made**, and it changes real location-tracking behavior, not just a St
 integration point. Flagging it here rather than in the PR templates — this needs its actual
 rationale reconstructed (or the removal re-justified against a specific StellarMate GPS behavior)
 before it's fit to propose upstream, or even to keep long-term without a comment explaining it.
+
+---
+
+### 1.8 Near-pole RA singularity in `POST /api/fake_solve`
+
+**File**: `diffs/api_extensions_py.diff`.
+
+`api_fake_solve()` converts the injected JNow RA/Dec to J2000 through a skyfield Cartesian vector,
+then recovers RA via `.radec()` (an `atan2` over the vector's X/Y components). Near the celestial
+pole those components shrink toward zero, so floating-point noise — not the caller's intended
+direction — determines the returned RA. Live-verified: injecting `dec=90` with two different RA
+values both returned the same wrong RA; `dec=45` round-trips correctly. Fix: for
+`abs(dec) >= 89.9`, keep the caller's own JNow RA instead of the recomputed one. Dec stays accurate
+to the true pole.
+
+**Upstream-relevant**: a general-purpose endpoint silently returns wrong data (no error) for any
+near-polar injection. Filed as
+[brickbots/PiFinder#645](https://github.com/brickbots/PiFinder/issues/645).
+
+### 1.9 Multi-client `pos_server.py` (one thread per connection)
+
+**File**: `diffs/pos_server_py.diff` (same diff as §1.6, regenerated to carry both changes — split
+them when filing).
+
+`run_server()`'s accept loop called `handle_client()` **inline**: `pos_server.py` (the LX200
+protocol server on TCP 4030) served exactly one client at a time. A second connection got no
+response at all — not even a communication error — until the first one disconnected.
+
+But port 4030 is spoken to by several genuinely independent client types, potentially concurrently:
+
+| Client | How it connects |
+|---|---|
+| **SkySafari** (iOS/iPadOS) | directly, LX200/TCP to :4030 — the server's originally documented client |
+| **Stellarium** | directly, LX200/TCP to :4030 (also sends the ACK byte — `is_stellarium`) |
+| **KStars / Ekos** | indirectly — the `PiFinder LX200` INDI driver is *itself* a client of :4030 |
+| **StellarMate app** | via the same INDI driver as KStars (no separate wire to :4030) |
+
+Fix: `run_server()` starts **one daemon thread per accepted connection** (`listen(1)` → `listen(5)`).
+Every module-global that actually held *per-connection* state (`is_stellarium`,
+`stellarium_latitude`/`_longitude`, `sr_result`) becomes `threading.local()` — which as a side
+effect closes the last, connection-unscoped part of the `sr_result` cross-client contamination risk
+(the consume-once part was already fixed, see §1.6). The `sequence` counter is lock-guarded (race on
+two simultaneous GoTo pushes), and there is a passive connection cap (3 per IP, 8 global) so a
+misbehaving reconnect loop can't exhaust the process. A first debounce attempt that *actively closed*
+an older connection from the same IP when a new one arrived was removed after a two-client test from
+`127.0.0.1` (exactly how `indi_pifinder_lx200` connects) showed real independent clients can share an
+IP.
+
+Full design, per-shared-resource concurrency-safety analysis, eventuality table and test plan:
+`docs/concepts/pos_server_multi_client_architecture.md`. Live-tested twice — isolated
+(`test_pos_server_multiclient.py`, fake `shared_state`, test port) and against the running service on
+:4030 with three real parallel clients alongside the already-connected `PiFinder LX200` driver.
+
+**Why upstream-relevant**: not a StellarMate concern at all — `pos_server.py` is PiFinder's own
+LX200 server and its single-client accept loop is a plain limitation for *anyone* running more than
+one planetarium/app against it (SkySafari on a phone while KStars runs on a laptop is a completely
+ordinary setup). The rework is self-contained and behavior-preserving for the single-client case.
+See PR 10 in `docs/upstream_pr_templates.md`.
+
+**Related, deliberately not part of this fix** (flagged as a separate P1 in basic-memory
+`pifinder-stellarmate/00111`): `pos_server`'s latency-critical, externally-exposed read path talks to
+the `StateManager` child process with no scheduling priority. On a Pi 4 (4 cores) under a full
+`PiFinder.main` process fan-out (13 processes, load average 3.5–5.7 observed) that shows up as
+occasional `shared_state` slowness — CPU oversubscription, not a code defect, but a real design gap
+(`nice`/`chrt` for the StateManager, or profiling).
 
 ---
 
@@ -389,3 +488,31 @@ python-libinput than upstream uses at all.
 attempt at the GPS-menu-option change that `diffs/menu_structure_py.diff` now handles correctly
 (the old file's hunk has mismatched/duplicated brace lines and wouldn't apply cleanly even if it
 were wired in). Safe to delete as a cleanup item; not otherwise blocking anything.
+
+---
+
+## 5. Upstream capabilities we don't yet use
+
+Not a patch category - the four above are exhaustive for those. This is the reverse case: a new
+upstream PiFinder capability, noticed while integrating a version bump on the `alpha` branch (see
+`CONTRIBUTING.md`'s branch model), that this project doesn't touch or depend on yet but could be
+relevant to a future Mount Bridge/Control Center feature. Logged here so the next person integrating
+an upstream bump doesn't have to rediscover it from the diff.
+
+### 5.1 Optical Train FOV gating (`solver.py`, PiFinder 2.6.3)
+
+**Where**: `python/PiFinder/solver.py`, `PiFinder.optics.OpticalTrainResolver`.
+
+Upstream 2.6.3 (unchanged in 2.6.1) replaced the solver's hardcoded FOV gate
+(`fov_estimate=12.0°, fov_max_error=4.0°`) with one derived per-frame from an "optical train" -
+the resolved camera + lens combination (`shared_state.camera_type()` /
+`shared_state.camera_lens()`), read live so a lens change from the menu takes effect on the next
+frame rather than the next boot. Falls back to solving with no FOV gate at all when the train isn't
+yet confirmed to match the frames actually arriving (`optical_train_known()`), rather than gating on
+a guess.
+
+**Why noted, not acted on**: none of this project's patches touch this code region, and nothing in
+Mount Bridge currently reads FOV/optical-train state. Worth knowing about if Mount Bridge or the
+Control Center ever wants to reason about PiFinder's actual field of view (e.g. sizing an alignment
+search radius, or surfacing the resolved lens/FOV in a status badge) - `OpticalTrainResolver` would
+be the source of truth to read from, not something to reimplement.

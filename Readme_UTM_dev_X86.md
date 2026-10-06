@@ -1,0 +1,371 @@
+# x86 Dev/Simulator Machine on UTM — Setup Guide
+
+## Overview
+
+This document describes how to turn a StellarMate OS **x86_64** image, running as a **UTM**
+virtual machine on a Mac, into a full **Control-host development and simulator machine** for
+PiFinder_Stellarmate — no physical PiFinder hardware required.
+
+**What this machine is for:** developing and testing the Control Center GUI, the setup/patch
+scripts, and the INDI Mount Bridge coupling logic against the **PiFinder Simulator** and
+**Injected Solve** (see `docs/concepts/pifinder_fake_solve_simulation.md`), without needing a real
+Raspberry Pi, camera, or telescope.
+
+**What this machine is *not* for:** real plate-solving. PiFinder itself stays built and optimized
+for the Pi — this VM does not replace real hardware, it lets you iterate on everything *around*
+PiFinder without needing it plugged in. See "Known Limitations" below for exactly what doesn't
+work here and why that's fine for this use case.
+
+```mermaid
+flowchart LR
+    subgraph Mac["Your Mac"]
+        UTM["UTM VM: stellarmate-utm<br/>(StellarMate OS, x86_64)"]
+    end
+    subgraph LAN["Home/Office LAN (192.168.0.0/24)"]
+        Pi4["Real PiFinder device<br/>(Pi4/Pi5, e.g. 192.168.0.103)"]
+        Router["Router"]
+    end
+    UTM -- "eth0 (Shared/NAT)<br/>192.168.64.10" --> Mac
+    UTM -- "eth1 (Bridged)<br/>192.168.0.x" --> Router
+    Router --- Pi4
+    UTM -. "optional: couple to a real,<br/>remote PiFinder over INDI" .-> Pi4
+```
+
+## Prerequisites
+
+- A UTM VM already running **StellarMate OS x86_64** (this guide does not cover installing StellarMate
+  OS itself — it starts from an already-booted, already-accessible x86 StellarMate machine).
+- SSH access to that VM (this guide assumes you're working over SSH, as you would with a headless
+  Pi).
+- A GitHub Personal Access Token (classic, scope at least `repo`) for `apos/PiFinder_Stellarmate`
+  if you intend to push branches/open PRs from this machine.
+
+## 1. Network: two NICs, not one
+
+**Do not reconfigure the VM's existing network adapter** if you're connected to it over SSH — doing
+so will sever that connection, with no guarantee you'll be able to reconnect at the same address.
+Instead, add a **second, independent** network adapter and leave the first one untouched:
+
+1. In UTM, stop the VM.
+2. VM Settings → Network → **add a new device** (don't edit the existing one).
+3. Set the new device's Network Mode to **Bridge (Advanced)**, Bridged Interface: your Mac's active
+   physical interface (Wi-Fi or Ethernet — whichever one is actually on the LAN you want to reach).
+4. Start the VM again. The existing adapter (Shared/NAT, e.g. `192.168.64.10`) keeps working exactly
+   as before; the new one (`eth1` or similar) now exists but has no IP yet.
+5. Configure a static IP on the new interface via NetworkManager (adjust to your own LAN/gateway):
+
+   ```bash
+   nmcli connection add type ethernet ifname eth1 con-name eth1-lan \
+     ipv4.method manual ipv4.addresses <STATIC_IP>/24 \
+     ipv4.gateway <GATEWAY_IP> ipv4.dns <GATEWAY_IP> \
+     connection.autoconnect yes
+   nmcli connection up eth1-lan
+   ```
+
+   Verify with `nmcli device status` (both interfaces should show `connected` simultaneously) and a
+   `ping` to something else on that LAN.
+
+This gives the VM a real presence on your LAN (for reaching an actual PiFinder device over INDI, or
+just for normal internet/package-manager access) while keeping the original SSH connection alive
+throughout.
+
+## 2. Package manager access (handled automatically since PR #257)
+
+On a freshly provisioned image, StellarMate's own "Atomic Updates" protection is active by default -
+only its `[smos]` repo is reachable, `[core]`/`[extra]` stay commented out in `/etc/pacman.conf`
+until unlocked. `pifinder_stellarmate_setup.sh`'s "Installing system packages" phase now detects this
+(via the same `bin/os_detect.sh` abstraction the `--mode=indi_only` path already used) and
+temporarily disables/re-enables it around its own `pacman -S` calls automatically - no manual step
+needed here anymore.
+
+**Root cause of the previously-unexplained "pacman.conf reverts to an ARM-only mirror on its own"
+mystery** (this section used to describe a manual fix for exactly that, with the cause listed as
+unknown): it was never the base x86 image, `pifinder_pre_start.sh`, or an external process. It was
+this same phase's *own* `[core]`/`[extra]`/`[alarm]` → `mirror.archlinuxarm.org/aarch64/...` fallback
+block (meant for real ARM Pi hardware, where StellarMate's Atomic Updates lock has typically already
+been disabled in an earlier session and never re-locked) - re-triggering every time the lock was
+re-enabled (which re-comments `[core]`/`[extra]` back out, satisfying that fallback's own "add it if
+missing" condition) and re-appending an **ARM** mirror on this **x86_64** machine. [PR
+#257](https://github.com/apos/PiFinder_Stellarmate/pull/257) guards that fallback to `uname -m !=
+x86_64`, so it can no longer fire here at all.
+
+If you still see `pacman -S` fail with *"package architecture is not valid"* despite this (e.g. a
+stray block left over from a `dev` checkout predating this fix), check for and remove any
+`archlinuxarm.org` line in `/etc/pacman.conf`:
+
+```bash
+grep -n archlinuxarm /etc/pacman.conf
+```
+
+It should print nothing on a clean, current `dev` checkout.
+
+## 3. Pacman keyring
+
+**Correction (2026-09-04, later the same day)**: an earlier revision of this section claimed this
+wasn't needed on a fresh SMOS 2.3.0 image - that was premature. It genuinely wasn't needed for the
+very first `pacman -S` calls that day, but resurfaced later the same session as `error: smos: key
+"...F4" is unknown` / `database 'smos' is not valid` on every `pacman -Ss`/`-Qi` query, tracked down
+to a plain **user error, not a device quirk**: a later, unrelated manual `sudo pacman-key --init`
+call (while chasing a different problem) re-initialized the keyring from a state where the `smos`
+key was already trusted some other way, discarding that trust - `--init` is not purely idempotent to
+re-run once a keyring already exists and works. Whether a genuinely fresh image needs this step at
+all before its first `pacman -S` remains unconfirmed either way; keep it handy regardless:
+
+```bash
+sudo pacman-key --init
+sudo pacman-key --populate archlinux
+sudo pacman-key --recv-keys 320758E60CC6CF30A2B69EA1856A39ADD7E519F4 --keyserver keyserver.ubuntu.com
+sudo pacman-key --lsign-key 320758E60CC6CF30A2B69EA1856A39ADD7E519F4
+```
+
+The `recv-keys`/`lsign-key` step imports and trusts the `smos` repo's own signing key (StellarMate's
+custom package repo) — without it, `smos` package lookups fail with *"key ... is unknown"* even
+after the keyring itself is initialized. Also remember `sudo` for read-only queries like `pacman -Ss`/
+`-Qi` too, not just for installs - `/etc/pacman.d/gnupg` is `0700 root:root`, so a plain-user query
+fails with the confusingly unrelated-sounding *"Public keyring not found"* / *"keyring is not
+writable"*, easy to mistake for the actual missing-key problem above.
+
+## 4. Clone PiFinder_Stellarmate — `dev`, not `main`
+
+`main` only gets fast-forwarded on an explicit release cut and lags significantly behind active
+development. Always work from `dev`:
+
+```bash
+git clone https://github.com/apos/PiFinder_Stellarmate.git
+cd PiFinder_Stellarmate
+git checkout dev
+```
+
+`dev` already contains everything this guide depends on, including the x86 compatibility handling
+described in the next section.
+
+## 5. Why the setup script works on x86 (background, no action needed)
+
+Running `pifinder_stellarmate_setup.sh --mode=full` on x86 without dedicated compatibility handling
+would hit several places that unconditionally assume real Raspberry Pi hardware -
+[PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233) is where this was addressed:
+
+- The script hard-`exit 1`'d when neither `/boot/firmware/config.txt` nor `/boot/config.txt` exists
+  (never true on x86) — the whole install aborted before ever reaching the INDI driver build.
+- Twelve `should_apply_patch()` calls in `patch_PiFinder_installation_files.sh` were gated on Pi
+  model `P4|P5`, even though the patches themselves (numpy/pandas/skyfield version pins for
+  Python 3.13+, the `tetra3.py`→`main.py` rename fix, a Python 3.11+ dataclass fix, the `all_ips`
+  network feature, etc.) have nothing to do with Pi hardware. This silently left `skyfield`/`pandas`
+  uninstalled and the `tetra3` import broken — `pifinder.service` crash-looped with
+  `ModuleNotFoundError: No module named 'tetra3.tetra3'`.
+- `imu_pi.py`/`keyboard_pi.py`/`displays.py` crashed the whole PiFinder process instead of falling
+  back when their hardware backend isn't available (adafruit-blinka's `import board` raises
+  `NotImplementedError("Board not supported GENERIC_LINUX_PC")` on any non-Pi machine) — the same
+  class of bug `camera_pi.py`'s existing `CameraDebug` fallback already solved for the camera, just
+  never needed for IMU/keyboard/display before.
+- The setup script left the Control Center disabled/stopped on a fresh install, with no indication
+  of where to reach it.
+
+None of this requires action on your part - it's background for anyone debugging a future x86 issue
+that looks similar.
+
+## 6. Run the setup script
+
+```bash
+bash pifinder_stellarmate_setup.sh
+```
+
+This clones PiFinder itself, applies all patches, builds the venv, builds and installs all three
+INDI drivers (PiFinder LX200, PiFinder Mount Bridge, PiFinder Simulator), and enables and starts the
+Control Center automatically, printing every reachable URL at the end:
+
+```
+  Control Center reachable at:
+    http://<eth0-ip>:8765/
+    http://<eth1-ip>:8765/
+  Login: any username, password = your stellarmate system password
+```
+
+On a fresh StellarMate OS install that's username `stellarmate`, password `smate` — the StellarMate
+OS default, not a project secret (change it if you haven't already). See
+[Readme_ControlCenter.md](Readme_ControlCenter.md) for the Control Center itself (every tile, the
+Mount Bridge workflows, the API surface).
+
+**On a fresh venv, the script stops itself after creating it** and prints the exact activation
+command to run - a `source` inside the script's own subshell can't affect your outer shell, so this
+one manual step can't be automated away. Run the printed command, then re-run
+`bash pifinder_stellarmate_setup.sh` in the now-activated venv to continue:
+
+```bash
+source ~/PiFinder/python/.venv/bin/activate
+bash pifinder_stellarmate_setup.sh
+```
+
+On x86, expect to see `Hardware: Not a Pi (e.g. x86 Control host)` in the final summary and
+`✅ No critical warnings — setup completed cleanly.`
+
+For `--action=reinstall`/`--action=update` (non-interactive, e.g. from the Control Center's own
+"Install or Update" buttons) see the script's own `--help`-equivalent header comment.
+
+## 7. Make the INDI drivers visible in the StellarMate Web Manager
+
+The Web Manager reads `/usr/share/indi/drivers.xml` only once, at its own startup. A freshly
+installed driver won't show up in its profile editor until it's restarted:
+
+```bash
+systemctl --user restart stellarmatewebmanager.service
+```
+
+(On real Pi hardware this is documented as needing a real GUI/VNC session, not SSH — on this x86
+image, running it directly over SSH worked without issue. If it doesn't for you, fall back to
+restarting it from the desktop session.)
+
+## 8. GitHub CLI (`gh`) — optional, only if you'll push from this machine
+
+```bash
+sudo pacman -S github-cli
+```
+
+Authenticate with a Personal Access Token:
+
+```bash
+git remote set-url origin "https://<YOUR_TOKEN>@github.com/apos/PiFinder_Stellarmate.git"
+echo "<YOUR_TOKEN>" | gh auth login --with-token
+```
+
+If you ever need `gh project` commands (adding issues/PRs to the GitHub Projects board), the token
+also needs the `project`/`read:project` scope, which a classic PAT usually doesn't have by default:
+
+```bash
+gh auth refresh -s project,read:project
+```
+
+This opens an interactive browser-based device-flow confirmation — it has to be completed by a
+human in a real browser, not scriptable.
+
+## 9. Fix VM standby/suspend freezing (Linux guest, not PiFinder-specific)
+
+Unrelated to PiFinder itself, but likely to bite you on any QEMU/UTM Linux desktop guest: if the
+machine's screen goes idle, KDE Plasma can freeze completely (reachable up to the login screen, but
+input stops working after that), forcing a hard VM reset. Real hardware suspend doesn't work
+meaningfully inside a VM anyway, so the fix is to disable it entirely rather than debug it:
+
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+```
+
+If KDE's own power settings (`~/.config/powerdevilrc`) already show `AutoSuspendAction=0` and
+`TurnOffDisplayWhenIdle=false` (check first — they may already be correctly disabled) but the
+freeze still happens, the cause is X11's own DPMS timers, independent of KDE. Disable those too:
+
+```bash
+sudo tee /etc/X11/xorg.conf.d/10-disable-dpms.conf > /dev/null <<'EOF'
+Section "Extensions"
+    Option "DPMS" "Disable"
+EndSection
+
+Section "ServerFlags"
+    Option "StandbyTime" "0"
+    Option "SuspendTime" "0"
+    Option "OffTime" "0"
+    Option "BlankTime" "0"
+EndSection
+EOF
+```
+
+**This needs a logout/reboot to take effect** (it configures the X server, which only reads this at
+startup). Use UTM's own **Pause** feature (not guest-OS suspend) if you want to stop the VM without
+shutting it down — that actually works, since it's the hypervisor freezing/resuming the whole VM
+from outside, not the guest OS trying to power-manage virtual hardware that doesn't really exist.
+
+## 10. Optional: WireGuard access to the device fleet
+
+Section 1's bridged NIC only reaches devices on whatever LAN the Mac happens to be bridged into right
+now — if the Mac roams to a different network, this VM loses direct access to fleet devices (e.g. a
+Pi5) that stay on the original LAN, or that are only reachable at all via a VPN mesh. If your fleet
+has such a mesh (e.g. a WireGuard server relaying between all your StellarMate devices), setting up a
+client on this VM restores that access independent of whatever the bridged NIC is currently doing.
+
+1. Install the WireGuard tools (single targeted package, not a full system upgrade — see section 3's
+   package-manager caveats):
+
+   ```bash
+   sudo pacman -S --needed wireguard-tools
+   ```
+
+2. Place your client identity (private/public keypair) and the peer/server config your VPN admin
+   issued you under `~/Config/WIREGUARD/` — this directory is intentionally outside the repo and not
+   synced with it; keys never belong in version control. A minimal client config looks like:
+
+   ```ini
+   [Interface]
+   PrivateKey = <YOUR_CLIENT_PRIVATE_KEY>
+   Address = <ASSIGNED_CLIENT_ADDRESS>/32
+   [Peer]
+   PublicKey = <VPN_SERVER_PUBLIC_KEY>
+   Endpoint = <VPN_SERVER_HOST>:<VPN_SERVER_PORT>
+   AllowedIPs = <VPN_SUBNET>/24
+   PersistentKeepalive = 25
+   ```
+
+3. If your setup provides an install helper that wraps `wg-quick` in a systemd service (recommended
+   over running `wg-quick up` by hand, so the tunnel survives reboots), run its local-install mode and
+   keep your existing keys when prompted rather than generating new ones — the server side has to
+   know your public key in advance regardless of which keys you use.
+
+4. Verify:
+
+   ```bash
+   sudo wg show          # expect a recent "latest handshake"
+   ping -c2 <SOME_HOST_ON_THE_VPN_SUBNET>
+   ```
+
+**Gotcha - handshake succeeding is not proof the tunnel actually routes traffic.** The WireGuard
+handshake is keyed purely by public key, not by IP address, so it can succeed even when your
+`Address` doesn't match what the server has on file for that key. If `wg show` reports a fresh
+handshake but every `ping` inside the VPN subnet times out (including to the VPN gateway itself),
+the most likely cause is exactly this: your local `Address` was changed (or was wrong from the
+start) without the server-side peer entry for your public key being updated to match — the server
+then silently drops packets from the address you're actually sending from. Fix is server-side (your
+VPN admin needs to update that peer's allowed source address to match), not something you can work
+around from the client.
+
+## Known Limitations
+
+- **No real plate-solving.** `~/PiFinder/bin/cedar-detect-server` only ships as an ARM binary — on
+  x86 it fails to launch (`Exec format error`, caught, no crash) and `solve_state` stays `null`
+  forever. This is by design for this use case (Injected Solve replaces it); tracked as a
+  low-priority backlog item in
+  [issue #234](https://github.com/apos/PiFinder_Stellarmate/issues/234) if a real x86_64 build is
+  ever wanted.
+- **Injected Solve / PiFinder Simulator end-to-end workflow is verified working on this machine.**
+  Setting a target on the `PiFinder Simulator` INDI device and running
+  `python3 test_tools/pifinder_truth_injector.py --indi-device "PiFinder Simulator" --interval 2.0`
+  correctly drove `/api/status` to `fake_solve_active: true, solve_source: "CAM"`, and Mount Bridge's
+  `MODE_GOTO_FORWARD` coupling mode slewed the `Telescope Simulator` to within ~24' RA / ~1.5' Dec of
+  the injected target. **Caveat on the test methodology, not a bug**: leaving the injector running
+  continuously at a fixed, unchanging target causes PiFinder's own reported drift to climb over time
+  (IMU-anchor blending accumulates on repeated re-injection of an identical position) even though the
+  mount has already reached the target and stopped correctly — Mount Bridge's `MaxSyncDriftNP` safety
+  cap (default 120') correctly refuses to chase this artificial drift. For a clean test, prefer a
+  single well-timed `/api/fake_solve` call over a long-running unchanging injector loop, or use an
+  interval large enough / a target that moves slightly, as real tracked objects would.
+- **Goto-Forward/Auto-Correct require an active, fresh PiFinder solve to do anything at all.** Since
+  there's no real camera solver on x86 (see above), that solve has to come from the truth injector.
+  If the injector isn't running, Mount Bridge correctly withholds any Goto (it always Syncs to
+  PiFinder's current position before forwarding — see `syncMountToPiFinderPosition()` — and that
+  needs a fresh solve to succeed) rather than firing blind; a Goto sent while the injector is down
+  just sits pending and gets forwarded automatically the moment a fresh solve becomes available
+  again. On real Pi hardware the camera provides this continuously, so this only matters here: keep
+  the truth injector running for the whole time you're testing Goto-Forward/Auto-Correct on this VM.
+- **The x86/non-Pi hardware-fallback patches** (`imu_pi.py`/`keyboard_pi.py`/`displays.py` falling
+  back instead of crashing when their hardware backend isn't available - see
+  [PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233)) **are purely additive** (new
+  `except`/fallback branches around existing working code) but unverified on real Pi hardware - a
+  real Pi4/Pi5 smoke test is recommended before promoting a `dev` state containing them to `main`.
+
+## References
+
+- [PR #233](https://github.com/apos/PiFinder_Stellarmate/pull/233) — the x86 compatibility fixes
+  this guide depends on.
+- [Issue #234](https://github.com/apos/PiFinder_Stellarmate/issues/234) — cedar-detect-server x86_64
+  build (backlog, low priority).
+- `docs/concepts/pifinder_fake_solve_simulation.md` — the Injected Solve mechanism this machine is
+  meant to exercise.
+- `Readme_ControlCenter.md`, `Readme_PiFinder_LX200.md` — general Control Center / INDI driver
+  reference, not x86-specific.

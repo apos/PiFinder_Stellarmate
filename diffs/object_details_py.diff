@@ -1,0 +1,20 @@
+diff --git a/python/PiFinder/ui/object_details.py b/python/PiFinder/ui/object_details.py
+index c142519a..f0fa9c2c 100644
+--- a/python/PiFinder/ui/object_details.py
++++ b/python/PiFinder/ui/object_details.py
+@@ -77,6 +77,15 @@ class UIObjectDetails(UIModule):
+         self.object_display_mode = DM_LOCATE
+         self.object_image = None
+ 
++        # Surfaces the on-device push-to target externally (e.g. to an
++        # external mount bridge polling /api/current_target) - this screen
++        # (default mode DM_LOCATE, the offset-arrow guidance display) is
++        # PiFinder's own "push-to this object" UI, so entering it is the
++        # on-device equivalent of an external client's Goto(). UIState's
++        # target()/set_target() existed already but had no caller before
++        # this - see PiFinder_Stellarmate#171.
++        self.shared_state.ui_state().set_target(self.object)
++
+         # Marking Menu - Just default help for now
+         self.marking_menu = MarkingMenu(
+             left=MarkingMenuOption(),

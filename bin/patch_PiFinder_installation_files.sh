@@ -9,7 +9,7 @@ source "$(dirname "$0")/functions.sh"
 current_pifinder=$(cat "${pifinder_stellarmate_dir}/version.txt" | tr -d '[:space:]')
 
 # Detect current Pi hardware model
-hw_model=$(tr -d '\0' < /proc/device-tree/model)
+hw_model=$(get_hw_model)
 if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
     current_pi="P5"
 elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
@@ -90,8 +90,7 @@ cp "${pifinder_stellarmate_dir}/pifinder_post_update.sh" "${pifinder_dir}/."
 
 ############################################################
 # Check if kstarsrc exists (no symlink needed)
-echo "🔍 Checking for ~/.config/kstarsrc ..."
-mkdir -p "$pifinder_config_dir"
+echo "🔍 Checking for $kstarsrc_target ..."
 
 if [ -f "$kstarsrc_target" ]; then
     echo "✅ Found $kstarsrc_target"
@@ -100,18 +99,15 @@ else
 fi
 
 
-    echo "DEBUG: current_pifinder = $current_pifinder"
-    echo "DEBUG: current_pi = $current_pi"
-    echo "DEBUG: current_os = $current_os"
-    if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
-        echo "DEBUG: should_apply_patch returned true for requirements.txt"
-    else
-        echo "DEBUG: should_apply_patch returned false for requirements.txt"
-    fi
-
 echo "------------------------------------"
 #######################################################
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+# Pi-model filter is deliberately "general", not "P4|P5": every fix below is
+# a pure Python/numpy version-compatibility issue (nothing GPIO/camera/Pi-
+# hardware specific), so it applies equally on a real Pi and on an x86
+# Control-host development machine (current_pi="unknown" there - see
+# get_hw_model() in functions.sh). Restricting this to P4|P5 previously made
+# the whole block silently skip on x86, leaving skyfield/pandas uninstalled.
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
     cp "$python_requirements" "$python_requirements.bak"
 
@@ -212,7 +208,7 @@ for service_file in "${service_files[@]}"; do
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     for cfg in "$config_default_json" "$config_json"; do
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
@@ -317,7 +313,7 @@ echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
         sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
     fi
@@ -349,7 +345,7 @@ echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
         sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
     fi
@@ -365,7 +361,7 @@ echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
         sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
     fi
@@ -381,7 +377,7 @@ echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
         sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
     fi
@@ -416,7 +412,7 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
@@ -440,7 +436,7 @@ echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     camera_insert="from picamera2 import Picamera"
     if ! grep -q "$camera_insert" "$camera_file"; then
         awk -v insert="$camera_insert" '
@@ -486,6 +482,62 @@ python3 -m py_compile "$main_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERR
 echo "------------------------------------"
 
 ##################################################
+# PiFinder imu_pi.py / imu_fake.py - Full Simulation IMU dead-reckoning
+# (docs/concepts/full_simulation_imu_dead_reckoning.md): lets the fake-IMU
+# fallback (used whenever real IMU hardware isn't found, e.g. this x86 dev/
+# Control-host machine, see PiFinder_Stellarmate#98 - same "general/general"
+# reasoning as displays.py just below) be driven by externally injected
+# orientation samples via the new /api/fake_imu endpoint, instead of a
+# permanently-frozen identity quaternion that never published at all.
+
+echo "🔧 Updating imu_pi.py ..."
+cp "$imu_pi_py" "$imu_pi_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+    apply_patch_or_warn "$imu_pi_py" "${pifinder_stellarmate_dir}/diffs/imu_pi_py.diff"
+else
+    echo "⏩ Skipping patch for imu_pi.py: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$imu_pi_py"
+python3 -m py_compile "$imu_pi_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+echo "🔧 Updating imu_fake.py ..."
+cp "$imu_fake_py" "$imu_fake_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+    apply_patch_or_warn "$imu_fake_py" "${pifinder_stellarmate_dir}/diffs/imu_fake_py.diff"
+else
+    echo "⏩ Skipping patch for imu_fake.py: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$imu_fake_py"
+python3 -m py_compile "$imu_fake_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder displays.py - graceful fallback to the existing DisplayHeadless*
+# classes when the real OLED/LCD SPI/GPIO hardware isn't available (e.g. an
+# x86 dev/Control-host machine with no PiFinder hardware attached at all,
+# see PiFinder_Stellarmate#98) instead of crashing the whole process. Same
+# philosophy as camera_pi.py's existing CameraDebug fallback, general/
+# general on purpose (not P4|P5) - see basic-memory/pifinder-stellarmate/00099.
+
+echo "🔧 Updating displays.py (headless fallback) ..."
+cp "$display_py" "$display_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+    apply_patch_or_warn "$display_py" "${pifinder_stellarmate_dir}/diffs/displays_py.diff"
+else
+    echo "⏩ Skipping displays.py headless-fallback patch: ❌ incompatible version/pi/os"
+fi
+show_diff_if_changed "$display_py"
+python3 -m py_compile "$display_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder state.py - exposes debug_solve (Tools -> Test Mode's on/off
 # state, previously a local-only variable with no way to read it back)
 
@@ -510,8 +562,9 @@ echo "------------------------------------"
 
 ##################################################
 # PiFinder api_extensions.py - POST /api/debug_solve to toggle Test Mode
-# directly (reliable, bypasses menu navigation/keyboard_queue), plus
-# debug_solve in GET /api/status to read the resulting state back
+# directly (reliable, bypasses menu navigation/keyboard_queue), debug_solve
+# in GET /api/status to read the resulting state back, plus POST /api/fake_solve
+# and DELETE /api/fake_solve for the Fake-Solve simulation feature below
 
 echo "🔧 Updating api_extensions.py ..."
 cp "$api_extensions_py" "$api_extensions_py.bak"
@@ -522,13 +575,95 @@ python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ 
 echo "------------------------------------"
 
 ##################################################
+# PiFinder ui/align.py - records the confirmed solve-based Align (RA/Dec +
+# timestamp) into shared_state so /api/status can surface it; the Mount
+# Bridge driver Syncs the mount to it regardless of Coupling mode (#313,
+# docs/concepts/mount_bridge_sync_on_pifinder_align.md)
+
+echo "🔧 Updating ui/align.py ..."
+cp "$align_py" "$align_py.bak"
+
+    apply_patch_or_warn "$align_py" "${pifinder_stellarmate_dir}/diffs/align_py.diff"
+show_diff_if_changed "$align_py"
+python3 -m py_compile "$align_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder tests/test_last_align_stamp.py - regression guard for the #313
+# align-stamp behaviour above (new file, create-diff; inert on-device -
+# only runs in a dev checkout with requirements_dev.txt, like every other
+# file already in python/tests/). -N makes re-runs a no-op once it exists.
+
+echo "🔧 Adding tests/test_last_align_stamp.py ..."
+apply_patch_or_warn "${pifinder_dir}/python/tests/test_last_align_stamp.py" \
+    "${pifinder_stellarmate_dir}/diffs/test_last_align_stamp_py.diff"
+python3 -m py_compile "${pifinder_dir}/python/tests/test_last_align_stamp.py" \
+    && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder ui/object_details.py - surfaces the on-device push-to target
+# (UIState's own target()/set_target(), previously never called) so GET
+# /api/current_target (see api_extensions.py above) can report it - see
+# PiFinder_Stellarmate#171
+
+echo "🔧 Updating ui/object_details.py ..."
+cp "$object_details_py" "$object_details_py.bak"
+
+    apply_patch_or_warn "$object_details_py" "${pifinder_stellarmate_dir}/diffs/object_details_py.diff"
+show_diff_if_changed "$object_details_py"
+python3 -m py_compile "$object_details_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder types/positioning.py - new FakeSolve dataclass, the message
+# type used to inject a one-time synthetic solve (see integrator.py below)
+
+echo "🔧 Updating types/positioning.py ..."
+cp "$positioning_py" "$positioning_py.bak"
+
+    apply_patch_or_warn "$positioning_py" "${pifinder_stellarmate_dir}/diffs/positioning_py.diff"
+show_diff_if_changed "$positioning_py"
+python3 -m py_compile "$positioning_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder integrator.py - Fake-Solve simulation: injects a one-time,
+# synthetic solve (FakeSolve on fake_solve_command_queue) at a chosen
+# RA/Dec, bypassing image capture/plate-solving, so PiFinder's own IMU
+# dead-reckoning can be exercised (e.g. by an external mount bridge) without
+# a real sky. See docs/concepts/pifinder_fake_solve_simulation.md.
+
+echo "🔧 Updating integrator.py ..."
+cp "$integrator_py" "$integrator_py.bak"
+
+    apply_patch_or_warn "$integrator_py" "${pifinder_stellarmate_dir}/diffs/integrator_py.diff"
+show_diff_if_changed "$integrator_py"
+python3 -m py_compile "$integrator_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
+# PiFinder pos_server.py - Fix #107: get_telescope_ra/dec return None
+# instead of a fake "+00*00'01" placeholder when there's no valid pointing,
+# so LX200 consumers (Mount Bridge, the PiFinder LX200 driver) see a
+# connection/read error instead of mistaking it for a real RA=0/Dec=0 fix.
+
+echo "🔧 Updating pos_server.py ..."
+cp "$pos_server_py" "$pos_server_py.bak"
+
+    apply_patch_or_warn "$pos_server_py" "${pifinder_stellarmate_dir}/diffs/pos_server_py.diff"
+show_diff_if_changed "$pos_server_py"
+python3 -m py_compile "$pos_server_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder server.py
 server_py="${pifinder_dir}/python/PiFinder/server.py"
 echo "🔧 Updating server.py ..."
 cp "$server_py" "$server_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     # Login/password-change username, mount-type sync, First Steps route,
     # Setup Wizard control, port tracking, etc. are all in server_py.diff now.
     # (Used to also run two sed replacements here for the login/password-
@@ -555,7 +690,7 @@ cp "$sys_utils_py" "$sys_utils_py.bak"
 cp "$sys_utils_fake_py" "$sys_utils_fake_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     apply_patch_or_warn "$sys_utils_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
     apply_patch_or_warn "$sys_utils_fake_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
 else
@@ -573,7 +708,7 @@ echo "🔧 Updating ui/status.py (all_ips) ..."
 cp "$status_py" "$status_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     apply_patch_or_warn "$status_py" "${pifinder_stellarmate_dir}/diffs/status_py.diff"
 else
     echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
@@ -618,7 +753,7 @@ echo "------------------------------------"
 echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0|2.5.1|2.6.0" "P4|P5" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
     apply_patch_or_warn "$menu_py" "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"

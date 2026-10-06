@@ -30,6 +30,8 @@ Everything below follows from a small set of principles:
   whether or not a mount exists) and `PiFinder Mount Bridge` (the only building block that even
   knows a second, real mount exists) — independently buildable and enabled, no impact on each
   other.
+- **Client/Host role model**: separates "the device with the real mount" from "the device the user
+  operates" as its own concept.
 
 ## PiFinder LX200 Driver
 
@@ -55,6 +57,15 @@ Everything below follows from a small set of principles:
   a remaining error is a calibration issue, not a missed slew (otherwise it would "hunt").
 - **Settle delay (3 poll cycles) before verifying** — PiFinder needs time after the physical move
   to produce a fresh solve.
+- **HOLDING instead of a one-shot settle timer**: after a Goto-Forward slew, the Bridge keeps
+  actively holding the target rather than settling once and being done.
+- **Max Sync Drift limit**: auto-sync refuses an implausibly large correction (e.g. from an open
+  mount clutch or a bad solve).
+- **Shadow Sync**: PiFinder's position is automatically mirrored onto the `PiFinder Simulator`
+  device.
+- **Multi-Point Alignment**: a single sync point degrades over time — several alignment points keep
+  the mount model accurate across the sky instead of just near where it was taken.
+- **Solve-Freshness gating**: the coupling logic ignores a stale PiFinder solve.
 
 ## Testing & Operations
 
@@ -62,3 +73,11 @@ Everything below follows from a small set of principles:
   risk increased step by step, never tested on real hardware untested.
 - **Documentation bilingual, English as the primary language** (the project page is in English),
   German as a secondary version with a language switcher.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>

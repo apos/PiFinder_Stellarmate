@@ -1,14 +1,322 @@
---- python/PiFinder/api_extensions.py.orig	2026-07-19 12:48:07.710375719 +0200
-+++ python/PiFinder/api_extensions.py	2026-07-19 12:45:40.050888561 +0200
-@@ -160,6 +160,7 @@
+--- python/PiFinder/api_extensions.py.orig	2026-09-27 10:46:08.307773653 +0200
++++ python/PiFinder/api_extensions.py	2026-09-27 10:45:45.048372291 +0200
+@@ -18,9 +18,11 @@
+ import io
+ import json
+ import logging
++import math
+ 
+ from flask import request, session, Response
+ from PIL import Image
++from PiFinder.types.positioning import FakeSolve, FakeImuSample
+ 
+ from PiFinder.optics import OpticalTrainResolver
+ 
+@@ -31,6 +33,86 @@
+ _API_OPTICAL_TRAIN = OpticalTrainResolver()
+ 
+ 
++def _angular_separation_deg(ra1, dec1, ra2, dec2) -> float:
++    """Great-circle separation in degrees between two J2000 RA/Dec points
++    (both in degrees). Standard haversine form - no existing helper for
++    this in calc_utils.py/catalogs.py to reuse."""
++    ra1_r, dec1_r, ra2_r, dec2_r = (math.radians(x) for x in (ra1, dec1, ra2, dec2))
++    d_ra = ra2_r - ra1_r
++    d_dec = dec2_r - dec1_r
++    a = (
++        math.sin(d_dec / 2) ** 2
++        + math.cos(dec1_r) * math.cos(dec2_r) * math.sin(d_ra / 2) ** 2
++    )
++    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a))))
++
++
++# #191: 90-degree azimuth quadrants for /api/nearby_bright_stars' optional
++# `direction` filter - N straddles the 0/360 wrap, the other three don't.
++_DIRECTION_QUADRANTS = {
++    "N": (315.0, 45.0),
++    "E": (45.0, 135.0),
++    "S": (135.0, 225.0),
++    "W": (225.0, 315.0),
++}
++
++
++def _azimuth_in_direction(az: float, direction: str) -> bool:
++    lo, hi = _DIRECTION_QUADRANTS[direction]
++    if lo < hi:
++        return lo <= az < hi
++    return az >= lo or az < hi  # wraps through 0/360 (N only)
++
++
++# #191 follow-up, direct feedback (2026-09-27): picking the `count` brightest
++# candidates outright (the previous behavior) can hand back stars that all
++# cluster in the same patch of sky - nothing here ever considered mutual
++# separation. That matters for this endpoint's actual purpose: a real
++# multi-point mount alignment model (confirmed for OnStep, see
++# PiFinder_Stellarmate's docs/concepts/mount_bridge_multistar_alignment.md
++# §4.5 - repeated Syncs do accumulate into a real model there, not just
++# overwrite the last one) needs its reference points spread across
++# different parts of the sky to fit well; a clustered or near-collinear set
++# fits a poorly-conditioned model with large extrapolation error away from
++# those points, no different from why a real 3-star hand-align is taught to
++# use widely-separated stars.
++_SPREAD_POOL_FACTOR = 4
++_SPREAD_POOL_MIN = 8
++
++
++def _select_spread_candidates(candidates: list, count: int) -> list:
++    """Greedy farthest-point (max-min angular separation) selection of up to
++    `count` candidates, restricted to a brightness-bounded pool first so a
++    very dim, hard-to-solve star is never picked purely for being far from
++    the others.
++
++    Starts from the single brightest candidate in the pool, then repeatedly
++    adds whichever remaining pool candidate maximizes its minimum angular
++    separation to everything already selected - classic max-min diversity
++    sampling - ties broken by brightness. Returns candidates in selection
++    order (brightest first, then each next-most-spread pick), not
++    re-sorted by brightness afterward.
++    """
++    if count <= 0 or not candidates:
++        return []
++    by_brightness = sorted(candidates, key=lambda c: (c["mag"] is None, c["mag"]))
++    pool_size = min(len(by_brightness), max(count * _SPREAD_POOL_FACTOR, _SPREAD_POOL_MIN))
++    pool = by_brightness[:pool_size]
++
++    selected = [pool[0]]
++    remaining = pool[1:]
++    while remaining and len(selected) < count:
++        def _min_sep_to_selected(c):
++            return min(
++                _angular_separation_deg(c["ra"], c["dec"], s["ra"], s["dec"])
++                for s in selected
++            )
++
++        remaining.sort(key=lambda c: (-_min_sep_to_selected(c), c["mag"] is None, c["mag"]))
++        selected.append(remaining.pop(0))
++    return selected
++
++
+ def _json_response(data, status=200):
+     """Unified JSON response format"""
+     return Response(
+@@ -166,6 +248,15 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
 +                "debug_solve": ss.debug_solve(),
++                "fake_solve_active": ss.fake_solve_active(),
++                # Last confirmed solve-based PiFinder Align (see
++                # state.SharedStateObj.set_last_align). last_align_time is an
++                # epoch float an external poller dedups on; ra/dec are J2000
++                # degrees. All null until the first Align this session.
++                "last_align_time": ss.last_align_time(),
++                "last_align_ra": ss.last_align_ra(),
++                "last_align_dec": ss.last_align_dec(),
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -750,6 +751,22 @@
+@@ -219,6 +310,200 @@
+             logger.error("api/location error: %s", e)
+             return _json_response({"error": str(e)}, 500)
+ 
++    @app.route("/api/current_target")
++    def api_current_target():
++        """Returns the on-device push-to target, if any - whatever object the
++        UI's Object Details/Locate screen (the offset-arrow push-to guidance
++        display) is currently showing. RA and Dec are both in **degrees**
++        (CompositeObject.ra/.dec's own native unit - RA is NOT in hours here,
++        unlike /api/fake_solve's input), J2000 (same convention as everywhere
++        else in PiFinder) - callers that need JNow/epoch-of-date are expected
++        to precess themselves, same as POST /api/fake_solve's own convention
++        in the other direction. `null` if nothing has been selected yet this
++        session.
++        """
++        try:
++            target = server_instance.shared_state.ui_state().target()
++            if target is None:
++                return _json_response({"target": None})
++            return _json_response(
++                {
++                    "target": {
++                        "ra": target.ra,
++                        "dec": target.dec,
++                        "name": target.display_name,
++                    }
++                }
++            )
++        except Exception as e:
++            logger.error("api/current_target error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/nearby_bright_stars")
++    def api_nearby_bright_stars():
++        """
++        Return up to `count` named bright stars from PiFinder's own "Str"
++        catalog within `radius` degrees of a center point, each currently at
++        or above `min_altitude` degrees of altitude - candidate targets for
++        an external automated multi-point mount-alignment sequence (Mount
++        Bridge's own MULTI_POINT_ALIGN, see PiFinder_Stellarmate's
++        docs/concepts/mount_bridge_multistar_alignment.md §4.2).
++
++        Not PiFinder's own "alignment" (camera-to-eyepiece target_pixel
++        calibration - see docs/ax/positioning/CONTEXT.md). Deliberately
++        named to avoid that established vocabulary rather than collide
++        with it - this has nothing to do with target_pixel/AlignOnRaDec.
++
++        Query parameters:
++            ra, dec: degrees, J2000 - center of the search. Defaults to
++                PiFinder's own current solved position if omitted.
++            radius: degrees, default 60.
++            count: max results, default 4.
++            min_altitude: degrees above horizon, default 20.
++            direction: optional, one of "N"/"E"/"S"/"W" - restricts
++                candidates to that 90-degree azimuth quadrant (N=315-45,
++                E=45-135, S=135-225, W=225-315). A HARD filter, not a
++                preference: if fewer than `count` candidates remain after
++                applying it, the request fails with 422 rather than
++                silently returning fewer/falling back to other directions -
++                the caller asked for a specific sky region (e.g. "never
++                point toward that obstruction") and a silent fallback would
++                defeat the point. Omit for the previous, direction-agnostic
++                behavior.
++
++        Returns {"candidates": [{"ra": deg, "dec": deg, "name": str or null,
++        "mag": float or null, "altitude": deg, "azimuth": deg}, ...]},
++        already altitude- (and, if given, direction-) filtered - callers do
++        not need to re-check visibility themselves. Selected via
++        _select_spread_candidates() (see its own docstring) rather than
++        plain brightness ranking - brightest first, then chosen to spread
++        across the sky, not necessarily the `count` single brightest stars
++        in the search area.
++        """
++        try:
++            ss = server_instance.shared_state
++            qs = request.args
++            radius = float(qs.get("radius", 60.0))
++            count = int(qs.get("count", 4))
++            min_altitude = float(qs.get("min_altitude", 20.0))
++            direction = qs.get("direction", "").strip().upper() or None
++            if direction is not None and direction not in _DIRECTION_QUADRANTS:
++                return _json_response(
++                    {"error": f"invalid direction '{direction}' (expected N/E/S/W)"}, 400
++                )
++
++            if "ra" in qs and "dec" in qs:
++                center_ra = float(qs["ra"])
++                center_dec = float(qs["dec"])
++            else:
++                sol = ss.solution()
++                if sol is None or not sol.has_pointing():
++                    return _json_response(
++                        {"error": "no ra/dec given and no current solve available"},
++                        400,
++                    )
++                aligned = sol.pointing.aligned.estimate
++                center_ra = float(aligned.RA)
++                center_dec = float(aligned.Dec)
++
++            location = ss.location()
++            dt = ss.datetime()
++            if location is None or dt is None or not location.lock:
++                return _json_response(
++                    {"error": "location/time not available (GPS not locked?)"}, 503
++                )
++
++            from PiFinder.calc_utils import sf_utils
++            from PiFinder.db.objects_db import ObjectsDatabase
++
++            sf_utils.set_location(location.lat, location.lon, location.altitude)
++
++            db = ObjectsDatabase()
++            _conn, cursor = db.get_pifinder_database()
++            # names.rowid ordering matters here: bright_stars_loader.py
++            # inserts "Str <sequence>" first, then the common name (e.g.
++            # "Alioth"), then the Latin/Bayer designation last - so each
++            # object has several rows in `names`, not one. Fetch them all
++            # per object and pick the best one in Python below rather than
++            # returning a duplicate candidate per name variant.
++            cursor.execute(
++                """
++                SELECT objects.id, objects.ra, objects.dec, objects.mag,
++                       names.common_name
++                FROM catalog_objects
++                JOIN objects ON objects.id = catalog_objects.object_id
++                LEFT JOIN names ON names.object_id = objects.id
++                WHERE catalog_objects.catalog_code = 'Str'
++                ORDER BY objects.id, names.rowid
++                """
++            )
++            rows = cursor.fetchall()
++
++            objects_by_id: dict[int, dict] = {}
++            for object_id, ra, dec, mag_json, name in rows:
++                entry = objects_by_id.get(object_id)
++                if entry is None:
++                    mag = None
++                    if mag_json:
++                        try:
++                            mag = json.loads(mag_json).get("filter_mag")
++                        except (TypeError, ValueError, json.JSONDecodeError):
++                            mag = None
++                    entry = {"ra": ra, "dec": dec, "mag": mag, "name": None}
++                    objects_by_id[object_id] = entry
++                # Prefer the first name that isn't the synthetic "Str N"
++                # catalog-sequence name (a real common/Latin name is far
++                # more useful for a user-facing candidate list); keep "Str
++                # N" only as a last-resort fallback if nothing else exists.
++                is_catalog_seq_name = name is not None and name.startswith("Str ")
++                if entry["name"] is None or (
++                    entry["name"].startswith("Str ") and not is_catalog_seq_name
++                ):
++                    entry["name"] = name
++
++            candidates = []
++            for entry in objects_by_id.values():
++                ra, dec = entry["ra"], entry["dec"]
++                if _angular_separation_deg(center_ra, center_dec, ra, dec) > radius:
++                    continue
++                alt, az = sf_utils.radec_to_altaz(ra, dec, dt)
++                if alt < min_altitude:
++                    continue
++                if direction is not None and not _azimuth_in_direction(az, direction):
++                    continue
++                candidates.append(
++                    {
++                        "ra": ra,
++                        "dec": dec,
++                        "name": entry["name"],
++                        "mag": entry["mag"],
++                        "altitude": alt,
++                        "azimuth": az,
++                    }
++                )
++
++            # Hard filter, not a preference (#191): the caller asked for a
++            # specific sky region on purpose (e.g. "never point toward that
++            # tree") - silently returning fewer or falling back to other
++            # directions would defeat that. Only enforced when a direction
++            # was actually given; the direction-agnostic case keeps its
++            # previous "return whatever's available" behavior.
++            if direction is not None and len(candidates) < count:
++                return _json_response(
++                    {
++                        "error": (
++                            f"only {len(candidates)} candidate(s) found in direction "
++                            f"'{direction}' (radius {radius}°, min_altitude "
++                            f"{min_altitude}°), need {count}"
++                        )
++                    },
++                    422,
++                )
++            return _json_response({"candidates": _select_spread_candidates(candidates, count)})
++        except Exception as e:
++            logger.error("api/nearby_bright_stars error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
+     @app.route("/api/solution")
+     def api_solution():
+         try:
+@@ -770,6 +1055,134 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -26,6 +334,118 @@
 +            return _json_response({"success": True})
 +        except Exception as e:
 +            logger.error("api/debug_solve error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_solve", methods=["POST"])
++    def api_fake_solve():
++        """Inject a one-time, synthetic solve at a given RA/Dec, bypassing
++        image capture/plate-solving entirely - lets PiFinder's own IMU
++        dead-reckoning take over from that fixed point, for testing
++        anything downstream of a solve (e.g. an external mount bridge)
++        without a real sky. JSON body: {"ra": <deg>, "dec": <deg>} - JNow
++        (current epoch, i.e. exactly what an INDI mount's own
++        EQUATORIAL_EOD_COORD reports - callers are expected to pass that
++        straight through, not precess it themselves).
++        Distinct from /api/debug_solve, which substitutes a canned image
++        for the real solver to actually plate-solve.
++        """
++        try:
++            if server_instance.fake_solve_command_queue is None:
++                return _json_response(
++                    {"error": "fake_solve_command_queue not available (standalone/test mode)"},
++                    503,
++                )
++            body = request.get_json(silent=True)
++            if not body or "ra" not in body or "dec" not in body:
++                return _json_response({"error": "Missing 'ra'/'dec' field"}, 400)
++            ra_jnow = float(body["ra"])
++            dec_jnow = float(body["dec"])
++            # PiFinder's own solved/tracked position is J2000 (see
++            # /api/solution's Alt/Az computation above, and _apply_
++            # successful_solve()'s callers) - a mount's EQUATORIAL_EOD_COORD
++            # is JNow (epoch of date), so injecting it unconverted leaves a
++            # systematic offset equal to the current precession from J2000
++            # (~12-14' as of 2026, growing over time) in a fixed direction,
++            # not random drift. Found live (2026-08-05) testing #130's
++            # "Mount is source": PiFinder consistently sat northwest of the
++            # coupled Telescope Simulator regardless of target. Same
++            # JNow->J2000 conversion pos_server.py's handle_goto_command()
++            # already does for incoming LX200 GOTOs, applied here too since
++            # this is the same kind of "coordinates arriving from an
++            # external INDI mount" boundary.
++            from PiFinder.calc_utils import sf_utils
++            from skyfield.positionlib import position_of_radec
++
++            ts = sf_utils.ts
++            p = position_of_radec(ra_hours=ra_jnow / 15.0, dec_degrees=dec_jnow, epoch=ts.now())
++            ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
++            ra = float(ra_h._degrees)
++            dec = float(dec_d.degrees)
++            # Near the pole RA is numerically meaningless: the atan2 that
++            # recovers it above runs on a near-zero X/Y vector, so noise
++            # dominates the caller's intended direction. Keep the caller's
++            # own JNow RA there instead. Upstream: brickbots/PiFinder#645.
++            if abs(dec_jnow) >= 89.9:
++                ra = ra_jnow
++            server_instance.fake_solve_command_queue.put(FakeSolve(ra=ra, dec=dec))
++            return _json_response({"success": True, "ra": ra, "dec": dec})
++        except Exception as e:
++            logger.error("api/fake_solve error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_solve", methods=["DELETE"])
++    def api_fake_solve_disable():
++        """Turn Fake-Solve back off, resuming normal real-camera solving.
++
++        Only clears the flag the integrator's exclusivity guard checks
++        (see integrator.py) - the last fake-anchored estimate is left as-is
++        and simply gets overwritten by the next real solve/failed-solve
++        result, same as any other "waiting for fresh data" gap. Read the
++        resulting state back via "fake_solve_active" in GET /api/status.
++        """
++        try:
++            server_instance.shared_state.set_fake_solve_active(False)
++            return _json_response({"success": True})
++        except Exception as e:
++            logger.error("api/fake_solve DELETE error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/fake_imu", methods=["POST"])
++    def api_fake_imu():
++        """Inject one synthetic IMU orientation sample (q_x2imu, scalar-first
++        w/x/y/z) into the fake-IMU fallback (PiFinder.imu_fake.Imu), for
++        driving ImuDeadReckoning between /api/fake_solve injections without
++        real IMU hardware - see PiFinder_Stellarmate's
++        docs/concepts/full_simulation_imu_dead_reckoning.md for the full
++        design and the RA/Dec-to-quaternion derivation callers are expected
++        to use. JSON body: {"w": <float>, "x": <float>, "y": <float>,
++        "z": <float>}. Each call marks "observed moving at send time" - the
++        fake IMU's own debounce (no new sample for a short window, see
++        FAKE_MOVING_TIMEOUT_SEC in imu_fake.py) is what reports "stopped",
++        not a separate stop message - callers should simply stop POSTing
++        once the simulated telescope stops moving.
++
++        No-op (503) when the real IMU is in use - real hardware never reads
++        from this queue, so injecting here would silently do nothing rather
++        than the clear "wrong mode" this responds with instead.
++        """
++        try:
++            if server_instance.fake_imu_command_queue is None:
++                return _json_response(
++                    {"error": "fake_imu_command_queue not available (standalone/test mode)"},
++                    503,
++                )
++            body = request.get_json(silent=True)
++            if not body or not all(k in body for k in ("w", "x", "y", "z")):
++                return _json_response({"error": "Missing 'w'/'x'/'y'/'z' field"}, 400)
++            w, x, y, z = (float(body[k]) for k in ("w", "x", "y", "z"))
++            magnitude = math.sqrt(w * w + x * x + y * y + z * z)
++            if magnitude < 1e-6 or any(math.isnan(v) for v in (w, x, y, z)):
++                return _json_response({"error": "Degenerate quaternion (NaN or near-zero magnitude)"}, 400)
++            server_instance.fake_imu_command_queue.put(FakeImuSample(w=w, x=x, y=y, z=z))
++            return _json_response({"success": True})
++        except Exception as e:
++            logger.error("api/fake_imu error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
 +
      @app.route("/api/key", methods=["POST"])

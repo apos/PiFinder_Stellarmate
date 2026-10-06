@@ -2,11 +2,24 @@
 #include "pifinder_bridge_client.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <memory>
+#include <string>
+
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>
+#include <libastro.h>
+#include <libnova/julian_day.h>
+#include <libnova/transform.h>
 
 static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBridge());
 
@@ -40,10 +53,690 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
 
     return res == CURLE_OK && httpCode == 200;
 }
+
+// #227 follow-up (2026-08-19): Goto-Forward needs full-cadence, fresh
+// PiFinder solves throughout (to Sync from before every Goto, and to verify
+// arrival), but PiFinder's own battery-friendly sleep (keypad/IMU activity
+// only) has no way to know this driver needs it awake - a real live deadlock
+// otherwise (PiFinder sleeps from inactivity, sleep throttles its solve
+// cadence, Goto-Forward can never get a fresh enough solve to act, so
+// nothing ever moves to generate real activity either). Called every tick
+// while MODE_GOTO_FORWARD is active - see PiFinder's /api/keep_awake and
+// state.py's register_external_activity() for the other side of this.
+bool httpPostKeepAwake(const std::string &url)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{}");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && httpCode == 200;
+}
+
+size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+// ROOT CAUSE (found live 2026-09-19, "no fresh solve"/stale-drift
+// investigation, confirmed via the freshCamPosition() DEBUG instrumentation
+// added earlier the same night): every ageSeconds computation in this file
+// used `static_cast<double>(time(nullptr))` - whole seconds only, truncated
+// - against `last_solve_success`, a sub-second-precision epoch float from
+// Python's time.time() on PiFinder's side. Whenever a solve is injected
+// LESS THAN ONE SECOND before Mount Bridge checks it (exactly the case
+// GoTo-Forward/reposition-detection cares about most - a solve just landed,
+// is it fresh enough to act on?), the truncated integer "now" can be
+// SMALLER than the untruncated float last_solve_success from the very same
+// real instant, making ageSeconds spuriously NEGATIVE and failing the
+// `ageSeconds >= 0.0` guard - live-confirmed: "ageSeconds=-0.551 (now=
+// 1789845225, last_solve_success=1789845225.551)", a solve rejected as
+// "not fresh" that was in fact under 1 second old. Intermittent by nature
+// (only bites when the solve is very fresh, which is exactly when it's
+// most likely to fall in the "same second, later fraction" case) - this is
+// the "mal geht's, mal nicht" pattern this project has chased on and off
+// all session. Fix: a proper sub-second-precision wall clock, matching
+// what last_solve_success itself already is.
+double nowEpochSeconds()
+{
+    using namespace std::chrono;
+    return duration<double>(system_clock::now().time_since_epoch()).count();
+}
+
+// Fetches PiFinder's own /api/status and extracts solve_source +
+// last_solve_success - the position/status distinction from #107's
+// root-cause writeup applies here too: LX200 (:GR#/:GD# - what
+// getPiFinderRADE() reads) carries position only, no freshness/validity
+// info at all, so this is fetched separately over HTTP instead of
+// extending the LX200 wire protocol with a bespoke status command.
+// Returns false on any request/parse failure - callers must treat that as
+// "unknown", never as "fresh".
+bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource, double &lastSolveSuccess)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &solution = parsed.at("solution");
+        solveSource = solution.value("solve_source", std::string());
+        const auto &lastSolveField = solution.at("last_solve_success");
+        lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// Same /api/status endpoint again - reads the "last confirmed PiFinder
+// Align" fields (see PiFinder state.SharedStateObj.set_last_align and
+// docs/concepts/mount_bridge_sync_on_pifinder_align.md). last_align_time is
+// an epoch float the caller dedups on; last_align_ra/dec are where the user
+// centred the object in the eyepiece - the position the mount should be
+// Synced to.
+//
+// UNIT + EPOCH: /api/status reports these in DEGREES, J2000 - exactly like
+// solution.RA/Dec (see httpGetPiFinderFreshCamPosition()'s own CRITICAL
+// comments). Callers Sync/compare against the mount's EQUATORIAL_EOD_COORD,
+// which is HOURS, JNow. Convert here, once, at the source: RA /15 to hours,
+// then precess both to epoch-of-date - identical to that function.
+//
+// Returns false (leaving all outputs untouched) on any request/parse
+// failure or a null/absent last_align_time (no Align yet this PiFinder
+// session, or an older PiFinder without the field).
+bool httpGetPiFinderAlignEvent(const std::string &url, double &alignTime, double &alignRA, double &alignDec)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto timeIt = parsed.find("last_align_time");
+        if (timeIt == parsed.end() || timeIt->is_null())
+            return false;
+        const auto raIt = parsed.find("last_align_ra");
+        const auto decIt = parsed.find("last_align_dec");
+        if (raIt == parsed.end() || raIt->is_null() || decIt == parsed.end() || decIt->is_null())
+            return false;
+
+        const double raJ2000Hours = raIt->get<double>() / 15.0;
+        const double decJ2000Deg = decIt->get<double>();
+        INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+        INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+        INDI::J2000toObserved(&j2000, jd, &jnow);
+
+        alignTime = timeIt->get<double>();
+        alignRA = jnow.rightascension;
+        alignDec = jnow.declination;
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// Same /api/status endpoint as httpGetPiFinderSolveStatus() above, but also
+// extracts RA/Dec from the *same* JSON response instead of leaving the
+// caller to fetch position separately (e.g. via the LX200 EQUATORIAL_EOD_COORD
+// property, as getPiFinderRADE() does). That separate-channel approach is
+// fine for read-only display, but for anything that's about to Sync the
+// mount it has a real timing gap: confirming "the last solve was CAM and
+// fresh" via this endpoint, then fetching the position value via a totally
+// different call moments later, can pick up a position PiFinder has since
+// advanced past that confirmed solve via IMU interpolation - syncing the
+// mount to a position that was never actually verified. Found live
+// (2026-08-19, #227 follow-up): PiFinder "overshooting" past a target the
+// mount had genuinely reached correctly. Returns false (and leaves ra/dec
+// untouched) unless solve_source is exactly "CAM", the solve is within
+// maxAgeSeconds, and RA/Dec both parsed - the position and the freshness/
+// source guarantee always come from one atomic snapshot.
+bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSeconds, double &ra, double &dec,
+                                      bool *httpLevelFailure = nullptr)
+{
+    if (httpLevelFailure != nullptr)
+        *httpLevelFailure = false;
+
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+    {
+        if (httpLevelFailure != nullptr)
+            *httpLevelFailure = true;
+        return false;
+    }
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 800L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    // DEBUG-level instrumentation (2026-09-19, "no fresh solve" stall
+    // investigation - see basic-memory pifinder-stellarmate for the full
+    // writeup). Only ever visible with this driver's own Debug switch
+    // enabled (KStars: Configure -> Logging -> Drivers -> Mount, or the
+    // matching INDI Control Panel Options-tab Debug toggle) - INDI's own
+    // DEBUGFDEVICE()/LOGF_DEBUG() machinery suppresses DBG_DEBUG entirely
+    // otherwise, same tiered convention as every other INDI driver, so this
+    // never runs at any cost in normal operation. Logs the exact reason
+    // for every "not fresh" verdict, not just the one final WARN the caller
+    // already prints - the four checks below can each fail independently
+    // and the existing log line alone can't tell them apart.
+    if (res != CURLE_OK || httpCode != 200)
+    {
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): HTTP failed - curl result=%d ('%s'), httpCode=%ld",
+                     url.c_str(), static_cast<int>(res), curl_easy_strerror(res), httpCode);
+        if (httpLevelFailure != nullptr)
+            *httpLevelFailure = true;
+        return false;
+    }
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &solution = parsed.at("solution");
+        const std::string solveSource = solution.value("solve_source", std::string());
+        const auto &lastSolveField = solution.at("last_solve_success");
+        const double lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+
+        if (solveSource != "CAM" || lastSolveSuccess <= 0.0)
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - solve_source='%s' (need 'CAM'), "
+                         "last_solve_success=%.3f (need >0)",
+                         url.c_str(), solveSource.c_str(), lastSolveSuccess);
+            return false;
+        }
+        const double ageSeconds = nowEpochSeconds() - lastSolveSuccess;
+        if (!(ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds))
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - ageSeconds=%.3f, maxAgeSeconds=%.3f "
+                         "(now=%.3f, last_solve_success=%.3f)",
+                         url.c_str(), ageSeconds, maxAgeSeconds,
+                         nowEpochSeconds(), lastSolveSuccess);
+            return false;
+        }
+
+        const auto &raField = solution.at("RA");
+        const auto &decField = solution.at("Dec");
+        if (raField.is_null() || decField.is_null())
+        {
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                         "freshCamPosition(%s): rejected - RA and/or Dec null in an otherwise fresh CAM solve",
+                         url.c_str());
+            return false;
+        }
+
+        // Found live (2026-09-03), root-caused via LOGF_WARN instrumentation
+        // at the one place that actually USES an adopted target
+        // (handleRepositionDetection()'s Fall-4 revert): a plain, non-null,
+        // numerically valid RA=0/Dec=0 reading from PiFinder passed every
+        // check above (fresh, CAM-sourced, non-null) and got silently
+        // adopted as a real held target by an ordinary adoption site (Fall-2
+        // confirm, or HOLDING's own periodic re-sync - neither validates
+        // what it adopts). It then sat there, unremarkable-looking (0.0 is
+        // not NaN), until a LATER, unrelated Fall-4 timeout used it to
+        // revert the mount for real - the actual entry point for this
+        // project's whole run of RA0/Dec0 incidents was HERE, not at any of
+        // the several revert/adoption sites already patched one at a time.
+        // Reject at the source instead: PiFinder's actual solved position is
+        // never genuinely this close to 0/0 in any of this project's test
+        // scenarios, and a real observer targeting that exact point would
+        // cross it in seconds, not sit there - a solve landing within a
+        // couple of arcminutes of it this reliably is far more likely a
+        // transient bad read (e.g. during the periodic indiserver/PiFinder
+        // slowness this project has already documented) than a genuine
+        // position.
+        if (std::abs(raField.get<double>()) < 0.05 && std::abs(decField.get<double>()) < 0.05)
+        {
+            // Free function, no getDeviceName() in scope - DEBUGFDEVICE takes
+            // the device name explicitly instead (see LOGF_WARN's own
+            // definition in indilogger.h).
+            DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_WARNING,
+                         "PiFinder reported a solve suspiciously close to RA0/Dec0 (RA=%.4f, DEC=%.4f deg) - "
+                         "treating as untrustworthy rather than adopting it as a real position.",
+                         raField.get<double>(), decField.get<double>());
+            return false;
+        }
+
+        // CRITICAL UNIT MISMATCH (found live 2026-08-19, caused a real
+        // runaway slew): PiFinder's /api/status reports "solution.RA" in
+        // DEGREES (0-360) - unlike the LX200 EQUATORIAL_EOD_COORD property
+        // getPiFinderRADE() reads elsewhere in this driver, which is hours
+        // (0-24) per INDI convention. Every caller of this function (Sync,
+        // angularSeparationArcmin()) expects hours, matching getMountRADE()
+        // and the rest of the driver. Must convert here, once, at the
+        // source - never assume degrees-vs-hours from a bare number.
+        const double raJ2000Hours = raField.get<double>() / 15.0;
+        const double decJ2000Deg  = decField.get<double>();
+
+        // EPOCH MISMATCH (found live 2026-09-01, issue #232): PiFinder's
+        // /api/status solution is J2000 - PiFinder is J2000 throughout (see
+        // /api/fake_solve's and /api/current_target's own docstrings). Every
+        // caller of this function compares/syncs the value against the mount's
+        // EQUATORIAL_EOD_COORD, which is epoch-of-date (JNow). Without
+        // precessing here the bridge reads a fixed precession-sized offset
+        // (~12' in 2026, growing) as perpetual "drift" and can never hold a
+        // target within threshold. Precess once, at the source - mirrors
+        // lx200_pifinder.cpp::pollCurrentTarget() doing the same for the other
+        // PiFinder->mount coordinate path.
+        INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+        INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+        INDI::J2000toObserved(&j2000, jd, &jnow);
+
+        ra = jnow.rightascension;
+        dec = jnow.declination;
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): accepted - ageSeconds=%.3f, RA=%.4fh, DEC=%.4f deg (JNow)",
+                     url.c_str(), nowEpochSeconds() - lastSolveSuccess, ra, dec);
+        return true;
+    }
+    catch (const nlohmann::json::exception &e)
+    {
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
+                     "freshCamPosition(%s): JSON parse failed - %s (body length %zu)",
+                     url.c_str(), e.what(), body.size());
+        return false;
+    }
+}
+
+// Cooldown wrapper around httpGetPiFinderFreshCamPosition() (2026-09-11,
+// issue #238): every caller tries the nginx-fronted URL (:80) then falls
+// back to PiFinder's own port (:8080), and TimerHit() reaches this - via the
+// drift computation, handleShadowSync(), and syncMountToPiFinderPosition() -
+// unconditionally on every tick. Found live: when PiFinder's HTTP API is
+// slow (same underlying condition as PiFinder LX200's pos_server.py reads
+// timing out - see the #139 comment above), each blocking curl_easy_perform()
+// pair could cost up to ~1.6s, and with no cooldown TimerHit() retried the
+// full pair on the very next tick regardless - 30+ seconds of the driver's
+// single event-loop thread being back-to-back blocked on a PiFinder that
+// wasn't answering, indistinguishable from the driver itself being hung
+// (issue #238's original gdb finding - a thread cleanly in select() - is
+// exactly what a blocking curl call inside libcurl looks like from outside).
+// After a full failed attempt (both URLs), skip trying again entirely for
+// FRESH_POSITION_FAILURE_COOLDOWN_SEC - an already-known-slow PiFinder gets
+// one bounded stall instead of one every tick, and recovers within one
+// cooldown window once it's responsive again.
+static constexpr double FRESH_POSITION_FAILURE_COOLDOWN_SEC = 5.0;
+
+// piFinderHost (2026-09-14, Control Host topology): every HTTP call in this
+// file used to hardcode "127.0.0.1", correct only when Mount Bridge and
+// PiFinder's own Python web server run on the SAME machine. Once "Control
+// Host" existed as its own role (Mount Bridge here, PiFinder's HTTP API on a
+// REMOTE device), that assumption broke - the driver could never reach
+// PiFinder's /api/status at all in that topology, so DRIFT_STATUS stayed
+// permanently Idle/stale there (while the ALL-IN-ONE/local topology kept
+// working fine, since 127.0.0.1 was always correct for it - this is why the
+// bug was there "seit Wochen" for Control Host specifically, never for the
+// local case). Callers now pass PIFINDER_HTTP_HOST (SettingsTP - defaults to
+// "127.0.0.1", updated by the Control Center whenever it knows PiFinder is
+// remote - see server.py's own comment on where that push happens).
+bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinderHost, double &ra, double &dec)
+{
+    static time_t s_lastFailureTime = 0;
+    const time_t now = time(nullptr);
+    if (s_lastFailureTime != 0 && difftime(now, s_lastFailureTime) < FRESH_POSITION_FAILURE_COOLDOWN_SEC)
+        return false;
+
+    // 2026-09-26: the cooldown above exists for one specific situation (see
+    // its own comment, issue #238) - a PiFinder whose HTTP server itself is
+    // genuinely slow/unresponsive, where retrying every tick would block
+    // this driver's single event-loop thread back-to-back. It must NOT fire
+    // for a normal, healthy HTTP response that simply isn't a fresh CAM
+    // solve yet (an isolated CAM_FAILED frame - completely routine even on a
+    // perfectly working real camera - or the position being a hair older
+    // than maxAgeSeconds): live-caught on the Pi5 during a real-sky session,
+    // the real solve cadence is a reliable ~0.5s, so one such ordinary
+    // moment used to black out DRIFT_STATUS/auto-correct for a full 5s
+    // afterward for no reason - the very next tick's solve would have been
+    // fine. Track HTTP-level failure separately from a content-level
+    // "not fresh yet" verdict, and only arm the cooldown when BOTH URLs
+    // failed at the HTTP level (i.e. PiFinder's web server itself could not
+    // be reached at all) - a successful, healthy response that just isn't
+    // fresh yet gets re-checked on the very next tick with no penalty.
+    bool primaryHttpFailed = false;
+    bool fallbackHttpFailed = false;
+    const bool ok =
+        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
+                                         &primaryHttpFailed) ||
+        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec,
+                                         &fallbackHttpFailed);
+
+    s_lastFailureTime = (!ok && primaryHttpFailed && fallbackHttpFailed) ? now : 0;
+    return ok;
+}
+
+// True only if PiFinder's currently-reported position came from a real
+// camera solve (not IMU dead-reckoning, not a failed attempt) within
+// maxAgeSeconds. Fails closed (false) on any HTTP/parse error - an
+// automatic mount correction must never fire off data that couldn't be
+// verified. See #79: Auto-correct previously corrected off a continuously
+// IMU-interpolated position with no freshness check at all, chasing a
+// target that kept moving between real solves.
+// Fetches PiFinder's own /api/orientation_status (Mount Type +
+// screen_direction/PiFinder Type, both read straight from config.json) -
+// same request/response shape convention as httpGetPiFinderSolveStatus()
+// above. Returns false on any request/parse failure.
+bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, std::string &screenDirection)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        mountType = parsed.value("mount_type", std::string());
+        screenDirection = parsed.value("screen_direction", std::string());
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// Fetches PiFinder's own GPS/site location (/api/status "location": lat/lon,
+// degrees) - same JSON endpoint every other httpGetPiFinder*() function
+// here already polls, just a different field. Used by the horizon-safety
+// check below (see sendMountCoordsSafe()'s own comment for why that exists)
+// - PiFinder already knows where it physically is (real GPS, or the sim
+// rig's configured location), no separate site-location tracking needed in
+// this driver. Returns false (leaving lat/lon untouched) on any request/
+// parse failure or if PiFinder doesn't have a location lock yet.
+bool httpGetPiFinderLocation(const std::string &url, double &lat, double &lon)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || httpCode != 200)
+        return false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &location = parsed.at("location");
+        if (!location.value("lock", false))
+            return false;
+        const auto &latField = location.at("lat");
+        const auto &lonField = location.at("lon");
+        if (latField.is_null() || lonField.is_null())
+            return false;
+        lat = latField.get<double>();
+        lon = lonField.get<double>();
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return false;
+    }
+}
+
+// #191 - fetches candidate alignment points from PiFinder's own
+// /api/nearby_bright_stars (its "Str" bright-named-star catalog, already
+// altitude-filtered server-side using PiFinder's own GPS location/time -
+// see docs/concepts/mount_bridge_multistar_alignment.md §4.2). No ra/dec
+// query params are sent - the endpoint centers on PiFinder's own current
+// solved position itself, matching §4.2's own decision to anchor on
+// PiFinder's view rather than the mount's (possibly wrong) one. RA comes
+// back in degrees (this endpoint's own convention, matching every other
+// CompositeObject-shaped PiFinder API) - converted to hours here to match
+// sendMountCoords()'s convention, same as everywhere else in this file.
+// Returns false (with outError set) on any request/parse failure or a
+// zero-candidate response.
+bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, double minAltitude,
+                               const char *direction,
+                               std::vector<std::pair<double, double>> &outPoints,
+                               std::vector<std::string> &outNames, std::string &outError)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+    {
+        outError = "curl_easy_init failed";
+        return false;
+    }
+
+    char fullUrl[256];
+    // direction is nullptr/"" for the previous, direction-agnostic
+    // behavior - "" is skipped by PiFinder's own qs.get(...) or None
+    // default, not sent as an empty query value.
+    if (direction != nullptr && direction[0] != '\0')
+        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f&direction=%s",
+                      url.c_str(), radius, count, minAltitude, direction);
+    else
+        std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=%d&min_altitude=%.1f",
+                      url.c_str(), radius, count, minAltitude);
+
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
+    {
+        outError = curl_easy_strerror(res);
+        return false;
+    }
+    if (httpCode != 200)
+    {
+        outError = "HTTP " + std::to_string(httpCode) + ": " + body;
+        return false;
+    }
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse(body);
+        const auto &candidates = parsed.at("candidates");
+        outPoints.clear();
+        outNames.clear();
+        // Precess J2000 -> JNow here, once, at the source - same reasoning
+        // and same INDI::J2000toObserved() pattern already used for every
+        // other PiFinder-sourced coordinate in this file (see
+        // httpGetLastAlignFromPiFinder()/httpGetPiFinderFreshCamPosition()'s
+        // own comments: "/api/status... is J2000 - PiFinder is J2000
+        // throughout... without precessing here the bridge reads a fixed
+        // precession-sized offset"). This endpoint's own docstring
+        // ("ra, dec: degrees, J2000") confirms the same is true here, but
+        // gotoAlignPoint() previously sent these straight to
+        // sendMountCoordsSafe() unprecessed - a systematic pointing offset
+        // on every Multi-Point Alignment point equal to the accumulated
+        // precession since J2000 (tens of arcminutes by now), not random
+        // noise. Live-reported (2026-09-27): "die Sterne werden nicht exakt
+        // angefahren" - consistent with exactly this kind of fixed,
+        // systematic offset rather than a GPS/time/catalog error.
+        const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+        for (const auto &c : candidates)
+        {
+            const double raJ2000Hours = c.at("ra").get<double>() / 15.0;
+            const double decJ2000Deg = c.at("dec").get<double>();
+            INDI::IEquatorialCoordinates j2000 { raJ2000Hours, decJ2000Deg };
+            INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+            INDI::J2000toObserved(&j2000, jd, &jnow);
+            outPoints.emplace_back(jnow.rightascension, jnow.declination);
+            const auto &nameField = c.at("name");
+            outNames.emplace_back(nameField.is_null() ? std::string() : nameField.get<std::string>());
+        }
+        if (outPoints.empty())
+        {
+            outError = "0 candidates returned";
+            return false;
+        }
+        return true;
+    }
+    catch (const nlohmann::json::exception &e)
+    {
+        outError = std::string("JSON parse error: ") + e.what();
+        return false;
+    }
+}
+
+// See fetchFreshPiFinderPosition()'s own comment on piFinderHost.
+bool isPiFinderSolveFresh(double maxAgeSeconds, const std::string &piFinderHost)
+{
+    std::string solveSource;
+    double lastSolveSuccess = 0.0;
+    const bool ok = httpGetPiFinderSolveStatus("http://" + piFinderHost + "/api/status", solveSource, lastSolveSuccess) ||
+                    httpGetPiFinderSolveStatus("http://" + piFinderHost + ":8080/api/status", solveSource, lastSolveSuccess);
+    if (!ok || solveSource != "CAM" || lastSolveSuccess <= 0.0)
+        return false;
+
+    // Same truncated-integer-vs-float-epoch bug as httpGetPiFinderFreshCamPosition()'s
+    // own ageSeconds computation (see nowEpochSeconds()'s own comment) -
+    // fixed here too, same root cause, same fix.
+    const double ageSeconds = nowEpochSeconds() - lastSolveSuccess;
+    return ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds;
+}
+
+// Singleton guard (2026-09-07, direct feedback: "Warum haben die Treiber
+// keine Singleton???"). Found live: indiserver's FIFO `start` has no dedup
+// of its own - something sent it twice for this same driver, and two
+// genuinely separate processes both happily registered with the same
+// indiserver as "PiFinder Mount Bridge" at once.
+//
+// flock() rather than a PID file, specifically to avoid the classic
+// stale-lock problem: if this process is ever killed uncleanly (SIGKILL,
+// a crash), a PID file would be left behind and could wrongly refuse a
+// later, legitimate restart. flock() needs no such liveness-checking - the
+// kernel releases it automatically the instant the holding process exits,
+// crashes, or is killed, full stop.
+//
+// Scoped to this process's *parent* PID (indiserver's own PID) rather than
+// one fixed path, so two genuinely separate indiserver instances (e.g. a
+// real Full-Simulation profile and a separate Fake-Mode test instance on a
+// different port) can each still run their own single Mount Bridge without
+// falsely colliding with each other - only a second instance spawned by
+// the SAME indiserver (today's actual bug) gets refused.
+bool acquireSingletonLock()
+{
+    const std::string lockPath = "/tmp/.indi_pifinder_mount_bridge_" + std::to_string(getppid()) + ".lock";
+    const int fd = open(lockPath.c_str(), O_CREAT | O_RDWR, 0600);
+    if (fd < 0)
+        return true; // can't even attempt the lock - fail open rather than refuse to start over a filesystem hiccup
+
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+    {
+        close(fd);
+        return false; // another instance already holds it
+    }
+
+    // Deliberately never closed - held for this process's entire lifetime
+    // so the lock stays in effect. No leak in practice: the kernel reclaims
+    // the fd (and releases the flock) on process exit regardless of how it
+    // exits.
+    return true;
+}
+
 } // namespace
 
 PiFinderMountBridge::PiFinderMountBridge()
 {
+    // As early as possible - before any INDI property/network setup - so a
+    // duplicate exits immediately and cleanly, never registering with
+    // indiserver at all. See acquireSingletonLock()'s own comment.
+    if (!acquireSingletonLock())
+    {
+        fprintf(stderr, "PiFinder Mount Bridge: another instance is already running under this "
+                        "indiserver (parent pid %d) - exiting.\n", getppid());
+        exit(1);
+    }
+
     setVersion(1, 1);
     setDriverInterface(AUX_INTERFACE);
 
@@ -61,16 +754,48 @@ bool PiFinderMountBridge::initProperties()
 
     IUFillText(&SettingsT[INDISERVER_HOST], "INDISERVER_HOST", "indiserver host", "localhost");
     IUFillText(&SettingsT[INDISERVER_PORT], "INDISERVER_PORT", "indiserver port", "7624");
-    IUFillTextVector(&SettingsTP, SettingsT, 2, getDeviceName(), "BRIDGE_SETTINGS", "Settings",
+    // Control Host topology (2026-09-14): PiFinder's own HTTP API (solve
+    // freshness, orientation, mount type, keep-awake, align events, nearby
+    // bright stars) - separate from INDISERVER_HOST/PORT above, which is
+    // only the INDI protocol connection to the LX200/mount devices. Defaults
+    // to "127.0.0.1" (same as every hardcoded call site before this), so an
+    // existing all-in-one setup with nothing setting this explicitly keeps
+    // working unchanged. See fetchFreshPiFinderPosition()'s own comment.
+    IUFillText(&SettingsT[PIFINDER_HTTP_HOST], "PIFINDER_HTTP_HOST", "PiFinder HTTP host", "127.0.0.1");
+    IUFillTextVector(&SettingsTP, SettingsT, 3, getDeviceName(), "BRIDGE_SETTINGS", "Settings",
                      "Options", IP_RW, 60, IPS_IDLE);
 
     IUFillText(&ActiveDeviceT[ACTIVE_PIFINDER], "ACTIVE_PIFINDER", "PiFinder", "PiFinder LX200");
     IUFillText(&ActiveDeviceT[ACTIVE_MOUNT], "ACTIVE_MOUNT", "Mount", "");
     IUFillTextVector(&ActiveDeviceTP, ActiveDeviceT, 2, getDeviceName(), "ACTIVE_DEVICES", "Active devices",
                      "Options", IP_RW, 60, IPS_IDLE);
+    // Seeded from the same literals just passed to IUFillText() above, not
+    // read back from ActiveDeviceT[...].text - that crashed live
+    // (2026-08-05), apparently not yet populated at this point in this
+    // libindi build. Whatever the reason, there's no need to read it back:
+    // we just set it.
+    m_lastActivePiFinder = "PiFinder LX200";
+    m_lastActiveMount = "";
 
-    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_ON);
-    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_OFF);
+    IUFillText(&ShadowDeviceT[SHADOW_DEVICE], "SHADOW_DEVICE", "Shadow device", "PiFinder Simulator");
+    IUFillTextVector(&ShadowDeviceTP, ShadowDeviceT, 1, getDeviceName(), "SHADOW_DEVICE_NAME",
+                     "Shadow device", "Shadow Sync", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_ENABLE], "SHADOW_SYNC_ENABLE", "Enable", ISS_OFF);
+    IUFillSwitch(&ShadowSyncS[SHADOW_SYNC_DISABLE], "SHADOW_SYNC_DISABLE", "Disable", ISS_ON);
+    IUFillSwitchVector(&ShadowSyncSP, ShadowSyncS, 2, getDeviceName(), "SHADOW_SYNC", "Mirror to shadow device",
+                       "Shadow Sync", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
+    // Default ISS_ON is Verify/Alert only, not Off (2026-09-07, direct
+    // feedback) - only matters for a genuinely fresh install with no saved
+    // config yet (loadConfig() overrides this immediately once a config
+    // file exists), but that first-run moment is exactly what every new
+    // user hits, and Coupling being silently Off with no visible reason is
+    // a worse first impression than a passive, safe default (Verify/Alert
+    // never touches the mount, just warns) that requires no setup step of
+    // its own.
+    IUFillSwitch(&BridgeModeS[MODE_OFF], "MODE_OFF", "Off", ISS_OFF);
+    IUFillSwitch(&BridgeModeS[MODE_VERIFY_ALERT], "MODE_VERIFY_ALERT", "Verify/Alert only", ISS_ON);
     IUFillSwitch(&BridgeModeS[MODE_AUTO_CORRECT], "MODE_AUTO_CORRECT", "Auto-correct on drift", ISS_OFF);
     IUFillSwitch(&BridgeModeS[MODE_GOTO_FORWARD], "MODE_GOTO_FORWARD", "Goto-Forward", ISS_OFF);
     IUFillSwitchVector(&BridgeModeSP, BridgeModeS, 4, getDeviceName(), "BRIDGE_MODE", "Coupling",
@@ -83,16 +808,160 @@ bool PiFinderMountBridge::initProperties()
 
     IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_NOW], "TRIGGER_SYNC_NOW", "Sync Now", ISS_OFF);
     IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_NOW], "TRIGGER_GOTO_NOW", "Goto Now", ISS_OFF);
-    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 2, getDeviceName(), "MANUAL_TRIGGER",
+    // Goto Now (above) sends the mount to wherever PiFinder is CURRENTLY
+    // pointed - useless for recovering from a physical disturbance (bumped
+    // mount, slipped clutch, overbalance) since PiFinder is rigidly mounted
+    // to the OTA and moves with it, so its live solve reflects the
+    // disturbance too. This button instead re-precesses and re-sends the
+    // held ORIGINAL_TARGET (the same value HOLDING's own automatic
+    // correction tracks back to) - "go back to what I actually meant to
+    // point at," independent of where the optical tube has since ended up.
+    IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_HELD], "TRIGGER_GOTO_HELD", "Goto Held Target", ISS_OFF);
+    // Goto Held Target (above) only corrects the mount - PiFinder's own
+    // belief about "what am I pushed-to" (TARGET_EOD_COORD) is untouched,
+    // so a later Mount Bridge restart can re-read PiFinder's still-wrong
+    // target as its recovery baseline and slew the mount right back to it
+    // - reproduced live (2026-09-05/06). This button re-sends the held
+    // target to PiFinder itself too (via sendPiFinderCoords()), exactly
+    // like an external LX200 client's push-to - PiFinder's own on-device
+    // UI/arrows re-target to it, closing that gap. The mount side is left
+    // to the existing automatic correction (HOLDING) rather than duplicated
+    // here.
+    IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align to Held Target", ISS_OFF);
+    IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_TO_COORDS], "TRIGGER_SYNC_TO_COORDS", "Sync To Coords", ISS_OFF);
+    IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 5, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
+
+    // See the header comment - RA/Dec to sync the mount to on the next
+    // TRIGGER_SYNC_TO_COORDS, no freshness judgment made here at all.
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_RA], "RA", "RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&SyncToCoordsN[SYNC_TO_COORDS_DEC], "DEC", "DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&SyncToCoordsNP, SyncToCoordsN, 2, getDeviceName(), "SYNC_TO_COORDS",
+                       "Sync to coords", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&AbortMountS[0], "ABORT_MOUNT_NOW", "Stop movement", ISS_OFF);
+    IUFillSwitchVector(&AbortMountSP, AbortMountS, 1, getDeviceName(), "ABORT_MOUNT",
+                       "Emergency stop", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    IUFillSwitch(&MultiPointAlignS[ALIGN_START], "ALIGN_START", "Start", ISS_OFF);
+    IUFillSwitch(&MultiPointAlignS[ALIGN_STOP], "ALIGN_STOP", "Stop", ISS_OFF);
+    IUFillSwitchVector(&MultiPointAlignSP, MultiPointAlignS, 2, getDeviceName(), "MULTI_POINT_ALIGN",
+                       "Multi-Point Alignment (#191)", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    IUFillNumber(&AlignConfigN[ALIGN_RADIUS], "RADIUS_DEG", "Search radius (deg)", "%.0f", 5, 180, 5, 60);
+    IUFillNumber(&AlignConfigN[ALIGN_COUNT], "POINT_COUNT", "Number of points", "%.0f", 1, 10, 1, 4);
+    IUFillNumber(&AlignConfigN[ALIGN_MIN_ALTITUDE], "MIN_ALTITUDE_DEG", "Min altitude (deg)", "%.0f", 0, 80, 5, 20);
+    IUFillNumberVector(&AlignConfigNP, AlignConfigN, 3, getDeviceName(), "ALIGN_CONFIG",
+                       "Alignment point selection", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_ANY], "ALIGN_DIR_ANY", "Any", ISS_ON);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_N], "ALIGN_DIR_N", "N", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_E], "ALIGN_DIR_E", "E", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_S], "ALIGN_DIR_S", "S", ISS_OFF);
+    IUFillSwitch(&AlignDirectionS[ALIGN_DIR_W], "ALIGN_DIR_W", "W", ISS_OFF);
+    IUFillSwitchVector(&AlignDirectionSP, AlignDirectionS, 5, getDeviceName(), "ALIGN_DIRECTION",
+                       "Preferred direction", "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_INDEX], "POINT_INDEX", "Current point (1-based)", "%.0f", 0, 10, 1, 0);
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_COUNT], "POINT_COUNT", "Total points", "%.0f", 0, 10, 1, 0);
+    IUFillNumber(&AlignProgressN[ALIGN_POINT_SYNCED], "POINT_SYNCED", "Points verified/synced", "%.0f", 0, 10, 1, 0);
+    IUFillNumberVector(&AlignProgressNP, AlignProgressN, 3, getDeviceName(), "ALIGN_PROGRESS",
+                       "Alignment progress", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillText(&AlignProgressT[ALIGN_CURRENT_NAME], "CURRENT_NAME", "Current point's star name", "");
+    IUFillText(&AlignProgressT[ALIGN_SYNCED_NAMES], "SYNCED_NAMES", "Synced star names (this sequence)", "");
+    IUFillTextVector(&AlignProgressTP, AlignProgressT, 2, getDeviceName(), "ALIGN_PROGRESS_NAMES",
+                       "Alignment progress (names)", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
+    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to held target", ISS_OFF);
+    IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
+                       "Unexplained reposition", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    IUFillSwitch(&ExternalHoldS[EXTERNAL_HOLD_ON], "HOLD_ON", "Hold", ISS_OFF);
+    IUFillSwitch(&ExternalHoldS[EXTERNAL_HOLD_OFF], "HOLD_OFF", "Release", ISS_ON);
+    IUFillSwitchVector(&ExternalHoldSP, ExternalHoldS, 2, getDeviceName(), "EXTERNAL_HOLD",
+                       "External hold", "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+    IUFillText(&ExternalHoldReasonT[0], "REASON", "Reason", "");
+    IUFillTextVector(&ExternalHoldReasonTP, ExternalHoldReasonT, 1, getDeviceName(), "EXTERNAL_HOLD_REASON",
+                     "External hold reason", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    IUFillSwitch(&TargetSourceS[TARGET_SOURCE_PIFINDER], "TARGET_SOURCE_PIFINDER", "PiFinder", ISS_ON);
+    IUFillSwitch(&TargetSourceS[TARGET_SOURCE_MOUNT], "TARGET_SOURCE_MOUNT", "Mount", ISS_OFF);
+    IUFillSwitchVector(&TargetSourceSP, TargetSourceS, 2, getDeviceName(), "TARGET_SOURCE",
+                       "Following", "Main Control", IP_RO, ISR_1OFMANY, 0, IPS_IDLE);
+
+    // See the header comment - starts at a large/"ancient" value; only ever
+    // reset to 0 by an actual TargetSourceSP change in setTargetSource().
+    IUFillNumber(&TargetSourceAgeN[0], "AGE_SEC", "Seconds since Following changed", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&TargetSourceAgeNP, TargetSourceAgeN, 1, getDeviceName(), "TARGET_SOURCE_AGE",
+                       "Following age", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // See the header comment.
+    IUFillNumber(&CorrectionAgeN[0], "AGE_SEC", "Seconds since last self-sent mount command", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&CorrectionAgeNP, CorrectionAgeN, 1, getDeviceName(), "CORRECTION_AGE",
+                       "Correction age", "Main Control", IP_RO, 60, IPS_IDLE);
 
     IUFillNumber(&DriftThresholdN[0], "THRESHOLD_ARCMIN", "Threshold (arcmin)", "%.1f", 0.1, 600, 0.5, 5);
     IUFillNumberVector(&DriftThresholdNP, DriftThresholdN, 1, getDeviceName(), "DRIFT_THRESHOLD",
                        "Drift Threshold", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillNumber(&MaxSyncDriftN[0], "MAX_SYNC_DRIFT_ARCMIN", "Max auto-Sync drift (arcmin)", "%.0f", 10, 10000, 10, 120);
+    IUFillNumberVector(&MaxSyncDriftNP, MaxSyncDriftN, 1, getDeviceName(), "MAX_SYNC_DRIFT",
+                       "Auto-Sync sanity limit", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    IUFillNumber(&SolveFreshnessMaxAgeN[0], "MAX_AGE_SEC", "Max solve age (s)", "%.1f", 0.5, 60, 0.5, 5);
+    IUFillNumberVector(&SolveFreshnessMaxAgeNP, SolveFreshnessMaxAgeN, 1, getDeviceName(), "SOLVE_FRESHNESS",
+                       "Auto-correct solve freshness", "Main Control", IP_RW, 60, IPS_IDLE);
+
     IUFillNumber(&DriftStatusN[0], "DRIFT_ARCMIN", "Current drift (arcmin)", "%.2f", 0, 10000, 0, 0);
     IUFillNumberVector(&DriftStatusNP, DriftStatusN, 1, getDeviceName(), "DRIFT_STATUS", "Status",
                        "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // §8.8: see the header comment. Range/step match isAboveHorizon()'s own
+    // libnova output (degrees, -90..90); IPS_IDLE until the first real
+    // reading, same convention as most other status properties here.
+    IUFillNumber(&MountHorizonStatusN[0], "ALTITUDE_DEG", "Mount altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 1, getDeviceName(), "MOUNT_HORIZON_STATUS",
+                       "Mount horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillNumber(&PiFinderHorizonStatusN[0], "ALTITUDE_DEG", "PiFinder altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumberVector(&PiFinderHorizonStatusNP, PiFinderHorizonStatusN, 1, getDeviceName(), "PIFINDER_HORIZON_STATUS",
+                       "PiFinder horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // See the header comment - durable (config-file) record of the mount's
+    // last-seen position, read back at Connect()-time to tell a Bridge-only
+    // restart apart from a genuine fresh mount connection.
+    IUFillNumber(&LastKnownMountPosN[LAST_KNOWN_MOUNT_RA], "RA", "RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&LastKnownMountPosN[LAST_KNOWN_MOUNT_DE], "DEC", "DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&LastKnownMountPosNP, LastKnownMountPosN, 2, getDeviceName(), "LAST_KNOWN_MOUNT_POS",
+                       "Last known mount position", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // See the header comment - the fixed J2000 coordinate of the last
+    // genuinely new target, distinct from the tactical (JNow) held target.
+    IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_RA], "RA", "RA (J2000, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&OriginalTargetN[ORIGINAL_TARGET_DE], "DEC", "DEC (J2000, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&OriginalTargetNP, OriginalTargetN, 2, getDeviceName(), "ORIGINAL_TARGET",
+                       "Original GoTo target (J2000)", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillNumber(&OriginalTargetDriftN[0], "DRIFT_ARCMIN", "Drift from original target (arcmin)", "%.2f", 0, 10000, 0, 0);
+    IUFillNumberVector(&OriginalTargetDriftNP, OriginalTargetDriftN, 1, getDeviceName(), "ORIGINAL_TARGET_DRIFT",
+                       "Original target drift", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Distinct from DriftStatusNP - that one means "the mount is tracking a
+    // bit imprecisely, will self-correct". This means the mount refused a
+    // Goto/Sync outright (e.g. an elevation or cable-wrap/axis limit), which
+    // is what led to the balcony-wall incident: the software silently
+    // accepted the refusal instead of telling the user. IPS_ALERT while a
+    // refusal is active, IPS_OK once a subsequent attempt succeeds.
+    IUFillText(&MountRejectT[0], "MESSAGE", "Message", "");
+    IUFillTextVector(&MountRejectTP, MountRejectT, 1, getDeviceName(), "MOUNT_REJECT",
+                       "Mount refused Goto/Sync", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    IUFillText(&PiFinderOrientationT[ORIENTATION_MOUNT_TYPE], "MOUNT_TYPE", "PiFinder's Mount Type", "");
+    IUFillText(&PiFinderOrientationT[ORIENTATION_SCREEN_DIRECTION], "SCREEN_DIRECTION", "PiFinder Type", "");
+    IUFillTextVector(&PiFinderOrientationTP, PiFinderOrientationT, 2, getDeviceName(), "PIFINDER_ORIENTATION",
+                       "PiFinder Orientation", "Main Control", IP_RO, 60, IPS_IDLE);
 
     addDebugControl();
     setDefaultPollingPeriod(2000);
@@ -106,6 +975,7 @@ void PiFinderMountBridge::ISGetProperties(const char *dev)
 
     defineProperty(&SettingsTP);
     defineProperty(&ActiveDeviceTP);
+    defineProperty(&ShadowDeviceTP);
 
     if (!m_configLoaded)
     {
@@ -123,16 +993,117 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&BridgeModeSP);
         defineProperty(&CorrectionActionSP);
         defineProperty(&ManualTriggerSP);
+        defineProperty(&SyncToCoordsNP);
+        defineProperty(&AbortMountSP);
+        defineProperty(&MultiPointAlignSP);
+        defineProperty(&AlignConfigNP);
+        defineProperty(&AlignDirectionSP);
+        defineProperty(&AlignProgressNP);
+        defineProperty(&AlignProgressTP);
         defineProperty(&DriftThresholdNP);
+        defineProperty(&MaxSyncDriftNP);
+        defineProperty(&SolveFreshnessMaxAgeNP);
         defineProperty(&DriftStatusNP);
+        defineProperty(&MountHorizonStatusNP);
+        defineProperty(&PiFinderHorizonStatusNP);
+        defineProperty(&LastKnownMountPosNP);
+        defineProperty(&OriginalTargetNP);
+        defineProperty(&OriginalTargetDriftNP);
+        defineProperty(&MountRejectTP);
+        defineProperty(&PiFinderOrientationTP);
+        defineProperty(&ShadowSyncSP);
+        defineProperty(&RepositionConfirmSP);
+        defineProperty(&ExternalHoldSP);
+        defineProperty(&ExternalHoldReasonTP);
+        defineProperty(&TargetSourceSP);
+        defineProperty(&TargetSourceAgeNP);
+        defineProperty(&CorrectionAgeNP);
+
+        // Restore the saved Coupling mode/threshold/etc. now that their
+        // properties actually exist - see m_connectedConfigLoaded's
+        // comment. Applies via the normal IUUpdateSwitch path, same as a
+        // client sending it, so BridgeModeSP.s/IDSetSwitch etc. still fire
+        // correctly. Deliberately still a one-time-per-process bootstrap
+        // (unlike the invariant check below): re-reading the saved config
+        // file on every later reconnect within the same running process
+        // would silently discard any in-session change (e.g. a Coupling
+        // mode picked this session but not yet saved to disk for whatever
+        // reason) the moment the device happens to disconnect/reconnect -
+        // not the same "correct a bad hidden default" job as the check
+        // below, which is safe to repeat because it only ever acts when
+        // the invariant is already violated.
+        if (!m_connectedConfigLoaded)
+        {
+            loadConfig(true);
+            m_connectedConfigLoaded = true;
+        }
+
+        // Self-healing guarantee (2026-09-07, direct feedback): "some
+        // Coupling mode is always active, defaulting to Verify/Alert if
+        // none was ever explicitly chosen" must hold regardless of WHY
+        // it might not - a stale/corrupted saved config with every
+        // switch written Off, a partially-written config file, or any
+        // other way BridgeModeSP could end up with none of its
+        // ISR_1OFMANY switches actually On. Not something to diagnose
+        // case-by-case - just verify the invariant directly and fix it
+        // on the spot if it doesn't hold, exactly like the RA0/Dec0
+        // guards elsewhere in this file don't ask why a bad value
+        // arrived before rejecting it.
+        //
+        // Extended 2026-09-13 (direct feedback): moved out of the
+        // m_connectedConfigLoaded gate above - as written, this only ever
+        // ran on this driver PROCESS's very first connect, so a LATER
+        // disconnect/reconnect within the same still-running process
+        // skipped it entirely even though the exact same "no active
+        // switch" state could in principle still occur by then (nothing
+        // here resets BridgeModeSP's in-memory state on disconnect, but a
+        // future code path doing so, or an explicit CONFIG_LOAD reloading
+        // a corrupted file, wouldn't be caught until the whole driver
+        // process itself restarted). Idempotent and cheap (a single
+        // IUFindOnSwitch check, only acting when it's actually violated),
+        // so running it on every connect costs nothing on the common,
+        // already-healthy path.
+        if (!IUFindOnSwitch(&BridgeModeSP))
+        {
+            LOG_WARN("BRIDGE_MODE had no active switch on connect - "
+                     "defaulting to Verify/Alert only and re-saving.");
+            IUResetSwitch(&BridgeModeSP);
+            BridgeModeS[MODE_VERIFY_ALERT].s = ISS_ON;
+            BridgeModeSP.s = IPS_OK;
+            IDSetSwitch(&BridgeModeSP, nullptr);
+            saveConfig(true, BridgeModeSP.name);
+        }
     }
     else
     {
         deleteProperty(BridgeModeSP.name);
         deleteProperty(CorrectionActionSP.name);
         deleteProperty(ManualTriggerSP.name);
+        deleteProperty(SyncToCoordsNP.name);
+        deleteProperty(AbortMountSP.name);
+        deleteProperty(MultiPointAlignSP.name);
+        deleteProperty(AlignConfigNP.name);
+        deleteProperty(AlignDirectionSP.name);
+        deleteProperty(AlignProgressNP.name);
+        deleteProperty(AlignProgressTP.name);
         deleteProperty(DriftThresholdNP.name);
+        deleteProperty(MaxSyncDriftNP.name);
+        deleteProperty(SolveFreshnessMaxAgeNP.name);
         deleteProperty(DriftStatusNP.name);
+        deleteProperty(MountHorizonStatusNP.name);
+        deleteProperty(PiFinderHorizonStatusNP.name);
+        deleteProperty(LastKnownMountPosNP.name);
+        deleteProperty(OriginalTargetNP.name);
+        deleteProperty(OriginalTargetDriftNP.name);
+        deleteProperty(MountRejectTP.name);
+        deleteProperty(PiFinderOrientationTP.name);
+        deleteProperty(ShadowSyncSP.name);
+        deleteProperty(RepositionConfirmSP.name);
+        deleteProperty(ExternalHoldSP.name);
+        deleteProperty(ExternalHoldReasonTP.name);
+        deleteProperty(TargetSourceSP.name);
+        deleteProperty(TargetSourceAgeNP.name);
+        deleteProperty(CorrectionAgeNP.name);
     }
 
     return true;
@@ -151,6 +1122,7 @@ bool PiFinderMountBridge::Connect()
 
     m_client->setServer(SettingsT[INDISERVER_HOST].text, std::stoi(SettingsT[INDISERVER_PORT].text));
     m_client->setDevices(piFinderName, mountName);
+    m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
 
     if (!m_client->connectServer())
     {
@@ -160,6 +1132,22 @@ bool PiFinderMountBridge::Connect()
     }
 
     LOGF_INFO("Bridging %s -> %s.", piFinderName.c_str(), mountName.c_str());
+    m_didInitialSync = false;
+
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.3: EXTERNAL_HOLD
+    // is never persisted and always starts released on (re)connect - a
+    // stale HOLD_ON surviving a manual Disconnect/Reconnect (e.g. the
+    // Control Center's own watchdog crashed or was killed while holding)
+    // would otherwise silently leave every acting behavior suppressed with
+    // no obvious cause.
+    if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+        LOG_WARN("External hold was still ON from before this (re)connect - releasing it now.");
+    IUResetSwitch(&ExternalHoldSP);
+    ExternalHoldS[EXTERNAL_HOLD_OFF].s = ISS_ON;
+    ExternalHoldSP.s = IPS_IDLE;
+    IUSaveText(&ExternalHoldReasonT[0], "");
+    ExternalHoldReasonTP.s = IPS_IDLE;
+
     SetTimer(getCurrentPollingPeriod());
     return true;
 }
@@ -182,11 +1170,612 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     // PiFinder's web server falls back to 8080 if port 80 is already taken
     // (e.g. StellarMate's own nginx/dashboard) - same probe order the
     // gui_installer status page already uses for its OLED mirror.
-    if (httpPostMountType("http://127.0.0.1/api/set_mount_type", mountType) ||
-        httpPostMountType("http://127.0.0.1:8080/api/set_mount_type", mountType))
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    if (httpPostMountType("http://" + piFinderHost + "/api/set_mount_type", mountType) ||
+        httpPostMountType("http://" + piFinderHost + ":8080/api/set_mount_type", mountType))
     {
         LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
         m_lastSyncedMountType = mountType;
+    }
+}
+
+void PiFinderMountBridge::keepPiFinderAwake()
+{
+    // Same 80-then-8080 fallback order as syncMountTypeToPiFinder() above.
+    // Best-effort - a failed keep-awake call isn't fatal to the Goto, it
+    // just means PiFinder might go/stay asleep and the next sync-before-Goto
+    // attempt waits for its own next fresh solve, same as before this
+    // mechanism existed.
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    httpPostKeepAwake("http://" + piFinderHost + "/api/keep_awake") ||
+        httpPostKeepAwake("http://" + piFinderHost + ":8080/api/keep_awake");
+}
+
+void PiFinderMountBridge::syncOrientationStatus()
+{
+    // Cooldown, same fix and same reasoning as fetchFreshPiFinderPosition()'s
+    // own (issue #238): this runs unconditionally on EVERY TimerHit() tick
+    // (see TimerHit() itself), with no early-return before its own blocking
+    // 80-then-8080 curl pair (1500ms timeout each per httpGetPiFinderOrientation()).
+    // fetchFreshPiFinderPosition() already had exactly this gap closed for
+    // its own call sites, but this one was never given the same protection -
+    // found live (2026-09-19) instrumenting the "no fresh solve" stall: a
+    // slow/unresponsive PiFinder HTTP API would make THIS call re-block the
+    // driver's single event-loop thread on every single tick, indefinitely,
+    // with no backoff - the same "30+ seconds, indistinguishable from the
+    // driver itself being hung" pattern #238 already diagnosed once, just at
+    // an un-cooled-down call site instead of the one that got fixed.
+    static time_t s_lastOrientationFailureTime = 0;
+    const time_t nowOrientation = time(nullptr);
+    if (s_lastOrientationFailureTime != 0 &&
+        difftime(nowOrientation, s_lastOrientationFailureTime) < FRESH_POSITION_FAILURE_COOLDOWN_SEC)
+        return;
+
+    std::string piFinderMountType, screenDirection;
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    const bool gotOrientation =
+        httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection) ||
+        httpGetPiFinderOrientation("http://" + piFinderHost + ":8080/api/orientation_status", piFinderMountType, screenDirection);
+    s_lastOrientationFailureTime = gotOrientation ? 0 : nowOrientation;
+    if (!gotOrientation)
+        return; // PiFinder unreachable this tick - leave the last-known values/state showing rather than blank them
+
+    std::string indiMountType;
+    const bool haveIndiMountType = m_client && m_client->getMountType(indiMountType);
+
+    // Both sides already use the exact same two-value vocabulary ("EQ"/
+    // "Alt/Az") - see /api/set_mount_type's accepted values and
+    // getMountType()'s own mapping - so this is a plain string compare, no
+    // separate normalization needed.
+    const bool mountTypeMatches = haveIndiMountType && indiMountType == piFinderMountType;
+
+    const std::string key = piFinderMountType + "|" + screenDirection + "|" + (mountTypeMatches ? "1" : "0") +
+                             "|" + (haveIndiMountType ? "1" : "0");
+    if (key == m_lastOrientationStatusKey)
+        return; // nothing changed since last publish - avoid redundant INDI traffic every tick
+
+    m_lastOrientationStatusKey = key;
+    IUSaveText(&PiFinderOrientationT[ORIENTATION_MOUNT_TYPE], piFinderMountType.c_str());
+    IUSaveText(&PiFinderOrientationT[ORIENTATION_SCREEN_DIRECTION], screenDirection.c_str());
+    // No INDI mount type known yet (not connected, or a driver that doesn't
+    // report it) - IPS_IDLE rather than a false-positive IPS_ALERT, since
+    // there's nothing to actually disagree with yet.
+    PiFinderOrientationTP.s = !haveIndiMountType ? IPS_IDLE : (mountTypeMatches ? IPS_OK : IPS_ALERT);
+    IDSetText(&PiFinderOrientationTP, nullptr);
+}
+
+bool PiFinderMountBridge::isShadowDeviceSafe() const
+{
+    const std::string shadowName = ShadowDeviceT[SHADOW_DEVICE].text;
+    if (shadowName.empty())
+        return false;
+
+    // Must never fire if the shadow name happens to coincide with a real,
+    // load-bearing device (typo, profile mixup, future reconfiguration) -
+    // otherwise Shadow Sync would start Sync-ing the REAL mount or
+    // PiFinder straight from PiFinder's raw live position, completely
+    // bypassing Coupling's threshold/freshness/MaxSyncDrift gates. Found
+    // via user pushback (2026-08-08) while designing the auto-arm below -
+    // auto-arming removes the one manual "did I really mean to point this
+    // there" pause a human had before, so this check has to stand in for
+    // it unconditionally.
+    if (shadowName == std::string(ActiveDeviceT[ACTIVE_MOUNT].text))
+        return false;
+    if (shadowName == std::string(ActiveDeviceT[ACTIVE_PIFINDER].text))
+        return false;
+
+    return true;
+}
+
+void PiFinderMountBridge::autoArmShadowSyncIfDevicePresent()
+{
+    // Auto-enables ShadowSyncSP the moment its target device is actually
+    // present and safe to use - User decision (2026-08-08): keep the
+    // manual switch (discoverable, real off-switch) rather than removing
+    // it, but make sure nobody has to remember to (re-)flip it after every
+    // driver restart. Fires once per device (re)appearance, not every
+    // tick - m_shadowAutoArmed resets below once the device drops out
+    // again, so reconnecting re-triggers auto-arm rather than leaving a
+    // stale "already armed" flag across a device swap.
+    if (!m_client->isShadowReady() || !isShadowDeviceSafe())
+    {
+        m_shadowAutoArmed = false;
+        m_shadowSyncCheckedSavedDisable = false;
+        return;
+    }
+
+    if (m_shadowAutoArmed || ShadowSyncS[SHADOW_SYNC_ENABLE].s == ISS_ON)
+    {
+        m_shadowAutoArmed = true;
+        return;
+    }
+
+    // Found live (2026-08-28): reaching here on a plain driver restart
+    // (device was present the whole time, only this process restarted)
+    // looks identical to a genuine first-ever appearance - m_shadowAutoArmed
+    // is always false right after construction either way. Without this
+    // check, an explicit "Disable" the user saved to config right before
+    // the restart got silently overridden back to enabled every time.
+    // IUGetConfigSwitch reads the on-disk config directly rather than the
+    // in-memory switch, since the latter's current value doesn't carry the
+    // "was this ever actually saved" distinction on its own. Checked once
+    // per device (re)appearance (see m_shadowSyncCheckedSavedDisable), not
+    // every tick - it's a file read, not free.
+    if (!m_shadowSyncCheckedSavedDisable)
+    {
+        m_shadowSyncCheckedSavedDisable = true;
+        ISState savedDisable;
+        if (IUGetConfigSwitch(getDeviceName(), ShadowSyncSP.name, ShadowSyncS[SHADOW_SYNC_DISABLE].name, &savedDisable) == 0
+            && savedDisable == ISS_ON)
+        {
+            LOG_INFO("Shadow Sync was explicitly disabled and saved before this restart - leaving it off "
+                      "(re-enable it manually if that's no longer wanted).");
+            m_shadowAutoArmed = true; // treat as settled - don't re-check every tick
+            return;
+        }
+    }
+
+    IUResetSwitch(&ShadowSyncSP);
+    ShadowSyncS[SHADOW_SYNC_ENABLE].s = ISS_ON;
+    ShadowSyncSP.s = IPS_OK;
+    IDSetSwitch(&ShadowSyncSP, nullptr);
+    saveConfig(true, ShadowSyncSP.name);
+    m_shadowAutoArmed = true;
+    LOGF_INFO("Shadow device '%s' detected - Shadow Sync auto-enabled.", ShadowDeviceT[SHADOW_DEVICE].text);
+}
+
+void PiFinderMountBridge::handleShadowSync()
+{
+    // Deliberately does not depend on m_client->isReady() (which requires
+    // the real mount's properties too) - the shadow device (#181) must
+    // work independent of ACTIVE_MOUNT/Coupling entirely, purely mirroring
+    // PiFinder's own verified position for visualization. Also deliberately
+    // never touches DriftStatusNP/exceeded/drift - those describe PiFinder
+    // vs the *real* mount, unrelated to this.
+    if (ShadowSyncS[SHADOW_SYNC_ENABLE].s != ISS_ON)
+        return;
+
+    if (!isShadowDeviceSafe())
+        return;
+
+    if (!m_client->isShadowReady())
+        return;
+
+    // Same freshness gate as every other automatic action here (#79) -
+    // mirroring a stale/IMU-interpolated position would just teach the
+    // shadow device to lie too, defeating the point of it being "truth".
+    // #227 follow-up (2026-08-19/20): position now comes from the same
+    // atomic snapshot as the freshness/source check (see
+    // httpGetPiFinderFreshCamPosition()) - the old two-call pattern here
+    // could mirror a position already advanced past the verified solve via
+    // IMU interpolation, which is exactly the Shadow device visibly
+    // drifting apart from PiFinder LX200 that was observed live.
+    double piRA, piDec;
+    if (!fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec))
+        return;
+
+    m_client->syncShadowCoords(piRA, piDec);
+}
+
+void PiFinderMountBridge::runModeReadinessCheck()
+{
+    if (BridgeModeS[MODE_OFF].s == ISS_ON)
+        return; // nothing to verify - Coupling being Off is itself the "nothing needed" state
+
+    if (!m_client->isReady())
+    {
+        // Not fixable here (needs the devices to actually connect) - just
+        // make sure it's visible instead of silently doing nothing until
+        // someone notices drift never updates. TimerHit()'s own isReady()
+        // gate already handles this correctly once connected; this is
+        // purely a heads-up at the moment the mode was chosen.
+        LOG_WARN("Coupling mode enabled, but PiFinder and/or mount aren't both connected yet - "
+                 "will start once ready.");
+    }
+
+    // A sanity limit smaller than the correction threshold would silently
+    // block every correction whose drift falls between the two forever -
+    // "exceeds threshold" but also "exceeds sanity cap", so it never syncs
+    // and the GUI just shows a permanent, unexplained Alert. Safe to
+    // auto-fix (raising a limit is strictly less restrictive, never a
+    // safety regression) rather than just warn.
+    if (MaxSyncDriftN[0].value < DriftThresholdN[0].value)
+    {
+        LOGF_WARN("Auto-Sync sanity limit (%.1f') was smaller than Threshold (%.1f') - corrections in "
+                  "that gap could never fire. Raised the sanity limit to match.",
+                  MaxSyncDriftN[0].value, DriftThresholdN[0].value);
+        MaxSyncDriftN[0].value = DriftThresholdN[0].value;
+        MaxSyncDriftNP.s = IPS_OK;
+        IDSetNumber(&MaxSyncDriftNP, nullptr);
+        saveConfig(true, MaxSyncDriftNP.name);
+    }
+}
+
+bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double piRA, double piDec, double mountRA,
+                                                     double mountDec, double drift)
+{
+    // --- A Fall-4 confirmation from a previous tick is still open: only check its timeout here. ---
+    if (m_repositionConfirmPending)
+    {
+        if (time(nullptr) < m_repositionConfirmDeadline)
+            return true; // still waiting on a response - don't let the old per-mode logic act meanwhile
+
+        LOG_WARN("Reposition confirmation timed out - treating as unintentional, reverting to the held target.");
+        m_repositionConfirmPending = false;
+        IUResetSwitch(&RepositionConfirmSP);
+        RepositionConfirmSP.s = IPS_ALERT;
+        IDSetSwitch(&RepositionConfirmSP, nullptr);
+        if (havePositions)
+        {
+            // Same Sync+re-Goto pattern HOLDING already uses for ordinary
+            // drift - explicitly authorized past MaxSyncDriftNP this one
+            // time, since a human-reviewable confirmation window just
+            // expired unanswered rather than this being blind automation.
+            //
+            // Found live (2026-08-08): NOT routing this through the normal
+            // SLEWING state caused an infinite loop - the next tick saw the
+            // mount moving without weCommandedIt being true (misclassified
+            // as ANOTHER external reposition), and marking "confirmed good"
+            // immediately (before the Goto had actually converged) meant
+            // any still-remaining residual looked implausible again right
+            // away. Fixed: fire the same commands, but hand control back to
+            // the existing SLEWING/SETTLING machinery to verify real
+            // convergence (same discipline as every other correction path)
+            // instead of declaring success ourselves. m_lastConfirmedGoodTime
+            // is deliberately NOT touched here - it only updates once drift
+            // is actually observed back within Threshold, same as normal.
+            // Found live (2026-09-03): m_lastForwardedRA/Dec default to NaN
+            // (see the header) and are only ever set by a genuine forwarded
+            // Goto or a confirmed external reposition - NOT by the plain
+            // Sync this mode does "on entering Goto-Forward" after every
+            // driver restart. A restart landing shortly before this timeout
+            // fires (e.g. the Control Center's readiness watchdog restarting
+            // an only-momentarily-slow driver) left them still NaN here -
+            // sendMountCoords() forwarded that through INDI to the mount
+            // unchecked, and the mount silently coerced NaN to 0/0, sending
+            // it there for real. There is no genuine "held target" yet to
+            // revert to in that case - fall back to PiFinder's own current
+            // fresh position (piRA/piDec, already verified fresh above) and
+            // adopt it as the new held target, exactly like the Fall-2
+            // "external reposition confirmed" branch above already does.
+            if (std::isnan(m_lastForwardedRA) || std::isnan(m_lastForwardedDec))
+            {
+                LOG_WARN("No held target since the last restart - adopting PiFinder's current position instead of reverting to an unset one.");
+                m_lastForwardedRA = piRA;
+                m_lastForwardedDec = piDec;
+                setOriginalTarget(piRA, piDec); // same reasoning as Fall-2 above - best available baseline
+                // Low-value (PiFinder is already at piRA/piDec - this is its
+                // own reported position), kept for consistency with the two
+                // sites below - see docs/concepts/mount_bridge_reposition_notifies_pifinder.md UC3.
+                notifyPiFinderOfReposition(piRA, piDec);
+            }
+            // Diagnostic instrumentation added live (2026-09-03) chasing a
+            // recurrence of the mount landing at/near RA0/Dec0 via exactly
+            // this revert path, with m_lastForwardedRA/Dec NOT NaN this
+            // time (the guard above did not fire) - meaning whatever value
+            // was actually used here was itself already bad, from a source
+            // this comment's own earlier fix didn't anticipate. An external
+            // log watcher missed the moment (disconnected during the same
+            // system slowness this project has already documented), so
+            // this prints directly through INDI's own message channel -
+            // immune to any external tool's own connection gaps - to
+            // finally pin down the exact value on the next occurrence.
+            LOGF_WARN("Reposition revert about to send: piRA=%.6f piDec=%.6f (SYNC), then m_lastForwardedRA=%.6f "
+                      "m_lastForwardedDec=%.6f (TRACK).",
+                      piRA, piDec, m_lastForwardedRA, m_lastForwardedDec);
+            applySlewRateForDrift(drift);
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC") &&
+                sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+            {
+                if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+                {
+                    m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                    m_forwardState = ForwardState::SLEWING;
+                }
+                else
+                {
+                    m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                    m_correctState = CorrectState::SLEWING;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (!havePositions)
+        return false;
+
+    // --- Fall 2: mount moved without either of our own state machines having commanded it. ---
+    // A whole Multi-Point Alignment run (SLEWING through SETTLING, one point after another) is just
+    // as much "commanded by us" as ForwardState/CorrectState::SLEWING - found live (2026-09-07, #309):
+    // without this, an alignment run with Coupling=Goto-Forward active had its own GoTos misclassified
+    // as external repositions, adopted as a "confirmed" new held target, and followed by a spurious
+    // extra GoTo cycle after each point. Deliberately checking "anything other than IDLE/DONE" rather
+    // than mirroring ForwardState/CorrectState's SLEWING-only check: handleMultiPointAlignment() runs
+    // BEFORE this function each tick (unlike handleGotoForward()/handleAutoCorrectGoto(), which run
+    // after), so on the exact tick a point's slew completes, m_alignState has already flipped to
+    // SETTLING by the time weCommandedIt is evaluated here - a SLEWING-only check would still miss
+    // precisely the arrival tick where the misclassification actually happens. Alignment's own
+    // SETTLING already owns verifying arrival and syncing; reposition detection has nothing useful to
+    // add for either of its states.
+    //
+    // Recent-command time window (2026-09-26): the SLEWING/alignment-state
+    // checks above still miss one case - handleGotoForward()'s own #227 fix
+    // Syncs the mount to PiFinder's position BEFORE computing/sending the
+    // actual Goto (see its own comment), and a Sync is atomic, not a slew -
+    // it can move the mount's reported position in a single tick with no
+    // SLEWING state ever observed in between. Live-caught on the Pi5 (real
+    // PiFinder against Telescope Simulator, Goto-Forward coupling):
+    // REPOSITION_CONFIRM re-triggered many times per second, each of Mount
+    // Bridge's own corrections apparently misread as an external reposition.
+    // secondsSinceLastMountCommand() is already tracked for the CORRECTION_AGE
+    // display but was never consulted here - a mount move within a couple of
+    // ticks of a command we ourselves just sent is ours, whether or not a
+    // state-machine flag happened to still say SLEWING at this exact instant.
+    static constexpr double RECENT_SELF_COMMAND_WINDOW_SEC = 4.0; // ~2 ticks at the 2s polling period
+    const bool weCommandedIt = m_forwardState == ForwardState::SLEWING || m_correctState == CorrectState::SLEWING ||
+                                (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE) ||
+                                m_client->secondsSinceLastMountCommand() < RECENT_SELF_COMMAND_WINDOW_SEC;
+
+    // Onset/still-moving detection: compare the mount's own position against
+    // the last tick's, rather than watching isMountSlewing() (see
+    // m_lastPolledMountRA's own comment in the header - a real external move
+    // can complete without ever reporting IPS_BUSY at all). Skipped while we
+    // commanded the current motion ourselves (that's a real, large, expected
+    // delta - not Fall 2) - but, unlike before, NOT skipped just because
+    // m_externalSlewInProgress is already true, so a still-moving mount can
+    // be recognized as such throughout the whole settle window, not just at
+    // its very first tick.
+    if (!std::isnan(m_lastPolledMountRA) && !weCommandedIt)
+    {
+        const double mountDeltaArcmin =
+            angularSeparationArcmin(mountRA, mountDec, m_lastPolledMountRA, m_lastPolledMountDec);
+        const double elapsedSec = std::max(0.0, static_cast<double>(time(nullptr) - m_lastPolledMountTime));
+        const double maxPlausiblePassiveDrift = elapsedSec * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+
+        if (mountDeltaArcmin > maxPlausiblePassiveDrift)
+        {
+            if (!m_externalSlewInProgress)
+            {
+                LOGF_INFO("Mount moved %.1f arcmin since the last check (~%.0fs ago, more than the %.1f' passive sky "
+                          "motion could plausibly produce) without a command from Mount Bridge itself - external "
+                          "control detected (hand-paddle, SkySafari, the OnStep app, or a mount-side GoTo). Will "
+                          "adopt the new position once settled and confirmed by a fresh PiFinder solve.",
+                          mountDeltaArcmin, elapsedSec, maxPlausiblePassiveDrift);
+                m_externalSlewInProgress = true;
+            }
+            else
+            {
+                // Found live (2026-09-07): a fixed SETTLE_TICKS countdown
+                // alone doesn't verify the mount actually STOPPED - it just
+                // waits N ticks and then trusts it's done. Any slew slower
+                // than SETTLE_TICKS * the polling period (true for most real
+                // GoTos of any real distance) let this adopt an intermediate,
+                // still-in-flight position as if it were final, once per
+                // settle window, repeatedly - each one visible externally
+                // once notifyPiFinderOfReposition() started pushing it to
+                // PiFinder (see docs/concepts/mount_bridge_reposition_notifies_pifinder.md).
+                // Restarting the countdown here instead means it only
+                // reaches zero after SETTLE_TICKS CONSECUTIVE ticks with no
+                // further motion - a real "has it actually stopped" check,
+                // not just elapsed time.
+                LOGF_DEBUG("Mount still moving mid-slew (%.1f arcmin since last check) - resetting the settle wait.",
+                           mountDeltaArcmin);
+            }
+            m_externalSettleTicksRemaining = SETTLE_TICKS;
+        }
+    }
+    m_lastPolledMountRA = mountRA;
+    m_lastPolledMountDec = mountDec;
+    m_lastPolledMountTime = time(nullptr);
+
+    if (m_externalSlewInProgress)
+    {
+        if (m_externalSettleTicksRemaining > 0)
+        {
+            --m_externalSettleTicksRemaining;
+            return true; // give the mount a few ticks to physically finish settling - isMountSlewing() can't be trusted to tell us (see above)
+        }
+        if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+            return true; // finished moving, but waiting for a fresh solve to confirm before trusting it (#79)
+
+        m_externalSlewInProgress = false;
+        m_lastForwardedRA = piRA;
+        m_lastForwardedDec = piDec;
+        m_correctTargetRA = piRA;
+        m_correctTargetDec = piDec;
+        setOriginalTarget(piRA, piDec); // genuinely new target - a confirmed external reposition
+        notifyPiFinderOfReposition(piRA, piDec);
+        m_lastConfirmedGoodTime = time(nullptr);
+        m_forwardState = ForwardState::HOLDING;
+        m_correctState = CorrectState::IDLE;
+        setTargetSource(TARGET_SOURCE_MOUNT);
+        LOGF_INFO("External reposition confirmed by a fresh PiFinder solve (RA %.4fh, DEC %.4f deg) - adopted "
+                  "as the new held target.",
+                  piRA, piDec);
+        return true;
+    }
+
+    // Our own correction is already mid-flight (SLEWING/SETTLING) - let
+    // handleGotoForward()/handleAutoCorrectGoto() manage it uninterrupted,
+    // don't reclassify a transitional position as anything.
+    if (weCommandedIt)
+        return false;
+
+    // --- Fall 3 vs Fall 4: no command signal seen, but PiFinder-vs-mount disagree past Threshold. ---
+    // Never trust this drift number off a stale solve - same freshness gate
+    // every other drift-consuming code path in this file already has
+    // (SETTLING, HOLDING's own correction, CorrectState::SETTLING). Found
+    // live (2026-08-08, #186 testing): right after Fall 1 forwards a
+    // legitimate PushTo and the mount arrives, PiFinder's own reported
+    // position hasn't necessarily been reconfirmed by a fresh solve yet -
+    // without this gate, that transient (but real) mismatch got
+    // misclassified as an implausible Fall-4 jump instead of just waiting
+    // for the next solve like every other arrival-verification path does.
+    if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+        return false;
+
+    if (drift <= DriftThresholdN[0].value)
+    {
+        m_lastConfirmedGoodTime = time(nullptr); // currently agreeing - this moment is confirmed-good
+        m_repositionBaselineTrusted = true;
+        return false;
+    }
+
+    if (!m_repositionBaselineTrusted)
+    {
+        // Haven't observed a genuine confirmed-good moment since the last
+        // reset (restart/mode-switch) yet - any pre-existing drift here
+        // could simply be a backlog from being offline, not a sudden
+        // implausible jump. Defer entirely to the existing HOLDING/Auto-
+        // correct logic (still backstopped by MaxSyncDriftNP) until a real
+        // baseline has actually been established.
+        //
+        // Found live (2026-08-27): this silently returning false leaves a
+        // large drift just sitting there - DriftStatusNP goes IPS_ALERT
+        // (computed unconditionally above, in TimerHit), but nothing ever
+        // explains *why* no automatic action is happening or what to do
+        // about it. Deliberately not auto-correcting here (a large,
+        // unbaselined drift is exactly the case Fall 4/MaxSyncDriftNP exist
+        // to NOT act on blindly - see their own comments) - just make the
+        // situation legible instead. Rate-limited to once per
+        // REPOSITION_CONFIRM_TIMEOUT_SEC so this doesn't spam every tick
+        // while the condition persists.
+        const long now = time(nullptr);
+        if (now - m_lastUntrustedBaselineWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+        {
+            m_lastUntrustedBaselineWarnTime = now;
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin, but no confirmed-good baseline has been "
+                      "observed since the last restart/mode-switch - not auto-correcting a possibly-stale "
+                      "backlog. Toggle this Coupling mode off and on to force an immediate re-sync from "
+                      "PiFinder's current position, or send a fresh Goto/push-to.",
+                      drift);
+        }
+        return false;
+    }
+
+    const double elapsedSec = static_cast<double>(time(nullptr) - m_lastConfirmedGoodTime);
+    const double maxPlausibleDrift = elapsedSec * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+
+    if (drift <= maxPlausibleDrift)
+        return false; // Fall 3: physically plausible passive drift - let the existing HOLDING/Auto-correct logic handle it as before
+
+    // Fall 4: exceeds what passive sky motion could produce in the elapsed
+    // time - ask rather than guess (see docs/concepts/mount_bridge_reposition_detection.md UC4).
+    m_repositionConfirmPending = true;
+    m_repositionConfirmDeadline = time(nullptr) + REPOSITION_CONFIRM_TIMEOUT_SEC;
+    RepositionConfirmSP.s = IPS_BUSY;
+    IDSetSwitch(&RepositionConfirmSP, nullptr);
+    LOGF_WARN("Drift %.1f arcmin exceeds what passive sky motion could produce in %.0fs (max plausible %.1f') - "
+              "likely a deliberate reposition (e.g. clutch released) or a disturbance. Confirm via "
+              "REPOSITION_CONFIRM within %ds, or it will be treated as unintentional and reverted automatically.",
+              drift, elapsedSec, maxPlausibleDrift, REPOSITION_CONFIRM_TIMEOUT_SEC);
+    return true;
+}
+
+// #313 - a confirmed solve-based PiFinder Align (the finder-to-scope optical
+// calibration the user triggers from PiFinder's own on-device menu) means
+// PiFinder's solved position now accurately reflects where the telescope is
+// truly pointed - but the telescope has NOT moved, only PiFinder's own
+// calibration improved. The correct mount reaction is a plain Sync, and it
+// is cross-cutting: a stale mount self-belief silently corrupts every
+// Coupling mode's own piRA-vs-mountRA drift math, so this belongs above the
+// mode dispatch, not as a mode-specific behaviour or a fifth mode. See
+// docs/concepts/mount_bridge_sync_on_pifinder_align.md.
+//
+// Runs unconditionally from TimerHit() (like handleMultiPointAlignment()),
+// returns immediately when there is nothing to do.
+void PiFinderMountBridge::handlePiFinderAlignSync()
+{
+    // Off is the ONLY Coupling mode excluded here (explicitly decoupled -
+    // stay completely passive, same as everywhere else). Verify/Alert DOES
+    // Sync on an Align (owner decision, 2026-09-08): the trigger is a
+    // deliberate user calibration, not automation reacting to poll noise,
+    // and a Sync corrects exactly the mount self-knowledge that mode's own
+    // drift alerts depend on being accurate - but it is surfaced as a
+    // visible INFO line there, matching that mode's "tell me, don't act
+    // silently" character.
+    if (BridgeModeS[MODE_OFF].s == ISS_ON)
+        return;
+
+    double alignTime = 0.0, alignRA = 0.0, alignDec = 0.0;
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    const bool haveAlign =
+        httpGetPiFinderAlignEvent("http://" + piFinderHost + "/api/status", alignTime, alignRA, alignDec) ||
+        httpGetPiFinderAlignEvent("http://" + piFinderHost + ":8080/api/status", alignTime, alignRA, alignDec);
+    if (!haveAlign)
+        return;
+
+    // Dedup on the timestamp, mirroring the "track what we last acted on"
+    // pattern used throughout this file (m_lastForwardedRA/Dec etc.).
+    if (!std::isnan(m_lastAlignSyncTime) && alignTime <= m_lastAlignSyncTime)
+        return;
+
+    // First sighting this connection: adopt silently so a pre-existing Align
+    // from an earlier PiFinder session doesn't fire a Sync on every reconnect.
+    if (std::isnan(m_lastAlignSyncTime))
+    {
+        m_lastAlignSyncTime = alignTime;
+        return;
+    }
+
+    // From here a genuinely new Align is pending. Track when we first saw it
+    // so a persistently un-actionable one (mount stuck slewing, Sync keeps
+    // failing) doesn't retry forever - give up with a warning after a bound.
+    if (m_alignSyncPendingSince == 0)
+        m_alignSyncPendingSince = static_cast<long>(time(nullptr));
+    const bool giveUp =
+        static_cast<long>(time(nullptr)) - m_alignSyncPendingSince > ALIGN_SYNC_RETRY_MAX_SEC;
+
+    // Don't Sync mid-slew: a SYNC during motion is rejected or unsafe on many
+    // mounts, and if the user Aligned then immediately slewed, the in-flight
+    // GoTo establishes position anyway. Retry next tick (do NOT advance
+    // m_lastAlignSyncTime) unless we've hit the give-up bound.
+    if (m_client->isMountSlewing() && !giveUp)
+    {
+        LOG_DEBUG("PiFinder Align seen, but the mount is slewing - will retry next tick.");
+        return;
+    }
+
+    // Don't interfere with the bridge's own Multi-Point Alignment run - it
+    // manages its own per-point syncs, and an extra one mid-sequence could
+    // inject a stray point into the mount's alignment model.
+    if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE && !giveUp)
+    {
+        LOG_DEBUG("PiFinder Align seen, but a Multi-Point Alignment run is active - deferring.");
+        return;
+    }
+
+    if (giveUp)
+    {
+        LOGF_WARN("PiFinder Align was confirmed ~%lds ago but the mount could not be Synced (still "
+                  "slewing, a Multi-Point Alignment run outlasted the wait, or the Sync kept failing) "
+                  "- giving up on this one. Re-run the Align, or Sync manually.",
+                  static_cast<long>(time(nullptr)) - m_alignSyncPendingSince);
+        m_lastAlignSyncTime = alignTime;
+        m_alignSyncPendingSince = 0;
+        return;
+    }
+
+    // Sync to what the user asserted - the position they centred in the
+    // eyepiece (httpGetPiFinderAlignEvent() already converted it to
+    // hours/JNow) - not PiFinder's subsequent solved position: no dependence
+    // on a fresh /api/status solve still being available now (a cloud right
+    // after the Align), no sidereal drift across the poll gap.
+    if (sendMountCoordsSafe(alignRA, alignDec, "SYNC"))
+    {
+        m_lastAlignSyncTime = alignTime;
+        m_alignSyncPendingSince = 0;
+        if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
+            LOGF_INFO("PiFinder Align confirmed - Synced mount to %.5f / %.5f. (Verify/Alert normally "
+                      "never writes the mount; a deliberate Align is the one exception.)",
+                      alignRA, alignDec);
+        else
+            LOGF_INFO("PiFinder Align confirmed - Synced mount to %.5f / %.5f.", alignRA, alignDec);
+    }
+    else
+    {
+        LOG_ERROR("PiFinder Align confirmed, but sending SYNC to the mount failed - will retry next tick.");
     }
 }
 
@@ -196,109 +1785,716 @@ void PiFinderMountBridge::TimerHit()
         return;
 
     syncMountTypeToPiFinder();
+    syncOrientationStatus();
+    autoArmShadowSyncIfDevicePresent();
+    handleShadowSync();
 
-    if (BridgeModeS[MODE_OFF].s == ISS_ON || !m_client->isReady())
+    if (!m_client->isReady())
     {
-        SetTimer(getCurrentPollingPeriod());
-        return;
-    }
-
-    if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
-    {
-        handleGotoForward();
-        SetTimer(getCurrentPollingPeriod());
-        return;
-    }
-
-    double piRA, piDec, mountRA, mountDec;
-    if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
-    {
-        SetTimer(getCurrentPollingPeriod());
-        return;
-    }
-
-    const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
-    DriftStatusN[0].value = drift;
-
-    const double threshold = DriftThresholdN[0].value;
-    const bool exceeded = drift > threshold;
-
-    if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
-    {
-        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
-        if (exceeded)
-            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, threshold);
-    }
-    else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
-    {
-        DriftStatusNP.s = IPS_OK;
-        if (exceeded)
+        // #159: cold-start race - a watched device/property that hadn't
+        // registered with indiserver yet when Connect() first ran could
+        // otherwise sit "not ready" forever, indistinguishable from a real
+        // functional bug (isReady() gates most of the driver's own
+        // behavior, and nothing here previously explained why).
+        if (m_client->retryMissingPropertiesIfNeeded())
+            LOG_INFO("PiFinder/mount device properties not all available yet - retrying subscription.");
+        else if (m_client->bindingGaveUp() && !m_bindingGiveUpLogged)
         {
-            const bool useGoto = CorrectionActionS[ACTION_GOTO].s == ISS_ON;
+            LOG_ERROR("PiFinder/mount device properties never became available - check Active "
+                      "devices names match running drivers, or that both are actually connected. "
+                      "Reconnect once confirmed.");
+            m_bindingGiveUpLogged = true;
+        }
+        SetTimer(getCurrentPollingPeriod());
+        return;
+    }
+    m_bindingGiveUpLogged = false;
 
-            // A Goto correction takes far longer than one 2s tick to
-            // complete, and "drift still exceeds threshold" stays true for
-            // the whole time the mount is slewing toward it. Without this
-            // guard, every tick re-issued a fresh Goto to the (slightly
-            // updated) target, which most mount drivers handle by aborting
-            // the in-progress slew and starting over - visible as the mount
-            // repeatedly stopping/restarting, plus an "aborted" alert from
-            // the client on every abort. Sync is instantaneous (no physical
-            // motion to interrupt), so it doesn't need this guard.
-            if (useGoto && m_client->isMountSlewing())
+    // #227 follow-up (2026-08-19): before trusting/using the mount's
+    // position for anything, unconditionally Sync it once from PiFinder's
+    // position - whatever the mount reports right after Connect() (leftover
+    // from before this session, or a hardware default) is not assumed
+    // accurate. Only for the modes actually allowed to move/Sync the mount;
+    // Verify-Alert and Off must stay passive. Retries every tick (no fresh
+    // solve yet just means try again next tick) until it succeeds once.
+    //
+    // Refined (2026-09-11, direct feedback): "unconditionally" used to mean
+    // literally every Connect(), including a Bridge-only restart where the
+    // mount driver itself never disconnected and its position was perfectly
+    // good the whole time - see m_didInitialSync's own header comment for
+    // the live incident this caused (a manually-injected test position
+    // silently overwrote a real, good mount position after an unrelated
+    // Bridge self-heal restart). Checked against LastKnownMountPosNP first -
+    // durable across a Bridge restart, unlike m_didInitialSync itself: if
+    // the mount's current position still matches what was last known-good
+    // before this (re)start, the mount driver is the actual ground truth
+    // and never lost track, so trust it instead of blindly overwriting it
+    // from PiFinder's current position.
+    if (!m_didInitialSync &&
+        (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON || BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON))
+    {
+        double mountRA, mountDec;
+        const bool haveSavedBaseline = LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value != 0.0 ||
+                                        LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value != 0.0;
+        if (haveSavedBaseline && m_client->getMountRADE(mountRA, mountDec) &&
+            angularSeparationArcmin(mountRA, mountDec, LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value,
+                                     LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value) < MOUNT_UNCHANGED_THRESHOLD_ARCMIN)
+        {
+            LOG_INFO("Mount position unchanged since before this (re)start - the mount driver itself never "
+                      "lost track, trusting it instead of blindly re-Syncing from PiFinder's current position.");
+            m_didInitialSync = true;
+        }
+        else if (syncMountToPiFinderPosition())
+        {
+            m_didInitialSync = true;
+        }
+    }
+
+    // Keep LastKnownMountPosNP fresh as an ordinary, mode-independent
+    // baseline (same "always-on, Coupling-mode-independent" philosophy as
+    // DriftStatusNP below) - written to disk only when the mount actually
+    // moved enough to matter, not every tick. Deliberately runs AFTER the
+    // bootstrap check above, so a restart always compares against the
+    // PRE-restart baseline first, before this overwrites it with the
+    // (possibly just-changed) live position for the *next* restart.
+    {
+        double mountRA, mountDec;
+        if (m_client->getMountRADE(mountRA, mountDec) &&
+            angularSeparationArcmin(mountRA, mountDec, LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value,
+                                     LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value) > MOUNT_UNCHANGED_THRESHOLD_ARCMIN)
+        {
+            LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value = mountRA;
+            LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value = mountDec;
+            LastKnownMountPosNP.s = IPS_OK;
+            IDSetNumber(&LastKnownMountPosNP, nullptr);
+            saveConfig(true, LastKnownMountPosNP.name);
+        }
+    }
+
+    // #191 PoC - independent of Coupling mode entirely (a one-shot action,
+    // not a standing coupling mode - see the concept doc's own "Abgrenzung
+    // zu bestehenden Coupling-Modi"), so it ticks unconditionally here
+    // rather than through the BridgeModeSP dispatch below. Own state
+    // machine, no-ops immediately when IDLE/DONE.
+    handleMultiPointAlignment();
+
+    // #313 - Sync the mount on a confirmed PiFinder Align, independent of
+    // Coupling mode (Off excluded). Cross-cutting, above the mode dispatch -
+    // see the function's own header comment.
+    //
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.2: gated behind
+    // EXTERNAL_HOLD - this is exactly the gap a Control-Center-only
+    // Coupling-mode override (the version of this feature that shipped
+    // before the driver-side property existed) could not close on its own,
+    // since handlePiFinderAlignSync() fires in every Coupling mode except
+    // MODE_OFF, MODE_VERIFY_ALERT included.
+    if (ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON)
+        handlePiFinderAlignSync();
+
+    // Drift is computed and published whenever the bridge is ready
+    // (PiFinder solving, mount connected), regardless of Coupling mode -
+    // including Off. Found live (2026-08-05): the GUI's drift readout froze
+    // at its startup default while Coupling was Off, which looked like a
+    // broken readout rather than the intended "nothing is being watched"
+    // state - Verify/Alert's compute-and-report behavior is really the
+    // mode-independent baseline every other mode builds on, not a feature
+    // exclusive to that one preset. Coupling mode still gates the *action*
+    // (warn log, correction, forwarding) - Off stays inert there, just not
+    // blind.
+    // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: piRA/piDec must come from
+    // the same HTTP-backed, freshness-checked source every other consequential read in this file
+    // already uses (httpGetPiFinderFreshCamPosition()), not the separate, laggier INDI mirror
+    // (getPiFinderRADE(), via "PiFinder LX200") - the two could silently disagree by double-digit
+    // arcminutes whenever PiFinder's real position was actively changing, which this driver's own
+    // top-level drift readout (the value everything else reacts to) was still exposed to.
+    double piRA, piDec, mountRA, mountDec;
+    const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
+    const bool havePositions = havePiFinderPosition && m_client->getMountRADE(mountRA, mountDec);
+    // Remember the last genuinely fresh PiFinder position (no extra HTTP call -
+    // this is the same fetch every other consequential read this tick already
+    // uses) so PIFINDER_HORIZON_STATUS below can fall back to "last known, N
+    // seconds old" instead of freezing when the current tick has none - see
+    // m_lastKnownPiFinderRA's own header comment. Never read by anything that
+    // actually moves the mount.
+    if (havePiFinderPosition)
+    {
+        m_lastKnownPiFinderRA = piRA;
+        m_lastKnownPiFinderDec = piDec;
+        m_lastKnownPiFinderPositionTime = time(nullptr);
+    }
+    double drift = 0.0;
+    bool exceeded = false;
+    if (havePositions)
+    {
+        drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+        DriftStatusN[0].value = drift;
+        const double threshold = DriftThresholdN[0].value;
+        exceeded = drift > threshold;
+        DriftStatusNP.s = exceeded ? IPS_ALERT : IPS_OK;
+
+        // See OriginalTargetNP's own header comment - this is the "did we
+        // hold what the user actually asked for" metric, separate from
+        // DriftStatusNP above ("does the mount currently agree with
+        // PiFinder"). Re-precess the fixed J2000 original target to
+        // CURRENT JNow every tick before comparing - JNow itself keeps
+        // changing with time, so comparing a stale JNow snapshot against a
+        // fresh one would show spurious drift that's really just
+        // precession, not a real change in pointing.
+        double originalTargetJNowRA, originalTargetJNowDec;
+        if (getOriginalTargetJNow(originalTargetJNowRA, originalTargetJNowDec))
+        {
+            const double originalTargetDrift = angularSeparationArcmin(piRA, piDec, originalTargetJNowRA, originalTargetJNowDec);
+            OriginalTargetDriftN[0].value = originalTargetDrift;
+            const bool originalTargetExceeded = originalTargetDrift > threshold;
+            OriginalTargetDriftNP.s = originalTargetExceeded ? IPS_ALERT : IPS_OK;
+            IDSetNumber(&OriginalTargetDriftNP, nullptr);
+
+            // Diagnostic only (see the header comment for why this doesn't
+            // self-correct) - rate-limited the same way MaxSyncDriftNP's own
+            // warning is, so a sustained wander doesn't spam the log every
+            // tick without adding new information.
+            if (originalTargetExceeded)
             {
-                // Already correcting from a previous tick - let it finish.
-            }
-            else
-            {
-                const char *coordSet = useGoto ? "TRACK" : "SYNC";
-                if (m_client->sendMountCoords(piRA, piDec, coordSet))
-                    LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent %s to mount.", drift, coordSet);
-                else
-                    LOG_ERROR("Failed to send correction to mount.");
+                const long now = time(nullptr);
+                if (now - m_lastOriginalTargetDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                {
+                    m_lastOriginalTargetDriftWarnTime = now;
+                    LOGF_WARN("PiFinder has drifted %.1f arcmin from the original GoTo target (threshold %.1f) - "
+                              "mount and PiFinder still agree with each other, but both have wandered from what "
+                              "was actually requested. Send a fresh Goto/push-to to re-anchor.",
+                              originalTargetDrift, threshold);
+                }
             }
         }
     }
 
-    IDSetNumber(&DriftStatusNP, nullptr);
+    // Published every tick alongside drift, same reasoning as DriftStatusNP
+    // just above - both describe the current moment, not just mode-specific
+    // events. Left at its large initial default (never published as
+    // "fresh") until the first real TargetSourceSP change this run.
+    if (m_lastTargetSourceChangeTime > 0)
+    {
+        TargetSourceAgeN[0].value =
+            static_cast<double>(static_cast<long>(time(nullptr)) - m_lastTargetSourceChangeTime);
+        IDSetNumber(&TargetSourceAgeNP, nullptr);
+    }
+
+    // Reposition Detection (#178) only applies to the two "held target"
+    // Goto-based modes (Goto-Forward, Auto-correct's Goto action) - it
+    // needs a held-target concept to adopt into, which Verify/Alert (never
+    // touches the mount) and Auto-correct's plain Sync action (no target,
+    // just continuous re-sync) don't have. See
+    // docs/concepts/mount_bridge_reposition_detection.md.
+    // Was emergency-disabled live (2026-08-08) after a false-positive
+    // Fall-4 loop (see git history) - re-enabled after two fixes: reverts
+    // now route through the normal SLEWING state instead of declaring
+    // success immediately (so convergence is actually verified), and the
+    // rate-based classification only activates after a genuine
+    // confirmed-good baseline, not immediately after every restart.
+    // #372, docs/concepts/mount_bridge_external_hold.md §2.2: a dither must
+    // not be read as an external reposition while held - excluded here
+    // rather than inside handleRepositionDetection() itself, same "gate at
+    // the call site, not inside the handler" shape as handlePiFinderAlignSync()
+    // above.
+    const bool repositionDetectionApplies =
+        ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON &&
+        (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON ||
+         (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON));
+    const bool repositionHandledThisTick =
+        repositionDetectionApplies && handleRepositionDetection(havePositions, piRA, piDec, mountRA, mountDec, drift);
+
+    if (repositionHandledThisTick)
+    {
+        // Fully handled above (external slew in progress/just adopted, or
+        // a Fall-4 confirmation pending/just resolved) - skip the normal
+        // per-mode logic so it can't act on the same drift a moment ago.
+    }
+    else if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+    {
+        // #372 §2.2: stay fully passive regardless of the selected Coupling
+        // mode - same logging-only behavior as Verify/Alert, no Sync/Goto of
+        // any kind while held. Positioned before the MODE_GOTO_FORWARD check
+        // below so handleGotoForward() never runs at all while held - a
+        // simplification versus the concept's own table, which wanted
+        // Goto-Forward's held-target *tracking* to keep running even though
+        // the actual forward is skipped; splitting that out of
+        // handleGotoForward() itself was judged not worth the added
+        // complexity for v1 (a released Goto-Forward re-baselines against
+        // PiFinder's current target quickly regardless).
+        if (havePositions && exceeded)
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f) - not acting (external hold: %s).",
+                      drift, DriftThresholdN[0].value, ExternalHoldReasonT[0].text);
+    }
+    else if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+    {
+        handleGotoForward();
+    }
+    else if (!havePositions)
+    {
+        // Nothing more to do this tick - PiFinder/mount coordinates aren't
+        // available yet, same as before this changed to compute drift
+        // unconditionally.
+    }
+    else if (BridgeModeS[MODE_VERIFY_ALERT].s == ISS_ON)
+    {
+        if (exceeded)
+            LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, DriftThresholdN[0].value);
+    }
+    else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
+    {
+        if (CorrectionActionS[ACTION_GOTO].s == ISS_ON)
+        {
+            // Goto/Track correction: needs arrival-verify-and-refine, not a
+            // one-shot fire-and-forget - see handleAutoCorrectGoto()'s
+            // header comment for why (#170).
+            handleAutoCorrectGoto(exceeded, piRA, piDec, drift, DriftThresholdN[0].value);
+        }
+        else if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+        {
+            // Found live (#79): correcting off a continuously
+            // IMU-interpolated position (no real solve backing it, or one
+            // older than SolveFreshnessMaxAgeN) chases a target that keeps
+            // moving between real solves - the mount "oscillates" toward
+            // wherever dead-reckoning currently thinks PiFinder points,
+            // instead of a verified position. Skip the correction and wait
+            // for the next tick's fresh-solve check instead.
+            //
+            // IPS_ALERT here (not IPS_OK) so the GUI can tell "exceeded but
+            // gated" apart from "exceeded and actively correcting" - found
+            // live (2026-08-05): the GUI's caption previously said
+            // "Correcting the mount now" purely from drift > threshold, with
+            // no way to know the driver was silently refusing underneath.
+            DriftStatusNP.s = IPS_ALERT;
+            LOGF_DEBUG(
+                "Drift %.1f arcmin exceeded threshold, but PiFinder's position isn't backed by a solve "
+                "within the last %.1fs - skipping correction.",
+                drift, SolveFreshnessMaxAgeN[0].value);
+        }
+        else if (exceeded && drift > MaxSyncDriftN[0].value)
+        {
+            DriftStatusNP.s = IPS_ALERT;
+            // Rate-limited - see m_lastMaxSyncDriftWarnTime's own comment;
+            // this branch re-evaluates every fresh solve and would otherwise
+            // spam the log for as long as the condition persists.
+            const long now = time(nullptr);
+            if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+            {
+                m_lastMaxSyncDriftWarnTime = now;
+                LOGF_WARN("Drift %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - skipping Sync to "
+                          "avoid corrupting the mount's model off a possibly bad solve.",
+                          drift, MaxSyncDriftN[0].value);
+            }
+        }
+        else if (exceeded)
+        {
+            // Sync path: instantaneous, no physical motion to verify/refine.
+            DriftStatusNP.s = IPS_BUSY;
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
+                LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent SYNC to mount.", drift);
+            else
+                LOG_ERROR("Failed to send correction to mount.");
+        }
+        // else: not exceeded - DriftStatusNP.s already set to IPS_OK by the
+        // baseline computation above.
+    }
+
+    if (havePositions)
+    {
+        IDSetNumber(&DriftStatusNP, nullptr);
+    }
+    else
+    {
+        // 2026-09-18, direct feedback (basic-memory pifinder-stellarmate/
+        // 00169): a missing fresh solve used to leave DriftStatusNP silently
+        // at whatever it last showed - e.g. a stale "Ok" from minutes ago,
+        // indistinguishable from a genuinely current, agreeing readout. Same
+        // IPS_IDLE-means-"can't verify right now" convention this file
+        // already uses elsewhere (see the HOLDING/arrival-wait branches
+        // above) - actively publish "unknown" instead of leaving a
+        // possibly-stale-but-still-green state standing unremarked.
+        DriftStatusNP.s = IPS_IDLE;
+        IDSetNumber(&DriftStatusNP, nullptr);
+    }
+
+    // §8.8: independent of havePositions above - this only needs the
+    // mount's own reported position, not a fresh PiFinder solve, so it
+    // stays meaningful even with no solve active at all (the exact
+    // situation that motivated this: a below-horizon mount with neither a
+    // real nor synthetic solve, where havePositions is false the whole
+    // time). isAboveHorizon() itself fails open (altitude=90, "above") if
+    // no location lock exists yet - same deliberate defense-in-depth
+    // semantics as every other caller of it, not changed here.
+    {
+        double mountRA, mountDec;
+        if (m_client->getMountRADE(mountRA, mountDec))
+        {
+            double altitude = 90.0;
+            const bool above = isAboveHorizon(mountRA, mountDec, altitude);
+            MountHorizonStatusN[0].value = altitude;
+            MountHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
+            IDSetNumber(&MountHorizonStatusNP, nullptr);
+        }
+    }
+
+    // PiFinder's own altitude - same reasoning as MountHorizonStatusNP just
+    // above, mirrored for the other side of a Sync. piRA/piDec were already
+    // fetched for havePositions/the drift readout above (havePiFinderPosition
+    // guards their validity) - no second HTTP round trip.
+    //
+    // 2026-09-18, direct feedback (basic-memory pifinder-stellarmate/00169):
+    // this used to require havePiFinderPosition (a solve fresh within
+    // SolveFreshnessMaxAgeN) exactly like the drift/Sync/Goto logic above -
+    // but unlike those, this property never drives the mount, it's a pure
+    // display value. Gating it on the SAME freshness requirement meant a
+    // stale/missing solve froze it at whatever it last showed (often its 0
+    // startup default) even though PiFinder's last known position is still
+    // real information worth showing, same as MOUNT_HORIZON_STATUS just
+    // above has no freshness gate at all. Falls back to the last genuinely
+    // fresh position on record (m_lastKnownPiFinderRA/Dec) when this tick's
+    // own fetch isn't fresh - IPS_BUSY marks "stale, shown anyway" so the
+    // GUI/a future consumer can tell it apart from a currently-confirmed
+    // IPS_OK/IPS_ALERT, without inventing a new property.
+    if (havePiFinderPosition)
+    {
+        double altitude = 90.0;
+        const bool above = isAboveHorizon(piRA, piDec, altitude);
+        PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
+        IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
+    }
+    else if (m_lastKnownPiFinderPositionTime > 0)
+    {
+        double altitude = 90.0;
+        isAboveHorizon(m_lastKnownPiFinderRA, m_lastKnownPiFinderDec, altitude);
+        PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusNP.s = IPS_BUSY; // stale - last known, not currently confirmed
+        IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
+    }
+    // else: never had a position at all this run - nothing to fall back to,
+    // leave the property at its untouched startup default.
+
+    // Deliberately published here, AFTER handleGotoForward()/
+    // handleAutoCorrectGoto()/the plain-Sync branch above have all had a
+    // chance to run and possibly call sendMountCoords() - found live
+    // (2026-09-01): publishing this earlier in the tick (before dispatch)
+    // meant a correction sent THIS tick wasn't reflected until the NEXT
+    // tick, a real race indi_pifinder_simulator's mount-follow gate hit in
+    // practice (it would briefly still follow a self-correction before the
+    // fresh age caught up). See CorrectionAgeNP's own header comment.
+    CorrectionAgeN[0].value = m_client->secondsSinceLastMountCommand();
+    IDSetNumber(&CorrectionAgeNP, nullptr);
+
     SetTimer(getCurrentPollingPeriod());
+}
+
+void PiFinderMountBridge::setMountRejectWarning(bool active, const std::string &message)
+{
+    const IPState newState = active ? IPS_ALERT : IPS_OK;
+    const char *newText = active ? message.c_str() : "";
+
+    // Avoid redundant INDI traffic/log noise every poll tick when nothing
+    // changed - same reasoning as setTargetSource() below.
+    if (MountRejectTP.s == newState && std::string(MountRejectT[0].text ? MountRejectT[0].text : "") == newText)
+        return;
+
+    IUSaveText(&MountRejectT[0], newText);
+    MountRejectTP.s = newState;
+    IDSetText(&MountRejectTP, nullptr);
+}
+
+void PiFinderMountBridge::setTargetSource(int index)
+{
+    if (TargetSourceS[index].s == ISS_ON)
+        return; // already showing this - avoid redundant INDI traffic every tick
+    IUResetSwitch(&TargetSourceSP);
+    TargetSourceS[index].s = ISS_ON;
+    TargetSourceSP.s = IPS_OK;
+    IDSetSwitch(&TargetSourceSP, nullptr);
+
+    // See TargetSourceAgeNP's header comment - only an actual change resets
+    // the clock, not every tick that happens to re-affirm the same source.
+    m_lastTargetSourceChangeTime = static_cast<long>(time(nullptr));
+}
+
+void PiFinderMountBridge::applySlewRateForDrift(double driftArcmin)
+{
+    const int count = m_client->getSlewRateCount();
+    if (count <= 0)
+        return; // driver doesn't expose slew rates - optional enhancement, not fatal to the Goto
+
+    const double clamped = std::clamp(driftArcmin, SLEW_RATE_LOG_MIN_ARCMIN, SLEW_RATE_LOG_MAX_ARCMIN);
+    const double t = std::log(clamped / SLEW_RATE_LOG_MIN_ARCMIN) /
+                      std::log(SLEW_RATE_LOG_MAX_ARCMIN / SLEW_RATE_LOG_MIN_ARCMIN); // 0..1
+    int index = static_cast<int>(std::lround(t * (count - 1)));
+    index = std::clamp(index, 0, count - 1);
+
+    m_client->setSlewRateIndex(index);
+}
+
+void PiFinderMountBridge::setOriginalTarget(double jnowRA, double jnowDec)
+{
+    INDI::IEquatorialCoordinates jnow { jnowRA, jnowDec };
+    INDI::IEquatorialCoordinates j2000 { 0.0, 0.0 };
+    const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+    INDI::ObservedToJ2000(&jnow, jd, &j2000);
+
+    m_originalTargetRA_J2000 = j2000.rightascension;
+    m_originalTargetDec_J2000 = j2000.declination;
+    m_haveOriginalTarget = true;
+
+    OriginalTargetN[ORIGINAL_TARGET_RA].value = m_originalTargetRA_J2000;
+    OriginalTargetN[ORIGINAL_TARGET_DE].value = m_originalTargetDec_J2000;
+    OriginalTargetNP.s = IPS_OK;
+    IDSetNumber(&OriginalTargetNP, nullptr);
+}
+
+bool PiFinderMountBridge::getOriginalTargetJNow(double &ra, double &dec)
+{
+    if (!m_haveOriginalTarget)
+        return false;
+    INDI::IEquatorialCoordinates j2000 { m_originalTargetRA_J2000, m_originalTargetDec_J2000 };
+    INDI::IEquatorialCoordinates jnow { 0.0, 0.0 };
+    const double jd = static_cast<double>(time(nullptr)) / 86400.0 + 2440587.5;
+    INDI::J2000toObserved(&j2000, jd, &jnow);
+    ra = jnow.rightascension;
+    dec = jnow.declination;
+    return true;
+}
+
+// Found live (2026-09-03): a corrupted/stale coordinate reaching this far -
+// from any of several sources this project has already chased down one at
+// a time (a NaN'd never-set held target, a rapid tracking on/off stress
+// test racing Fall-2's external-reposition detection, or a not-yet-found
+// cause still under investigation) - got forwarded as a real Sync+Track
+// command and the mount genuinely slewed there. Rather than keep chasing
+// each individual source of a bad value one at a time, this is a single,
+// central safety net every mount-affecting command in this driver now
+// passes through: refuse to send ANY coordinate whose altitude, right now,
+// at this site, is below the safety margin - a real telescope slewing
+// there risks a physical collision with its own mount/tripod. This is
+// deliberately NOT a "reject exactly RA0/Dec0" special case (0h/0deg can be
+// a perfectly legitimate real target close to the celestial equator/
+// equinox) - altitude is the only thing that actually matters for mount
+// safety, and it depends on time and site location like any other object's
+// altitude does.
+//
+// -5 degrees, not 0: direct user feedback (2026-09-03) - a site at real
+// elevation (e.g. on a mountain) can have a geometric horizon depressed
+// somewhat below the ideal sea-level 0 degrees; -5 degrees is a
+// conservative allowance for that without opening the door to a genuine
+// below-local-horizon slew.
+static constexpr double HORIZON_SAFETY_MARGIN_DEG = -5.0;
+
+bool PiFinderMountBridge::isAboveHorizon(double ra, double dec, double &outAltitude)
+{
+    double lat, lon;
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    const bool haveLocation =
+        httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", lat, lon) ||
+        httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", lat, lon);
+    if (!haveLocation)
+    {
+        // No location lock yet (e.g. very early startup) - nothing to
+        // check against. Fail OPEN here deliberately: refusing every
+        // command until a GPS lock exists would make the whole bridge
+        // unusable before one is acquired, and every caller of
+        // sendMountCoordsSafe() already has its own freshness/sanity gates
+        // upstream of this - this is defense in depth, not the only check.
+        outAltitude = 90.0;
+        return true;
+    }
+
+    struct ln_lnlat_posn observer { lon, lat };
+    struct ln_equ_posn object { ra * 15.0, dec }; // libnova wants RA in degrees
+    struct ln_hrz_posn horizontal;
+    const double jd = ln_get_julian_from_sys();
+    ln_get_hrz_from_equ(&object, &observer, jd, &horizontal);
+
+    outAltitude = horizontal.alt;
+    return horizontal.alt >= HORIZON_SAFETY_MARGIN_DEG;
+}
+
+bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char *coordSetName)
+{
+    double altitude = 90.0;
+    if (!isAboveHorizon(ra, dec, altitude))
+    {
+        LOGF_ERROR("Refusing to send RA %.4fh / DEC %.4f deg (%s) to the mount - %.1f degrees below the "
+                   "horizon safety margin (%.1f). This coordinate is not being forwarded.",
+                   ra, dec, coordSetName, altitude, HORIZON_SAFETY_MARGIN_DEG);
+        return false;
+    }
+    return m_client->sendMountCoords(ra, dec, coordSetName);
+}
+
+bool PiFinderMountBridge::syncMountToPiFinderPosition()
+{
+    double piRA, piDec;
+    if (!fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec))
+    {
+        LOG_WARN("No fresh PiFinder camera solve yet - deferring Goto until the mount can be Synced to a real position first.");
+        return false;
+    }
+
+    if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
+    {
+        LOG_ERROR("Failed to Sync mount to PiFinder's current position before forwarding Goto.");
+        return false;
+    }
+
+    LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) before forwarding Goto.",
+              piRA, piDec);
+    return true;
+}
+
+bool PiFinderMountBridge::consumeGenuinePiFinderTargetPending(double targetRA, double targetDec)
+{
+    if (!m_client->consumePiFinderTargetPending())
+        return false;
+
+    if (!std::isnan(m_lastNotifiedPiFinderRA) && !std::isnan(m_lastNotifiedPiFinderDec) &&
+        angularSeparationArcmin(targetRA, targetDec, m_lastNotifiedPiFinderRA, m_lastNotifiedPiFinderDec) <
+            ECHO_MATCH_THRESHOLD_ARCMIN)
+    {
+        // Our own echo (see m_lastNotifiedPiFinderRA/Dec's header comment) -
+        // not a genuine new push-to from a human or another client. Clear it
+        // so it only suppresses this one expected event, not any later
+        // genuinely new push-to that happens to land on the same
+        // coordinates.
+        LOGF_DEBUG("PiFinder target-changed event matches what Mount Bridge itself just pushed "
+                   "(RA %.4fh, DEC %.4f deg) - echo, not a genuine new push-to, ignoring.",
+                   targetRA, targetDec);
+        m_lastNotifiedPiFinderRA = std::nan("");
+        m_lastNotifiedPiFinderDec = std::nan("");
+        return false;
+    }
+
+    return true;
+}
+
+void PiFinderMountBridge::notifyPiFinderOfReposition(double ra, double dec)
+{
+    if (m_client->sendPiFinderCoords(ra, dec, "TRACK"))
+    {
+        m_lastNotifiedPiFinderRA = ra;
+        m_lastNotifiedPiFinderDec = dec;
+        LOGF_INFO("Confirmed external reposition (RA %.4fh, DEC %.4f deg) pushed to PiFinder itself.",
+                  ra, dec);
+    }
+    else
+    {
+        LOG_WARN("Failed to push confirmed external reposition to PiFinder - its own push-to display "
+                 "may now be stale until the next reposition or a manual 'Align to Held Target'.");
+    }
 }
 
 void PiFinderMountBridge::handleGotoForward()
 {
+    keepPiFinderAwake();
+
     double targetRA, targetDec;
-    const bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
+    bool hasTarget = m_client->getPiFinderTargetRADE(targetRA, targetDec);
+
+    // Same reasoning and threshold as httpGetPiFinderFreshCamPosition()'s
+    // own guard above (see its comment) - this is a second, independent
+    // path (PiFinder's own TARGET_EOD_COORD mirror, not /api/status) that
+    // can also feed a genuinely-new-target adoption unchecked. A stale
+    // RA0/Dec0 sitting in that property from well before this run (e.g. an
+    // old, never-pushed-to default) getting misread as a fresh push-to
+    // event would otherwise forward it exactly like a real one.
+    if (hasTarget && std::abs(targetRA) < 0.05 && std::abs(targetDec) < 0.05)
+    {
+        LOGF_WARN("PiFinder's target is suspiciously close to RA0/Dec0 (RA=%.4fh, DEC=%.4f deg) - "
+                  "treating as no genuine target rather than forwarding it.",
+                  targetRA, targetDec);
+        hasTarget = false;
+    }
 
     switch (m_forwardState)
     {
         case ForwardState::IDLE:
         {
             if (!hasTarget)
-                return;
-
-            if (std::isnan(m_lastForwardedRA))
             {
-                // First observation since entering this mode - establish a
-                // baseline without forwarding, so switching into Goto-Forward
-                // doesn't immediately re-send whatever push-to target
-                // happened to already be set on PiFinder.
-                m_lastForwardedRA = targetRA;
-                m_lastForwardedDec = targetDec;
+                m_forwardAwaitingSync = false;
                 return;
             }
 
-            const bool isNewTarget = std::abs(targetRA - m_lastForwardedRA) > 1e-9 ||
-                                      std::abs(targetDec - m_lastForwardedDec) > 1e-9;
-            if (!isNewTarget)
-                return;
+            if (consumeGenuinePiFinderTargetPending(targetRA, targetDec))
+                m_forwardAwaitingSync = true;
 
-            if (m_client->sendMountCoords(targetRA, targetDec, "TRACK"))
+            if (!m_forwardAwaitingSync)
+            {
+                // No genuinely new Goto *event* since we started watching
+                // (a BridgeMode switch, or a driver restart while this mode
+                // was already active) - see consumePiFinderTargetPending()'s
+                // own header comment for why this is event-based, not a
+                // value comparison. Whatever target is already sitting here
+                // is presumed stale/already acted on, not something to
+                // blindly re-fire (found live 2026-08-09: turning Goto-
+                // Forward on immediately re-slewed to the last-held target -
+                // an earlier value-comparison approach here couldn't
+                // reliably tell "stale" apart from "new").
+                //
+                // Still move to HOLDING rather than staying IDLE forever:
+                // found live (2026-08-08) that a driver restart while
+                // Goto-Forward was already active and holding a target left
+                // the state machine permanently stuck in IDLE - nothing
+                // "new" ever arrived, so drift went uncorrected indefinitely
+                // (Altair drifted to 3.3' with no correction). HOLDING does
+                // not fire anything on this tick either (no Goto here), but
+                // from the *next* tick on it both actively re-checks drift/
+                // threshold (self-correcting via the existing settle logic)
+                // and applies this exact same pending-flag check itself, so
+                // a subsequent genuinely new target still fires immediately.
+                m_lastForwardedRA = targetRA;
+                m_lastForwardedDec = targetDec;
+                // Found live (2026-09-03): this recovery path left
+                // OriginalTargetNP unset (still its 0/0 INDI default) across
+                // a restart, because setOriginalTarget() was only called at
+                // genuinely-new-target sites - not here. Every later "Held
+                // target drifted - synced and re-issued" cycle then re-
+                // anchored m_lastForwardedRA/Dec to PiFinder's own noisy
+                // solve with nothing left comparing against a fixed true
+                // target, so a real slow walk-off (confirmed visually in
+                // Stellarium the same session) went completely undetected by
+                // ORIGINAL_TARGET_DRIFT. Same "best available baseline"
+                // reasoning as the Fall-4 NaN-guard above (line ~984) -
+                // guarded so a legitimately already-tracked original target
+                // from before the restart is never clobbered.
+                if (std::isnan(m_originalTargetRA_J2000) || std::isnan(m_originalTargetDec_J2000))
+                    setOriginalTarget(targetRA, targetDec);
+                m_forwardState = ForwardState::HOLDING;
+                return;
+            }
+
+            // #227 root-cause fix (2026-08-19): always Sync the mount to
+            // PiFinder's actual current position before computing/sending
+            // the Goto - see syncMountToPiFinderPosition()'s header comment.
+            // If PiFinder has no fresh solve yet, m_forwardAwaitingSync stays
+            // true and this is retried next tick using whatever target is
+            // then current, instead of either firing blind or dropping the
+            // user's target selection.
+            if (!syncMountToPiFinderPosition())
+                break;
+
+            {
+                double mountRA, mountDec;
+                applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                          ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
+                                          : SLEW_RATE_LOG_MAX_ARCMIN); // unknown - assume far, safe default
+            }
+            if (sendMountCoordsSafe(targetRA, targetDec, "TRACK"))
             {
                 LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) - forwarded Goto to mount.",
                           targetRA, targetDec);
+                setTargetSource(TARGET_SOURCE_PIFINDER);
+                setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
                 m_lastForwardedRA = targetRA;
                 m_lastForwardedDec = targetDec;
+                setOriginalTarget(targetRA, targetDec); // genuinely new target - a real forwarded Goto
                 m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                m_forwardAwaitingSync = false;
                 m_forwardState = ForwardState::SLEWING;
             }
             else
@@ -310,9 +2506,19 @@ void PiFinderMountBridge::handleGotoForward()
 
         case ForwardState::SLEWING:
         {
+            // Mirrors CorrectState::SLEWING's IPS_BUSY (#170) - lets the GUI
+            // tell "actively slewing/correcting" apart from "holding", same
+            // signal Auto-correct already gives. Previously left whatever
+            // TimerHit's baseline drift computation set here (found live
+            // 2026-08-08: the GUI caption for Goto-Forward was a static
+            // string regardless of state - couldn't distinguish this from
+            // "holding, drift exceeded").
+            DriftStatusNP.s = IPS_BUSY;
+            IDSetNumber(&DriftStatusNP, nullptr);
             if (!m_client->isMountSlewing())
             {
                 m_settleTicksRemaining = SETTLE_TICKS;
+                m_freshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
                 m_forwardState = ForwardState::SETTLING;
                 LOG_INFO("Mount finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
             }
@@ -321,14 +2527,58 @@ void PiFinderMountBridge::handleGotoForward()
 
         case ForwardState::SETTLING:
         {
+            std::string rejectMsg;
+            if (m_client->mountRejectedLastCoords(rejectMsg))
+            {
+                LOGF_WARN("Mount refused the Goto (%s) - likely an elevation or cable-wrap/axis limit, not just"
+                          " settling. Not retrying the same command - now holding.",
+                          rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the Goto (no message from driver)" : rejectMsg);
+                m_forwardState = ForwardState::HOLDING;
+                break;
+            }
+            // Deliberately NOT clearing the warning just because *this tick*
+            // saw no new rejection - mountRejectedLastCoords() is
+            // consume-on-read, so it reads false on every tick after the one
+            // that actually caught it. Clearing here would erase the warning
+            // one tick after showing it, before a human ever sees it. Only
+            // cleared below on a genuinely confirmed-good arrival.
+
             if (m_settleTicksRemaining > 0)
             {
                 --m_settleTicksRemaining;
                 break;
             }
 
-            double piRA, piDec, mountRA, mountDec;
-            if (!m_client->getPiFinderRADE(piRA, piDec) || !m_client->getMountRADE(mountRA, mountDec))
+            double piRA, piDec;
+            const bool haveFreshCamPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
+            if (!haveFreshCamPosition)
+            {
+                // PiFinder hasn't produced a real camera solve since arrival
+                // yet - see the header comment on m_freshnessWaitTicksRemaining.
+                // Keep waiting rather than verifying/correcting off a guess.
+                // #227 follow-up (2026-08-19): this now also covers the case
+                // where the *last* solve was fresh-and-CAM but the position
+                // read separately (e.g. via LX200) had already moved past it
+                // via IMU interpolation by the time we read it - position and
+                // freshness/source guarantee now always come from the same
+                // atomic snapshot, see httpGetPiFinderFreshCamPosition().
+                if (--m_freshnessWaitTicksRemaining <= 0)
+                {
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after arrival - resuming normal holding.");
+                    m_forwardState = ForwardState::HOLDING;
+                }
+                // Same reasoning as HOLDING's own freshness gate below - don't
+                // leave DriftStatusNP silently at whatever it last was (e.g. a
+                // BUSY left over from the SLEWING state just before this) while
+                // arrival still can't be verified.
+                DriftStatusNP.s = IPS_IDLE;
+                IDSetNumber(&DriftStatusNP, nullptr);
+                break;
+            }
+
+            double mountRA, mountDec;
+            if (!m_client->getMountRADE(mountRA, mountDec))
             {
                 m_forwardState = ForwardState::IDLE;
                 break;
@@ -340,7 +2590,18 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift > threshold && m_settleRetriesRemaining > 0)
+            if (drift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - a residual this
+                // large is almost certainly a bad/outlier solve, not a
+                // plausible alignment-model error. Don't Sync off it; hold
+                // and keep re-checking on the next fresh solve instead.
+                LOGF_WARN("Residual %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - not syncing,"
+                          " will re-check on the next fresh solve.",
+                          drift, MaxSyncDriftN[0].value);
+                m_forwardState = ForwardState::HOLDING;
+            }
+            else if (drift > threshold && m_settleRetriesRemaining > 0)
             {
                 // The mount already physically arrived via the Goto above,
                 // but a residual this size usually means its own model was
@@ -352,13 +2613,14 @@ void PiFinderMountBridge::handleGotoForward()
                 // retries would chase solve noise forever if the residual
                 // never actually clears.
                 --m_settleRetriesRemaining;
-                if (!m_client->sendMountCoords(piRA, piDec, "SYNC"))
+                if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
                 {
                     LOG_ERROR("Failed to send verification sync to mount.");
                     m_forwardState = ForwardState::IDLE;
                     break;
                 }
-                if (!m_client->sendMountCoords(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                applySlewRateForDrift(drift);
+                if (!sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
                 {
                     LOG_ERROR("Failed to re-issue Goto to mount after sync.");
                     m_forwardState = ForwardState::IDLE;
@@ -372,15 +2634,667 @@ void PiFinderMountBridge::handleGotoForward()
             else
             {
                 if (drift > threshold)
-                    LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
+                    LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f - now holding, will retry on the next drift check.",
                               MAX_SETTLE_RETRIES, drift, threshold);
                 else
-                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                {
+                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f - now holding.",
                               drift, threshold);
-                m_forwardState = ForwardState::IDLE;
+                    setMountRejectWarning(false, "");
+                }
+                m_forwardState = ForwardState::HOLDING;
             }
             break;
         }
+
+        case ForwardState::HOLDING:
+        {
+            // A new push-to target always takes priority over continuing to
+            // hold the old one - same pending-event check as IDLE (see
+            // consumePiFinderTargetPending()'s header comment).
+            if (hasTarget)
+            {
+                if (consumeGenuinePiFinderTargetPending(targetRA, targetDec))
+                    m_forwardAwaitingSync = true;
+
+                if (m_forwardAwaitingSync)
+                {
+                    // Same #227 root-cause fix as IDLE above - always Sync to
+                    // PiFinder's current position before forwarding a new
+                    // target, retrying next tick (still holding the old
+                    // target in the meantime) if no fresh solve is available
+                    // yet.
+                    if (!syncMountToPiFinderPosition())
+                        break;
+
+                    {
+                        double mountRA, mountDec;
+                        applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                                  ? angularSeparationArcmin(targetRA, targetDec, mountRA, mountDec)
+                                                  : SLEW_RATE_LOG_MAX_ARCMIN);
+                    }
+                    if (sendMountCoordsSafe(targetRA, targetDec, "TRACK"))
+                    {
+                        LOGF_INFO("New PiFinder target (RA %.4fh, DEC %.4f deg) while holding - forwarded Goto to mount.",
+                                  targetRA, targetDec);
+                        setTargetSource(TARGET_SOURCE_PIFINDER);
+                        setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
+                        m_lastForwardedRA = targetRA;
+                        m_lastForwardedDec = targetDec;
+                        setOriginalTarget(targetRA, targetDec); // genuinely new target - a real forwarded Goto
+                        m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                        m_forwardAwaitingSync = false;
+                        m_forwardState = ForwardState::SLEWING;
+                    }
+                    else
+                    {
+                        LOG_ERROR("Failed to forward Goto to mount.");
+                    }
+                    break;
+                }
+            }
+
+            // If our own last correction is still physically executing,
+            // skip this tick entirely - found live (2026-08-08): without
+            // this, re-checking on the very next 2s poll tick could either
+            // stack a new Sync+Goto on top of one still in flight, or read
+            // piRA/mountRA mid-motion (transitional positions), teaching
+            // the mount's model a bogus association via Sync. No fixed
+            // settle-tick delay here (that was for verifying an uncertain
+            // *new arrival* after a real slew, see SETTLING above) - a
+            // continuous holding-correction is to a target we already
+            // trust, so just wait for the mount to actually report done.
+            if (m_client->isMountSlewing())
+            {
+                DriftStatusNP.s = IPS_BUSY;
+                IDSetNumber(&DriftStatusNP, nullptr);
+                break;
+            }
+
+            {
+                std::string rejectMsg;
+                if (m_client->mountRejectedLastCoords(rejectMsg))
+                {
+                    LOGF_WARN("Mount refused the correction (%s) - likely an elevation or cable-wrap/axis limit."
+                              " Not retrying the same command this tick.",
+                              rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                    setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the correction (no message from driver)" : rejectMsg);
+                    break;
+                }
+                // Same reasoning as SETTLING above - not cleared here, only
+                // on a genuinely confirmed-good drift check below.
+            }
+
+            // Still the same held target - watch for it drifting past
+            // Threshold (e.g. ordinary mount tracking imperfection) and
+            // correct exactly like SETTLING does, just re-triggerable
+            // indefinitely instead of only right after arrival. Same
+            // freshness gate as everywhere else - never correct off a
+            // guessed/stale position.
+            //
+            // #227 follow-up (2026-08-19): this is the loop that was
+            // actually oscillating live ("PiFinder overshoots, mount pulls
+            // back and forth") - the mount had genuinely reached the real
+            // target correctly, but the *separately* fetched PiFinder
+            // position (old getPiFinderRADE(), a plain LX200 read with no
+            // freshness/source info of its own) could already reflect IMU
+            // interpolation applied *after* the last confirmed-fresh CAM
+            // solve, dragging an already-correct mount away from a real
+            // target toward an unverified guess. Now uses one atomic
+            // snapshot for both the freshness/source guarantee and the
+            // position value - see httpGetPiFinderFreshCamPosition().
+            double piRA, piDec;
+            const bool haveFreshCamPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
+            if (!haveFreshCamPosition)
+            {
+                // Found live 2026-09-06: this used to just break here, leaving
+                // DriftStatusNP at whatever it last was (e.g. IPS_OK, drift
+                // 0.0') - once PiFinder's own solve feed stopped updating (see
+                // test_tools/pifinder_truth_injector.py's port-detection bug,
+                // basic-memory pifinder-stellarmate/00089 sec. 8), the GUI kept
+                // showing "Holding target - drift 0.0' within 5'" indefinitely,
+                // looking converged when nothing had been verified in minutes.
+                // IPS_IDLE is otherwise unused for DriftStatusNP here (OK/ALERT
+                // are a verified reading, BUSY an in-flight correction) -
+                // republished every tick while stale so it's never left
+                // silently unpublished, same as every other state below.
+                DriftStatusNP.s = IPS_IDLE;
+                IDSetNumber(&DriftStatusNP, nullptr);
+                break;
+            }
+
+            double mountRA, mountDec;
+            if (!m_client->getMountRADE(mountRA, mountDec))
+                break;
+
+            const double drift = angularSeparationArcmin(piRA, piDec, mountRA, mountDec);
+            const double threshold = DriftThresholdN[0].value;
+            DriftStatusN[0].value = drift;
+            DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
+            IDSetNumber(&DriftStatusNP, nullptr);
+
+            // Found live (2026-09-03): `drift` above only catches the mount
+            // and PiFinder *disagreeing* with each other - it stays small
+            // when both have quietly wandered from the actually-requested
+            // object together (this file's own correction below re-anchored
+            // to piRA/piDec every cycle, so mount and PiFinder always agreed
+            // with EACH OTHER even as they drifted from the true target -
+            // see ORIGINAL_TARGET_DRIFT's own header comment). Checking that
+            // too - not just tactical `drift` - is what makes this the
+            // "hold the object, no matter what" correction the user actually
+            // wants, not just an internal mount/PiFinder consistency check.
+            // Safe to auto-correct on this signal alone, unlike a tactical
+            // mount/PiFinder disagreement: any *external* reposition already
+            // shows up as tactical `drift` first and is intercepted by
+            // handleRepositionDetection()'s Fall-4 (REPOSITION_CONFIRM)
+            // before this function ever runs, so by construction, reaching
+            // here with mount/PiFinder still agreeing is always OUR OWN
+            // accumulated correction noise, never someone else's move.
+            double heldRA = piRA, heldDec = piDec;
+            const bool haveOriginalTarget = getOriginalTargetJNow(heldRA, heldDec);
+            const double originalTargetDrift = haveOriginalTarget
+                ? angularSeparationArcmin(piRA, piDec, heldRA, heldDec)
+                : 0.0;
+
+            if (drift <= threshold && originalTargetDrift <= threshold)
+            {
+                setMountRejectWarning(false, "");
+                break;
+            }
+
+            // Found live (2026-09-05/06): this sanity cap only ever checked
+            // `drift` (mount vs PiFinder disagreement) - but mount and
+            // PiFinder can perfectly agree with EACH OTHER while both are
+            // correctly, currently pointed somewhere completely different
+            // from a stale/wrong ORIGINAL_TARGET (e.g. inherited across a
+            // driver restart from PiFinder's own not-yet-corrected
+            // TARGET_EOD_COORD, or an earlier accidental push-to). That
+            // case has `drift` near zero but `originalTargetDrift` in the
+            // thousands of arcmin, sailed straight through this check, and
+            // the driver then genuinely slewed the mount there with zero
+            // warning or refusal - reproduced live, twice, the same night.
+            // Guard on whichever of the two is larger - the sanity cap's
+            // whole point is "never re-point this far without a human
+            // confirming it," and that applies exactly as much to a bad
+            // held target as to raw mount/PiFinder disagreement.
+            const double worstDrift = std::max(drift, originalTargetDrift);
+            if (worstDrift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - stay in HOLDING and
+                // keep watching rather than syncing off a likely-bad solve.
+                // Rate-limited (see m_lastMaxSyncDriftWarnTime's own comment) -
+                // this re-evaluates every fresh solve, which would otherwise
+                // spam the log every ~1-2s for as long as the condition
+                // persists without adding new information.
+                const long now = time(nullptr);
+                if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                {
+                    m_lastMaxSyncDriftWarnTime = now;
+                    LOGF_WARN("Held target drifted %.1f arcmin (tactical %.1f, from-original %.1f), exceeding the"
+                              " auto-Sync sanity limit (%.1f) - not syncing, will re-check on the next fresh solve.",
+                              worstDrift, drift, originalTargetDrift, MaxSyncDriftN[0].value);
+                }
+                break;
+            }
+
+            applySlewRateForDrift(drift);
+            if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
+            {
+                LOG_ERROR("Failed to send verification sync to mount while holding.");
+                break;
+            }
+            // Found live (2026-09-01, basic-memory pifinder-stellarmate/00106):
+            // this used to Track back to piRA/piDec - the position just
+            // Synced to - which is a no-op (Sync says "you are HERE", Track
+            // to the same value says "go HERE"). That was a deliberate fix
+            // at the time for a real oscillation bug (git history), but it
+            // means this "correction" never actually moves anything back
+            // toward the requested object. Confirmed live 2026-09-03: over a
+            // 17-minute stress run this let the true target visibly walk out
+            // of the eyepiece/camera center - PiFinder's optical axis is
+            // physically aligned with it, see docs/concepts/
+            // coordinate_pipeline_reference.md - because every cycle
+            // re-anchored "the target" to wherever it had already drifted
+            // to, instead of pulling it back.
+            //
+            // Now re-precesses the fixed OriginalTargetNP (getOriginalTargetJNow())
+            // and Tracks back to *that*, routed through the same bounded-
+            // retry SLEWING/SETTLING convergence machinery a fresh Goto
+            // already uses below (m_settleRetriesRemaining caps the attempts,
+            // and SETTLING only retries after isMountSlewing()==false plus a
+            // fresh solve). That gating - not avoiding an exact target value -
+            // is what actually prevents the old oscillation: a real mount
+            // rarely lands on an exactly-precise RA/Dec, so chasing one with
+            // no settle-gate and no retry budget re-triggered every tick
+            // forever. Falls back to piRA/piDec (the old behavior) if no
+            // original target has been recorded yet - should not happen
+            // after the OriginalTargetNP restart-recovery fix, but a safe
+            // default rather than tracking uninitialized fields. heldRA/
+            // heldDec were already computed above, alongside
+            // originalTargetDrift.
+            if (!sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
+            {
+                LOG_ERROR("Failed to re-issue Goto to mount while holding.");
+                break;
+            }
+            m_lastForwardedRA = heldRA;
+            m_lastForwardedDec = heldDec;
+            // Found live (2026-09-01, basic-memory pifinder-stellarmate/00105):
+            // the Sync just above moves the mount's own reported position -
+            // without this, handleRepositionDetection()'s Fall-2 onset check
+            // (which runs BEFORE this function every tick, comparing the
+            // mount's current position against m_lastPolledMountRA/Dec from
+            // the previous tick) reads the post-Sync jump on the *next* tick,
+            // sees a change that looks exactly like an unexplained external
+            // move, and misclassifies our own correction as "external
+            // control detected" - a self-inflicted false positive, not real
+            // drift. Updating the baseline here to the position we just
+            // synced to closes that gap.
+            m_lastPolledMountRA = piRA;
+            m_lastPolledMountDec = piDec;
+            m_lastPolledMountTime = time(nullptr);
+            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+            m_forwardState = ForwardState::SLEWING;
+            LOGF_INFO("Held target drifted (mount/PiFinder %.1f', original-target %.1f' - threshold %.1f) -"
+                      " synced and re-issued Goto back to the true original target to recenter it.",
+                      drift, originalTargetDrift, threshold);
+            break;
+        }
+    }
+}
+
+void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, double piDec, double drift, double threshold)
+{
+    switch (m_correctState)
+    {
+        case CorrectState::IDLE:
+        {
+            if (!exceeded)
+                return;
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+            {
+                DriftStatusNP.s = IPS_ALERT;
+                LOGF_DEBUG(
+                    "Drift %.1f arcmin exceeded threshold, but PiFinder's position isn't backed by a solve "
+                    "within the last %.1fs - skipping correction.",
+                    drift, SolveFreshnessMaxAgeN[0].value);
+                return;
+            }
+
+            DriftStatusNP.s = IPS_BUSY;
+            applySlewRateForDrift(drift);
+            if (sendMountCoordsSafe(piRA, piDec, "TRACK"))
+            {
+                LOGF_INFO("Drift %.1f arcmin exceeded threshold - sent Goto to mount.", drift);
+                m_correctTargetRA = piRA;
+                m_correctTargetDec = piDec;
+                m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                m_correctState = CorrectState::SLEWING;
+                setMountRejectWarning(false, ""); // fresh attempt - any old warning no longer applies
+            }
+            else
+            {
+                LOG_ERROR("Failed to send correction to mount.");
+            }
+            break;
+        }
+
+        case CorrectState::SLEWING:
+        {
+            // A Goto correction takes far longer than one poll tick to
+            // complete, and "drift still exceeds threshold" stays true for
+            // the whole time the mount is slewing toward it - stay BUSY and
+            // just wait for it to finish rather than re-issuing (which most
+            // mount drivers handle by aborting the in-progress slew and
+            // starting over).
+            DriftStatusNP.s = IPS_BUSY;
+            if (!m_client->isMountSlewing())
+            {
+                m_correctSettleTicksRemaining = SETTLE_TICKS;
+                m_correctFreshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
+                m_correctState = CorrectState::SETTLING;
+                LOG_INFO("Auto-correct Goto finished slewing - waiting for a fresh PiFinder solve to verify arrival.");
+            }
+            break;
+        }
+
+        case CorrectState::SETTLING:
+        {
+            DriftStatusNP.s = IPS_BUSY;
+
+            {
+                std::string rejectMsg;
+                if (m_client->mountRejectedLastCoords(rejectMsg))
+                {
+                    LOGF_WARN("Mount refused the auto-correct Goto (%s) - likely an elevation or"
+                              " cable-wrap/axis limit, not just settling. Not retrying the same command -"
+                              " resuming normal monitoring.",
+                              rejectMsg.empty() ? "no message from driver" : rejectMsg.c_str());
+                    setMountRejectWarning(true, rejectMsg.empty() ? "Mount refused the auto-correct Goto (no message from driver)" : rejectMsg);
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                // Same reasoning as ForwardState::SETTLING above - not
+                // cleared here, only on a genuinely confirmed-good residual
+                // check below.
+            }
+
+            if (m_correctSettleTicksRemaining > 0)
+            {
+                --m_correctSettleTicksRemaining;
+                break;
+            }
+
+            if (!isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+            {
+                // See m_freshnessWaitTicksRemaining's comment on ForwardState
+                // - same reasoning applies here: trusting an IMU-interpolated
+                // "arrival" position would Sync the mount to a guessed
+                // position instead of a verified one.
+                if (--m_correctFreshnessWaitTicksRemaining <= 0)
+                {
+                    LOG_WARN("Gave up waiting for a fresh PiFinder solve after auto-correct Goto - resuming normal monitoring.");
+                    m_correctState = CorrectState::IDLE;
+                }
+                break;
+            }
+
+            // drift/threshold reflect this tick's freshly-computed
+            // separation (passed in from TimerHit), i.e. the actual residual
+            // now that the mount has stopped and PiFinder has a fresh solve.
+            if (drift > MaxSyncDriftN[0].value)
+            {
+                // See MaxSyncDriftNP's header comment - don't Sync off a
+                // likely-bad solve; fall back to normal monitoring instead.
+                LOGF_WARN("Auto-correct residual %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) -"
+                          " not syncing, resuming normal monitoring.",
+                          drift, MaxSyncDriftN[0].value);
+                m_correctState = CorrectState::IDLE;
+            }
+            else if (drift > threshold && m_correctSettleRetriesRemaining > 0)
+            {
+                // The mount already physically arrived via the Goto above,
+                // but a residual this size usually means its own alignment
+                // model was slightly off at this sky position - blindly
+                // re-issuing Goto to a corrected RA/Dec never fixes that (see
+                // #170: drift kept climbing right back up after each
+                // "correction"). Sync first to fix the model with PiFinder's
+                // verified solve, then re-issue the Goto so it benefits from
+                // the corrected model. Bounded so a genuinely noisy solve
+                // can't loop forever chasing it.
+                --m_correctSettleRetriesRemaining;
+                if (!sendMountCoordsSafe(piRA, piDec, "SYNC"))
+                {
+                    LOG_ERROR("Failed to send verification sync to mount.");
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                applySlewRateForDrift(drift);
+                if (!sendMountCoordsSafe(m_correctTargetRA, m_correctTargetDec, "TRACK"))
+                {
+                    LOG_ERROR("Failed to re-issue Goto to mount after sync.");
+                    m_correctState = CorrectState::IDLE;
+                    break;
+                }
+                LOGF_INFO("Auto-correct arrival verified by PiFinder solve: residual %.1f arcmin exceeds threshold %.1f -"
+                          " synced and re-issued Goto (%d attempt(s) left).",
+                          drift, threshold, m_correctSettleRetriesRemaining);
+                m_correctState = CorrectState::SLEWING;
+            }
+            else
+            {
+                if (drift > threshold)
+                    LOGF_WARN("Auto-correct gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f.",
+                              MAX_SETTLE_RETRIES, drift, threshold);
+                else
+                {
+                    LOGF_INFO("Auto-correct arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f.",
+                              drift, threshold);
+                    setMountRejectWarning(false, "");
+                }
+                m_correctState = CorrectState::IDLE;
+            }
+            break;
+        }
+    }
+}
+
+// #191 PoC - see the header comment on MultiPointAlignSP and
+// docs/concepts/mount_bridge_multistar_alignment.md for the full design
+// this is a deliberately reduced slice of.
+bool PiFinderMountBridge::gotoAlignPoint(size_t index)
+{
+    const double ra = m_alignPoints[index].first;
+    const double dec = m_alignPoints[index].second;
+    double mountRA, mountDec;
+    applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                               ? angularSeparationArcmin(ra, dec, mountRA, mountDec)
+                               : SLEW_RATE_LOG_MAX_ARCMIN);
+    if (!sendMountCoordsSafe(ra, dec, "TRACK"))
+    {
+        LOGF_ERROR("Multi-Point Alignment: failed to send Goto for point %zu/%zu (RA %.4fh, DEC %.4f deg).",
+                   index + 1, m_alignPoints.size(), ra, dec);
+        return false;
+    }
+    LOGF_INFO("Multi-Point Alignment: slewing to point %zu/%zu (RA %.4fh, DEC %.4f deg).",
+              index + 1, m_alignPoints.size(), ra, dec);
+    m_alignState = AlignState::SLEWING;
+    AlignProgressN[ALIGN_POINT_INDEX].value = static_cast<double>(index + 1);
+    AlignProgressNP.s = IPS_BUSY;
+    IDSetNumber(&AlignProgressNP, nullptr);
+    const std::string &name = (index < m_alignPointNames.size()) ? m_alignPointNames[index] : std::string();
+    IUSaveText(&AlignProgressT[ALIGN_CURRENT_NAME], name.c_str());
+    AlignProgressTP.s = IPS_BUSY;
+    IDSetText(&AlignProgressTP, nullptr);
+    return true;
+}
+
+bool PiFinderMountBridge::fetchAlignmentCandidates()
+{
+    const double radius = AlignConfigN[ALIGN_RADIUS].value;
+    const int count = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
+    const double minAltitude = AlignConfigN[ALIGN_MIN_ALTITUDE].value;
+    // nullptr for ALIGN_DIR_ANY (index 0) - matches
+    // httpGetNearbyBrightStars()'s own "no direction param sent" contract.
+    const char *direction = nullptr;
+    if (AlignDirectionS[ALIGN_DIR_N].s == ISS_ON) direction = "N";
+    else if (AlignDirectionS[ALIGN_DIR_E].s == ISS_ON) direction = "E";
+    else if (AlignDirectionS[ALIGN_DIR_S].s == ISS_ON) direction = "S";
+    else if (AlignDirectionS[ALIGN_DIR_W].s == ISS_ON) direction = "W";
+
+    std::string error;
+    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+    const bool ok =
+        httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
+                                  direction, m_alignPoints, m_alignPointNames, error) ||
+        httpGetNearbyBrightStars("http://" + piFinderHost + ":8080/api/nearby_bright_stars", radius, count, minAltitude,
+                                  direction, m_alignPoints, m_alignPointNames, error);
+    if (!ok)
+    {
+        LOGF_ERROR("Multi-Point Alignment: could not get candidate points from PiFinder (%s).", error.c_str());
+        return false;
+    }
+    LOGF_INFO("Multi-Point Alignment: got %zu candidate point(s) from PiFinder (radius %.0f deg, "
+              "min altitude %.0f deg%s%s).",
+              m_alignPoints.size(), radius, minAltitude,
+              direction ? ", direction " : "", direction ? direction : "");
+    return true;
+}
+
+void PiFinderMountBridge::startMultiPointAlignment()
+{
+    if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+    {
+        LOG_WARN("Multi-Point Alignment: already running.");
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+    if (!m_client->isReady())
+    {
+        LOG_ERROR("Multi-Point Alignment: PiFinder/mount not ready - cannot start.");
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+    if (!fetchAlignmentCandidates())
+    {
+        // fetchAlignmentCandidates() already logged why.
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
+
+    LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (single solve per point, "
+              "Sync only - see #191).",
+              m_alignPoints.size());
+    m_alignPointIndex = 0;
+    m_alignSyncedCount = 0;
+    m_alignSyncedNamesList.clear();
+    AlignProgressN[ALIGN_POINT_COUNT].value = static_cast<double>(m_alignPoints.size());
+    AlignProgressN[ALIGN_POINT_SYNCED].value = 0;
+    IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], "");
+    if (gotoAlignPoint(m_alignPointIndex))
+    {
+        MultiPointAlignSP.s = IPS_BUSY;
+    }
+    else
+    {
+        m_alignState = AlignState::IDLE;
+        MultiPointAlignSP.s = IPS_ALERT;
+        AlignProgressNP.s = IPS_ALERT;
+        IDSetNumber(&AlignProgressNP, nullptr);
+    }
+    IDSetSwitch(&MultiPointAlignSP, nullptr);
+}
+
+void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
+{
+    if (m_alignState == AlignState::IDLE)
+        return;
+
+    LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points (%zu verified/synced).", reason,
+              m_alignPointIndex, m_alignPoints.size(), m_alignSyncedCount);
+    m_alignState = AlignState::IDLE;
+    // Reuses the existing panic-button path (#179) rather than a bespoke
+    // stop mechanism - matches UC4 in the concept doc exactly.
+    m_client->abortMount();
+    MultiPointAlignSP.s = IPS_ALERT;
+    IDSetSwitch(&MultiPointAlignSP, nullptr);
+    // Left at its last live values (not reset to 0) - "stopped at 2/4, 1
+    // synced" is more useful post-mortem info for the GUI than a blank
+    // readout. The next Start resets it fresh (see startMultiPointAlignment()).
+    AlignProgressNP.s = IPS_ALERT;
+    IDSetNumber(&AlignProgressNP, nullptr);
+}
+
+void PiFinderMountBridge::handleMultiPointAlignment()
+{
+    switch (m_alignState)
+    {
+        case AlignState::IDLE:
+        case AlignState::DONE:
+            return;
+
+        case AlignState::SLEWING:
+        {
+            if (!m_client->isMountSlewing())
+            {
+                m_alignSettleTicksRemaining = SETTLE_TICKS;
+                m_alignFreshnessWaitTicksRemaining = MAX_FRESHNESS_WAIT_TICKS;
+                m_alignState = AlignState::SETTLING;
+                LOGF_INFO("Multi-Point Alignment: arrived at point %zu/%zu, waiting for a fresh "
+                          "PiFinder solve to verify.",
+                          m_alignPointIndex + 1, m_alignPoints.size());
+            }
+            break;
+        }
+
+        case AlignState::SETTLING:
+        {
+            if (m_alignSettleTicksRemaining > 0)
+            {
+                --m_alignSettleTicksRemaining;
+                break;
+            }
+
+            // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: one atomic
+            // HTTP-backed read instead of a separate isPiFinderSolveFresh() check (HTTP) followed
+            // by getPiFinderRADE() (INDI) for the value - the two could disagree on which position
+            // was actually the fresh one.
+            double piRA, piDec;
+            const bool haveFreshPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
+            if (!haveFreshPosition)
+            {
+                if (--m_alignFreshnessWaitTicksRemaining <= 0)
+                {
+                    LOGF_WARN("Multi-Point Alignment: no fresh solve at point %zu/%zu within the "
+                              "wait budget - skipping this point (see §4.4).",
+                              m_alignPointIndex + 1, m_alignPoints.size());
+                    advanceAlignPoint();
+                }
+                break;
+            }
+
+            if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
+            {
+                LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
+                          "DEC %.4f deg (fresh PiFinder solve).",
+                          m_alignPointIndex + 1, m_alignPoints.size(), piRA, piDec);
+                ++m_alignSyncedCount;
+                AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
+                IDSetNumber(&AlignProgressNP, nullptr);
+                const std::string &syncedName = (m_alignPointIndex < m_alignPointNames.size())
+                                                     ? m_alignPointNames[m_alignPointIndex]
+                                                     : std::string();
+                if (!syncedName.empty())
+                {
+                    if (!m_alignSyncedNamesList.empty())
+                        m_alignSyncedNamesList += ", ";
+                    m_alignSyncedNamesList += syncedName;
+                    IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], m_alignSyncedNamesList.c_str());
+                    IDSetText(&AlignProgressTP, nullptr);
+                }
+            }
+            else
+            {
+                LOGF_WARN("Multi-Point Alignment: could not sync at point %zu/%zu - skipping.",
+                          m_alignPointIndex + 1, m_alignPoints.size());
+            }
+            advanceAlignPoint();
+            break;
+        }
+    }
+}
+
+void PiFinderMountBridge::advanceAlignPoint()
+{
+    ++m_alignPointIndex;
+    if (m_alignPointIndex >= m_alignPoints.size())
+    {
+        LOGF_INFO("Multi-Point Alignment: sequence complete (%zu/%zu point(s) verified/synced).",
+                  m_alignSyncedCount, m_alignPoints.size());
+        m_alignState = AlignState::DONE;
+        // Found via #217's GUI-facing follow-up: a run where every single
+        // point got skipped (no fresh PiFinder solve ever arrived) still
+        // reported IPS_OK ("sequence complete") before this fix - identical
+        // to a real success at a glance. 0 verified points is a failure to
+        // report as one, not a completed alignment.
+        MultiPointAlignSP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        AlignProgressNP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
+        IDSetNumber(&AlignProgressNP, nullptr);
+        AlignProgressTP.s = AlignProgressNP.s;
+        IDSetText(&AlignProgressTP, nullptr);
+        return;
+    }
+
+    if (!gotoAlignPoint(m_alignPointIndex))
+    {
+        m_alignState = AlignState::IDLE;
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
     }
 }
 
@@ -397,9 +3311,87 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // Any mode change resets the Goto-Forward state machine, so
             // re-entering it always re-baselines against whatever target
             // PiFinder currently has instead of reacting to a stale one.
+            //
+            // Discard any pending target-update event from before this
+            // switch - handleGotoForward()'s IDLE case (see its own comment)
+            // now reacts to a genuinely new Goto *event*
+            // (consumePiFinderTargetPending(), edge-triggered) rather than
+            // comparing RA/Dec values, so this is a plain "start listening
+            // from here" reset, not a value snapshot. This replaces an
+            // earlier value-snapshot version of this fix (2026-08-09) that
+            // turned out unsafe live: turning Goto-Forward on immediately
+            // re-slewed to the mount's last-held target, because a value
+            // comparison alone can't reliably tell "stale target already
+            // sitting there" apart from "genuinely new" (see
+            // pifinder_bridge_client.h's consumePiFinderTargetPending() for
+            // why an event-based signal fixes that). A target that was
+            // already there before this switch produces no new event and is
+            // correctly ignored; picking the very same object again in
+            // KStars right after switching modes still fires immediately,
+            // since that click produces a fresh event regardless of value.
             m_forwardState = ForwardState::IDLE;
-            m_lastForwardedRA = std::nan("");
-            m_lastForwardedDec = std::nan("");
+            m_client->consumePiFinderTargetPending();
+
+            // Sync the mount to PiFinder's current position once, right when
+            // entering Goto-Forward - gives the mount's own model a known-
+            // good alignment reference before any Goto is ever forwarded,
+            // the same way you'd sync a real scope to a known star before
+            // doing GoTos elsewhere (direct live feedback, 2026-08-09: "At a
+            // Goto Start I should do a 'sync mount from PiFinder' first").
+            // Gated on solve freshness (same isPiFinderSolveFresh() check
+            // Auto-correct already uses) - only trust PiFinder's live
+            // position as a sync reference if it's backed by a recent real
+            // camera solve, not a stale/IMU-only guess. Found live the same
+            // session: syncing off a frozen Injected-Solve position (the
+            // physical unit wasn't actually moving with the test mount)
+            // would have synced the mount to a meaningless reference -
+            // skipping when not fresh is deliberate, not a gap to "fix" by
+            // relaxing this check.
+            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+            {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
+                // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.
+                double piRA, piDec;
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                {
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
+                        LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
+                                  piRA, piDec);
+                    else
+                        LOG_WARN("Failed to sync mount to PiFinder's position on entering Goto-Forward.");
+                }
+            }
+
+            // Same idea for Auto-Correct's Goto-refine state machine - don't
+            // let an in-progress settle/retry cycle from a previous mode
+            // silently keep running (or resume stale) after switching away
+            // and back.
+            m_correctState = CorrectState::IDLE;
+
+            // Same for Reposition Detection's own tracking (#178) - don't
+            // let a stale "watching an external slew" or "confirmation
+            // pending" state, or an outdated drift-rate baseline, survive a
+            // mode switch.
+            m_externalSlewInProgress = false;
+            m_lastConfirmedGoodTime = 0;
+            m_repositionBaselineTrusted = false;
+            if (m_repositionConfirmPending)
+            {
+                m_repositionConfirmPending = false;
+                IUResetSwitch(&RepositionConfirmSP);
+                RepositionConfirmSP.s = IPS_IDLE;
+                IDSetSwitch(&RepositionConfirmSP, nullptr);
+            }
+
+            // Persist so the chosen mode actually survives a reconnect -
+            // see m_connectedConfigLoaded's comment. Without this, the
+            // saved config just keeps replaying whatever was last actively
+            // saved (typically Off/Verify-Alert from ages ago) regardless
+            // of what the user picks live, same "selection doesn't stick"
+            // shape as #158's ACTIVE_DEVICES bug.
+            saveConfig(true, BridgeModeSP.name);
+            runModeReadinessCheck();
             return true;
         }
 
@@ -408,6 +3400,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IUUpdateSwitch(&CorrectionActionSP, states, names, n);
             CorrectionActionSP.s = IPS_OK;
             IDSetSwitch(&CorrectionActionSP, nullptr);
+
+            // Switching Sync<->Goto mid-correction shouldn't leave a stale
+            // settle/retry cycle running for the action that's no longer
+            // selected.
+            m_correctState = CorrectState::IDLE;
             return true;
         }
 
@@ -416,19 +3413,126 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             IUUpdateSwitch(&ManualTriggerSP, states, names, n);
             const bool wantSync = ManualTriggerS[TRIGGER_SYNC_NOW].s == ISS_ON;
             const bool wantGoto = ManualTriggerS[TRIGGER_GOTO_NOW].s == ISS_ON;
+            const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
+            const bool wantAlignHeld = ManualTriggerS[TRIGGER_ALIGN_HELD].s == ISS_ON;
+            const bool wantSyncToCoords = ManualTriggerS[TRIGGER_SYNC_TO_COORDS].s == ISS_ON;
 
-            if (wantSync || wantGoto)
+            if (wantSyncToCoords)
             {
-                double piRA, piDec;
-                if (!m_client->isReady() || !m_client->getPiFinderRADE(piRA, piDec))
+                // See SyncToCoordsNP's own header comment - whatever was last
+                // written there, no freshness/source judgment made here.
+                if (sendMountCoordsSafe(SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value, "SYNC"))
                 {
-                    LOG_ERROR("Not ready - PiFinder or mount device/properties not available yet.");
+                    LOGF_INFO("Manual SYNC to explicit coords sent to mount (RA %.4fh, DEC %.4f deg).",
+                              SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send explicit-coords Sync to mount.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantAlignHeld)
+            {
+                // Re-sends the held target to PiFinder itself - see this
+                // switch's own IUFillSwitch comment above for why Goto Held
+                // Target alone isn't enough. Deliberately does NOT also
+                // re-command the mount here: HOLDING's own automatic
+                // correction already reacts once PiFinder's target/position
+                // agree again, and duplicating that command risks a race
+                // against it (two independent Gotos to the same target).
+                double heldRA, heldDec;
+                if (!getOriginalTargetJNow(heldRA, heldDec))
+                {
+                    LOG_ERROR("No held target recorded yet - push-to or Goto a target first.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+                else if (m_client->sendPiFinderCoords(heldRA, heldDec, "TRACK"))
+                {
+                    LOGF_INFO("Held target (RA %.4fh, DEC %.4f deg) re-sent to PiFinder itself.",
+                              heldRA, heldDec);
+                    ManualTriggerSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Failed to send held target to PiFinder.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+            }
+            else if (wantGotoHeld)
+            {
+                // Deliberately does NOT read PiFinder's current live
+                // position at all (unlike Sync/Goto Now above) - the whole
+                // point is recovering from a case where that current
+                // position is itself the disturbance (mount bumped, clutch
+                // slipped, overbalance) and no longer represents where the
+                // user actually wants to point. Uses the same fixed,
+                // re-precessed ORIGINAL_TARGET that HOLDING's own automatic
+                // correction tracks back to, so no fresh camera solve is
+                // required here.
+                double heldRA, heldDec;
+                if (!getOriginalTargetJNow(heldRA, heldDec))
+                {
+                    LOG_ERROR("No held target recorded yet - push-to or Goto a target first.");
+                    ManualTriggerSP.s = IPS_ALERT;
+                }
+                else
+                {
+                    // Found live (2026-09-05/06): missing here entirely -
+                    // every other Goto call site sets an appropriate slew
+                    // rate for the actual distance before sending. Without
+                    // it, this button silently inherited whatever rate a
+                    // previous *small* correction had last set (e.g. 0.25x)
+                    // and made the mount crawl to what can be an arbitrarily
+                    // large distance - "felt like it took forever," live
+                    // user report the same night this button was added.
+                    double mountRA, mountDec;
+                    applySlewRateForDrift(m_client->getMountRADE(mountRA, mountDec)
+                                              ? angularSeparationArcmin(heldRA, heldDec, mountRA, mountDec)
+                                              : SLEW_RATE_LOG_MAX_ARCMIN);
+
+                    if (sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
+                    {
+                        LOGF_INFO("Manual Goto to held target (RA %.4fh, DEC %.4f deg) sent to mount.",
+                                  heldRA, heldDec);
+                        ManualTriggerSP.s = IPS_OK;
+                    }
+                    else
+                    {
+                        LOG_ERROR("Failed to send Goto-held-target correction to mount.");
+                        ManualTriggerSP.s = IPS_ALERT;
+                    }
+                }
+            }
+            else if (wantSync || wantGoto)
+            {
+                // #227 follow-up (2026-08-19/20): same atomic fresh-CAM-
+                // solve requirement as every automatic action - a manual
+                // trigger is still a real Sync/Goto to the mount and must
+                // not act on a stale/IMU-interpolated position just because
+                // a human clicked the button. Previously used the plain
+                // (non-atomic, no freshness/source check at all)
+                // getPiFinderRADE() - this manual path had none of the
+                // protection the automatic paths already had. Deliberately
+                // UNCHANGED (2026-09-09, direct feedback: "Der Normalbetrieb
+                // bleibt wie er ist") - the below-horizon recovery banner's
+                // own, looser needs are served by TRIGGER_SYNC_TO_COORDS
+                // above instead, a separate primitive, not a change here.
+                double piRA, piDec;
+                const bool haveFreshCamPosition =
+                    m_client->isReady() &&
+                    (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                     httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec));
+                if (!haveFreshCamPosition)
+                {
+                    LOG_ERROR("Not ready, or no fresh PiFinder camera solve available - not sending a manual correction off a guess.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
                 else
                 {
                     const char *coordSet = wantGoto ? "TRACK" : "SYNC";
-                    if (m_client->sendMountCoords(piRA, piDec, coordSet))
+                    if (sendMountCoordsSafe(piRA, piDec, coordSet))
                     {
                         LOGF_INFO("Manual %s sent to mount.", coordSet);
                         ManualTriggerSP.s = IPS_OK;
@@ -443,6 +3547,179 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             IUResetSwitch(&ManualTriggerSP);
             IDSetSwitch(&ManualTriggerSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, ShadowSyncSP.name) == 0)
+        {
+            IUUpdateSwitch(&ShadowSyncSP, states, names, n);
+            ShadowSyncSP.s = IPS_OK;
+            IDSetSwitch(&ShadowSyncSP, nullptr);
+            saveConfig(true, ShadowSyncSP.name);
+            return true;
+        }
+
+        if (strcmp(name, AbortMountSP.name) == 0)
+        {
+            IUUpdateSwitch(&AbortMountSP, states, names, n);
+
+            if (AbortMountS[0].s == ISS_ON)
+            {
+                // Deliberately not gated on m_client->isReady() - see
+                // abortMount()'s own comment, this must work even if
+                // PiFinder's side is unavailable/stale.
+                if (m_client->abortMount())
+                {
+                    LOG_WARN("Emergency stop: sent ABORT to the mount.");
+                    AbortMountSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Emergency stop: mount not available - could not send ABORT.");
+                    AbortMountSP.s = IPS_ALERT;
+                }
+            }
+
+            IUResetSwitch(&AbortMountSP);
+            IDSetSwitch(&AbortMountSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, MultiPointAlignSP.name) == 0)
+        {
+            IUUpdateSwitch(&MultiPointAlignSP, states, names, n);
+
+            if (MultiPointAlignS[ALIGN_START].s == ISS_ON)
+                startMultiPointAlignment();
+            else if (MultiPointAlignS[ALIGN_STOP].s == ISS_ON)
+                stopMultiPointAlignment("stopped by user");
+
+            IUResetSwitch(&MultiPointAlignSP);
+            IDSetSwitch(&MultiPointAlignSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, AlignDirectionSP.name) == 0)
+        {
+            IUUpdateSwitch(&AlignDirectionSP, states, names, n);
+            AlignDirectionSP.s = IPS_OK;
+            IDSetSwitch(&AlignDirectionSP, nullptr);
+            saveConfig(true, AlignDirectionSP.name);
+            return true;
+        }
+
+        if (strcmp(name, RepositionConfirmSP.name) == 0)
+        {
+            IUUpdateSwitch(&RepositionConfirmSP, states, names, n);
+
+            if (!m_repositionConfirmPending)
+            {
+                LOG_WARN("No reposition confirmation is currently pending.");
+                RepositionConfirmSP.s = IPS_ALERT;
+            }
+            else if (RepositionConfirmS[REPOSITION_CONFIRM_YES].s == ISS_ON)
+            {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
+                // HTTP-backed read - adopting a position as the new held target must be at least
+                // as trustworthy as every other adoption path in this file, not read from the
+                // separate, laggier INDI mirror.
+                double piRA, piDec;
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                {
+                    m_lastForwardedRA = piRA;
+                    m_lastForwardedDec = piDec;
+                    m_correctTargetRA = piRA;
+                    m_correctTargetDec = piDec;
+                    setOriginalTarget(piRA, piDec); // genuinely new target - explicit user confirmation
+                    notifyPiFinderOfReposition(piRA, piDec);
+                    m_forwardState = ForwardState::HOLDING;
+                    m_correctState = CorrectState::IDLE;
+                    m_lastConfirmedGoodTime = time(nullptr);
+                    setTargetSource(TARGET_SOURCE_MOUNT);
+                    LOGF_INFO("Reposition confirmed - adopted (RA %.4fh, DEC %.4f deg) as the new held target.",
+                              piRA, piDec);
+                    RepositionConfirmSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Could not read PiFinder's position to adopt - not ready.");
+                    RepositionConfirmSP.s = IPS_ALERT;
+                }
+                m_repositionConfirmPending = false;
+            }
+            else if (RepositionConfirmS[REPOSITION_CONFIRM_NO].s == ISS_ON)
+            {
+                // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: same atomic
+                // HTTP-backed read as the Yes branch above.
+                double piRA, piDec;
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                {
+                    // Same fix as the timeout path above (see its comment) -
+                    // route through the normal SLEWING state so the existing
+                    // SETTLING logic verifies real convergence, instead of
+                    // declaring success immediately.
+                    applySlewRateForDrift(angularSeparationArcmin(piRA, piDec, m_lastForwardedRA, m_lastForwardedDec));
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC") &&
+                        sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
+                    {
+                        if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+                        {
+                            m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+                            m_forwardState = ForwardState::SLEWING;
+                        }
+                        else
+                        {
+                            m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+                            m_correctState = CorrectState::SLEWING;
+                        }
+                    }
+                    LOG_INFO("Reposition declined - reverting to the held target.");
+                    RepositionConfirmSP.s = IPS_OK;
+                }
+                else
+                {
+                    LOG_ERROR("Could not read PiFinder's position to revert from - not ready.");
+                    RepositionConfirmSP.s = IPS_ALERT;
+                }
+                m_repositionConfirmPending = false;
+            }
+
+            IUResetSwitch(&RepositionConfirmSP);
+            IDSetSwitch(&RepositionConfirmSP, nullptr);
+            return true;
+        }
+
+        // #372, docs/concepts/mount_bridge_external_hold.md - set/cleared by
+        // the Control Center's guiding watchdog. Stays selected once set
+        // (BridgeModeSP-style radio pair), not a momentary action switch
+        // like RepositionConfirmSP above.
+        if (strcmp(name, ExternalHoldSP.name) == 0)
+        {
+            IUUpdateSwitch(&ExternalHoldSP, states, names, n);
+            ExternalHoldSP.s = IPS_OK;
+            IDSetSwitch(&ExternalHoldSP, nullptr);
+
+            if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON)
+            {
+                // §2.3: the Control Center checks ALIGN_PROGRESS itself
+                // before setting HOLD_ON and won't normally send this while
+                // a run is active - if it arrives anyway (e.g. hand-set from
+                // the INDI Control Panel), let the run finish rather than
+                // force-abort it. handleMultiPointAlignment() is
+                // deliberately not gated by ExternalHoldSP at all - see its
+                // own TimerHit() call site.
+                if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+                    LOG_WARN("External hold requested while a Multi-Point Alignment run is in progress - "
+                             "letting it finish rather than aborting it.");
+                const char *reason = ExternalHoldReasonT[0].text;
+                LOGF_INFO("External hold ON - %s", (reason != nullptr && reason[0] != '\0') ? reason : "(no reason given)");
+            }
+            else
+            {
+                LOG_INFO("External hold released.");
+            }
             return true;
         }
     }
@@ -462,11 +3739,110 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             return true;
         }
 
+        // #372 - set by the Control Center immediately before ExternalHoldSP
+        // itself, so ISNewSwitch's own HOLD_ON log line above already has
+        // the fresh reason text by the time it reads it.
+        if (strcmp(name, ExternalHoldReasonTP.name) == 0)
+        {
+            IUUpdateText(&ExternalHoldReasonTP, texts, names, n);
+            ExternalHoldReasonTP.s = IPS_OK;
+            IDSetText(&ExternalHoldReasonTP, nullptr);
+            return true;
+        }
+
         if (strcmp(name, ActiveDeviceTP.name) == 0)
         {
             IUUpdateText(&ActiveDeviceTP, texts, names, n);
             ActiveDeviceTP.s = IPS_OK;
             IDSetText(&ActiveDeviceTP, nullptr);
+
+            // Compared against m_lastActive*, not a pre-update snapshot of
+            // ActiveDeviceT[...].text - crashed live (2026-08-05) reading
+            // that field's raw char* into a std::string here, apparently
+            // reentered via loadConfig()'s config replay inside
+            // ISGetProperties() at a point where it wasn't yet safe to
+            // read. m_lastActive* is always a valid owned string (seeded
+            // from the same defaults in initProperties()), so this needs
+            // no null-checks and only reads ActiveDeviceT[...].text after
+            // IUUpdateText() has just populated it from the incoming,
+            // known-valid texts[] array.
+            const std::string newPiFinder = ActiveDeviceT[ACTIVE_PIFINDER].text;
+            const std::string newMount = ActiveDeviceT[ACTIVE_MOUNT].text;
+            const bool changed = newPiFinder != m_lastActivePiFinder || newMount != m_lastActiveMount;
+            m_lastActivePiFinder = newPiFinder;
+            m_lastActiveMount = newMount;
+
+            // Found live (#158): changing which device is watched here used to
+            // be cosmetic while already connected - m_client's watchDevice()
+            // subscriptions were only ever established once, inside Connect(),
+            // so re-pointing ActiveDeviceTP at a different mount mid-session
+            // updated what the property *displayed* but left the embedded
+            // client silently bound to whichever device was active at the
+            // last Connect(). isReady() then depended on properties from a
+            // device nobody was watching anymore - MANUAL_TRIGGER went
+            // straight to Alert ("not ready"), and TimerHit()'s isReady()
+            // gate blocked the drift/correction logic entirely, with nothing
+            // in the log to explain why. Cycling the connection re-runs
+            // Connect()'s setDevices() against the new names, the same
+            // recovery a full disconnect/reconnect (or driver restart)
+            // already provided manually.
+            //
+            // The `changed` guard is not optional: found live (2026-08-05)
+            // that some other INDI client (KStars/Ekos, the Web Manager, or
+            // this driver's own profile-load cycle) periodically re-asserts
+            // ActiveDeviceTP with its *current, unchanged* values as routine
+            // INDI traffic - completely normal, but the original fix reacted
+            // to *any* ISNewText call for this vector, not just an actual
+            // value change, so it disconnected and reconnected every single
+            // time that happened - a self-inflicted periodic drop that
+            // looked identical to "something else keeps killing the
+            // connection" from the outside.
+            // #204: Connect()/Disconnect() called as plain functions here
+            // used to bypass INDI::DefaultDevice's own post-connect
+            // bookkeeping entirely - the framework's own CONNECTION switch
+            // handler (defaultdevice.cpp's onNewValues lambda) always
+            // follows a successful Connect()/Disconnect() with
+            // setConnected()+updateProperties(), which is what actually
+            // flips isConnected() and re-defines/deletes the
+            // connected-only properties (including the ones #161's second
+            // loadConfig(true) call and TimerHit()'s own continued
+            // scheduling implicitly depend on). Skipping both left
+            // TimerHit() permanently stopped after this reconnect - found
+            // live (2026-08-10) testing #159: drift froze for good, even
+            // after reverting ActiveDeviceTP back to the original working
+            // device, only a full process restart recovered it. Now
+            // mirrors the framework's own two-branch sequence exactly.
+            if (changed && isConnected())
+            {
+                LOG_INFO("Active devices changed - reconnecting to apply.");
+                if (Disconnect())
+                {
+                    setConnected(false, IPS_IDLE);
+                    updateProperties();
+                }
+                if (Connect())
+                {
+                    setConnected(true);
+                    updateProperties();
+                }
+            }
+            return true;
+        }
+
+        if (strcmp(name, ShadowDeviceTP.name) == 0)
+        {
+            IUUpdateText(&ShadowDeviceTP, texts, names, n);
+            ShadowDeviceTP.s = IPS_OK;
+            IDSetText(&ShadowDeviceTP, nullptr);
+
+            // Rebinds only the client's shadow-device watch, not the whole
+            // session - deliberately not a Disconnect()/Connect() cycle
+            // like ActiveDeviceTP above. The shadow device is independent
+            // of the real PiFinder/mount coupling (#181); re-pointing it
+            // must never interrupt an in-progress correction/settle cycle
+            // on the real mount.
+            if (isConnected())
+                m_client->setShadowDevice(ShadowDeviceT[SHADOW_DEVICE].text);
             return true;
         }
     }
@@ -483,6 +3859,55 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
             IUUpdateNumber(&DriftThresholdNP, values, names, n);
             DriftThresholdNP.s = IPS_OK;
             IDSetNumber(&DriftThresholdNP, nullptr);
+            // Found live (2026-08-09): unlike MaxSyncDriftNP/BridgeModeSP/
+            // ShadowSyncSP just above/below, this handler never persisted
+            // the change - a user-set Threshold silently reverted to the
+            // compiled-in default (5) on the next driver restart, with
+            // nothing in the GUI explaining why. Same auto-save-on-change
+            // pattern as those, just missing here.
+            saveConfig(true, DriftThresholdNP.name);
+            return true;
+        }
+
+        if (strcmp(name, SyncToCoordsNP.name) == 0)
+        {
+            // Transient one-shot input for TRIGGER_SYNC_TO_COORDS below -
+            // not persisted (saveConfig), unlike DriftThresholdNP above:
+            // this is a value to act on once, not a standing setting.
+            IUUpdateNumber(&SyncToCoordsNP, values, names, n);
+            SyncToCoordsNP.s = IPS_OK;
+            IDSetNumber(&SyncToCoordsNP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, AlignConfigNP.name) == 0)
+        {
+            IUUpdateNumber(&AlignConfigNP, values, names, n);
+            AlignConfigNP.s = IPS_OK;
+            IDSetNumber(&AlignConfigNP, nullptr);
+            saveConfig(true, AlignConfigNP.name);
+            return true;
+        }
+
+        if (strcmp(name, MaxSyncDriftNP.name) == 0)
+        {
+            IUUpdateNumber(&MaxSyncDriftNP, values, names, n);
+            MaxSyncDriftNP.s = IPS_OK;
+            IDSetNumber(&MaxSyncDriftNP, nullptr);
+            // Same gap as DriftThresholdNP above (2026-08-09) - found while
+            // fixing that one, same missing auto-save.
+            saveConfig(true, MaxSyncDriftNP.name);
+            return true;
+        }
+
+        if (strcmp(name, SolveFreshnessMaxAgeNP.name) == 0)
+        {
+            IUUpdateNumber(&SolveFreshnessMaxAgeNP, values, names, n);
+            SolveFreshnessMaxAgeNP.s = IPS_OK;
+            IDSetNumber(&SolveFreshnessMaxAgeNP, nullptr);
+            // Same gap as DriftThresholdNP above (2026-08-09) - found while
+            // fixing that one, same missing auto-save.
+            saveConfig(true, SolveFreshnessMaxAgeNP.name);
             return true;
         }
     }
@@ -494,9 +3919,27 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
 {
     IUSaveConfigText(fp, &SettingsTP);
     IUSaveConfigText(fp, &ActiveDeviceTP);
+    IUSaveConfigText(fp, &ShadowDeviceTP);
+    IUSaveConfigSwitch(fp, &ShadowSyncSP);
     IUSaveConfigSwitch(fp, &BridgeModeSP);
     IUSaveConfigSwitch(fp, &CorrectionActionSP);
     IUSaveConfigNumber(fp, &DriftThresholdNP);
+    IUSaveConfigNumber(fp, &MaxSyncDriftNP);
+    IUSaveConfigNumber(fp, &SolveFreshnessMaxAgeNP);
+    // #191/#217: was missing here despite ISNewNumber() already calling
+    // saveConfig(true, AlignConfigNP.name) on every change - that call only
+    // *triggers* a save, saveConfigItems() (this function) is what actually
+    // decides what gets written. Without this line, radius/count/
+    // min_altitude silently never persisted across a driver restart/reboot,
+    // always resetting to the IUFillNumber defaults - found live, 2026-08-10,
+    // in response to "Überleben diese Werte einen Reload/Reboot?".
+    IUSaveConfigNumber(fp, &AlignConfigNP);
+    // Learned from the AlignConfigNP omission just above - added here from
+    // the start this time, not after a repeat report.
+    IUSaveConfigSwitch(fp, &AlignDirectionSP);
+    // See LastKnownMountPosNP's own header comment - this is what makes it
+    // durable across a Bridge process restart, unlike m_didInitialSync.
+    IUSaveConfigNumber(fp, &LastKnownMountPosNP);
     return true;
 }
 

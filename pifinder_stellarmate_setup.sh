@@ -4,13 +4,13 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.6.0"
+pifinder_stellarmate_version_stable="2.6.3"
 
 # This script is actually tested against this version
-pifinder_stellarmate_version_testing="2.6.0"
+pifinder_stellarmate_version_testing="2.6.1"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
-smos_version_stable="2.2.1"
+smos_version_stable="2.3.0"
 smos_version_testing="2.2.1"
 
 
@@ -159,46 +159,40 @@ fi
 phase "Checking versions"
 
 ############################################################
-# VERSION CHECK (Live check from GitHub)
+# VERSION CHECK (informational only)
+#
+# PiFinder is pinned to a fixed release tag (v${pifinder_stellarmate_version_stable},
+# see the git clone/checkout calls below) - this project never installs
+# whatever the upstream release branch's HEAD happens to be at the moment,
+# on purpose, for stability. This check used to compare against the live
+# release-branch HEAD and hard-abort if it had moved past
+# pifinder_stellarmate_version_stable/_testing - found live 2026-08-04 that
+# this made the script permanently refuse to install/update the moment
+# upstream cut a new release, even though the actual clone/checkout below
+# was never going to touch that newer version anyway (it always targeted
+# the pinned tag). Kept as a pure heads-up now, never blocks.
 
 # Read local PiFinder version
 pifinder_local_version=$(cat "$(pwd)/version.txt" 2>/dev/null)
 
-# Fetch online version from GitHub (release branch)
+# Fetch the upstream release branch's current version - informational only,
+# does not influence which version actually gets installed below.
 github_version=$(curl -s https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt | tr -d '\r')
 
 echo "ℹ️  Local PiFinder version: $pifinder_local_version"
-echo "ℹ️  GitHub PiFinder version: $github_version"
+echo "ℹ️  Pinned PiFinder version (this run installs/updates to this): v${pifinder_stellarmate_version_stable}"
+echo "ℹ️  Latest PiFinder version on GitHub's release branch: $github_version"
 
 # version_gt()/version_eq() - see bin/version_compare.sh for why these live
 # in their own sourceable file (unit-testable in isolation, see
 # bin/tests/test_version_compare.bats).
 source "${SCRIPT_DIR}/bin/version_compare.sh"
 
-# Main check
-if version_eq "$github_version" "$pifinder_stellarmate_version_stable"; then
-    echo "✅ PiFinder version $github_version matches STABLE version. Proceeding..."
-elif version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
-    echo "⚠️  Actual PiFinder version in Git-main ($github_version) is NEWER than tested version ($pifinder_stellarmate_version_stable)."
-    echo "⚠️  Proceed only if you are testing new features."
-    read -p "⚠️⚠️⚠️  Continue with installation? (yes/no): " confirm
-    confirm="${confirm//[$'\r\n']}"
-    if [[ "$confirm" != "yes" ]]; then
-        echo "ℹ️  Installation cancelled by user."
-        exit 0
-    fi
-
-    # Optional: Warn again if version is even newer than "testing"
-    if version_gt "$github_version" "$pifinder_stellarmate_version_testing"; then
-        echo "❌ GitHub version $github_version is NEWER than the last defined TESTING version $pifinder_stellarmate_version_testing."
-        echo "❌ This might break your current test configuration."
-        echo "❌❌❌ Exiting to prevent unintended test mismatches."
-        exit 1
-    fi
-else
-    echo "❌ PiFinder version $github_version is not supported by this Stellarmate patch script."
-    echo "❌ Expected STABLE: $pifinder_stellarmate_version_stable or TESTING: $pifinder_stellarmate_version_testing"
-    exit 1
+if version_gt "$github_version" "$pifinder_stellarmate_version_stable"; then
+    echo "ℹ️  A newer PiFinder release ($github_version) exists upstream - this run still installs"
+    echo "ℹ️  the pinned v${pifinder_stellarmate_version_stable} for stability. Bump"
+    echo "ℹ️  pifinder_stellarmate_version_stable in this script (after verifying the newer version)"
+    echo "ℹ️  to move the pin forward."
 fi
 
 echo "$pifinder_stellarmate_version_stable" > "$(pwd)/version.txt"
@@ -215,11 +209,29 @@ elif version_eq "$current_smos_version" "$smos_version_stable"; then
 elif version_gt "$current_smos_version" "$smos_version_stable"; then
     echo "⚠️  SMOS $current_smos_version is NEWER than tested version ($smos_version_stable)."
     echo "⚠️  Arch is rolling release — package versions may differ. Proceed with caution."
-    read -p "⚠️⚠️⚠️  Continue anyway? (yes/no): " confirm_smos
-    confirm_smos="${confirm_smos//[$'\r\n']}"
-    if [[ "$confirm_smos" != "yes" ]]; then
-        echo "ℹ️  Installation cancelled by user."
-        exit 0
+    # Same interactive-vs-scripted distinction the reinstall/update menu
+    # above already uses (empty $ACTION = a human running this directly in
+    # a terminal; the Control Center GUI always passes --action=...).
+    # Found live 2026-09-04 on stellarmate-utm (SMOS 2.3.0 vs. the
+    # 2.2.1 pin): every GUI-triggered run silently hit "Installation
+    # cancelled by user" here, every single time, with no way to answer
+    # this prompt - the GUI spawns this script as a systemd service's
+    # subprocess (stdin inherited from pifinder-control-center.service,
+    # i.e. /dev/null), so `read` sees immediate EOF, `confirm_smos` comes
+    # back empty, and the "not yes" branch always fires. A confirmation
+    # prompt nobody running through the GUI can ever answer isn't a safety
+    # gate, it's a silent, permanent block - so a scripted run just gets
+    # the same warning already printed above and proceeds, exactly like the
+    # OLDER-than-tested branch below already does unconditionally.
+    if [ -z "$ACTION" ]; then
+        read -p "⚠️⚠️⚠️  Continue anyway? (yes/no): " confirm_smos
+        confirm_smos="${confirm_smos//[$'\r\n']}"
+        if [[ "$confirm_smos" != "yes" ]]; then
+            echo "ℹ️  Installation cancelled by user."
+            exit 0
+        fi
+    else
+        echo "ℹ️  Running non-interactively (--action=$ACTION) - proceeding despite the newer SMOS version."
     fi
 else
     echo "⚠️  SMOS $current_smos_version is OLDER than tested version ($smos_version_stable). Proceeding anyway."
@@ -230,13 +242,45 @@ phase "Setting up hardware access"
 
 echo "ℹ️ INFO: running as user <<$(whoami)>> – assuming this is the correct Stellarmate setup user."
 
-# Create hardware groups if missing (Arch/SMOS does not create these by default)
+# groupadd/usermod require /etc/group and /etc/passwd to be well-formed,
+# newline-terminated files. A missing trailing newline on the last line makes
+# shadow-utils misreport "Non-text file" / "cannot open ...: Cannot allocate
+# memory" (not a real ENOMEM - verified via strace, no syscall actually
+# fails) and silently no-op instead of creating the group/updating the user.
+# Found live on a fresh SMOS 2.3.0 x86 image (2026-09-05): both files were
+# missing it, spi/gpio were never created, and pifinder.service could never
+# start (systemd exit 216/GROUP - SupplementaryGroups= couldn't resolve
+# gpio/spi). Ensuring this here is a correctness precondition for the calls
+# below, not a defensive workaround.
+for f in /etc/group /etc/passwd; do
+    if [ -n "$(sudo tail -c 1 "$f")" ]; then
+        echo "⚠️  $f is missing its trailing newline - fixing before groupadd/usermod."
+        sudo bash -c "printf '\n' >> '$f'"
+    fi
+done
+
+# Create hardware groups if missing (Arch/SMOS does not create these by default).
+# PiFinder cannot start at all without these (pifinder.service's
+# SupplementaryGroups=), so a failure here must hard-abort the script, not
+# just warn and continue.
 for grp in spi gpio i2c kmem input; do
-    getent group "$grp" > /dev/null 2>&1 || sudo groupadd "$grp"
+    if ! getent group "$grp" > /dev/null 2>&1; then
+        sudo groupadd "$grp"
+        if ! getent group "$grp" > /dev/null 2>&1; then
+            echo "❌ FATAL: groupadd '$grp' failed - PiFinder cannot start without it (see pifinder.service's SupplementaryGroups=)."
+            exit 1
+        fi
+    fi
 done
 
 # Add rights accessing hardware to user
 sudo usermod -a -G spi,gpio,i2c,video,kmem,input ${USER}
+for grp in spi gpio i2c video kmem input; do
+    if ! id -nG "${USER}" | tr ' ' '\n' | grep -qx "$grp"; then
+        echo "❌ FATAL: user '${USER}' is not in group '$grp' after usermod - PiFinder cannot access the required hardware."
+        exit 1
+    fi
+done
 
 # udev rule for /dev/gpiomem access (Arch Linux). Pi5's RP1 chip exposes
 # several numbered nodes (/dev/gpiomem0..4), each its OWN subsystem
@@ -271,7 +315,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
         echo "⚠️  An existing PiFinder installation was found at ${pifinder_home}/PiFinder."
         echo "❓ Please choose an action:"
         echo "   1. Delete the existing installation and reinstall from scratch."
-        echo "   2. Update the existing installation with 'git reset --hard origin/release'."
+        echo "   2. Update the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}."
         echo "   3. Cancel the installation."
         echo "   4. Uninstall PiFinder completely (removes services, INDI drivers, ~/PiFinder)."
         echo "   5. Reset (keep data/config, wipe venv/build only, ready to re-run setup)."
@@ -319,7 +363,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 fi
                 echo "Installation from scratch ..."
                 cd "${pifinder_home}"
-                if ! git clone --recursive --branch release https://github.com/brickbots/PiFinder.git; then
+                if ! git clone --recursive --branch "v${pifinder_stellarmate_version_stable}" https://github.com/brickbots/PiFinder.git; then
                     echo "❌ ERROR: 'git clone' of PiFinder failed (network issue or GitHub unreachable?)."
                     echo "❌ Aborting setup rather than patching/building against an incomplete checkout."
                     exit 1
@@ -353,19 +397,49 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
                 cp "${pifinder_stellarmate_dir}/src_pifinder/.claude/skills/pifinder-remote/scripts/pf_remote.py" "${pifinder_home}/PiFinder/.claude/skills/pifinder-remote/scripts/"
                 ;;
             2)
-                echo "➡️  Selected: 2. Update the existing installation with 'git reset --hard origin/release'."
+                echo "➡️  Selected: 2. Update the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}."
                 stop_fake_mode_if_running
                 sudo systemctl stop pifinder
-                echo "🔄 Updating the existing installation with 'git reset --hard origin/release'..."
+                echo "🔄 Updating the existing installation to pinned PiFinder v${pifinder_stellarmate_version_stable}..."
                 cd "${pifinder_home}/PiFinder"
-                if ! git reset --hard origin/release; then
-                    echo "❌ ERROR: 'git reset --hard origin/release' failed - aborting rather than"
+                # Tags aren't guaranteed to be present after a --branch=<tag>
+                # clone (implies --single-branch, restricting the default
+                # fetch refspec to that one ref) - --tags explicitly
+                # overrides that restriction and fetches every tag
+                # regardless, so this also picks up a NEWER pin (a future
+                # bump of pifinder_stellarmate_version_stable itself), not
+                # just re-fetching the one already checked out.
+                if ! git fetch origin --tags; then
+                    echo "❌ ERROR: 'git fetch origin --tags' failed - aborting rather than"
                     echo "❌ patching/building against a checkout left in an unknown state."
                     exit 1
                 fi
-                if ! git pull; then
-                    echo "❌ ERROR: 'git pull' failed - aborting rather than patching/building against"
-                    echo "❌ a possibly-stale checkout."
+                # The existing checkout always has local modifications at
+                # this point - every diffs/*.diff patch this script applies
+                # is a tracked-file modification, still present from the
+                # previous run. `git checkout <different-tag>` refuses to
+                # switch refs while those would be overwritten (found live
+                # 2026-08-09, #190: updating from a pinned v2.6.0 checkout to
+                # v2.6.1 failed with "Your local changes... would be
+                # overwritten by checkout" on every previously-patched
+                # file). They're fully reproducible (re-applied by
+                # patch_PiFinder_installation_files.sh a few lines below),
+                # so discarding them here is always safe - reset to the
+                # *current* HEAD first, before switching to the new tag.
+                if ! git reset --hard HEAD; then
+                    echo "❌ ERROR: 'git reset --hard HEAD' failed - aborting rather than"
+                    echo "❌ patching/building against a checkout left in an unknown state."
+                    exit 1
+                fi
+                if ! git checkout "v${pifinder_stellarmate_version_stable}"; then
+                    echo "❌ ERROR: 'git checkout v${pifinder_stellarmate_version_stable}' failed - tag not"
+                    echo "❌ found after fetch. Aborting rather than patching/building against a"
+                    echo "❌ checkout left in an unknown state."
+                    exit 1
+                fi
+                if ! git reset --hard "v${pifinder_stellarmate_version_stable}"; then
+                    echo "❌ ERROR: 'git reset --hard' failed - aborting rather than patching/building"
+                    echo "❌ against a possibly-stale checkout."
                     exit 1
                 fi
                 sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
@@ -412,7 +486,7 @@ if [ -d "${pifinder_home}/PiFinder" ]; then
 else
     echo "🚀 No existing installation found. Starting fresh..."
     cd "${pifinder_home}"
-    git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+    git clone --recursive --branch "v${pifinder_stellarmate_version_stable}" https://github.com/brickbots/PiFinder.git
     sudo chown -R ${USER}:${USER} "${pifinder_home}/PiFinder"
     echo "python/.venv/" >> "${pifinder_home}/PiFinder/.gitignore"
     bash ${pifinder_stellarmate_bin}/patch_PiFinder_installation_files.sh
@@ -422,36 +496,83 @@ fi
 
 phase "Installing system packages"
 
-# Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot)
-grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
+# Temporarily disable StellarMate's Atomic Updates protection (official
+# mechanism) if it's currently active, reusing the same pacman/apt/nix
+# abstraction layer (bin/os_detect.sh) that os_install_packages() already
+# uses for --mode=indi_only above, rather than a second, ad-hoc lock/unlock
+# here. No-op on a device where it's already unlocked (e.g. the Pi4/Pi5 dev
+# units, unlocked in an earlier session) - this only actually engages on a
+# freshly provisioned system (e.g. stellarmate-utm right after a clean SMOS
+# install), which is also the only place the raw `pacman -S` calls below were
+# ever observed to fail ("target not found" / core+extra+alarm unreachable,
+# only StellarMate's own [smos] repo active).
+relock_atomic_updates=0
+if os_pacman_has_atomic_updates_script && os_pacman_check_atomic_updates; then
+    echo "ℹ️  Temporarily disabling StellarMate's Atomic Updates protection (official mechanism) to reach core/extra/alarm ..."
+    if os_pacman_atomic_updates_disable; then
+        relock_atomic_updates=1
+    else
+        add_warning "Could not disable StellarMate's Atomic Updates protection - system package installs below may fail."
+    fi
+fi
+
+# Arch/SMOS: add core, extra, alarm repos if missing (pacman.conf resets after reboot).
+# aarch64-only fallback - archlinuxarm.org has no x86_64 packages. On
+# stellarmate-utm (x86_64) the unlock above already leaves [core]/[extra]
+# wired to the correct arch-native mirror (via StellarMate's own script,
+# which reads /etc/pacman.d/mirrorlist), so this would 404 unconditionally
+# if it ever ran there instead.
+if [ "$(uname -m)" != "x86_64" ]; then
+    grep -q "^\[core\]" /etc/pacman.conf || printf '\n[core]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/core\n\n[extra]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/extra\n\n[alarm]\nSigLevel = Optional TrustAll\nServer = http://mirror.archlinuxarm.org/aarch64/alarm\n' | sudo tee -a /etc/pacman.conf > /dev/null
+fi
 sudo pacman -Sy --noconfirm
 
 # Install system package requirements (Arch/SMOS)
 # libcamera 0.7.1+ uses pybind11 smart_holder — incompatible with picamera2 from pip.
 # python-libcamera must stay at 0.7.0 — use cached package if available, then pin.
+# nlohmann-json: header-only C++ JSON lib the INDI drivers' CMakeLists.txt
+# require (pkg_check_modules 'nlohmann_json') - was missing from this list,
+# so all three driver builds failed with "package 'nlohmann_json' not found".
 sudo pacman -S --noconfirm --needed \
     git python-pip python-virtualenv libcap \
-    openexr
-# libcamera + libcamera-ipa are pre-installed by SMOS — only install if missing.
-# Never upgrade: repo may carry a newer pkgrel with incompatible soname (SMOS packaging bug:
-# libcamera 0.7.1-64 breaks libcamera-ipa 0.7.1-1 soname dependency).
-if ! pacman -Q libcamera &>/dev/null || ! pacman -Q libcamera-ipa &>/dev/null; then
-    sudo pacman -S --noconfirm libcamera libcamera-ipa
+    openexr nlohmann-json
+# libcamera is pre-installed by SMOS base. The smos `libcamera` package BUNDLES
+# the IPA modules (/usr/lib/libcamera/ipa/ipa_rpi_{pisp,vc4}.so) — SMOS has NO
+# separate `libcamera-ipa` package (that is an Arch Linux ARM split-package
+# concept). Never pull extra/libcamera-ipa: it hard-requires libcamera.so=0.7-64
+# / libcamera-base.so=0.7-64, which the smos libcamera package does not declare
+# (Provides: None), so pacman cannot prepare the transaction.
+if ! pacman -Q libcamera &>/dev/null; then
+    sudo pacman -S --noconfirm libcamera
     echo "  ✅ libcamera installed"
 else
-    echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base)"
+    echo "  ℹ️  libcamera $(pacman -Q libcamera | awk '{print $2}') already present (SMOS base, IPA bundled)"
 fi
-# Prefer pinned package from repo, fall back to pacman cache
-PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
-[ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
-if [ -n "$PYLIBCAM_PKG" ]; then
-    echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
-    sudo pacman -U --noconfirm "$PYLIBCAM_PKG"
-    PYLIBCAM_METHOD="pinned 0.7.0 from $(basename $PYLIBCAM_PKG)"
+# Prefer pinned package from repo, fall back to pacman cache.
+# The cached package is aarch64-only (built for Pi) - on x86 it's still found
+# by the ls glob (same git checkout), but `pacman -U` on it can never work
+# and used to fail silently: no add_warning, and the summary below claimed
+# "pinned" regardless of the pacman error, leaving python-libcamera not
+# installed at all with "No critical warnings" shown to the user.
+if [ "$(uname -m)" = "x86_64" ]; then
+    echo "ℹ️  x86_64 host — skipping aarch64 python-libcamera pin (not applicable; no real camera hardware here anyway)."
+    PYLIBCAM_METHOD="skipped (x86_64 host, aarch64-only pin not applicable)"
 else
-    add_warning "python-libcamera 0.7.0 not found — installed current version. Camera may fail (smart_holder)!"
-    sudo pacman -S --noconfirm --needed python-libcamera
-    PYLIBCAM_METHOD="current version (UNPINNED — may cause smart_holder error!)"
+    PYLIBCAM_PKG=$(ls "${pifinder_stellarmate_dir}/packages/python-libcamera-0.7.0-"*"-aarch64.pkg.tar.xz" 2>/dev/null | head -1)
+    [ -z "$PYLIBCAM_PKG" ] && PYLIBCAM_PKG=$(ls /var/cache/pacman/pkg/python-libcamera-0.7.0-*-aarch64.pkg.tar.xz 2>/dev/null | head -1)
+    if [ -n "$PYLIBCAM_PKG" ]; then
+        echo "ℹ️  Installing python-libcamera 0.7.0 from cache (smart_holder fix) ..."
+        if sudo pacman -U --noconfirm "$PYLIBCAM_PKG"; then
+            PYLIBCAM_METHOD="pinned 0.7.0 from $(basename $PYLIBCAM_PKG)"
+        else
+            add_warning "python-libcamera 0.7.0 cached package failed to install (see log above) - camera may fail (smart_holder)!"
+            PYLIBCAM_METHOD="FAILED to pin 0.7.0 (see warnings above)"
+        fi
+    else
+        add_warning "python-libcamera 0.7.0 not found — installed current version. Camera may fail (smart_holder)!"
+        sudo pacman -S --noconfirm --needed python-libcamera
+        PYLIBCAM_METHOD="current version (UNPINNED — may cause smart_holder error!)"
+    fi
 fi
 grep -q "IgnorePkg.*python-libcamera" /etc/pacman.conf || \
     sudo sed -i '/^\[options\]/a IgnorePkg = python-libcamera' /etc/pacman.conf
@@ -463,6 +584,11 @@ if [ -n "$LIBCAM_MAJOR" ] && [ "$LIBCAM_MAJOR" -gt 0 ] 2>/dev/null; then
     add_warning "libcamera $LIBCAM_VER detected — python-libcamera 0.7.0 may be incompatible! Update packages/ in SM repo if camera fails."
 else
     echo "ℹ️  libcamera version $LIBCAM_VER — compatible with python-libcamera 0.7.0"
+fi
+
+if [ "${relock_atomic_updates}" = "1" ]; then
+    echo "ℹ️  Restoring StellarMate's Atomic Updates protection ..."
+    os_pacman_atomic_updates_enable
 fi
 
 
@@ -561,6 +687,18 @@ if ! is_venv_active "${python_venv}"; then
     fi
   else
     if [ -n "$ACTION" ]; then
+      # touch lock_file here too (not just the create_venv success path
+      # above) - this branch is actually the common case for Update/
+      # Reinstall on an install that already has a venv from a previous
+      # run: it's just not active in *this* fresh shell invocation. Without
+      # this, the resume guard at the top of the script (`[ -f "$lock_file"
+      # ] && is_venv_active ...`) never sees the lock file after the
+      # re-exec below, so it re-runs the ENTIRE script from the top again -
+      # including the menu prompt/choice and the actual git checkout +
+      # patch application a second time. Found live 2026-08-03 testing
+      # PR #154's Update path: the whole log (checkout, file list, patch
+      # diffs) appeared twice.
+      touch "${lock_file}"
       echo "🔁 Virtual environment directory exists but isn't active — re-executing inside it automatically ..."
       cd "$SCRIPT_DIR"
       exec bash -c "source '${python_venv}/bin/activate' && exec '${SCRIPT_PATH}' \"\$@\"" -- "$@"
@@ -596,6 +734,19 @@ else
     install_requirements "${python_requirements}"
     find "${pifinder_home}/PiFinder" -type f -name "*.pyc" -delete
     find "${pifinder_home}/PiFinder" -type d -name "__pycache__" -delete
+
+    # Pin picamera2 to a known-good version - PiFinder's own requirements.txt
+    # leaves it unpinned, so a fresh install can silently pull a newer
+    # release whose drm_preview.py has drifted from
+    # diffs/drm_preview_smos.diff's expected context, breaking the patch
+    # applied below (found live 2026-08-09: a fresh Pi5 install pulled
+    # 0.3.37, which added an FMT_MAP entry the diff's hunks didn't account
+    # for - same fragility class as the pandas/#190 patch-drift issues).
+    # Same reasoning as python-libcamera's pin above - keep this version and
+    # the diff in sync; if drm_preview.py's patch ever needs regenerating
+    # for a newer picamera2, bump this pin to match in the same change.
+    echo "🔧 Pinning picamera2 to 0.3.37 (matches diffs/drm_preview_smos.diff) ..."
+    pip install picamera2==0.3.37
 
     # Install python-libinput 0.1.0 manually (0.3.0a0 unavailable; setup.py uses removed 'imp')
     echo "🔧 Installing python-libinput 0.1.0 (patched for Python 3.12+) ..."
@@ -667,7 +818,7 @@ else
     fi
 
     # Pi5: lgpio C library + rpi-lgpio (RPi.GPIO drop-in for the Pi5 RP1 GPIO)
-    hw_model_setup=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+    hw_model_setup=$(get_hw_model)
     if echo "$hw_model_setup" | grep -q "Raspberry Pi 5"; then
         echo "🔧 [Pi5] lgpio / rpi-lgpio Setup ..."
 
@@ -698,17 +849,30 @@ else
             echo "  ✅ liblgpio.so: already installed."
         fi
 
-        # rpi-lgpio + lgpio aus lokalem packages/ installieren
+        # rpi-lgpio + lgpio aus lokalem packages/ installieren.
+        # Real RPi.GPIO (from requirements_additional.txt, installed earlier
+        # via the main requirements.txt) and rpi-lgpio both provide files
+        # under site-packages/RPi/GPIO/ - whichever pip install runs LAST
+        # physically wins on disk, but pip tracks them as two independent
+        # packages. If a previous run already installed rpi-lgpio and real
+        # RPi.GPIO overwrote its files afterwards, a plain `pip install
+        # rpi-lgpio` here sees "Requirement already satisfied" (per pip's own
+        # bookkeeping) and does NOTHING - the broken RPi.GPIO stays in place
+        # silently. Found live (2026-09-05, Pi5): pifinder.service fell back
+        # to DisplayHeadless (dark OLED) because of exactly this. Explicitly
+        # remove real RPi.GPIO first, then --force-reinstall rpi-lgpio/lgpio
+        # so the outcome never depends on prior pip state.
         echo "  Installing rpi-lgpio + lgpio ..."
+        pip uninstall --quiet -y RPi.GPIO 2>/dev/null
         LGPIO_WHL=$(ls "${pifinder_stellarmate_dir}/packages/lgpio-"*.whl 2>/dev/null | head -1)
         if [ -n "$LGPIO_WHL" ]; then
-            pip install --quiet --no-index \
+            pip install --quiet --force-reinstall --no-index \
                 --find-links="${pifinder_stellarmate_dir}/packages/" \
                 rpi-lgpio lgpio \
                 && echo "  ✅ rpi-lgpio installed from packages/." \
                 || add_warning "[Pi5] rpi-lgpio install from packages/ failed."
         else
-            pip install --quiet rpi-lgpio \
+            pip install --quiet --force-reinstall rpi-lgpio \
                 && echo "  ✅ rpi-lgpio installed from PyPI." \
                 || add_warning "[Pi5] rpi-lgpio install failed — GPIO will not work!"
         fi
@@ -807,10 +971,8 @@ if [ -f "/boot/firmware/config.txt" ]; then
 elif [ -f "/boot/config.txt" ]; then
     CONFIG_FILE="/boot/config.txt"
 else
-    echo "❌ config.txt not found!"; exit 1
+    CONFIG_FILE=""
 fi
-
-echo "🔧 Ensuring required config.txt entries are present ..."
 
 # Tracks whether this run actually changed /boot/config.txt - the only thing
 # in this script that needs a real reboot (Pi firmware overlays are only
@@ -818,64 +980,75 @@ echo "🔧 Ensuring required config.txt entries are present ..."
 # restarted live by the end of this script.
 CONFIG_CHANGED=false
 
-# Add a line globally if not already present anywhere in config.txt
-add_if_missing() {
-    local line="$1"
-    if ! grep -Fxq "$line" "$CONFIG_FILE"; then
-        echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
-        echo "✅ Added: $line"
+if [ -z "$CONFIG_FILE" ]; then
+    # No Raspberry Pi firmware config.txt on this system - this is not real
+    # Pi hardware (e.g. an x86 Control-host development machine, see
+    # docs/concepts/setup_indi_only_install_mode.md and
+    # basic-memory/pifinder-stellarmate/00098). There is nothing GPIO/SPI/I2C
+    # related to configure here; skip instead of aborting the whole install.
+    echo "ℹ️  No Raspberry Pi firmware config.txt found (not real Pi hardware) — skipping GPIO/SPI/I2C overlay setup."
+else
+    echo "🔧 Ensuring required config.txt entries are present ..."
+
+    # Add a line globally if not already present anywhere in config.txt
+    add_if_missing() {
+        local line="$1"
+        if ! grep -Fxq "$line" "$CONFIG_FILE"; then
+            echo "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
+            echo "✅ Added: $line"
+            CONFIG_CHANGED=true
+        else
+            echo "ℹ️  Already present: $line"
+        fi
+    }
+
+    # Add a line inside a specific [section] block; creates section if missing.
+    # Lines are only added once per section (idempotent).
+    add_to_section() {
+        local section="$1"
+        local line="$2"
+        # Check if line already exists anywhere in file (avoid duplicates across sections)
+        if grep -Fxq "$line" "$CONFIG_FILE"; then
+            echo "ℹ️  Already present: $line"
+            return
+        fi
+        # Insert section header + line if section missing, else append after last line of section
+        if ! grep -Fxq "[$section]" "$CONFIG_FILE"; then
+            printf '\n[%s]\n%s\n' "$section" "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
+            echo "✅ Created [$section] and added: $line"
+        else
+            # Append line after the section header
+            sudo sed -i "/^\[$section\]/a $line" "$CONFIG_FILE"
+            echo "✅ Added to [$section]: $line"
+        fi
         CONFIG_CHANGED=true
-    else
-        echo "ℹ️  Already present: $line"
-    fi
-}
+    }
 
-# Add a line inside a specific [section] block; creates section if missing.
-# Lines are only added once per section (idempotent).
-add_to_section() {
-    local section="$1"
-    local line="$2"
-    # Check if line already exists anywhere in file (avoid duplicates across sections)
-    if grep -Fxq "$line" "$CONFIG_FILE"; then
-        echo "ℹ️  Already present: $line"
-        return
-    fi
-    # Insert section header + line if section missing, else append after last line of section
-    if ! grep -Fxq "[$section]" "$CONFIG_FILE"; then
-        printf '\n[%s]\n%s\n' "$section" "$line" | sudo tee -a "$CONFIG_FILE" > /dev/null
-        echo "✅ Created [$section] and added: $line"
-    else
-        # Append line after the section header
-        sudo sed -i "/^\[$section\]/a $line" "$CONFIG_FILE"
-        echo "✅ Added to [$section]: $line"
-    fi
-    CONFIG_CHANGED=true
-}
+    # Global entries (apply to all Pi models)
+    add_if_missing "dtparam=spi=on"
+    add_if_missing "dtparam=i2c_arm=on"
 
-# Global entries (apply to all Pi models)
-add_if_missing "dtparam=spi=on"
-add_if_missing "dtparam=i2c_arm=on"
+    # Detect Pi model for model-specific overlays
+    hw_model=$(get_hw_model)
+    if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
+        # Pi5: PWM on GPIO13 (ALT0), imx296
+        # WARNING: dtoverlay=uart3 on Pi5/RP1 occupies GPIO9 (UART3-RX) = SPI0-MISO -> SPI conflict!
+        # On Pi4/BCM2711, uart3 is on GPIO4/5 -> no conflict.
+        # TODO Pi5 GPS dongle/UBLOX: determine SPI-free UART pins on RP1 and add them here.
+        add_to_section "pi5" "dtparam=i2c_arm_baudrate=10000"
+        add_to_section "pi5" "dtoverlay=pwm,pin=13,func=4"
+        add_to_section "pi5" "dtoverlay=pwm-2chan"
+        add_to_section "pi5" "dtoverlay=imx296"
+    elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
+        # Pi4: PWM on GPIO13 (ALT0), uart3, imx296 — NO pwm-2chan (would override to GPIO19)
+        add_to_section "pi4" "dtparam=i2c_arm_baudrate=10000"
+        add_to_section "pi4" "dtoverlay=pwm,pin=13,func=4"
+        add_to_section "pi4" "dtoverlay=uart3"
+        add_to_section "pi4" "dtoverlay=imx296"
+    fi
 
-# Detect Pi model for model-specific overlays
-hw_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
-if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
-    # Pi5: PWM on GPIO13 (ALT0), imx296
-    # WARNING: dtoverlay=uart3 on Pi5/RP1 occupies GPIO9 (UART3-RX) = SPI0-MISO -> SPI conflict!
-    # On Pi4/BCM2711, uart3 is on GPIO4/5 -> no conflict.
-    # TODO Pi5 GPS dongle/UBLOX: determine SPI-free UART pins on RP1 and add them here.
-    add_to_section "pi5" "dtparam=i2c_arm_baudrate=10000"
-    add_to_section "pi5" "dtoverlay=pwm,pin=13,func=4"
-    add_to_section "pi5" "dtoverlay=pwm-2chan"
-    add_to_section "pi5" "dtoverlay=imx296"
-elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
-    # Pi4: PWM on GPIO13 (ALT0), uart3, imx296 — NO pwm-2chan (would override to GPIO19)
-    add_to_section "pi4" "dtparam=i2c_arm_baudrate=10000"
-    add_to_section "pi4" "dtoverlay=pwm,pin=13,func=4"
-    add_to_section "pi4" "dtoverlay=uart3"
-    add_to_section "pi4" "dtoverlay=imx296"
+    echo "✅ config.txt checks complete."
 fi
-
-echo "✅ config.txt checks complete."
 
 # Swapfile is created earlier (before pip install) — see above
 
@@ -916,25 +1089,37 @@ sudo systemctl enable pifinder-fake-mode-autostart
 
 echo "🔧 Starting PiFinder services ..."
 sudo systemctl start pifinder-setup
-sudo systemctl start pifinder
+# restart, not start: on an Update run (as opposed to a fresh install),
+# pifinder.service is very likely already active from before this run - a
+# plain `start` on an already-active unit is a no-op, silently leaving the
+# OLD process running under whatever config was loaded before this run's
+# daemon-reload above, even though the just-copied pi_config_files/
+# pifinder.service (e.g. its Nice=/CPUWeight=, or any future change) is
+# already on disk and loaded into systemd. `restart` makes an update
+# actually take effect on an already-running instance too, same as a fresh
+# start does for a first install.
+sudo systemctl restart pifinder
 sudo systemctl start pifinder_splash
 
-# pifinder-control-center.service is deliberately not enabled by default
-# (see comment above) - but once the user has chosen "on" (enabled), a
-# reboot would auto-start it via systemd's own persistence. This run may
-# not reboot, so honor that same already-expressed choice here too -
-# otherwise "enabled but stopped" silently persists and the user has no
-# way to see the result of this very run.
+# Always enable + start the Control Center at the end of a setup run - a
+# user who just ran this script (fresh install or otherwise) has no other
+# way to discover/reach it than the URLs this prints below, and previously
+# had to know to separately run gui_installer/launch_setup_gui.sh
+# afterwards. Enabling here also means a later reboot auto-starts it via
+# systemd's own persistence, same as any other choice made through the
+# Control Center itself.
 #
-# Only if it's currently INACTIVE - if it's already active, this run was
-# most likely started BY that very instance (the GUI's own Update button),
-# which already restarts itself after a successful run on its own. A
-# restart from here would kill that instance mid-run instead: found live
-# 2026-08-01, the setup script survives (KillMode=process), but writes to
-# the now-orphaned server.py's stdout pipe hit SIGPIPE and die silently,
-# well before this script would otherwise reach the INDI driver build.
-if systemctl is-enabled --quiet pifinder-control-center && ! systemctl is-active --quiet pifinder-control-center; then
-    echo "🔧 Starting PiFinder Control Center (was enabled but stopped) ..."
+# Only START if it's currently INACTIVE - if it's already active, this run
+# was most likely started BY that very instance (the GUI's own Update
+# button), which already restarts itself after a successful run on its
+# own. A restart from here would kill that instance mid-run instead: found
+# live 2026-08-01, the setup script survives (KillMode=process), but
+# writes to the now-orphaned server.py's stdout pipe hit SIGPIPE and die
+# silently, well before this script would otherwise reach the INDI driver
+# build. `enable` itself is idempotent and safe to run either way.
+sudo systemctl enable pifinder-control-center
+if ! systemctl is-active --quiet pifinder-control-center; then
+    echo "🔧 Starting PiFinder Control Center ..."
     sudo systemctl start pifinder-control-center
 fi
 
@@ -944,13 +1129,16 @@ phase "Building INDI drivers"
 # build_and_install_indi_drivers() is shared with the --mode=indi_only path
 # below - see bin/build_and_install_indi_drivers.sh.
 build_and_install_indi_drivers
+echo "🔎 build_and_install_indi_drivers returned - proceeding to Installation Summary ..."
 
 # Detect Pi and OS versions for the final summary message
-hw_model=$(tr -d '\0' < /proc/device-tree/model)
+hw_model=$(get_hw_model)
 if echo "$hw_model" | grep -q "Raspberry Pi 5"; then
     current_pi="Pi 5"
 elif echo "$hw_model" | grep -q "Raspberry Pi 4"; then
     current_pi="Pi 4"
+elif [ -z "$hw_model" ]; then
+    current_pi="Not a Pi (e.g. x86 Control host)"
 else
     current_pi="Unknown Pi"
 fi
@@ -967,7 +1155,7 @@ echo ""
 echo "##############################################"
 echo "  PiFinder Setup — Installation Summary"
 echo "##############################################"
-echo "  PiFinder:             $github_version"
+echo "  PiFinder:             v${pifinder_stellarmate_version_stable}  [latest upstream: $github_version]"
 echo "  SM Scripts:           $pifinder_local_version  [branch: $(git -C "$SCRIPT_DIR" symbolic-ref --short -q HEAD || echo unknown)]"
 echo "  SMOS:                 ${current_smos_version:-unknown}  [tested: $smos_version_stable]"
 echo "  Hardware:             $current_pi"
@@ -1008,6 +1196,70 @@ else
     echo "     (Services, INDI drivers, and code were already restarted live.)"
 fi
 echo "##############################################"
+echo ""
+
+# Control Center was enabled+started above (before the INDI driver build) -
+# tell the user where to actually reach it, reusing the same /state-derived
+# IP list gui_installer/launch_setup_gui.sh prints, instead of leaving them
+# to go find/run that script themselves. A few retries: the service was
+# just started and may not have bound its port yet.
+_cc_state=""
+for _ in $(seq 1 20); do
+    _cc_state="$(curl -s -m 2 "http://localhost:8765/state" 2>/dev/null)"
+    [ -n "$_cc_state" ] && break
+    sleep 0.25
+done
+if [ -n "$_cc_state" ]; then
+    python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+port = data.get('port', 8765)
+ips = data.get('ips') or ['localhost']
+print('  Control Center reachable at:')
+for ip in ips:
+    print(f'    http://{ip}:{port}/')
+" "$_cc_state"
+    echo "  Login: any username, password = your stellarmate system password"
+else
+    echo "  ⚠️  Control Center did not respond after 5s - check:"
+    echo "     journalctl -u pifinder-control-center -n 50"
+fi
+echo "##############################################"
 rm -f "$warnings_file"
 
 phase "Setup complete"
+
+# Restart the Control Center now that every write to its stdout above is
+# already done - guarantees a plain terminal run (not through the GUI's own
+# Update button) doesn't leave the Control Center serving stale code
+# indefinitely, since only a GUI-triggered run's own success (server.py's
+# _cc_restart_pending) used to restart it. Direct feedback (2026-09-12):
+# "Wird das CC neu installiert, dann wird es auch vom Setup neu gestartet.
+# Ganz einfach."
+#
+# BUT skip it entirely when server.py itself launched this run
+# (PFSM_CC_MANAGED_RUN, set by _start_run()'s subprocess.Popen env) - found
+# live (2026-09-12): calling this unconditionally killed that same Python
+# process's _reader_thread mid-readline, before its own proc.wait() ever
+# returned, so _cc_restart_pending never got set and the frontend just saw
+# the completed run vanish into "Idle" instead of the graceful restarting/
+# success handoff. Same reasoning as the enable/start logic further up
+# (which deliberately only starts if inactive - see that block's own comment
+# about a 2026-08-01 SIGPIPE incident from restarting too early, mid-script)
+# - only here it's the very last line racing the *end* of the run instead of
+# the middle. A run started outside the Control Center (plain CLI/SSH) has
+# no such process to race, and still gets its guaranteed restart below.
+#
+# Temporary diagnostic (2026-09-13): a run on the Pi5 vanished right after
+# the driver-install messages, before the Installation Summary above even
+# started printing - if that recurs, this line tells us whether execution
+# even reaches here at all, and if so, whether PFSM_CC_MANAGED_RUN survived
+# the venv re-exec/self-update re-exec earlier in this script intact. Remove
+# once that's understood.
+echo "🔎 PFSM_CC_MANAGED_RUN=${PFSM_CC_MANAGED_RUN:-<unset>}"
+if [ -z "${PFSM_CC_MANAGED_RUN:-}" ]; then
+    sudo systemctl restart pifinder-control-center || true
+fi

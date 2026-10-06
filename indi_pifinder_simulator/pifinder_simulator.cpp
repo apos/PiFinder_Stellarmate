@@ -1,0 +1,617 @@
+#include "pifinder_simulator.h"
+
+#include <cmath>
+#include <cstring>
+#include <ctime>
+#include <string>
+
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
+namespace
+{
+
+size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    static_cast<std::string *>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+// Found live (2026-09-01): this device's position used to default to a
+// fixed, compiled-in RA/Dec (5.5h/20 deg) regardless of actual time/location
+// - on a real mount, Connect()ing and then Goto-Forward syncing to that
+// default could send the OTA below the horizon, risking the mount or the
+// scope. Mount Bridge's own Multi-Point Alignment already solves exactly
+// this via PiFinder's /api/nearby_bright_stars (altitude-filtered
+// server-side using PiFinder's own GPS location/time - see
+// httpGetNearbyBrightStars() in pifinder_mount_bridge.cpp and
+// docs/concepts/mount_bridge_multistar_alignment.md §4.2) - reused here
+// rather than inventing a second altitude-safety mechanism. Returns false
+// (leaving the caller's own fallback in place) if PiFinder's web server
+// isn't reachable yet or has no candidate above minAltitude.
+//
+// centerRA/centerDec (2026-09-09, degrees J2000, NAN = "omit both, let the
+// endpoint default to PiFinder's own current position" - the original
+// behavior): direct user request - "irgendein sicherer Stern am ganzen
+// Himmel" was too loose a default; picking one near wherever the mount
+// already is (radiusDeg, typically 20-30) gives Verify/Alert and
+// Auto-correct something plausible to reconcile against from the very
+// first tick, rather than two arbitrarily far-apart truths. Only one of
+// centerRA/centerDec needs to be checked for NAN - the caller always sets
+// both or neither.
+bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName,
+                              double centerRA = NAN, double centerDec = NAN, double radiusDeg = 180.0)
+{
+    for (const char *url : {"http://127.0.0.1/api/nearby_bright_stars", "http://127.0.0.1:8080/api/nearby_bright_stars"})
+    {
+        CURL *curl = curl_easy_init();
+        if (curl == nullptr)
+            continue;
+
+        char fullUrl[256];
+        if (std::isnan(centerRA))
+        {
+            std::snprintf(fullUrl, sizeof(fullUrl), "%s?radius=%.1f&count=1&min_altitude=%.1f",
+                          url, radiusDeg, minAltitude);
+        }
+        else
+        {
+            std::snprintf(fullUrl, sizeof(fullUrl), "%s?ra=%.6f&dec=%.6f&radius=%.1f&count=1&min_altitude=%.1f",
+                          url, centerRA, centerDec, radiusDeg, minAltitude);
+        }
+
+        std::string body;
+        curl_easy_setopt(curl, CURLOPT_URL, fullUrl);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+        const CURLcode res = curl_easy_perform(curl);
+        long httpCode = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK || httpCode != 200)
+            continue;
+
+        try
+        {
+            const auto parsed = nlohmann::json::parse(body);
+            const auto &candidates = parsed.at("candidates");
+            if (candidates.empty())
+                continue;
+            const auto &c = candidates.front();
+            outRA = c.at("ra").get<double>() / 15.0;
+            outDec = c.at("dec").get<double>();
+            outName = c.value("name", std::string("?"));
+            return true;
+        }
+        catch (const nlohmann::json::exception &)
+        {
+            continue;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+static std::unique_ptr<PiFinderSimulator> pifinder_simulator(new PiFinderSimulator());
+
+PiFinderSimulator::PiFinderSimulator()
+{
+    setVersion(1, 0);
+
+    // Must happen here, before initProperties() ever runs - INDI::Telescope's
+    // own setTelescopeConnection() doc comment requires this ("Child class
+    // should call this in the constructor before Telescope registers any
+    // connection interfaces"). Calling it from initProperties() (even before
+    // any other code there) is too late: INDI::Telescope::initProperties()
+    // already registers Serial+TCP connection plugins using the default
+    // telescopeConnection value (CONNECTION_SERIAL | CONNECTION_TCP) by the
+    // time this class's own initProperties() body runs, so a later call here
+    // can't undo the already-registered Serial/Network port UI (visible in
+    // the Control Panel's "Port Auswahl" dialog with a guessed /dev/ttyUSB0)
+    // for what is meant to be a pure in-memory value holder with no physical
+    // link at all.
+    setTelescopeConnection(CONNECTION_NONE);
+
+    SetTelescopeCapability(TELESCOPE_CAN_GOTO | TELESCOPE_CAN_SYNC | TELESCOPE_CAN_ABORT, 1);
+
+    // Matches what Goto()/Sync() already set - this device has a real,
+    // usable position from construction (see m_hasPosition's header
+    // comment), so its TrackState should say so from the start too, not
+    // just after the first client command.
+    TrackState = SCOPE_TRACKING;
+}
+
+const char *PiFinderSimulator::getDefaultName()
+{
+    return "PiFinder Simulator";
+}
+
+bool PiFinderSimulator::initProperties()
+{
+    // setTelescopeConnection(CONNECTION_NONE) must NOT be called here - by
+    // the time this runs, INDI::Telescope::initProperties() below has
+    // already registered connection plugins from the default
+    // telescopeConnection value. See the constructor's own comment for the
+    // actual call site and why.
+    INDI::Telescope::initProperties();
+
+    SetParkDataType(PARK_NONE);
+
+    addAuxControls();
+
+    PushToTargetNP[0].fill("RA", "RA (h)", "%.6f", 0, 24, 0, 0);
+    PushToTargetNP[1].fill("DEC", "DEC (deg)", "%.6f", -90, 90, 0, 0);
+    PushToTargetNP.fill(getDeviceName(), "SIMULATE_PUSH_TO", "Simulate push-to", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+
+    // §9, docs/concepts/complete_position_simulator.md - see ISSnoopDevice()'s
+    // own comment. Empty by default (following off) - never hardcoded.
+    IUFillText(&MountDeviceT[MOUNT_DEVICE], "MOUNT_DEVICE", "Follow mount while slewing", "");
+    IUFillTextVector(&MountDeviceTP, MountDeviceT, 1, getDeviceName(), "FOLLOW_MOUNT_DEVICE",
+                      "Follow mount", "Main Control", IP_RW, 60, IPS_IDLE);
+
+    // Read-only status for whichever startup-default path actually fired
+    // (see TimerHit()'s comment) - "pending" until decided, then one of
+    // "near_mount"/"anywhere_safe"/"compiled_fallback". Consumed by the
+    // Control Center to warn when no real relationship to the mount could
+    // be established (2026-09-09).
+    IUFillText(&StartupDefaultSourceT[STARTUP_DEFAULT_SOURCE], "SOURCE", "Startup position source", "pending");
+    IUFillTextVector(&StartupDefaultSourceTP, StartupDefaultSourceT, 1, getDeviceName(), "STARTUP_DEFAULT_SOURCE",
+                      "Startup Default", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Snoop decode target - name/element names must match the real
+    // EQUATORIAL_EOD_COORD shape for IUSnoopNumber() to recognize it.
+    // "device" filled in once a mount is actually named (see ISNewText()).
+    IUFillNumber(&MountEqN[MOUNT_AXIS_RA], "RA", "RA", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&MountEqN[MOUNT_AXIS_DE], "DEC", "DEC", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountEqNP, MountEqN, 2, "", "EQUATORIAL_EOD_COORD", "Eq. Coordinates",
+                        "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Second snoop decode target on the same mount device: its slew target
+    // (see the header comment on MountTargetNP - used to tell a genuine new
+    // forwarded GoTo apart from a HOLDING re-sync). "device" filled in
+    // alongside MountEqNP in ISNewText().
+    IUFillNumber(&MountTargetN[MOUNT_TGT_RA], "RA", "RA", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&MountTargetN[MOUNT_TGT_DE], "DEC", "DEC", "%.6f", -90, 90, 0, 0);
+    IUFillNumberVector(&MountTargetNP, MountTargetN, 2, "", "TARGET_EOD_COORD", "Slew Target",
+                        "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Fixed, singular device (see the header comment) - snoop registration
+    // never needs to change, so it happens once here rather than through
+    // ISNewText() like MountDeviceTP above.
+    IUFillNumber(&MountBridgeCorrectionAgeN[0], "AGE_SEC", "Mount Bridge correction age", "%.0f", 0, 1e9, 0, 1e9);
+    IUFillNumberVector(&MountBridgeCorrectionAgeNP, MountBridgeCorrectionAgeN, 1, MOUNT_BRIDGE_DEVICE_NAME,
+                        "CORRECTION_AGE", "Correction age", "Main Control", IP_RO, 60, IPS_IDLE);
+    IDSnoopDevice(MOUNT_BRIDGE_DEVICE_NAME, "CORRECTION_AGE");
+
+    // Base class already defaults EQUATORIAL_EOD_COORD to IPS_OK on
+    // construction, which is what we want here (see m_hasPosition's own
+    // comment, 2026-09-01: this device starts with a real, usable
+    // above-the-horizon position, not an empty one) - no override needed.
+
+    return true;
+}
+
+bool PiFinderSimulator::updateProperties()
+{
+    INDI::Telescope::updateProperties();
+
+    if (isConnected())
+    {
+        defineProperty(PushToTargetNP);
+        defineProperty(&MountDeviceTP);
+        defineProperty(&StartupDefaultSourceTP);
+
+        // See m_connectedConfigLoaded's own comment - MountDeviceTP has
+        // nothing to load into until just now. loadConfig() re-delivers any
+        // saved value through our own ISNewText() (same "config replay"
+        // mechanism pifinder_mount_bridge.cpp's ActiveDeviceTP already
+        // relies on - see its own comment), which is what actually performs
+        // the IDSnoopDevice() registration - no separate call needed here.
+        if (!m_connectedConfigLoaded)
+        {
+            loadConfig(true, MountDeviceTP.name);
+            m_connectedConfigLoaded = true;
+        }
+    }
+    else
+    {
+        deleteProperty(PushToTargetNP);
+        deleteProperty(MountDeviceTP.name);
+        deleteProperty(StartupDefaultSourceTP.name);
+    }
+
+    return true;
+}
+
+bool PiFinderSimulator::saveConfigItems(FILE *fp)
+{
+    INDI::Telescope::saveConfigItems(fp);
+    IUSaveConfigText(fp, &MountDeviceTP);
+    return true;
+}
+
+bool PiFinderSimulator::Connect()
+{
+    LOG_INFO("PiFinder Simulator connected.");
+    // The startup-default pick itself moved to TimerHit() (2026-09-09) - see
+    // that function's own comment. Connect() is too early: before any
+    // client could realistically have issued Sync()/Goto(), but *also*
+    // before the mount snoop could realistically have delivered anything,
+    // which a mount-relative default needs.
+    //
+    // Found live (2026-09-01): nothing ever started the poll loop on
+    // Connect() - TimerHit()/ReadScopeStatus() genuinely never ran even
+    // once without this (confirmed with a throwaway counter property, not
+    // just inference), no matter what m_hasPosition/TrackState defaulted
+    // to. Sync()/Goto() worked regardless since they're plain client-
+    // triggered calls, independent of polling - that's what made this
+    // driver look like it "worked" all along. Same pattern already used by
+    // pifinder_mount_bridge.cpp's own Connect().
+    SetTimer(getCurrentPollingPeriod());
+    return true;
+}
+
+bool PiFinderSimulator::Disconnect()
+{
+    LOG_INFO("PiFinder Simulator disconnected.");
+    return true;
+}
+
+// Runs once, on one of the first few TimerHit() ticks rather than at
+// Connect() itself (2026-09-09 - see Connect()'s own comment for why):
+// waits up to STARTUP_DEFAULT_GRACE_SEC for the mount snoop to deliver a
+// real position, so the mount-relative search in pickSafeDefaultPosition()
+// (radius 20-30deg, direct user request) gets a genuine chance to fire
+// instead of near-always falling through to "anywhere safe" purely on
+// timing. Once the grace window expires - mount snoop present or not -
+// this fires exactly once and never revisits the decision (m_hasPosition
+// only ever moves again via an explicit Sync()/Goto() after this).
+void PiFinderSimulator::maybeApplyStartupDefault()
+{
+    if (m_startupDefaultReplaced)
+        return;
+
+    const long now = static_cast<long>(time(nullptr));
+    if (m_startupDefaultWaitSince == 0)
+        m_startupDefaultWaitSince = now;
+
+    const bool haveMountCenter = MountEqNP.s != IPS_IDLE &&
+        isUsableCoordinate(MountEqN[MOUNT_AXIS_RA].value, MountEqN[MOUNT_AXIS_DE].value);
+    const bool graceExpired = now - m_startupDefaultWaitSince >= STARTUP_DEFAULT_GRACE_SEC;
+    if (!haveMountCenter && !graceExpired)
+        return;  // keep waiting - not yet decided either way
+
+    double safeRA, safeDec;
+    std::string safeName;
+    // JNow->J2000 deliberately NOT precession-corrected here (unlike the
+    // exact-Sync paths elsewhere in this project) - sub-degree drift is
+    // irrelevant against a 20-30deg search radius.
+    const double centerRA = haveMountCenter ? MountEqN[MOUNT_AXIS_RA].value * 15.0 : NAN;
+    const double centerDec = haveMountCenter ? MountEqN[MOUNT_AXIS_DE].value : NAN;
+    if (pickSafeDefaultPosition(20.0, safeRA, safeDec, safeName, centerRA, centerDec, 25.0))
+    {
+        m_currentRA = safeRA;
+        m_currentDEC = safeDec;
+        m_startupDefaultSource = haveMountCenter ? "near_mount" : "anywhere_safe";
+        LOGF_INFO("Defaulting to a real, currently-visible star (%s, RA %.4fh, DEC %.4f deg, %s) instead of the fixed compiled-in default.",
+                  safeName.c_str(), safeRA, safeDec,
+                  haveMountCenter ? "near the mount" : "no mount position after waiting - anywhere safe");
+    }
+    else
+    {
+        m_startupDefaultSource = "compiled_fallback";
+        LOG_WARN("Could not fetch a safe default position from PiFinder's own /api/nearby_bright_stars (not reachable yet?) - keeping the compiled-in default. Sync/Goto to a real target before relying on this device's position.");
+    }
+    IUSaveText(&StartupDefaultSourceT[STARTUP_DEFAULT_SOURCE], m_startupDefaultSource.c_str());
+    StartupDefaultSourceTP.s = IPS_OK;
+    IDSetText(&StartupDefaultSourceTP, nullptr);
+    m_startupDefaultReplaced = true;
+}
+
+void PiFinderSimulator::TimerHit()
+{
+    if (!isConnected())
+        return;
+    maybeApplyStartupDefault();
+    ReadScopeStatus();
+    SetTimer(getCurrentPollingPeriod());
+}
+
+bool PiFinderSimulator::ReadScopeStatus()
+{
+    // Deliberately never changes on its own between Sync()/Goto() calls -
+    // see the header comment: this device holds still exactly where it was
+    // put (starting at its own fixed above-the-horizon default, see
+    // m_hasPosition's header comment), so a test session always knows
+    // precisely what "sky truth" it's currently feeding PiFinder.
+    //
+    // m_hasPosition is always true from construction now, but the guard
+    // stays (cheap, and self-documenting) rather than assuming so silently.
+    //
+    // Force IPS_OK on every poll, not just once inside Goto()/
+    // Sync() - found live: the base class's own TRACK-mode dispatch resets
+    // EqNP back to IPS_BUSY right after Goto() returns (normal "still
+    // slewing" convention for a real telescope), overriding an IPS_OK set
+    // from inside Goto() itself. This device has no simulated slew time
+    // (see the class comment) - it always "arrives" instantly, so every
+    // tick after the first should show OK, not stay stuck on Busy forever.
+    if (m_hasPosition)
+    {
+        NewRaDec(m_currentRA, m_currentDEC);
+        if (EqNP.getState() != IPS_OK)
+        {
+            EqNP.setState(IPS_OK);
+            EqNP.apply();
+        }
+    }
+    return true;
+}
+
+bool PiFinderSimulator::Goto(double ra, double dec)
+{
+    // No simulated slew time - takes effect immediately, same as Sync().
+    // A real slew delay isn't useful here: the point of this device is a
+    // precisely known, immediately-settable position, not motion realism
+    // (the real Telescope Simulator already covers that for the mount side).
+    m_currentRA = ra;
+    m_currentDEC = dec;
+    m_hasPosition = true;
+    TrackState = SCOPE_TRACKING;
+    LOGF_INFO("Goto: RA %.4fh, DEC %.4f deg.", ra, dec);
+    // Found live (2026-08-30): the base class's own dispatch already marks
+    // EqNP IPS_BUSY before calling Goto() (normal "slewing" convention), and
+    // NewRaDec() only updates the value, not the state - left uncorrected,
+    // it stayed stuck on Busy forever, since this driver has no simulated
+    // slew time to eventually finish. Set OK explicitly: this device always
+    // "arrives" the instant Goto()/Sync() is called (see the class comment).
+    NewRaDec(m_currentRA, m_currentDEC);
+    EqNP.setState(IPS_OK);
+    EqNP.apply();
+    return true;
+}
+
+bool PiFinderSimulator::Sync(double ra, double dec)
+{
+    m_currentRA = ra;
+    m_currentDEC = dec;
+    m_hasPosition = true;
+    TrackState = SCOPE_TRACKING;
+    LOGF_INFO("Sync: RA %.4fh, DEC %.4f deg.", ra, dec);
+    NewRaDec(m_currentRA, m_currentDEC);
+    EqNP.setState(IPS_OK);
+    EqNP.apply();
+    return true;
+}
+
+bool PiFinderSimulator::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
+{
+    if (dev != nullptr && !strcmp(dev, getDeviceName()) && !strcmp(name, PushToTargetNP.getName()))
+    {
+        PushToTargetNP.update(values, names, n);
+        PushToTargetNP.setState(IPS_OK);
+        PushToTargetNP.apply();
+
+        // Deliberately only touches TargetNP (TARGET_EOD_COORD), not
+        // m_currentRA/DEC - see the header comment on PushToTargetNP. A real
+        // push-to doesn't change PiFinder's own reported position either.
+        TargetNP[0].setValue(PushToTargetNP[0].getValue());
+        TargetNP[1].setValue(PushToTargetNP[1].getValue());
+        TargetNP.setState(IPS_OK);
+        TargetNP.apply();
+
+        LOGF_INFO("Simulated PiFinder push-to: RA %.4fh, DEC %.4f deg (TARGET_EOD_COORD updated, "
+                  "current position left unchanged).",
+                  PushToTargetNP[0].getValue(), PushToTargetNP[1].getValue());
+        return true;
+    }
+
+    return INDI::Telescope::ISNewNumber(dev, name, values, names, n);
+}
+
+bool PiFinderSimulator::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
+{
+    if (dev != nullptr && !strcmp(dev, getDeviceName()) && !strcmp(name, MountDeviceTP.name))
+    {
+        IUUpdateText(&MountDeviceTP, texts, names, n);
+        MountDeviceTP.s = IPS_OK;
+        IDSetText(&MountDeviceTP, nullptr);
+
+        const std::string newDevice = MountDeviceT[MOUNT_DEVICE].text ? MountDeviceT[MOUNT_DEVICE].text : "";
+        if (newDevice != m_snoopedMountDevice)
+        {
+            m_snoopedMountDevice = newDevice;
+            strncpy(MountEqNP.device, newDevice.c_str(), MAXINDIDEVICE - 1);
+            MountEqNP.device[MAXINDIDEVICE - 1] = '\0';
+            strncpy(MountTargetNP.device, newDevice.c_str(), MAXINDIDEVICE - 1);
+            MountTargetNP.device[MAXINDIDEVICE - 1] = '\0';
+            m_haveLastMountTarget = false;
+            m_followActive = false;
+            // See ISSnoopDevice()'s own comment - re-registering is harmless
+            // (indiserver just keeps the latest registration for this
+            // property/device pair); an empty name effectively means
+            // "nothing named yet", not "watch nothing" - indiserver simply
+            // never sees a device with an empty name, so no snoop events
+            // arrive, same net effect.
+            if (!newDevice.empty())
+            {
+                IDSnoopDevice(newDevice.c_str(), "EQUATORIAL_EOD_COORD");
+                IDSnoopDevice(newDevice.c_str(), "TARGET_EOD_COORD");
+            }
+            LOGF_INFO("Following mount device for real slews: %s", newDevice.empty() ? "(none)" : newDevice.c_str());
+            // Persist across restarts - see m_connectedConfigLoaded's own
+            // comment for why this was missing before (found live 2026-09-01,
+            // "Full Sim / Goto mount -> Dead reckoning geht nicht": a fresh
+            // profile restart silently reset this back to empty/off).
+            saveConfig(true, MountDeviceTP.name);
+        }
+        return true;
+    }
+
+    return INDI::Telescope::ISNewText(dev, name, texts, names, n);
+}
+
+bool PiFinderSimulator::ISSnoopDevice(XMLEle *root)
+{
+    const char *deviceName = findXMLAttValu(root, "device");
+
+    if (deviceName && strcmp(deviceName, MOUNT_BRIDGE_DEVICE_NAME) == 0)
+    {
+        if (IUSnoopNumber(root, &MountBridgeCorrectionAgeNP) == 0)
+            m_mountBridgeCorrectionAge = MountBridgeCorrectionAgeN[0].value;
+        return true;
+    }
+
+    if (deviceName && !m_snoopedMountDevice.empty() && m_snoopedMountDevice == deviceName)
+    {
+        // The mount's slew target changed -> a genuine new GoTo to a new
+        // place is starting. Follow the mount through to it, regardless of
+        // Mount Bridge's CORRECTION_AGE (a forwarded user GoTo goes out via
+        // sendMountCoords() too, so the age can't tell it apart from a
+        // correction - the target change can). A HOLDING re-sync re-issues
+        // the *same* target, so TARGET_EOD_COORD does not change and this
+        // does not trip.
+        if (IUSnoopNumber(root, &MountTargetNP) == 0)
+        {
+            const double tgtRA = MountTargetN[MOUNT_TGT_RA].value;
+            const double tgtDEC = MountTargetN[MOUNT_TGT_DE].value;
+            if (!isUsableCoordinate(tgtRA, tgtDEC))
+            {
+                // Do NOT touch m_lastMountTargetRA/DEC/m_haveLastMountTarget
+                // here - accepting a bad reading as the new "last known
+                // target" would make the NEXT genuinely good reading look
+                // like a false "target changed" (or silently suppress a
+                // real one), and would hand a NaN/out-of-range value to
+                // separationArcmin() on the very next call.
+                const long now = static_cast<long>(time(nullptr));
+                if (now - m_lastBadMountCoordWarnTime >= BAD_MOUNT_COORD_WARN_INTERVAL_SEC)
+                {
+                    m_lastBadMountCoordWarnTime = now;
+                    LOGF_WARN("Ignoring unusable slew target from '%s' (RA %.4fh DEC %.4f - not finite or "
+                              "Dec out of [-90,90]). Not following until a usable target is seen.",
+                              deviceName, tgtRA, tgtDEC);
+                }
+                return true;
+            }
+            const bool changed = !m_haveLastMountTarget ||
+                                 separationArcmin(m_lastMountTargetRA, m_lastMountTargetDEC, tgtRA, tgtDEC)
+                                     > MOUNT_TARGET_CHANGE_EPS_DEG * 60.0;
+            if (m_haveLastMountTarget && changed)
+            {
+                m_followActive = true;
+                m_followTargetRA = tgtRA;
+                m_followTargetDEC = tgtDEC;
+                m_followDeadline = static_cast<long>(time(nullptr)) + FOLLOW_TIMEOUT_SEC;
+                LOGF_INFO("Mount slew target changed (RA %.4fh DEC %.4f) - following it through the slew.",
+                          tgtRA, tgtDEC);
+            }
+            m_lastMountTargetRA = tgtRA;
+            m_lastMountTargetDEC = tgtDEC;
+            m_haveLastMountTarget = true;
+            return true;
+        }
+
+        if (IUSnoopNumber(root, &MountEqNP) == 0)
+        {
+            // PiFinder is rigidly attached to the OTA, so a real slew moves
+            // it too - but ordinary mount-model drift once the mount is back
+            // to idle/tracking must NOT keep dragging this device along, or
+            // there is nothing left for Verify/Alert or Auto-correct to
+            // detect. Two things get followed:
+            //   1. m_followActive - a forwarded new GoTo (target changed
+            //      above); follow the mount verbatim until it settles on the
+            //      new target (or a safety timeout).
+            //   2. a Busy episode NOT explained by Mount Bridge itself
+            //      (CORRECTION_AGE old) - e.g. a hand-paddle / external slew.
+            // Mount Bridge's own small HOLDING/auto-correct re-syncs match
+            // neither (same target, fresh CORRECTION_AGE) and stay unfollowed
+            // - the feedback loop that used to walk PiFinder and mount off
+            // together (2026-09-01) does not form.
+            if (m_followActive && static_cast<long>(time(nullptr)) > m_followDeadline)
+            {
+                m_followActive = false;
+                LOG_INFO("Mount-follow timed out (mount never settled on the new target) - holding here.");
+            }
+
+            const bool externalSlew = MountEqNP.s == IPS_BUSY &&
+                                      m_mountBridgeCorrectionAge >= CORRECTION_GRACE_SEC;
+
+            if (m_followActive || externalSlew)
+            {
+                const double mountRA = MountEqN[MOUNT_AXIS_RA].value;
+                const double mountDEC = MountEqN[MOUNT_AXIS_DE].value;
+                if (!isUsableCoordinate(mountRA, mountDEC))
+                {
+                    // Leave m_currentRA/DEC exactly where they were - this is
+                    // the actual root cause of the 2026-09-05 incident (a
+                    // real mount at Dec 90/NCP ended up publishing a NaN
+                    // here at some point, silently copied straight through
+                    // with no check at all). Skip this tick rather than
+                    // publish/track a bad value; the follow/arrival logic
+                    // below still runs against the last GOOD m_currentRA/DEC.
+                    const long now = static_cast<long>(time(nullptr));
+                    if (now - m_lastBadMountCoordWarnTime >= BAD_MOUNT_COORD_WARN_INTERVAL_SEC)
+                    {
+                        m_lastBadMountCoordWarnTime = now;
+                        LOGF_WARN("Ignoring unusable position from '%s' while following (RA %.4fh DEC %.4f - "
+                                  "not finite or Dec out of [-90,90]). Holding last known-good position.",
+                                  m_snoopedMountDevice.c_str(), mountRA, mountDEC);
+                    }
+                }
+                else
+                {
+                    m_currentRA = mountRA;
+                    m_currentDEC = mountDEC;
+                    m_hasPosition = true;
+                    TrackState = SCOPE_TRACKING;
+                    NewRaDec(m_currentRA, m_currentDEC);
+                    if (EqNP.getState() != IPS_OK)
+                    {
+                        EqNP.setState(IPS_OK);
+                        EqNP.apply();
+                    }
+                }
+            }
+
+            // Stop following once the mount has settled (state OK) close to
+            // the new target - the exact settled position was just copied
+            // above, so this device ends up precisely where the mount is.
+            if (m_followActive && MountEqNP.s == IPS_OK &&
+                separationArcmin(m_currentRA, m_currentDEC, m_followTargetRA, m_followTargetDEC)
+                    < FOLLOW_ARRIVED_ARCMIN)
+            {
+                m_followActive = false;
+            }
+        }
+        return true;
+    }
+
+    return INDI::Telescope::ISSnoopDevice(root);
+}
+
+bool PiFinderSimulator::isUsableCoordinate(double ra_h, double dec_d)
+{
+    // See the header comment on this declaration for the incident that
+    // motivated it. Deliberately independent of separationArcmin()'s own
+    // acos() clamp below (which was already correct before this fix, not
+    // the actual gap) - this guards the INGESTION of a snooped coordinate
+    // before it ever becomes m_currentRA/DEC/m_followTargetRA/DEC, so a
+    // single bad reading can neither corrupt this device's own published
+    // position nor get fed into separationArcmin() (or anything else) in
+    // the first place.
+    return std::isfinite(ra_h) && std::isfinite(dec_d) && dec_d >= -90.0 && dec_d <= 90.0;
+}
+
+double PiFinderSimulator::separationArcmin(double ra1_h, double dec1_d, double ra2_h, double dec2_d)
+{
+    const double d2r = M_PI / 180.0;
+    const double ra1 = ra1_h * 15.0 * d2r, ra2 = ra2_h * 15.0 * d2r;
+    const double dec1 = dec1_d * d2r, dec2 = dec2_d * d2r;
+    double c = std::sin(dec1) * std::sin(dec2) + std::cos(dec1) * std::cos(dec2) * std::cos(ra1 - ra2);
+    c = std::max(-1.0, std::min(1.0, c));
+    return std::acos(c) / d2r * 60.0;
+}

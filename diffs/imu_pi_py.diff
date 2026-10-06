@@ -1,0 +1,24 @@
+--- python/PiFinder/imu_pi.py.orig	2026-09-01 22:04:24.610889000 +0200
++++ python/PiFinder/imu_pi.py	2026-09-01 21:48:39.927099765 +0200
+@@ -166,7 +166,7 @@
+         )
+ 
+ 
+-def imu_monitor(shared_state, console_queue, log_queue):
++def imu_monitor(shared_state, console_queue, log_queue, fake_imu_command_queue=None):
+     MultiprocLogging.configurer(log_queue)
+     logger.debug("Starting IMU")
+     imu = None
+@@ -179,7 +179,11 @@
+         console_queue.put("DEGRADED_OPS IMU")
+         from PiFinder.imu_fake import Imu as ImuFake
+ 
+-        imu = ImuFake()
++        # 2026-09-01, docs/concepts/full_simulation_imu_dead_reckoning.md:
++        # lets Full Simulation drive this fallback's avg_quat/moving() from
++        # externally injected FakeImuSample messages instead of a
++        # permanently-frozen identity quaternion.
++        imu = ImuFake(fake_imu_command_queue=fake_imu_command_queue)
+ 
+     imu_calibrated = False
+     imu_sample = ImuSample(

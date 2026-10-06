@@ -1,0 +1,48 @@
+--- python/PiFinder/types/positioning.py.orig	2026-09-01 22:04:24.500890374 +0200
++++ python/PiFinder/types/positioning.py	2026-09-01 21:48:05.324792023 +0200
+@@ -617,6 +617,45 @@
+ 
+ 
+ @dataclass
++class FakeSolve:
++    """Inject a one-time, synthetic ``SuccessfulSolve`` at (ra, dec),
++    bypassing image capture/centroid extraction/tetra3 entirely - lets
++    PiFinder's own IMU dead-reckoning take over from a chosen fixed
++    point, for testing anything downstream of a solve (e.g. an
++    external mount bridge) without a real sky. Degrees.
++
++    Travels on its own dedicated queue (not ``align_command_queue`` -
++    this is not part of ``SolverCommand``), so existing consumers of
++    that queue's message shape are unaffected.
++    """
++
++    ra: float
++    dec: float
++
++
++@dataclass
++class FakeImuSample:
++    """Inject one synthetic IMU orientation sample (``q_x2imu``, scalar-first
++    w/x/y/z), for driving ``ImuDeadReckoning`` between ``FakeSolve``
++    injections without real IMU hardware (Full Simulation - see
++    PiFinder_Stellarmate's docs/concepts/full_simulation_imu_dead_reckoning.md
++    for the full design and the RA/Dec-to-quaternion derivation callers use).
++
++    Travels on its own dedicated queue (mirrors FakeSolve's own queue, not
++    reused - see that class's own comment for why), drained by the fake IMU
++    fallback (PiFinder.imu_fake.Imu) once per its own update() cycle. Each
++    sample marks "the telescope was observed moving at send time" - the fake
++    IMU's own debounce (no new sample for a short window) is what reports
++    "stopped", not an explicit stop message.
++    """
++
++    w: float
++    x: float
++    y: float
++    z: float
++
++
++@dataclass
+ class AlignedResult:
+     """Reply on ``align_result_queue`` carrying the pixel where the
+     alignment target landed.

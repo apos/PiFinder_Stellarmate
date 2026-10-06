@@ -4,9 +4,11 @@
 
 > ### ✅ Getestet und verifiziert gegen
 >
-> * **PiFinder-Software 2.6.0** auf **StellarMate OS 2.2.1** (Arch Linux), Raspberry Pi 4 und Pi 5
 > * Testgerät: **LogiLink ID0120** (2,4-GHz-USB-Dongle-Nummernblock, keine eigenen Pfeiltasten)
 > * Python-Paket **evdev**, jeder Linux-Kernel mit `/dev/input/eventN`-Nodes (kein X11 nötig)
+> * Hängt nur von PiFinders stabiler `POST /api/key`-Remote-API ab — kein
+>   PiFinder-versionsspezifisches Verhalten. Getestete PiFinder- / StellarMate-OS- / Pi-Kombinationen:
+>   s. die [Versionskompatibilitäts-Tabelle in README.md](README.md#version-compatibility).
 
 Dieses Dokument beschreibt die **Keyboard Bridge** (`test_tools/fb_keyboard_bridge.py`) — einen
 kleinen, von PiFinders eigenem Code unabhängigen Prozess, der aus einem beliebigen
@@ -27,31 +29,27 @@ Umschalt-Button dokumentiert, der diese Bridge startet und stoppt.
 7. [Selbstheilung & Persistenz](#selbstheilung--persistenz)
 8. [Bekannte Einschränkungen & Fehlerbehebung](#bekannte-einschränkungen--fehlerbehebung)
 9. [Entwicklung & Testing](#entwicklung--testing)
-10. [Strategische Roadmap](#strategische-roadmap)
+10. [Roadmap](#roadmap)
 11. [Versionskompatibilität](#versionskompatibilität)
 
 ---
 
 ## Warum das existiert
 
-PiFinders echtes Eingabegerät ist ein physisches Tastatur-HAT, direkt per GPIO verdrahtet und über
-`keyboard_pi.py` ausgelesen. Für das fertige Produkt ist das die richtige Lösung, erzeugt aber zwei
-praktische Probleme, auf die dieses Projekt ständig stößt:
+PiFinders echtes Eingabegerät ist ein Tastatur-HAT an GPIO (über `keyboard_pi.py` ausgelesen). Ein
+reiner HAT-Pfad hat zwei Nachteile:
 
-1. **Hardware-freie Entwicklung und Tests.** Ein reiner HAT-Eingabepfad bedeutet: jede
-   UI-/Software-Änderung muss mit der physischen Einheit in der Hand getestet werden — kein
-   Bank-Test, keine CI, kein "kurzer Check vom Schreibtisch aus" ohne die tatsächliche
-   Teleskop-Montierungs-Hardware.
-2. **Ein günstiger, physisch robuster Feld-Ersatz.** PiFinders HAT-Tastatur teilt sich in diesem
-   Projekt GPIO-Leitungen mit anderer Zusatz-Hardware (s. den GPIO-16-Konflikt, dokumentiert in
-   `basic-memory/pifinder-stellarmate/00000` und `00023`) — ein kleiner Wireless-Nummernblock
-   umgeht das komplett, ist leichter und braucht deutlich weniger Strom.
+1. **Kein hardware-freies Testen.** Jede UI-Änderung braucht die physische Einheit in der Hand —
+   kein Bench-Test, keine CI.
+2. **GPIO-Konkurrenz.** Die HAT-Tastatur teilt sich GPIO-Leitungen mit anderer Zusatz-Hardware
+   (z. B. der Geekworm-X1203-USV / GPIO-16-Konflikt — s. das Kompatibilitäts-Banner im
+   Haupt-[README.md](README.md)). Ein Wireless-Nummernblock umgeht das, ist leichter und
+   stromsparender.
 
-Die Keyboard Bridge löst beides mit einem Skript: Sie liest rohe Tastenereignisse von **jedem**
-Linux-Eingabegerät (`evdev`) und leitet sie an PiFinders bestehende, stabile
-`POST /api/key`-Remote-API weiter — denselben Endpunkt, den die Web-UI-eigene virtuelle Tastatur,
-`pf_remote.py` und die Setup-GUI ohnehin schon nutzen. Kein PiFinder-Quellcode wird angefasst; die
-Bridge ist ein reiner Client einer öffentlichen Schnittstelle.
+Die Keyboard Bridge liest rohe Tastenereignisse von **jedem** Linux-Eingabegerät (`evdev`) und
+leitet sie an PiFinders stabile `POST /api/key`-Remote-API weiter — denselben Endpunkt, den die
+Web-UI-Tastatur, `pf_remote.py` und die Setup-GUI nutzen. Kein PiFinder-Quellcode wird angefasst;
+die Bridge ist ein reiner Client einer öffentlichen API.
 
 ```mermaid
 flowchart LR
@@ -83,17 +81,15 @@ Die Bridge ist bewusst **von PiFinders eigenem Prozess und Code entkoppelt**:
   genutzt, um zu verifizieren, dass die Auto-Probe-Antwort tatsächlich ein Bild ist) werden über die
   Standardbibliothek hinaus gebraucht — einmalig in PiFinders eigenes venv installiert, getrackt in
   `bin/requirements_additional.txt`, damit ein venv-Rebuild diese Abhängigkeit nicht wieder
-  stillschweigend verliert (ist genau einmal passiert, s.
-  `basic-memory/pifinder-stellarmate/00030`).
+  stillschweigend verliert (ist genau einmal passiert).
 
 ---
 
 ## Tastenbelegung
 
-Abgestimmt auf ein reines Nummernblock-Gerät ohne eigene Pfeiltasten. Seit 2026-07-19 ist die
-Belegung **komplett unabhängig vom NumLock-Zustand** — ein bewusstes Redesign (s.
-[Bekannte Einschränkungen](#bekannte-einschränkungen--fehlerbehebung) für das frühere,
-NumLock-abhängige Design und warum es ersetzt wurde):
+Abgestimmt auf ein reines Nummernblock-Gerät ohne eigene Pfeiltasten. Die Belegung ist **komplett
+unabhängig vom NumLock-Zustand** — wichtig für einen kabellosen Nummernblock, bei dem es keine
+verlässliche Möglichkeit gibt, dessen NumLock-LED remote zu lesen oder zu setzen:
 
 | Physische Taste | PiFinder-Aktion |
 |---|---|
@@ -133,19 +129,11 @@ zwischen dem echten HAT und diesem Ersatz überträgt:
    `ALT_*`-Aktionen, die auf echter Hardware existieren (`ALT_0`, `ALT_PLUS`, `ALT_MINUS`,
    `ALT_LEFT/UP/DOWN/RIGHT`).
 
-Ein subtiles Korrektheitsdetail, das explizit dokumentiert werden sollte, da es während der
-Entwicklung einen echten, schwer zu findenden Bug verursachte: ob eine Long-Press-/Hold-Aktion
-**bereits ausgelöst** hat, wird in einem eigenen `fired_codes`-Set festgehalten, geschrieben nur vom
-Timer-Thread (`fire_hold()`) genau in dem Moment, in dem er seine Aktion sendet — **bevor** jegliche
-Netzwerk-I/O stattfindet. Der Key-up-Handler (Hauptthread) liest und leert dieses Set nur; er
-schließt niemals aus dem Vorhandensein/Fehlen eines `Timer`-Objekts in `hold_timers`, ob der Hold
-"gefeuert" hat, weil `fire_hold()` sich selbst genau in dem Moment aus `hold_timers` entfernt, in dem
-es feuert — das erzeugt eine Race Condition, bei der Key-up "bereits weg" sehen und (fälschlich)
-einen zusätzlichen kurzen Druck beim Loslassen senden könnte. Bei SQUARE speziell schloss dieser
-überzählige Druck das gerade erst per Long-Press geöffnete Marking Menu wieder — das Menü öffnete
-sich sichtbar und verschwand sofort wieder. Behoben, indem zwei unabhängige Signale für zwei
-unabhängige Fragen genutzt werden ("läuft noch ein Timer" vs. "hat der Timer bereits gefeuert"),
-statt eines für beide zu überladen.
+Zwei unabhängige Signale für zwei unabhängige Fragen: `hold_timers` = läuft noch ein Hold-Timer;
+`fired_codes` = hat ein Hold bereits gefeuert (geschrieben von `fire_hold()` vor jeglicher
+Netzwerk-I/O, gelesen und geleert vom Key-up-Handler). Der Key-up-Handler schließt nie aus
+`hold_timers`, ob der Hold gefeuert hat — `fire_hold()` entfernt sich selbst beim Feuern aus
+`hold_timers`, das würde also racen und einen überzähligen kurzen Druck beim Loslassen senden.
 
 ---
 
@@ -170,10 +158,8 @@ sudo systemctl disable --now pifinder-numpad-bridge.service  # aus, übersteht R
 <table>
 <tr>
 <td align="center">
-<a href="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png"><img src="docs/images/pfinder_lx200/Pifinder Stellarmate Control Center.png" width="500"></a><br>
-<sub>Das Control Center — die "Turn Numpad On/Off"-Zeile der Numpad-Bridge liegt im hier gezeigten
-Hardware-/Peripherie-Abschnitt. Ein eigener Nahaufnahme-Screenshot dieser Zeile ist eine offene
-Doku-Aufgabe (s. <a href="#strategische-roadmap">Strategische Roadmap</a>).</sub>
+<a href="docs/images/readme/cc_numpad_row.png"><img src="docs/images/readme/cc_numpad_row.png" width="620"></a><br>
+<sub>Der <strong>Turn Numpad On/Off</strong>-Schalter im Control Center — in der Kachel <em>Simulation, Test and Power</em>, unter <em>Hardware test and details → Optional external hardware</em>. Kein Reboot; funktioniert gegen Real- oder Fake-Mode.</sub>
 </td>
 </tr>
 </table>
@@ -255,8 +241,7 @@ Zwei unabhängige Probleme, zwei unabhängige Fixes:
   `Restart=always`), umgeschaltet über den Control-Center-Button — systemds eigener
   Enabled-Zustand ist das, was einen Reboot übersteht, nicht eine Variable im Arbeitsspeicher. Das
   ersetzte ein früheres Design, das ein einfaches `Popen`-Objekt innerhalb des Control-Center-eigenen
-  Server-Prozesses trackte, was einen Reboot des ganzen Pi natürlich gar nicht überstehen konnte (s.
-  `basic-memory/pifinder-stellarmate/00035`).
+  Server-Prozesses trackte, was einen Reboot des ganzen Pi natürlich gar nicht überstehen konnte.
 - **Selbstheilung über einen Fake/Real-Mode-Wechsel hinweg**: ein Moduswechsel ändert, **welcher
   Port** tatsächlich erreichbar ist (Real Mode: 80/8080, Fake Mode: 8081). Statt bei jedem
   Moduswechsel explizit gestoppt und neu gestartet zu werden (das ursprüngliche Design, später als
@@ -272,17 +257,6 @@ Zwei unabhängige Probleme, zwei unabhängige Fixes:
   stdout/Journal aus — läuft weder Real noch Fake Mode, werden Tastendrücke stillschweigend
   verworfen (mit Log-Zeile), bis eine Instanz erscheint. `journalctl -u
   pifinder-numpad-bridge.service -f` prüfen, wenn Tasten scheinbar nichts tun.
-- **Historisches Design (abgelöst, hier zur Einordnung dokumentiert):** eine frühere Version
-  trackte den NumLock-Zustand selbst (beim Start aus der LED des Geräts geseedet, bei jedem
-  NumLock-Druck umgeschaltet), um `4/8/6/2` je nach NumLock eine doppelte Ziffern-/Navigations-Bedeutung
-  zu geben. Verworfen, weil ein Wireless-Dongle keine verlässliche Möglichkeit bietet, diese LED
-  remote zu lesen oder zu setzen — die aktuelle feste Belegung (s. [Tastenbelegung](#tastenbelegung))
-  beseitigt die gesamte Fehlerklasse, statt sie zu umgehen.
-- **Zusammen mit dem LCD-Autostart gebündelt war ein früher Design-Fehler**, inzwischen behoben: die
-  Bridge startete ursprünglich nur zusammen mit dem Fake-Mode-Autostart des Waveshare-LCDs, obwohl
-  sie keine eigene GPIO-/Overlay-Abhängigkeit hat und auch mit echtem OLED+HAT im Real Mode
-  problemlos läuft. In einen eigenständigen Toggle aufgeteilt
-  (`basic-memory/pifinder-stellarmate/00031`).
 - **Braucht bereits laufendes PiFinder.** Der "Turn Numpad On"-Button im Control Center weigert sich
   explizit, die Bridge zu starten, wenn weder Fake noch Real Mode gerade laufen (es gäbe nichts, an
   das gesendet werden könnte) — erst PiFinder starten.
@@ -296,43 +270,39 @@ Zwei unabhängige Probleme, zwei unabhängige Fixes:
 - `keypad_gpio_matrix_test.py` (gleiches `test_tools/`-Verzeichnis) ist die entsprechende
   Roh-Hardware-Diagnose für die **echte** HAT-Tastatur — nützlich, um ein Bridge-Problem von einem
   physischen Tastatur-Problem zu unterscheiden, wenn etwas nicht wie erwartet reagiert.
-- Für die Bridge selbst existiert bisher keine automatisierte Testsuite (s. Strategische Roadmap).
+- Für die Bridge selbst existiert bisher keine automatisierte Testsuite (s. Roadmap).
 
 ---
 
-## Strategische Roadmap
+## Roadmap
 
-Priorisiert nach dem GitHub-Projects-Schema aus `basic-memory/pifinder-stellarmate/00001`s
-TODO-Tabelle (s. [[bm-github-project-schema-todo-format]] für das Schema selbst):
-
-| Priorität | Größe | Punkt |
-|---|---|---|
-| P2 | XS | Nahaufnahme-Screenshot der Numpad-Umschalt-Zeile im Control Center für dieses Dokument ergänzen (bisher nur als Teil des Ganzseiten-Screenshots gezeigt). |
-| P3 (noch nicht getrackt) | S | Automatisierter Smoke-Test: synthetische evdev-Events durch `classify()`/die Event-Loop schicken, ohne echte Hardware, erwartete `/api/key`-Aufrufe verifizieren (bräuchte ein Mock-HTTP-Ziel — aktuell keinerlei Testabdeckung für dieses Skript). |
-| P3 (noch nicht getrackt) | M | Kleiner On-Screen-/Journal-Statusindikator erwägen, sichtbar ohne SSH-Zugriff, wenn keine PiFinder-Instanz erreichbar ist, statt nur einer Log-Zeile. |
-
-Aktuell sind keine offenen Bugs zu dieser Komponente getrackt — ihr jüngstes Redesign
-(NumLock-unabhängige Belegung, systemd-Persistenz, Selbstheilung) hat jedes zuvor bekannte Problem
-gelöst.
+Die projektweite Ausrichtung (v2.x / v3.x) steht im Haupt-[README.md](README.md#roadmap).
+Getrackte, priorisierte Arbeit liegt im [GitHub-Projekt](https://github.com/users/apos/projects/15)
+([Roadmap-Ansicht](https://github.com/users/apos/projects/15/views/4)); ausgelieferte Änderungen
+stehen im [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## Versionskompatibilität
 
-| PiFinder | SMOS | Pi 4 | Pi 5 |
-|---|---|---|---|
-| 2.6.0 | 2.2.1 | ✅ getestet | ✅ getestet |
-| 2.5.1 | 2.1.1 | ✅ getestet (frühere Belegung) | — |
+Die PiFinder- / StellarMate-OS- / Pi-Testmatrix wird an einer Stelle gepflegt — der
+[Versionskompatibilitäts-Tabelle im Haupt-README.md](README.md#version-compatibility).
 
-Hängt nur von PiFinders `POST /api/key`-Remote-API ab, die über jede von diesem Projekt anvisierte
-PiFinder-Version hinweg stabil geblieben ist — kein PiFinder-versionsspezifisches Verhalten in der
-Bridge selbst.
+Die Bridge hängt nur von PiFinders `POST /api/key`-Remote-API ab, die über jede von diesem Projekt
+anvisierte PiFinder-Version hinweg stabil geblieben ist — kein PiFinder-versionsspezifisches
+Verhalten in der Bridge selbst.
 
 ## Siehe auch
 
 - [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md) — der Umschalt-Button, der diese Bridge
   startet/stoppt, und der geschwisterliche "External SPI LCD"-Toggle für hardwarefreie
   Display-Tests.
-- [README.md](README.md) — Basis-PiFinder-auf-StellarMate-Installation.
-- `basic-memory/pifinder-stellarmate/00031`, `00035` — die zwei Design-Iterationen, die zur
-  aktuellen Architektur führten (Entkopplung vom LCD-Toggle, dann systemd-Persistenz).
+- [README.md](README.md) — Basis-Installation, die Versionsmatrix und die Projekt-Roadmap.
+
+---
+
+<p align="center">
+  <img src="docs/images/logo/PiFinder-Stellarmate_Wortmarke_Positiv_fuer-hellen-hg.png" alt="PiFinder StellarMate" width="300"><br>
+  © github.com/apos 2026<br>
+  <em>Unofficial community project, not affiliated with StellarMate or PiFinder.</em>
+</p>
