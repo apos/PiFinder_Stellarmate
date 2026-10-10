@@ -147,6 +147,15 @@ if [ "$MODE" = "indi_only" ]; then
     fi
     echo "##############################################"
     echo "###REBOOT_NEEDED### false"
+    # The indi_only path (e.g. a Control host on SMOS x86) exits here, never
+    # reaching the "Setup complete" block below - it needs the post-SMOS-
+    # update guard and the recorded SMOS version just the same.
+    install_smos_update_guard
+    if [ ! -s "$warnings_file" ]; then
+        record_smos_version
+    else
+        echo "ℹ️  CRITICAL WARNINGS present - SMOS version not recorded, so the post-update notice stays until a clean run."
+    fi
     rm -f "$warnings_file"
     exit 0
 fi
@@ -1070,14 +1079,9 @@ sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-fake-mode-autostart
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-control-center.service /etc/systemd/system/pifinder-control-center.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-numpad-bridge.service /etc/systemd/system/pifinder-numpad-bridge.service
 
-# Post-SMOS-update guard: a USER unit on purpose - /home survives the SMOS
-# root reset that removes everything above, so it can still offer the
-# restore when the Control Center itself is gone (bin/smos_update_guard.py).
-# Enabled by symlink so this also works without a user session (SSH).
-mkdir -p "${HOME}/.config/systemd/user/default.target.wants"
-cp "${pifinder_stellarmate_dir}/pi_config_files/pifinder-smos-update-guard.service" "${HOME}/.config/systemd/user/"
-ln -sf ../pifinder-smos-update-guard.service "${HOME}/.config/systemd/user/default.target.wants/pifinder-smos-update-guard.service"
-systemctl --user daemon-reload 2>/dev/null || true
+# Post-SMOS-update guard (user unit - see install_smos_update_guard() in
+# bin/functions.sh).
+install_smos_update_guard
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
@@ -1237,11 +1241,20 @@ else
     echo "     journalctl -u pifinder-control-center -n 50"
 fi
 echo "##############################################"
+# Only a clean run counts as "restored against this SMOS version" - with
+# CRITICAL WARNINGS (e.g. a driver build failed) the post-update notice must
+# stay so the restore can be re-run.
+_setup_clean=1
+[ -s "$warnings_file" ] && _setup_clean=0
 rm -f "$warnings_file"
 
 phase "Setup complete"
 
-record_smos_version
+if [ "$_setup_clean" = 1 ]; then
+    record_smos_version
+else
+    echo "ℹ️  CRITICAL WARNINGS present - SMOS version not recorded, so the post-update notice stays until a clean run."
+fi
 
 # Restart the Control Center now that every write to its stdout above is
 # already done - guarantees a plain terminal run (not through the GUI's own
