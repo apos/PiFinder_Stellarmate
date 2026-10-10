@@ -346,6 +346,18 @@ record_smos_version() {
   fi
 }
 
+# Installs the post-SMOS-update guard as a USER unit: /home survives the SMOS
+# root reset that removes the Control Center service, so the guard can still
+# offer the restore when the Control Center itself is gone
+# (bin/smos_update_guard.py). Enabled by symlink so this also works without a
+# user session (SSH).
+install_smos_update_guard() {
+  mkdir -p "${HOME}/.config/systemd/user/default.target.wants"
+  cp "${pifinder_stellarmate_dir}/pi_config_files/pifinder-smos-update-guard.service" "${HOME}/.config/systemd/user/"
+  ln -sf ../pifinder-smos-update-guard.service "${HOME}/.config/systemd/user/default.target.wants/pifinder-smos-update-guard.service"
+  systemctl --user daemon-reload 2>/dev/null || true
+}
+
 stop_indi_driver_and_wait() {
   local process_name="$1"
   local max_wait_seconds="${2:-5}"
