@@ -9,7 +9,7 @@
 
 set -u
 
-PORT=8765
+PORT=8777  # was 8765 - collided with Ekos's native MCP server (issue #481)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 

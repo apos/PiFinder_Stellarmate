@@ -57,7 +57,7 @@
             <p class="grey-text text-lighten-1" style="margin-bottom: 0.2rem;">{{ _('Reachable at:') }}</p>
             <ul class="first-steps-links">
               {% for ip in ips %}
-              <li><a href="http://{{ ip }}:8765/" target="_blank" rel="noopener">{{ ip }}:8765</a></li>
+              <li><a href="http://{{ ip }}:8777/" target="_blank" rel="noopener">{{ ip }}:8777</a></li>
               {% endfor %}
             </ul>
           </div>
@@ -135,7 +135,7 @@
     chevron.textContent = open ? 'expand_more' : 'expand_less';
   }
 
-  const SETUP_GUI_PORT = 8765;
+  const SETUP_GUI_PORT = 8777;
 
   function setupGuiBaseUrl() {
     return `http://${location.hostname}:${SETUP_GUI_PORT}`;

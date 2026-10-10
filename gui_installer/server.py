@@ -33,7 +33,12 @@ import pam_auth
 import indi_client
 import webmanager_client
 
-PORT = 8765
+# Moved off 8765 (issue #481): KStars/Ekos's native MCP server (and its AI
+# assistant) default to 8765 too, so the two collided on any device running
+# both. LEGACY_PORT is only still used to reach a peer Control Center that has
+# not been updated yet (see _cc_proxy_get()).
+PORT = 8777
+LEGACY_PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
 # (sys_utils.verify_password("stellarmate", password)) - one password to
 # remember for both. Only the page and state-changing actions require it;
@@ -3543,7 +3548,7 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
 
 
 def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float = 5):
-    """GET another device's own Control Center (always port 8765) - category
+    """GET another device's own Control Center (PORT, falling back to LEGACY_PORT for a peer not yet updated) - category
     2b of docs/concepts/control_host_hardware_badges_mirroring.md. First
     forwards THIS request's own Authorization header unchanged (the original
     2026-09-12 decision: assume the same stellarmate account password across
@@ -3567,12 +3572,23 @@ def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float 
     Returns the parsed JSON dict, or None on any failure (unreachable, wrong
     password there too, older PFSM without this route, ...) - fails soft,
     same as every other unreachable-remote case already does."""
-    def _try(header: str | None):
-        req = urllib.request.Request(f"http://{host}:8765{path}")
+    def _get(header: str | None, port: int):
+        req = urllib.request.Request(f"http://{host}:{port}{path}")
         if header:
             req.add_header("Authorization", header)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
+
+    def _try(header: str | None):
+        # A peer still on a pre-port-change PFSM listens on LEGACY_PORT only:
+        # fall back there only when nothing answers on PORT at all (a refused
+        # connection), never on an HTTP-level answer.
+        try:
+            return _get(header, PORT)
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, OSError):
+            return _get(header, LEGACY_PORT)
 
     try:
         return _try(auth_header)

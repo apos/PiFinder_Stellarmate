@@ -13,7 +13,7 @@
 
 Today PFSM's operational surface is split across three UIs:
 
-- the **web Control Center** (`gui_installer/`, port 8765) — install/update, mode switching,
+- the **web Control Center** (`gui_installer/`, port 8777) — install/update, mode switching,
   hardware checks, and the Mount Bridge coupling dial;
 - the raw **INDI Control Panel** in KStars — device connection, `ACTIVE_DEVICES`, advanced
   properties;
