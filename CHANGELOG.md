@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- Mount Bridge driver restart/stop helpers (`indi_client._mount_bridge_pids()`/`restart_mount_bridge_driver()`, `stop_indi_driver_and_wait`, the driver-build script's pre-kill) matched with a bare `pgrep/pkill -f <name>`, which also hits any process that merely contains the driver name in its command line - notably the C++ compiler building the driver itself (`.../indi_pifinder_mount_bridge.dir/...cpp.o`). A running Control Center "recovering" a missing Mount Bridge therefore SIGKILLed the build mid-compile (seen as `make: *** Killed`), so the driver could never be rebuilt while the Control Center was up. The match is now anchored to the process's argv[0]
+
 ## [2.0.0] - 2026-10-06
 
 > Released deliberately early, before everything could be tested under a real sky: field-tested in PiFinder

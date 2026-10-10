@@ -42,9 +42,9 @@ build_and_install_indi_drivers() {
     if [ -n "${active_profile}" ]; then
         curl -s -X POST http://localhost:8624/api/server/stop >/dev/null 2>&1 || true
     fi
-    pkill -f indi_pifinder_lx200 2>/dev/null || true
-    pkill -f indi_pifinder_mount_bridge 2>/dev/null || true
-    pkill -f indi_pifinder_simulator 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_lx200( |\$)" 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_mount_bridge( |\$)" 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_simulator( |\$)" 2>/dev/null || true
     sleep 1
 
     bash "${pifinder_stellarmate_bin}/build_indi_driver.sh" \

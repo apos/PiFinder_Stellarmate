@@ -337,16 +337,19 @@ stop_fake_mode_if_running() {
 stop_indi_driver_and_wait() {
   local process_name="$1"
   local max_wait_seconds="${2:-5}"
+  # Anchored to argv[0] so a compiler/linker merely mentioning the driver name
+  # in its own command line (".../<name>.dir/....o") isn't matched and killed.
+  local pattern="^(/[^ ]*/)?${process_name}( |\$)"
 
-  pkill -f "${process_name}" 2>/dev/null || true
+  pkill -f "${pattern}" 2>/dev/null || true
 
   local elapsed=0
-  while pgrep -f "${process_name}" &>/dev/null && (( elapsed < max_wait_seconds * 2 )); do
+  while pgrep -f "${pattern}" &>/dev/null && (( elapsed < max_wait_seconds * 2 )); do
     sleep 0.5
     elapsed=$((elapsed + 1))
   done
 
-  if pgrep -f "${process_name}" &>/dev/null; then
+  if pgrep -f "${pattern}" &>/dev/null; then
     echo "⚠️  ${process_name} still running after ${max_wait_seconds}s - install may fail with 'Text file busy'."
   fi
 }
