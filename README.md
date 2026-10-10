@@ -14,11 +14,11 @@
 >   Alignment** is possible.
 > * A basic HowTo / usage description or video guide is **not yet available**.
 >
-> **⚠️ Known issue ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** the Control
-> Center's port **8765** collides with the new native MCP server in KStars/Ekos (same default port).
-> Until this is changed, **do not enable Ekos's MCP server on a PFSM device — and Ekos's AI assistant
-> "Stella" is not usable** (it relies on that same port). Other open issues are tracked in the
-> [GitHub Project](https://github.com/users/apos/projects/15).
+> **Port change ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** v2.0.0/2.0.1
+> served the Control Center on port **8765**, which collides with the native MCP server (and AI
+> assistant "Stella") in KStars/Ekos. It now listens on port **8777** — update your bookmarks. On a
+> device still running 2.0.x, **do not enable Ekos's MCP server**. Other open issues are tracked in
+> the [GitHub Project](https://github.com/users/apos/projects/15).
 
 ## Summary
 
@@ -108,7 +108,7 @@ opens it in a browser automatically:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -279,7 +279,7 @@ device:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -420,9 +420,6 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
 - Harden and test the current feature set end-to-end under real skies (Mount Bridge coupling, Full
   Simulation, the Control Center) — v2.0.0 shipped the bulk of it (see `CHANGELOG.md`), but only
   PiFinder host mode has been field-tested so far; Control host mode needs to become fully reliable.
-- Change the Control Center's port away from 8765 so it no longer collides with Ekos's native MCP
-  server and AI assistant "Stella"
-  ([issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
 - A basic HowTo / usage description and a video guide.
 - Contribute selected changes back upstream to [PiFinder](https://github.com/brickbots/PiFinder)
   (which patches — still to be decided) — process and candidate list:

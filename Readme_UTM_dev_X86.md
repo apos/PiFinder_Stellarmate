@@ -176,8 +176,8 @@ Control Center automatically, printing every reachable URL at the end:
 
 ```
   Control Center reachable at:
-    http://<eth0-ip>:8765/
-    http://<eth1-ip>:8765/
+    http://<eth0-ip>:8777/
+    http://<eth1-ip>:8777/
   Login: any username, password = your stellarmate system password
 ```
 

@@ -269,7 +269,7 @@ bullets(s,M,2.2,12.0,4.4,[
     ("A setup script ","— installs & patches PiFinder onto StellarMate OS."),
     ("diffs/*.diff patches ","— applied to a stock checkout via patch(1)."),
     ("Three INDI drivers ","— LX200, Mount Bridge, Simulator."),
-    ("A web Control Center ","— stdlib-only, port 8765."),
+    ("A web Control Center ","— stdlib-only, port 8777."),
 ],sz=T_BODY,gap=20)
 footer(s,"Part 1 · Summary")
 
@@ -334,7 +334,7 @@ s=slide(LIGHT); head(s,"Architecture","Stdlib only — by necessity")
 text(s,M,2.4,6.5,3.0,[[("It bootstraps the very venv that PiFinder needs, "
     "so it can’t depend on one.",T_H2,True,INK)]],ls=1.2)
 bullets(s,M,5.0,6.5,2.0,[
-    "http.server on :8765, polled every 1–2 s.",
+    "http.server on :8777, polled every 1–2 s.",
     "HTTP Basic auth against the system account (PAM).",
 ],sz=T_BODYSM,gap=14)
 pic(s,"cc_full.png",CCX,CCY,CCW,CCH)

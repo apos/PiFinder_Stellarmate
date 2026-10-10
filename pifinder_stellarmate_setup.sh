@@ -1205,7 +1205,7 @@ echo ""
 # just started and may not have bound its port yet.
 _cc_state=""
 for _ in $(seq 1 20); do
-    _cc_state="$(curl -s -m 2 "http://localhost:8765/state" 2>/dev/null)"
+    _cc_state="$(curl -s -m 2 "http://localhost:8777/state" 2>/dev/null)"
     [ -n "$_cc_state" ] && break
     sleep 0.25
 done
@@ -1216,7 +1216,7 @@ try:
     data = json.loads(sys.argv[1])
 except Exception:
     sys.exit(0)
-port = data.get('port', 8765)
+port = data.get('port', 8777)
 ips = data.get('ips') or ['localhost']
 print('  Control Center reachable at:')
 for ip in ips:

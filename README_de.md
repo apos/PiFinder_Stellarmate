@@ -14,11 +14,11 @@
 >   **Multi-Point-Alignment** ist möglich.
 > * Eine grundlegende HowTo-/Bedienungsanleitung bzw. ein Video-Guide ist **noch nicht verfügbar**.
 >
-> **⚠️ Bekanntes Problem ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** Der
-> Port **8765** des Control Centers kollidiert mit dem neuen nativen MCP-Server in KStars/Ekos
-> (gleicher Default-Port). Bis das geändert ist, **den MCP-Server von Ekos auf einem PFSM-Gerät nicht
-> aktivieren — und Ekos' KI-Assistent „Stella" ist nicht nutzbar** (er nutzt denselben Port). Weitere
-> offene Punkte stehen im [GitHub-Projekt](https://github.com/users/apos/projects/15).
+> **Port-Änderung ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** v2.0.0/2.0.1
+> boten das Control Center auf Port **8765** an, der mit dem nativen MCP-Server (und dem KI-Assistenten
+> „Stella") in KStars/Ekos kollidiert. Es lauscht jetzt auf Port **8777** — Lesezeichen anpassen. Auf
+> einem Gerät mit 2.0.x den **MCP-Server von Ekos nicht aktivieren**. Weitere offene Punkte stehen im
+> [GitHub-Projekt](https://github.com/users/apos/projects/15).
 
 ## Zusammenfassung
 
@@ -114,7 +114,7 @@ Netzwerkschnittstelle), und öffnet sie automatisch im Browser:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -289,7 +289,7 @@ Gerät aus erreichbar ist:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -431,9 +431,6 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
   Coupling, Full Simulation, das Control Center) — v2.0.0 hat das meiste davon ausgeliefert (siehe
   `CHANGELOG.md`), im Feld getestet ist bisher aber nur der PiFinder-Host-Modus; der Control-Host-
   Modus muss noch durchgehend zuverlässig werden.
-- Den Port des Control Centers von 8765 wegverlegen, damit er nicht mehr mit dem nativen MCP-Server
-  und dem KI-Assistenten „Stella" von Ekos kollidiert
-  ([Issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
 - Eine grundlegende HowTo-/Bedienungsanleitung und ein Video-Guide.
 - Ausgewählte Änderungen zurück ins Upstream-Projekt [PiFinder](https://github.com/brickbots/PiFinder)
   spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:

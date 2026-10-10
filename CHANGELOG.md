@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- The Control Center now listens on port **8777** instead of 8765 (#481): KStars/Ekos's new native MCP server, and its AI assistant ("Stella"), default to 8765 too, so the two collided on any device running both. All references were migrated (server, launcher, setup script, PiFinder's PFSM page link, docs). Another Control Center that has not been updated yet is still reached on the legacy port as a fallback. Existing bookmarks to `:8765` need updating
+
 ## [2.0.1] - 2026-10-10
 
 > Patch release on top of 2.0.0, found while recovering the UTM after the SMOS 2.4.0 update. Known issue unchanged: the Control Center's port 8765 collides with Ekos's native MCP server / AI assistant "Stella" - [#481](https://github.com/apos/PiFinder_Stellarmate/issues/481).

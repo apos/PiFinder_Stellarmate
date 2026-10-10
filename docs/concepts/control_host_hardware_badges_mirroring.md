@@ -67,7 +67,7 @@ computes each of these correctly for itself) instead of a parameter tweak.
 ## 3. Design questions for 2b (resolved 2026-09-13)
 
 - **Which endpoint makes the call?** New shared `_cc_proxy_get(host, path, auth_header)` -
-  `GET http://{host}:8765{path}` with `timeout=5`, returns the parsed JSON or `None` on any
+  `GET http://{host}:8777{path}` with `timeout=5`, returns the parsed JSON or `None` on any
   failure (fails soft, same as every other unreachable-remote case). Used by:
   - `/api/hardware_status?host=...` - when `host` is set, proxies the *whole* remote response
     (camera/imu/gps) instead of reading local hardware, exactly as originally proposed here. GPS
@@ -118,7 +118,7 @@ sollte die Camera/IMU-Badge-Mirroring-Funktion auch per INDI abbilden... INDI is
 
 **The architecture question this settles**: INDI (device layer) and PiFinder's own REST API
 (application layer, port 8080) were both already network-transparent by design - no auth, work
-from any host. Only the Control Center's own HTTP API (port 8765) is (rightly) password-protected,
+from any host. Only the Control Center's own HTTP API (port 8777) is (rightly) password-protected,
 since it exposes real host-admin actions (reboot, poweroff, uninstall, host-lock). §2b's badges
 were never admin actions - they're read-only device/host facts that had been routed through the
 admin-protected layer anyway, for lack of another cross-machine channel. Camera/IMU presence and

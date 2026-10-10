@@ -248,7 +248,7 @@ PiFinder is patched in place, never forked. The mount side is generic INDI.
 \item \textbf{A setup script} — installs \& patches PiFinder onto StellarMate OS.
 \item \textbf{\code{diffs/*.diff} patches} — applied to a stock checkout via \code{patch(1)}.
 \item \textbf{Three INDI drivers} — LX200, Mount Bridge, Simulator.
-\item \textbf{A web Control Center} — stdlib-only, port 8765.
+\item \textbf{A web Control Center} — stdlib-only, port 8777.
 \end{itemize}
 \end{frame}
 
@@ -314,7 +314,7 @@ Pinned to a fixed release tag, not the upstream \emph{release} branch.
 \column{0.34\textwidth}
 \begin{itemize}
 \item It bootstraps the very venv that PiFinder needs, so it can't depend on one.
-\item \code{http.server} on \code{:8765}, polled every 1--2\,s.
+\item \code{http.server} on \code{:8777}, polled every 1--2\,s.
 \item HTTP Basic auth against the system account (PAM).
 \end{itemize}
 \column{0.64\textwidth}

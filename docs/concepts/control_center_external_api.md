@@ -11,7 +11,7 @@ behind them, usable for external/automated control - not just human clicks in th
 
 **Short answer: yes, functionally.** The Control Center is not server-rendered HTML with hidden
 form posts - the frontend is a thin client over a genuine JSON HTTP API on the same server
-(`pifinder-control-center.service`, port 8765). Every visible action already has a route. Full
+(`pifinder-control-center.service`, port 8777). Every visible action already has a route. Full
 inventory of `do_GET`/`do_POST` routes as of this writing:
 
 **Status / read (GET)**
