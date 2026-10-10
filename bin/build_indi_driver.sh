@@ -28,8 +28,15 @@ cmake --build "${BUILD_DIR}"
 
 echo "-> Installing driver executable..."
 stop_indi_driver_and_wait "indi_pifinder_lx200"
-sudo cp "${BUILD_DIR}/indi_pifinder_lx200" /usr/bin/indi_pifinder_lx200
-sudo chmod +x /usr/bin/indi_pifinder_lx200
+# Replace atomically (copy next to the target, then rename over it): a plain
+# `cp` over a binary that is still executing fails with "Text file busy", and
+# something (Web Manager profile autostart, the Control Center's self-heal)
+# may respawn the driver between stop_indi_driver_and_wait and this line.
+# rename(2) just swaps the directory entry - a running instance keeps its old
+# inode until it is restarted.
+sudo cp "${BUILD_DIR}/indi_pifinder_lx200" /usr/bin/indi_pifinder_lx200.new
+sudo chmod +x /usr/bin/indi_pifinder_lx200.new
+sudo mv -f /usr/bin/indi_pifinder_lx200.new /usr/bin/indi_pifinder_lx200
 
 # Remove artifacts from the old lx200generic fat-binary/symlink approach, if present.
 sudo rm -f /usr/bin/indi_lx200_pifinder

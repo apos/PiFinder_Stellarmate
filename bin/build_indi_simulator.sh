@@ -30,8 +30,15 @@ cmake --build "${BUILD_DIR}"
 
 echo "-> Installing driver executable..."
 stop_indi_driver_and_wait "indi_pifinder_simulator"
-sudo cp "${BUILD_DIR}/indi_pifinder_simulator" /usr/bin/indi_pifinder_simulator
-sudo chmod +x /usr/bin/indi_pifinder_simulator
+# Replace atomically (copy next to the target, then rename over it): a plain
+# `cp` over a binary that is still executing fails with "Text file busy", and
+# something (Web Manager profile autostart, the Control Center's self-heal)
+# may respawn the driver between stop_indi_driver_and_wait and this line.
+# rename(2) just swaps the directory entry - a running instance keeps its old
+# inode until it is restarted.
+sudo cp "${BUILD_DIR}/indi_pifinder_simulator" /usr/bin/indi_pifinder_simulator.new
+sudo chmod +x /usr/bin/indi_pifinder_simulator.new
+sudo mv -f /usr/bin/indi_pifinder_simulator.new /usr/bin/indi_pifinder_simulator
 
 echo "-> Checking driver XML entry in ${SYSTEM_DRIVERS_XML}..."
 if grep -qF "PiFinder Simulator" "${SYSTEM_DRIVERS_XML}"; then
