@@ -387,6 +387,8 @@ sudo reboot
 
 Dies stellt alles wieder her, was PiFinder benötigt: Pacman-Repos, Systempakete, Hardware-Gruppen, udev-Regeln, `/boot/config.txt`-Overlays, Swapfile und systemd-Dienste.
 
+Auf einem **Nicht-Pi-System (x86-SMOS)** — z. B. ein Control Host oder die UTM-Dev-VM — werden die Pi-spezifischen Schritte übersprungen; derselbe Befehl führt stattdessen den nicht-interaktiven Update-Pfad des Setups aus (`--action=update`, `--mode=full` oder `indi_only`, je nachdem, wie die Maschine installiert wurde). Das installiert die INDI-Treiber, den Control-Center-Dienst, die Hardware-Gruppen und den GSC-Katalog neu und stellt `gh` wieder her.
+
 ### Synchronisation von basic-memory / Claude-Kontext mit Nextcloud
 
 > **Das ist ein persönlicher Workflow des Maintainers, kein allgemeiner Setup-Schritt für
