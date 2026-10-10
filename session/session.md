@@ -16,11 +16,36 @@
   --mode=full` liefen sauber (3m31s, keine Warnungen). Control Center und `pifinder` aktiv, Treiber installiert.
 - `dev` @ `4268521`: Control Center jetzt auf **Port 8777**, SMOS-Update-Karte + Wächter (User-Unit), NVMe-Warnkarte.
 
+## Stand (aktualisiert 2026-10-10, 20:45)
+- **Pi4 läuft von der NVMe** (SMOS 2.4.0, `@system-2.4.0`, Kernel 6.18.53, Hostname jetzt `stellarmate-pi4`).
+  Noch KEIN Reboot seit der Reparatur - das Booten von NVMe ist also erst einmal bewiesen, ein weiterer
+  Reboot (ToDo 2) steht aus.
+- **PFSM wiederhergestellt**: `restore_after_smos_update.sh` (Pi-Pfad, ohne Fehler: Gruppen, udev, `config.txt`
+  `[pi4]`-Overlays, Swapfile, Dienste, `gh`, `rclone`, `python-libcamera` 0.7.0) und danach
+  `pifinder_stellarmate_setup.sh --action=update --mode=full` (3m31s, keine Warnungen). Treiber installiert,
+  `pifinder` und `pifinder-control-center` aktiv. `.smos_version_restored` = 2.4.0. Wächter-Unit installiert.
+- **WireGuard**: der Tunnel `nethserver8` lief nach dem Update nicht, weil der selbst angelegte
+  `wg-nethserver-client.service` (in `/etc/systemd/system`) mit dem Root-Reset verschwunden war; Konfiguration
+  (`~/Config/WIREGUARD/nethserver8.conf`), Helfer `~/bin/wg-nethserver` und Kernelmodul waren intakt. Von Hand
+  gestartet (`wg-nethserver up`, Handshake ok) und die Unit aus `~/bin/backup_files/` wieder installiert und
+  **enabled** (nicht gestartet, der Tunnel lief ja schon). Gilt nur bis zum nächsten SMOS-Update, bis #561 den
+  Hook baut (Kommentar im Issue). Beim nächsten Reboot prüfen: `sudo wg show` zeigt `nethserver8` mit Handshake.
+- **Boot-Konfiguration** (NVMe): `cmdline.txt`, `/etc/fstab` und die Vorlage
+  `etc/stellarmate/boot/cmdline.txt` stehen auf den UUIDs der NVMe; Sicherungen `*.bak-20261010` liegen daneben.
+  Nichts davon über `smos-post-update.sh` neu erzeugen lassen, ohne die Datei danach zu prüfen.
+- **SD-Karte**: unverändert (SMOS 2.3.0, Notfall-Zugang). Bis auf zwei leere Mountpunkt-Verzeichnisse
+  (`/mnt/nvm_root`, `/mnt/nvm_boot`) nichts geschrieben.
+- **Issue #561** angelegt (dringend) mit Plan und Anforderungen; **Warnkarte** im Control Center (PR #562)
+  erscheint auf Geräten mit `SM_ROOT_NVM`-Label.
+- **Offen/ungeprüft**: Kamera (Hardware-Test), libcamera/python-libcamera auf 2.4.0 nach dem Reboot,
+  bm-Sync auf dem Pi4, Pi5 (zurückgestellt).
+
 ## ToDos (Reihenfolge einhalten)
 1. **`git pull --ff-only origin dev`** im Checkout (der Pi4-Stand ist älter als dev).
 2. **Reboot von NVMe und prüfen**: bootet ohne SD-Eingriff? `cat /proc/cmdline` (root=UUID=...),
    `systemctl is-active pifinder pifinder-control-center`, Control Center auf `http://<pi4>:8777/`,
-   Kamera/IMU/GPS ("Test hardware" im Control Center), `pacman -Q libcamera python-libcamera`.
+   Kamera/IMU/GPS ("Test hardware" im Control Center), `pacman -Q libcamera python-libcamera`,
+   WireGuard (`sudo wg show` -> `nethserver8` mit Handshake, Dienst `wg-nethserver-client`).
 3. **Issue #561 abarbeiten** (dringend): `smos-post-update.sh` gegen SMOS 2.4.0 verifizieren (NVMe- UND SD-Boot);
    `~/bin/smos-post-update.sh` ist eine alte Kopie (31.05.) - eine kanonische Kopie (Symlink auf das Repo-Skript
    bzw. vom Setup installiert); automatischer Hook beim Herunterfahren (vor dem Reboot, solange das alte System
