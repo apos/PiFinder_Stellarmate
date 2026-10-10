@@ -6752,6 +6752,10 @@ async function pollLog() {
     logPosition = data.position;
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
+  // The step list's labels are otherwise loaded once at page init; if that
+  // fetch missed them (page loaded while the server was still restarting),
+  // the step list stayed hidden for the whole run. Adopt them from any poll.
+  if (data.phases && data.phases.length) phaseLabels = data.phases;
   updateProgress(data.phase_index, data.phase_total, data.phase_label);
   updateChecklist(data.phase_index, data.running, data.exit_code);
   setModeTileVisible(!data.running);
