@@ -5413,6 +5413,10 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_index": phase_index,
                     "phase_total": len(phases),
                     "phase_label": phases[phase_index] if phase_index >= 0 else None,
+                    # Same list /state sends - lets a page whose one-time
+                    # init fetch missed it (e.g. loaded while the server was
+                    # still coming up after a restart) recover its step list.
+                    "phases": phases,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "restarting": restarting,
