@@ -378,6 +378,8 @@ sudo reboot
 
 This restores everything PiFinder needs: pacman repos, system packages, hardware groups, udev rules, `/boot/config.txt` overlays, swapfile, and systemd services.
 
+On a **non-Pi (x86) SMOS** — e.g. a Control host or the UTM dev VM — the Pi-specific steps are skipped; the same command instead runs the setup's non-interactive update path (`--action=update`, `--mode=full` or `indi_only` depending on how the machine was installed), which reinstalls the INDI drivers, the Control Center service, hardware groups and the GSC catalog, and restores `gh`.
+
 ### Syncing basic-memory / Claude context to Nextcloud
 
 > **This is a maintainer-specific workflow, not a general PiFinder_Stellarmate setup step.** It
