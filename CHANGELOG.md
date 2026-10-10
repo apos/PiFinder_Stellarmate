@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- Control Center warning on devices that boot from NVMe/USB (root label `SM_ROOT*` but not `SM_ROOT`): a SMOS update can rewrite `cmdline.txt`/`fstab` to `LABEL=SM_ROOT`, which such a disk does not carry, so the device never boots again unless `bin/smos-post-update.sh` ran before the reboot (seen on a Pi 4, SMOS 2.3.0 -> 2.4.0, #561). The card names the script and `--updatesd`, and the SD/USB rescue path
+
 ### Fixed
 
 - The post-SMOS-update guard page: an empty password field now says to enter the stellarmate system password (it used to send the request and answer "Wrong password."), a hint names the password, and browser autofill is switched off so a saved password for another device is not filled in

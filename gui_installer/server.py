@@ -4339,6 +4339,21 @@ def _read_first_line(path: Path):
     return v or None
 
 
+def _nvme_system_info() -> dict:
+    """Is this device booted from a non-default-labelled root (the NVMe/USB
+    layout, label SM_ROOT_NVM)? A SMOS update can rewrite the boot
+    configuration to LABEL=SM_ROOT, which such a system cannot find (seen
+    2026-10-10, 2.3.0 -> 2.4.0): it then never boots again. Only a hint for
+    the warning card - the fix is bin/smos-post-update.sh (issue #561)."""
+    try:
+        src = subprocess.run(["findmnt", "-no", "SOURCE", "/"], capture_output=True, text=True, timeout=3).stdout.strip()
+        dev = src.split("[")[0]
+        label = subprocess.run(["lsblk", "-no", "LABEL", dev], capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return {"external_root": False, "root_label": None}
+    return {"external_root": label.startswith("SM_ROOT") and label != "SM_ROOT", "root_label": label or None}
+
+
 def _smos_update_info() -> dict:
     """{current, recorded, pending}. A missing record (first start of a
     Control Center that predates this check) is initialized silently with the
@@ -4355,6 +4370,7 @@ def _smos_update_info() -> dict:
         "current": current,
         "recorded": recorded,
         "pending": bool(current and recorded and current != recorded),
+        "nvme": _nvme_system_info(),
     }
 
 
