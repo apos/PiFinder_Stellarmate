@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Setup/Update now restores the GSC guide-star catalog (`/usr/local/bin/gsc` + `/usr/share/GSC`, copied from the KStars Flatpak) whenever it is missing. A SMOS update resets the root filesystem and wiped the earlier manual copy, which silently left Ekos guiding/plate-solve align/autofocus without a star field and made the Control Center's "runs entirely from System INDI drivers" card fire again
 - Mount Bridge driver restart/stop helpers (`indi_client._mount_bridge_pids()`/`restart_mount_bridge_driver()`, `stop_indi_driver_and_wait`, the driver-build script's pre-kill) matched with a bare `pgrep/pkill -f <name>`, which also hits any process that merely contains the driver name in its command line - notably the C++ compiler building the driver itself (`.../indi_pifinder_mount_bridge.dir/...cpp.o`). A running Control Center "recovering" a missing Mount Bridge therefore SIGKILLed the build mid-compile (seen as `make: *** Killed`), so the driver could never be rebuilt while the Control Center was up. The match is now anchored to the process's argv[0]
 
 ## [2.0.0] - 2026-10-06
@@ -86,7 +87,6 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
-- Setup/Update now restores the GSC guide-star catalog (`/usr/local/bin/gsc` + `/usr/share/GSC`, copied from the KStars Flatpak) whenever it is missing. A SMOS update resets the root filesystem and wiped the earlier manual copy, which silently left Ekos guiding/plate-solve align/autofocus without a star field and made the Control Center's "runs entirely from System INDI drivers" card fire again
 - Control Center: page-load crash on the Control host and PiFinder Client pages (`Cannot access 'wmSelectedProfile' before initialization`) - an early top-level `refreshMountBridgeStatus()` call read a `let` still in its temporal dead zone; now deferred (#477)
 - Mount Bridge: the readiness self-heal's Check 3 treated "wrong device linked" and "right device linked but disconnected" alike and only re-linked - a no-op for the latter, leaving PiFinder LX200 disconnected forever behind an endless "re-linked" log. It now sends a real connect (#479)
 - Control Center: "Re-seed from mount" switched Injected Solve off again ~2s after seeding it in Full Simulation (a deliberate real-hardware safety release that never accounted for Full Simulation having no real camera); now skipped there (#480)
