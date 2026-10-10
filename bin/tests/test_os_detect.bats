@@ -65,6 +65,10 @@ setup() {
     [ "$(os_package_name libindi-dev apt)" = "libindi-dev" ]
 }
 
+@test "os_package_name: libindi-dev maps to nixpkgs' indilib (there is no libindi attribute)" {
+    [ "$(os_package_name libindi-dev nix)" = "indilib" ]
+}
+
 @test "os_package_name: unknown generic name returns empty, not a guess" {
     [ -z "$(os_package_name totally-unknown-package pacman)" ]
 }

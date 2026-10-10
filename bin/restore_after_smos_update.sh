@@ -15,6 +15,16 @@
 #   - drm_preview.py patch (if picamera2 present in venv)
 #
 # Use Case 2: SMOS update with existing PiFinder installation in /home
+#
+# Non-Pi (x86 SMOS, e.g. a Control host or the UTM dev VM): none of the
+# Pi-specific steps apply (ARM mirrors, GPIO groups for the physical bus,
+# config.txt overlays, swapfile, picamera2 patch), but the SMOS update wipes
+# the same things there too - PFSM services and INDI drivers under /usr,
+# hardware groups, the GSC catalog copy, gh. Rather than duplicating all of
+# that, restore_x86() hands over to pifinder_stellarmate_setup.sh's own
+# non-interactive update path (which already handles Atomic Updates, keyring,
+# packages, drivers, services and the Control Center on x86), picking the
+# same mode the machine was installed with.
 
 set -e
 
@@ -25,20 +35,49 @@ echo " PiFinder — Restore after SMOS Update"
 echo "======================================================"
 echo ""
 
-# Pi-only, by construction: step 1 below adds Arch Linux ARM's own
-# aarch64 mirrors (mirror.archlinuxarm.org/aarch64/...) to /etc/pacman.conf,
-# which is simply wrong on an x86 Control-host (StellarMate x86 already
-# ships correct native repos - see get_hw_model()'s own header comment).
-# Found live (2026-09-06, stellarmate-utm): running this unmodified would
-# have corrupted a working x86 pacman.conf with unusable ARM repo entries.
-# get_hw_model() returns an empty string on non-Pi systems (no
-# /proc/device-tree/model at all) - hard-fail here rather than silently
-# doing the wrong thing to package management.
+# Steps 1-8 below are Pi-only by construction: step 1 adds Arch Linux ARM's
+# own aarch64 mirrors to /etc/pacman.conf, which would corrupt a working x86
+# pacman.conf with unusable ARM repo entries (found live 2026-09-06,
+# stellarmate-utm). get_hw_model() returns an empty string on non-Pi systems
+# (no /proc/device-tree/model at all) - those take the x86 path instead.
+restore_x86() {
+    echo "ℹ️  Non-Pi (x86) system detected - skipping the Pi-specific steps"
+    echo "    (ARM repos, config.txt overlays, swapfile, picamera2 patch)."
+    echo ""
+
+    local mode="full"
+    if [ ! -d "${python_venv}" ]; then
+        mode="indi_only"
+    fi
+    echo "ℹ️  Install mode: ${mode}"
+
+    # GitHub CLI: wiped by the update; not a runtime dependency, so best
+    # effort and non-fatal - same unlock/keyring/install/relock window the
+    # setup uses for its own packages (bin/os_detect.sh).
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "🔧 Restoring GitHub CLI (gh) ..."
+        # shellcheck disable=SC1091
+        source "$(dirname "$0")/os_detect.sh"
+        if os_pacman_has_atomic_updates_script && os_pacman_atomic_updates_disable; then
+            sudo pacman-key --init
+            sudo pacman-key --populate
+            sudo pacman -Sy || true
+            sudo pacman -S --noconfirm --needed github-cli \
+                && echo "  ✅ gh (GitHub CLI) installed" \
+                || echo "  ⚠️  gh install failed/skipped (not required for PiFinder itself)."
+            os_pacman_atomic_updates_enable
+        else
+            echo "  ⚠️  Could not unlock Atomic Updates - skipping gh (not required for PiFinder itself)."
+        fi
+    fi
+
+    echo "🔧 Running the setup's non-interactive update (--mode=${mode}) ..."
+    bash "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" --action=update --mode="${mode}"
+}
+
 if [ -z "$(get_hw_model)" ]; then
-    echo "❌ This script restores Pi4/Pi5-specific state (ARM package repos, GPIO"
-    echo "   groups, /boot/config.txt overlays, camera hardware patches) and must"
-    echo "   not run on a non-Pi (x86) system - no /proc/device-tree/model found."
-    exit 1
+    restore_x86
+    exit $?
 fi
 
 # -------------------------------------------------------

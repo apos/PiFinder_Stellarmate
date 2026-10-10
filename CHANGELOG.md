@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-10
+
+> Patch release on top of 2.0.0, found while recovering the UTM after the SMOS 2.4.0 update. Known issue unchanged: the Control Center's port 8765 collides with Ekos's native MCP server / AI assistant "Stella" - [#481](https://github.com/apos/PiFinder_Stellarmate/issues/481).
+
+### Changed
+
+- `bin/restore_after_smos_update.sh` now works on non-Pi (x86) SMOS machines (Control host, UTM dev VM) instead of hard-failing: the Pi-specific steps (ARM repos, config.txt overlays, swapfile, picamera2 patch) are skipped and it hands over to the setup's own non-interactive update path (`--action=update`, `--mode=full` or `indi_only` depending on whether a PiFinder venv exists), after best-effort restoring the GitHub CLI. A SMOS update wipes the Control Center service, INDI drivers, hardware groups and the GSC catalog there too
+
+### Fixed
+
+- Setup/Update now restores the GSC guide-star catalog (`/usr/local/bin/gsc` + `/usr/share/GSC`, copied from the KStars Flatpak) whenever it is missing. A SMOS update resets the root filesystem and wiped the earlier manual copy, which silently left Ekos guiding/plate-solve align/autofocus without a star field and made the Control Center's "runs entirely from System INDI drivers" card fire again
+- Mount Bridge driver restart/stop helpers (`indi_client._mount_bridge_pids()`/`restart_mount_bridge_driver()`, `stop_indi_driver_and_wait`, the driver-build script's pre-kill) matched with a bare `pgrep/pkill -f <name>`, which also hits any process that merely contains the driver name in its command line - notably the C++ compiler building the driver itself (`.../indi_pifinder_mount_bridge.dir/...cpp.o`). A running Control Center "recovering" a missing Mount Bridge therefore SIGKILLed the build mid-compile (seen as `make: *** Killed`), so the driver could never be rebuilt while the Control Center was up. The match is now anchored to the process's argv[0]
+
+### Documentation
+
+- Reconstructed the three lost concept docs (#60, #61, #62) and expanded the Nix section of the upstream-packaging concept doc
+
 ## [2.0.0] - 2026-10-06
 
 > Released deliberately early, before everything could be tested under a real sky: field-tested in PiFinder

@@ -20,6 +20,37 @@
 # os_install_packages(). Requires functions.sh's pifinder_stellarmate_bin
 # and add_warning() to already be sourced/defined by the caller.
 
+# Restores the GSC guide-star catalog (gsc binary + /usr/share/GSC data) onto
+# the System paths the System-built INDI drivers look in, copied from the
+# KStars Flatpak. A profile containing any PiFinder driver launches every
+# driver from System sources (the Web Manager loads only one drivers.xml per
+# profile), and the System build ships without GSC - so CCD/Guide/Telescope
+# Simulator render a blank star field and Ekos guiding / plate-solve align /
+# autofocus don't work. A SMOS update resets the root filesystem and wipes
+# these copies again, so this runs on every setup/update, not just once.
+# Copied rather than symlinked: Flatpak update paths aren't stable.
+# Non-fatal: warns when KStars' Flatpak isn't there to copy from.
+ensure_gsc_catalog() {
+    if [ -x /usr/local/bin/gsc ] && [ -n "$(ls -A /usr/share/GSC 2>/dev/null)" ]; then
+        return 0
+    fi
+    local fp_loc fp_files
+    fp_loc="$(flatpak info --show-location org.kde.kstars 2>/dev/null)"
+    fp_files="${fp_loc}/files"
+    if [ -z "${fp_loc}" ] || [ ! -x "${fp_files}/bin/gsc" ] || [ ! -d "${fp_files}/share/GSC" ]; then
+        add_warning "GSC star catalog is missing and could not be restored (KStars Flatpak with gsc not found) - Ekos guiding/plate-solve align/autofocus on simulated or real images will see a blank star field."
+        return 0
+    fi
+    echo "-> Restoring GSC star catalog from the KStars Flatpak ..."
+    if sudo cp "${fp_files}/bin/gsc" /usr/local/bin/gsc \
+        && sudo rm -rf /usr/share/GSC \
+        && sudo cp -r "${fp_files}/share/GSC" /usr/share/GSC; then
+        echo "✅ GSC star catalog restored."
+    else
+        add_warning "Restoring the GSC star catalog from the KStars Flatpak failed - copy ${fp_files}/bin/gsc to /usr/local/bin/gsc and ${fp_files}/share/GSC to /usr/share/GSC manually."
+    fi
+}
+
 build_and_install_indi_drivers() {
     echo "🔧 Building and installing PiFinder INDI drivers ..."
 
@@ -42,9 +73,9 @@ build_and_install_indi_drivers() {
     if [ -n "${active_profile}" ]; then
         curl -s -X POST http://localhost:8624/api/server/stop >/dev/null 2>&1 || true
     fi
-    pkill -f indi_pifinder_lx200 2>/dev/null || true
-    pkill -f indi_pifinder_mount_bridge 2>/dev/null || true
-    pkill -f indi_pifinder_simulator 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_lx200( |\$)" 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_mount_bridge( |\$)" 2>/dev/null || true
+    pkill -f "^(/[^ ]*/)?indi_pifinder_simulator( |\$)" 2>/dev/null || true
     sleep 1
 
     bash "${pifinder_stellarmate_bin}/build_indi_driver.sh" \
@@ -58,6 +89,8 @@ build_and_install_indi_drivers() {
     bash "${pifinder_stellarmate_bin}/build_indi_simulator.sh" \
         && echo "✅ PiFinder Simulator driver installed." \
         || add_warning "PiFinder Simulator INDI driver build/install FAILED — run bin/build_indi_simulator.sh manually to see why."
+
+    ensure_gsc_catalog
 
     # The StellarMate Web Manager caches its driver catalog at its own
     # process startup - restart it so newly built/updated drivers show up.
