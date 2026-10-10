@@ -86,6 +86,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Setup/Update now restores the GSC guide-star catalog (`/usr/local/bin/gsc` + `/usr/share/GSC`, copied from the KStars Flatpak) whenever it is missing. A SMOS update resets the root filesystem and wiped the earlier manual copy, which silently left Ekos guiding/plate-solve align/autofocus without a star field and made the Control Center's "runs entirely from System INDI drivers" card fire again
 - Control Center: page-load crash on the Control host and PiFinder Client pages (`Cannot access 'wmSelectedProfile' before initialization`) - an early top-level `refreshMountBridgeStatus()` call read a `let` still in its temporal dead zone; now deferred (#477)
 - Mount Bridge: the readiness self-heal's Check 3 treated "wrong device linked" and "right device linked but disconnected" alike and only re-linked - a no-op for the latter, leaving PiFinder LX200 disconnected forever behind an endless "re-linked" log. It now sends a real connect (#479)
 - Control Center: "Re-seed from mount" switched Injected Solve off again ~2s after seeding it in Full Simulation (a deliberate real-hardware safety release that never accounted for Full Simulation having no real camera); now skipped there (#480)
