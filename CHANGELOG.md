@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- `bin/restore_after_smos_update.sh` (Pi path) now also installs the post-SMOS-update guard user unit; previously only the setup did, so a Pi that was only ever restored with this script had no guard for its next SMOS update
 - Install/Update tile: the step list (the 10 phases with check marks) could stay hidden for a whole run when the page's one-time init fetch of `/state` happened while the Control Center was still restarting - the labels were never loaded again. `/log` now also carries `phases` and every poll refreshes the labels
 - INDI driver install (`build_indi_driver.sh`, `build_indi_bridge.sh`, `build_indi_simulator.sh`, `build_indi_onstep_fix.sh`) failed intermittently with `cp: cannot create regular file ...: Text file busy` when something respawned the just-stopped driver before the copy (seen on the UTM during a post-update restore, a different driver each time, so the driver build reported CRITICAL WARNINGS and the SMOS version was rightly not recorded). The binary is now copied next to the target and renamed over it, which does not need the old file to be idle
 - The SMOS post-update notice's "Run post-update restore" button stayed clickable while the restore (or any install/update run) was already running; it is now disabled and relabelled "Restore running…" for the duration

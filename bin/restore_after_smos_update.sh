@@ -325,6 +325,10 @@ fi
 # -------------------------------------------------------
 # Done
 # -------------------------------------------------------
+# The post-SMOS-update guard (a user unit, so it survives the next root reset)
+# is otherwise only installed by the setup - a Pi that only ever ran this
+# restore script would have no guard for its next SMOS update.
+install_smos_update_guard
 record_smos_version
 echo ""
 echo "======================================================"
