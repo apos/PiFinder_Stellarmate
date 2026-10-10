@@ -68,8 +68,15 @@ echo "-> Backing up and installing driver executable..."
 if [[ -f /usr/bin/indi_lx200generic && ! -f "/usr/bin/indi_lx200generic.${BACKUP_SUFFIX}" ]]; then
     sudo cp /usr/bin/indi_lx200generic "/usr/bin/indi_lx200generic.${BACKUP_SUFFIX}"
 fi
-sudo cp "${BUILD_DIR}/indi_lx200generic" /usr/bin/indi_lx200generic
-sudo chmod +x /usr/bin/indi_lx200generic
+# Replace atomically (copy next to the target, then rename over it): a plain
+# `cp` over a binary that is still executing fails with "Text file busy", and
+# something (Web Manager profile autostart, the Control Center's self-heal)
+# may respawn the driver between stop_indi_driver_and_wait and this line.
+# rename(2) just swaps the directory entry - a running instance keeps its old
+# inode until it is restarted.
+sudo cp "${BUILD_DIR}/indi_lx200generic" /usr/bin/indi_lx200generic.new
+sudo chmod +x /usr/bin/indi_lx200generic.new
+sudo mv -f /usr/bin/indi_lx200generic.new /usr/bin/indi_lx200generic
 
 if [[ -n "${active_profile}" ]]; then
     echo "-> Restarting INDI server with profile '${active_profile}'..."
