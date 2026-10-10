@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- SMOS update notice with a one-click post-update restore (yellow card "SMOS was updated (X -> Y)" + "Run post-update restore" button). The setup/restore records the SMOS version it completed against (`.smos_version_restored`, in the repo checkout under /home, which a SMOS root reset leaves alone); when `/etc/stellarmate/version` differs, the Control Center shows the card and the button runs `bin/restore_after_smos_update.sh` through the normal run/terminal machinery (`GET /api/smos_update_status`, `POST /api/smos_post_update_restore`). Because the update also removes the Control Center service itself, a small user-level guard unit (`pifinder-smos-update-guard.service`, `bin/smos_update_guard.py`, installed under `~/.config/systemd/user` by the setup) serves the same notice on the Control Center port when the version changed and the Control Center is gone, runs the restore on request (password-protected) and hands the port back
+
 ### Changed
 
 - The Control Center now listens on port **8777** instead of 8765 (#481): KStars/Ekos's new native MCP server, and its AI assistant ("Stella"), default to 8765 too, so the two collided on any device running both. All references were migrated (server, launcher, setup script, PiFinder's PFSM page link, docs). Another Control Center that has not been updated yet is still reached on the legacy port as a fallback. Existing bookmarks to `:8765` need updating

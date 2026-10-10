@@ -334,6 +334,18 @@ stop_fake_mode_if_running() {
 # first, right after the initial kill) installed fine, but Mount Bridge and
 # Simulator (built afterwards) both failed with "Text file busy" despite
 # the same kill having run moments earlier for all three.
+# Records the SMOS version this setup/restore completed against, so the Control
+# Center (and bin/smos_update_guard.py, when the Control Center itself was
+# wiped) can tell that a later SMOS update still needs a post-update restore.
+# Lives in the repo checkout under /home, which a SMOS root reset leaves alone.
+record_smos_version() {
+  local v
+  v="$(head -n1 /etc/stellarmate/version 2>/dev/null | tr -d '[:space:]')"
+  if [ -n "${v}" ]; then
+    echo "${v}" > "${pifinder_stellarmate_dir}/.smos_version_restored"
+  fi
+}
+
 stop_indi_driver_and_wait() {
   local process_name="$1"
   local max_wait_seconds="${2:-5}"
