@@ -9,6 +9,7 @@
 /indi_pifinder_bridge/build/
 /indi_pifinder_simulator/build/
 /.gui_setup.log
+/.gui_setup.result
 /.setup_warnings
 /.resume_from_venv
 /.mount_bridge_desired_state.json
