@@ -4475,6 +4475,21 @@ function collectActiveShowstoppers() {
       });
     }
   }
+  if (smosUpdateInfo && smosUpdateInfo.nvme && smosUpdateInfo.nvme.external_root && !nvmeWarningDismissed()) {
+    const lbl = String(smosUpdateInfo.nvme.root_label || 'SM_ROOT_NVM').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    items.push({
+      id: 'nvme-boot-warning',
+      category: 'pifinder',
+      title: 'This device boots from NVMe/USB - run smos-post-update.sh after every SMOS update, BEFORE rebooting',
+      text: 'A SMOS update can rewrite the boot configuration (cmdline.txt, fstab) to LABEL=SM_ROOT while this disk is labelled ' + lbl +
+        '. The device then waits for a root partition that does not exist and never boots again (seen 2.3.0 -> 2.4.0, issue #561). ' +
+        'After the update, before the reboot: sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh (add --updatesd to refresh the SD card too). ' +
+        'Keep a bootable SD card or USB stick with SSH enabled (port 5624): booted from it, the same script repairs the NVMe.',
+      buttons: [
+        { label: 'Hide', onclick: 'dismissNvmeWarning()', action: 'nvme-boot-hide' },
+      ],
+    });
+  }
   // SMOS was updated since the last completed setup/restore: the update
   // resets the root filesystem (services, INDI drivers, hardware groups,
   // GSC catalog), so offer the post-update restore.
@@ -9381,6 +9396,17 @@ async function refreshSmosUpdateInfo() {
 // this late-evaluated script, leaving the first poll to the 30s interval.
 setTimeout(refreshSmosUpdateInfo, 1000);
 setInterval(refreshSmosUpdateInfo, 30000);
+// NVMe/USB boot warning (issue #561): a SMOS update can rewrite the boot
+// configuration to labels this disk does not have, so the device never boots
+// again unless bin/smos-post-update.sh runs before the reboot. Hideable per
+// browser.
+function nvmeWarningDismissed() {
+  try { return localStorage.getItem('nvmeBootWarningDismissed') === '1'; } catch (e) { return false; }
+}
+function dismissNvmeWarning() {
+  try { localStorage.setItem('nvmeBootWarningDismissed', '1'); } catch (e) { /* storage blocked */ }
+  renderNoSolveBanner();
+}
 async function startSmosPostUpdate() {
   try {
     const r = await fetch('/api/smos_post_update_restore', { method: 'POST' });
