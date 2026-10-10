@@ -51,23 +51,27 @@ restore_x86() {
     fi
     echo "ℹ️  Install mode: ${mode}"
 
-    # GitHub CLI: wiped by the update; not a runtime dependency, so best
-    # effort and non-fatal - same unlock/keyring/install/relock window the
-    # setup uses for its own packages (bin/os_detect.sh).
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "🔧 Restoring GitHub CLI (gh) ..."
+    # GitHub CLI + rclone (basic-memory/Nextcloud sync): wiped by the update;
+    # neither is a runtime dependency, so best effort and non-fatal - same
+    # unlock/keyring/install/relock window the setup uses for its own
+    # packages (bin/os_detect.sh). The Pi path installs both above.
+    local dev_pkgs=()
+    command -v gh >/dev/null 2>&1 || dev_pkgs+=(github-cli)
+    command -v rclone >/dev/null 2>&1 || dev_pkgs+=(rclone)
+    if [ "${#dev_pkgs[@]}" -gt 0 ]; then
+        echo "🔧 Restoring dev tooling: ${dev_pkgs[*]} ..."
         # shellcheck disable=SC1091
         source "$(dirname "$0")/os_detect.sh"
         if os_pacman_has_atomic_updates_script && os_pacman_atomic_updates_disable; then
             sudo pacman-key --init
             sudo pacman-key --populate
             sudo pacman -Sy || true
-            sudo pacman -S --noconfirm --needed github-cli \
-                && echo "  ✅ gh (GitHub CLI) installed" \
-                || echo "  ⚠️  gh install failed/skipped (not required for PiFinder itself)."
+            sudo pacman -S --noconfirm --needed "${dev_pkgs[@]}" \
+                && echo "  ✅ ${dev_pkgs[*]} installed" \
+                || echo "  ⚠️  ${dev_pkgs[*]} install failed/skipped (not required for PiFinder itself)."
             os_pacman_atomic_updates_enable
         else
-            echo "  ⚠️  Could not unlock Atomic Updates - skipping gh (not required for PiFinder itself)."
+            echo "  ⚠️  Could not unlock Atomic Updates - skipping ${dev_pkgs[*]} (not required for PiFinder itself)."
         fi
     fi
 
