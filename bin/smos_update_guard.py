@@ -72,23 +72,26 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="wi
  h1{color:#ffc107;font-size:1.15rem;margin:.1rem 0 .6rem}
  button{background:#b8860b;color:#fff;border:0;border-radius:6px;padding:.6rem 1rem;font-size:1rem;cursor:pointer}
  button:disabled{opacity:.5;cursor:default} input{padding:.5rem;border-radius:6px;border:1px solid #555;background:#222;color:#eee}
- #msg{margin-top:.8rem;color:#ffd666}
+ #msg{margin-top:.8rem;color:#ffd666} .hint{font-size:.85rem;color:#c9b27a}
 </style>
 <div class="card">
  <h1>&#9888; SMOS was updated (%(recorded)s &rarr; %(current)s)</h1>
  <p>The system update reset the root filesystem, which removed the PiFinder Control Center,
  the INDI drivers and related system setup. Run the post-update restore to put them back
  (takes a few minutes; this page switches to the Control Center when it is done).</p>
- <p><input id="pw" type="password" placeholder="stellarmate password" autocomplete="current-password">
+ <p><input id="pw" type="password" placeholder="stellarmate password" autocomplete="off">
  <button id="go">Run post-update restore</button></p>
+ <p class="hint">The system password of the <b>stellarmate</b> user on this device (StellarMate OS default: <code>smate</code>).</p>
  <div id="msg"></div>
 </div>
 <script>
 const msg=document.getElementById('msg'), go=document.getElementById('go');
 go.onclick=async()=>{
+  const pw=document.getElementById('pw').value;
+  if(!pw){msg.textContent='Enter the stellarmate system password first.'; return;}
   go.disabled=true; msg.textContent='Starting...';
-  const r=await fetch('/restore',{method:'POST',headers:{'Authorization':'Basic '+btoa('stellarmate:'+document.getElementById('pw').value)}});
-  if(!r.ok){go.disabled=false; msg.textContent=r.status===401?'Wrong password.':'Could not start: '+r.status; return;}
+  const r=await fetch('/restore',{method:'POST',headers:{'Authorization':'Basic '+btoa('stellarmate:'+pw)}});
+  if(!r.ok){go.disabled=false; msg.textContent=r.status===401?'That password was not accepted - use the stellarmate system password.':'Could not start: '+r.status; return;}
   msg.textContent='Restore running - the Control Center will appear here when it is finished...';
   const t=setInterval(async()=>{
     try{const s=await (await fetch('/state',{cache:'no-store'})).json();
