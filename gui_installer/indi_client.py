@@ -1382,6 +1382,11 @@ MOUNT_BRIDGE_FIFO_PATH = "/tmp/indiFIFO"
 
 
 MOUNT_BRIDGE_PROCESS_NAME = "indi_pifinder_mount_bridge"
+# Anchored to argv[0]: a bare `pgrep/pkill -f <name>` also matches any process
+# that merely has the name somewhere in its command line - notably the C++
+# compiler building this very driver (".../indi_pifinder_mount_bridge.dir/...
+# .cpp.o"), which the force-kill below then SIGKILLed mid-build.
+_MOUNT_BRIDGE_PROCESS_PATTERN = rf"^(/\S*/)?{MOUNT_BRIDGE_PROCESS_NAME}( |$)"
 # How long to wait for the old process to actually exit before giving up and
 # starting a new one anyway - see restart_mount_bridge_driver()'s own comment
 # for why this wait exists at all.
@@ -1391,7 +1396,7 @@ _MOUNT_BRIDGE_STOP_POLL_INTERVAL_SEC = 0.2
 
 def _mount_bridge_pids() -> list:
     try:
-        out = subprocess.run(["pgrep", "-f", MOUNT_BRIDGE_PROCESS_NAME],
+        out = subprocess.run(["pgrep", "-f", _MOUNT_BRIDGE_PROCESS_PATTERN],
                               capture_output=True, text=True, timeout=3)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return []
@@ -1430,7 +1435,7 @@ def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_
     # above, since a new one could have raced in during the wait.
     remaining = _mount_bridge_pids()
     if remaining:
-        subprocess.run(["pkill", "-9", "-f", MOUNT_BRIDGE_PROCESS_NAME], capture_output=True)
+        subprocess.run(["pkill", "-9", "-f", _MOUNT_BRIDGE_PROCESS_PATTERN], capture_output=True)
         time.sleep(0.5)
 
     with open(fifo_path, "w") as f:
