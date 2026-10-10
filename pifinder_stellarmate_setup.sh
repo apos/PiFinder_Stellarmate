@@ -1070,6 +1070,15 @@ sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-fake-mode-autostart
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-control-center.service /etc/systemd/system/pifinder-control-center.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-numpad-bridge.service /etc/systemd/system/pifinder-numpad-bridge.service
 
+# Post-SMOS-update guard: a USER unit on purpose - /home survives the SMOS
+# root reset that removes everything above, so it can still offer the
+# restore when the Control Center itself is gone (bin/smos_update_guard.py).
+# Enabled by symlink so this also works without a user session (SSH).
+mkdir -p "${HOME}/.config/systemd/user/default.target.wants"
+cp "${pifinder_stellarmate_dir}/pi_config_files/pifinder-smos-update-guard.service" "${HOME}/.config/systemd/user/"
+ln -sf ../pifinder-smos-update-guard.service "${HOME}/.config/systemd/user/default.target.wants/pifinder-smos-update-guard.service"
+systemctl --user daemon-reload 2>/dev/null || true
+
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 
@@ -1231,6 +1240,8 @@ echo "##############################################"
 rm -f "$warnings_file"
 
 phase "Setup complete"
+
+record_smos_version
 
 # Restart the Control Center now that every write to its stdout above is
 # already done - guarantees a plain terminal run (not through the GUI's own

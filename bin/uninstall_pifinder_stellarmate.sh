@@ -44,6 +44,9 @@ _stop_disable_remove_units() {
     # function. Found live 2026-08-01, user: "Ist noch ein bisschen wenig an
     # Meldung" - the old silent per-unit loop meant only the "Stopping..."
     # header and nothing else ever made it out before the connection dropped.
+    rm -f "${HOME}/.config/systemd/user/pifinder-smos-update-guard.service" \
+          "${HOME}/.config/systemd/user/default.target.wants/pifinder-smos-update-guard.service" \
+          "${HOME}/PiFinder_Stellarmate/.smos_version_restored" 2>/dev/null || true
     echo "🔧 Stopping PiFinder systemd units ..."
     for unit in "${SYSTEM_UNITS[@]}"; do
         sudo systemctl stop "$unit" 2>/dev/null

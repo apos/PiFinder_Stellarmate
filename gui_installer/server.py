@@ -49,6 +49,14 @@ AUTH_REALM = "PiFinder Setup"
 GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
+RESTORE_SCRIPT = REPO_ROOT / "bin" / "restore_after_smos_update.sh"
+# SMOS version at the last completed setup/restore (written by
+# bin/functions.sh's record_smos_version()); lives in /home, so it survives a
+# SMOS root reset. A different /etc/stellarmate/version means the update
+# wiped the root filesystem - see bin/smos_update_guard.py for the case where
+# this Control Center itself is gone.
+SMOS_VERSION_FILE = Path("/etc/stellarmate/version")
+SMOS_VERSION_RECORD_FILE = REPO_ROOT / ".smos_version_restored"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
 # Installed by pifinder_stellarmate_setup.sh's "Configuring hardware &
@@ -307,7 +315,7 @@ _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 # same technique PHASE_MARKER/REBOOT_MARKER above use.
 _had_critical_warnings = False
 CRITICAL_WARNINGS_MARKER = "CRITICAL WARNINGS"
-_last_action = None  # "fresh" | "reinstall" | "update"
+_last_action = None  # "fresh" | "reinstall" | "update" | "restore"
 _last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
 # True from the moment a successful setup-script run finishes until this
 # process itself gets killed by _restart_control_center() below - exposed via
@@ -4323,6 +4331,33 @@ def _current_pifinder_stellarmate_branch():
         return None
 
 
+def _read_first_line(path: Path):
+    try:
+        v = path.read_text().strip().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return None
+    return v or None
+
+
+def _smos_update_info() -> dict:
+    """{current, recorded, pending}. A missing record (first start of a
+    Control Center that predates this check) is initialized silently with the
+    current version rather than raising a false alarm."""
+    current = _read_first_line(SMOS_VERSION_FILE)
+    recorded = _read_first_line(SMOS_VERSION_RECORD_FILE)
+    if current and not recorded:
+        try:
+            SMOS_VERSION_RECORD_FILE.write_text(current + "\n")
+            recorded = current
+        except OSError:
+            pass
+    return {
+        "current": current,
+        "recorded": recorded,
+        "pending": bool(current and recorded and current != recorded),
+    }
+
+
 def _start_run(action, branch=None, mode=None):
     global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode, _had_critical_warnings
     with _lock:
@@ -4344,10 +4379,13 @@ def _start_run(action, branch=None, mode=None):
         _had_critical_warnings = False
         _last_action = action
         _last_mode = mode or "full"
-        cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
-        if branch:
+        if action == "restore":
+            cmd = ["bash", str(RESTORE_SCRIPT)]
+        else:
+            cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
+        if action != "restore" and branch:
             cmd.append(f"--branch={branch}")
-        if mode and mode != "full":
+        if action != "restore" and mode and mode != "full":
             cmd.append(f"--mode={mode}")
         # PFSM_CC_MANAGED_RUN tells the script's own final "restart the
         # Control Center" line (see its own comment) that THIS run is being
@@ -4691,6 +4729,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/pifinder_welcome_red.png":
             self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
+            return
+
+        if parsed.path == "/api/smos_update_status":
+            self._send_json(_smos_update_info())
             return
 
         if parsed.path == "/state":
@@ -5442,6 +5484,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _host_take_control(client_id)
             self._send_json({"success": True, "is_host": True})
+            return
+
+        if parsed.path == "/api/smos_post_update_restore":
+            # Same run machinery/terminal as Update; only offered while the
+            # SMOS version differs from the one recorded at the last
+            # completed setup/restore (the page shows the notice card).
+            if not _smos_update_info()["pending"]:
+                self._send_json({"started": False, "error": "No SMOS update is pending."}, status=409)
+                return
+            started, error = _start_run("restore")
+            self._send_json({"started": started, "error": error})
             return
 
         if parsed.path == "/start":

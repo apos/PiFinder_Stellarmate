@@ -12,5 +12,6 @@
 /.setup_warnings
 /.resume_from_venv
 /.mount_bridge_desired_state.json
+/.smos_version_restored
 __pycache__/
 /test_tools/live_logs/

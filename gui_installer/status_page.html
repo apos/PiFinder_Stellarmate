@@ -4469,6 +4469,18 @@ function collectActiveShowstoppers() {
       });
     }
   }
+  // SMOS was updated since the last completed setup/restore: the update
+  // resets the root filesystem (services, INDI drivers, hardware groups,
+  // GSC catalog), so offer the post-update restore.
+  if (smosUpdateInfo && smosUpdateInfo.pending) {
+    items.push({
+      id: 'smos-update',
+      category: 'pifinder',
+      title: `SMOS was updated (${smosUpdateInfo.recorded} \u2192 ${smosUpdateInfo.current})`,
+      text: 'A SMOS update resets the root filesystem and removes parts of the PiFinder setup (Control Center service, INDI drivers, hardware groups, star catalog). Run the post-update restore to put them back - it takes a few minutes and restarts the Control Center.',
+      buttons: [{ label: 'Run post-update restore', onclick: 'startSmosPostUpdate()', action: 'smos-post-update' }],
+    });
+  }
   return items;
 }
 
@@ -9331,6 +9343,41 @@ let wmHasSimulator = null;
 // available flag and a workaround already applied or still needed.
 let wmAnyPifinderDriver = null;
 let wmKnownGaps = [];
+// SMOS update notice (bin/smos_update_guard.py serves the same notice when
+// this Control Center itself was wiped by the update). Polled separately from
+// the Web Manager status so it still works when the Web Manager is down.
+let smosUpdateInfo = null;
+async function refreshSmosUpdateInfo() {
+  try {
+    const r = await fetch('/api/smos_update_status', { cache: 'no-store' });
+    if (r.ok) {
+      const next = await r.json();
+      const changed = !smosUpdateInfo || smosUpdateInfo.pending !== next.pending
+        || smosUpdateInfo.current !== next.current || smosUpdateInfo.recorded !== next.recorded;
+      smosUpdateInfo = next;
+      // The cards otherwise only re-render on a Mount Bridge status poll,
+      // which never happens on a device without a Mount Bridge (e.g. right
+      // after a SMOS update wiped it) - exactly when this notice matters.
+      if (changed) renderNoSolveBanner();
+    }
+  } catch (e) { /* offline/restarting - keep the last known value */ }
+}
+// Not a window 'load' listener: observed live (2026-10-10) not to fire for
+// this late-evaluated script, leaving the first poll to the 30s interval.
+setTimeout(refreshSmosUpdateInfo, 1000);
+setInterval(refreshSmosUpdateInfo, 30000);
+async function startSmosPostUpdate() {
+  try {
+    const r = await fetch('/api/smos_post_update_restore', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.started) {
+      console.warn('SMOS post-update restore not started:', j.error || r.status);
+    }
+  } catch (e) {
+    console.warn('SMOS post-update restore request failed:', e);
+  }
+  refreshSmosUpdateInfo();
+}
 let wmServerRunning = false;
 let wmLastActiveProfile = null;
 let wmLastRunning = false;
