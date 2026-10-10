@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- The SMOS post-update notice's "Run post-update restore" button stayed clickable while the restore (or any install/update run) was already running; it is now disabled and relabelled "Restore running…" for the duration
 - The recorded SMOS version (post-update notice) is now also updated by the `--mode=indi_only` setup path - which exits before the final "Setup complete" block and therefore never recorded it, leaving a Control host on SMOS x86 with a notice that never went away - and only after a run without CRITICAL WARNINGS, so a failed driver build keeps the notice. The post-update guard unit is installed in `indi_only` mode too (it was only installed by the full path)
 - `bin/restore_after_smos_update.sh` on x86 now also restores `rclone` (basic-memory/Nextcloud sync) next to `gh`; only the Pi path used to install it, so after a SMOS update on the UTM the sync silently stopped ("rclone not found")
 

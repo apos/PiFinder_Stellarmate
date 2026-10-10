@@ -3399,9 +3399,15 @@ let polling = false;
 // "update") is optional/best-effort - whatever the caller happens to have
 // on hand (a /start call's own argument, or a /state poll's `action`
 // field); a generic label is used when it isn't available.
-const RUN_ACTION_LABELS = { fresh: 'Fresh install', reinstall: 'Reinstall', update: 'Update' };
+const RUN_ACTION_LABELS = { fresh: 'Fresh install', reinstall: 'Reinstall', update: 'Update', restore: 'Post-update restore' };
 function setPolling(running, action) {
+  const wasRunning = polling;
   polling = running;
+  // Cards with run-dependent buttons (SMOS post-update restore) must follow
+  // the run state immediately, not on the next unrelated poll.
+  if (wasRunning !== running && typeof renderNoSolveBanner === 'function') {
+    try { renderNoSolveBanner(); } catch (e) { /* page still initializing */ }
+  }
   const banner = document.getElementById('cc-update-running-banner');
   if (!banner) return;
   if (running) {
@@ -4478,7 +4484,12 @@ function collectActiveShowstoppers() {
       category: 'pifinder',
       title: `SMOS was updated (${smosUpdateInfo.recorded} \u2192 ${smosUpdateInfo.current})`,
       text: 'A SMOS update resets the root filesystem and removes parts of the PiFinder setup (Control Center service, INDI drivers, hardware groups, star catalog). Run the post-update restore to put them back - it takes a few minutes and restarts the Control Center.',
-      buttons: [{ label: 'Run post-update restore', onclick: 'startSmosPostUpdate()', action: 'smos-post-update' }],
+      // Disabled while any install/update/restore run is in progress - a
+      // second click would only be refused by the server (409) anyway.
+      buttons: [{
+        label: polling ? 'Restore running\u2026' : 'Run post-update restore',
+        onclick: 'startSmosPostUpdate()', action: 'smos-post-update', disabled: polling,
+      }],
     });
   }
   return items;
