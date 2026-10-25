@@ -4480,11 +4480,15 @@ function collectActiveShowstoppers() {
     items.push({
       id: 'nvme-boot-warning',
       category: 'pifinder',
-      title: 'This device boots from NVMe/USB - run smos-post-update.sh after every SMOS update, BEFORE rebooting',
+      title: smosUpdateInfo.nvme.pre_reboot_hook
+        ? 'This device boots from NVMe/USB - the boot configuration is fixed automatically when you reboot after a SMOS update'
+        : 'This device boots from NVMe/USB - run smos-post-update.sh after every SMOS update, BEFORE rebooting',
       text: 'A SMOS update can rewrite the boot configuration (cmdline.txt, fstab) to LABEL=SM_ROOT while this disk is labelled ' + lbl +
         '. The device then waits for a root partition that does not exist and never boots again (seen 2.3.0 -> 2.4.0, issue #561). ' +
-        'After the update, before the reboot: sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh (add --updatesd to refresh the SD card too). ' +
-        'Keep a bootable SD card or USB stick with SSH enabled (port 5624): booted from it, the same script repairs the NVMe.',
+        (smosUpdateInfo.nvme.pre_reboot_hook
+          ? 'The shutdown hook smos-pre-reboot-fix.service corrects the staged system before the reboot (its result is in the journal: journalctl -u smos-pre-reboot-fix). '
+          : 'The automatic shutdown hook is not installed here - run the setup/update once, or after each SMOS update and before the reboot: sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh. ') +
+        'Add --updatesd to refresh the SD card. Keep a bootable SD card or USB stick with SSH enabled (port 5624): booted from it, the same script repairs the NVMe (sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh).',
       buttons: [
         { label: 'Hide', onclick: 'dismissNvmeWarning()', action: 'nvme-boot-hide' },
       ],

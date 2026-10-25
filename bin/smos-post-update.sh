@@ -14,6 +14,15 @@
 #   sudo ./smos-post-update.sh --updatesd               - post-update + update the SD card (external boot only)
 #   sudo ./smos-post-update.sh --updatenvme_memory       - memory sync SD -> ext. storage (SD boot only)
 #   sudo ./smos-post-update.sh --sync-memory            - basic-memory + .claude <-> Nextcloud (rclone bisync)
+#   sudo ./smos-post-update.sh --pre-reboot             - quiet, never-failing variant for the shutdown hook
+#                                                            (smos-pre-reboot-fix.service, issue #561): if a newer
+#                                                            @system-* subvolume has been staged by a SMOS update,
+#                                                            fix ITS boot config (LABEL -> UUID in cmdline.txt, fstab
+#                                                            and the cmdline template) and restore the WireGuard unit
+#                                                            BEFORE the reboot - on dual-boot layouts only
+#
+# The UUID fixup is enabled automatically when the external disk carries the dual-boot labels
+# (_NVM / _NVE); --enable-dual-boot-sd-nvme is then only needed for the one-time label rename.
 #
 # Supported hardware:
 #   Pi5: NVMe via PCIe (/dev/nvme0n1) - labels _NVE, PCIe Gen3 config
@@ -21,7 +30,8 @@
 
 set -e
 
-source "$(dirname "$0")/functions.sh"
+# realpath: this file may be run through the ~/bin/smos-post-update.sh symlink the setup installs
+source "$(dirname "$(realpath "$0")")/functions.sh"
 
 # Pi-only, by construction (see "Supported hardware" above): _detect_external_storage()
 # below pattern-matches /dev/sda1+/dev/sda2 as "Pi4 USB SSD external storage" with no
@@ -36,7 +46,9 @@ source "$(dirname "$0")/functions.sh"
 # mirror.archlinuxarm.org/aarch64 assumption as install_extra_packages() below, and this
 # UTM's own basic-memory sync already goes through sync_basic_memory.sh directly (see
 # basic-memory pifinder-stellarmate/00003), not this wrapper.
-if [ -z "$(get_hw_model)" ]; then
+# SMOS_PU_EXT_ROOT_DEV/SMOS_PU_EXT_BOOT_DEV (both) name the devices explicitly - used by
+# test_tools/test_smos_post_update.sh against loop images; nothing is auto-detected then.
+if [ -z "$(get_hw_model)" ] && [ -z "${SMOS_PU_EXT_ROOT_DEV:-}" ]; then
     echo "!! This script manages Pi4/Pi5 NVMe/USB-SSD/SD dual-boot storage and must not"
     echo "   run on a non-Pi (x86) system - no /proc/device-tree/model found."
     exit 1
@@ -52,12 +64,14 @@ UPDATE_SD=0
 UPDATE_NVME_MEMORY=0
 SYNC_MEMORY=0
 DUAL_BOOT=0
+PRE_REBOOT=0
 for arg in "$@"; do
     case "$arg" in
         --updatesd)           UPDATE_SD=1 ;;
         --updatenvme_memory)  UPDATE_NVME_MEMORY=1 ;;
         --sync-memory)        SYNC_MEMORY=1 ;;
         --enable-dual-boot-sd-nvme)          DUAL_BOOT=1 ;;
+        --pre-reboot)         PRE_REBOOT=1 ;;
     esac
 done
 
@@ -72,7 +86,17 @@ NVME_ROOT_TMP=""
 STORAGE_TYPE=""   # "nvme" (PCIe, Pi5) or "usb" (USB SSD/NVMe, Pi4)
 LABEL_POSTFIX=""  # "_NVE" for Pi5 NVMe, "_NVM" for Pi4 USB
 
+BACKUP_DIR="${SMOS_PU_BACKUP_DIR:-/home/stellarmate/bin/backup_files}"
+
 _detect_external_storage() {
+    if [ -n "${SMOS_PU_EXT_ROOT_DEV:-}" ] && [ -n "${SMOS_PU_EXT_BOOT_DEV:-}" ]; then
+        NVME_BOOT_DEV="$SMOS_PU_EXT_BOOT_DEV"
+        NVME_ROOT_DEV="$SMOS_PU_EXT_ROOT_DEV"
+        STORAGE_TYPE="usb"
+        LABEL_POSTFIX="_NVM"
+        echo "   External storage: explicit devices ($NVME_ROOT_DEV, $NVME_BOOT_DEV)"
+        return 0
+    fi
     if [ -b "/dev/nvme0n1p1" ]; then
         NVME_BOOT_DEV="/dev/nvme0n1p1"
         NVME_ROOT_DEV="/dev/nvme0n1p2"
@@ -99,11 +123,14 @@ _setup_nvme_dirs() {
     _detect_external_storage || return 1
 
     local root_dev
-    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    root_dev="${SMOS_PU_RUNNING_ROOT:-$(findmnt -n -o SOURCE / | sed 's/\[.*//')}"
 
-    if [[ "$root_dev" == /dev/nvme* ]]; then
+    # Running from the external disk: PCIe NVMe (Pi5) OR the USB SSD/NVMe (Pi4, /dev/sdX2) -
+    # this used to test /dev/nvme* only, so a Pi4 on USB was treated as an SD boot (and
+    # --updatesd, the extra packages and the live WireGuard restore never ran there).
+    if [[ "$root_dev" == /dev/nvme* ]] || [ "$(readlink -f "$root_dev")" = "$(readlink -f "$NVME_ROOT_DEV")" ]; then
         BOOT_FROM_NVME=1
-        NVME_BOOT_DIR="/boot"
+        NVME_BOOT_DIR="${SMOS_PU_BOOT_DIR:-/boot}"
         NVME_FSTAB="/etc/fstab"
         echo "   Boot source: NVMe ($root_dev)"
     else
@@ -115,8 +142,10 @@ _setup_nvme_dirs() {
             exit 1
         fi
 
-        NVME_BOOT_TMP=$(mktemp -d /mnt/nvme-boot-fix-XXXXXX)
-        NVME_ROOT_TMP=$(mktemp -d /mnt/nvme-root-fix-XXXXXX)
+        # Under /run (tmpfs), not /mnt: on an SD rescue boot nothing may be written to the SD.
+        NVME_BOOT_TMP=$(mktemp -d /run/nvme-boot-fix-XXXXXX)
+        NVME_ROOT_TMP=$(mktemp -d /run/nvme-root-fix-XXXXXX)
+        chmod 755 "$NVME_BOOT_TMP" "$NVME_ROOT_TMP"
 
         mount "$NVME_BOOT_DEV" "$NVME_BOOT_TMP"
         mount -o subvolid=5 "$NVME_ROOT_DEV" "$NVME_ROOT_TMP"
@@ -192,6 +221,15 @@ rename_nvme_labels() {
     fi
 }
 
+# Exact label tokens only: "LABEL=SM_ROOT" must not match "LABEL=SM_ROOT_NVM" (the old plain
+# substring replace would have turned that into "UUID=<uuid>_NVM").
+_label_re='([^A-Za-z0-9_]|$)'
+
+_backup_once() {  # $1 file - one *.bak-pu-<date> next to it, before the first change
+    local f="$1"
+    [ -e "${f}.bak-pu-$(date +%Y%m%d)" ] || cp -a "$f" "${f}.bak-pu-$(date +%Y%m%d)"
+}
+
 fix_uuids() {
     local boot_uuid root_uuid
     boot_uuid=$(blkid -s UUID -o value "$NVME_BOOT_DEV")
@@ -202,30 +240,41 @@ fix_uuids() {
         return 1
     fi
 
-    # cmdline.txt on the NVMe boot partition: root=LABEL= -> root=UUID=
-    local cmdline="${NVME_BOOT_DIR}/cmdline.txt"
-    if grep -q 'root=LABEL=SM_ROOT' "$cmdline"; then
-        sed -i "s|root=LABEL=SM_ROOT|root=UUID=${root_uuid}|g" "$cmdline"
-        echo ">> [NVMe] cmdline.txt:  changed  (LABEL=SM_ROOT -> UUID=${root_uuid})"
-        REBOOT_NEEDED=1
-    else
-        echo ">> [NVMe] cmdline.txt:  OK"
-    fi
+    # The system subvolume's /etc: "/etc/..." on the running system, "<mount>/@system-X/etc/..." offline.
+    local etc_prefix=""
+    [ -n "$NVME_FSTAB" ] && etc_prefix="${NVME_FSTAB%/etc/fstab}"
+
+    # cmdline.txt on the NVMe boot partition AND the template SMOS generates it from
+    # (etc/stellarmate/boot/cmdline.txt): root=LABEL=SM_ROOT -> root=UUID=
+    local f
+    for f in "${NVME_BOOT_DIR}/cmdline.txt" "${etc_prefix}/etc/stellarmate/boot/cmdline.txt"; do
+        [ -f "$f" ] || continue
+        if grep -Eq "root=LABEL=SM_ROOT${_label_re}" "$f"; then
+            _backup_once "$f"
+            sed -E -i "s#root=LABEL=SM_ROOT([^A-Za-z0-9_]|\$)#root=UUID=${root_uuid}\1#g" "$f"
+            echo ">> [NVMe] ${f}:  changed  (LABEL=SM_ROOT -> UUID=${root_uuid})"
+            REBOOT_NEEDED=1
+        else
+            echo ">> [NVMe] ${f}:  OK"
+        fi
+    done
 
     # fstab on NVMe: LABEL=SM_BOOT and LABEL=SM_ROOT -> UUIDs
     if [ -z "$NVME_FSTAB" ]; then
         echo ">> [NVMe] fstab:        skipped (no path determined)"
         return 0
     fi
-    if grep -q 'LABEL=SM_BOOT' "$NVME_FSTAB"; then
-        sed -i "s|LABEL=SM_BOOT|UUID=${boot_uuid}|g" "$NVME_FSTAB"
+    if grep -Eq '^LABEL=SM_BOOT[[:space:]]' "$NVME_FSTAB"; then
+        _backup_once "$NVME_FSTAB"
+        sed -E -i "s#^LABEL=SM_BOOT([[:space:]])#UUID=${boot_uuid}\1#" "$NVME_FSTAB"
         echo ">> [NVMe] fstab /boot:  changed  (LABEL=SM_BOOT -> UUID=${boot_uuid})"
         REBOOT_NEEDED=1
     else
         echo ">> [NVMe] fstab /boot:  OK"
     fi
-    if grep -q 'LABEL=SM_ROOT' "$NVME_FSTAB"; then
-        sed -i "s|LABEL=SM_ROOT|UUID=${root_uuid}|g" "$NVME_FSTAB"
+    if grep -Eq '^LABEL=SM_ROOT[[:space:]]' "$NVME_FSTAB"; then
+        _backup_once "$NVME_FSTAB"
+        sed -E -i "s#^LABEL=SM_ROOT([[:space:]])#UUID=${root_uuid}\1#" "$NVME_FSTAB"
         echo ">> [NVMe] fstab /:      changed  (LABEL=SM_ROOT -> UUID=${root_uuid})"
         REBOOT_NEEDED=1
     else
@@ -260,6 +309,8 @@ install_extra_packages() {
 
     local pkg_list
     pkg_list="$(dirname "$(realpath "$0")")/package.list"
+    # a device-local list in ~/bin wins over the one shipped with the repo
+    [ -f "/home/stellarmate/bin/package.list" ] && pkg_list="/home/stellarmate/bin/package.list"
 
     if [ ! -f "$pkg_list" ]; then
         echo "!! package.list not found: $pkg_list - aborting."
@@ -300,7 +351,7 @@ install_extra_packages() {
 
 restore_wireguard() {
     local service="wg-nethserver-client"
-    local backup_file="/home/stellarmate/bin/backup_files/${service}.service"
+    local backup_file="${BACKUP_DIR}/${service}.service"
 
     # On SD boot, NVME_FSTAB points at the temporarily-mounted NVMe subvolume
     # (${NVME_ROOT_TMP}/${nvme_subvol}/etc/fstab); on NVMe boot it's simply
@@ -321,8 +372,14 @@ restore_wireguard() {
         echo ">> Service file missing - restoring from backup..."
         echo "   Source:      $backup_file"
         echo "   Destination: $service_file"
+        if [ ! -f "$backup_file" ]; then
+            echo "!! WireGuard backup unit not found: $backup_file - nothing to restore."
+            return 0
+        fi
+        mkdir -p "$(dirname "$service_file")"
         cp "$backup_file" "$service_file"
-        if [ "$BOOT_FROM_NVME" -eq 1 ]; then
+        # --pre-reboot writes into the STAGED (not yet running) subvolume: enable it offline.
+        if [ "$BOOT_FROM_NVME" -eq 1 ] && [ "$PRE_REBOOT" -eq 0 ]; then
             systemctl daemon-reload
             systemctl enable --now "${service}.service"
             echo ">> Service restored, enabled, and started."
@@ -339,8 +396,8 @@ restore_wireguard() {
         echo "   Path:  $service_file"
     fi
 
-    if [ "$BOOT_FROM_NVME" -eq 0 ]; then
-        echo ">> Live status skipped (SD boot, NVMe system isn't running)"
+    if [ "$BOOT_FROM_NVME" -eq 0 ] || [ "$PRE_REBOOT" -eq 1 ]; then
+        echo ">> Live status skipped (the target system isn't the running one)"
         return 0
     fi
 
@@ -518,7 +575,7 @@ update_sd() {
 }
 
 update_nvme_memory() {
-    local NVME_BTRFS_MNT="/mnt/nvme-btrfs-root"
+    local NVME_BTRFS_MNT="/run/nvme-btrfs-root"
     local NVME_HOME="${NVME_BTRFS_MNT}/@home/stellarmate"
 
     # Check whether booted from SD
@@ -656,7 +713,68 @@ sync_memory() {
     fi
 }
 
+# ===== --pre-reboot (shutdown hook, issue #561) =====
+#
+# A SMOS update stages a NEW @system-* subvolume (+ boot config) while the OLD system keeps
+# running until the reboot. On a dual-boot layout (labels *_NVM / *_NVE) the update writes
+# LABEL=SM_ROOT / LABEL=SM_BOOT, which the disk does not carry - the device then never boots
+# again. This runs from smos-pre-reboot-fix.service's ExecStop, i.e. at the reboot, while the
+# old system is still up, and fixes the staged subvolume. It never fails the shutdown.
+
+_PR_ROOT_TMP=""
+_cleanup_pre_reboot() {
+    [ -n "$_PR_ROOT_TMP" ] && { umount "$_PR_ROOT_TMP" 2>/dev/null; rmdir "$_PR_ROOT_TMP" 2>/dev/null; } || true
+    _PR_ROOT_TMP=""
+}
+
+# Mounts the disk's top level and points NVME_FSTAB at the newest @system-* that is NOT the
+# running one. Returns 1 (nothing to do) when no newer system has been staged.
+_setup_pre_reboot_target() {
+    local running_subvol newest
+    running_subvol="${SMOS_PU_RUNNING_SUBVOL:-$(findmnt -n -o OPTIONS / | grep -oP 'subvol=\K[^,\]]+' | sed 's|^/||')}"
+    _PR_ROOT_TMP=$(mktemp -d /run/smos-pu-root-XXXXXX)
+    chmod 755 "$_PR_ROOT_TMP"
+    mount -o subvolid=5 "$NVME_ROOT_DEV" "$_PR_ROOT_TMP" || { echo "!! cannot mount $NVME_ROOT_DEV"; return 1; }
+    newest=$(cd "$_PR_ROOT_TMP" && ls -d @system-* 2>/dev/null | sort -V | tail -1)
+    if [ -z "$newest" ] || [ "$newest" = "$running_subvol" ]; then
+        echo "   No newer system staged (running: ${running_subvol:-?}, newest: ${newest:-none}) - nothing to do."
+        return 1
+    fi
+    echo "   Staged system: $newest (running: ${running_subvol:-?})"
+    NVME_FSTAB="${_PR_ROOT_TMP}/${newest}/etc/fstab"
+    if [ ! -f "$NVME_FSTAB" ]; then
+        echo "!! $NVME_FSTAB missing - cannot fix the staged system."
+        return 1
+    fi
+    return 0
+}
+
+_pre_reboot_main() {
+    _setup_nvme_dirs || return 0
+    if [ "$BOOT_FROM_NVME" -ne 1 ]; then
+        echo "   Not running from the external disk - nothing to do."
+        return 0
+    fi
+    local root_label
+    root_label=$(blkid -p -s LABEL -o value "$NVME_ROOT_DEV" 2>/dev/null || true)  # -p: read the disk, not blkid's cache
+    case "$root_label" in
+        *"${LABEL_POSTFIX}") ;;
+        *) echo "   Root label '${root_label}' is not a dual-boot label - nothing to do."; return 0 ;;
+    esac
+    _setup_pre_reboot_target || return 0
+    fix_uuids || true
+    restore_wireguard || true
+}
+
 # ===== Main program =====
+
+if [ "$PRE_REBOOT" -eq 1 ]; then
+    echo "=== SMOS pre-reboot fix ==="
+    # Subshell so that nothing can abort the shutdown; its own EXIT trap unmounts the temporary
+    # mount (the variable only exists inside the subshell).
+    ( trap _cleanup_pre_reboot EXIT; _pre_reboot_main ) || true
+    exit 0
+fi
 
 if [ "$SYNC_MEMORY" -eq 1 ]; then
     echo "=== Memory sync <-> Nextcloud ==="
@@ -674,6 +792,19 @@ fi
 echo "=== StellarMate Post-Update Boot Restore ==="
 _setup_nvme_dirs
 echo ""
+
+# The dual-boot labels (_NVM/_NVE) mean SD and external disk are used side by side - that is
+# exactly the layout whose boot config a SMOS update breaks (issue #561), so the UUID fixup is
+# no longer opt-in there.
+if [ "$DUAL_BOOT" -eq 0 ]; then
+    _root_label=$(blkid -p -s LABEL -o value "$NVME_ROOT_DEV" 2>/dev/null || true)  # -p: read the disk, not blkid's cache
+    case "$_root_label" in
+        *"${LABEL_POSTFIX}")
+            DUAL_BOOT=1
+            echo ">> Dual-boot layout detected (root label ${_root_label}) - UUID fixup enabled automatically."
+            echo "" ;;
+    esac
+fi
 
 restore_file /boot/cmdline.txt
 restore_file /boot/config.txt

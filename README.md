@@ -378,6 +378,8 @@ sudo reboot
 
 This restores everything PiFinder needs: pacman repos, system packages, hardware groups, udev rules, `/boot/config.txt` overlays, swapfile, and systemd services.
 
+On a **Pi 4/Pi 5 that boots from NVMe/USB** (root label `SM_ROOT_NVM`/`SM_ROOT_NVE`, SD card kept as emergency system), a SMOS update can rewrite the boot configuration to `LABEL=SM_ROOT`, which that disk does not carry, so it never boots again (seen 2.3.0 → 2.4.0, [#561](https://github.com/apos/PiFinder_Stellarmate/issues/561)). The setup installs `smos-pre-reboot-fix.service`, which corrects the staged system when you reboot after the update; `bin/smos-post-update.sh` is the manual equivalent and, booted from the SD card with the disk attached, the repair tool (`--updatesd` refreshes the SD).
+
 On a **non-Pi (x86) SMOS** — e.g. a Control host or the UTM dev VM — the Pi-specific steps are skipped; the same command instead runs the setup's non-interactive update path (`--action=update`, `--mode=full` or `indi_only` depending on how the machine was installed), which reinstalls the INDI drivers, the Control Center service, hardware groups and the GSC catalog, and restores `gh`.
 
 ### Syncing basic-memory / Claude context to Nextcloud
