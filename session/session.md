@@ -48,19 +48,19 @@
   `00201_coldstart-2026-10-25-nachmittag-...`.
 
 ## ToDos (Reihenfolge einhalten)
-1. **`git pull --ff-only origin dev`**, dann das **Setup-Update auf dem Pi4** (Control Center "Update" oder
-   `bash pifinder_stellarmate_setup.sh --action=update --mode=full`) - nur mit Go des Users. Es installiert den Hook
-   `smos-pre-reboot-fix.service` (nur wegen Root-Label `SM_ROOT_NVM`) und den Symlink `~/bin/smos-post-update.sh`.
-   Prüfen: `systemctl is-enabled smos-pre-reboot-fix`, `ls -l ~/bin/smos-post-update.sh` (alte Datei als `*.old-<Datum>`).
-2. **Hook verifizieren**: einmal `sudo systemctl reboot`, danach `journalctl -u smos-pre-reboot-fix -b -1` - erwartet:
-   "No newer system staged ... nothing to do". Zugleich WireGuard (`sudo wg show`), Dienste, Kamera prüfen.
-3. **Beim nächsten echten SMOS-Update**: vor dem ersten Boot prüfen (`journalctl -u smos-pre-reboot-fix -b -1`), ob das
-   bereitgestellte `@system-*` UUIDs trägt; offen ist, ob SMOS' Updater über `systemctl reboot` neu startet.
-4. **`--updatesd`**: die SD (SMOS 2.3.0) ist der Notfall-Zugang; nur auf ausdrückliche Anweisung des Users aktualisieren
-   (`sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --updatesd`; seit #566 läuft das auch auf dem Pi4/USB).
-5. **Kamera/Hardware-Test** ("Test hardware" im Control Center, `libcamera 0.7.2-64` / `python-libcamera 0.7.0-3`).
-6. **bm-Sync auf dem Pi4**: `rclone` prüfen, `bash ~/basic-memory/basic-memory/scripts/sync_basic_memory.sh`.
-7. **Pi5**: Stand beim User erfragen (laut User "erledigt", Details nicht dokumentiert); Pi5-Verifikation fehlt.
+Erledigt am 2026-10-25: Setup-Update auf dem Pi4 mit dem Hook `smos-pre-reboot-fix.service` und dem Symlink
+`~/bin/smos-post-update.sh`; Reboot-Test bestanden (`journalctl -u smos-pre-reboot-fix -b -1` zeigt den Lauf beim
+Herunterfahren, "nothing to do"); WireGuard und Dienste kommen von selbst hoch. v2.1.0 ist released.
+
+1. **Beim nächsten echten SMOS-Update**: vor dem ersten Boot prüfen, ob das bereitgestellte `@system-*` UUIDs trägt
+   (`journalctl -u smos-pre-reboot-fix -b -1` nach dem Reboot lesen). Offen ist, ob SMOS' Updater über
+   `systemctl reboot` neu startet. Als Absicherung vorher: SD-Karte als Notfallsystem bereit, SSH Port 5624.
+2. **`--updatesd`**: die SD (SMOS 2.3.0) ist der Notfall-Zugang; nur auf ausdrückliche Anweisung des Users
+   aktualisieren (`sudo bash ~/PiFinder_Stellarmate/bin/smos-post-update.sh --updatesd`; seit #566 läuft das auf dem
+   Pi4/USB).
+3. **Kamera/Hardware-Test** ("Test hardware" im Control Center, `libcamera 0.7.2-64` / `python-libcamera 0.7.0-3`).
+4. **bm-Sync auf dem Pi4**: `rclone` prüfen, `bash ~/basic-memory/basic-memory/scripts/sync_basic_memory.sh`.
+5. **Pi5**: laut User war der letzte Boot in Ordnung; eigene Verifikation (`_NVE`-Pfad des Hooks) steht aus.
 
 ## Regeln, die hier gelten
 - SSH auf allen Flotten-Geräten: **Port 5624**, nicht 22. Auf der UTM gibt es den Alias `smate-pi4`.
