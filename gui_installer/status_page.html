@@ -2997,16 +2997,6 @@
           <span id="hw-details-chevron">&#9660; show</span>
         </div>
         <div id="hw-details" style="display:none;">
-          <!-- Control host only (2026-09-13, direct feedback: "eine volle
-               Control-host-Unterstützung ist nicht nötig, aber es sollte
-               klar sagen, dass das die lokale Hardware ist, nicht die
-               entfernte") - Test Hardware's own functional test
-               (rpicam-hello capture, an actual I2C read) always runs
-               against THIS device, unlike the passive Camera/IMU/GPS rows
-               below it, which are already proxied to the PiFinder Client
-               (category 2b). Deliberately not built out further per that
-               same feedback - just labeled honestly. -->
-          <div id="hwtest-ch-note" class="mb-hint" style="display:none;">Test Hardware only checks this device's own hardware, not the PiFinder Client's - Camera/IMU above already show the PiFinder Client's real, live state and don't need it.</div>
           <div id="hw-status" title="Checked directly against the hardware (camera/I2C/gpsd), independent of whether PiFinder's own software considers itself running.">
             <div class="hw-row" title="Runs a deeper check against each subsystem (camera capture / IMU read / PiFinder's own GPS status) and classifies any failure as hardware, driver, or Python - not just a bare presence check. Output also appears in the Terminal below.">
               <button id="hwtest-btn" class="ql-small-btn" onclick="runHardwareTest()" style="margin-left:0;">Test Hardware</button>
@@ -3855,10 +3845,6 @@ function updateChGrouping() {
     const host = pifinderHost();
     remoteLabel.textContent = host ? `PiFinder Client (${host})` : 'PiFinder Client';
   }
-  // Direct feedback (2026-09-13): Test Hardware's own functional test stays
-  // local-only by design - just needs to say so clearly (see its own HTML
-  // comment).
-  document.getElementById('hwtest-ch-note').style.display = inCh ? '' : 'none';
 }
 
 // Control host only (category 2b, docs/concepts/
@@ -7220,7 +7206,7 @@ function setHwRow(key, present) {
   // this property) needs its own wording instead of the generic "check
   // unavailable" below, since that phrase reads as a local-check problem.
   if (isRemoteRow && present === null) {
-    setHwDot(dotEl, 'status-dot dot-white');
+    setHwDot(dotEl, 'status-dot dot-unconfirmed');
     textEl.textContent = 'unavailable (remote PiFinder LX200 not reachable)';
     const detailEl = document.getElementById('hw-' + key + '-detail');
     if (detailEl) detailEl.textContent = '';
@@ -7241,7 +7227,7 @@ function setHwRow(key, present) {
     setHwDot(dotEl, 'status-dot dot-green');
     // "click Test Hardware" is actively wrong advice for this row on a
     // Control host - that button only ever tests THIS device's own
-    // hardware (see #hwtest-ch-note), never the PiFinder Client's, so
+    // hardware, never the PiFinder Client's, so
     // clicking it can't make this row any more "tested" than it already
     // is. Direct report (2026-09-15): bare "present" alone doesn't say
     // WHICH device it's present on - this row can mean either depending
@@ -7257,7 +7243,7 @@ function setHwRow(key, present) {
     const detailEl = document.getElementById('hw-' + key + '-detail');
     if (detailEl) detailEl.textContent = '';
   } else {
-    setHwDot(dotEl, 'status-dot dot-white');
+    setHwDot(dotEl, 'status-dot dot-unconfirmed');
     textEl.textContent = 'unknown (check unavailable)';
   }
 }

@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- `bin/utm_fix_display_setup_drm_race.sh`: stops the black UTM window after boot on SMOS 2.4.0. `display-setup.service` ran before the VM's virtio-gpu appeared, found no display and wrote a Dummy-driver Xorg config. The script adds a drop-in that waits (max 40 s) for a DRM connector first; UTM guests only. Re-run it after a SMOS update
+
+### Changed
+
+- Control Center: the Camera/IMU/GPS hardware rows pulse (yellow) while their state is unknown or the remote PiFinder LX200 is not reachable, instead of a static white dot
+- Control Center: removed the yellow "Test Hardware only checks this device's own hardware" hint on Control hosts
+
+### Fixed
+
+- Presentation `PFSM_overview.pptx` named the old Control Center port 8765 on two slides; now 8777 (matches `build.py` and the Beamer deck)
+
 ## [2.1.0] - 2026-10-25
 
 > Port and update-safety release, built after the real SMOS 2.3.0 → 2.4.0 update (UTM and Pi 4): the Control Center
