@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
+
 ## [2.1.1] - 2026-10-25
 
 > Small follow-up to 2.1.0: a fix for the black UTM window after boot, two Control Center hardware-row tweaks and a
