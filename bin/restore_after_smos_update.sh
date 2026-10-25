@@ -54,6 +54,22 @@ run_setup_update() {
     bash "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" --action=update --mode="${mode}"
 }
 
+# The SMOS update replaces /etc, so the drop-in that makes display-setup.service
+# wait for the virtio-gpu is gone afterwards (black UTM window after the next
+# boot, see bin/utm_fix_display_setup_drm_race.sh). Only for a VM with a
+# virtio-gpu (UTM/QEMU): the script itself does nothing anywhere else.
+# Non-fatal - a missing display fix must not stop the restore.
+restore_utm_display_fix() {
+    local fix="$(dirname "$0")/utm_fix_display_setup_drm_race.sh"
+    if ! systemd-detect-virt -q 2>/dev/null; then
+        return 0
+    fi
+    if [ -f "${fix}" ]; then
+        echo "🔧 Restoring the UTM display fix (display-setup waits for the virtio-gpu) ..."
+        bash "${fix}" || echo "  ⚠️  UTM display fix failed/skipped (not required for the restore itself)."
+    fi
+}
+
 restore_x86() {
     echo "ℹ️  Non-Pi (x86) system detected - skipping the Pi-specific steps"
     echo "    (ARM repos, config.txt overlays, swapfile, picamera2 patch)."
@@ -82,6 +98,8 @@ restore_x86() {
             echo "  ⚠️  Could not unlock Atomic Updates - skipping ${dev_pkgs[*]} (not required for PiFinder itself)."
         fi
     fi
+
+    restore_utm_display_fix
 
     run_setup_update
 }
