@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-25
+
+> Small follow-up to 2.1.0: a fix for the black UTM window after boot, two Control Center hardware-row tweaks and a
+> corrected port in the overview deck. The Pi 4 camera has since been tested on real hardware and works. Still not
+> verified: a real SMOS update with the pre-reboot hook (#561) on the Pi 4 and anything on the Pi 5.
+
 ### Added
 
 - `bin/utm_fix_display_setup_drm_race.sh`: stops the black UTM window after boot on SMOS 2.4.0. `display-setup.service` ran before the VM's virtio-gpu appeared, found no display and wrote a Dummy-driver Xorg config. The script adds a drop-in that waits (max 40 s) for a DRM connector first; UTM guests only. Re-run it after a SMOS update
