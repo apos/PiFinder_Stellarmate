@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- `bin/restore_after_smos_update.sh` (Pi path) now finishes with the setup's non-interactive update, like the x86 path. It used to record the SMOS version after its own steps although the Control Center service and the INDI drivers - which only the setup installs - were still missing, so the post-update notice disappeared too early. The setup records the version itself, and only after a clean run
 - The post-SMOS-update guard page: an empty password field now says to enter the stellarmate system password (it used to send the request and answer "Wrong password."), a hint names the password, and browser autofill is switched off so a saved password for another device is not filled in
 - `bin/restore_after_smos_update.sh` (Pi path) now also installs the post-SMOS-update guard user unit; previously only the setup did, so a Pi that was only ever restored with this script had no guard for its next SMOS update
 - Install/Update tile: the step list (the 10 phases with check marks) could stay hidden for a whole run when the page's one-time init fetch of `/state` happened while the Control Center was still restarting - the labels were never loaded again. `/log` now also carries `phases` and every poll refreshes the labels
