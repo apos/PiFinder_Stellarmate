@@ -4350,8 +4350,9 @@ def _nvme_system_info() -> dict:
         dev = src.split("[")[0]
         label = subprocess.run(["lsblk", "-no", "LABEL", dev], capture_output=True, text=True, timeout=3).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
-        return {"external_root": False, "root_label": None}
-    return {"external_root": label.startswith("SM_ROOT") and label != "SM_ROOT", "root_label": label or None}
+        return {"external_root": False, "root_label": None, "pre_reboot_hook": False}
+    hook = subprocess.run(["systemctl", "is-active", "smos-pre-reboot-fix.service"], capture_output=True, text=True, timeout=3).stdout.strip() == "active"
+    return {"external_root": label.startswith("SM_ROOT") and label != "SM_ROOT", "root_label": label or None, "pre_reboot_hook": hook}
 
 
 def _smos_update_info() -> dict:

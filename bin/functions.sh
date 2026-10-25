@@ -358,6 +358,38 @@ install_smos_update_guard() {
   systemctl --user daemon-reload 2>/dev/null || true
 }
 
+# One canonical smos-post-update.sh: ~/bin/smos-post-update.sh used to be an independent copy
+# that went stale (the Pi 4 still had the 31 May version, issue #561). Replaced by a symlink to
+# the repo script; an existing regular file is kept as *.old-<date>.
+install_smos_post_update_link() {
+  local target="${pifinder_stellarmate_dir}/bin/smos-post-update.sh"
+  local link="${HOME}/bin/smos-post-update.sh"
+  [ -f "${target}" ] || return 0
+  mkdir -p "${HOME}/bin"
+  if [ -e "${link}" ] && [ ! -L "${link}" ]; then
+    mv "${link}" "${link}.old-$(date +%Y%m%d)"
+  fi
+  ln -sfn "${target}" "${link}"
+}
+
+# Shutdown hook (smos-pre-reboot-fix.service): only on devices whose root disk carries the
+# dual-boot labels (SM_ROOT_NVM on a Pi 4 USB disk, SM_ROOT_NVE on a Pi 5 NVMe) - everywhere else
+# a SMOS update does not break the boot configuration and the hook would be pointless.
+install_smos_pre_reboot_hook() {
+  local root_src root_label
+  root_src="$(findmnt -no SOURCE / 2>/dev/null | sed 's/\[.*//')"
+  root_label="$(lsblk -no LABEL "${root_src}" 2>/dev/null | head -1)"
+  case "${root_label}" in
+    SM_ROOT_NVM|SM_ROOT_NVE) ;;
+    *) return 0 ;;
+  esac
+  sed "s#@REPO@#${pifinder_stellarmate_dir}#g" \
+    "${pifinder_stellarmate_dir}/pi_config_files/smos-pre-reboot-fix.service" \
+    | sudo tee /etc/systemd/system/smos-pre-reboot-fix.service >/dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now smos-pre-reboot-fix.service
+}
+
 stop_indi_driver_and_wait() {
   local process_name="$1"
   local max_wait_seconds="${2:-5}"

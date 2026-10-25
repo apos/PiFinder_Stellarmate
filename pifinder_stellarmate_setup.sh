@@ -151,6 +151,8 @@ if [ "$MODE" = "indi_only" ]; then
     # reaching the "Setup complete" block below - it needs the post-SMOS-
     # update guard and the recorded SMOS version just the same.
     install_smos_update_guard
+    install_smos_post_update_link
+    install_smos_pre_reboot_hook || add_warning "Could not install the SMOS pre-reboot hook (smos-pre-reboot-fix.service) - run smos-post-update.sh manually after a SMOS update, before rebooting (issue #561)."
     if [ ! -s "$warnings_file" ]; then
         record_smos_version
     else
@@ -1082,6 +1084,8 @@ sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-numpad-bridge.servi
 # Post-SMOS-update guard (user unit - see install_smos_update_guard() in
 # bin/functions.sh).
 install_smos_update_guard
+install_smos_post_update_link
+install_smos_pre_reboot_hook || add_warning "Could not install the SMOS pre-reboot hook (smos-pre-reboot-fix.service) - run smos-post-update.sh manually after a SMOS update, before rebooting (issue #561)."
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload

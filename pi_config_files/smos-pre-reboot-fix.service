@@ -1,0 +1,15 @@
+[Unit]
+Description=Fix the boot configuration staged by a SMOS update before the reboot (issue #561)
+# Active from boot on; its ExecStop runs at shutdown while the OLD system is still up and
+# the disk still mounted - the moment a SMOS update has staged its new @system-* subvolume.
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=@REPO@/bin/smos-post-update.sh --pre-reboot
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target
