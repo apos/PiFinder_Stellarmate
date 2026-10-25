@@ -63,7 +63,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 
 > ### ✅ **Aktuell gepinnte Versionen**
 >
-> * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) über `version.txt` /
+> * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.4.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
 >   `release`-Branches. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host —
 >   [Versionskompatibilität](#versionskompatibilität) hat die Details.
@@ -224,7 +224,7 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
 
 *   Ein Raspberry Pi 4 oder Pi 5 mit PiFinder-Hardware (Hat, Display, Kamera usw.).
 *   **Eine aktuelle StellarMate-OS-(SMOS-)Installation — die einzige unterstützte Basis.** Gepinnt auf
-    und getestet gegen StellarMate OS 2.3.0 (Arch Linux); das Setup-Skript warnt (fährt aber fort),
+    und getestet gegen StellarMate OS 2.4.0 (Arch Linux); das Setup-Skript warnt (fährt aber fort),
     falls deine SMOS-Version von diesem getesteten Pin abweicht. **Die Installation auf einem
     Stock-PiFinder-OS-Image wird nicht unterstützt** — die gesamte Existenzberechtigung dieses
     Projekts ist die StellarMate-Integration (INDI, KStars/Ekos, der Web Manager, die App), die ein
@@ -415,6 +415,7 @@ das zu wiederholen.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (Dev / Simulator) |
 |---|---|---|---|---|
+| 2.6.3 | 2.4.0 | ✅ getestet — echtes Update 2.3.0 → 2.4.0, Restore, Reboot von NVMe (siehe NVMe-Hinweis unter "SMOS-Updates"); Kamera-Hardwaretest steht aus | ⚠️ unter 2.4.0 nicht verifiziert (seit dem Update nicht erreichbar) | ✅ getestet — echtes Update 2.3.0 → 2.4.0 und Restore, Control Center, Mount Bridge gegen den PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ vollständig getestet | ✅ vollständig getestet | ✅ getestet — Installation, Control Center, Mount Bridge gegen den PiFinder Simulator (kein echtes Plate-Solving; siehe [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)) |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend | — |
 | 2.6.0 | 2.1.1 | ✅ getestet | ⚠️ seit dem OLED-Fix nicht erneut verifiziert (hardwarebasiert, sollte also übertragbar sein — siehe Zeile 2.2.1) | — |
