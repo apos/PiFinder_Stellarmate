@@ -3580,6 +3580,11 @@ def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float 
     Returns the parsed JSON dict, or None on any failure (unreachable, wrong
     password there too, older PFSM without this route, ...) - fails soft,
     same as every other unreachable-remote case already does."""
+    # The only caller validates already; checked again here so no unvalidated host can ever
+    # reach the URL below (CodeQL py/full-ssrf flagged this line after the port change).
+    if not _valid_pifinder_host(host) or not path.startswith("/"):
+        return None
+
     def _get(header: str | None, port: int):
         req = urllib.request.Request(f"http://{host}:{port}{path}")
         if header:
