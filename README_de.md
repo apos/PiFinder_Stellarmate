@@ -14,11 +14,11 @@
 >   **Multi-Point-Alignment** ist möglich.
 > * Eine grundlegende HowTo-/Bedienungsanleitung bzw. ein Video-Guide ist **noch nicht verfügbar**.
 >
-> **⚠️ Bekanntes Problem ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** Der
-> Port **8765** des Control Centers kollidiert mit dem neuen nativen MCP-Server in KStars/Ekos
-> (gleicher Default-Port). Bis das geändert ist, **den MCP-Server von Ekos auf einem PFSM-Gerät nicht
-> aktivieren — und Ekos' KI-Assistent „Stella" ist nicht nutzbar** (er nutzt denselben Port). Weitere
-> offene Punkte stehen im [GitHub-Projekt](https://github.com/users/apos/projects/15).
+> **Port-Änderung ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** v2.0.0/2.0.1
+> boten das Control Center auf Port **8765** an, der mit dem nativen MCP-Server (und dem KI-Assistenten
+> „Stella") in KStars/Ekos kollidiert. Es lauscht jetzt auf Port **8777** — Lesezeichen anpassen. Auf
+> einem Gerät mit 2.0.x den **MCP-Server von Ekos nicht aktivieren**. Weitere offene Punkte stehen im
+> [GitHub-Projekt](https://github.com/users/apos/projects/15).
 
 ## Zusammenfassung
 
@@ -63,7 +63,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 
 > ### ✅ **Aktuell gepinnte Versionen**
 >
-> * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.3.0** (Arch Linux) über `version.txt` /
+> * Gepinnt auf **PiFinder 2.6.3** auf **StellarMate OS 2.4.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
 >   `release`-Branches. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host —
 >   [Versionskompatibilität](#versionskompatibilität) hat die Details.
@@ -114,7 +114,7 @@ Netzwerkschnittstelle), und öffnet sie automatisch im Browser:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -224,7 +224,7 @@ Der Einrichtungsprozess ist bewusst einfach gehalten. Er führt dich durch eine 
 
 *   Ein Raspberry Pi 4 oder Pi 5 mit PiFinder-Hardware (Hat, Display, Kamera usw.).
 *   **Eine aktuelle StellarMate-OS-(SMOS-)Installation — die einzige unterstützte Basis.** Gepinnt auf
-    und getestet gegen StellarMate OS 2.3.0 (Arch Linux); das Setup-Skript warnt (fährt aber fort),
+    und getestet gegen StellarMate OS 2.4.0 (Arch Linux); das Setup-Skript warnt (fährt aber fort),
     falls deine SMOS-Version von diesem getesteten Pin abweicht. **Die Installation auf einem
     Stock-PiFinder-OS-Image wird nicht unterstützt** — die gesamte Existenzberechtigung dieses
     Projekts ist die StellarMate-Integration (INDI, KStars/Ekos, der Web Manager, die App), die ein
@@ -289,7 +289,7 @@ Gerät aus erreichbar ist:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -387,6 +387,8 @@ sudo reboot
 
 Dies stellt alles wieder her, was PiFinder benötigt: Pacman-Repos, Systempakete, Hardware-Gruppen, udev-Regeln, `/boot/config.txt`-Overlays, Swapfile und systemd-Dienste.
 
+Auf einem **Pi 4/Pi 5, der von NVMe/USB bootet** (Root-Label `SM_ROOT_NVM`/`SM_ROOT_NVE`, SD-Karte als Notfallsystem), kann ein SMOS-Update die Boot-Konfiguration auf `LABEL=SM_ROOT` zurücksetzen, das diese Platte nicht trägt - sie bootet dann nie wieder (gesehen bei 2.3.0 → 2.4.0, [#561](https://github.com/apos/PiFinder_Stellarmate/issues/561)). Das Setup installiert `smos-pre-reboot-fix.service`, das beim Reboot nach dem Update das bereitgestellte System korrigiert; `bin/smos-post-update.sh` ist das manuelle Gegenstück und - von der SD-Karte gebootet, mit angeschlossener Platte - das Reparaturwerkzeug (`--updatesd` aktualisiert die SD).
+
 Auf einem **Nicht-Pi-System (x86-SMOS)** — z. B. ein Control Host oder die UTM-Dev-VM — werden die Pi-spezifischen Schritte übersprungen; derselbe Befehl führt stattdessen den nicht-interaktiven Update-Pfad des Setups aus (`--action=update`, `--mode=full` oder `indi_only`, je nachdem, wie die Maschine installiert wurde). Das installiert die INDI-Treiber, den Control-Center-Dienst, die Hardware-Gruppen und den GSC-Katalog neu und stellt `gh` wieder her.
 
 ### Synchronisation von basic-memory / Claude-Kontext mit Nextcloud
@@ -413,6 +415,7 @@ das zu wiederholen.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (Dev / Simulator) |
 |---|---|---|---|---|
+| 2.6.3 | 2.4.0 | ✅ getestet — echtes Update 2.3.0 → 2.4.0, Restore, Reboot von NVMe (siehe NVMe-Hinweis unter "SMOS-Updates"); Kamera-Hardwaretest steht aus | ⚠️ unter 2.4.0 nicht verifiziert (seit dem Update nicht erreichbar) | ✅ getestet — echtes Update 2.3.0 → 2.4.0 und Restore, Control Center, Mount Bridge gegen den PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ vollständig getestet | ✅ vollständig getestet | ✅ getestet — Installation, Control Center, Mount Bridge gegen den PiFinder Simulator (kein echtes Plate-Solving; siehe [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)) |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend | — |
 | 2.6.0 | 2.1.1 | ✅ getestet | ⚠️ seit dem OLED-Fix nicht erneut verifiziert (hardwarebasiert, sollte also übertragbar sein — siehe Zeile 2.2.1) | — |
@@ -431,9 +434,6 @@ stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
   Coupling, Full Simulation, das Control Center) — v2.0.0 hat das meiste davon ausgeliefert (siehe
   `CHANGELOG.md`), im Feld getestet ist bisher aber nur der PiFinder-Host-Modus; der Control-Host-
   Modus muss noch durchgehend zuverlässig werden.
-- Den Port des Control Centers von 8765 wegverlegen, damit er nicht mehr mit dem nativen MCP-Server
-  und dem KI-Assistenten „Stella" von Ekos kollidiert
-  ([Issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
 - Eine grundlegende HowTo-/Bedienungsanleitung und ein Video-Guide.
 - Ausgewählte Änderungen zurück ins Upstream-Projekt [PiFinder](https://github.com/brickbots/PiFinder)
   spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:

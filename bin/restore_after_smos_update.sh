@@ -40,39 +40,50 @@ echo ""
 # pacman.conf with unusable ARM repo entries (found live 2026-09-06,
 # stellarmate-utm). get_hw_model() returns an empty string on non-Pi systems
 # (no /proc/device-tree/model at all) - those take the x86 path instead.
-restore_x86() {
-    echo "ℹ️  Non-Pi (x86) system detected - skipping the Pi-specific steps"
-    echo "    (ARM repos, config.txt overlays, swapfile, picamera2 patch)."
-    echo ""
-
+# The Control Center service, the INDI drivers, the guard unit and the SMOS
+# version record are (re)installed by the setup, not by the steps of the Pi
+# path below - so BOTH paths finish with its non-interactive update. It records
+# the SMOS version itself, and only after a run without CRITICAL WARNINGS.
+run_setup_update() {
     local mode="full"
     if [ ! -d "${python_venv}" ]; then
         mode="indi_only"
     fi
     echo "ℹ️  Install mode: ${mode}"
+    echo "🔧 Running the setup's non-interactive update (--mode=${mode}) ..."
+    bash "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" --action=update --mode="${mode}"
+}
 
-    # GitHub CLI: wiped by the update; not a runtime dependency, so best
-    # effort and non-fatal - same unlock/keyring/install/relock window the
-    # setup uses for its own packages (bin/os_detect.sh).
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "🔧 Restoring GitHub CLI (gh) ..."
+restore_x86() {
+    echo "ℹ️  Non-Pi (x86) system detected - skipping the Pi-specific steps"
+    echo "    (ARM repos, config.txt overlays, swapfile, picamera2 patch)."
+    echo ""
+
+    # GitHub CLI + rclone (basic-memory/Nextcloud sync): wiped by the update;
+    # neither is a runtime dependency, so best effort and non-fatal - same
+    # unlock/keyring/install/relock window the setup uses for its own
+    # packages (bin/os_detect.sh). The Pi path installs both above.
+    local dev_pkgs=()
+    command -v gh >/dev/null 2>&1 || dev_pkgs+=(github-cli)
+    command -v rclone >/dev/null 2>&1 || dev_pkgs+=(rclone)
+    if [ "${#dev_pkgs[@]}" -gt 0 ]; then
+        echo "🔧 Restoring dev tooling: ${dev_pkgs[*]} ..."
         # shellcheck disable=SC1091
         source "$(dirname "$0")/os_detect.sh"
         if os_pacman_has_atomic_updates_script && os_pacman_atomic_updates_disable; then
             sudo pacman-key --init
             sudo pacman-key --populate
             sudo pacman -Sy || true
-            sudo pacman -S --noconfirm --needed github-cli \
-                && echo "  ✅ gh (GitHub CLI) installed" \
-                || echo "  ⚠️  gh install failed/skipped (not required for PiFinder itself)."
+            sudo pacman -S --noconfirm --needed "${dev_pkgs[@]}" \
+                && echo "  ✅ ${dev_pkgs[*]} installed" \
+                || echo "  ⚠️  ${dev_pkgs[*]} install failed/skipped (not required for PiFinder itself)."
             os_pacman_atomic_updates_enable
         else
-            echo "  ⚠️  Could not unlock Atomic Updates - skipping gh (not required for PiFinder itself)."
+            echo "  ⚠️  Could not unlock Atomic Updates - skipping ${dev_pkgs[*]} (not required for PiFinder itself)."
         fi
     fi
 
-    echo "🔧 Running the setup's non-interactive update (--mode=${mode}) ..."
-    bash "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" --action=update --mode="${mode}"
+    run_setup_update
 }
 
 if [ -z "$(get_hw_model)" ]; then
@@ -321,6 +332,12 @@ fi
 # -------------------------------------------------------
 # Done
 # -------------------------------------------------------
+# Control Center, INDI drivers, guard unit and the recorded SMOS version come
+# from the setup update - recording the version here, as this path used to,
+# marked the restore as done while the Control Center and drivers were missing.
+echo ""
+echo "🔧 [9/9] Setup update (Control Center, INDI drivers, update guard) ..."
+run_setup_update
 echo ""
 echo "======================================================"
 echo "✅ Restore complete. Please reboot to verify:"

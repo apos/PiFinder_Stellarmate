@@ -1,0 +1,10 @@
+[Unit]
+Description=PFSM: offer the post-update restore after a SMOS update (acts only if the SMOS version changed and the Control Center is gone)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/PiFinder_Stellarmate/bin/smos_update_guard.py
+
+[Install]
+WantedBy=default.target

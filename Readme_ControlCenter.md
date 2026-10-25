@@ -47,7 +47,7 @@ development, checking whether the camera/IMU/GPS are actually detected independe
 PiFinder's own software believes, and rebooting/shutting down the Pi without SSH.
 
 It runs as a small, dependency-free Python web server (`gui_installer/server.py` +
-`gui_installer/status_page.html`) reachable at `http://<pi-address>:8765`, deliberately kept **stdlib
+`gui_installer/status_page.html`) reachable at `http://<pi-address>:8777`, deliberately kept **stdlib
 only** — its job includes bootstrapping the very venv/pip environment PiFinder itself needs, so it
 cannot depend on anything that environment would provide.
 
@@ -56,7 +56,7 @@ flowchart TB
     subgraph Browser
         UI["status_page.html<br/>(polls every 1-2s)"]
     end
-    subgraph "Pi (port 8765)"
+    subgraph "Pi (port 8777)"
         Server["server.py<br/>(http.server, stdlib only)"]
         Setup["pifinder_stellarmate_setup.sh<br/>(subprocess, streamed)"]
         FakeMode["test_tools/fake_mode.sh"]
@@ -334,7 +334,7 @@ browser automatically:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)

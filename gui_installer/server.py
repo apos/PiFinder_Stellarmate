@@ -33,7 +33,12 @@ import pam_auth
 import indi_client
 import webmanager_client
 
-PORT = 8765
+# Moved off 8765 (issue #481): KStars/Ekos's native MCP server (and its AI
+# assistant) default to 8765 too, so the two collided on any device running
+# both. LEGACY_PORT is only still used to reach a peer Control Center that has
+# not been updated yet (see _cc_proxy_get()).
+PORT = 8777
+LEGACY_PORT = 8765
 # Same account + mechanism PiFinder's own Remote login checks
 # (sys_utils.verify_password("stellarmate", password)) - one password to
 # remember for both. Only the page and state-changing actions require it;
@@ -44,6 +49,14 @@ AUTH_REALM = "PiFinder Setup"
 GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
+RESTORE_SCRIPT = REPO_ROOT / "bin" / "restore_after_smos_update.sh"
+# SMOS version at the last completed setup/restore (written by
+# bin/functions.sh's record_smos_version()); lives in /home, so it survives a
+# SMOS root reset. A different /etc/stellarmate/version means the update
+# wiped the root filesystem - see bin/smos_update_guard.py for the case where
+# this Control Center itself is gone.
+SMOS_VERSION_FILE = Path("/etc/stellarmate/version")
+SMOS_VERSION_RECORD_FILE = REPO_ROOT / ".smos_version_restored"
 PIFINDER_DIR = Path.home() / "PiFinder"
 PIFINDER_VENV_PY = PIFINDER_DIR / "python" / ".venv" / "bin" / "python3"
 # Installed by pifinder_stellarmate_setup.sh's "Configuring hardware &
@@ -302,7 +315,7 @@ _reboot_needed = None  # None = unknown yet, True/False once the run reports it
 # same technique PHASE_MARKER/REBOOT_MARKER above use.
 _had_critical_warnings = False
 CRITICAL_WARNINGS_MARKER = "CRITICAL WARNINGS"
-_last_action = None  # "fresh" | "reinstall" | "update"
+_last_action = None  # "fresh" | "reinstall" | "update" | "restore"
 _last_mode = "full"  # "full" | "indi_only" - selects PHASES vs PHASES_INDI_ONLY
 # True from the moment a successful setup-script run finishes until this
 # process itself gets killed by _restart_control_center() below - exposed via
@@ -3543,7 +3556,7 @@ def _startup_hardware_test(timeout=120, interval=2, extended_retry_interval=15):
 
 
 def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float = 5):
-    """GET another device's own Control Center (always port 8765) - category
+    """GET another device's own Control Center (PORT, falling back to LEGACY_PORT for a peer not yet updated) - category
     2b of docs/concepts/control_host_hardware_badges_mirroring.md. First
     forwards THIS request's own Authorization header unchanged (the original
     2026-09-12 decision: assume the same stellarmate account password across
@@ -3567,12 +3580,28 @@ def _cc_proxy_get(host: str, path: str, auth_header: str | None, timeout: float 
     Returns the parsed JSON dict, or None on any failure (unreachable, wrong
     password there too, older PFSM without this route, ...) - fails soft,
     same as every other unreachable-remote case already does."""
-    def _try(header: str | None):
-        req = urllib.request.Request(f"http://{host}:8765{path}")
+    # The only caller validates already; checked again here so no unvalidated host can ever
+    # reach the URL below (CodeQL py/full-ssrf flagged this line after the port change).
+    if not _valid_pifinder_host(host) or not path.startswith("/"):
+        return None
+
+    def _get(header: str | None, port: int):
+        req = urllib.request.Request(f"http://{host}:{port}{path}")
         if header:
             req.add_header("Authorization", header)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
+
+    def _try(header: str | None):
+        # A peer still on a pre-port-change PFSM listens on LEGACY_PORT only:
+        # fall back there only when nothing answers on PORT at all (a refused
+        # connection), never on an HTTP-level answer.
+        try:
+            return _get(header, PORT)
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, OSError):
+            return _get(header, LEGACY_PORT)
 
     try:
         return _try(auth_header)
@@ -4307,6 +4336,50 @@ def _current_pifinder_stellarmate_branch():
         return None
 
 
+def _read_first_line(path: Path):
+    try:
+        v = path.read_text().strip().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return None
+    return v or None
+
+
+def _nvme_system_info() -> dict:
+    """Is this device booted from a non-default-labelled root (the NVMe/USB
+    layout, label SM_ROOT_NVM)? A SMOS update can rewrite the boot
+    configuration to LABEL=SM_ROOT, which such a system cannot find (seen
+    2026-10-10, 2.3.0 -> 2.4.0): it then never boots again. Only a hint for
+    the warning card - the fix is bin/smos-post-update.sh (issue #561)."""
+    try:
+        src = subprocess.run(["findmnt", "-no", "SOURCE", "/"], capture_output=True, text=True, timeout=3).stdout.strip()
+        dev = src.split("[")[0]
+        label = subprocess.run(["lsblk", "-no", "LABEL", dev], capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return {"external_root": False, "root_label": None, "pre_reboot_hook": False}
+    hook = subprocess.run(["systemctl", "is-active", "smos-pre-reboot-fix.service"], capture_output=True, text=True, timeout=3).stdout.strip() == "active"
+    return {"external_root": label.startswith("SM_ROOT") and label != "SM_ROOT", "root_label": label or None, "pre_reboot_hook": hook}
+
+
+def _smos_update_info() -> dict:
+    """{current, recorded, pending}. A missing record (first start of a
+    Control Center that predates this check) is initialized silently with the
+    current version rather than raising a false alarm."""
+    current = _read_first_line(SMOS_VERSION_FILE)
+    recorded = _read_first_line(SMOS_VERSION_RECORD_FILE)
+    if current and not recorded:
+        try:
+            SMOS_VERSION_RECORD_FILE.write_text(current + "\n")
+            recorded = current
+        except OSError:
+            pass
+    return {
+        "current": current,
+        "recorded": recorded,
+        "pending": bool(current and recorded and current != recorded),
+        "nvme": _nvme_system_info(),
+    }
+
+
 def _start_run(action, branch=None, mode=None):
     global _running, _exit_code, _process, _lines, _phase_index, _reboot_needed, _last_action, _last_mode, _had_critical_warnings
     with _lock:
@@ -4328,10 +4401,13 @@ def _start_run(action, branch=None, mode=None):
         _had_critical_warnings = False
         _last_action = action
         _last_mode = mode or "full"
-        cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
-        if branch:
+        if action == "restore":
+            cmd = ["bash", str(RESTORE_SCRIPT)]
+        else:
+            cmd = ["bash", str(SETUP_SCRIPT), f"--action={action}"]
+        if action != "restore" and branch:
             cmd.append(f"--branch={branch}")
-        if mode and mode != "full":
+        if action != "restore" and mode and mode != "full":
             cmd.append(f"--mode={mode}")
         # PFSM_CC_MANAGED_RUN tells the script's own final "restart the
         # Control Center" line (see its own comment) that THIS run is being
@@ -4675,6 +4751,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/pifinder_welcome_red.png":
             self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
+            return
+
+        if parsed.path == "/api/smos_update_status":
+            self._send_json(_smos_update_info())
             return
 
         if parsed.path == "/state":
@@ -5355,6 +5435,10 @@ class Handler(BaseHTTPRequestHandler):
                     "phase_index": phase_index,
                     "phase_total": len(phases),
                     "phase_label": phases[phase_index] if phase_index >= 0 else None,
+                    # Same list /state sends - lets a page whose one-time
+                    # init fetch missed it (e.g. loaded while the server was
+                    # still coming up after a restart) recover its step list.
+                    "phases": phases,
                     "reboot_needed": reboot_needed,
                     "action": last_action,
                     "restarting": restarting,
@@ -5426,6 +5510,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _host_take_control(client_id)
             self._send_json({"success": True, "is_host": True})
+            return
+
+        if parsed.path == "/api/smos_post_update_restore":
+            # Same run machinery/terminal as Update; only offered while the
+            # SMOS version differs from the one recorded at the last
+            # completed setup/restore (the page shows the notice card).
+            if not _smos_update_info()["pending"]:
+                self._send_json({"started": False, "error": "No SMOS update is pending."}, status=409)
+                return
+            started, error = _start_run("restore")
+            self._send_json({"started": started, "error": error})
             return
 
         if parsed.path == "/start":

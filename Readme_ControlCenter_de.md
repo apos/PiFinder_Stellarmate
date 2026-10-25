@@ -49,7 +49,7 @@ werden, unabhängig davon, was PiFinders eigene Software glaubt; den Pi rebooten
 SSH.
 
 Es läuft als kleiner, abhängigkeitsfreier Python-Webserver (`gui_installer/server.py` +
-`gui_installer/status_page.html`), erreichbar unter `http://<pi-adresse>:8765`, bewusst **nur mit
+`gui_installer/status_page.html`), erreichbar unter `http://<pi-adresse>:8777`, bewusst **nur mit
 stdlib** gehalten — seine Aufgabe umfasst das Bootstrappen genau der venv-/pip-Umgebung, die
 PiFinder selbst braucht, es kann also von nichts abhängen, das diese Umgebung erst bereitstellen
 würde.
@@ -59,7 +59,7 @@ flowchart TB
     subgraph Browser
         UI["status_page.html<br/>(pollt alle 1-2s)"]
     end
-    subgraph "Pi (Port 8765)"
+    subgraph "Pi (Port 8777)"
         Server["server.py<br/>(http.server, nur stdlib)"]
         Setup["pifinder_stellarmate_setup.sh<br/>(Subprozess, gestreamt)"]
         FakeMode["test_tools/fake_mode.sh"]
@@ -345,7 +345,7 @@ Netzwerkschnittstelle), und öffnet sie automatisch im Browser:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)

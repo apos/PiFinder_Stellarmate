@@ -10,8 +10,8 @@ pifinder_stellarmate_version_stable="2.6.3"
 pifinder_stellarmate_version_testing="2.6.1"
 
 # StellarMate OS version this script was tested with (rolling release — changes matter!)
-smos_version_stable="2.3.0"
-smos_version_testing="2.2.1"
+smos_version_stable="2.4.0"
+smos_version_testing="2.3.0"
 
 
 ############################################################
@@ -147,6 +147,17 @@ if [ "$MODE" = "indi_only" ]; then
     fi
     echo "##############################################"
     echo "###REBOOT_NEEDED### false"
+    # The indi_only path (e.g. a Control host on SMOS x86) exits here, never
+    # reaching the "Setup complete" block below - it needs the post-SMOS-
+    # update guard and the recorded SMOS version just the same.
+    install_smos_update_guard
+    install_smos_post_update_link
+    install_smos_pre_reboot_hook || add_warning "Could not install the SMOS pre-reboot hook (smos-pre-reboot-fix.service) - run smos-post-update.sh manually after a SMOS update, before rebooting (issue #561)."
+    if [ ! -s "$warnings_file" ]; then
+        record_smos_version
+    else
+        echo "ℹ️  CRITICAL WARNINGS present - SMOS version not recorded, so the post-update notice stays until a clean run."
+    fi
     rm -f "$warnings_file"
     exit 0
 fi
@@ -1070,6 +1081,12 @@ sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-fake-mode-autostart
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-control-center.service /etc/systemd/system/pifinder-control-center.service
 sudo cp ${pifinder_stellarmate_dir}/pi_config_files/pifinder-numpad-bridge.service /etc/systemd/system/pifinder-numpad-bridge.service
 
+# Post-SMOS-update guard (user unit - see install_smos_update_guard() in
+# bin/functions.sh).
+install_smos_update_guard
+install_smos_post_update_link
+install_smos_pre_reboot_hook || add_warning "Could not install the SMOS pre-reboot hook (smos-pre-reboot-fix.service) - run smos-post-update.sh manually after a SMOS update, before rebooting (issue #561)."
+
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 
@@ -1205,7 +1222,7 @@ echo ""
 # just started and may not have bound its port yet.
 _cc_state=""
 for _ in $(seq 1 20); do
-    _cc_state="$(curl -s -m 2 "http://localhost:8765/state" 2>/dev/null)"
+    _cc_state="$(curl -s -m 2 "http://localhost:8777/state" 2>/dev/null)"
     [ -n "$_cc_state" ] && break
     sleep 0.25
 done
@@ -1216,7 +1233,7 @@ try:
     data = json.loads(sys.argv[1])
 except Exception:
     sys.exit(0)
-port = data.get('port', 8765)
+port = data.get('port', 8777)
 ips = data.get('ips') or ['localhost']
 print('  Control Center reachable at:')
 for ip in ips:
@@ -1228,9 +1245,20 @@ else
     echo "     journalctl -u pifinder-control-center -n 50"
 fi
 echo "##############################################"
+# Only a clean run counts as "restored against this SMOS version" - with
+# CRITICAL WARNINGS (e.g. a driver build failed) the post-update notice must
+# stay so the restore can be re-run.
+_setup_clean=1
+[ -s "$warnings_file" ] && _setup_clean=0
 rm -f "$warnings_file"
 
 phase "Setup complete"
+
+if [ "$_setup_clean" = 1 ]; then
+    record_smos_version
+else
+    echo "ℹ️  CRITICAL WARNINGS present - SMOS version not recorded, so the post-update notice stays until a clean run."
+fi
 
 # Restart the Control Center now that every write to its stdout above is
 # already done - guarantees a plain terminal run (not through the GUI's own

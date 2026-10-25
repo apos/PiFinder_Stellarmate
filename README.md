@@ -14,11 +14,11 @@
 >   Alignment** is possible.
 > * A basic HowTo / usage description or video guide is **not yet available**.
 >
-> **⚠️ Known issue ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** the Control
-> Center's port **8765** collides with the new native MCP server in KStars/Ekos (same default port).
-> Until this is changed, **do not enable Ekos's MCP server on a PFSM device — and Ekos's AI assistant
-> "Stella" is not usable** (it relies on that same port). Other open issues are tracked in the
-> [GitHub Project](https://github.com/users/apos/projects/15).
+> **Port change ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** v2.0.0/2.0.1
+> served the Control Center on port **8765**, which collides with the native MCP server (and AI
+> assistant "Stella") in KStars/Ekos. It now listens on port **8777** — update your bookmarks. On a
+> device still running 2.0.x, **do not enable Ekos's MCP server**. Other open issues are tracked in
+> the [GitHub Project](https://github.com/users/apos/projects/15).
 
 ## Summary
 
@@ -59,7 +59,7 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 
 > ### ✅ **Current Pinned Versions**
 >
-> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.3.0** (Arch Linux) via `version.txt` /
+> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.4.0** (Arch Linux) via `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — a fixed release tag, not the upstream `release` branch's moving
 >   HEAD. Fully tested on Pi 4, Pi 5, and the x86 dev/simulator host —
 >   [Version Compatibility](#version-compatibility) has the details.
@@ -108,7 +108,7 @@ opens it in a browser automatically:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -214,7 +214,7 @@ The setup process is designed to be straightforward. It will guide you through a
 
 *   A Raspberry Pi 4 or Pi 5 with PiFinder hardware (hat, screen, camera, etc.).
 *   **A current StellarMate OS (SMOS) installation — the only supported base.** Pinned to and tested
-    against StellarMate OS 2.3.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
+    against StellarMate OS 2.4.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
     version differs from this tested pin. **Installing onto a stock PiFinder OS image is not
     supported** — this project's entire premise is the StellarMate integration (INDI, KStars/Ekos,
     the Web Manager, the app), none of which a stock PiFinder OS provides, so there would be nothing
@@ -279,7 +279,7 @@ device:
 Starting setup GUI webserver...
 Webserver started.
    Setup GUI reachable at:
-     http://192.168.1.23:8765/
+     http://192.168.1.23:8777/
    Login: any username, password = your stellarmate system password
    (protects the page itself plus Reinstall/Update/Reboot; /state,
    /log and /shutdown stay reachable without login)
@@ -378,6 +378,8 @@ sudo reboot
 
 This restores everything PiFinder needs: pacman repos, system packages, hardware groups, udev rules, `/boot/config.txt` overlays, swapfile, and systemd services.
 
+On a **Pi 4/Pi 5 that boots from NVMe/USB** (root label `SM_ROOT_NVM`/`SM_ROOT_NVE`, SD card kept as emergency system), a SMOS update can rewrite the boot configuration to `LABEL=SM_ROOT`, which that disk does not carry, so it never boots again (seen 2.3.0 → 2.4.0, [#561](https://github.com/apos/PiFinder_Stellarmate/issues/561)). The setup installs `smos-pre-reboot-fix.service`, which corrects the staged system when you reboot after the update; `bin/smos-post-update.sh` is the manual equivalent and, booted from the SD card with the disk attached, the repair tool (`--updatesd` refreshes the SD).
+
 On a **non-Pi (x86) SMOS** — e.g. a Control host or the UTM dev VM — the Pi-specific steps are skipped; the same command instead runs the setup's non-interactive update path (`--action=update`, `--mode=full` or `indi_only` depending on how the machine was installed), which reinstalls the INDI drivers, the Control Center service, hardware groups and the GSC catalog, and restores `gh`.
 
 ### Syncing basic-memory / Claude context to Nextcloud
@@ -403,6 +405,7 @@ project has been tested against. Other docs in this repo link here rather than r
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (dev / simulator) |
 |---|---|---|---|---|
+| 2.6.3 | 2.4.0 | ✅ tested — real 2.3.0 → 2.4.0 update, restore, reboot from NVMe (see the NVMe note in "SMOS Updates"); camera hardware test pending | ⚠️ not verified on 2.4.0 (unreachable since the update) | ✅ tested — real 2.3.0 → 2.4.0 update and restore, Control Center, Mount Bridge vs. the PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ fully tested | ✅ fully tested | ✅ tested — install, Control Center, Mount Bridge vs. the PiFinder Simulator (no real plate-solving; see [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)) |
 | 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending | — |
 | 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) | — |
@@ -420,9 +423,6 @@ Tracked, prioritized work — issues, test cases, next steps — lives in the
 - Harden and test the current feature set end-to-end under real skies (Mount Bridge coupling, Full
   Simulation, the Control Center) — v2.0.0 shipped the bulk of it (see `CHANGELOG.md`), but only
   PiFinder host mode has been field-tested so far; Control host mode needs to become fully reliable.
-- Change the Control Center's port away from 8765 so it no longer collides with Ekos's native MCP
-  server and AI assistant "Stella"
-  ([issue #481](https://github.com/apos/PiFinder_Stellarmate/issues/481)).
 - A basic HowTo / usage description and a video guide.
 - Contribute selected changes back upstream to [PiFinder](https://github.com/brickbots/PiFinder)
   (which patches — still to be decided) — process and candidate list:
