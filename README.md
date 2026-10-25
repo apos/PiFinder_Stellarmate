@@ -59,7 +59,7 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 
 > ### ✅ **Current Pinned Versions**
 >
-> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.3.0** (Arch Linux) via `version.txt` /
+> * Pinned to **PiFinder 2.6.3** on **StellarMate OS 2.4.0** (Arch Linux) via `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — a fixed release tag, not the upstream `release` branch's moving
 >   HEAD. Fully tested on Pi 4, Pi 5, and the x86 dev/simulator host —
 >   [Version Compatibility](#version-compatibility) has the details.
@@ -214,7 +214,7 @@ The setup process is designed to be straightforward. It will guide you through a
 
 *   A Raspberry Pi 4 or Pi 5 with PiFinder hardware (hat, screen, camera, etc.).
 *   **A current StellarMate OS (SMOS) installation — the only supported base.** Pinned to and tested
-    against StellarMate OS 2.3.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
+    against StellarMate OS 2.4.0 (Arch Linux); the setup script warns (but proceeds) if your SMOS
     version differs from this tested pin. **Installing onto a stock PiFinder OS image is not
     supported** — this project's entire premise is the StellarMate integration (INDI, KStars/Ekos,
     the Web Manager, the app), none of which a stock PiFinder OS provides, so there would be nothing
@@ -405,6 +405,7 @@ project has been tested against. Other docs in this repo link here rather than r
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (dev / simulator) |
 |---|---|---|---|---|
+| 2.6.3 | 2.4.0 | ✅ tested — real 2.3.0 → 2.4.0 update, restore, reboot from NVMe (see the NVMe note in "SMOS Updates"); camera hardware test pending | ⚠️ not verified on 2.4.0 (unreachable since the update) | ✅ tested — real 2.3.0 → 2.4.0 update and restore, Control Center, Mount Bridge vs. the PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ fully tested | ✅ fully tested | ✅ tested — install, Control Center, Mount Bridge vs. the PiFinder Simulator (no real plate-solving; see [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)) |
 | 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending | — |
 | 2.6.0 | 2.1.1 | ✅ tested | ⚠️ not re-verified since the OLED fix (hardware-based, so expected to carry over — see 2.2.1 row) | — |

@@ -5,11 +5,25 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-25
+
+> Port and update-safety release, built after the real SMOS 2.3.0 → 2.4.0 update (UTM and Pi 4): the Control Center
+> moved from port 8765 to **8777** (Ekos's native MCP server / "Stella" uses 8765, #481); a SMOS update notice with a
+> one-click post-update restore plus a guard for a wiped Control Center; the boot configuration of NVMe/USB-boot devices
+> is fixed automatically before the reboot (#561); driver installs and restores no longer fail intermittently.
+> Not verified on a Pi 5 (unreachable since the update) and camera hardware on the Pi 4 is still to be tested.
+> Existing bookmarks to `:8765` need updating.
+
 ### Added
 
 - Automatic fix before the reboot after a SMOS update (#561): `bin/smos-post-update.sh --pre-reboot`, run by `smos-pre-reboot-fix.service` when the system shuts down, corrects the boot configuration of the newly staged `@system-*` subvolume (LABEL -> UUID in `cmdline.txt`, `fstab` and the cmdline template) and restores the WireGuard unit offline - only on devices whose root disk carries the dual-boot labels, never fails the shutdown, mounts nothing permanently. The setup installs the hook there, and replaces `~/bin/smos-post-update.sh` (which had gone stale) by a symlink to the repo script
 - `test_tools/test_smos_post_update.sh`: loop-device test of the pre-reboot hook and the SD-rescue run (29 checks: staged vs running system, idempotence, nothing staged, non-dual-boot label, never-fail, exact label match, no leftover mounts)
 - Control Center warning on devices that boot from NVMe/USB (root label `SM_ROOT*` but not `SM_ROOT`): a SMOS update can rewrite `cmdline.txt`/`fstab` to `LABEL=SM_ROOT`, which such a disk does not carry, so the device never boots again unless `bin/smos-post-update.sh` ran before the reboot (seen on a Pi 4, SMOS 2.3.0 -> 2.4.0, #561). The card names the script and `--updatesd`, and the SD/USB rescue path
+- SMOS update notice with a one-click post-update restore (yellow card "SMOS was updated (X -> Y)" + "Run post-update restore" button). The setup/restore records the SMOS version it completed against (`.smos_version_restored`, in the repo checkout under /home, which a SMOS root reset leaves alone); when `/etc/stellarmate/version` differs, the Control Center shows the card and the button runs `bin/restore_after_smos_update.sh` through the normal run/terminal machinery (`GET /api/smos_update_status`, `POST /api/smos_post_update_restore`). Because the update also removes the Control Center service itself, a small user-level guard unit (`pifinder-smos-update-guard.service`, `bin/smos_update_guard.py`, installed under `~/.config/systemd/user` by the setup) serves the same notice on the Control Center port when the version changed and the Control Center is gone, runs the restore on request (password-protected) and hands the port back
+
+### Changed
+
+- The Control Center now listens on port **8777** instead of 8765 (#481): KStars/Ekos's new native MCP server, and its AI assistant ("Stella"), default to 8765 too, so the two collided on any device running both. All references were migrated (server, launcher, setup script, PiFinder's PFSM page link, docs). Another Control Center that has not been updated yet is still reached on the legacy port as a fallback. Existing bookmarks to `:8765` need updating
 
 ### Fixed
 
@@ -24,14 +38,6 @@ All notable changes to this project are documented in this file. Format loosely 
 - The SMOS post-update notice's "Run post-update restore" button stayed clickable while the restore (or any install/update run) was already running; it is now disabled and relabelled "Restore running…" for the duration
 - The recorded SMOS version (post-update notice) is now also updated by the `--mode=indi_only` setup path - which exits before the final "Setup complete" block and therefore never recorded it, leaving a Control host on SMOS x86 with a notice that never went away - and only after a run without CRITICAL WARNINGS, so a failed driver build keeps the notice. The post-update guard unit is installed in `indi_only` mode too (it was only installed by the full path)
 - `bin/restore_after_smos_update.sh` on x86 now also restores `rclone` (basic-memory/Nextcloud sync) next to `gh`; only the Pi path used to install it, so after a SMOS update on the UTM the sync silently stopped ("rclone not found")
-
-### Added
-
-- SMOS update notice with a one-click post-update restore (yellow card "SMOS was updated (X -> Y)" + "Run post-update restore" button). The setup/restore records the SMOS version it completed against (`.smos_version_restored`, in the repo checkout under /home, which a SMOS root reset leaves alone); when `/etc/stellarmate/version` differs, the Control Center shows the card and the button runs `bin/restore_after_smos_update.sh` through the normal run/terminal machinery (`GET /api/smos_update_status`, `POST /api/smos_post_update_restore`). Because the update also removes the Control Center service itself, a small user-level guard unit (`pifinder-smos-update-guard.service`, `bin/smos_update_guard.py`, installed under `~/.config/systemd/user` by the setup) serves the same notice on the Control Center port when the version changed and the Control Center is gone, runs the restore on request (password-protected) and hands the port back
-
-### Changed
-
-- The Control Center now listens on port **8777** instead of 8765 (#481): KStars/Ekos's new native MCP server, and its AI assistant ("Stella"), default to 8765 too, so the two collided on any device running both. All references were migrated (server, launcher, setup script, PiFinder's PFSM page link, docs). Another Control Center that has not been updated yet is still reached on the legacy port as a fallback. Existing bookmarks to `:8765` need updating
 
 ## [2.0.1] - 2026-10-10
 
