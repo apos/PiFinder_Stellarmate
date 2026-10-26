@@ -31,13 +31,16 @@ Install-or-Update tile and which can also be run by hand. Around it sit:
 
 The problem this concept addresses is not that one of these is broken. It is that **no single document says how they
 fit together**, and the facts are spread over this repository and about twenty notes of the maintainer's notebook.
-Two examples of what that costs, both found while writing this chapter:
+Two examples of what that costs, both found while writing this chapter (the second needs a check on a device before anyone changes anything):
 
-- The PiFinder pin is set in the setup script, **written to `version.txt` by that same script on every run**, and
-  then **read back from `version.txt` by the patch script** to decide which diffs apply. `version.txt` is therefore an
-  output *and* an input; nothing in the repository says so outside code comments.
-- The three post-checkout copy lists (files from `src_pifinder/` into the PiFinder checkout) appear **three times** in
-  the setup script (fresh install, reinstall, update). Adding a file in one place and not the others is easy.
+- The PiFinder pin is set in the setup script, **written to `version.txt` by that same script on every run**, and then **read back from
+  `version.txt` by the patch script** to decide which diffs apply. `version.txt` is committed with every bump (see `git log`) and the
+  readmes point to it, so this is probably deliberate; but the patch script depends on that rewrite having happened, and nothing
+  outside code comments says so.
+- The setup script copies the files from `src_pifinder/` (the `/smos` page template, its screenshots, the `pifinder-remote` skill,
+  `gps_stellarmate.py`) into the PiFinder checkout **in the reinstall and the update branch, not in the fresh-install branch**.
+  In the fresh-install branch only `gps_stellarmate.py` arrives (copied by the patch script). Whether a true fresh install is
+  therefore missing `smos.html` is **not verified**; it needs one real fresh install (chapter 6, gap 2).
 
 ## 2. The lifecycle stages (verified 2026-10-26)
 
@@ -64,9 +67,9 @@ run.
 | Fact | Source | Used by | Maintained |
 |---|---|---|---|
 | PiFinder version that is installed | `pifinder_stellarmate_version_stable` (setup script) | clone/checkout tag; written to `version.txt` | by hand, on a bump |
-| PiFinder version "actually tested" | `pifinder_stellarmate_version_testing` (2.6.1) | **nothing**: defined, not read by any script (checked with `grep`) | by hand, stale in practice |
+| PiFinder version "actually tested" | `pifinder_stellarmate_version_testing` (2.6.1) | **no code**: not read by any script, the Control Center or a test (`grep` over the repository); it stays as a note in the header | by hand; looks stale |
 | SMOS version tested against | `smos_version_stable` (2.4.0) | the SMOS check at the start | by hand |
-| the older SMOS version | `smos_version_testing` (2.3.0) | **nothing**: defined, not read by any script | by hand, stale in practice |
+| the older SMOS version | `smos_version_testing` (2.3.0) | **no code**, same as above | by hand; looks stale |
 | PiFinder version seen by the patch script | `version.txt` (written by the setup script) | `should_apply_patch` per diff | generated |
 | Which combinations were tested on which Pi | the table in `README.md#version-compatibility` | readers | by hand |
 | Pinned packages | see chapter 5 | the setup script | by hand, in code and comments |
@@ -74,7 +77,10 @@ run.
 Each diff is applied only if three conditions match: the PiFinder version, the Pi model (`P4`, `P5`) and the OS
 (`should_apply_patch`; `general` means "any"). A new PiFinder release therefore needs, in this order: the pin bumped,
 the diffs checked against the new files (a failing hunk is reported, not hidden), the matrix updated after a real test
-on the devices. **This order is not written down anywhere as a procedure** — it is spread over comments and notes.
+on the devices. The procedure **is** written down: `CONTRIBUTING.md` ("Branch model") defines an `alpha` integration branch for exactly this, with the
+acceptance test (patches apply, both INDI drivers build, a full `bin/simulate_fresh_install.sh --mode=fresh` plus the setup plus a
+cold-boot reboot pass cleanly, see `Readme_UTM_dev_X86.md`). What is *not* written down is the last step of the order above: updating the
+README matrix after the device tests, and the clean-up of stale pins.
 
 **Proposal (not built).** One manifest file in the repository (`versions.env` or similar) holding the pins; the setup
 script, the patch script, the README matrix check and the self-check of chapter 8 read it; `version.txt` is then a
@@ -115,16 +121,27 @@ version and, for the venv, to a package version (hence the `picamera2==0.3.37` p
 
 ## 6. What is missing (verified gaps)
 
-1. **No functional check after installation or update.** The run ends with a summary of versions, the warnings, and a
-   probe whether the Control Center answers. Nothing asks the questions that matter: does `pifinder.service` run, does
+1. **No functional check built into the installation or the update.** The run ends with a summary of versions, the warnings, and a
+   probe whether the Control Center answers. Nothing in the setup asks the questions that matter: does `pifinder.service` run, does
    PiFinder's own API answer, are the three INDI drivers in the catalog and loadable, are all patches applied, do the
-   venv packages import, does the hardware answer (on a Pi)? The Control Center's "Test Hardware" does part of this, but only on
-   demand and only for the hardware. This is the largest gap; chapter 8 proposes the check.
-2. **The post-checkout copy lists exist three times** (fresh install, reinstall, update) in the setup script.
+   venv packages import? The Control Center has pieces of this (the status badges, the readiness checklist, the hardware test), but they
+   are not part of the setup's result. `help.html` says "Test Hardware" runs automatically once when the Control Center starts; the
+   code shows the button and the request handler but **no automatic call** (checked in `status_page.html` and `server.py`), so
+   either the help text is stale or the call is indirect. This is the largest gap; chapter 8 proposes one common check.
+2. **The post-checkout copy list exists twice, and the fresh-install branch has none.** Reinstall and update copy five groups of files;
+   a fresh install relies on the patch script, which only copies `gps_stellarmate.py`. `diffs/server_py.diff` references the
+   template `smos.html` without creating it. **To verify before any change:** one real fresh install (`bin/simulate_fresh_install.sh
+   --mode=fresh` on the UTM, as `CONTRIBUTING.md` already requires for a version bump), then look for `smos.html`, the screenshots and
+   the skill. If they are missing, the fix is one shared function; if the page works anyway, find out why before touching it.
 3. **The version pins have no single source**, and two of them (`*_testing`) are dead variables (chapter 3).
-4. **The update path for a new PiFinder version is not written down as a procedure** (chapter 3).
+4. **The step "update the README matrix and drop stale pins" after a version bump is not part of the written procedure**
+   (`CONTRIBUTING.md` covers the branch model and the acceptance test; chapter 3).
 5. **Documentation is spread** over this repository and a maintainer notebook with no entry point (chapter 9).
-6. **SMOS updates started outside PFSM are only reacted to** (the notice card, the hook); chapter 7 closes this for updates
+6. **Legacy scripts that contradict the current rules are still in `bin/`** (appendix, chapter 11): one commits everything
+   on `main`, one resets PiFinder to upstream's moving `release` branch instead of the pinned tag, two carry stock-PiFinder paths.
+7. **`test_tools/` is not only tests.** The Control Center and a systemd unit run files from it (`fake_mode.sh`,
+   `fb_keyboard_bridge.py`, `fb_screen_mirror.py`, both injectors); renaming or moving the folder as "just test code" would break the product.
+8. **SMOS updates started outside PFSM are only reacted to** (the notice card, the hook); chapter 7 closes this for updates
    started from the Control Center.
 
 ## 7. SMOS update from the Control Center
@@ -379,6 +396,14 @@ setup keeps its CRITICAL-WARNINGS logic; the self-check adds what that logic can
 | **The maintainer's notebook** (`basic-memory`) | the *runbook and history*: step-by-step operating procedure per device, test campaigns, incident notes, session start-ups, decisions in progress; **one entry note** ("lifecycle map") that lists every stage with its Git owner and its notes | fast-moving, device-specific, not for users |
 | **The code** | the self-check (chapter 8), the version manifest (chapter 3), the tests | a document can drift, an executed check cannot |
 
+**Two lifecycles, not one.** Everything above is the **product lifecycle**: what runs on a user's device. The **development
+lifecycle** (branch, pull request into `dev`, release to `main`, the test levels, simulated installs, the UTM dev machine,
+the Git rules) is a second one. Today its principles are split between `CONTRIBUTING.md` (submodule setup, running the bats suite),
+`docs/concepts/setup_script_test_suite.md`, and the maintainer's notebook (Git workflow, release workflow, test method). Proposal:
+the *principles* go into a "Development lifecycle" section of `CONTRIBUTING.md` (branch model, "PR into `dev`, never straight to
+`main`", the release steps, the three test levels: bats for pure logic, loop-device tests, live tests on the devices), the *procedure
+and history* stay in the notebook, and the entry note there lists both lifecycles. Scripts are classed accordingly in chapter 11.
+
 Anything a **user** needs in order to update safely (what to run, what to expect, what to do when it fails) belongs in the
 README and the Control Center, never only in the notebook.
 
@@ -402,3 +427,56 @@ Open questions:
    (`/home/stellarmate/PiFinder_Stellarmate`, like `.smos_version_restored`, is the obvious place).
 6. Whether `POST /api/system/reboot` or `systemctl reboot` is the right reboot for the guarded update; the hook only helps for the latter.
 7. Whether the update type of a software upgrade may be chosen by the user or is always "all".
+
+## 11. Appendix: inventory of scripts and their class (verified 2026-10-26)
+
+"Called by" was checked with `grep` over the repository (without the PiFinder submodule, vendored code, the changelog and
+`docs/`). *Product* = runs on a user's device as part of the lifecycle of chapters 1–7. *Dev* = maintainer or contributor tooling.
+*UTM* = only for the x86 development VM. *Legacy* = not called by anything and, in the cases named, contradicting a rule that
+holds today. Nothing here has been removed. **Never change a running system on the strength of this table:** each row marked as a
+proposal needs a check on a device first, and the owner may keep a script for a reason that is not written down (a manual helper,
+a recovery path). The clean-up is tracked in the issue linked from the pull request, one change per finding.
+
+### Shared library (used by almost everything)
+
+| File | What it is |
+|---|---|
+| `bin/functions.sh` | sourced by the setup script and most of `bin/`. Holds the **paths** (`pifinder_home`, `pifinder_stellarmate_dir`, `python_venv`, `pifinder_data_dir`, the KStars Flatpak config path), the **warning channel** (`add_warning`), **venv helpers** (`is_venv_active`, `check_venv_exists`, `create_venv`), `get_hw_model`, `stop_fake_mode_if_running`, `stop_indi_driver_and_wait`, `apply_patch_or_warn`, `install_requirements`, and the **post-update installers** (`record_smos_version`, `install_smos_update_guard`, `install_smos_post_update_link`, `install_smos_pre_reboot_hook`). Also seven older helpers inherited from the stock PiFinder setup (`insert_lines_after_search`, `create_dir_file_and_insert_lines`, `comment_out_line`, `comment_out_line_awk`, `append_line_to_file`, `check_line_exists`, `check_user_exists`) that **no file in the repository calls** (`grep`, only their definitions remain). It is the one file where a change reaches every stage; it has no tests, so removing the dead helpers needs at least a syntax and source check on each device type first. |
+| `bin/os_detect.sh` | package-manager abstraction (pacman, apt, nix), the Atomic Updates unlock/relock; bats-tested |
+| `bin/version_compare.sh` | `version_gt`, `version_eq`; bats-tested |
+
+### Product
+
+| Stage | Files | Called by |
+|---|---|---|
+| S0 | `bin/self_update.sh`, `bin/switch_branch.sh` | setup script, Control Center, `launch_setup_gui.sh` |
+| S1, S4 | `pifinder_stellarmate_setup.sh`, `bin/build_and_install_indi_drivers.sh`, `bin/build_indi_driver.sh`, `build_indi_bridge.sh`, `build_indi_simulator.sh`, `build_indi_onstep_fix.sh` | the setup script and the Control Center; the single `build_indi_*` scripts are also the documented manual rebuild |
+| S2 | `bin/patch_PiFinder_installation_files.sh`, `diffs/`, `src_pifinder/` | setup script |
+| S2, S3 | `pifinder_update.sh`, `pifinder_post_update.sh` (repository root) | copied by the patch script into `~/PiFinder` in place of PiFinder's own (the originals are kept as `*.before.stellarmate`). **`pifinder_update.sh` has `/home/pifinder/...` paths and does `git checkout release; git pull`**. PiFinder's own `sys_utils.update_software()` still calls `/home/pifinder/PiFinder/pifinder_update.sh` (also in the installed copy), so on SMOS (user `stellarmate`) that menu path points nowhere. Probably left over from the port from Raspberry Pi OS; **no change recommended without checking what the menu entry does today**. |
+| S3, S4 | `bin/package.list`, `bin/requirements_additional.txt`, `packages/` | setup and patch scripts |
+| S4 | `bin/pifinder_pre_start.sh` (WirePlumber, groups, PWM, swap) | setup script, `pifinder-setup.service` |
+| S4 | `bin/display_off.py`, `bin/lcd_dev_mode_autostart.sh`, `pi_config_files/*.service` | the units; the LCD script is for the optional external SPI display |
+| S4 (optional hardware) and Control Center | `test_tools/fake_mode.sh`, `fb_keyboard_bridge.py`, `fb_screen_mirror.py`, `pifinder_truth_injector.py`, `pifinder_imu_injector.py`, `keypad_gpio_matrix_test.py` | the Control Center and `pifinder-numpad-bridge.service` — **product code that lives in a folder called `test_tools/`** |
+| S5 | `bin/restore_after_smos_update.sh`, `bin/smos-post-update.sh`, `bin/smos_update_guard.py`, `pi_config_files/smos-pre-reboot-fix.service`, `pi_config_files/pifinder-smos-update-guard.service`, `bin/smos_update_state.py` | Control Center, the units, the user |
+| Control Center | `gui_installer/` (`server.py`, `status_page.html`, `webmanager_client.py`, `indi_client.py`, `pam_auth.py`, `launch_setup_gui.sh`) | `pifinder-control-center.service` |
+| S7 | `bin/uninstall_pifinder_stellarmate.sh` | setup script, Control Center |
+
+### Dev and UTM
+
+| Class | Files | Note |
+|---|---|---|
+| Dev: tests | `bin/tests/` (bats), `test_tools/test_smos_post_update.sh`, `test_tools/test.md`, `test_tools/TF-*.md` | the bats suite covers only pure logic (chapter 6, `setup_script_test_suite.md`) |
+| Dev: simulated install | `bin/simulate_fresh_install.sh` | referenced from `CONTRIBUTING.md` |
+| Dev: test harnesses | the other `test_tools/*.py` (`align_sync_test.py`, `drift_test_logger.py`, `goto_hold_verify.py`, `pifinder_pushto_stress_test.py`, `tracking_toggle_stress_test.py`, …) | not called by the product |
+| Dev: documents | `docs/presentations/` build scripts | not part of the lifecycle |
+| UTM | `bin/utm_cleanup_stray_sddm_sessions.sh`, `bin/utm_fix_utm_apple_silicon_host_pause_issues.sh`, `bin/utm_fix_display_setup_drm_race.sh` | a SMOS update resets `/etc`, so they must run again afterwards; `restore_after_smos_update.sh` re-applies the display fix on a VM only |
+
+### Legacy (proposal for a separate clean-up)
+
+| File | Why |
+|---|---|
+| `bin/git_commit_and_push_all_from_main_to_dev_and_main` | not called by anything and **mentioned in no document, no note**; runs `git add -A` and commits on `main`, then merges `main` into `dev`. This is the opposite of the current rule (every change through a branch and a pull request into `dev`, `main` only by a release). |
+| `bin/update_pifinder_repo.sh` | not called by anything; `git reset --hard origin/release` on `~/PiFinder` installs upstream's moving release head, which contradicts the pin (chapter 3); hard-coded path |
+| `bin/00_delete_python_cache_sh` | not called, no `.sh` suffix, `/home/pifinder` paths from the stock-PiFinder era |
+| `bin/00_restart_pifinder_service_and_delete_cache.sh` | not called; a developer convenience with a hard-coded `/home/stellarmate`; could move to `test_tools/` or be dropped |
+| `tmp/pos_server.py` | tracked file in a `tmp/` folder, added 2025-11-17; no script references this path (the product uses the PiFinder checkout's `pos_server.py` patched by `diffs/pos_server_py.diff`); it differs from the installed, patched file in 836 diff lines, so it is an old copy. Code scanning flags it (alert #3). |
