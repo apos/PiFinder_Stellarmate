@@ -8,7 +8,7 @@
 Nothing here changes the system. The SMOS update API of the Web Manager (port
 8624) is only ever asked the questions listed in API_READS below - never
 `GET /api/software/upgrade`, which is a GET that STARTS an upgrade (see
-docs/concepts/smos_update_from_control_center.md). Items that need root (boot
+docs/concepts/lifecycle_install_update_upgrade.md (chapter 7)). Items that need root (boot
 entries, btrfs subvolumes) are read with `sudo -n` and simply left out when
 sudo would prompt.
 

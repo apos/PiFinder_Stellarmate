@@ -8,7 +8,7 @@ All notable changes to this project are documented in this file. Format loosely 
 ### Added
 
 - `bin/smos_update_state.py`: read-only before/after comparison for a SMOS update (`snapshot`, `compare`). Records version, kernel, boot configuration (`root=`, `LABEL=` lines, boot entries), subvolumes, key package versions and unit states, and flags changes that an update must not cause (a root label the disk does not carry, as in #561). Asks the SMOS update API only questions, never `GET /api/software/upgrade`, which starts an upgrade
-- Concept `docs/concepts/smos_update_from_control_center.md`: running the SMOS update from a Control Center button with a verified step in front of the reboot, and the two SMOS update mechanisms (software upgrade vs. delta update)
+- Concept `docs/concepts/lifecycle_install_update_upgrade.md`: the PFSM lifecycle in one place (install, update, patch system, version pins, Python requirements, SMOS post-update, checks after an installation), what is verified and what is missing, where documentation lives, and the guarded SMOS update from a Control Center button (software upgrade vs. delta update)
 
 ### Fixed
 
