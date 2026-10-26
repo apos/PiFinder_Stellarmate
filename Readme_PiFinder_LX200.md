@@ -12,16 +12,17 @@
 > PiFinder / StellarMate OS / Pi combinations, see the
 > [Version Compatibility table in README.md](README.md#version-compatibility).
 
-> ### ⚠️ Mandatory: this only works through the StellarMate Web Manager
+> ### ⚠️ This only works through the StellarMate Web Manager's profile
 >
 > The PiFinder LX200 / Mount Bridge drivers live **only** in the Web Manager's own driver catalog,
 > under **"System INDI Drivers"** — nowhere else. Ekos has its own, separate, built-in catalog and
-> **cannot** see or launch these drivers itself, in any mode. There is no way to set this up
-> entirely from within KStars/Ekos: the Equipment Profile has to be built in the Web Manager first
-> ([Step 2](#step-2-create-an-equipment-profile-in-the-web-manager)), and Ekos then only ever
+> **cannot** see or launch these drivers itself, in any mode. The drivers therefore run in an
+> Equipment Profile of the Web Manager (you create the profile, the **Control Center adds the
+> drivers** for you — [Readme_ControlCenter.md](Readme_ControlCenter.md#next-set-up-your-equipment-profile);
+> by hand: [Step 2](#step-2-create-an-equipment-profile-in-the-web-manager)), and Ekos only ever
 > connects to it remotely, in **"Remote Host"** mode, never "Local"
-> ([Step 4](#step-4-kstarsekos-remote-mode)). Skipping the Web Manager, or leaving Ekos on "Local"
-> mode, means the drivers simply never appear — this is the single most common way this setup fails.
+> ([Step 4](#step-4-kstarsekos-remote-mode)). Leaving Ekos on "Local" mode means the drivers simply
+> never appear — this is the single most common way this setup fails.
 
 This document covers the **INDI integration layer** that connects PiFinder to KStars/Ekos,
 SkySafari, and (optionally) a real motorized mount. It is a companion to the main
@@ -183,9 +184,11 @@ This must run from the actual GUI/VNC desktop session, not from a plain SSH sess
 
 ### Step 2: Create an equipment profile in the Web Manager
 
-> **⚠️ This step is mandatory and cannot be done from within Ekos.** Open the StellarMate Web
-> Manager directly (not through KStars) and build the profile here — this is the *only* place the
-> PiFinder drivers exist.
+> **The Control Center normally does this for you:** with a profile of your own selected, its **Role**
+> cards and **One-Click Setup** add the PiFinder drivers (see
+> [Readme_ControlCenter.md](Readme_ControlCenter.md#next-set-up-your-equipment-profile)). This step is
+> the manual way. It cannot be done from within Ekos: open the StellarMate Web Manager directly (not
+> through KStars) — the *only* place the PiFinder drivers exist.
 
 Open `http://<pi-address>:8624` in a browser. The whole Web Manager is a single page:
 
