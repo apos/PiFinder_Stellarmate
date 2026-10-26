@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- `bin/smos_update_state.py`: read-only before/after comparison for a SMOS update (`snapshot`, `compare`). Records version, kernel, boot configuration (`root=`, `LABEL=` lines, boot entries), subvolumes, key package versions and unit states, and flags changes that an update must not cause (a root label the disk does not carry, as in #561). Asks the SMOS update API only questions, never `GET /api/software/upgrade`, which starts an upgrade
+- Concept `docs/concepts/smos_update_from_control_center.md`: running the SMOS update from a Control Center button with a verified step in front of the reboot, and the two SMOS update mechanisms (software upgrade vs. delta update)
+
 ### Fixed
 
 - `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
