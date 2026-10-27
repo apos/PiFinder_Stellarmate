@@ -425,18 +425,29 @@ Auf einem anderen Gerät: `INDI-only` (Checkbox) installiert nur die INDI-Build-
 beide INDI-Treiber — kein Clone, kein venv, kein Katalog — für einen separaten Control-Host, der
 über das Netz an einen PiFinder gekoppelt ist (s. [help.html#indi-only-mode](gui_installer/help.html)).
 
-### Als Nächstes: Equipment-Profil anlegen (zwingend erforderlich)
+### Als Nächstes: Equipment-Profil einrichten
 
-> **⚠️ Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari
-> nutzbar.** Die gerade gebauten INDI-Treiber (`PiFinder LX200`, optional `PiFinder Mount Bridge`)
-> existieren nur im eigenen Treiber-Katalog des StellarMate Web Managers — sie tauchen nirgends in
-> Ekos auf, und es gibt kein Profil dafür, bis eines selbst angelegt wird. Diesen Schritt zu
-> überspringen ist der mit Abstand häufigste Grund, warum die Mount-Bridge-Kachel unten, SkySafari
-> oder Ekos' Geräteliste nach einer sonst erfolgreichen Installation leer bleiben.
+> **Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari
+> nutzbar.** Es braucht ein eigenes Equipment-Profil: einmal in der StellarMate App oder im Web
+> Manager anlegen (`http://<pi-adresse>:8624`). Der schreibgeschützte "Simulators"-Standard ist
+> nicht verwendbar — das Control Center bietet ihn gar nicht an.
 
-Das einmal direkt im Web Manager erledigen (`http://<pi-adresse>:8624`, nicht über KStars) —
-vollständige bebilderte Anleitung:
-[Readme_PiFinder_LX200_de.md — Schritt 2: Equipment-Profil im Web-Manager anlegen](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
+Den Rest erledigt das Control Center. In der Kachel **INDI Mount Bridge** (*Settings → Setup
+checklist & diagnostics*):
+
+1. **Profile** — das eigene Profil wählen.
+2. Die **Rollen**-Karte anklicken, die zu diesem Gerät passt (oder **One-Click Setup**). Das Control
+   Center trägt die PiFinder-Treiber (`PiFinder LX200`, und `PiFinder Mount Bridge`, wo die Rolle sie
+   braucht) selbst in dieses Profil ein und startet ein laufendes Profil neu, damit sie greifen.
+   In der Treiberliste des Web Managers ist nichts anzuhaken.
+3. **Mount** — den Treiber der eigenen Mount verknüpfen (der eine Schritt, der dein Urteil braucht),
+   dann **Connect**.
+
+Die Treiber existieren nur im Katalog des Web Managers und tauchen nie in Ekos' eigener Treiberliste
+auf; Ekos erreicht sie über ein Profil im Modus **Remote Host** (Schritt *KStars Link*, Details in
+[Readme_PiFinder_LX200_de.md — Schritt 4](Readme_PiFinder_LX200_de.md#schritt-4-kstarsekos-remote-modus)).
+Das Profil von Hand im Web Manager aufzubauen geht auch:
+[Readme_PiFinder_LX200_de.md — Schritt 2](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
 
 ---
 

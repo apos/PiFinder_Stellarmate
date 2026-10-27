@@ -10,6 +10,10 @@ All notable changes to this project are documented in this file. Format loosely 
 - `bin/smos_update_state.py`: read-only before/after comparison for a SMOS update (`snapshot`, `compare`). Records version, kernel, boot configuration (`root=`, `LABEL=` lines, boot entries), subvolumes, key package versions and unit states, and flags changes that an update must not cause (a root label the disk does not carry, as in #561). Asks the SMOS update API only questions, never `GET /api/software/upgrade`, which starts an upgrade
 - Concept `docs/concepts/lifecycle_install_update_upgrade.md`: the PFSM lifecycle in one place (install, update, patch system, version pins, Python requirements, SMOS post-update, checks after an installation), what is verified and what is missing, where documentation lives, and the guarded SMOS update from a Control Center button (software upgrade vs. delta update)
 
+### Changed
+
+- Documentation (README, Control Center and LX200 readmes, EN and DE): creating the PiFinder drivers' entry in the Web Manager profile is no longer described as a manual, mandatory step. The Control Center adds the drivers to the selected profile itself (Role cards, One-Click Setup); what stays manual is having a profile of your own (StellarMate App or Web Manager) and linking the mount
+
 ### Fixed
 
 - `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
