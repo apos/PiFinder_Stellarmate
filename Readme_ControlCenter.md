@@ -412,18 +412,28 @@ Running elsewhere: `INDI-only` (checkbox) installs just the INDI build dependenc
 drivers — no clone, no venv, no catalog — for a separate control host coupled to a PiFinder over the
 network (see [help.html#indi-only-mode](gui_installer/help.html)).
 
-### Next: create your equipment profile (mandatory)
+### Next: set up your equipment profile
 
-> **⚠️ A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari.** The
-> INDI drivers this install just built (`PiFinder LX200`, optionally `PiFinder Mount Bridge`) only
-> exist in the StellarMate Web Manager's own driver catalog — they don't appear anywhere inside
-> Ekos, and there is no profile for them until you create one yourself. Skipping this step is the
-> single most common reason the Mount Bridge tile below, or SkySafari, or Ekos's device list, all
-> stay empty after an otherwise successful install.
+> **A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari.** It needs an
+> equipment profile of your own: create one once in the StellarMate App or in the Web Manager
+> (`http://<pi-address>:8624`). The read-only "Simulators" default cannot be used — the Control
+> Center does not offer it.
 
-Do this once, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars) — full
-walkthrough with screenshots:
-[Readme_PiFinder_LX200.md — Step 2: create an equipment profile in the Web Manager](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
+The Control Center does the rest. In the **INDI Mount Bridge** tile (*Settings → Setup checklist &
+diagnostics*):
+
+1. **Profile** — select your profile.
+2. Click the **Role** card that fits this device (or **One-Click Setup**). The Control Center adds
+   the PiFinder drivers (`PiFinder LX200`, and `PiFinder Mount Bridge` where the role needs it) to
+   that profile itself and restarts a running profile to apply them. Nothing to tick in the Web
+   Manager's driver list.
+3. **Mount** — link your mount's driver (the one step that needs your judgement), then **Connect**.
+
+The drivers exist only in the Web Manager's catalog and never show up in Ekos's own driver list;
+Ekos reaches them as a **Remote Host** profile (*KStars Link* step, details in
+[Readme_PiFinder_LX200.md — Step 4](Readme_PiFinder_LX200.md#step-4-kstarsekos-remote-mode)). Building
+the profile by hand in the Web Manager works too:
+[Readme_PiFinder_LX200.md — Step 2](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
 
 ---
 

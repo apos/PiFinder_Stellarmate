@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation (README, Control Center and LX200 readmes, EN and DE): creating the PiFinder drivers' entry in the Web Manager profile is no longer described as a manual, mandatory step. The Control Center adds the drivers to the selected profile itself (Role cards, One-Click Setup); what stays manual is having a profile of your own (StellarMate App or Web Manager) and linking the mount
+
 ### Fixed
 
 - `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
