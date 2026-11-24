@@ -602,6 +602,18 @@ python3 -m py_compile "${pifinder_dir}/python/tests/test_last_align_stamp.py" \
 echo "------------------------------------"
 
 ##################################################
+# PiFinder tests/test_api_align.py - tests for POST /api/align (api_extensions
+# above; "Sync PiFinder from mount"). New file, create-diff, inert on-device
+# like test_last_align_stamp.py above; -N makes re-runs a no-op.
+
+echo "🔧 Adding tests/test_api_align.py ..."
+apply_patch_or_warn "${pifinder_dir}/python/tests/test_api_align.py" \
+    "${pifinder_stellarmate_dir}/diffs/test_api_align_py.diff"
+python3 -m py_compile "${pifinder_dir}/python/tests/test_api_align.py" \
+    && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/object_details.py - surfaces the on-device push-to target
 # (UIState's own target()/set_target(), previously never called) so GET
 # /api/current_target (see api_extensions.py above) can report it - see

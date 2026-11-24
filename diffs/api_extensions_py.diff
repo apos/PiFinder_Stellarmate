@@ -1,10 +1,13 @@
---- python/PiFinder/api_extensions.py.orig	2026-09-27 10:46:08.307773653 +0200
-+++ python/PiFinder/api_extensions.py	2026-09-27 10:45:45.048372291 +0200
-@@ -18,9 +18,11 @@
+--- python/PiFinder/api_extensions.py.orig
++++ python/PiFinder/api_extensions.py
+@@ -18,9 +18,14 @@
  import io
  import json
  import logging
 +import math
++import queue
++import threading
++import time
  
  from flask import request, session, Response
  from PIL import Image
@@ -12,7 +15,7 @@
  
  from PiFinder.optics import OpticalTrainResolver
  
-@@ -31,6 +33,86 @@
+@@ -31,6 +36,118 @@
  _API_OPTICAL_TRAIN = OpticalTrainResolver()
  
  
@@ -28,6 +31,38 @@
 +        + math.cos(dec1_r) * math.cos(dec2_r) * math.sin(d_ra / 2) ** 2
 +    )
 +    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a))))
++
++
++def _jnow_to_j2000(ra_jnow: float, dec_jnow: float):
++    """Convert an RA/Dec in the current epoch (JNow, degrees - what an INDI
++    mount's EQUATORIAL_EOD_COORD reports) to J2000 degrees, the epoch PiFinder's
++    solver, align and catalogs work in. Same conversion as /api/fake_solve
++    (including its pole handling) and pos_server.py's LX200 GOTO."""
++    from PiFinder.calc_utils import sf_utils
++    from skyfield.positionlib import position_of_radec
++
++    ts = sf_utils.ts
++    p = position_of_radec(
++        ra_hours=ra_jnow / 15.0, dec_degrees=dec_jnow, epoch=ts.now()
++    )
++    ra_h, dec_d, _ = p.radec(epoch=ts.J2000)
++    ra = float(ra_h._degrees)
++    dec = float(dec_d.degrees)
++    # Near the pole RA is numerically meaningless (atan2 on a near-zero X/Y
++    # vector); keep the caller's own RA there. Upstream: brickbots/PiFinder#645.
++    if abs(dec_jnow) >= 89.9:
++        ra = ra_jnow
++    return ra, dec
++
++
++# POST /api/align: a camera solve older than this is "no current solve".
++_ALIGN_MAX_SOLVE_AGE_S = 5.0
++# How long the web handler waits for the main process to report the outcome:
++# align_on_radec()'s own 2 s timeout plus main-loop latency.
++_ALIGN_RESULT_TIMEOUT_S = 4.0
++# One align at a time - align_on_radec() drains and reads a single shared
++# response queue (the on-device Align screen reads the same one).
++_ALIGN_LOCK = threading.Lock()
 +
 +
 +# #191: 90-degree azimuth quadrants for /api/nearby_bright_stars' optional
@@ -99,7 +134,7 @@
  def _json_response(data, status=200):
      """Unified JSON response format"""
      return Response(
-@@ -166,6 +248,15 @@
+@@ -166,6 +283,15 @@
                  "power_state": ss.power_state(),
                  "solve_state": ss.solve_state(),
                  "camera_type": ss.camera_type(),
@@ -115,7 +150,7 @@
                  "location": loc.to_dict() if loc else None,
                  "solution": _solution_to_dict(sol),
                  "datetime": {
-@@ -219,6 +310,200 @@
+@@ -219,6 +345,200 @@
              logger.error("api/location error: %s", e)
              return _json_response({"error": str(e)}, 500)
  
@@ -316,7 +351,7 @@
      @app.route("/api/solution")
      def api_solution():
          try:
-@@ -770,6 +1055,134 @@
+@@ -770,6 +1090,260 @@
      # 4. Lightweight control endpoints (optional, for remote triggering by OpenClaw)
      # ───────────────────────────────────────────────
  
@@ -409,6 +444,132 @@
 +        except Exception as e:
 +            logger.error("api/fake_solve DELETE error: %s", e)
 +            return _json_response({"error": str(e)}, 500)
++
++    @app.route("/api/align", methods=["POST"])
++    def api_align():
++        """Align PiFinder to the position the scope is centred on - the
++        on-device Align (UIAlign / ``align_on_radec``) without the UI.
++
++        Tells the solver which camera pixel corresponds to the given RA/Dec
++        and stores it as ``target_pixel`` (persisted in config), exactly as
++        picking a star in the Align screen does. Real plate-solving keeps
++        running; only PiFinder's calibration between camera axis and scope
++        changes. The IMU dead-reckoning re-anchors on the next successful
++        solve, like after any Align.
++
++        JSON body: {"ra": <deg>, "dec": <deg>} - JNow (current epoch, i.e.
++        what an INDI mount's own EQUATORIAL_EOD_COORD reports; converted to
++        J2000 here).
++
++        200 {"success": true, "ra", "dec" (J2000), "separation_deg", "fov_deg"}
++        409 {"success": false, "reason": ..., "message": ...} with reason one of
++            "no_solve" (no camera solve in the last few seconds),
++            "outside_fov" (the position is not inside PiFinder's field; carries
++            "separation_deg" from the field centre and "fov_deg"),
++            "timeout" (the solver gave no pixel within 2 s),
++            "fake_solve_active" (an injected position is active),
++            "busy" (another align is running).
++        503 when not running with a main process (standalone/test mode).
++        """
++        acquired = False
++        try:
++            if server_instance.align_result_queue is None:
++                return _json_response(
++                    {"error": "align_result_queue not available (standalone/test mode)"},
++                    503,
++                )
++            body = request.get_json(silent=True)
++            if not body or "ra" not in body or "dec" not in body:
++                return _json_response({"error": "Missing 'ra'/'dec' field"}, 400)
++            ra_jnow = float(body["ra"])
++            dec_jnow = float(body["dec"])
++            if not (
++                math.isfinite(ra_jnow)
++                and math.isfinite(dec_jnow)
++                and -90.0 <= dec_jnow <= 90.0
++            ):
++                return _json_response({"error": "ra/dec out of range"}, 400)
++            ra, dec = _jnow_to_j2000(ra_jnow, dec_jnow)
++
++            def refuse(reason, message, **extra):
++                return _json_response(
++                    {"success": False, "reason": reason, "message": message, **extra},
++                    409,
++                )
++
++            ss = server_instance.shared_state
++            if ss.fake_solve_active():
++                return refuse(
++                    "fake_solve_active",
++                    "An injected (fake) position is active; real solving is paused.",
++                )
++            sol = ss.solution()
++            last_ok = sol.last_solve_success
++            if last_ok is None or time.time() - last_ok > _ALIGN_MAX_SOLVE_AGE_S:
++                return refuse(
++                    "no_solve",
++                    "PiFinder has no current plate solve. Point it at stars and retry.",
++                )
++            fov = _API_OPTICAL_TRAIN.resolve(
++                ss.camera_type(), ss.camera_lens()
++            ).fov_degrees
++            centre = sol.pointing.camera.estimate
++            sep = None
++            if centre is not None:
++                sep = _angular_separation_deg(
++                    float(centre.RA), float(centre.Dec), ra, dec
++                )
++            extra = {"fov_deg": fov}
++            if sep is not None:
++                extra["separation_deg"] = sep
++            # Beyond the frame's corner nothing can solve: refuse at once with
++            # the distance rather than waiting for the solver's timeout.
++            if sep is not None and sep > (fov / 2.0) * math.sqrt(2.0):
++                return refuse(
++                    "outside_fov",
++                    "The position is outside PiFinder's field of view.",
++                    **extra,
++                )
++
++            if not _ALIGN_LOCK.acquire(blocking=False):
++                return refuse("busy", "Another align is already running.", **extra)
++            acquired = True
++            while True:  # drop any stale outcome from an earlier request
++                try:
++                    server_instance.align_result_queue.get(block=False)
++                except queue.Empty:
++                    break
++            server_instance.ui_queue.put(("align_on_radec", ra, dec))
++            try:
++                result = server_instance.align_result_queue.get(
++                    timeout=_ALIGN_RESULT_TIMEOUT_S
++                )
++            except queue.Empty:
++                result = {"ok": False}
++            if result.get("ok"):
++                return _json_response(
++                    {"success": True, "ra": ra, "dec": dec, **extra}
++                )
++            # No pixel came back: either the position lies in the frame's
++            # edge zone (solver found it outside the image) or nothing solved
++            # in the 2 s window.
++            if sep is not None and sep > fov / 2.0:
++                return refuse(
++                    "outside_fov",
++                    "The position is outside PiFinder's field of view.",
++                    **extra,
++                )
++            return refuse(
++                "timeout",
++                "The solver gave no alignment pixel within 2 s.",
++                **extra,
++            )
++        except Exception as e:
++            logger.error("api/align error: %s", e)
++            return _json_response({"error": str(e)}, 500)
++        finally:
++            if acquired:
++                _ALIGN_LOCK.release()
 +
 +    @app.route("/api/fake_imu", methods=["POST"])
 +    def api_fake_imu():
