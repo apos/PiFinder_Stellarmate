@@ -965,10 +965,9 @@
   #mb-sync-feedback.mb-sync-warn { border-color: #a8832e; color: #ddd; }
   #mb-sync-feedback.mb-sync-work { border-color: #3d6fb5; color: #ddd; }
   #mb-sync-feedback b { font-weight: 600; }
-  /* feedback line + the user-triggered "Reconnect mount" button (shown only with a mount warning) */
+  /* feedback line row */
   #mb-sync-feedback-row { display: flex; align-items: center; gap: 0.5rem; }
   #mb-sync-feedback-row #mb-sync-feedback { flex: 1 1 auto; min-width: 0; }
-  #mb-reconnect-mount-btn { flex: none; display: none; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -2655,7 +2654,7 @@
           <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand."><span class="mb-sync-dir">PiFinder &rarr; mount</span>Sync mount from PiFinder</button>
           <button id="mb-sync-pifinder-btn" data-mb-action="sync-pifinder-from-mount" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncPiFinderFromMount()" disabled title="One-shot: tells PiFinder where the mount points - the mount is trusted, PiFinder is corrected. Use it after you centred a star in the scope and PiFinder doesn't agree. On a real PiFinder this is PiFinder's own Align (like picking the star on the device), real plate-solving keeps running; it needs a current plate solve and the mount inside PiFinder's field of view. In Full Simulation it injects the mount's position instead. Needs a connected mount."><span class="mb-sync-dir">mount &rarr; PiFinder</span>Sync PiFinder from mount</button>
             </div>
-            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div><button id="mb-reconnect-mount-btn" class="ql-small-btn ql-small-btn-white" onclick="reconnectMount()" title="Disconnect and connect the mount driver again (like Disconnect/Connect in Ekos). Only when you click it; nothing reconnects on its own.">Reconnect mount</button></div>
+            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
             <div class="mb-qa-group-label">Held target</div>
@@ -4292,6 +4291,27 @@ function updatePiFinderHorizonStatus(altitudeDeg, belowHorizon) {
 // only.
 function collectActiveShowstoppers() {
   const items = [];
+  // Mount warnings (issue #583). The mount is parked: it ignores Sync and Goto.
+  if (_mountParked) {
+    items.push({
+      id: 'mount-parked',
+      category: 'mount-bridge',
+      title: 'Mount is parked',
+      text: 'A parked mount ignores Sync and Goto, so "Sync mount from PiFinder" would do nothing. Unpark it first.',
+      buttons: [{ label: 'Unpark mount', onclick: 'unparkMount()', action: 'unpark-mount' }],
+    });
+  }
+  // The mount driver says connected, but the position has not changed for a minute.
+  if (_mountSilent) {
+    const min = Math.max(1, Math.round(_mountSilent.forS / 60));
+    items.push({
+      id: 'mount-silent',
+      category: 'mount-bridge',
+      title: 'Mount not responding',
+      text: `${_mountSilent.device} is connected but its position has not changed for ${min} min, so a Sync would not reach it. This can happen after the network dropped. If the mount is connected over USB and Reconnect does not help, unplug and replug the USB cable. Nothing is reconnected automatically.`,
+      buttons: [{ label: 'Reconnect mount', onclick: 'reconnectMount()', action: 'reconnect-mount' }],
+    });
+  }
   // Below horizon: no software fix helps until the mount is physically
   // repositioned - Synthetic Solve wouldn't let Sync/Goto through either,
   // isAboveHorizon() would still refuse them. "Sync mount from PiFinder"
@@ -8865,21 +8885,24 @@ async function triggerSyncToPiFinderVisible() {
   // at all, in the scroll-away #mb-log panel. Now the error itself shows
   // right at the button for a few seconds, same spot the "Syncing…" status
   // already used - not just relying on pollMbLog() to eventually catch it.
-  if (failure) {
+  if (verify && verify.reason === 'parked') {
+    // Nothing was sent: a parked mount ignores Sync. The yellow card has the Unpark button.
+    _mountParked = true;
+    setSyncFeedback('warn', 'Mount is parked', 'unpark it first, then sync');
+    renderNoSolveBanner();
+  } else if (failure) {
     setSyncFeedback('warn', 'Mount not synced', failure, failure);
   } else if (verify && verify.verified === false) {
     // INDI took the command but the mount did not move to it - a connected
     // but silent driver (issue #583). Not "synced"; say so and offer the way out.
     const sep = typeof verify.separation_arcmin === 'number' ? verify.separation_arcmin : null;
     setSyncFeedback('warn', 'Mount did not take the sync',
-      sep !== null ? `it still reports a position ${(sep / 60).toFixed(1)}° away` : 'it still reports the old position',
+      (sep !== null ? `it still reports a position ${(sep / 60).toFixed(1)}° away` : 'it still reports the old position') + '; is it parked or not responding?',
       'The sync command was accepted, but the mount did not report PiFinder\'s position afterwards (' + (verify.device || 'mount') +
-      '). The mount driver may be connected but not answering, e.g. after the network dropped. "Reconnect mount" reconnects the driver.');
-    showReconnectMount(true);
+      '). The mount may be parked, or its driver connected but not answering (e.g. after the network dropped); a yellow card appears if so.');
   } else {
     setSyncFeedback('ok', 'Mount synced to PiFinder',
       verify && verify.verified === true ? 'the mount reports PiFinder\'s position' : 'sent (not verified)', '');
-    showReconnectMount(false);
     // 2026-09-09, direct feedback ("ICH WILL NICHT Re-seeden, sondern
     // synch from PiFinder. Ist meine Entscheidung!"): the sim-mismatch
     // card itself offers both buttons as equally valid fixes ("Re-seed...
@@ -8940,54 +8963,67 @@ function refreshSyncIdleText(syntheticSolveRunning) {
   }
 }
 
-// ---- mount warnings (issue #583): never automatic, only a warning and a button ----
-var _mountSilenceWarn = false;
-function showReconnectMount(show) {
-  const b = document.getElementById('mb-reconnect-mount-btn');
-  if (b) b.style.display = show ? '' : 'none';
-}
-// From the status poll: the server flags a mount whose reported position has
-// not changed for 60 s while its driver says connected. Debounced there, so a
-// signal that comes back by itself never shows this; it clears as soon as the
-// position moves again.
+// ---- mount warnings (issue #583): yellow cards, never automatic ----
+// State from the status poll: the server flags a mount whose reported position
+// has not changed for 60 s while its driver says connected ("silent"), and
+// whether the mount is parked. Both show as the usual yellow card
+// (collectActiveShowstoppers()) with a button the user presses themselves.
+// Debounced on the server, so a signal that comes back by itself never shows
+// the card, and it goes away as soon as the position moves again.
+var _mountSilent = null;      // {device, forS} while the mount is silent
+var _mountParked = false;
 function applyMountSilence(ms) {
   if (!ms || ms.unknown) return;
-  const el = document.getElementById('mb-sync-feedback');
-  if (!el || el.classList.contains('mb-sync-work')) return;
-  if (ms.silent === true) {
-    _mountSilenceWarn = true;
-    const min = Math.max(1, Math.round((ms.silent_for_s || 60) / 60));
-    setSyncFeedback('warn', 'Mount not responding',
-      `its position has not changed for ${min} min`,
-      (ms.device || 'The mount') + ' is connected but its reported position is frozen, so a sync would not reach it. This can happen after the network dropped. "Reconnect mount" reconnects the driver; nothing is reconnected automatically.');
-    showReconnectMount(true);
-  } else if (_mountSilenceWarn) {
-    _mountSilenceWarn = false;
-    showReconnectMount(false);
-    setSyncFeedback('idle', 'No sync since page load', '');
-    refreshSyncIdleText(lastTruthInjectorDesired === true);
-  }
+  const silent = ms.silent === true ? { device: ms.device || 'The mount', forS: ms.silent_for_s || 60 } : null;
+  const parked = ms.parked === true;
+  const changed = parked !== _mountParked ||
+    (silent === null) !== (_mountSilent === null) ||
+    (silent !== null && Math.round(silent.forS / 60) !== Math.round(_mountSilent.forS / 60));
+  _mountSilent = silent;
+  _mountParked = parked;
+  if (changed) renderNoSolveBanner();
 }
 async function reconnectMount() {
-  const b = document.getElementById('mb-reconnect-mount-btn');
-  if (b && b.dataset.busy === '1') return;
+  const btns = Array.from(document.querySelectorAll('[data-mb-action="reconnect-mount"]'));
+  if (btns.some((b) => b.dataset.busy === '1')) return;
   if (!window.confirm('Reconnect the mount driver now? Do not do this during a slew or while guiding.')) return;
-  if (b) { b.dataset.busy = '1'; b.disabled = true; }
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; });
   setSyncFeedback('work', 'Reconnecting the mount driver …', 'up to 20 s');
   try {
     const resp = await fetch('/api/mount_reconnect', { method: 'POST' });
     const d = await resp.json();
     if (d.success) {
-      _mountSilenceWarn = false;
+      _mountSilent = null;
       setSyncFeedback('ok', 'Mount driver reconnected', d.device || '');
-      showReconnectMount(false);
     } else {
       setSyncFeedback('warn', 'Mount not reconnected', d.error || 'failed');
     }
   } catch (e) {
     setSyncFeedback('warn', 'Mount not reconnected', String(e));
   }
-  if (b) { b.disabled = false; delete b.dataset.busy; }
+  btns.forEach((b) => { b.disabled = false; delete b.dataset.busy; });
+  renderNoSolveBanner();
+}
+async function unparkMount() {
+  const btns = Array.from(document.querySelectorAll('[data-mb-action="unpark-mount"]'));
+  if (btns.some((b) => b.dataset.busy === '1')) return;
+  if (!window.confirm('Unpark the mount now? It may start tracking.')) return;
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; });
+  setSyncFeedback('work', 'Unparking the mount …', 'up to 20 s');
+  try {
+    const resp = await fetch('/api/mount_unpark', { method: 'POST' });
+    const d = await resp.json();
+    if (d.success) {
+      _mountParked = false;
+      setSyncFeedback('ok', 'Mount unparked', d.device || '');
+    } else {
+      setSyncFeedback('warn', 'Mount not unparked', d.error || 'failed');
+    }
+  } catch (e) {
+    setSyncFeedback('warn', 'Mount not unparked', String(e));
+  }
+  btns.forEach((b) => { b.disabled = false; delete b.dataset.busy; });
+  renderNoSolveBanner();
 }
 
 function fmtRaHms(raDeg) {

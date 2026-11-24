@@ -1583,18 +1583,21 @@ _mount_silence = _MountSilenceTracker()
 
 
 def _mount_silence_for(status: dict) -> dict:
-    """Silence verdict for the mount named in a mount_bridge_status() result.
-    A failed or slow read counts as "no information", never as silence."""
+    """Silence verdict for the mount named in a mount_bridge_status() result,
+    plus whether it is parked ("parked": True/False/None). A failed or slow read
+    counts as "no information", never as silence."""
     device = status.get("active_mount")
     if not device or status.get("mount_connected") is not True:
-        return _mount_silence.update(device, status.get("mount_connected"), None)
+        out = _mount_silence.update(device, status.get("mount_connected"), None)
+        out["parked"] = None
+        return out
     try:
-        coords = indi_client.read_mount_position(
-            device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL
-        )
+        state = indi_client.read_mount_state(device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
     except indi_client.INDIClientError:
-        return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True}
-    return _mount_silence.update(device, True, coords)
+        return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
+    out = _mount_silence.update(device, True, state["coords"])
+    out["parked"] = state["parked"]
+    return out
 
 
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
@@ -7028,6 +7031,21 @@ class Handler(BaseHTTPRequestHandler):
             # position()'s own docstring for why this is a deliberately
             # separate primitive from /api/mount_bridge_manual_sync).
             _mb_log("syncing mount to PiFinder's currently visible position...")
+            # A parked mount ignores Sync (INDI refuses motion/sync commands
+            # while parked) - say so instead of sending something that goes
+            # nowhere (found live 2026-11-24, OnStep "At Home and Parked").
+            try:
+                _mount = indi_client.active_mount_name()
+                if _mount and indi_client.read_mount_state(_mount)["parked"] is True:
+                    _mb_log(f"  not sent: {_mount} is parked.")
+                    self._send_json(
+                        {"success": False, "reason": "parked", "device": _mount,
+                         "error": "The mount is parked. Unpark it first, then sync."},
+                        status=409,
+                    )
+                    return
+            except indi_client.INDIClientError:
+                pass  # can't tell - fall through and let the sync + read-back decide
             try:
                 target = indi_client.sync_mount_to_pifinder_visible_position()
             except indi_client.INDIClientError as e:
@@ -7050,6 +7068,23 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 _mb_log("  done." if check.get("verified") else "  done (not verified).")
             self._send_json({"success": True, **check})
+            return
+
+        if parsed.path == "/api/mount_unpark":
+            # User-triggered only: a parked mount ignores Sync and Goto.
+            try:
+                device = indi_client.active_mount_name()
+                if not device:
+                    self._send_json({"success": False, "error": "no mount is configured in the Mount Bridge"}, status=409)
+                    return
+                _mb_log(f"unparking '{device}' (user request)...")
+                ok = indi_client.unpark_mount(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  unparked." if ok else "  the mount did not report unparked within 20 s.")
+            self._send_json({"success": ok, "device": device, "error": None if ok else "the mount did not report unparked within 20 s"})
             return
 
         if parsed.path == "/api/mount_reconnect":

@@ -1234,6 +1234,47 @@ def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAU
     return ra, dec
 
 
+def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    """One light read of what the page needs to know about a mount:
+    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
+    `parked` is None for a mount that has no TELESCOPE_PARK property at all."""
+    props = get_properties(
+        device=device, host=host, port=port, timeout=timeout,
+        stop_after={"EQUATORIAL_EOD_COORD", "TELESCOPE_PARK"},
+    )
+    dev = props.get(device, {})
+    el = dev.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = el.get("RA"), el.get("DEC")
+    coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
+    park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
+    parked = None if park_el is None else park_el.get("PARK") == "On"
+    return {"coords": coords, "parked": parked}
+
+
+def unpark_mount(
+    device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    wait_s: float = 20.0,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> bool:
+    """User-triggered: unpark the mount (TELESCOPE_PARK.UNPARK). A parked mount
+    ignores Sync and Goto. Returns True once the mount reports not parked
+    within `wait_s`. Raises INDIClientError if the mount has no park control."""
+    set_switch(device, "TELESCOPE_PARK", "UNPARK", host, port, timeout)
+    deadline = _now() + wait_s
+    while _now() < deadline:
+        try:
+            if read_mount_state(device, host, port, timeout)["parked"] is False:
+                return True
+        except INDIClientError:
+            pass
+        _sleep(0.7)
+    return False
+
+
 def _separation_arcmin(ra1_h: float, dec1: float, ra2_h: float, dec2: float) -> float:
     """Great-circle separation in arcmin between two RA(hours)/Dec(degrees) points."""
     import math

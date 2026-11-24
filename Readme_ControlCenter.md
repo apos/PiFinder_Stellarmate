@@ -562,11 +562,13 @@ The section splits into what you use every session and what you set once:
     standard 16 mm lens); if it can't align it says why. One fixed line under the two buttons shows
     the last result with its time; it never appears or disappears, so nothing else moves. In Full
     Simulation (no camera) the button injects the mount's position instead. After **Sync mount
-    from PiFinder** the line also says whether the mount really took it; if the mount driver is
-    connected but silent (for example after the network dropped), it turns yellow with **Mount did
-    not take the sync**, and a passive **Mount not responding** warning appears when the mount's
-    position has not changed for 60 s. A **Reconnect mount** button then reconnects the driver. It
-    only acts when you click it and is refused while Ekos is guiding; nothing reconnects by itself.
+    from PiFinder** the line also says whether the mount really took it, and a parked mount (it
+    ignores Sync) is caught before anything is sent. Yellow cards cover the two causes: **Mount is
+    parked** with an **Unpark mount** button, and **Mount not responding** (the driver says
+    connected but the position has not changed for 60 s, for example after the network dropped)
+    with a **Reconnect mount** button. The buttons only act when you click them, Reconnect is
+    refused while Ekos is guiding, and nothing is unparked or reconnected by itself. For a USB mount
+    that does not come back, unplug and replug the cable.
   - **Held target**: **Align to Held Target** and **Goto Held Target** (correct PiFinder's or the
     mount's belief about the held target — need an active coupling mode), **Revert to Held Target
     Now**, and **Stop movement** (emergency stop; also sets Coupling to Off so nothing re-triggers).

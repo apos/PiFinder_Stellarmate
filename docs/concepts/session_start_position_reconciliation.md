@@ -306,9 +306,12 @@ was listed as connected but silent after the network dropped for 17 minutes: `Fi
 `OnStep Status` and `:GU# return` empty, position frozen at RA 0 / Dec 0, the TCP session never
 re-established. INDI accepted the SYNC, nothing reached the mount, and the Control Center reported
 "Mount synced". The page now reads the mount's position back after "Sync mount from PiFinder" (6 s,
-3 arcmin) and says "Mount did not take the sync" otherwise; a passive "Mount not responding" warning
-appears when the reported position has not changed for 60 s while the driver says connected, with a
-user-triggered "Reconnect mount" (never automatic, refused while Ekos guides). A live mount's RA keeps
+3 arcmin) and says "Mount did not take the sync" otherwise; yellow cards (the usual showstopper cards) appear
+when the mount is parked ("Unpark mount"; a parked mount ignores Sync, found live on the OnStep "At Home
+and Parked", and the sync is not sent at all) or when the reported position has not changed for 60 s while
+the driver says connected ("Reconnect mount"). Both buttons are user-triggered only; Reconnect is refused
+while Ekos guides. For a USB mount a driver reconnect only helps while the adapter is still enumerated,
+otherwise the cable has to be replugged. A live mount's RA keeps
 moving even when parked (checked on the OnStep: RA advanced every poll while parked at Home), which is
 what the silence test relies on; simulators are exempt.
 

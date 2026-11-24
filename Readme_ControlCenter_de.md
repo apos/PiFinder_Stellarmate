@@ -583,11 +583,13 @@ Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal eins
     Ergebnis mit Uhrzeit; sie erscheint und verschwindet nie, nichts anderes verschiebt sich. In der
     Full Simulation (keine Kamera) injiziert der Button stattdessen die Position der Montierung. Nach
     **Sync mount from PiFinder** sagt die Zeile auch, ob die Montierung den Sync wirklich übernommen
-    hat; ist der Montierungstreiber verbunden, aber stumm (zum Beispiel nach einem Netzausfall), wird
-    sie gelb mit **Mount did not take the sync**, und eine passive Warnung **Mount not responding**
-    erscheint, wenn sich die Position der Montierung 60 s lang nicht ändert. Ein Button **Reconnect
-    mount** verbindet den Treiber dann neu. Er wirkt nur auf deinen Klick, wird bei laufendem Guiding
-    verweigert, und nichts verbindet sich von selbst neu.
+    hat, und eine geparkte Montierung (sie ignoriert Sync) wird erkannt, bevor etwas gesendet wird.
+    Gelbe Karten decken die beiden Ursachen ab: **Mount is parked** mit einem Button **Unpark mount**
+    und **Mount not responding** (der Treiber sagt verbunden, aber die Position ändert sich 60 s lang
+    nicht, zum Beispiel nach einem Netzausfall) mit einem Button **Reconnect mount**. Die Buttons
+    wirken nur auf deinen Klick, Reconnect wird bei laufendem Guiding verweigert, und nichts wird von
+    selbst entparkt oder neu verbunden. Kommt eine USB-Montierung nicht zurück, hilft Ab- und
+    Anstecken des Kabels.
   - **Held target**: **Align to Held Target** und **Goto Held Target** (korrigieren PiFinders bzw.
     der Montierung Annahme über das gehaltene Ziel — brauchen einen aktiven Coupling-Modus),
     **Revert to Held Target Now** und **Stop movement** (Not-Halt; setzt außerdem Coupling auf Off,
