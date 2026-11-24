@@ -7,11 +7,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center, Mount Bridge: **Sync PiFinder from mount** is now PiFinder's own Align (new `POST /api/align` in PiFinder, patched in via `diffs/api_extensions_py.diff`, `main_py.diff`, `server_py.diff`). It tells PiFinder where the mount points without pausing real plate-solving, so there is nothing to switch off afterwards. It needs a current plate solve and the mount inside PiFinder's field of view; when it can't align it says why (no solve, mount is X° off the field centre, timeout) instead of timing out silently. In Full Simulation (no camera) it still injects the mount's position. Tests: `diffs/test_api_align_py.diff`.
+- Control Center, Mount Bridge Quick Actions: a fixed feedback line under the two Sync buttons shows the last Sync result with its time. It is always there and only its text changes, so nothing moves when a result arrives.
 - `bin/smos_update_state.py`: read-only before/after comparison for a SMOS update (`snapshot`, `compare`). Records version, kernel, boot configuration (`root=`, `LABEL=` lines, boot entries), subvolumes, key package versions and unit states, and flags changes that an update must not cause (a root label the disk does not carry, as in #561). Asks the SMOS update API only questions, never `GET /api/software/upgrade`, which starts an upgrade
 - Concept `docs/concepts/lifecycle_install_update_upgrade.md`: the PFSM lifecycle in one place (install, update, patch system, version pins, Python requirements, SMOS post-update, checks after an installation), what is verified and what is missing, where documentation lives, and the guarded SMOS update from a Control Center button (software upgrade vs. delta update)
 
 ### Changed
 
+- Control Center, Mount Bridge Quick Actions: two groups, **Sync positions (once)** (**Sync mount from PiFinder** and **Sync PiFinder from mount**, direction on each button) and **Held target**. "Re-seed from mount" is now called "Sync PiFinder from mount", "Set position" is "Set PiFinder position". The manual one-shot seed (Set PiFinder position, RA/Dec, and the former "Turn off", now "Stop injected solve") moved to *Simulation, Test and Power*, because an injected position pauses real camera solving and is a testing tool. README and help (EN/DE) updated; the screenshot `cc_mount_bridge_manual_seed.png` still shows the earlier layout.
 - Documentation (README, Control Center and LX200 readmes, EN and DE): creating the PiFinder drivers' entry in the Web Manager profile is no longer described as a manual, mandatory step. The Control Center adds the drivers to the selected profile itself (Role cards, One-Click Setup); what stays manual is having a profile of your own (StellarMate App or Web Manager) and linking the mount
 
 ### Fixed

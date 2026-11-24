@@ -141,7 +141,7 @@ Is PiFinder's plate-solver producing a position right now? Read from PiFinder's 
 ### Injected
 
 Appears docked onto `Solve`'s right edge **only while [Injected Solve](#synthetic-solve-vs-a-manual-one-shot-seed)
-is active** (Synthetic Solve, Re-seed from mount, Set position, or Sync). Its presence is the
+is active** (Synthetic Solve, Set PiFinder position, or, in Full Simulation only, Sync PiFinder from mount). Its presence is the
 signal — no colour scale. Whenever it shows, `Solve` is red.
 
 ### IMU
@@ -506,7 +506,7 @@ matches which side you trust:
 
 | Button | What it does | Use when |
 |---|---|---|
-| **Re-seed from mount** | Reads the mount's current position and injects *that* as PiFinder's position. | The mount is where you want to be; PiFinder's (simulated) solve is the odd one out. |
+| **Sync PiFinder from mount** | Tells PiFinder where the mount points: PiFinder's own Align on a real PiFinder, the mount's position injected as PiFinder's in Full Simulation. | The mount is where you want to be; PiFinder's solve is the odd one out. |
 | **Sync mount from PiFinder** | Syncs the mount to whatever PiFinder currently shows — an instant position update, no slew. | PiFinder's position is correct (a real solve, or one you deliberately set) and the mount's belief is wrong — e.g. after moving the mount by hand. |
 
 Either one, once it succeeds, clears the card. The same **Sync mount from PiFinder** button also
@@ -552,11 +552,22 @@ mount is below the horizon, since it wouldn't mean anything.
 
 The section splits into what you use every session and what you set once:
 
-- **Quick Actions** — the one-shot buttons: **Sync mount from PiFinder** (above), **Align to Held
-  Target** and **Goto Held Target** (correct PiFinder's or the mount's belief about the held target
-  — need an active coupling mode), and **Stop movement** (emergency stop; also sets Coupling to Off
-  so nothing re-triggers). **Threshold** (arcmin) is how far off before Verify/Alert warns or an
-  Auto-correct mode acts. **Decouple** sets Coupling back to Off.
+- **Quick Actions** — the one-shot buttons, in two groups:
+  - **Sync positions (once)**: **Sync mount from PiFinder** (PiFinder → mount) and **Sync PiFinder
+    from mount** (mount → PiFinder), side by side with the direction on each button. Use the second
+    one after you centred a star in the scope and PiFinder doesn't agree: on a real PiFinder it is
+    PiFinder's own **Align** (the same calibration as picking the star on the device), so real
+    plate-solving keeps running and there is nothing to switch off afterwards. It needs a current
+    plate solve and the mount inside PiFinder's field of view (about 6.9° from the centre with the
+    standard 16 mm lens); if it can't align it says why. One fixed line under the two buttons shows
+    the last result with its time; it never appears or disappears, so nothing else moves. In Full
+    Simulation (no camera) the button injects the mount's position instead.
+  - **Held target**: **Align to Held Target** and **Goto Held Target** (correct PiFinder's or the
+    mount's belief about the held target — need an active coupling mode), **Revert to Held Target
+    Now**, and **Stop movement** (emergency stop; also sets Coupling to Off so nothing re-triggers).
+
+  **Threshold** (arcmin) is how far off before Verify/Alert warns or an Auto-correct mode acts.
+  **Decouple** sets Coupling back to Off.
 - **Coupling presets** — pick one:
   - **Verify/Alert only** — watches the drift, never moves the mount. The passive "is my mount still
     aligned?" check for astrophotography.
@@ -633,18 +644,20 @@ Simulation "there is a sky" switch. It drives the green `Injected` badge in the 
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
-<sub>Manual one-shot seed (Full Simulation), inside Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code>, and a direct RA/Dec entry.</sub>
+<sub>Manual one-shot seed (Full Simulation): <code>Sync PiFinder from mount</code>, <code>Set PiFinder position</code>, and a direct RA/Dec entry. It now lives in <em>Simulation, Test and Power</em>; the screenshot shows the earlier layout.</sub>
 </td>
 </tr>
 </table>
 
-**Manual one-shot seed** (collapsed inside Quick Actions) injects a *single* position and stops:
-**Re-seed from mount** reads the mount's current position once, **Set position** takes a literal
-RA/Dec (JNow, degrees), and either turns the injection on if it wasn't. PiFinder's normal IMU
-dead-reckoning tracks from that anchor exactly as it would from a real solve. Use this to place
-PiFinder at one known spot — e.g. to set up the disagreement for a Sync test — rather than have it
-follow the mount. `Turn off` returns PiFinder to real camera solving. Deliberately *not* reflected
-in the Synthetic Solve dot, to keep that one signal simple.
+**Manual one-shot seed** (collapsed, in *Simulation, Test and Power*) injects a *single* position
+and stops: **Sync PiFinder from mount** reads the mount's current position once, **Set PiFinder
+position** takes a literal RA/Dec (JNow, degrees), and either turns the injection on if it wasn't.
+PiFinder's normal IMU dead-reckoning tracks from that anchor exactly as it would from a real solve.
+Use this to place PiFinder at one known spot — e.g. to set up the disagreement for a Sync test —
+rather than have it follow the mount. An injected position pauses real camera solving, which is why
+this belongs to testing; **Stop injected solve** returns PiFinder to real camera solving. On a real
+PiFinder use the Quick Action **Sync PiFinder from mount** instead (PiFinder's own Align, no
+injection). Deliberately *not* reflected in the Synthetic Solve dot, to keep that one signal simple.
 
 ---
 
