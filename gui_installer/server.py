@@ -1549,6 +1549,54 @@ def _ekos_start_profile(profile_name: str) -> dict:
 
 
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
+# Mount silence (issue #583): a mount driver can be "connected" but silent
+# (dead TCP session to the controller). A live mount's reported RA/Dec keeps
+# changing - even a parked one, its RA follows the sidereal clock - so a
+# position that has not changed at all for SILENT_AFTER_S while the driver
+# says connected is flagged. The 60 s debounce means a signal that comes back
+# by itself never raises it; the flag clears the moment the position moves.
+# Simulators legitimately sit still and are exempt. Nothing is ever restarted
+# automatically - the page only warns and offers "Reconnect mount".
+class _MountSilenceTracker:
+    SILENT_AFTER_S = 60.0
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.device = None
+        self.coords = None
+        self.since = None
+
+    def update(self, device, connected, coords, now=None) -> dict:
+        now = time.monotonic() if now is None else now
+        if not device or connected is not True or coords is None or "simulator" in device.lower():
+            self.reset()
+            return {"silent": False, "silent_for_s": 0, "device": device}
+        if device != self.device or coords != self.coords:
+            self.device, self.coords, self.since = device, coords, now
+        quiet = now - self.since
+        return {"silent": quiet >= self.SILENT_AFTER_S, "silent_for_s": int(quiet), "device": device}
+
+
+_mount_silence = _MountSilenceTracker()
+
+
+def _mount_silence_for(status: dict) -> dict:
+    """Silence verdict for the mount named in a mount_bridge_status() result.
+    A failed or slow read counts as "no information", never as silence."""
+    device = status.get("active_mount")
+    if not device or status.get("mount_connected") is not True:
+        return _mount_silence.update(device, status.get("mount_connected"), None)
+    try:
+        coords = indi_client.read_mount_position(
+            device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL
+        )
+    except indi_client.INDIClientError:
+        return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True}
+    return _mount_silence.update(device, True, coords)
+
+
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
 
@@ -5054,6 +5102,11 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 )
                 _mb_last_running = status.get("running")
+            if status.get("running") is True:
+                try:
+                    status["mount_silence"] = _mount_silence_for(status)
+                except Exception as e:  # a diagnostic must never break the poll
+                    _mb_log(f"mount silence check failed: {e}")
             self._send_json(status)
             return
 
@@ -6976,13 +7029,49 @@ class Handler(BaseHTTPRequestHandler):
             # separate primitive from /api/mount_bridge_manual_sync).
             _mb_log("syncing mount to PiFinder's currently visible position...")
             try:
-                indi_client.sync_mount_to_pifinder_visible_position()
+                target = indi_client.sync_mount_to_pifinder_visible_position()
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
-            _mb_log("  done.")
-            self._send_json({"success": True})
+            # INDI accepted the command; did the mount take it? (issue #583:
+            # a connected-but-silent driver accepts it and does nothing.)
+            check = {"verified": None}
+            try:
+                check = indi_client.verify_mount_position(target[0], target[1])
+            except Exception as e:
+                _mb_log(f"  could not verify the sync: {e}")
+            if check.get("verified") is False:
+                _mb_log(
+                    "  sent, but the mount did not take it: it still reports {:.3f}h {:+.2f} deg, {:.1f}' from the target".format(
+                        check.get("mount_ra_h", 0.0), check.get("mount_dec", 0.0), check.get("separation_arcmin", 0.0)
+                    )
+                )
+            else:
+                _mb_log("  done." if check.get("verified") else "  done (not verified).")
+            self._send_json({"success": True, **check})
+            return
+
+        if parsed.path == "/api/mount_reconnect":
+            # User-triggered only (issue #583): disconnect/connect the coupled
+            # mount's INDI driver. Never while Ekos guides, and never on its own.
+            if _guiding_hold_active:
+                self._send_json({"success": False, "error": "Ekos is guiding - stop guiding before reconnecting the mount driver"}, status=409)
+                return
+            try:
+                device = indi_client.active_mount_name()
+                if not device:
+                    self._send_json({"success": False, "error": "no mount is configured in the Mount Bridge"}, status=409)
+                    return
+                _mb_log(f"reconnecting mount driver '{device}' (user request)...")
+                ok = indi_client.reconnect_device(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mount_silence.reset()
+            _mb_log("  reconnected." if ok else "  the driver did not report connected again within 20 s.")
+            self._send_json({"success": ok, "device": device, "error": None if ok else "the driver did not report connected again within 20 s"})
             return
 
         if parsed.path == "/api/optical_train_sync":
