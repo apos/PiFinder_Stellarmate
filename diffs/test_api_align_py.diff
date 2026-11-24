@@ -1,6 +1,6 @@
 --- python/tests/test_api_align.py.orig
 +++ python/tests/test_api_align.py
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,276 @@
 +"""Tests for POST /api/align (PiFinder_Stellarmate): align PiFinder to the
 +position a scope is centred on, without the on-device Align UI.
 +
@@ -213,3 +213,67 @@
 +    ra, dec = _jnow_to_j2000(123.0, 89.95)
 +    assert ra == pytest.approx(123.0)
 +    assert 89.0 < dec <= 90.0
++
++
++# ---- align_on_radec(record_align=...) ----------------------------------
++# POST /api/align passes record_align=False: the position came from the
++# mount, so stamping it would make the Mount Bridge Sync the mount to itself
++# (a pointless extra point in a pointing model such as OnStep's).
++
++class _AlignConfig:
++    def __init__(self):
++        self.options = {}
++
++    def set_option(self, k, v):
++        self.options[k] = v
++
++
++class _AlignResponseQueue:
++    """Delivers its reply only after align_on_radec()'s initial drain."""
++
++    def __init__(self, result):
++        self._result, self._drained = result, False
++
++    def get(self, block=False):
++        if not self._drained:
++            self._drained = True
++            raise queue.Empty
++        if self._result is None:
++            raise queue.Empty
++        r, self._result = self._result, None
++        return r
++
++
++def _run_align_on_radec(**kwargs):
++    import PiFinder.i18n  # noqa: F401  - installs gettext _() used by align.py
++    from PiFinder.state import SharedStateObj
++    from PiFinder.types.positioning import AlignedResult
++    from PiFinder.ui.align import align_on_radec
++
++    ss = SharedStateObj()
++    assert ss.last_align_time() is None
++    queues = {
++        "align_command": queue.Queue(),
++        "align_response": _AlignResponseQueue(AlignedResult(y_target=250.0, x_target=260.0)),
++        "console": queue.Queue(),
++    }
++    cfg = _AlignConfig()
++    ok = align_on_radec(10.0, 20.0, queues, cfg, ss, **kwargs)
++    return ok, ss, cfg
++
++
++@pytest.mark.unit
++def test_align_stamps_by_default():
++    ok, ss, cfg = _run_align_on_radec()
++    assert ok is True
++    assert ss.last_align_time() is not None
++    assert (ss.last_align_ra(), ss.last_align_dec()) == (10.0, 20.0)
++
++
++@pytest.mark.unit
++def test_align_without_record_still_calibrates_but_does_not_stamp():
++    ok, ss, cfg = _run_align_on_radec(record_align=False)
++    assert ok is True
++    assert "target_pixel" in cfg.options  # the calibration itself is stored
++    assert ss.last_align_time() is None  # but no Sync request for the mount
++

@@ -1,6 +1,31 @@
 --- python/PiFinder/ui/align.py.orig
 +++ python/PiFinder/ui/align.py
-@@ -65,6 +65,12 @@
+@@ -24,13 +24,23 @@
+ CAMERA_NATIVE_RES = 512
+ 
+ 
+-def align_on_radec(ra, dec, command_queues, config_object, shared_state) -> bool:
++def align_on_radec(
++    ra, dec, command_queues, config_object, shared_state, record_align=True
++) -> bool:
+     """
+     Handles the intricacies of:
+     * Telling the solver to figure out alignment pixel
+     * Wait for it to be done
+     * Set the config item and the shared state
+     * return True on success, False on timeout / failure
++
++    ``record_align`` (PiFinder_Stellarmate): stamp the confirmed align with
++    ``shared_state.set_last_align()``, which makes the Mount Bridge Sync the
++    mount to it. Right for an align the user did against the sky (the
++    scope hasn't moved, only PiFinder's calibration); wrong when the RA/Dec
++    came FROM the mount (POST /api/align) - the Sync would tell the mount its
++    own position and, on mounts that keep a pointing model, add a pointless
++    point to it. That caller passes False.
+     """
+ 
+     # Clear out any pending responses
+@@ -65,6 +75,13 @@
      command_queues["console"].put(_("Alignment Set"))
      shared_state.set_target_pixel(target_pixel)
      config_object.set_option("target_pixel", target_pixel)
@@ -9,7 +34,8 @@
 +    # moved, only our calibration). ra/dec are the J2000 catalog coords the
 +    # user centered in the eyepiece. Only here, not the reset-to-center path
 +    # (UIAlign.key_number(1)) or the manual daytime align (align_daytime.py).
-+    shared_state.set_last_align(ra, dec)
++    if record_align:
++        shared_state.set_last_align(ra, dec)
      return True
  
  

@@ -245,7 +245,7 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -815,6 +940,35 @@
+@@ -815,6 +940,38 @@
                      if catalogs.catalog_filter is not None:
                          catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -262,8 +262,8 @@
 +                ):
 +                    # POST /api/align (PiFinder_Stellarmate): same code path
 +                    # as the on-device Align (UIAlign) - asks the solver for
-+                    # the camera pixel of (ra, dec) [J2000, degrees], stores
-+                    # target_pixel, stamps last_align. Blocks this loop for up
++                    # the camera pixel of (ra, dec) [J2000, degrees] and stores
++                    # target_pixel (no last_align stamp - see record_align below). Blocks this loop for up
 +                    # to align_on_radec()'s own 2 s timeout, exactly like the
 +                    # on-device Align does.
 +                    try:
@@ -273,6 +273,9 @@
 +                            command_queues,
 +                            cfg,
 +                            shared_state,
++                            # the position came FROM the mount: no stamp, or the
++                            # Mount Bridge would Sync the mount to itself
++                            record_align=False,
 +                        )
 +                    except Exception:
 +                        logger.exception("align_on_radec failed")
@@ -281,7 +284,7 @@
                  elif ui_command == "test_mode":
                      dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1291,7 +1445,26 @@
+@@ -1291,7 +1448,26 @@
          from rpi_hardware_pwm import HardwarePWM
  
          cfg = config.Config()
@@ -309,7 +312,7 @@
          integrator = importlib.import_module("PiFinder.integrator")
  
          # verify and sync GPSD baud rate
-@@ -1311,6 +1484,8 @@
+@@ -1311,6 +1487,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
@@ -318,7 +321,7 @@
          else:
              gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
  
-@@ -1334,9 +1509,24 @@
+@@ -1334,9 +1512,24 @@
          from PiFinder import camera_none as camera  # type: ignore[no-redef]
  
      if args.keyboard.lower() == "pi":
