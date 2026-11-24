@@ -19,6 +19,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center, Mount Bridge Quick Actions: the feedback line under the Sync buttons said "No sync since page load" while Synthetic Solve was running, which reads like a fault in Full Simulation. It now says "Synthetic Solve is feeding PiFinder · no manual sync needed" while Synthetic Solve runs and keeps "No sync since page load" otherwise. A Sync result already shown is never replaced.
 - `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
 
 ## [2.1.1] - 2026-10-25

@@ -4947,6 +4947,7 @@ function updateModeSummaryLine() {
 // until really settled" - replaced with a real poll-until-target loop that
 // needed this shared renderer to stay in sync with the periodic poll).
 function applyTruthInjectorState(desired, alive, errorText) {
+  refreshSyncIdleText(desired === true && !errorText);
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
@@ -8878,12 +8879,17 @@ async function triggerSyncToPiFinderVisible() {
 // Never inserted or removed, only its content changes, so a result can't move
 // anything else on the page; the last action stays with its time until the
 // next one replaces it (direct feedback, 2026-11-24).
+//   kinds: 'idle' (nothing yet), 'feed' (Synthetic Solve keeps PiFinder in step -
+//   nothing to sync by hand), 'work' (running), 'ok', 'warn' (a result).
+//   Only 'idle'/'feed' are replaced by refreshSyncIdleText(); a result stays.
+var _syncFeedbackIdle = true;
 function setSyncFeedback(kind, lead, rest, tooltip) {
   const el = document.getElementById('mb-sync-feedback');
   if (!el) return;
+  _syncFeedbackIdle = kind === 'idle' || kind === 'feed';
   el.classList.remove('mb-sync-ok', 'mb-sync-warn', 'mb-sync-work');
-  if (kind !== 'idle') el.classList.add('mb-sync-' + kind);
-  const dotClass = kind === 'ok' ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : 'dot-unconfirmed';
+  if (kind === 'ok' || kind === 'warn' || kind === 'work') el.classList.add('mb-sync-' + kind);
+  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : 'dot-unconfirmed';
   el.textContent = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot ' + dotClass;
@@ -8900,6 +8906,20 @@ function setSyncFeedback(kind, lead, rest, tooltip) {
   }
   el.append(dot, msg, when);
   el.title = tooltip || (rest ? lead + ' · ' + rest : lead);
+}
+
+// The idle line must not claim "no sync" while Synthetic Solve is feeding
+// PiFinder the simulated mount's position all the time (Full Simulation) -
+// that reads like a fault (direct feedback, 2026-11-24). Called from
+// applyTruthInjectorState(); leaves a real Sync result alone.
+function refreshSyncIdleText(syntheticSolveRunning) {
+  if (!_syncFeedbackIdle) return;
+  if (syntheticSolveRunning) {
+    setSyncFeedback('feed', 'Synthetic Solve is feeding PiFinder', 'no manual sync needed',
+      'Full Simulation: Synthetic Solve continuously gives PiFinder the simulated mount\'s position. Sync buttons still work for a one-off correction.');
+  } else {
+    setSyncFeedback('idle', 'No sync since page load', '');
+  }
 }
 
 function fmtRaHms(raDeg) {
