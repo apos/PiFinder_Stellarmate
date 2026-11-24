@@ -205,6 +205,12 @@ sequenceDiagram
   `align_on_radec()` only — which also means both real entry points (the Align screen's
   `key_square()` and `object_details.py`'s "align on this object") are covered for free, since
   both call it.
+- **A third entry point must not stamp (`POST /api/align`, 2026-11-24).** "Sync PiFinder from mount"
+  calls `align_on_radec()` with an RA/Dec that came *from the mount*. Stamping it would make the
+  Mount Bridge Sync the mount to its own position and, on mounts that keep a pointing model
+  (OnStep stores every align as a point; so does Ekos), add a pointless point. `align_on_radec()`
+  therefore takes `record_align` (default `True`, unchanged for the two on-device entry points);
+  the API path passes `False`. The calibration itself (`target_pixel`) is stored either way.
 - **Sync to the asserted target, not the post-align solve.** The Mount Bridge syncs to
   `last_align_ra`/`last_align_dec` (the catalog coords the user centred), not to PiFinder's
   subsequent `/api/status` solved position. No dependence on a fresh solve still being available a

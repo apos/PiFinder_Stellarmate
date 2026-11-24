@@ -23,6 +23,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 import http.cookiejar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -3780,6 +3781,93 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
         return None
 
 
+def _read_coupled_mount_position():
+    """The coupled mount's live position as (ra_deg, dec_deg, error): read once
+    via INDI, JNow (what the mount reports as EQUATORIAL_EOD_COORD), RA already
+    converted to degrees. Shared by the Injected-Solve re-seed and the Align-
+    based "Sync PiFinder from mount"; `error` is a short user-readable string
+    when the position can't be trusted (no mount, not connected, read failed).
+    The mount itself is always local to THIS device (Mount Bridge is a local
+    INDI driver); only the PiFinder being synced can be remote."""
+    try:
+        status = indi_client.mount_bridge_status()
+    except Exception as e:
+        return None, None, f"could not reach Mount Bridge: {e}"
+    active_mount = status.get("active_mount")
+    if not active_mount:
+        return None, None, "no mount configured in Mount Bridge"
+    # Live-found (2026-09-11, TE for #374): active_mount is just the
+    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
+    # (e.g. right after a Control Center restart) it can already be set
+    # while the device itself isn't connected yet. get_properties() below
+    # then either errors (caught, visible) or - the actually-observed,
+    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
+    # indiserver is still holding from before the reconnect, silently
+    # seeding the re-seed from an old position instead of the live one.
+    # mount_connected is the device's own live CONNECTION.CONNECT read, not
+    # a persisted name - check it explicitly before trusting the position.
+    if not status.get("mount_connected"):
+        return None, None, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
+    try:
+        props = indi_client.get_properties(device=active_mount)
+        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
+        dec_deg = float(eq["DEC"])
+    except Exception as e:
+        return None, None, f"could not read {active_mount}'s position: {e}"
+    return ra_deg, dec_deg, None
+
+
+def _pifinder_align_from_mount(port: str, host: str = "127.0.0.1") -> dict:
+    """"Sync PiFinder from mount" on real hardware: tell PiFinder where the
+    mount points, using PiFinder's own Align (POST /api/align) - the same
+    calibration step as picking the centred star on the device. Real plate-
+    solving keeps running (unlike /api/fake_solve, which pauses it).
+
+    Returns a dict: {"success": True, "ra", "dec" (J2000), "mount_ra_deg",
+    "mount_dec_deg" (JNow), "separation_deg", "fov_deg"} or {"success": False,
+    "reason": "no_solve"|"outside_fov"|"timeout"|"fake_solve_active"|"busy"|
+    "mount"|"unreachable"|"error", "message"/"error": str, plus
+    "separation_deg"/"fov_deg" when PiFinder reported them}. PiFinder answers
+    these refusals itself (HTTP 409 with a JSON body); the reason texts the page
+    shows are built from them, see triggerSyncPiFinderFromMount() in
+    status_page.html. Full Simulation has no camera/solve to align against and
+    uses the injected-solve path instead - the page picks, not this function."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return {"success": False, "reason": "error", "error": "invalid port"}
+    ra_deg, dec_deg, err = _read_coupled_mount_position()
+    if err:
+        return {"success": False, "reason": "mount", "error": err}
+    body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+    req = urllib.request.Request(
+        f"http://{host}:{port}/api/align",
+        method="POST",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        # PiFinder's own timeout for the solver is 2 s; allow for the main loop.
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        try:
+            data = json.loads(e.read())
+        except Exception:
+            return {"success": False, "reason": "error", "error": f"PiFinder answered HTTP {e.code}"}
+        if e.code == 404:
+            return {
+                "success": False, "reason": "error",
+                "error": "this PiFinder has no Align API yet - update PiFinder_Stellarmate",
+            }
+        if "reason" not in data:
+            return {"success": False, "reason": "error", "error": data.get("error") or f"PiFinder answered HTTP {e.code}"}
+    except Exception as e:
+        return {"success": False, "reason": "unreachable", "error": f"could not reach PiFinder: {e}"}
+    data["mount_ra_deg"] = ra_deg
+    data["mount_dec_deg"] = dec_deg
+    return data
+
+
 def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", skip_auto_release: bool = False):
     """Turn Injected Solve on, seeded with the currently coupled mount's
     live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
@@ -3804,32 +3892,9 @@ def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", s
     flag defaulting to False."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False, "invalid port"
-    try:
-        status = indi_client.mount_bridge_status()
-    except Exception as e:
-        return False, f"could not reach Mount Bridge: {e}"
-    active_mount = status.get("active_mount")
-    if not active_mount:
-        return False, "no mount configured in Mount Bridge"
-    # Live-found (2026-09-11, TE for #374): active_mount is just the
-    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
-    # (e.g. right after a Control Center restart) it can already be set
-    # while the device itself isn't connected yet. get_properties() below
-    # then either errors (caught, visible) or - the actually-observed,
-    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
-    # indiserver is still holding from before the reconnect, silently
-    # seeding the re-seed from an old position instead of the live one.
-    # mount_connected is the device's own live CONNECTION.CONNECT read, not
-    # a persisted name - check it explicitly before trusting the position.
-    if not status.get("mount_connected"):
-        return False, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
-    try:
-        props = indi_client.get_properties(device=active_mount)
-        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
-        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
-        dec_deg = float(eq["DEC"])
-    except Exception as e:
-        return False, f"could not read {active_mount}'s position: {e}"
+    ra_deg, dec_deg, err = _read_coupled_mount_position()
+    if err:
+        return False, err
     try:
         body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
         req = urllib.request.Request(
@@ -5794,6 +5859,16 @@ class Handler(BaseHTTPRequestHandler):
             skip_auto_release = qs.get("skip_auto_release", [""])[0] == "true"
             ok, err = _pifinder_enable_fake_solve_from_mount(port, host, skip_auto_release=skip_auto_release)
             self._send_json({"success": ok, "error": err})
+            return
+
+        if parsed.path == "/api/pifinder_align_from_mount":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "reason": "error", "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json(_pifinder_align_from_mount(port, host))
             return
 
         if parsed.path == "/api/fake_solve_set":

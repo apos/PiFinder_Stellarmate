@@ -146,7 +146,7 @@ Produziert PiFinders Plate-Solver gerade eine Position? Aus PiFinders `solve_sou
 ### Injected
 
 Erscheint an `Solve`s rechtem Rand **nur solange ein [Injected Solve](#synthetic-solve-vs-manueller-einmal-seed)
-aktiv ist** (Synthetic Solve, Re-seed from mount, Set position oder Sync). Seine Anwesenheit ist das
+aktiv ist** (Synthetic Solve, Set PiFinder position oder, nur in der Full Simulation, Sync PiFinder from mount). Seine Anwesenheit ist das
 Signal — keine Farbskala. Wann immer er sichtbar ist, ist `Solve` rot.
 
 ### IMU
@@ -524,7 +524,7 @@ die zwei Wege an, das zu ändern — nimm den, der zur vertrauenswürdigen Seite
 
 | Button | Was er tut | Wann |
 |---|---|---|
-| **Re-seed from mount** | Liest die aktuelle Position der Montierung und injiziert *diese* als PiFinders Position. | Die Montierung steht richtig; PiFinders (simulierter) Solve ist der Ausreißer. |
+| **Sync PiFinder from mount** | Sagt PiFinder, wohin die Montierung zeigt: auf einem echten PiFinder PiFinders eigener Align, in der Full Simulation wird die Position der Montierung als PiFinders Position injiziert. | Die Montierung steht richtig; PiFinders Solve ist der Ausreißer. |
 | **Sync mount from PiFinder** | Synct die Montierung auf das, was PiFinder gerade zeigt — sofortige Positionsaktualisierung, kein Slew. | PiFinders Position stimmt (ein echter Solve, oder eine bewusst gesetzte) und die Montierung glaubt Falsches — z. B. nach Bewegen der Montierung von Hand. |
 
 Sobald eine der beiden erfolgreich ist, verschwindet die Karte. Derselbe **Sync mount from
@@ -571,12 +571,24 @@ neu berechnet, da sie nichts bedeuten würde.
 
 Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal einstellt:
 
-- **Quick Actions** — die Einmal-Buttons: **Sync mount from PiFinder** (oben), **Align to Held
-  Target** und **Goto Held Target** (korrigieren PiFinders bzw. der Montierung Annahme über das
-  gehaltene Ziel — brauchen einen aktiven Coupling-Modus) und **Stop movement** (Not-Halt; setzt
-  außerdem Coupling auf Off, damit nichts nachtriggert). **Threshold** (Bogenmin.) ist, wie weit
-  daneben, bevor Verify/Alert warnt oder ein Auto-correct-Modus eingreift. **Decouple** setzt
-  Coupling zurück auf Off.
+- **Quick Actions** — die Einmal-Buttons, in zwei Gruppen:
+  - **Sync positions (once)**: **Sync mount from PiFinder** (PiFinder → Montierung) und **Sync
+    PiFinder from mount** (Montierung → PiFinder), nebeneinander, die Richtung steht am Button. Den
+    zweiten benutzt man, wenn man einen Stern im Scope zentriert hat und PiFinder nicht
+    übereinstimmt: Auf einem echten PiFinder ist das PiFinders eigener **Align** (dieselbe
+    Kalibrierung wie das Auswählen des Sterns am Gerät), das echte Plate-Solving läuft also weiter
+    und danach ist nichts abzuschalten. Er braucht einen aktuellen Plate-Solve und die Montierung
+    im Gesichtsfeld von PiFinder (beim Standardobjektiv 16 mm etwa 6,9° von der Mitte); kann er
+    nicht alignen, sagt er warum. Eine feste Zeile unter den beiden Buttons zeigt das letzte
+    Ergebnis mit Uhrzeit; sie erscheint und verschwindet nie, nichts anderes verschiebt sich. In der
+    Full Simulation (keine Kamera) injiziert der Button stattdessen die Position der Montierung.
+  - **Held target**: **Align to Held Target** und **Goto Held Target** (korrigieren PiFinders bzw.
+    der Montierung Annahme über das gehaltene Ziel — brauchen einen aktiven Coupling-Modus),
+    **Revert to Held Target Now** und **Stop movement** (Not-Halt; setzt außerdem Coupling auf Off,
+    damit nichts nachtriggert).
+
+  **Threshold** (Bogenmin.) ist, wie weit daneben, bevor Verify/Alert warnt oder ein
+  Auto-correct-Modus eingreift. **Decouple** setzt Coupling zurück auf Off.
 - **Coupling-Presets** — eines wählen:
   - **Verify/Alert only** — überwacht die Drift, bewegt die Montierung nie. Der passive "steht meine
     Montierung noch richtig?"-Check für die Astrofotografie.
@@ -656,19 +668,22 @@ das grüne `Injected`-Badge in der PiFinder-Kachel.
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
-<sub>Manueller Einmal-Seed (Full Simulation), in den Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code> und eine direkte RA/Dec-Eingabe.</sub>
+<sub>Manueller Einmal-Seed (Full Simulation): <code>Sync PiFinder from mount</code>, <code>Set PiFinder position</code> und eine direkte RA/Dec-Eingabe. Er sitzt jetzt in <em>Simulation, Test and Power</em>; der Screenshot zeigt das frühere Layout.</sub>
 </td>
 </tr>
 </table>
 
-**Manueller Einmal-Seed** (eingeklappt in den Quick Actions) injiziert *eine einzelne* Position und
-hört dann auf: **Re-seed from mount** liest die aktuelle Position der Montierung einmal, **Set
-position** nimmt eine wörtliche RA/Dec (JNow, Grad), und beide schalten die Injektion ein, falls sie
-aus war. PiFinders normales IMU-Dead-Reckoning trackt von diesem Anker aus weiter, genau wie von
-einem echten Solve. Damit setzt man PiFinder an *eine* bekannte Stelle — z. B. um die Uneinigkeit
-für einen Sync-Test herzustellen — statt ihn der Montierung folgen zu lassen. `Turn off` bringt
-PiFinder zum echten Kamera-Solving zurück. Bewusst *nicht* im Synthetic-Solve-Punkt gespiegelt, um
-dieses eine Signal einfach zu halten.
+**Manueller Einmal-Seed** (eingeklappt, in *Simulation, Test and Power*) injiziert *eine einzelne*
+Position und hört dann auf: **Sync PiFinder from mount** liest die aktuelle Position der Montierung
+einmal, **Set PiFinder position** nimmt eine wörtliche RA/Dec (JNow, Grad), und beide schalten die
+Injektion ein, falls sie aus war. PiFinders normales IMU-Dead-Reckoning trackt von diesem Anker aus
+weiter, genau wie von einem echten Solve. Damit setzt man PiFinder an *eine* bekannte Stelle — z. B.
+um die Uneinigkeit für einen Sync-Test herzustellen — statt ihn der Montierung folgen zu lassen. Eine
+injizierte Position pausiert das echte Kamera-Solving, deshalb gehört das zum Testen; **Stop
+injected solve** bringt PiFinder zum echten Kamera-Solving zurück. Auf einem echten PiFinder nimmt
+man stattdessen die Quick Action **Sync PiFinder from mount** (PiFinders eigener Align, keine
+Injektion). Bewusst *nicht* im Synthetic-Solve-Punkt gespiegelt, um dieses eine Signal einfach zu
+halten.
 
 ---
 
