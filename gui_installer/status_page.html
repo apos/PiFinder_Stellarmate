@@ -590,6 +590,11 @@
     gap: 1rem;
     margin-bottom: 0.7rem;
   }
+  /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
+  #sky-panel { flex: 0 1 210px; min-width: 150px; max-width: 230px; }
+  #sky-panel .group-label { margin-bottom: 0.2rem; }
+  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
+  @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -2420,6 +2425,12 @@
         <div id="pf-keypad-c" class="pf-keypad" style="display:none;">
           <div class="group-label">Remote (per IP)</div>
           <div id="pf-keypad-c-grid"></div>
+        </div>
+        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
+             the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
+        <div id="sky-panel" style="display:none;">
+          <div class="group-label">Sky<a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a></div>
+          <svg id="sky-panel-svg" viewBox="0 0 240 240" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
         </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
@@ -8712,6 +8723,170 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   }
 }
 
+// ---- Sky Position Panel (begin) ----
+// docs/concepts/sky_position_panel.md. A small, display-only all-sky picture next to
+// PiFinder's screen and keys: zenith in the middle, horizon at the rim, north up, east left
+// (looking up). Fed by the 2 s /api/mount_bridge_drift poll ("sky" key). The geometry and
+// the model below are pure functions so test_tools/sky_panel_test.js can run them.
+const SKY_C = { ring: '#444444', ring2: '#333333', disc: '#1a1a1a', fg: '#dddddd', muted: '#888888',
+  blue: '#7ec8ff', green: '#4caf50', yellow: '#f5a623', red: '#e53935', redSoft: '#ff8a80' };
+const SKY_CX = 120, SKY_CY = 124, SKY_R = 90;
+const SKY_FOV_DEG = 13.7;        // PiFinder's field with the standard 16 mm lens
+const SKY_AGREE_DEG = 7;         // within about the field's half width: "they agree"
+function skyRad(d) { return d * Math.PI / 180; }
+function skySep(a, b) {
+  const x = Math.sin(skyRad(a.alt)) * Math.sin(skyRad(b.alt)) +
+    Math.cos(skyRad(a.alt)) * Math.cos(skyRad(b.alt)) * Math.cos(skyRad(a.az - b.az));
+  return Math.acos(Math.max(-1, Math.min(1, x))) * 180 / Math.PI;
+}
+// North up, east left. Below the horizon the marker sits just outside the rim, in the
+// direction of its azimuth.
+function skyPlace(o) {
+  const below = o.alt < 0;
+  const r = below ? SKY_R * 1.04 : (90 - o.alt) / 90 * SKY_R;
+  return { x: SKY_CX - r * Math.sin(skyRad(o.az)), y: SKY_CY - r * Math.cos(skyRad(o.az)), below: below };
+}
+function skyAlt(o) { return (o.alt < 0 ? '−' : '') + Math.abs(Math.round(o.alt)) + '°'; }
+// Mount state sets the colour of its dot and name: tracking green, stopped (not tracking)
+// yellow, parked red; unknown state stays blue.
+function skyMountStyle(state) {
+  if (state === 'parked') return { color: SKY_C.red, word: 'parked' };
+  if (state === 'not tracking') return { color: SKY_C.yellow, word: 'stopped' };
+  if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
+  return { color: SKY_C.blue, word: null };
+}
+// What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
+function skyBuildModel(sky) {
+  if (!sky) return null;
+  if (!sky.location_known) return { unknown: true, markers: [], line: null };
+  const markers = [];
+  const add = (id, o, name, color, extra) => {
+    if (!o) return null;
+    const m = Object.assign({ id: id, o: o, p: skyPlace(o), name: name, color: color, stale: o.stale === true }, extra || {});
+    markers.push(m);
+    return m;
+  };
+  const ms = skyMountStyle(sky.mount_state);
+  const mount = add('mount', sky.mount,
+    'Mount' + (ms.word ? ' (' + ms.word + ')' : '') + (sky.mount && sky.mount.alt < 0 ? ' ' + skyAlt(sky.mount) : ''), ms.color);
+  const pf = add('pifinder', sky.pifinder,
+    'PiFinder' + (sky.pifinder && sky.pifinder.alt < 0 ? ' ' + skyAlt(sky.pifinder) : ''),
+    sky.pifinder && sky.pifinder.alt < 0 ? SKY_C.redSoft : SKY_C.fg);
+  add('goto', sky.goto, 'Goto', SKY_C.fg);
+  add('held', sky.held, 'Held', SKY_C.blue);
+  let line = null;
+  if (mount && pf) {
+    const below = mount.p.below || pf.p.below;
+    line = {
+      from: mount.p, to: pf.p,
+      color: below ? SKY_C.red : (skySep(sky.mount, sky.pifinder) <= SKY_AGREE_DEG ? SKY_C.green : SKY_C.yellow),
+      // The arrow (the direction to sync) only exists where it can be known: exactly one of
+      // the two is below the horizon, so that one is wrong and gets corrected from the other.
+      arrow: (pf.p.below && !mount.p.below) ? { from: mount.p, to: pf.p }
+        : (mount.p.below && !pf.p.below) ? { from: pf.p, to: mount.p } : null,
+    };
+  }
+  skyPlaceNames(markers);
+  return { unknown: false, markers: markers, line: line };
+}
+// Name next to its marker: first free of "toward the middle", "other side", above, below.
+function skyPlaceNames(markers) {
+  const placed = [];
+  const h = 12;
+  markers.forEach((m) => {
+    const w = m.name.length * 6.3;
+    const cands = m.p.x > SKY_CX
+      ? [[-10, 4, 'end'], [10, 4, 'start'], [0, -10, 'middle'], [0, 18, 'middle']]
+      : [[10, 4, 'start'], [-10, 4, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
+    let pick = cands[0], box = null;
+    for (let i = 0; i < cands.length; i++) {
+      const c = cands[i], x = m.p.x + c[0], y = m.p.y + c[1];
+      const x0 = c[2] === 'end' ? x - w : c[2] === 'middle' ? x - w / 2 : x;
+      const b = { x0: x0, x1: x0 + w, y0: y - h + 2, y1: y + 3 };
+      const hit = x0 < 2 || x0 + w > 238 || b.y0 < 2 || b.y1 > 238 ||
+        placed.some((o) => !(b.x1 < o.x0 || b.x0 > o.x1 || b.y1 < o.y0 || b.y0 > o.y1));
+      box = b; pick = c;
+      if (!hit) break;
+    }
+    placed.push(box);
+    m.label = { x: m.p.x + pick[0], y: m.p.y + pick[1], anchor: pick[2] };
+  });
+}
+function skyEl(name, attrs, parent, text) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function drawSkyPanel(svg, model) {
+  svg.textContent = '';
+  const C = SKY_C;
+  skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: SKY_R, fill: C.disc, stroke: model.unknown ? C.ring2 : C.ring, 'stroke-width': 1.5,
+    'stroke-dasharray': model.unknown ? '3 4' : 'none' }, svg);
+  if (model.unknown) {
+    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12 }, svg, 'Location unknown');
+    return;
+  }
+  [30, 60].forEach((alt) => skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: (90 - alt) / 90 * SKY_R, fill: 'none', stroke: C.ring2,
+    'stroke-width': 1, 'stroke-dasharray': '2 4' }, svg));
+  skyEl('line', { x1: SKY_CX, y1: SKY_CY - SKY_R, x2: SKY_CX, y2: SKY_CY + SKY_R, stroke: C.ring2, 'stroke-width': 1 }, svg);
+  skyEl('line', { x1: SKY_CX - SKY_R, y1: SKY_CY, x2: SKY_CX + SKY_R, y2: SKY_CY, stroke: C.ring2, 'stroke-width': 1 }, svg);
+  [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach((d) => {
+    const off = SKY_R + 11;
+    skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 4, 'text-anchor': 'middle',
+      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 10.5, 'font-weight': d[0] === 'N' ? 700 : 500 }, svg, d[0]);
+  });
+  if (model.line) {
+    const L = model.line;
+    skyEl('line', { x1: L.from.x, y1: L.from.y, x2: L.to.x, y2: L.to.y, stroke: L.color, 'stroke-width': 1.4, 'stroke-dasharray': '4 3' }, svg);
+    if (L.arrow) {
+      const a = L.arrow, t = 0.6;
+      const x = a.from.x + (a.to.x - a.from.x) * t, y = a.from.y + (a.to.y - a.from.y) * t;
+      const ang = Math.atan2(a.to.y - a.from.y, a.to.x - a.from.x) * 180 / Math.PI;
+      skyEl('polygon', { points: '7,0 -5,-5 -5,5', transform: 'translate(' + x + ' ' + y + ') rotate(' + ang + ')', fill: C.red, stroke: C.disc, 'stroke-width': 1 }, svg);
+    }
+  }
+  const find = (id) => model.markers.find((m) => m.id === id);
+  const g = (m) => { const e = skyEl('g', { opacity: m.stale ? 0.5 : 1 }, svg); skyEl('title', {}, e, m.name + ' - altitude ' + Math.round(m.o.alt) + '°, azimuth ' + Math.round(m.o.az) + '°'); return e; };
+  const pf = find('pifinder'), held = find('held'), go = find('goto'), mount = find('mount');
+  if (pf && !pf.p.below) {
+    const f = SKY_FOV_DEG / 90 * SKY_R;
+    skyEl('rect', { x: pf.p.x - f / 2, y: pf.p.y - f / 2, width: f, height: f, fill: 'none', stroke: C.fg, 'stroke-width': 1, opacity: 0.8 }, g(pf));
+  }
+  if (held) {
+    const e = g(held);
+    skyEl('line', { x1: held.p.x - 6, y1: held.p.y, x2: held.p.x + 6, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 }, e);
+    skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
+  }
+  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
+  if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
+    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 11.5,
+    'font-weight': 600, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
+}
+let _skyLastOk = 0;
+function applySkyPanel(sky) {
+  const tile = document.getElementById('sky-panel');
+  const svg = document.getElementById('sky-panel-svg');
+  if (!tile || !svg) return;
+  const model = skyBuildModel(sky);
+  if (!model) { tile.style.display = 'none'; return; }
+  tile.style.display = '';
+  tile.style.opacity = '';
+  _skyLastOk = Date.now();
+  drawSkyPanel(svg, model);
+  svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
+    : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
+}
+// A picture that stopped updating must not look current.
+setInterval(() => {
+  const tile = document.getElementById('sky-panel');
+  if (tile && tile.style.display !== 'none' && _skyLastOk && Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
+}, 2000);
+// ---- Sky Position Panel (end) ----
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -8726,6 +8901,7 @@ async function refreshMbDrift() {
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
+      applySkyPanel(data.sky);
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
       // from mount' darf im Client Mode nicht auftauchen" - none of these
@@ -8741,6 +8917,7 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(null, false);
       updatePiFinderHorizonStatus(null, false);
       updateMountRejectWarning(false, null);
+      applySkyPanel(null);
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
