@@ -199,8 +199,8 @@
   #bottom-logos img { height: 78px; width: auto; display: block; }
   #pifinder-screen {
     display: block;
-    width: 154px;
-    height: 154px;
+    width: 192px;
+    height: 192px;
     image-rendering: pixelated;
     border-radius: 4px;
     background: #000;
@@ -208,7 +208,7 @@
   /* Row: the OLED mirror itself, then the help icon in its own small
      column to the right - NOT an overlay on top of the image (see
      .pifinder-screen-help's own comment for why that changed). */
-  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; }
+  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; order: 1; }
   /* Tightly wraps just the image + its waiting-overlay (inset:0 below) -
      kept separate from #pifinder-screen-wrap so the icon column doesn't
      also get covered by that overlay. */
@@ -584,19 +584,22 @@
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
   }
+  /* OLED mirror and Sky are the first row; the keys follow on the right when there is room and
+     wrap below otherwise (order: screen, sky, keys). */
   #pifinder-glance-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.7rem;
   }
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
-  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 1 230px; min-width: 160px; max-width: 250px; }
-  #sky-panel-inner { flex: 1 1 auto; min-width: 0; }
+  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
+     size: it never shrinks, the row wraps instead. */
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 0 auto; order: 2; }
+  #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
-  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
-  @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
+  #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -657,7 +660,7 @@
   .pf-keypad-style-btn:first-child { border-radius: 10px 0 0 10px; border-right: none; }
   .pf-keypad-style-btn:last-child { border-radius: 0 10px 10px 0; }
   .pf-keypad-style-btn.active { background: #8a2e24; border-color: #c0392b; color: #fff; }
-  .pf-keypad { flex: 1; }
+  .pf-keypad { flex: 1 1 auto; order: 3; }
   .pf-keypad-busy { opacity: 0.5; pointer-events: none; }
   #pf-keypad-a {
     display: flex;
@@ -692,17 +695,21 @@
     background: #5c1f1f;
     border-color: #e53935;
   }
-  #pf-keypad-a .pf-key { height: 46px; }
+  #pf-keypad-a .pf-key { height: 58px; }
   .pf-arrow { width: 28px; height: 28px; fill: currentColor; }
-  #pf-keypad-a .pf-arrow { width: 23px; height: 23px; }
+  #pf-keypad-a .pf-arrow { width: 26px; height: 26px; }
   .pf-key-enter { background: #8a2e24; border-color: #c0392b; color: #fff; }
   .pf-key-long.pf-armed { background: #8a2e24; border-color: #c0392b; color: #fff; }
   .pf-keypad-a-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
-    width: 172px;
+    width: 210px;
     flex-shrink: 0;
+  }
+  /* LONG sits in the grid's free bottom-right cell (next to the down key). */
+  .pf-keypad-a-grid .pf-key-long-square {
+    grid-column: 3; grid-row: 3; width: 100%; height: 58px; border-radius: 6px; font-size: 0.7rem;
   }
   .pf-key-long-square {
     background: #232323;
@@ -2402,8 +2409,8 @@
             <button class="pf-key pf-key-enter" style="grid-column:2; grid-row:2;" onclick="pfSendKey('SQUARE', this)" title="Enter">&#9632;</button>
             <button class="pf-key" style="grid-column:3; grid-row:2;" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
             <button class="pf-key" style="grid-column:2; grid-row:3;" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button id="pf-key-long-a" class="pf-key-long-square" onclick="pfToggleLong(this)">LONG</button>
           </div>
-          <button id="pf-key-long-a" class="pf-key-long-square" onclick="pfToggleLong(this)">LONG</button>
         </div>
         <div id="pf-keypad-b" class="pf-keypad" style="display:none;">
           <div class="pf-keypad-b-grid">
@@ -8894,7 +8901,10 @@ function applySkyPanel(sky) {
 // A picture that stopped updating must not look current.
 setInterval(() => {
   const tile = document.getElementById('sky-panel');
-  if (tile && tile.style.display !== 'none' && _skyLastOk && Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
+  if (!tile || tile.style.display === 'none' || !_skyLastOk) return;
+  // A read-only tab (another tab holds control) polls nothing, like the rest of the page: no dimming there.
+  if (typeof ccIsHost !== 'undefined' && !ccIsHost) { tile.style.opacity = ''; return; }
+  if (Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
 }, 2000);
 // ---- Sky Position Panel (end) ----
 
