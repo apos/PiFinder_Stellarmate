@@ -4,7 +4,7 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.6.3"
+pifinder_stellarmate_version_stable="2.6.4"
 
 # This script is actually tested against this version
 pifinder_stellarmate_version_testing="2.6.1"

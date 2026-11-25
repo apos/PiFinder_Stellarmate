@@ -1,6 +1,7 @@
 source /home/stellarmate/PiFinder_Stellarmate/bin/functions.sh
 
 git submodule update --init --recursive
+ensure_tetra3_symlink
 python3 -m venv ${pifinder_dir}/python/.venv
 source ${pifinder_dir}/python/.venv/bin/activate
 ${pifinder_dir}/python/.venv/bin/pip install -r ${pifinder_dir}/python/requirements.txt
