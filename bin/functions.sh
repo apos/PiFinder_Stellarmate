@@ -430,6 +430,46 @@ ensure_tetra3_symlink() {
   fi
 }
 
+# PiFinder's own data migrations. Upstream runs them from its pifinder_post_update.sh, which PFSM does not use
+# (see docs/concepts/lifecycle_install_update_upgrade.md section 4), so the ones that change user data are run here.
+# Today that is v2.6.0: clear a stale flop_image=true on the shipped "Generic Dobsonian" in config.json (a Dobsonian
+# needs neither flip nor flop; with the flag the object image comes out mirrored). Idempotent: PiFinder's script
+# changes the file only when it finds exactly that old record. config.json is backed up first; the backup is kept only
+# when the file really changed. Skipped while pifinder.service runs (PiFinder writes config.json itself, and the
+# script does not write atomically); it then runs at the next update. A failure never stops the install or update.
+run_pifinder_data_migrations() {
+  local migration="${pifinder_dir}/python/PiFinder/migrations/v2_6_0_dob_flop.py"
+  local config="${pifinder_data_dir}/config.json"
+  [ -f "$migration" ] || return 0   # PiFinder older than 2.6.0 has no such migration
+  [ -f "$config" ] || return 0      # nothing saved yet
+  if systemctl is-active --quiet pifinder.service 2>/dev/null; then
+    echo "ℹ️  PiFinder is running: the data migration check is skipped now and runs at the next update."
+    return 0
+  fi
+  # a unique name: two runs in the same second must never share (and delete) one backup
+  local backup
+  backup="$(mktemp "${config}.pfsm-before-migration-$(date +%Y%m%d-%H%M%S)-XXXXXX" 2>/dev/null)" || backup=""
+  if [ -z "$backup" ] || ! cp -p "$config" "$backup"; then
+    [ -n "$backup" ] && rm -f "$backup"
+    echo "⚠️  Could not back up ${config}: the data migration check is skipped."
+    return 0
+  fi
+  local out
+  if out="$(python3 "$migration" "$config" 2>&1)"; then
+    if cmp -s "$config" "$backup"; then
+      rm -f "$backup"
+      echo "✅ PiFinder data migration (v2.6.0 flop_image): nothing to change."
+    else
+      echo "✅ PiFinder data migration (v2.6.0 flop_image): ${out}"
+      echo "   config.json changed; the copy from before is kept at ${backup}"
+    fi
+  else
+    cp -p "$backup" "$config"
+    echo "⚠️  PiFinder data migration (v2.6.0 flop_image) failed, config.json restored from its backup (${backup}): ${out}"
+  fi
+  return 0
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"

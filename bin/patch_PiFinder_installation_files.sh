@@ -83,6 +83,9 @@ show_diff_if_changed() {
 # PiFinder 2.6.4+: python/tetra3 is no longer tracked, recreate the symlink after every checkout/clone
 ensure_tetra3_symlink
 
+# PiFinder data migrations that upstream runs from its own post-update script (not used by PFSM)
+run_pifinder_data_migrations
+
 # Copy a new pifinder_setup.sh 
 mv "${pifinder_dir}/pifinder_setup.sh" "${pifinder_dir}/pifinder_setup.sh.before.stellarmate"
 cp "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" "${pifinder_dir}/pifinder_setup.sh"

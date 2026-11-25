@@ -118,23 +118,36 @@ points at `/home/pifinder`, which does not exist on SMOS (user `stellarmate`, Ar
 - `diffs/software_py.diff` makes the menu's "update" say *Update via Control Center* instead of starting anything.
 - PFSM does not support a rollback to an older release (owner, 2026-11-25).
 
-### 4.2 Checklist for every change of the PiFinder pin
+### 4.2 PiFinder's data across versions (not the code path)
 
-1. **Patches:** regenerate every diff that fails, and dry-run each diff against the pristine file of **every** whitelisted version
-   (`git show vX:python/PiFinder/...` then `patch --dry-run -N`).
-2. **Upstream scripts:** compare the old and the new tag for what PFSM does not run by itself:
-   `git diff vOLD vNEW -- pifinder_setup.sh pifinder_update.sh pifinder_post_update.sh migration_source/ pi_config_files/ default_config.json python/requirements.txt`.
-   For every new migration or setup step decide: *PFSM covers it* / *not needed on SMOS* (say why) / *must be added*, and write the decision into the pin-bump note in basic-memory.
-3. **Tests that need no hardware:** our own tests, `node test_tools/*_test.js`, `python3 test_tools/*_test.py`, `bin/tests/run_all.sh`.
-4. **A real update on the Pi 5** (`--action=update` from the branch under test), then: version, no `*.rej`, service, API, LX200 and Mount Bridge connected.
-5. **Say what was not tested** (camera, solve, Align with a star, keyboard, Pi 4, UTM) in the changelog and in the release notes.
+The code path is PFSM's own (section 4.1). This section is only about the **data PiFinder keeps** and how a new version adapts it.
 
-State of the upstream migrations against PFSM (checked 2026-11-25, Pi 5): v2.2.1 (libinput, group `input`) covered; v2.2.2 (`dwc2,dr_mode=host`, USB-C host) not applied,
-not needed on a Pi 5 (not checked for Pi 4); v2.4.0 (cedar as a system service) not applied, PiFinder starts cedar itself; v2.6.0 (stale `flop_image`) not applied,
-the value is already false on the test Pi; v2.6.1 (`RemoveIPC=no`) not applied, **moot on the test Pi**: logind's effective default is `RemoveIPC=yes` (checked with `busctl`), which would remove the
-solver's `/dev/shm` segment (and the single-instance lock file) when the last session of the user ends, but `stellarmate` has `Linger=yes` (set by the SMOS image, not by PFSM),
-so the user is never fully logged out and nothing is removed. It would matter if lingering were switched off. Everything in `/dev/shm` on the test Pi belongs to PiFinder
-(`cedar_detect_image`, `pifinder.lock`, `sem.loky-*`); nothing of PFSM, INDI or KStars was found there. The only collision seen was two PiFinder instances (see section 4.1).
+| Data | Where | How a new PiFinder adapts it |
+|---|---|---|
+| Settings, equipment (telescopes, eyepieces), camera, alignment point | `~/PiFinder_data/config.json` | in code at start (defaults for missing keys are read from `default_config.json`; PiFinder 2.6.4 sanitises unusable alignment points and keeps unknown keys when it saves), plus script migrations with a ledger (below) |
+| Observation log | `~/PiFinder_data/observations.db` (`obs_sessions`, `obs_objects`, no schema version) | tables created on demand; no schema change since 2.0 |
+| Catalog | `astro_data/pifinder_objects.db` (tracked in git) | arrives with the tag (2.6.4: 33 files changed in `astro_data`, cited corrections) |
+| Lists, images, logs | `obslists/`, `screenshots/`, `captures/`, `pifinder.log*` | user content, no adaptation |
+
+PiFinder's script migrations are listed in `migration_source/` and recorded in a ledger `~/PiFinder_data/migrations/`; PFSM never creates it. Of them, **one** changes user data since 2.0:
+v2.6.0 clears a stale `flop_image=true` on the shipped "Generic Dobsonian" in `config.json` (otherwise the object image comes out mirrored).
+PFSM runs it itself: `run_pifinder_data_migrations()` (`bin/functions.sh`, called by the patch script after every install and update). It runs PiFinder's own script
+(idempotent, changes the file only on exactly that old record), backs up `config.json` first, keeps the backup only when the file changed, skips while `pifinder.service` runs, and never stops the update
+(`bin/tests/test_data_migration.bats`). v1.x.x (moves a pre-2.0 `observations.db`) does not apply to any PFSM install.
+
+PFSM's own data in PiFinder's data: only through PiFinder's API (`set_option("mount_type")`); the last-Align stamp lives in memory (`shared_state`), PFSM adds no key to `config.json`.
+
+**Checklist for every change of the PiFinder pin**
+
+1. **Patches:** regenerate every diff that fails and dry-run each diff against the pristine file of **every** whitelisted version (`git show vX:python/PiFinder/...`, then `patch --dry-run -N`).
+2. **Data:** `git diff vOLD vNEW -- python/PiFinder/config.py python/PiFinder/equipment.py default_config.json python/PiFinder/db python/PiFinder/migrations migration_source docs/adr`.
+   For each change in how config, database or ledger data is adapted decide: *PiFinder does it itself at start* / *a script migration that PFSM must run* (add it to `run_pifinder_data_migrations()` with a test) / *not applicable*.
+   Write the decision into the pin-bump note in basic-memory.
+3. **System settings, separate from data:** the parts of `migration_source/*.sh`, `pifinder_setup.sh` and `pi_config_files/` that touch `/boot/config.txt`, systemd, packages. Decide per item (covered by PFSM / not needed on SMOS, say why / must be added). State on the test Pi 5 (2026-11-25): libinput and group `input` covered;
+   USB-C host `dwc2` (v2.2.2) not applied, not needed on a Pi 5; Cedar as a system service (v2.4.0) not applied, PiFinder starts Cedar itself; `RemoveIPC=no` (v2.6.1) not applied and moot while the user has lingering (`stellarmate` has `Linger=yes`).
+4. **Tests that need no hardware:** our own tests, `node test_tools/*_test.js`, `python3 test_tools/*_test.py`, `bin/tests/run_all.sh`.
+5. **A real update on the Pi 5** (`--action=update` from the branch under test), then: version, no `*.rej`, service, API, LX200 and Mount Bridge connected.
+6. **Say what was not tested** (camera, solve, Align with a star, keyboard, Pi 4, UTM) in the changelog and the release notes.
 
 ## 5. Python and package requirements
 
