@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-25
+
+> OLED mirror release: the PiFinder tile's OLED mirror follows the picture PiFinder delivers, so the Rev 4 display (1.91" OLED, 176 x 176) is shown at 244 px.
+> No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `node test_tools/oled_mirror_size_test.js` (5 checks); the sizing logic rendered in headless Firefox (128 -> 192 px hard pixels, 176 -> 244 px smoothed);
+> PiFinder 2.6.4 started with `--display headless_320` on the Pi 5 serves clean 320 x 240 pictures (menus and settings), which the tile now shows at 244 x 183.
+>
+> **Not yet seen live:** the tile with a real Rev 4 (no Rev 4 hardware was available; the 176 picture in the mockup was an illustration), and the tile layout with the 244 px picture in the real page.
+> `bin/display_off.py` still drives the display as a 128 x 128 SSD1351 and is unverified for Rev 4 (#646).
+
 ### Added
 
 - Control Center, PiFinder tile: the OLED mirror follows the picture PiFinder delivers. Rev 4 has a 1.91" OLED with 176 x 176 pixels (about 62 % more viewing area; PiFinder 2.6.4 detects it by itself and already serves the picture in that resolution): it is now shown at 244 px (the 27 % longer sides of the bigger display), smoothed, instead of being squeezed into the old 192 px box. The 128 x 128 picture of Rev 3 stays as before (192 px, hard pixels). A picture that is not square (for example a 320 x 240 LCD) keeps its aspect ratio instead of being squashed. Not yet seen with real Rev 4 hardware (the 176 picture in the mockup is an illustration).
