@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- **PiFinder pin moves from v2.6.3 to v2.6.4** (upstream release of 2026-11-22; `version.txt`, `pifinder_stellarmate_setup.sh`, the version whitelist of `patch_PiFinder_installation_files.sh`). Two patches had to be regenerated for it: `main_py.diff` (the sleep state machine now sits on top of 2.6.4's new `update(keep_awake)`) and `align_py.diff` (the Align stamp now follows 2.6.4's `config_object.save_target_pixel()`). The other patches apply unchanged (line offsets only). The two Align test files' fake configs gained `save_target_pixel`.
+- `pifinder_update.sh` stops with a clear message when `git pull` fails (as upstream's own does since 2.6.4).
+
+### Fixed
+
+- PiFinder 2.6.4 stopped tracking `python/tetra3` (upstream ADR 0035): in 2.6.3 it was a tracked symlink that a checkout of the newer tag removes, and a fresh clone never has it, so `import tetra3` would fail. New `ensure_tetra3_symlink()` (bin/functions.sh) recreates the link on every install/update (patch script and `pifinder_post_update.sh`); unit-tested in `bin/tests/test_tetra3_symlink.bats`.
+- The setup script now restarts itself once after it switched the branch (`--branch=...`): before, the run kept the pinned versions of the OLD branch's script while the patches already came from the NEW one (found live: switching to the branch with the 2.6.4 pin updated PiFinder to 2.6.3 and then applied the 2.6.4 patches, two hunks failed; a second run fixed it).
+
 ## [2.3.0] - 2026-11-25
 
 > Control Center layout release: the **Mount Bridge** block groups its badges (PiFinder | Drift, Bridge, Alt | Mount) and
