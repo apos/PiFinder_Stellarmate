@@ -1130,7 +1130,10 @@
   }
   .mb-collapsed-summary:hover { border-color: #3a3a3a; }
   .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
-  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; flex-shrink: 0; }
+  /* margin-left: auto keeps "show"/"hide" at the right even when it is the only
+     visible child (expanded: the summary content is hidden, see below) - with
+     only justify-content: space-between a lone child sits at the left. */
+  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; flex-shrink: 0; margin-left: auto; }
   .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
   .mb-collapsed-summary-sub { font-size: 0.75rem; color: #888; margin-top: 0.15rem; }
   /* #mb-role-line already has its own margin (see its base rule above) meant
@@ -1150,6 +1153,23 @@
      visible/clickable to collapse back. */
   .mb-collapsed-summary.mb-summary-expanded > *:not(.mb-collapsed-summary-chevron) {
     display: none !important;
+  }
+  /* Expanded: the header bar and the area it opens form one frame (header on
+     top with the "hide" at the right, the content joined below it), instead of
+     a separate bar with the cards floating underneath. The area is the next
+     sibling, the same one toggleCollapsibleSection() shows and hides. */
+  .mb-collapsed-summary.mb-summary-expanded {
+    margin-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .mb-collapsed-summary.mb-summary-expanded + * {
+    border: 1px solid #2a2a2a;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    background: #161616;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.5rem;
   }
   #hw-status {
     margin-top: 0.7rem;
