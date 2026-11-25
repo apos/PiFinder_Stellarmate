@@ -1,9 +1,10 @@
 # Concept: Sky Position Panel (all-sky view of mount and PiFinder)
 
-> **Status: step 1 (driver and `indi_client.py`) built, GUI tile not yet.** Tracked as
+> **Status: step 1 (driver and `indi_client.py`) built and verified live on the Pi5 (2026-11-25); step 3 (GUI tile,
+> issue #607) built and merged, not yet seen in a browser.** Tracked as
 > [GitHub issue #598](https://github.com/apos/PiFinder_Stellarmate/issues/598); step 1 is
 > [issue #600](https://github.com/apos/PiFinder_Stellarmate/issues/600).
-> Mockup (private Artifact): <https://claude.ai/artifact/H8zHyccPCpR4zbXfwGSVXs>, version 3.
+> Mockup (private Artifact): <https://claude.ai/artifact/H8zHyccPCpR4zbXfwGSVXs>, version 6.
 > Decisions below are the project owner's, 2026-11-25 (two rounds).
 
 ## 1. Why

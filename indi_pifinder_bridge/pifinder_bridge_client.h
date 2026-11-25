@@ -111,6 +111,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
 
+        // The mount's own TELESCOPE_PARK state. False: the mount has no park
+        // property (nothing known); otherwise `parked` says whether PARK is on.
+        bool getMountParked(bool &parked) const;
+
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
 
@@ -198,6 +202,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         std::atomic<long> m_lastMountTargetTime { 0 };
         std::atomic<long> m_lastPiFinderTargetTime { 0 };
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountParkSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;

@@ -2199,6 +2199,7 @@ void PiFinderMountBridge::TimerHit()
     // leave the property at its untouched startup default.
 
     publishSkyPanelExtras();
+    checkPendingSyncVerification();
 
     // Deliberately published here, AFTER handleGotoForward()/
     // handleAutoCorrectGoto()/the plain-Sync branch above have all had a
@@ -2421,6 +2422,66 @@ void PiFinderMountBridge::publishTargetHorizon(INumberVectorProperty &np, INumbe
     n[1].value = azimuth;
     np.s = state;
     IDSetNumber(&np, nullptr);
+}
+
+void PiFinderMountBridge::startSyncVerification(double ra, double dec)
+{
+    m_syncVerify.active = true;
+    m_syncVerify.ra = ra;
+    m_syncVerify.dec = dec;
+    m_syncVerify.start = static_cast<long>(time(nullptr));
+    m_syncVerify.lastOffArcmin = -1.0;
+}
+
+void PiFinderMountBridge::checkPendingSyncVerification()
+{
+    if (!m_syncVerify.active)
+        return;
+    if (m_client == nullptr || m_client->isMountSlewing())
+    {
+        // A Goto took over: the mount is moving on purpose, this is no longer a Sync result.
+        m_syncVerify.active = false;
+        return;
+    }
+
+    static constexpr double TOLERANCE_ARCMIN = 3.0; // a tracking mount drifts well under this in the window
+    static constexpr long WINDOW_SEC = 6;
+
+    double mountRA, mountDec;
+    if (m_client->getMountRADE(mountRA, mountDec))
+    {
+        const double off = angularSeparationArcmin(mountRA, mountDec, m_syncVerify.ra, m_syncVerify.dec);
+        m_syncVerify.lastOffArcmin = off;
+        if (off <= TOLERANCE_ARCMIN)
+        {
+            LOGF_INFO("Mount took the Sync: it reports RA %.4fh, DEC %.4f deg (%.1f arcmin from the requested position).",
+                      mountRA, mountDec, off);
+            m_syncVerify.active = false;
+            return;
+        }
+    }
+
+    if (static_cast<long>(time(nullptr)) - m_syncVerify.start < WINDOW_SEC)
+        return;
+
+    bool parked = false;
+    const bool knowsPark = m_client->getMountParked(parked);
+    if (knowsPark && parked)
+    {
+        LOG_WARN("Mount did not take the Sync: it is parked, and a parked mount ignores Sync and Goto. Unpark it first.");
+    }
+    else if (m_syncVerify.lastOffArcmin < 0.0)
+    {
+        LOG_WARN("Mount did not confirm the Sync: its position could not be read within the check window. "
+                 "Is its driver connected but not answering?");
+    }
+    else
+    {
+        LOGF_WARN("Mount did not take the Sync to RA %.4fh, DEC %.4f deg: it still reports a position %.1f deg away. "
+                  "Is it not responding?",
+                  m_syncVerify.ra, m_syncVerify.dec, m_syncVerify.lastOffArcmin / 60.0);
+    }
+    m_syncVerify.active = false;
 }
 
 void PiFinderMountBridge::publishSkyPanelExtras()
@@ -3565,6 +3626,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 {
                     LOGF_INFO("Manual SYNC to explicit coords sent to mount (RA %.4fh, DEC %.4f deg).",
                               SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
+                    startSyncVerification(SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
                     ManualTriggerSP.s = IPS_OK;
                 }
                 else
@@ -3675,6 +3737,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     if (sendMountCoordsSafe(piRA, piDec, coordSet))
                     {
                         LOGF_INFO("Manual %s sent to mount.", coordSet);
+                        if (!wantGoto)
+                            startSyncVerification(piRA, piDec);
                         ManualTriggerSP.s = IPS_OK;
                     }
                     else

@@ -136,6 +136,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountEqNP = property.getNumber();
     else if (fromMount && property.isNameMatch("ON_COORD_SET"))
         m_mountOnCoordSetSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("TELESCOPE_PARK"))
+        m_mountParkSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_MOUNT_TYPE"))
         m_mountMountTypeSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
@@ -219,6 +221,8 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountTargetNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
+    else if (property.getSwitch() == m_mountParkSP)
+        m_mountParkSP = nullptr;
     else if (property.getSwitch() == m_piFinderOnCoordSetSP)
         m_piFinderOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountMountTypeSP)
@@ -370,6 +374,17 @@ bool PiFinderBridgeClient::consumePiFinderTargetPending()
     const bool wasPending = m_piFinderTargetPending;
     m_piFinderTargetPending = false;
     return wasPending;
+}
+
+bool PiFinderBridgeClient::getMountParked(bool &parked) const
+{
+    if (m_mountParkSP == nullptr)
+        return false;
+    auto park = m_mountParkSP->findWidgetByName("PARK");
+    if (park == nullptr)
+        return false;
+    parked = park->getState() == ISS_ON;
+    return true;
 }
 
 bool PiFinderBridgeClient::isMountSlewing() const
