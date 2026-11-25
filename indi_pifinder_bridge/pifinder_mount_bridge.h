@@ -476,7 +476,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // for the full rationale. isAboveHorizon() is also exposed on its
         // own (not just via sendMountCoordsSafe()) in case a future caller
         // needs to check without necessarily sending anything.
-        bool isAboveHorizon(double ra, double dec, double &outAltitude);
+        bool isAboveHorizon(double ra, double dec, double &outAltitude, double *outAzimuth = nullptr);
         bool sendMountCoordsSafe(double ra, double dec, const char *coordSetName);
 
         // Auto-correct only fires off a position PiFinder itself reports as
@@ -505,7 +505,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // until the mount has reported a first real position (no "0.0" or
         // "90.0" placeholder flashed before that).
         INumberVectorProperty MountHorizonStatusNP;
-        INumber MountHorizonStatusN[1];
+        INumber MountHorizonStatusN[2]; // ALTITUDE_DEG, AZIMUTH_DEG
 
         // PiFinder's own current altitude, mirroring MountHorizonStatusNP
         // just above but for the *other* side of a Sync (2026-09-11, direct
@@ -520,7 +520,33 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // IPS_ALERT/IPS_OK convention and "not published until a first
         // reading exists" rule as MountHorizonStatusNP.
         INumberVectorProperty PiFinderHorizonStatusNP;
-        INumber PiFinderHorizonStatusN[1];
+        INumber PiFinderHorizonStatusN[2]; // ALTITUDE_DEG, AZIMUTH_DEG
+
+        // Sky Position Panel (docs/concepts/sky_position_panel.md, issue #600):
+        // where the last Goto target and the held target are in the sky, same
+        // ALTITUDE_DEG/AZIMUTH_DEG elements and OK (above) / ALERT (below)
+        // convention as the two properties above; IPS_IDLE = no such target.
+        // Azimuth is in degrees from north (east 90), not libnova's south-based value.
+        INumberVectorProperty GotoTargetHorizonStatusNP;
+        INumber GotoTargetHorizonStatusN[2];
+        INumberVectorProperty HeldTargetHorizonStatusNP;
+        INumber HeldTargetHorizonStatusN[2];
+
+        // The observer location every altitude/azimuth above was computed
+        // with (LAT north, LONG east, degrees). IPS_IDLE = unknown: then the
+        // altitude values above are the fail-open placeholder (90) and must
+        // not be drawn.
+        INumberVectorProperty ObserverLocationNP;
+        INumber ObserverLocationN[2];
+        bool resolveObserverLocation(double &lat, double &lon);
+        bool horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth);
+        void publishSkyPanelExtras();
+        void publishTargetHorizon(INumberVectorProperty &np, INumber *n, bool have, double ra, double dec);
+        long m_locCacheTime = 0;
+        bool m_locCacheKnown = false;
+        double m_locCacheLat = 0.0;
+        double m_locCacheLon = 0.0;
+        std::string m_locSource;
 
         // Distinct from DriftStatusNP (mount vs PiFinder agreement) and
         // m_lastForwardedRA/Dec below (the tactical "held target", which

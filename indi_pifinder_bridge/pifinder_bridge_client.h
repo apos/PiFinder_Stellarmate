@@ -65,6 +65,15 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool getPiFinderRADE(double &ra, double &dec) const;
         bool getMountRADE(double &ra, double &dec) const;
 
+        // Observer location (degrees, latitude north, longitude east in
+        // -180..180) as the INDI world knows it: the standard
+        // GEOGRAPHIC_COORD property of the PiFinder device first, then of the
+        // mount - KStars and the StellarMate app write it to every device they
+        // drive, so it is the location the user actually set. An all-zero
+        // value is INDI's "never set" default and counts as unknown. `source`
+        // names where it came from (for the log). False: nothing usable.
+        bool getObserverLocation(double &lat, double &lon, std::string &source) const;
+
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
         // solved position and never changes just because a target was set.
@@ -175,6 +184,8 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_piFinderEqNP = nullptr;
         INDI::PropertyViewNumber *m_piFinderTargetNP = nullptr;
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
+        INDI::PropertyViewNumber *m_piFinderGeoNP = nullptr;
+        INDI::PropertyViewNumber *m_mountGeoNP = nullptr;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;

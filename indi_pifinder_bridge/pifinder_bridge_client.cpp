@@ -142,6 +142,10 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountAbortSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_SLEW_RATE"))
         m_mountSlewRateSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("GEOGRAPHIC_COORD"))
+        m_mountGeoNP = property.getNumber();
+    else if (fromPiFinder && property.isNameMatch("GEOGRAPHIC_COORD"))
+        m_piFinderGeoNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
@@ -200,6 +204,10 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_piFinderTargetNP = nullptr;
     else if (property.getNumber() == m_mountEqNP)
         m_mountEqNP = nullptr;
+    else if (property.getNumber() == m_piFinderGeoNP)
+        m_piFinderGeoNP = nullptr;
+    else if (property.getNumber() == m_mountGeoNP)
+        m_mountGeoNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_piFinderOnCoordSetSP)
@@ -258,6 +266,40 @@ bool PiFinderBridgeClient::getMountRADE(double &ra, double &dec) const
     ra = m_mountEqNP->at(0)->getValue();
     dec = m_mountEqNP->at(1)->getValue();
     return isUsableCoordinateForWarn("mount", ra, dec);
+}
+
+bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::string &source) const
+{
+    auto read = [](INDI::PropertyViewNumber *np, double &la, double &lo) -> bool
+    {
+        if (np == nullptr)
+            return false;
+        auto latW = np->findWidgetByName("LAT");
+        auto lonW = np->findWidgetByName("LONG");
+        if (latW == nullptr || lonW == nullptr)
+            return false;
+        la = latW->getValue();
+        lo = lonW->getValue();
+        if (!std::isfinite(la) || !std::isfinite(lo) || std::fabs(la) > 90.0 || std::fabs(lo) > 360.0)
+            return false;
+        if (std::fabs(la) < 1e-9 && std::fabs(lo) < 1e-9)
+            return false; // INDI's default for "never set" - not a real location
+        if (lo > 180.0)
+            lo -= 360.0;
+        return true;
+    };
+
+    if (read(m_piFinderGeoNP, lat, lon))
+    {
+        source = "INDI location of the PiFinder device (KStars / StellarMate app)";
+        return true;
+    }
+    if (read(m_mountGeoNP, lat, lon))
+    {
+        source = "INDI location of the mount (KStars / StellarMate app)";
+        return true;
+    }
+    return false;
 }
 
 bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
