@@ -1160,15 +1160,17 @@
      sibling, the same one toggleCollapsibleSection() shows and hides. */
   .mb-collapsed-summary.mb-summary-expanded {
     margin-bottom: 0;
+    border-bottom: none;            /* no divider: header and content are one box */
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+    padding-bottom: 0.2rem;         /* the bar only carries the "hide" - keep it slim */
   }
   .mb-collapsed-summary.mb-summary-expanded + * {
     border: 1px solid #2a2a2a;
     border-top: none;
     border-radius: 0 0 8px 8px;
     background: #161616;
-    padding: 0.6rem 0.8rem;
+    padding: 0.2rem 0.8rem 0.7rem;
     margin-bottom: 0.5rem;
   }
   #hw-status {
