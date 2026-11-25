@@ -11,7 +11,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
-- Documentation: a checklist for every change of the PiFinder pin (docs/concepts/lifecycle_install_update_upgrade.md section 4.2: compare upstream's setup/update scripts and migrations, test patches against every supported version) and the state of the upstream migrations against PFSM. Open: upstream's `RemoveIPC=no` (PiFinder 2.6.1) is not applied.
+- Documentation: a checklist for every change of the PiFinder pin (docs/concepts/lifecycle_install_update_upgrade.md section 4.2: compare upstream's setup/update scripts and migrations, test patches against every supported version) and the state of the upstream migrations against PFSM. Upstream's `RemoveIPC=no` (PiFinder 2.6.1) is not applied and not needed on SMOS as long as the user has lingering enabled (it has).
 - Control Center clock warnings: the yellow strip "The Pi's clock is not synchronised" is gone. In the field (no internet, time from the phone or GPS) a Pi without NTP is normal, so the strip would have been a false alarm that gave wrong advice. A Pi that is not NTP-synchronised is now only noted in grey on the time line under the Sky (`Pi clock not NTP-synced`); the yellow strip stays for the mount's clock differing from the Pi's.
 
 ## [2.6.0] - 2026-11-25
