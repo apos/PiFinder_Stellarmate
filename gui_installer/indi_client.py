@@ -588,7 +588,15 @@ def mount_bridge_drift(
     pifinder_altitude_raw = pifinder_horizon_elements.get("ALTITUDE_DEG")
     pifinder_altitude_deg = float(pifinder_altitude_raw) if pifinder_altitude_raw not in (None, "") else None
     pifinder_below_horizon = (pifinder_horizon_prop.get("state") == "Alert") if pifinder_altitude_deg is not None else None
-    sky = _sky_panel_data(device_props)
+    # The mount's own state (tracking / not tracking / parked) for the Sky
+    # Position Panel: only read when a mount is configured, and cached for a
+    # few seconds so this 2 s poll does not add a getProperties round trip each time.
+    active_mount_name_ = (device_props.get("ACTIVE_DEVICES", {}).get("elements", {}).get("ACTIVE_MOUNT") or None)
+    sky = _sky_panel_data(
+        device_props,
+        mount_name=active_mount_name_,
+        mount_state=_mount_motion_state_cached(active_mount_name_, host, port, timeout) if active_mount_name_ else None,
+    )
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -704,29 +712,71 @@ def _sky_point(prop: dict):
         return None
 
 
-def _sky_panel_data(device_props: dict):
+def mount_motion_state(props: dict):
+    """The mount's state from its own standard INDI properties: "parked" (a
+    parked mount wins over its tracking state), "tracking", "not tracking", or
+    None when the mount reports neither TELESCOPE_PARK nor TELESCOPE_TRACK_STATE.
+    `props` is one device's property dict as returned by get_properties()."""
+    park = props.get("TELESCOPE_PARK", {}).get("elements")
+    if park is not None and park.get("PARK") == "On":
+        return "parked"
+    track = props.get("TELESCOPE_TRACK_STATE", {}).get("elements")
+    if track is not None:
+        if track.get("TRACK_ON") == "On":
+            return "tracking"
+        if track.get("TRACK_OFF") == "On":
+            return "not tracking"
+    return None
+
+
+_MOUNT_MOTION_CACHE: dict = {}
+_MOUNT_MOTION_CACHE_S = 4.0
+
+
+def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float, _now=time.monotonic):
+    """mount_motion_state() of `device`, read at most every few seconds. Any
+    read failure gives None (the panel then just omits the state word)."""
+    cached = _MOUNT_MOTION_CACHE.get(device)
+    if cached is not None and _now() - cached[0] < _MOUNT_MOTION_CACHE_S:
+        return cached[1]
+    try:
+        props = get_properties(
+            device=device, host=host, port=port, timeout=timeout,
+            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE"},
+        )
+        state = mount_motion_state(props.get(device, {}))
+    except INDIClientError:
+        state = None
+    _MOUNT_MOTION_CACHE[device] = (_now(), state)
+    return state
+
+
+def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
     """Everything the Sky Position Panel draws, from the Mount Bridge's own
-    properties: {"location_known", "lat", "lon", "mount", "pifinder", "goto",
-    "held"}. Each position is None when there is nothing to draw. Without a
-    known observer location NO position is returned: the driver's altitude is
-    then its fail-open placeholder (90), which must never be plotted."""
+    properties: {"location_known", "lat", "lon", "mount", "mount_state",
+    "pifinder", "goto", "held"}. Each position is None when there is nothing to
+    draw. Without a known observer location NO position is returned: the
+    driver's altitude is then its fail-open placeholder (90), which must never
+    be plotted. `mount_name` is the configured mount device (None = no mount,
+    e.g. a Dobsonian: no mount marker); `mount_state` see mount_motion_state()."""
     location_prop = device_props.get("OBSERVER_LOCATION", {})
     location_elements = location_prop.get("elements", {})
     known = location_prop.get("state") in ("Ok", "Busy") and location_elements.get("LAT") not in (None, "")
     if not known:
         return {"location_known": False, "lat": None, "lon": None,
-                "mount": None, "pifinder": None, "goto": None, "held": None}
+                "mount": None, "mount_state": None, "pifinder": None, "goto": None, "held": None}
     try:
         lat = float(location_elements["LAT"])
         lon = float(location_elements["LONG"])
     except (KeyError, TypeError, ValueError):
         return {"location_known": False, "lat": None, "lon": None,
-                "mount": None, "pifinder": None, "goto": None, "held": None}
+                "mount": None, "mount_state": None, "pifinder": None, "goto": None, "held": None}
     return {
         "location_known": True,
         "lat": lat,
         "lon": lon,
-        "mount": _sky_point(device_props.get("MOUNT_HORIZON_STATUS", {})),
+        "mount": _sky_point(device_props.get("MOUNT_HORIZON_STATUS", {})) if mount_name else None,
+        "mount_state": mount_state if mount_name else None,
         "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
         "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
         "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
