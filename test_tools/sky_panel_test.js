@@ -54,10 +54,15 @@ m = T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'not tracking', pifinde
 ok(find(m, 'mount').name === 'Mount (stopped)' && find(m, 'mount').color === '#f5a623', 'not tracking: yellow "Mount (stopped)"');
 ok(find(m, 'pifinder').name === 'PiFinder −14°', 'below horizon: name carries the altitude');
 ok(m.line.color === '#e53935', 'below horizon: red line');
-ok(m.line.arrow && m.line.arrow.to === find(m, 'pifinder').p && m.line.arrow.from === find(m, 'mount').p, 'arrow points from the mount to the one below the horizon');
+ok(m.line.arrow && m.line.arrow.from === find(m, 'pifinder').p && m.line.arrow.to === find(m, 'mount').p, 'arrow starts at the one below the horizon (PiFinder) and points to the mount: Sync PiFinder from mount');
 // reverse: the mount below, PiFinder fine
 m = T.skyBuildModel(mk({ mount: pt(-5, 97), mount_state: 'tracking', pifinder: pt(40, 100) }));
-ok(m.line.arrow && m.line.arrow.to === find(m, 'mount').p, 'arrow points to the mount when the mount is the one below the horizon');
+ok(m.line.arrow && m.line.arrow.from === find(m, 'mount').p && m.line.arrow.to === find(m, 'pifinder').p, 'arrow starts at the mount and points to PiFinder when the mount is the one below the horizon');
+// just below the horizon: one decimal instead of "-0"
+m = T.skyBuildModel(mk({ mount: pt(50, 97), pifinder: pt(-0.4, 327.9) }));
+ok(find(m, 'pifinder').name === 'PiFinder −0.4°', 'a few tenths below the horizon shows one decimal, not -0');
+m = T.skyBuildModel(mk({ mount: pt(50, 97), pifinder: pt(-14.4, 327.9) }));
+ok(find(m, 'pifinder').name === 'PiFinder −14°', 'further below the horizon stays whole degrees');
 // both below: no arrow
 m = T.skyBuildModel(mk({ mount: pt(-5, 97), pifinder: pt(-20, 100) }));
 ok(m.line.arrow === null && m.line.color === '#e53935', 'both below: red line, no arrow');

@@ -8767,7 +8767,11 @@ function skyPlace(o) {
   const r = below ? SKY_R * 1.04 : (90 - o.alt) / 90 * SKY_R;
   return { x: SKY_CX - r * Math.sin(skyRad(o.az)), y: SKY_CY - r * Math.cos(skyRad(o.az)), below: below };
 }
-function skyAlt(o) { return (o.alt < 0 ? '−' : '') + Math.abs(Math.round(o.alt)) + '°'; }
+// Whole degrees; within a degree of the horizon one decimal, so "-0.4" never reads as "-0".
+function skyAlt(o) {
+  const a = Math.abs(o.alt);
+  return (o.alt < 0 ? '−' : '') + (Math.round(a) === 0 && a > 0 ? a.toFixed(1) : String(Math.round(a))) + '°';
+}
 // Mount state sets the colour of its dot and name: tracking green, stopped (not tracking)
 // yellow, parked red; unknown state stays blue.
 function skyMountStyle(state) {
@@ -8802,9 +8806,11 @@ function skyBuildModel(sky) {
       from: mount.p, to: pf.p,
       color: below ? SKY_C.red : (skySep(sky.mount, sky.pifinder) <= SKY_AGREE_DEG ? SKY_C.green : SKY_C.yellow),
       // The arrow (the direction to sync) only exists where it can be known: exactly one of
-      // the two is below the horizon, so that one is wrong and gets corrected from the other.
-      arrow: (pf.p.below && !mount.p.below) ? { from: mount.p, to: pf.p }
-        : (mount.p.below && !pf.p.below) ? { from: pf.p, to: mount.p } : null,
+      // the two is below the horizon, so that one is wrong and moves onto the other: the arrow
+      // starts at the wrong one and points to the right one ("Sync PiFinder from mount" when
+      // PiFinder is the one below the horizon: PiFinder -> Mount).
+      arrow: (pf.p.below && !mount.p.below) ? { from: pf.p, to: mount.p }
+        : (mount.p.below && !pf.p.below) ? { from: mount.p, to: pf.p } : null,
     };
   }
   // A position that is missing says so inside the picture instead of silently not appearing.

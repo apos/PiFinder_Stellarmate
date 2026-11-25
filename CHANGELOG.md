@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center, Sky tile (#632): the arrow now starts at the position that is below the horizon and points to the other one, matching the recommended action (PiFinder below the horizon: *Sync PiFinder from mount*, PiFinder moves onto the mount). It pointed the other way before. A position only a few tenths below the horizon now reads e.g. "PiFinder −0.4°" instead of "−0°".
 - Control Center, Sky tile: names no longer cover marker symbols or each other when mount and PiFinder (or Goto and Held) are almost on one spot. Each name is placed on the nearest free spot (three rings around its marker, sides, above, below, corners), treating every symbol, the N/E/S/W letters and the notes as obstacles; the mount dot is drawn on top of PiFinder's diamond so both stay visible.
 
 ### Changed
