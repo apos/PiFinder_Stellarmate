@@ -8888,6 +8888,16 @@ async function onDecoupleClick() {
 async function triggerSyncToPiFinderVisible() {
   const btns = Array.from(document.querySelectorAll('[data-mb-action="sync-to-visible"]'));
   if (btns.some((b) => b.dataset.busy === '1')) return;
+  // Plausibility first (issue #596): the driver refuses a sync from a position
+  // below the horizon and only logs it. Do not send it, and say whose position
+  // is wrong - the mount was not touched; the other direction is the fix.
+  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+    const below = Math.abs(_pifinderAltitudeDeg).toFixed(0);
+    setSyncFeedback('warn', 'Not synced',
+      `PiFinder is ${below}° below the horizon; the mount keeps its position. Use "Sync PiFinder from mount"`,
+      `PiFinder's own position is ${below}° below the horizon, so it cannot be right and the mount must not be synced to it. Nothing was sent, the mount was not changed. If the mount itself is pointed correctly, use "Sync PiFinder from mount" (in this group and in the yellow card above).`);
+    return;
+  }
   const originals = btns.map((b) => b.innerHTML);
   btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
   setSyncFeedback('work', 'Syncing mount to PiFinder …', 'checking the mount took it');
