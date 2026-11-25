@@ -32,14 +32,14 @@ ok(m && !m.warn && m.time === '21:58 CET' && m.tail === null, 'all clocks agree:
 m = T.clockSkyTimeModel(Object.assign({}, base, { mount_clock_warn: true }), ms, 0);
 ok(m.warn && m.tail === 'mount clock differs', 'mount clock differs: warn with that tail');
 m = T.clockSkyTimeModel(Object.assign({}, base, { pi_clock_warn: true }), ms, 0);
-ok(m.warn && m.tail === 'Pi clock not synchronised', 'Pi clock not synchronised: warn with that tail');
+ok(!m.warn && m.tail === 'Pi clock not NTP-synced', 'Pi not NTP-synced: grey note, no warning');
 // the line follows the Pi's clock, not the browser's: a browser 2 h behind still shows the Pi time
 m = T.clockSkyTimeModel(base, ms - 2 * 3600 * 1000, 2 * 3600 * 1000);
 eq(m.time, '21:58 CET', 'browser clock offset is corrected by the server offset');
 
 const mountOff = Object.assign({}, base, { mount_clock_warn: true, mount_skew_sec: 10 * 3600 + 24 * 60, mount_time_utc: '2026-11-25T10:34:27+00:00' });
 let bn = T.clockBannerModel(mountOff, {});
-ok(bn.mount && !bn.pi, 'mount strip only');
+ok(bn.mount, 'mount strip');
 ok(bn.text.indexOf('10 h 24 min behind') > 0, 'text names the size and direction: ' + bn.text.slice(0, 60));
 eq(bn.piClock, '21:58:27 CET', 'Pi clock shown');
 eq(bn.mountClock, '11:34:27 CET', 'mount clock shown');
@@ -48,11 +48,11 @@ ok(bn.text.indexOf('1 h 2 min ahead of') > 0, 'a mount ahead of the Pi says ahea
 bn = T.clockBannerModel(mountOff, { mount_clock: true });
 ok(!bn.mount, 'a dismissed strip stays hidden');
 bn = T.clockBannerModel(Object.assign({}, base, { pi_clock_warn: true }), {});
-ok(bn.pi && !bn.mount, 'Pi strip only');
+ok(!bn.mount && bn.pi === undefined, 'Pi not NTP-synced: no strip at all');
 bn = T.clockBannerModel(base, {});
-ok(!bn.pi && !bn.mount, 'no strips when everything agrees');
+ok(!bn.mount, 'no strip when everything agrees');
 bn = T.clockBannerModel(null, {});
-ok(!bn.pi && !bn.mount, 'no reading: no strips');
+ok(!bn.mount, 'no reading: no strip');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all ok');
