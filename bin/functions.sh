@@ -470,6 +470,22 @@ run_pifinder_data_migrations() {
   return 0
 }
 
+# Remember which libindi the PFSM drivers were just built against, so bin/compat_check.py can tell later (after a
+# system update) that the library moved under them. Best effort: a failure here never stops a build.
+record_driver_build_stamp() {
+  local libindi_version=""
+  if command -v pacman >/dev/null 2>&1; then
+    libindi_version="$(pacman -Q libindi 2>/dev/null | awk '{print $2}' | cut -d- -f1)"
+  fi
+  if [ -z "$libindi_version" ] && command -v pkg-config >/dev/null 2>&1; then
+    libindi_version="$(pkg-config --modversion libindi 2>/dev/null)"
+  fi
+  [ -n "$libindi_version" ] || return 0
+  mkdir -p "${pifinder_home}/.pfsm" 2>/dev/null || return 0
+  printf '{"libindi": "%s", "built_at": "%s"}\n' "$libindi_version" "$(date +%Y-%m-%dT%H:%M:%S%z)" \
+    > "${pifinder_home}/.pfsm/driver_build.json" 2>/dev/null || true
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"

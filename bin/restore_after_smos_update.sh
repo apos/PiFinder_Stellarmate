@@ -357,6 +357,8 @@ echo ""
 echo "🔧 [9/9] Setup update (Control Center, INDI drivers, update guard) ..."
 run_setup_update
 echo ""
+python3 "${pifinder_stellarmate_dir}/bin/compat_check.py" || true
+echo ""
 echo "======================================================"
 echo "✅ Restore complete. Please reboot to verify:"
 echo "   sudo reboot"
