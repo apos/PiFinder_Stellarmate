@@ -29,7 +29,10 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
    arrow on the connecting line points to the one that should be corrected (the direction to sync). When both are
    visible but far apart, only the user can know which is right: no arrow.
 8. **(i) help link** in the tile label, like the other tiles, with the explanation text (mockup shows the text).
-9. **Observer location is required** and comes from the StellarMate app and/or KStars (section 5). Without a mount
+9. **The mount's state is part of its name:** `Mount tracking`, `Mount not tracking`, `Mount parked` (owner,
+   2026-11-25: a mount that is not tracking drifts away from its target, which is exactly what was happening on the
+   Pi5). A parked mount is drawn grey.
+10. **Observer location is required** and comes from the StellarMate app and/or KStars (section 5). Without a mount
    (for example a Dobsonian) the panel shows PiFinder and the targets only.
 
 ## 3. What the picture shows
@@ -43,7 +46,7 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
   **Goto** (the last Goto target the user sent, to the mount or to PiFinder) = white ring. **Held** (the target the Mount Bridge holds the mount on,
   `ORIGINAL_TARGET`) = blue cross. When Held, Mount and PiFinder coincide the names move to free spots (greedy
   placement, first free of: toward the middle, other side, above, below).
-- **Names:** `Mount`, `PiFinder`, `Goto`, `Held`, bold, with a dark halo so they stay readable over rings. Placed toward the
+- **Names:** `Mount <state>`, `PiFinder`, `Goto`, `Held`, bold, with a dark halo so they stay readable over rings. Placed toward the
   disc's middle so they stay inside. When the markers are closer than about 30 px the names go to opposite sides
   (`Mount` left, `PiFinder` right).
 - **Line** between the two, dashed, in the status colours the page already uses: green (`#4caf50`) = agree
@@ -98,6 +101,10 @@ horizon cards. **Azimuth did not exist anywhere in the GUI path.**
   to be one or two HTTP requests on **every** horizon check).
 - `isAboveHorizon()` still fails open without a location (altitude 90, "above"), so the safety behaviour is unchanged;
   the panel never uses that placeholder because `OBSERVER_LOCATION` is `Idle` then.
+- **Mount state** needs no driver change: it comes from the mount device's own standard properties `TELESCOPE_PARK`
+  (PARK on = parked) and `TELESCOPE_TRACK_STATE` (TRACK_ON / TRACK_OFF), which the Control Center already reads for
+  the "mount is parked" card (`read_mount_state`). It goes into `sky.mount_state` (`parked` | `tracking` |
+  `not tracking` | `None`). Parked wins over the tracking state.
 - `indi_client.mount_bridge_status()` returns a new key `sky` = `{location_known, lat, lon, mount, pifinder, goto,
   held}`; each position is `{alt, az, below, stale}` or `None`. **Without a known location every position is `None`.**
   Older drivers lack the new properties; the panel then has no data and shows nothing.
