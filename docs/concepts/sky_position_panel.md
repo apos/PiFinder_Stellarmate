@@ -112,10 +112,10 @@ to four entries (Mount, PiFinder, Goto, Held); a further kind is one more entry,
 ## 6. Implementation plan
 
 1. **Driver** (`indi_pifinder_bridge`): azimuth, Goto/Held positions, observer location (sources above), one
-   location lookup per 3 s. **Built (#600); compiles; not yet run against the live indiserver.** Verify after the next
-   update on the Pi5 with an unfiltered `indi_getprop` dump (filtered reads are unreliable) in Full Simulation and with
-   the real OnStep: the new properties exist, `OBSERVER_LOCATION` matches the location KStars/the app set,
-   `PIFINDER_HORIZON_STATUS.AZIMUTH_DEG` matches PiFinder's `Az`.
+   location lookup per 3 s. **Built (#600) and verified live on the Pi5 in Full Simulation (2026-11-25):** the new properties exist with the
+   intended states (Goto/Held `Idle` while unset), `OBSERVER_LOCATION` equals the INDI location KStars/the app set,
+   PiFinder azimuth 337.65° vs PiFinder's own `Az` 337.71°, mount altitude/azimuth 53.33°/118.95° vs an independent
+   libnova calculation 53.34°/118.96°. Not yet checked: Goto/Held markers while a target is set, and a real-hardware run.
 2. **`indi_client.py`:** `sky` key. **Built (#600)**, tested with canned property dumps (known/unknown location, older
    driver, missing element).
 3. **GUI** (`status_page.html`): a pure function `skyPoint(alt, az, R)` plus `drawSkyPanel(markers)` building the
@@ -146,5 +146,5 @@ PR into `dev`.
 ## 8. Open questions
 
 1. Placement on a narrow screen: below the OLED (suggested) or hidden.
-2. Whether the PiFinder GPS location should win over the app/KStars location when both exist (current order: app/KStars
-   first, because it exists without GPS and is what the user set).
+2. Resolved 2026-11-25: the KStars / StellarMate app location is the truth for PFSM (so designed); the order in
+   section 5 stays (app/KStars first, PiFinder GPS only as fallback).
