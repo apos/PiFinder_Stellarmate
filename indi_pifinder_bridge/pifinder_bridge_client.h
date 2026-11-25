@@ -16,6 +16,7 @@
 
 #include <mutex>
 #include <string>
+#include <atomic>
 
 class PiFinderBridgeClient : public INDI::BaseClient
 {
@@ -73,6 +74,13 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // value is INDI's "never set" default and counts as unknown. `source`
         // names where it came from (for the log). False: nothing usable.
         bool getObserverLocation(double &lat, double &lon, std::string &source) const;
+
+        // The last Goto target the user sent (JNow, hours/degrees): either to the
+        // mount (KStars slews the mount directly) or to the PiFinder device
+        // (push-to, Goto Forward, a Dobsonian without mount) - whichever property
+        // was updated more recently. RA 0 / Dec 0 is INDI's "never set" default
+        // and counts as none. False: no target on either device.
+        bool getLastGotoTarget(double &ra, double &dec) const;
 
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
@@ -186,6 +194,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
         INDI::PropertyViewNumber *m_piFinderGeoNP = nullptr;
         INDI::PropertyViewNumber *m_mountGeoNP = nullptr;
+        INDI::PropertyViewNumber *m_mountTargetNP = nullptr;
+        std::atomic<long> m_lastMountTargetTime { 0 };
+        std::atomic<long> m_lastPiFinderTargetTime { 0 };
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;

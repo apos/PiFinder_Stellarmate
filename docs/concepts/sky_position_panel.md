@@ -40,7 +40,7 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
 - **Markers:** mount = blue dot (`#7ec8ff`). PiFinder = light diamond (`#ddd`) with its field of view as a small
   square drawn to the same scale (13.7° for the 16 mm lens, from `/api/solution` `FOV` when a solve exists, otherwise
   the configured lens value). Whether the mount lies inside that square tells the user if PiFinder's Align can work.
-  **Goto** (last target sent to PiFinder) = white ring. **Held** (the target the Mount Bridge holds the mount on,
+  **Goto** (the last Goto target the user sent, to the mount or to PiFinder) = white ring. **Held** (the target the Mount Bridge holds the mount on,
   `ORIGINAL_TARGET`) = blue cross. When Held, Mount and PiFinder coincide the names move to free spots (greedy
   placement, first free of: toward the middle, other side, above, below).
 - **Names:** `Mount`, `PiFinder`, `Goto`, `Held`, bold, with a dark halo so they stay readable over rings. Placed toward the
@@ -86,7 +86,9 @@ horizon cards. **Azimuth did not exist anywhere in the GUI path.**
   south, westwards; the driver shifts by 180°. Checked against PiFinder's own `Az` for the same RA/Dec and time:
   327.946° (driver math) vs 327.944° (PiFinder `/api/solution`). Altitude differed by 0.18° (PiFinder −14.446°,
   libnova −14.622°), which does not matter for a picture.
-- New `GOTO_TARGET_HORIZON_STATUS` (the PiFinder device's last `TARGET_EOD_COORD`; RA 0 / Dec 0 counts as "none") and
+- New `GOTO_TARGET_HORIZON_STATUS` (the last Goto target: the `TARGET_EOD_COORD` of the mount **or** of the PiFinder device,
+  whichever was updated last, because KStars slews the mount directly while push-to and Goto Forward go to PiFinder - found
+  live 2026-11-25, issue #603; RA 0 / Dec 0 counts as "none") and
   `HELD_TARGET_HORIZON_STATUS` (`ORIGINAL_TARGET`, J2000 converted to JNow). Same `ALTITUDE_DEG`/`AZIMUTH_DEG` elements,
   `Ok` above, `Alert` below, `Idle` none.
 - New `OBSERVER_LOCATION` (`LAT`, `LONG`; `Idle` = unknown). **Location source, in this order:** INDI
