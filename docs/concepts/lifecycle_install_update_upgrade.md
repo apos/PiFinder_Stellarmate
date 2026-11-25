@@ -139,7 +139,11 @@ PFSM's own data in PiFinder's data: only through PiFinder's API (`set_option("mo
 
 **Checklist for every change of the PiFinder pin**
 
-1. **Patches:** regenerate every diff that fails and dry-run each diff against the pristine file of **every** whitelisted version (`git show vX:python/PiFinder/...`, then `patch --dry-run -N`).
+1. **Patches:** `python3 test_tools/patch_drift_check.py [--fetch] [TAG ...]` dry-runs every diff against the pristine files of the pinned tag, the newest upstream release and the newest beta (or the tags you name),
+   using the same diff-to-file mapping as the patch script. Regenerate every diff that fails; a `MISSING` file means upstream renamed or removed it. Exit status 1 when the **pinned** tag fails (`--strict`: any tag).
+   Run it before every pin change, and now and then against the newest upstream version as an early warning (2026-11-25: 3.1.3-beta fails `main_py` and `align_py`, which are shaped for 2.6.4).
+   Known: the version whitelists in the patch script still name 2.3.0 to 2.6.3, but `main_py.diff` and `align_py.diff` were regenerated for 2.6.4 and no longer apply to 2.6.3 and older.
+   PFSM installs only the pinned tag, so those entries are stale; pruning them is an open decision.
 2. **Data:** `git diff vOLD vNEW -- python/PiFinder/config.py python/PiFinder/equipment.py default_config.json python/PiFinder/db python/PiFinder/migrations migration_source docs/adr`.
    For each change in how config, database or ledger data is adapted decide: *PiFinder does it itself at start* / *a script migration that PFSM must run* (add it to `run_pifinder_data_migrations()` with a test) / *not applicable*.
    Write the decision into the pin-bump note in basic-memory.

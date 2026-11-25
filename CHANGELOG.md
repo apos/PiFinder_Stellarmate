@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- `test_tools/patch_drift_check.py`: dry-runs every PFSM patch against the pristine files of PiFinder tags (default: the pinned tag, the newest release, the newest beta) with the diff-to-file mapping read from the patch script, so a new PiFinder version that moves our anchor lines is found before a pin change, not during the setup. Reports clean / offset / fuzz / new file / legacy / upstreamed / FAIL / MISSING; exit status 1 when the pinned tag fails. Tests: `test_tools/patch_drift_check_test.py`.
 - PiFinder data migration: PFSM now runs PiFinder's v2.6.0 migration itself (clears a stale `flop_image=true` on the shipped "Generic Dobsonian" in `~/PiFinder_data/config.json`, which would mirror the object image). Upstream runs it from its own post-update script, which PFSM does not use, so configs that jump from PiFinder 2.5.x to 2.6.x kept the bad value. It is idempotent, backs up `config.json` first (the copy is kept only if the file changed), is skipped while PiFinder runs, and never stops an update (`run_pifinder_data_migrations()` in `bin/functions.sh`, called by the patch script). The documentation now keeps PiFinder's **data** (what a new version adapts) apart from the code path and the system settings.
 
 ### Fixed
