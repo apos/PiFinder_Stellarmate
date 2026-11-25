@@ -69,6 +69,27 @@ ok(!overlap(find(m, 'mount'), find(m, 'pifinder')), 'agree: the two names do not
 // far apart, both visible: yellow, no arrow (only the user can know)
 m = T.skyBuildModel(mk({ mount: pt(35, 150), mount_state: 'tracking', pifinder: pt(62, 235) }));
 ok(m.line.color === '#f5a623' && m.line.arrow === null, 'far apart: yellow line, no arrow');
+// names never sit on a marker symbol (the screenshot case: mount and PiFinder almost on one spot)
+{
+  const lbox = (mm) => { const w = mm.name.length * 6.9, x = mm.label.x;
+    const x0 = mm.label.anchor === 'end' ? x - w : mm.label.anchor === 'middle' ? x - w / 2 : x;
+    return { x0, x1: x0 + w, y0: mm.label.y - 10, y1: mm.label.y + 3 }; };
+  const cases = [
+    mk({ mount: pt(60, 255), mount_state: 'not tracking', pifinder: pt(62, 250) }),
+    mk({ mount: pt(60, 255), mount_state: 'tracking', pifinder: pt(60.5, 255.5), goto: pt(61, 256), held: pt(59, 254) }),
+    mk({ mount: pt(85, 10), mount_state: 'tracking', pifinder: pt(86, 12) }),
+    mk({ mount: pt(5, 30), mount_state: 'parked', pifinder: pt(-4, 32) }),
+  ];
+  cases.forEach((c, n) => {
+    const mm = T.skyBuildModel(c);
+    let bad = 0;
+    mm.markers.forEach((a) => mm.markers.forEach((b) => {
+      const sy = { x0: b.p.x - 5, x1: b.p.x + 5, y0: b.p.y - 5, y1: b.p.y + 5 }, lb = lbox(a);
+      if (!(lb.x1 < sy.x0 || lb.x0 > sy.x1 || lb.y1 < sy.y0 || lb.y0 > sy.y1)) bad++;
+    }));
+    ok(bad === 0, 'case ' + (n + 1) + ': no name covers a marker symbol');
+  });
+}
 // parked
 m = T.skyBuildModel(mk({ mount: pt(53, 119), mount_state: 'parked', pifinder: pt(53.4, 120) }));
 ok(find(m, 'mount').name === 'Mount (parked)' && find(m, 'mount').color === '#e53935', 'parked: red "Mount (parked)"');

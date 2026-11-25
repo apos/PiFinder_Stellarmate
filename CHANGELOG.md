@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- Control Center, Sky tile: names no longer cover marker symbols or each other when mount and PiFinder (or Goto and Held) are almost on one spot. Each name is placed on the nearest free spot (three rings around its marker, sides, above, below, corners), treating every symbol, the N/E/S/W letters and the notes as obstacles; the mount dot is drawn on top of PiFinder's diamond so both stay visible.
+
 ### Changed
 
 - Control Center, PiFinder tile (#620): the OLED mirror is 25 % larger (192 px instead of 154 px), the LONG key sits in the free bottom-right cell of the key grid instead of beside it, and the Sky picture keeps its 230 px and never shrinks. OLED and Sky are the first row; the keys follow on the right when there is room and wrap below otherwise. In a read-only tab the Sky is no longer dimmed (nothing polls there). Keypad styles B and C only follow the new row order.
