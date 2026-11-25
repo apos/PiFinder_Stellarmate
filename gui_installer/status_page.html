@@ -9071,7 +9071,11 @@ async function triggerSyncPiFinderFromMount() {
   }
   const port = new URL(pifinderScreenUrl).port || '80';
   const host = pifinderHost();
-  const simulation = lastPifinderMode === 'fake';
+  // Full Simulation = Synthetic Solve (Truth Injector) feeding the real PiFinder
+  // service, so lastPifinderMode stays 'real' there. 'fake' only means the
+  // separate fake-PiFinder service. Either one has no camera to align against,
+  // and PiFinder's Align would be refused while an injected position is active.
+  const simulation = lastTruthInjectorDesired === true || lastPifinderMode === 'fake';
   const originals = btns.map((b) => b.innerHTML);
   btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
   setSyncFeedback('work', 'Syncing PiFinder to mount …', simulation ? '' : 'up to 2 s');
