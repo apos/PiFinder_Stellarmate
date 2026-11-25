@@ -26,6 +26,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center, Sky tile: all text in the picture is bold, and N/E/S/W are as large as the status lines next to it (#615).
 - Control Center, Sky tile: no "SKY" caption any more, and its (i) sits at the top right of the picture, the same way as at the PiFinder screen (#611).
 - Mount Bridge driver, Sky Position Panel data: the Goto target is now the last target sent to the mount (KStars slews it directly) or to PiFinder, whichever is newer. It only looked at PiFinder's target before, so a Goto from KStars to the mount never showed (#603).
 - Control Center, Mount Bridge: "Sync mount from PiFinder" no longer sends the sync when PiFinder's own position is below the horizon (the driver refuses it anyway) and no longer then claims the mount "may be parked or not responding". The feedback line says PiFinder is N° below the horizon, the mount was not changed, and points to "Sync PiFinder from mount" (#596).

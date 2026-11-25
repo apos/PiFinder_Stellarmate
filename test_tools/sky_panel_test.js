@@ -23,7 +23,7 @@ const T = sandbox(document);
 let failed = 0;
 function ok(cond, msg) { if (!cond) { failed++; console.error('FAIL: ' + msg); } else console.log('ok:   ' + msg); }
 function overlap(m1, m2) {
-  const box = (m) => { const w = m.name.length * 6.3, x = m.label.x;
+  const box = (m) => { const w = m.name.length * 6.9, x = m.label.x;
     const x0 = m.label.anchor === 'end' ? x - w : m.label.anchor === 'middle' ? x - w / 2 : x;
     return { x0, x1: x0 + w, y0: m.label.y - 10, y1: m.label.y + 3 }; };
   const p = box(m1), q = box(m2);

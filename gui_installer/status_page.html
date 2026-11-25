@@ -8802,7 +8802,7 @@ function skyPlaceNames(markers) {
   const placed = [];
   const h = 12;
   markers.forEach((m) => {
-    const w = m.name.length * 6.3;
+    const w = m.name.length * 6.9;  // bold, 12 px
     const cands = m.p.x > SKY_CX
       ? [[-10, 4, 'end'], [10, 4, 'start'], [0, -10, 'middle'], [0, 18, 'middle']]
       : [[10, 4, 'start'], [-10, 4, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
@@ -8833,7 +8833,7 @@ function drawSkyPanel(svg, model) {
   skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: SKY_R, fill: C.disc, stroke: model.unknown ? C.ring2 : C.ring, 'stroke-width': 1.5,
     'stroke-dasharray': model.unknown ? '3 4' : 'none' }, svg);
   if (model.unknown) {
-    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12 }, svg, 'Location unknown');
+    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12.5, 'font-weight': 700 }, svg, 'Location unknown');
     return;
   }
   [30, 60].forEach((alt) => skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: (90 - alt) / 90 * SKY_R, fill: 'none', stroke: C.ring2,
@@ -8842,8 +8842,9 @@ function drawSkyPanel(svg, model) {
   skyEl('line', { x1: SKY_CX - SKY_R, y1: SKY_CY, x2: SKY_CX + SKY_R, y2: SKY_CY, stroke: C.ring2, 'stroke-width': 1 }, svg);
   [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach((d) => {
     const off = SKY_R + 11;
-    skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 4, 'text-anchor': 'middle',
-      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 10.5, 'font-weight': d[0] === 'N' ? 700 : 500 }, svg, d[0]);
+    // About the size of the status lines next to it (13 px at the tile's usual width), all bold.
+    skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 5, 'text-anchor': 'middle',
+      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 13.5, 'font-weight': 700 }, svg, d[0]);
   });
   if (model.line) {
     const L = model.line;
@@ -8871,10 +8872,10 @@ function drawSkyPanel(svg, model) {
   if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
     fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
-  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 10.5,
+  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
     stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
-  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 11.5,
-    'font-weight': 600, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
+  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
+    'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
 }
 let _skyLastOk = 0;
 function applySkyPanel(sky) {
