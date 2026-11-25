@@ -584,8 +584,7 @@
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
   }
-  /* OLED mirror and Sky are the first row; the keys follow on the right when there is room and
-     wrap below otherwise (order: screen, sky, keys). */
+  /* OLED mirror and keys; the Sky sits below the Mount Bridge status (own block, #sky-panel). */
   #pifinder-glance-row {
     display: flex;
     flex-wrap: wrap;
@@ -595,8 +594,8 @@
   }
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
-     size: it never shrinks, the row wraps instead. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 0 auto; order: 3; }
+     size: it never shrinks. */
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; margin-top: 0.7rem; }
   #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
@@ -2435,14 +2434,6 @@
           <div class="group-label">Remote (per IP)</div>
           <div id="pf-keypad-c-grid"></div>
         </div>
-        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
-             the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
-        <div id="sky-panel" style="display:none;">
-          <div id="sky-panel-inner">
-            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-          </div>
-          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
-        </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
            as the Mount Bridge diagram's icon nodes (bordered box, currentColor
@@ -2664,6 +2655,16 @@
            by category. Consistently BELOW the badges/status row here,
            same as the PiFinder tile's own placement below its badges. -->
       <div id="showstopper-banners-mount-bridge"></div>
+      <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
+           the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
+         the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
+         profile (Dobsonian) where the diagram is hidden. -->
+      <div id="sky-panel" style="display:none;">
+        <div id="sky-panel-inner">
+          <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+        </div>
+        <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
+      </div>
       </div>
     <div id="mount-bridge-tile">
       <!-- Current status first: connection diagram, Coupling, Threshold -
