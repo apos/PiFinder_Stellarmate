@@ -407,18 +407,18 @@
      hardware/network setup instead. Same visual language (segmented
      two-option row) as install_devtype_copy_mockups.html, approved
      2026-09-12. */
-  .devtype-seg { display: flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; margin-bottom: 0.6rem; flex-wrap: wrap; }
-  .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.65rem 0.8rem; cursor: pointer; }
-  .devtype-seg-opt + .devtype-seg-opt { border-left: 1px solid #444; }
-  /* Direct feedback (2026-09-12): "Bei uns ist grün == ausgewählt" - this
-     used a one-off blue (matched install_devtype_copy_mockups.html's own
-     approval, but never reconciled with the established selected-state
-     color elsewhere on this page, e.g. .mb-role-card.mb-role-active).
-     Same green now, for the same reason: "selected" needs the one visual
-     language, not a second one just for this control. */
-  .devtype-seg-opt.devtype-seg-active { background: #1c2a1c; }
-  .devtype-seg-title { font-size: 0.8rem; font-weight: 600; color: #ddd; }
-  .devtype-seg-opt.devtype-seg-active .devtype-seg-title { color: #4caf50; }
+  .devtype-seg { display: flex; gap: 0.6rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+  #devtype-intro { font-size: 0.8rem; color: #ddd; line-height: 1.5; margin: 0 0 0.6rem; }
+  /* Two real buttons (border, own background, hover) - the explanation of the selected one is
+     the .devtype-info block below them. Direct feedback (2026-09-12): "Bei uns ist grün ==
+     ausgewählt", the same green as .mb-role-card.mb-role-active. */
+  .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.7rem 0.9rem; cursor: pointer; font: inherit;
+    font-size: 0.85rem; font-weight: 600; color: #ddd; background: #1e1e1e; border: 1px solid #444; border-radius: 8px; text-align: center; }
+  .devtype-seg-opt:hover { background: #262626; }
+  .devtype-seg-opt:focus-visible { outline: 2px solid #7ec8ff; outline-offset: 2px; }
+  .devtype-seg-opt.devtype-seg-active { background: #1c2a1c; border-color: #4caf50; color: #4caf50; }
+  .devtype-info { padding: 0.7rem 0.9rem; background: #1b1b1b; border: 1px solid #333; border-radius: 6px; margin-bottom: 0.6rem; }
+  .devtype-info > div > :first-child { margin-top: 0; }
   .devtype-seg-sub { font-size: 0.72rem; color: #999; margin-top: 0.3rem; line-height: 1.5; }
   .devtype-seg-hw { font-size: 0.68rem; color: #e0a030; margin-top: 0.45rem; line-height: 1.4; }
   .devtype-seg-compat { font-size: 0.68rem; color: #7fc97f; margin-top: 0.4rem; line-height: 1.4; }
@@ -3187,15 +3187,20 @@ sudo systemctl start pifinder</pre>
 
     <div id="install-groups">
       <div class="group-label">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
-      <div id="devtype-seg" class="devtype-seg">
-        <div class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" onclick="onDeviceTypeClick('full')">
-          <div class="devtype-seg-title">StellarMate + PiFinder</div>
+      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
+      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
+        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
+        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
+      </div>
+      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
+           became real buttons); onDeviceTypeClick() shows the matching block. -->
+      <div id="devtype-info" class="devtype-info">
+        <div id="devtype-info-full">
           <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
           <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
           <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
         </div>
-        <div class="devtype-seg-opt" id="devtype-opt-indi_only" onclick="onDeviceTypeClick('indi_only')">
-          <div class="devtype-seg-title">StellarMate + Control host only</div>
+        <div id="devtype-info-indi_only" style="display:none;">
           <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
           <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
           <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
@@ -5862,6 +5867,10 @@ function onDeviceTypeClick(type) {
   indiOnlyMode = (type === 'indi_only');
   document.getElementById('devtype-opt-full').classList.toggle('devtype-seg-active', type === 'full');
   document.getElementById('devtype-opt-indi_only').classList.toggle('devtype-seg-active', type === 'indi_only');
+  ['full', 'indi_only'].forEach(function (t) {
+    document.getElementById('devtype-opt-' + t).setAttribute('aria-pressed', type === t ? 'true' : 'false');
+    document.getElementById('devtype-info-' + t).style.display = type === t ? '' : 'none';
+  });
   showChoices(lastExistingInstall);
 }
 
