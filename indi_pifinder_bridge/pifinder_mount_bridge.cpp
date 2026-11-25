@@ -2441,12 +2441,12 @@ void PiFinderMountBridge::publishSkyPanelExtras()
         IDSetNumber(&ObserverLocationNP, nullptr);
     }
 
-    // Last Goto target requested on the PiFinder device (JNow). A target that
-    // was never set reads RA 0 / Dec 0 (INDI default) - that exact pair counts
-    // as "none"; a real target at 0h/0 deg is not a case worth a false marker.
+    // Last Goto target the user sent (JNow): to the mount (KStars slews it
+    // directly) or to the PiFinder device (push-to, Goto Forward, Dobsonian),
+    // whichever is newer; RA 0 / Dec 0 counts as "none" (see
+    // PiFinderBridgeClient::getLastGotoTarget()).
     double gotoRA = 0.0, gotoDec = 0.0;
-    const bool haveGoto = m_client != nullptr && m_client->getPiFinderTargetRADE(gotoRA, gotoDec) &&
-                          !(gotoRA == 0.0 && gotoDec == 0.0);
+    const bool haveGoto = m_client != nullptr && m_client->getLastGotoTarget(gotoRA, gotoDec);
     publishTargetHorizon(GotoTargetHorizonStatusNP, GotoTargetHorizonStatusN, haveGoto, gotoRA, gotoDec);
 
     double heldRA = 0.0, heldDec = 0.0;
