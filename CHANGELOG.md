@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- PiFinder data migration: PFSM now runs PiFinder's v2.6.0 migration itself (clears a stale `flop_image=true` on the shipped "Generic Dobsonian" in `~/PiFinder_data/config.json`, which would mirror the object image). Upstream runs it from its own post-update script, which PFSM does not use, so configs that jump from PiFinder 2.5.x to 2.6.x kept the bad value. It is idempotent, backs up `config.json` first (the copy is kept only if the file changed), is skipped while PiFinder runs, and never stops an update (`run_pifinder_data_migrations()` in `bin/functions.sh`, called by the patch script). The documentation now keeps PiFinder's **data** (what a new version adapts) apart from the code path and the system settings.
+
 ### Fixed
 
 - PiFinder's own update path is closed. The menu's "update" and the two scripts copied into `~/PiFinder` (`pifinder_update.sh`, `pifinder_post_update.sh`) would have done a `git pull` of the newest PiFinder release (bypassing the pinned and tested version and the patches) and run upstream's migrations; on SMOS they failed anyway because they point at `/home/pifinder`. The scripts now refuse and name the Control Center, and the menu says *Update via Control Center* (new `diffs/software_py.diff`, applies to every supported PiFinder version). The old post-update copy had stopped at the PiFinder 2.1 migrations; none of the migrations was ever run by PFSM (no `~/PiFinder_data/migrations` folder).
