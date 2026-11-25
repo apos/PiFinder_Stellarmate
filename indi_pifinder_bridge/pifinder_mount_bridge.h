@@ -541,6 +541,21 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         bool resolveObserverLocation(double &lat, double &lon);
         bool horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth);
         void publishSkyPanelExtras();
+
+        // Result of a manual Sync in the INDI log (issue #609): after a Sync is sent to the
+        // mount, its reported position is checked for a few seconds and the outcome logged
+        // (INFO took it / WARN did not). Levels follow the rest of this driver: INFO a
+        // success, WARN "accepted but not confirmed", ERROR failed or refused.
+        struct PendingSyncVerify
+        {
+            bool active = false;
+            double ra = 0.0;  // hours, JNow
+            double dec = 0.0; // degrees
+            long start = 0;
+            double lastOffArcmin = -1.0; // last position check, -1 = none readable yet
+        } m_syncVerify;
+        void startSyncVerification(double ra, double dec);
+        void checkPendingSyncVerification();
         void publishTargetHorizon(INumberVectorProperty &np, INumber *n, bool have, double ra, double dec);
         long m_locCacheTime = 0;
         bool m_locCacheKnown = false;
