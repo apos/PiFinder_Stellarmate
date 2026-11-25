@@ -539,6 +539,12 @@ def mount_bridge_drift(
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
+        # No Mount Bridge (for example a Dobsonian with push-to only): the Sky tile still
+        # works, computed from PiFinder LX200's own properties.
+        try:
+            sky_without_bridge = sky_panel_without_bridge(host, port, timeout)
+        except INDIClientError:
+            sky_without_bridge = None
         return {
             "running": False,
             "coupling_mode": None,
@@ -562,7 +568,7 @@ def mount_bridge_drift(
             "mount_below_horizon": None,
             "pifinder_altitude_deg": None,
             "pifinder_below_horizon": None,
-            "sky": None,
+            "sky": sky_without_bridge,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -712,6 +718,64 @@ def _sky_point(prop: dict):
         return None
 
 
+def equatorial_to_horizontal(ra_hours: float, dec_deg: float, lat_deg: float, lon_deg_east: float, unix_time: float):
+    """Altitude and azimuth (degrees, azimuth from NORTH, east 90) of a JNow
+    position at a site and time. Mean sidereal time, no refraction: good to a few
+    arcseconds, plenty for a picture. Checked against libnova (the Mount Bridge
+    driver's own maths) in test_tools/sky_math_test.py."""
+    import math
+    jd = unix_time / 86400.0 + 2440587.5
+    gmst = (280.46061837 + 360.98564736629 * (jd - 2451545.0)) % 360.0
+    ha = math.radians((gmst + lon_deg_east - ra_hours * 15.0) % 360.0)
+    dec, lat = math.radians(dec_deg), math.radians(lat_deg)
+    alt = math.asin(max(-1.0, min(1.0, math.sin(dec) * math.sin(lat) + math.cos(dec) * math.cos(lat) * math.cos(ha))))
+    az_south = math.atan2(math.sin(ha), math.cos(ha) * math.sin(lat) - math.tan(dec) * math.cos(lat))
+    return math.degrees(alt), (math.degrees(az_south) + 180.0) % 360.0
+
+
+def sky_panel_without_bridge(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_FAST_POLL, _now=time.time):
+    """The Sky Position Panel's data when no Mount Bridge runs (for example a
+    Dobsonian with push-to only): computed here from "PiFinder LX200"'s own INDI
+    properties - its position (EQUATORIAL_EOD_COORD), the last Goto target
+    (TARGET_EOD_COORD) and the observer location (GEOGRAPHIC_COORD, which KStars or
+    the StellarMate app set). Same shape as the Mount Bridge's `sky`; there is no
+    mount and no held target. None when PiFinder LX200 isn't there at all. RA 0 /
+    Dec 0 is INDI's "never set" and counts as no position; so does a 0/0 location."""
+    props = get_properties(
+        device="PiFinder LX200", host=host, port=port, timeout=timeout,
+        stop_after={"GEOGRAPHIC_COORD", "EQUATORIAL_EOD_COORD", "TARGET_EOD_COORD"},
+    )
+    dev = props.get("PiFinder LX200")
+    if not dev:
+        return None
+    geo = dev.get("GEOGRAPHIC_COORD", {}).get("elements", {})
+    try:
+        lat, lon = float(geo["LAT"]), float(geo["LONG"])
+    except (KeyError, TypeError, ValueError):
+        lat = lon = 0.0
+    if abs(lat) < 1e-9 and abs(lon) < 1e-9:
+        return {"location_known": False, "lat": None, "lon": None, "mount": None, "mount_state": None,
+                "mount_configured": False, "pifinder": None, "goto": None, "held": None}
+    if lon > 180.0:
+        lon -= 360.0
+    now = _now()
+
+    def point(name):
+        el = dev.get(name, {}).get("elements", {})
+        try:
+            ra, dec = float(el["RA"]), float(el["DEC"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if ra == 0.0 and dec == 0.0:
+            return None
+        alt, az = equatorial_to_horizontal(ra, dec, lat, lon, now)
+        return {"alt": alt, "az": az, "below": alt < 0, "stale": False}
+
+    return {"location_known": True, "lat": lat, "lon": lon, "mount": None, "mount_state": None,
+            "mount_configured": False, "pifinder": point("EQUATORIAL_EOD_COORD"),
+            "goto": point("TARGET_EOD_COORD"), "held": None}
+
+
 def mount_motion_state(props: dict):
     """The mount's state from its own standard INDI properties: "parked" (a
     parked mount wins over its tracking state), "tracking", "not tracking", or
@@ -764,19 +828,20 @@ def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
     known = location_prop.get("state") in ("Ok", "Busy") and location_elements.get("LAT") not in (None, "")
     if not known:
         return {"location_known": False, "lat": None, "lon": None,
-                "mount": None, "mount_state": None, "pifinder": None, "goto": None, "held": None}
+                "mount": None, "mount_state": None, "mount_configured": False, "pifinder": None, "goto": None, "held": None}
     try:
         lat = float(location_elements["LAT"])
         lon = float(location_elements["LONG"])
     except (KeyError, TypeError, ValueError):
         return {"location_known": False, "lat": None, "lon": None,
-                "mount": None, "mount_state": None, "pifinder": None, "goto": None, "held": None}
+                "mount": None, "mount_state": None, "mount_configured": False, "pifinder": None, "goto": None, "held": None}
     return {
         "location_known": True,
         "lat": lat,
         "lon": lon,
         "mount": _sky_point(device_props.get("MOUNT_HORIZON_STATUS", {})) if mount_name else None,
         "mount_state": mount_state if mount_name else None,
+        "mount_configured": bool(mount_name),
         "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
         "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
         "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
