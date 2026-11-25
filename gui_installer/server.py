@@ -52,6 +52,7 @@ GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 RESTORE_SCRIPT = REPO_ROOT / "bin" / "restore_after_smos_update.sh"
+_compat_cache = None  # (time, report) of /api/compat_check
 # SMOS version at the last completed setup/restore (written by
 # bin/functions.sh's record_smos_version()); lives in /home, so it survives a
 # SMOS root reset. A different /etc/stellarmate/version means the update
@@ -4868,6 +4869,23 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/pifinder_welcome_red.png":
             self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
+            return
+
+        if parsed.path == "/api/compat_check":
+            # bin/compat_check.py (read-only): does what PFSM built still fit the system? Cached for a minute,
+            # the checks start a few processes (ldd, pacman, qdbus6).
+            global _compat_cache
+            now = time.time()
+            if _compat_cache is None or now - _compat_cache[0] > 60:
+                try:
+                    proc = subprocess.run(
+                        ["python3", str(REPO_ROOT / "bin" / "compat_check.py"), "--json"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    _compat_cache = (now, json.loads(proc.stdout))
+                except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+                    _compat_cache = (now, {"status": "unknown", "checks": [], "error": str(e)})
+            self._send_json(_compat_cache[1])
             return
 
         if parsed.path == "/api/smos_update_status":

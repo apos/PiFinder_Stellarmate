@@ -135,6 +135,7 @@ if [ "$MODE" = "indi_only" ]; then
 
     phase "Building INDI drivers"
     build_and_install_indi_drivers
+    python3 "${pifinder_stellarmate_dir}/bin/compat_check.py" || true
 
     echo ""
     echo "##############################################"
@@ -1159,6 +1160,11 @@ phase "Building INDI drivers"
 # below - see bin/build_and_install_indi_drivers.sh.
 build_and_install_indi_drivers
 echo "🔎 build_and_install_indi_drivers returned - proceeding to Installation Summary ..."
+
+# Does what was just built fit the system it runs on? (read-only; never stops the setup)
+echo ""
+python3 "${pifinder_stellarmate_dir}/bin/compat_check.py" || true
+echo ""
 
 # Detect Pi and OS versions for the final summary message
 hw_model=$(get_hw_model)

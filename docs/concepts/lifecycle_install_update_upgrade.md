@@ -167,6 +167,22 @@ PFSM's own data in PiFinder's data: only through PiFinder's API (`set_option("mo
 | venv | deleted and rebuilt if the venv Python differs from the system Python | typical after a SMOS update |
 | Hipparcos catalog | three download URLs, then a bundled `src_pifinder/astro_data/hip_main.dat.gz` | the download source is not reliable |
 
+### 5.1 Compatibility check (2026-11-26)
+
+`bin/compat_check.py` (read-only, standard library only) asks whether what PFSM built still fits the system it runs on, and says what to do when it does not.
+It runs at the end of the setup, at the end of `restore_after_smos_update.sh`, and is served as `GET /api/compat_check` (cached for a minute) for a Control Center card, which is not built yet.
+
+| Check | Looks at | FAIL | WARN |
+|---|---|---|---|
+| PiFinder's Python environment | the venv's interpreter against the system's | the venv's Python does not start | system Python moved to another minor version (works while the old interpreter stays) |
+| PFSM INDI drivers | `ldd` of the four drivers; libindi version against `~/.pfsm/driver_build.json`, written when the drivers are built | a library is missing | libindi changed since the build |
+| Camera libraries | libcamera and python-libcamera against 0.7.x | | another major/minor version |
+| KStars clock action | the D-Bus action the mount-clock correction uses | | KStars runs but the action does not answer |
+| Installed PiFinder | `git describe` against `version.txt`, `*.rej` files | a patch left a `.rej` | installed tag differs from the pin |
+
+Exit status 1 only for FAIL (`--strict`: also WARN). Tests: `python3 test_tools/compat_check_test.py`, `bin/tests/test_driver_build_stamp.bats`.
+Not covered: an automatic rebuild of the venv (planned), and what a SMOS delta update does (open, see 7.1.3).
+
 ## 6. What is missing (verified gaps)
 
 1. **No functional check built into the installation or the update.** The run ends with a summary of versions, the warnings, and a

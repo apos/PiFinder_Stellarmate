@@ -111,4 +111,7 @@ build_and_install_indi_drivers() {
         echo "-> Restarting Web Manager profile '${active_profile}' (was running before this rebuild)..."
         curl -s -X POST "http://localhost:8624/api/server/start/${active_profile// /%20}" >/dev/null 2>&1 || true
     fi
+
+    # for bin/compat_check.py: which libindi these drivers were built against
+    record_driver_build_stamp
 }
