@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- Control Center clock warnings: the yellow strip "The Pi's clock is not synchronised" is gone. In the field (no internet, time from the phone or GPS) a Pi without NTP is normal, so the strip would have been a false alarm that gave wrong advice. A Pi that is not NTP-synchronised is now only noted in grey on the time line under the Sky (`Pi clock not NTP-synced`); the yellow strip stays for the mount's clock differing from the Pi's.
+
 ## [2.6.0] - 2026-11-25
 
 > OLED mirror release: the PiFinder tile's OLED mirror follows the picture PiFinder delivers, so the Rev 4 display (1.91" OLED, 176 x 176) is shown at 244 px.

@@ -120,12 +120,12 @@
 <p>Related: if a yellow strip says the <em>mount's</em> clock differs, that is a different problem (the mount itself has the wrong time), see <a href="#clock-warnings">clock warnings</a>.</p>
 
 <h2 id="clock-warnings">Clock warnings</h2>
-<p>A yellow strip at the top of the page appears when a clock this page can see is wrong for longer than a minute:</p>
+<p>A yellow strip at the top of the page appears when the mount's clock is wrong for longer than a minute:</p>
 <ul>
   <li><strong>The mount's clock differs from the Pi's clock by more than 10 minutes.</strong> The mount works out its sky position from its clock, so it may point wrongly. The strip shows both times. <em>Set mount time now</em> pushes the Pi's time to the mount again (through the KStars that runs on this Pi; it does nothing for a KStars on another computer). Usually the Control Center corrects a stale mount clock by itself, so the strip only stays when that did not work.</li>
-  <li><strong>The Pi's clock is not synchronised</strong> (NTP off or no internet). The Sky, the Alt value and every time on this page come from that clock. Connect the Pi to the internet or set the time, then reload the page.</li>
 </ul>
-<p><em>Dismiss</em> hides a strip until the clock is right again and goes wrong once more. The clock of a KStars on another computer cannot be checked from here; that is what the time under the Sky is for.</p>
+<p>If the Pi itself is not synchronised through NTP (no internet, for example in the field), no strip appears: the time under the Sky then says <em>Pi clock not NTP-synced</em> in grey. That is normal when the time comes from your phone or from GPS. The Sky, the Alt value and every time on this page come from the Pi's clock, so check it if the numbers look wrong.</p>
+<p><em>Dismiss</em> hides the strip until the clock is right again and goes wrong once more. The clock of a KStars on another computer cannot be checked from here; that is what the time under the Sky is for.</p>
 
 <h2 id="mode-power">Mode &amp; Power</h2>
 <p>Four collapsible groups: simulation/testing tools, a deeper hardware check, optional extra-hardware bridges, and service/power actions - each covers one part of running and exercising PiFinder on this device.</p>
