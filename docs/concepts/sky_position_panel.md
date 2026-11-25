@@ -29,9 +29,9 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
    arrow on the connecting line points to the one that should be corrected (the direction to sync). When both are
    visible but far apart, only the user can know which is right: no arrow.
 8. **(i) help link** in the tile label, like the other tiles, with the explanation text (mockup shows the text).
-9. **The mount's state is part of its name:** `Mount tracking`, `Mount not tracking`, `Mount parked` (owner,
-   2026-11-25: a mount that is not tracking drifts away from its target, which is exactly what was happening on the
-   Pi5). A parked mount is drawn grey.
+9. **The mount's state is part of its name and sets its colour** (owner, 2026-11-25): `Mount (tracking)` green,
+   `Mount (stopped)` yellow (not tracking), `Mount (parked)` red. A mount that is not tracking drifts away from its
+   target, which is what was happening on the Pi5; the colours are the Control Center's own status colours.
 10. **Observer location is required** and comes from the StellarMate app and/or KStars (section 5). Without a mount
    (for example a Dobsonian) the panel shows PiFinder and the targets only.
 
@@ -40,13 +40,13 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
 - **Projection:** azimuthal, zenith in the centre, horizon as the rim, dashed rings at 30° and 60° altitude,
   faint cross. **North up, East left** (looking up at the sky; same as the Stellarium view the owner uses).
   Letters N E S W outside the rim, N emphasised.
-- **Markers:** mount = blue dot (`#7ec8ff`). PiFinder = light diamond (`#ddd`) with its field of view as a small
+- **Markers:** mount = dot coloured by its state (green `#4caf50` tracking, yellow `#f5a623` stopped, red `#e53935` parked). PiFinder = light diamond (`#ddd`) with its field of view as a small
   square drawn to the same scale (13.7° for the 16 mm lens, from `/api/solution` `FOV` when a solve exists, otherwise
   the configured lens value). Whether the mount lies inside that square tells the user if PiFinder's Align can work.
   **Goto** (the last Goto target the user sent, to the mount or to PiFinder) = white ring. **Held** (the target the Mount Bridge holds the mount on,
-  `ORIGINAL_TARGET`) = blue cross. When Held, Mount and PiFinder coincide the names move to free spots (greedy
+  `ORIGINAL_TARGET`) = blue cross (`#7ec8ff`). When Held, Mount and PiFinder coincide the names move to free spots (greedy
   placement, first free of: toward the middle, other side, above, below).
-- **Names:** `Mount <state>`, `PiFinder`, `Goto`, `Held`, bold, with a dark halo so they stay readable over rings. Placed toward the
+- **Names:** `Mount (tracking|stopped|parked)`, `PiFinder`, `Goto`, `Held`, bold, with a dark halo so they stay readable over rings. Placed toward the
   disc's middle so they stay inside. When the markers are closer than about 30 px the names go to opposite sides
   (`Mount` left, `PiFinder` right).
 - **Line** between the two, dashed, in the status colours the page already uses: green (`#4caf50`) = agree
@@ -104,7 +104,7 @@ horizon cards. **Azimuth did not exist anywhere in the GUI path.**
 - **Mount state** needs no driver change: it comes from the mount device's own standard properties `TELESCOPE_PARK`
   (PARK on = parked) and `TELESCOPE_TRACK_STATE` (TRACK_ON / TRACK_OFF), which the Control Center already reads for
   the "mount is parked" card (`read_mount_state`). It goes into `sky.mount_state` (`parked` | `tracking` |
-  `not tracking` | `None`). Parked wins over the tracking state.
+  `not tracking` | `None`; shown as tracking / stopped / parked). Parked wins over the tracking state.
 - `indi_client.mount_bridge_status()` returns a new key `sky` = `{location_known, lat, lon, mount, pifinder, goto,
   held}`; each position is `{alt, az, below, stale}` or `None`. **Without a known location every position is `None`.**
   Older drivers lack the new properties; the panel then has no data and shows nothing.
