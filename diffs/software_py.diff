@@ -1,0 +1,21 @@
+--- python/PiFinder/ui/software.py.orig
++++ python/PiFinder/ui/software.py
+@@ -280,12 +280,12 @@
+             self._release_version = "Unknown"
+ 
+     def update_software(self):
+-        self.message(_("Updating..."), 10)
+-        if sys_utils.update_software():
+-            self.message(_("Ok! Restarting"), 10)
+-            sys_utils.restart_system()
+-        else:
+-            self.message(_("Error on Upd"), 3)
++        # PiFinder on StellarMate is updated through the Control Center, which
++        # keeps the tested PiFinder version and re-applies the StellarMate
++        # patches. PiFinder's own updater would pull the newest release and
++        # bypass both, so it is not started from here.
++        self.message(_("Update via"), 2)
++        self.message(_("Control Center"), 4)
+ 
+     def update(self, force=False):
+         self.clear_screen()

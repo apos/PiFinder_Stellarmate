@@ -718,6 +718,24 @@ python3 -m py_compile "$sys_utils_py" "$sys_utils_fake_py" && echo "✅ Syntax O
 echo "------------------------------------"
 
 ##################################################
+# PiFinder ui/software.py: the menu's own "update" is not started. PiFinder's updater (pifinder_update.sh)
+# would pull the newest release and bypass the version StellarMate pins and the patches; on SMOS it also
+# points at /home/pifinder, which does not exist. The menu now says to update through the Control Center.
+echo "🔧 Updating ui/software.py (in-app update points to the Control Center) ..."
+cp "$software_py" "$software_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
+    apply_patch_or_warn "$software_py" "${pifinder_stellarmate_dir}/diffs/software_py.diff"
+else
+    echo "⏩ Skipping patch for ui/software.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$software_py"
+python3 -m py_compile "$software_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/status.py: show every non-loopback IP on the OLED status screen
 echo "🔧 Updating ui/status.py (all_ips) ..."
 cp "$status_py" "$status_py.bak"

@@ -5,8 +5,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- PiFinder's own update path is closed. The menu's "update" and the two scripts copied into `~/PiFinder` (`pifinder_update.sh`, `pifinder_post_update.sh`) would have done a `git pull` of the newest PiFinder release (bypassing the pinned and tested version and the patches) and run upstream's migrations; on SMOS they failed anyway because they point at `/home/pifinder`. The scripts now refuse and name the Control Center, and the menu says *Update via Control Center* (new `diffs/software_py.diff`, applies to every supported PiFinder version). The old post-update copy had stopped at the PiFinder 2.1 migrations; none of the migrations was ever run by PFSM (no `~/PiFinder_data/migrations` folder).
+
 ### Changed
 
+- Documentation: a checklist for every change of the PiFinder pin (docs/concepts/lifecycle_install_update_upgrade.md section 4.2: compare upstream's setup/update scripts and migrations, test patches against every supported version) and the state of the upstream migrations against PFSM. Open: upstream's `RemoveIPC=no` (PiFinder 2.6.1) is not applied.
 - Control Center clock warnings: the yellow strip "The Pi's clock is not synchronised" is gone. In the field (no internet, time from the phone or GPS) a Pi without NTP is normal, so the strip would have been a false alarm that gave wrong advice. A Pi that is not NTP-synchronised is now only noted in grey on the time line under the Sky (`Pi clock not NTP-synced`); the yellow strip stays for the mount's clock differing from the Pi's.
 
 ## [2.6.0] - 2026-11-25

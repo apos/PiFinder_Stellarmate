@@ -105,6 +105,35 @@ The invariant is: **a clean run means every patch applied or was already applied
 stops the SMOS version from being recorded. The weak point is drift against upstream: patches are tied to a PiFinder
 version and, for the venv, to a package version (hence the `picamera2==0.3.37` pin below).
 
+### 4.1 PiFinder's own update scripts are not used (decision 2026-11-25)
+
+PiFinder's menu update (`sys_utils.update_software()` -> `pifinder_update.sh` -> `pifinder_post_update.sh`) does a
+`git checkout release && git pull` and then runs upstream's migrations (`migration_source/v*.sh`: `sudo`, `/boot/config.txt`,
+systemd units, a Debian `apt`) that are written for a stock PiFinder image. It would bypass the version PFSM pins and tests, and it
+points at `/home/pifinder`, which does not exist on SMOS (user `stellarmate`, Arch Linux). PFSM updates PiFinder itself: the setup script does
+`git fetch` and `git checkout v<pin>`, then the patch script. The migrations are **never run** here (there is no `~/PiFinder_data/migrations`).
+
+- The two scripts that the patch script copies into `~/PiFinder` are stubs that refuse and name the Control Center (`bin/tests/test_inapp_update_stub.bats`);
+  the old copies that stopped at the PiFinder 2.1 migrations are gone.
+- `diffs/software_py.diff` makes the menu's "update" say *Update via Control Center* instead of starting anything.
+- PFSM does not support a rollback to an older release (owner, 2026-11-25).
+
+### 4.2 Checklist for every change of the PiFinder pin
+
+1. **Patches:** regenerate every diff that fails, and dry-run each diff against the pristine file of **every** whitelisted version
+   (`git show vX:python/PiFinder/...` then `patch --dry-run -N`).
+2. **Upstream scripts:** compare the old and the new tag for what PFSM does not run by itself:
+   `git diff vOLD vNEW -- pifinder_setup.sh pifinder_update.sh pifinder_post_update.sh migration_source/ pi_config_files/ default_config.json python/requirements.txt`.
+   For every new migration or setup step decide: *PFSM covers it* / *not needed on SMOS* (say why) / *must be added*, and write the decision into the pin-bump note in basic-memory.
+3. **Tests that need no hardware:** our own tests, `node test_tools/*_test.js`, `python3 test_tools/*_test.py`, `bin/tests/run_all.sh`.
+4. **A real update on the Pi 5** (`--action=update` from the branch under test), then: version, no `*.rej`, service, API, LX200 and Mount Bridge connected.
+5. **Say what was not tested** (camera, solve, Align with a star, keyboard, Pi 4, UTM) in the changelog and in the release notes.
+
+State of the upstream migrations against PFSM (checked 2026-11-25, Pi 5): v2.2.1 (libinput, group `input`) covered; v2.2.2 (`dwc2,dr_mode=host`, USB-C host) not applied,
+not needed on a Pi 5 (not checked for Pi 4); v2.4.0 (cedar as a system service) not applied, PiFinder starts cedar itself; v2.6.0 (stale `flop_image`) not applied,
+the value is already false on the test Pi; **v2.6.1 (`RemoveIPC=no`) not applied and open**: without it logind removes the solver's `/dev/shm` segment when the last session of the user ends
+(no problem while a graphical session stays open, as on the test Pi).
+
 ## 5. Python and package requirements
 
 | What | How it is pinned or handled | Why |
