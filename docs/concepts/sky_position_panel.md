@@ -28,7 +28,7 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
 6. **Goto target and Held target are part of version 1** ("das brauchen wir"). The panel draws a list of markers, so
    further kinds can be added later without redesign.
 7. **Recommendation arrow only where it can be known:** when exactly one of mount/PiFinder is below the horizon, an
-   arrow on the connecting line points to the one that should be corrected (the direction to sync). When both are
+   arrow on the connecting line starts at the one that should be corrected and points to the one it moves onto (the direction to sync, changed in #632: it used to point at the wrong one). When both are
    visible but far apart, only the user can know which is right: no arrow.
 8. **(i) help link** in the tile label, like the other tiles, with the explanation text (mockup shows the text).
 9. **The mount's state is part of its name and sets its colour** (owner, 2026-11-25): `Mount (tracking)` green,
@@ -56,7 +56,7 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
   below the horizon.
 - **Below the horizon:** the marker is hollow, sits just outside the rim in the direction of its azimuth, red
   outline, and the name carries the altitude (`PiFinder −14°`, soft red `#ff8a80`). Same rule for the mount.
-  The arrow (decision 7) sits at 60 % of the line, red, pointing to the below-horizon device.
+  The arrow (decision 7) sits at 60 % of the line, red, starting at the below-horizon device and pointing to the other one.
 - **Size:** about 230 px square on the desktop layout, the same height class as the OLED tile; one column on a
   phone. Text 11.5 px.
 - **Night mode:** the page's `body.night-mode` filter already recolours everything; no separate palette. To be
