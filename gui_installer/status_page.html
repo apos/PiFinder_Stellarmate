@@ -208,7 +208,7 @@
   /* Row: the OLED mirror itself, then the help icon in its own small
      column to the right - NOT an overlay on top of the image (see
      .pifinder-screen-help's own comment for why that changed). */
-  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; order: 1; }
+  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; order: 2; }
   /* Tightly wraps just the image + its waiting-overlay (inset:0 below) -
      kept separate from #pifinder-screen-wrap so the icon column doesn't
      also get covered by that overlay. */
@@ -596,7 +596,7 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks, the row wraps instead. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 0 auto; order: 2; }
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 0 auto; order: 1; }
   #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
