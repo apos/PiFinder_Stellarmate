@@ -226,6 +226,14 @@
   <li><strong>Threshold</strong> — arcminutes of drift before Verify/Alert warns or an Auto-correct mode acts. <strong>Decouple</strong> sets Coupling back to Off.</li>
   <li><strong>Manual one-shot seed</strong> now lives in <em>Simulation, Test and Power</em> (collapsed): <strong>Sync PiFinder from mount</strong> injects the mount's position as PiFinder's, <strong>Set PiFinder position</strong> takes a literal RA/Dec. An injected position pauses real camera solving, so this is a testing tool; <strong>Stop injected solve</strong> brings real solving back. Each is a single shot, not the continuous <a href="#simulation-and-testing">Synthetic Solve</a> feed, and neither is reflected in that dot.</li>
 </ul>
+<h4 id="held-target">What is the "held target"?</h4>
+<p>The <strong>held target</strong> is the position the Mount Bridge currently remembers as "where we were sent": the most recent <em>deliberate</em> Goto or push-to. It is set by whichever side moved last, a push-to on PiFinder (its own menu, or KStars' Goto on "PiFinder LX200") or a Goto on the mount (KStars, SkySafari, the hand controller). The small "Following: PiFinder / Mount" badge in the GoTo group shows which one it came from. The three buttons act on it:</p>
+<ul>
+  <li><strong>Align to Held Target</strong> tells PiFinder that this is what it is pushed to; the mount is left alone.</li>
+  <li><strong>Goto Held Target</strong> sends the mount back to the held target.</li>
+  <li><strong>Revert to Held Target Now</strong> first corrects the mount's own position belief (a Sync to PiFinder's current position), then goes to the held target.</li>
+</ul>
+<p>They are for the case where something moved the mount after the Goto (a bump, a slipped clutch) and you want to return to what you meant to point at, not to wherever PiFinder happens to look now. Align to Held Target and Goto Held Target need an active coupling mode (they stay disabled while Coupling is Off); Revert to Held Target Now works in any mode.</p>
 <p>All four action buttons go disabled together whenever Coupling is Off — a hint below them says so.</p>
 
 <h3 id="coupling">Coupling &amp; Autoconnect</h3>
