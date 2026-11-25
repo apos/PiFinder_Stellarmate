@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Control Center, Install or Update (#630): "What is this device?" now has an intro sentence and two real buttons (StellarMate + PiFinder, StellarMate + Control host only); the explanation of the selected setup is shown below them, with the same wording and colours as before. Only the look changed, the selection itself works as before.
 - Control Center, Sky picture (#628): moved from the PiFinder glance row to the bottom of the PiFinder tile, directly below the Mount Bridge status line (outside the badge row), so it sits right above the Quick Actions buttons on a phone. It is its own block, so a PiFinder-only profile (Dobsonian, no Mount Bridge) still shows it, with PiFinder and Goto only.
 - Control Center, PiFinder tile (#620): the OLED mirror is 25 % larger (192 px instead of 154 px), the LONG key sits in the free bottom-right cell of the key grid instead of beside it, and the Sky picture keeps its 230 px and never shrinks. Order as before: OLED, keys, Sky (rightmost); when the row is too narrow the Sky wraps below. In a read-only tab the Sky is no longer dimmed (nothing polls there). Keypad styles B and C only follow the new row order.
 
