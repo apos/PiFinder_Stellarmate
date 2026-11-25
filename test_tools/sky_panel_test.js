@@ -87,6 +87,18 @@ ok(!clash, 'four names around coincident markers do not overlap');
 m = T.skyBuildModel(mk({ pifinder: pt(40, 60, true) }));
 ok(find(m, 'pifinder').stale === true, 'stale (last known) position is flagged');
 
+// a missing position says so instead of silently not appearing
+m = T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'tracking', mount_configured: true }));
+ok(find(m, 'mount') && !find(m, 'pifinder') && m.notes.join('|') === 'PiFinder: no position', 'PiFinder without position: note "PiFinder: no position"');
+m = T.skyBuildModel(mk({ pifinder: pt(40, 60), mount_configured: true }));
+ok(m.notes.join('|') === 'Mount: no position', 'configured mount without position: note "Mount: no position"');
+m = T.skyBuildModel(mk({ pifinder: pt(40, 60), mount_configured: false }));
+ok(m.notes.length === 0, 'no mount configured (Dobsonian): no mount note');
+m = T.skyBuildModel(mk({ mount_configured: true }));
+ok(m.notes.length === 2 && m.markers.length === 0, 'nothing known: both notes, no markers');
+const nv = mkEl('svg'); T.drawSkyPanel(nv, m);
+ok(nv.children.filter((c) => c.name === 'text').map((c) => c._text).includes('PiFinder: no position'), 'drawing writes the note');
+
 // drawing runs and writes every name
 const svg = mkEl('svg');
 T.drawSkyPanel(svg, T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'not tracking', pifinder: pt(-14.4, 327.9) })));

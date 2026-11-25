@@ -594,7 +594,7 @@
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. */
   #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 1 230px; min-width: 160px; max-width: 250px; }
   #sky-panel-inner { flex: 1 1 auto; min-width: 0; }
-  #sky-panel .help-link { margin: 1px 0 0 0; flex-shrink: 0; }
+  #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
   @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
   #pifinder-glance-status-stack {
@@ -2432,7 +2432,7 @@
              the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
         <div id="sky-panel" style="display:none;">
           <div id="sky-panel-inner">
-            <svg id="sky-panel-svg" viewBox="0 0 240 240" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
           </div>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
@@ -8762,7 +8762,7 @@ function skyMountStyle(state) {
 // What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
 function skyBuildModel(sky) {
   if (!sky) return null;
-  if (!sky.location_known) return { unknown: true, markers: [], line: null };
+  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [] };
   const markers = [];
   const add = (id, o, name, color, extra) => {
     if (!o) return null;
@@ -8791,7 +8791,11 @@ function skyBuildModel(sky) {
     };
   }
   skyPlaceNames(markers);
-  return { unknown: false, markers: markers, line: line };
+  // A position that is missing says so inside the picture instead of silently not appearing.
+  const notes = [];
+  if (!sky.pifinder) notes.push('PiFinder: no position');
+  if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
+  return { unknown: false, markers: markers, line: line, notes: notes };
 }
 // Name next to its marker: first free of "toward the middle", "other side", above, below.
 function skyPlaceNames(markers) {
@@ -8867,6 +8871,8 @@ function drawSkyPanel(svg, model) {
   if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
     fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 10.5,
+    stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
   model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 11.5,
     'font-weight': 600, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
 }
@@ -8921,7 +8927,7 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(null, false);
       updatePiFinderHorizonStatus(null, false);
       updateMountRejectWarning(false, null);
-      applySkyPanel(null);
+      applySkyPanel(data.sky);  // no Mount Bridge: the server computes it from PiFinder LX200 alone
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
