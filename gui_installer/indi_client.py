@@ -562,6 +562,7 @@ def mount_bridge_drift(
             "mount_below_horizon": None,
             "pifinder_altitude_deg": None,
             "pifinder_below_horizon": None,
+            "sky": None,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -587,6 +588,7 @@ def mount_bridge_drift(
     pifinder_altitude_raw = pifinder_horizon_elements.get("ALTITUDE_DEG")
     pifinder_altitude_deg = float(pifinder_altitude_raw) if pifinder_altitude_raw not in (None, "") else None
     pifinder_below_horizon = (pifinder_horizon_prop.get("state") == "Alert") if pifinder_altitude_deg is not None else None
+    sky = _sky_panel_data(device_props)
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -676,6 +678,58 @@ def mount_bridge_drift(
         "mount_below_horizon": mount_below_horizon,
         "pifinder_altitude_deg": pifinder_altitude_deg,
         "pifinder_below_horizon": pifinder_below_horizon,
+        "sky": sky,
+    }
+
+
+def _sky_point(prop: dict):
+    """One ALTITUDE_DEG/AZIMUTH_DEG property of the Sky Position Panel
+    (docs/concepts/sky_position_panel.md) as {"alt", "az", "below", "stale"},
+    or None when the driver has no such position (property missing on an older
+    driver, or IPS_IDLE = no such target / no location). `below` mirrors the
+    driver's own IPS_ALERT (at/below the horizon safety margin); `stale` is its
+    IPS_BUSY ("last known, not currently confirmed")."""
+    state = prop.get("state")
+    elements = prop.get("elements", {})
+    if state in (None, "Idle") or elements.get("ALTITUDE_DEG") in (None, "") or elements.get("AZIMUTH_DEG") in (None, ""):
+        return None
+    try:
+        return {
+            "alt": float(elements["ALTITUDE_DEG"]),
+            "az": float(elements["AZIMUTH_DEG"]),
+            "below": state == "Alert",
+            "stale": state == "Busy",
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _sky_panel_data(device_props: dict):
+    """Everything the Sky Position Panel draws, from the Mount Bridge's own
+    properties: {"location_known", "lat", "lon", "mount", "pifinder", "goto",
+    "held"}. Each position is None when there is nothing to draw. Without a
+    known observer location NO position is returned: the driver's altitude is
+    then its fail-open placeholder (90), which must never be plotted."""
+    location_prop = device_props.get("OBSERVER_LOCATION", {})
+    location_elements = location_prop.get("elements", {})
+    known = location_prop.get("state") in ("Ok", "Busy") and location_elements.get("LAT") not in (None, "")
+    if not known:
+        return {"location_known": False, "lat": None, "lon": None,
+                "mount": None, "pifinder": None, "goto": None, "held": None}
+    try:
+        lat = float(location_elements["LAT"])
+        lon = float(location_elements["LONG"])
+    except (KeyError, TypeError, ValueError):
+        return {"location_known": False, "lat": None, "lon": None,
+                "mount": None, "pifinder": None, "goto": None, "held": None}
+    return {
+        "location_known": True,
+        "lat": lat,
+        "lon": lon,
+        "mount": _sky_point(device_props.get("MOUNT_HORIZON_STATUS", {})),
+        "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
+        "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
+        "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
     }
 
 
