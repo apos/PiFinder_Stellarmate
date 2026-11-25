@@ -302,6 +302,7 @@
      the hostname/port readable instead of shouting it. */
   #mb-tile-loc {
     display: inline-block;
+    margin-left: 0.6rem;  /* gap after the (i), same as #pifinder-tile-loc */
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.68rem;
     font-weight: normal;
@@ -2657,7 +2658,7 @@
             <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
-            <div class="mb-qa-group-label">Held target</div>
+            <div class="mb-qa-group-label">Held target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the held target? The target the Mount Bridge currently remembers: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
             <div class="mb-row" id="mb-big-actions-row">
           <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
           <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
