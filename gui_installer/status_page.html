@@ -591,8 +591,10 @@
     margin-bottom: 0.7rem;
   }
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
-  #sky-panel { flex: 0 1 210px; min-width: 150px; max-width: 230px; }
-  #sky-panel .group-label { margin-bottom: 0.2rem; }
+  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. */
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 1 230px; min-width: 160px; max-width: 250px; }
+  #sky-panel-inner { flex: 1 1 auto; min-width: 0; }
+  #sky-panel .help-link { margin: 1px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
   @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
   #pifinder-glance-status-stack {
@@ -2429,8 +2431,10 @@
         <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
              the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
         <div id="sky-panel" style="display:none;">
-          <div class="group-label">Sky<a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a></div>
-          <svg id="sky-panel-svg" viewBox="0 0 240 240" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+          <div id="sky-panel-inner">
+            <svg id="sky-panel-svg" viewBox="0 0 240 240" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+          </div>
+          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
