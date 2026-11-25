@@ -197,6 +197,8 @@
   }
   #bottom-logos:hover { opacity: 1; }
   #bottom-logos img { height: 78px; width: auto; display: block; }
+  /* 192 px is the start size (the 128 x 128 picture at 1.5x); pifinderScreenFit() sets the real size from the picture
+     PiFinder delivers (Rev 4: 176 x 176 at 244 px). */
   #pifinder-screen {
     display: block;
     width: 192px;
@@ -2431,7 +2433,7 @@
       <div id="pifinder-glance-row">
         <div id="pifinder-screen-wrap">
           <div id="pifinder-screen-inner">
-            <img id="pifinder-screen" src="/pifinder_welcome_blue.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+            <img id="pifinder-screen" src="/pifinder_welcome_blue.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)" onload="pifinderScreenFit(this)">
             <div id="pifinder-screen-waiting"><span id="pifinder-screen-waiting-text">Waiting for<br>PiFinder&hellip;</span></div>
           </div>
           <a class="help-link pifinder-screen-help" href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener" title="PiFinder User Guide">i</a>
@@ -7089,6 +7091,28 @@ async function pollLog() {
 // same probe also doubles as the "is PiFinder actually reachable yet" signal
 // for the post-success access-links box below.
 let pifinderScreenUrl = null;
+// ---- OLED mirror size (begin) ----
+// PiFinder serves its screen in the display's real resolution: 128 x 128 (Rev 3), 176 x 176 (Rev 4, 1.91" OLED,
+// about 62 % more viewing area), 320 x 240 (ST7789 LCD, started by hand). The box follows the picture:
+// 128 stays at 1.5x (192 px, hard pixels, as before); anything larger gets its longest side at 244 px (Rev 4: 176 -> 244,
+// the 27 % longer sides of the bigger display), smoothed, and keeps its aspect ratio (4:3 is not squashed).
+function pfScreenBox(w, h) {
+  if (!(w > 0) || !(h > 0)) return null;
+  const longest = Math.max(w, h);
+  if (longest <= 128) return { w: Math.round(w * 1.5), h: Math.round(h * 1.5), smooth: false };
+  const f = 244 / longest;
+  return { w: Math.round(w * f), h: Math.round(h * f), smooth: true };
+}
+function pifinderScreenFit(img) {
+  const box = pfScreenBox(img.naturalWidth, img.naturalHeight);
+  if (!box) return;
+  const wpx = box.w + 'px', hpx = box.h + 'px', rend = box.smooth ? 'auto' : 'pixelated';
+  // same values on every 1 s poll: leave the element alone
+  if (img.style.width !== wpx) img.style.width = wpx;
+  if (img.style.height !== hpx) img.style.height = hpx;
+  if (img.style.imageRendering !== rend) img.style.imageRendering = rend;
+}
+// ---- OLED mirror size (end) ----
 // Set by showCtrlRemoteInputPrompt() (the two "Change address" buttons - status
 // line + drivers row) - makes the existing 'ctrl-remote-missing' showstopper
 // card (collectActiveShowstoppers()) reappear on demand for an ALREADY-configured
