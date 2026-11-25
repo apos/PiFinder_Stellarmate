@@ -12,10 +12,13 @@ All notable changes to this project are documented in this file. Format loosely 
 > not (parked, not answering); the new **Sky** tile shows mount, PiFinder, Goto and Held target on a small all-sky
 > picture; the driver writes the Sync result to the INDI log. No breaking changes.
 >
+> **Verified on the Pi 5 (Full Simulation):** "Sync PiFinder from mount" (injection), "Sync mount from PiFinder" with the
+> read-back check, the Sky tile, the Goto target and the mount state in the picture, and the new driver properties.
+>
 > **Not yet verified on real hardware / real sky:** PiFinder's Align from "Sync PiFinder from mount" with a star in the
-> field (the Full Simulation path and the refusal paths were exercised on the Pi 5); the yellow mount cards with
-> Reconnect and Unpark against the real OnStep; the Sky tile on a Dobsonian profile without a Mount Bridge and on
-> narrow screens; the driver's "Mount took the Sync" line seen in KStars/Ekos' INDI log.
+> field; the message for "Sync mount from PiFinder" while PiFinder is below the horizon (tested as code only); the
+> yellow mount cards with Reconnect and Unpark against the real OnStep; the Sky tile on a Dobsonian profile without a
+> Mount Bridge and on narrow screens; the driver's "Mount took the Sync" line seen in KStars/Ekos' INDI log.
 
 ### Added
 
