@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-25
+
+> PiFinder 2.6.4 release: the pin moves from PiFinder v2.6.3 to **v2.6.4** (upstream release of 2026-11-22). Two patches were
+> regenerated, a new safeguard keeps PiFinder's `python/tetra3` link alive, and the setup script now restarts itself after a
+> branch switch. No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0 (pin 2.6.3) for now.
+>
+> **Checked:** all 29 patch calls against a fresh 2.6.4 without rejects; our own tests (18) and the new bats test; a real update on
+> the Pi 5 (SMOS 2.4.0, OnStep): PiFinder at v2.6.4, `pifinder` service active, PiFinder web API answers (`/api/align` refuses
+> correctly without a solve), PiFinder LX200 and Mount Bridge connected.
+>
+> **Not yet seen live:** camera and a real sky solve, "Sync PiFinder from mount" with a star in the field, Full Simulation with a
+> fake solve, Pi 4, UTM, and the restart-after-branch-switch fix on a real run (only simulated). The keyboard process dying with
+> `lgpio.error` on the Pi 5 is the known UPS-shield GPIO clash and predates 2.6.4.
+
 ### Changed
 
 - **PiFinder pin moves from v2.6.3 to v2.6.4** (upstream release of 2026-11-22; `version.txt`, `pifinder_stellarmate_setup.sh`, the version whitelist of `patch_PiFinder_installation_files.sh`). Two patches had to be regenerated for it: `main_py.diff` (the sleep state machine now sits on top of 2.6.4's new `update(keep_awake)`) and `align_py.diff` (the Align stamp now follows 2.6.4's `config_object.save_target_pixel()`). The other patches apply unchanged (line offsets only). The two Align test files' fake configs gained `save_target_pixel`.
