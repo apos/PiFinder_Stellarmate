@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-11-26
+
+> Update safety release: PiFinder's own update path is closed, PiFinder's v2.6.0 data migration is run by PFSM, two early-warning tools (patch drift against upstream tags, compatibility with the system)
+> are added, and the clock warning no longer cries wolf on a Pi without NTP. No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `bin/tests/run_all.sh` (all bats tests, including the new ones for the stubs, the data migration and the driver build stamp), `python3 test_tools/compat_check_test.py` (14),
+> `python3 test_tools/patch_drift_check_test.py` (4), `node test_tools/clock_warning_test.js`; `software_py.diff` dry-run against PiFinder 2.3.0, 2.5.1, 2.6.0, 2.6.1, 2.6.3 and 2.6.4;
+> PiFinder's own v2.6.0 script on synthetic configs and on a copy of the real one; `bin/compat_check.py` on the Pi 5 (all five checks ok); `patch_drift_check.py` against 2.6.4 (pinned: no failure) and 3.1.3-beta.
+>
+> **Not yet seen live:** the three setup changes in a real update (the menu patch `software_py.diff`, the data migration, and the compatibility check at the end of the setup; the build stamp is written at the next driver build),
+> the grey "Pi clock not NTP-synced" line in the real page, and the Control Center card for the compatibility check (not built, only `GET /api/compat_check`).
+> Open: the version whitelists in the patch script still name 2.3.0 to 2.6.3, where `main_py` and `align_py` (shaped for 2.6.4) no longer apply.
+
 ### Added
 
 - `bin/compat_check.py`: a read-only compatibility check that asks whether what PFSM built still fits the system (a SMOS or package update can move these without PFSM noticing): the venv's Python against the system's, the PFSM INDI drivers (`ldd`, and the libindi version they were built against, now recorded in `~/.pfsm/driver_build.json` when the drivers are built), libcamera, KStars' D-Bus clock action, and the installed PiFinder against the pin. Each result says what is wrong and what to do. It runs at the end of the setup and of the SMOS restore script and is served as `GET /api/compat_check`; a Control Center card is not built yet. Tests: `test_tools/compat_check_test.py`, `bin/tests/test_driver_build_stamp.bats`.
