@@ -539,6 +539,12 @@ def mount_bridge_drift(
     props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout)
     device_props = props.get("PiFinder Mount Bridge")
     if not device_props:
+        # No Mount Bridge (for example a Dobsonian with push-to only): the Sky tile still
+        # works, computed from PiFinder LX200's own properties.
+        try:
+            sky_without_bridge = sky_panel_without_bridge(host, port, timeout)
+        except INDIClientError:
+            sky_without_bridge = None
         return {
             "running": False,
             "coupling_mode": None,
@@ -562,6 +568,7 @@ def mount_bridge_drift(
             "mount_below_horizon": None,
             "pifinder_altitude_deg": None,
             "pifinder_below_horizon": None,
+            "sky": sky_without_bridge,
         }
 
     bridge_mode = device_props.get("BRIDGE_MODE", {}).get("elements", {})
@@ -587,6 +594,15 @@ def mount_bridge_drift(
     pifinder_altitude_raw = pifinder_horizon_elements.get("ALTITUDE_DEG")
     pifinder_altitude_deg = float(pifinder_altitude_raw) if pifinder_altitude_raw not in (None, "") else None
     pifinder_below_horizon = (pifinder_horizon_prop.get("state") == "Alert") if pifinder_altitude_deg is not None else None
+    # The mount's own state (tracking / not tracking / parked) for the Sky
+    # Position Panel: only read when a mount is configured, and cached for a
+    # few seconds so this 2 s poll does not add a getProperties round trip each time.
+    active_mount_name_ = (device_props.get("ACTIVE_DEVICES", {}).get("elements", {}).get("ACTIVE_MOUNT") or None)
+    sky = _sky_panel_data(
+        device_props,
+        mount_name=active_mount_name_,
+        mount_state=_mount_motion_state_cached(active_mount_name_, host, port, timeout) if active_mount_name_ else None,
+    )
     coupling_mode = next((name for name, val in bridge_mode.items() if val == "On"), None)
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
@@ -676,6 +692,159 @@ def mount_bridge_drift(
         "mount_below_horizon": mount_below_horizon,
         "pifinder_altitude_deg": pifinder_altitude_deg,
         "pifinder_below_horizon": pifinder_below_horizon,
+        "sky": sky,
+    }
+
+
+def _sky_point(prop: dict):
+    """One ALTITUDE_DEG/AZIMUTH_DEG property of the Sky Position Panel
+    (docs/concepts/sky_position_panel.md) as {"alt", "az", "below", "stale"},
+    or None when the driver has no such position (property missing on an older
+    driver, or IPS_IDLE = no such target / no location). `below` mirrors the
+    driver's own IPS_ALERT (at/below the horizon safety margin); `stale` is its
+    IPS_BUSY ("last known, not currently confirmed")."""
+    state = prop.get("state")
+    elements = prop.get("elements", {})
+    if state in (None, "Idle") or elements.get("ALTITUDE_DEG") in (None, "") or elements.get("AZIMUTH_DEG") in (None, ""):
+        return None
+    try:
+        return {
+            "alt": float(elements["ALTITUDE_DEG"]),
+            "az": float(elements["AZIMUTH_DEG"]),
+            "below": state == "Alert",
+            "stale": state == "Busy",
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def equatorial_to_horizontal(ra_hours: float, dec_deg: float, lat_deg: float, lon_deg_east: float, unix_time: float):
+    """Altitude and azimuth (degrees, azimuth from NORTH, east 90) of a JNow
+    position at a site and time. Mean sidereal time, no refraction: good to a few
+    arcseconds, plenty for a picture. Checked against libnova (the Mount Bridge
+    driver's own maths) in test_tools/sky_math_test.py."""
+    import math
+    jd = unix_time / 86400.0 + 2440587.5
+    gmst = (280.46061837 + 360.98564736629 * (jd - 2451545.0)) % 360.0
+    ha = math.radians((gmst + lon_deg_east - ra_hours * 15.0) % 360.0)
+    dec, lat = math.radians(dec_deg), math.radians(lat_deg)
+    alt = math.asin(max(-1.0, min(1.0, math.sin(dec) * math.sin(lat) + math.cos(dec) * math.cos(lat) * math.cos(ha))))
+    az_south = math.atan2(math.sin(ha), math.cos(ha) * math.sin(lat) - math.tan(dec) * math.cos(lat))
+    return math.degrees(alt), (math.degrees(az_south) + 180.0) % 360.0
+
+
+def sky_panel_without_bridge(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_FAST_POLL, _now=time.time):
+    """The Sky Position Panel's data when no Mount Bridge runs (for example a
+    Dobsonian with push-to only): computed here from "PiFinder LX200"'s own INDI
+    properties - its position (EQUATORIAL_EOD_COORD), the last Goto target
+    (TARGET_EOD_COORD) and the observer location (GEOGRAPHIC_COORD, which KStars or
+    the StellarMate app set). Same shape as the Mount Bridge's `sky`; there is no
+    mount and no held target. None when PiFinder LX200 isn't there at all. RA 0 /
+    Dec 0 is INDI's "never set" and counts as no position; so does a 0/0 location."""
+    props = get_properties(
+        device="PiFinder LX200", host=host, port=port, timeout=timeout,
+        stop_after={"GEOGRAPHIC_COORD", "EQUATORIAL_EOD_COORD", "TARGET_EOD_COORD"},
+    )
+    dev = props.get("PiFinder LX200")
+    if not dev:
+        return None
+    geo = dev.get("GEOGRAPHIC_COORD", {}).get("elements", {})
+    try:
+        lat, lon = float(geo["LAT"]), float(geo["LONG"])
+    except (KeyError, TypeError, ValueError):
+        lat = lon = 0.0
+    if abs(lat) < 1e-9 and abs(lon) < 1e-9:
+        return {"location_known": False, "lat": None, "lon": None, "mount": None, "mount_state": None,
+                "mount_configured": False, "pifinder": None, "goto": None, "held": None}
+    if lon > 180.0:
+        lon -= 360.0
+    now = _now()
+
+    def point(name):
+        el = dev.get(name, {}).get("elements", {})
+        try:
+            ra, dec = float(el["RA"]), float(el["DEC"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if ra == 0.0 and dec == 0.0:
+            return None
+        alt, az = equatorial_to_horizontal(ra, dec, lat, lon, now)
+        return {"alt": alt, "az": az, "below": alt < 0, "stale": False}
+
+    return {"location_known": True, "lat": lat, "lon": lon, "mount": None, "mount_state": None,
+            "mount_configured": False, "pifinder": point("EQUATORIAL_EOD_COORD"),
+            "goto": point("TARGET_EOD_COORD"), "held": None}
+
+
+def mount_motion_state(props: dict):
+    """The mount's state from its own standard INDI properties: "parked" (a
+    parked mount wins over its tracking state), "tracking", "not tracking", or
+    None when the mount reports neither TELESCOPE_PARK nor TELESCOPE_TRACK_STATE.
+    `props` is one device's property dict as returned by get_properties()."""
+    park = props.get("TELESCOPE_PARK", {}).get("elements")
+    if park is not None and park.get("PARK") == "On":
+        return "parked"
+    track = props.get("TELESCOPE_TRACK_STATE", {}).get("elements")
+    if track is not None:
+        if track.get("TRACK_ON") == "On":
+            return "tracking"
+        if track.get("TRACK_OFF") == "On":
+            return "not tracking"
+    return None
+
+
+_MOUNT_MOTION_CACHE: dict = {}
+_MOUNT_MOTION_CACHE_S = 4.0
+
+
+def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float, _now=time.monotonic):
+    """mount_motion_state() of `device`, read at most every few seconds. Any
+    read failure gives None (the panel then just omits the state word)."""
+    cached = _MOUNT_MOTION_CACHE.get(device)
+    if cached is not None and _now() - cached[0] < _MOUNT_MOTION_CACHE_S:
+        return cached[1]
+    try:
+        props = get_properties(
+            device=device, host=host, port=port, timeout=timeout,
+            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE"},
+        )
+        state = mount_motion_state(props.get(device, {}))
+    except INDIClientError:
+        state = None
+    _MOUNT_MOTION_CACHE[device] = (_now(), state)
+    return state
+
+
+def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
+    """Everything the Sky Position Panel draws, from the Mount Bridge's own
+    properties: {"location_known", "lat", "lon", "mount", "mount_state",
+    "pifinder", "goto", "held"}. Each position is None when there is nothing to
+    draw. Without a known observer location NO position is returned: the
+    driver's altitude is then its fail-open placeholder (90), which must never
+    be plotted. `mount_name` is the configured mount device (None = no mount,
+    e.g. a Dobsonian: no mount marker); `mount_state` see mount_motion_state()."""
+    location_prop = device_props.get("OBSERVER_LOCATION", {})
+    location_elements = location_prop.get("elements", {})
+    known = location_prop.get("state") in ("Ok", "Busy") and location_elements.get("LAT") not in (None, "")
+    if not known:
+        return {"location_known": False, "lat": None, "lon": None,
+                "mount": None, "mount_state": None, "mount_configured": False, "pifinder": None, "goto": None, "held": None}
+    try:
+        lat = float(location_elements["LAT"])
+        lon = float(location_elements["LONG"])
+    except (KeyError, TypeError, ValueError):
+        return {"location_known": False, "lat": None, "lon": None,
+                "mount": None, "mount_state": None, "mount_configured": False, "pifinder": None, "goto": None, "held": None}
+    return {
+        "location_known": True,
+        "lat": lat,
+        "lon": lon,
+        "mount": _sky_point(device_props.get("MOUNT_HORIZON_STATUS", {})) if mount_name else None,
+        "mount_state": mount_state if mount_name else None,
+        "mount_configured": bool(mount_name),
+        "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
+        "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
+        "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
     }
 
 
@@ -1137,6 +1306,9 @@ def sync_mount_to_pifinder_visible_position(
     driver's SYNC_TO_COORDS/TRIGGER_SYNC_TO_COORDS primitive, which the
     driver executes with no freshness check of its own either - the whole
     point being "what the user can see is what gets synced to."
+    Returns (ra_hours, dec_degrees) - what the mount was asked to sync to
+    (JNow, as INDI reports it) - so the caller can check that the mount
+    really took it (see verify_mount_position()).
     Raises INDIClientError if PiFinder LX200's position isn't available."""
     props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
     coord_prop = props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {})
@@ -1206,6 +1378,155 @@ def sync_mount_to_pifinder_visible_position(
     # agree (the Sync above just succeeded), bring the simulator to the same
     # place too - best-effort, never fails this function if it's not loaded.
     sync_pifinder_simulator_to(float(ra) * 15.0, float(dec), host, port, timeout)
+    return float(ra), float(dec)
+
+
+def active_mount_name(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """The mount device the Mount Bridge is coupled to (ACTIVE_DEVICES.ACTIVE_MOUNT),
+    or None if none is configured. A light read - unlike mount_bridge_status()."""
+    props = get_properties(
+        device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"ACTIVE_DEVICES"}
+    )
+    elements = props.get("PiFinder Mount Bridge", {}).get("ACTIVE_DEVICES", {}).get("elements", {})
+    return elements.get("ACTIVE_MOUNT") or None
+
+
+def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT):
+    """The mount's own EQUATORIAL_EOD_COORD as the raw INDI strings (ra, dec),
+    or None if it isn't available. Raw strings on purpose: "did it change at
+    all" must not be confused by float formatting."""
+    props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"EQUATORIAL_EOD_COORD"})
+    el = props.get(device, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = el.get("RA"), el.get("DEC")
+    if ra in (None, "") or dec in (None, ""):
+        return None
+    return ra, dec
+
+
+def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    """One light read of what the page needs to know about a mount:
+    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
+    `parked` is None for a mount that has no TELESCOPE_PARK property at all."""
+    props = get_properties(
+        device=device, host=host, port=port, timeout=timeout,
+        stop_after={"EQUATORIAL_EOD_COORD", "TELESCOPE_PARK"},
+    )
+    dev = props.get(device, {})
+    el = dev.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = el.get("RA"), el.get("DEC")
+    coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
+    park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
+    parked = None if park_el is None else park_el.get("PARK") == "On"
+    return {"coords": coords, "parked": parked}
+
+
+def unpark_mount(
+    device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    wait_s: float = 20.0,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> bool:
+    """User-triggered: unpark the mount (TELESCOPE_PARK.UNPARK). A parked mount
+    ignores Sync and Goto. Returns True once the mount reports not parked
+    within `wait_s`. Raises INDIClientError if the mount has no park control."""
+    set_switch(device, "TELESCOPE_PARK", "UNPARK", host, port, timeout)
+    deadline = _now() + wait_s
+    while _now() < deadline:
+        try:
+            if read_mount_state(device, host, port, timeout)["parked"] is False:
+                return True
+        except INDIClientError:
+            pass
+        _sleep(0.7)
+    return False
+
+
+def _separation_arcmin(ra1_h: float, dec1: float, ra2_h: float, dec2: float) -> float:
+    """Great-circle separation in arcmin between two RA(hours)/Dec(degrees) points."""
+    import math
+    r1, d1, r2, d2 = math.radians(ra1_h * 15.0), math.radians(dec1), math.radians(ra2_h * 15.0), math.radians(dec2)
+    a = math.sin((d2 - d1) / 2) ** 2 + math.cos(d1) * math.cos(d2) * math.sin((r2 - r1) / 2) ** 2
+    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a)))) * 60.0
+
+
+def verify_mount_position(
+    target_ra_h: float,
+    target_dec: float,
+    tolerance_arcmin: float = 3.0,
+    wait_s: float = 6.0,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> dict:
+    """After a Sync: did the mount really take it? INDI accepts a sync command
+    even if the mount's driver is connected but silent (dead TCP session), so
+    "sent" is not "done" (issue #583). Reads the mount's reported position for
+    up to `wait_s` and returns {"verified": True/False/None, "mount_ra_h",
+    "mount_dec", "separation_arcmin", "device"}: True once it is within
+    `tolerance_arcmin` of the target, False if it never got there in time,
+    None if the check itself could not be made (no mount named, nothing
+    readable) - unknown is not reported as a failure."""
+    try:
+        device = active_mount_name(host, port, timeout)
+    except INDIClientError:
+        device = None
+    if not device:
+        return {"verified": None, "device": None}
+    deadline = _now() + wait_s
+    last = None
+    while True:
+        try:
+            pos = read_mount_position(device, host, port, timeout)
+        except INDIClientError:
+            pos = None
+        if pos is not None:
+            try:
+                ra_h, dec = float(pos[0]), float(pos[1])
+                sep = _separation_arcmin(ra_h, dec, target_ra_h, target_dec)
+                last = {"mount_ra_h": ra_h, "mount_dec": dec, "separation_arcmin": sep}
+                if sep <= tolerance_arcmin:
+                    return {"verified": True, "device": device, **last}
+            except ValueError:
+                pass
+        if _now() >= deadline:
+            break
+        _sleep(0.7)
+    if last is None:
+        return {"verified": None, "device": device}
+    return {"verified": False, "device": device, **last}
+
+
+def reconnect_device(
+    device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    settle_s: float = 2.0,
+    wait_s: float = 20.0,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> bool:
+    """User-triggered: disconnect and connect an INDI device again (what a
+    manual "Disconnect/Connect" in Ekos does). Returns True once the device
+    reports CONNECT=On again within `wait_s`. Never called automatically."""
+    set_switch(device, "CONNECTION", "DISCONNECT", host, port, timeout)
+    _sleep(settle_s)
+    set_switch(device, "CONNECTION", "CONNECT", host, port, timeout)
+    deadline = _now() + wait_s
+    while _now() < deadline:
+        try:
+            props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"CONNECTION"})
+            if _connection_state(props.get(device)) is True:
+                return True
+        except INDIClientError:
+            pass
+        _sleep(0.7)
+    return False
 
 
 def trigger_goto_held(

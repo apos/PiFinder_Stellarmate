@@ -141,7 +141,7 @@ Is PiFinder's plate-solver producing a position right now? Read from PiFinder's 
 ### Injected
 
 Appears docked onto `Solve`'s right edge **only while [Injected Solve](#synthetic-solve-vs-a-manual-one-shot-seed)
-is active** (Synthetic Solve, Re-seed from mount, Set position, or Sync). Its presence is the
+is active** (Synthetic Solve, Set PiFinder position, or, in Full Simulation only, Sync PiFinder from mount). Its presence is the
 signal — no colour scale. Whenever it shows, `Solve` is red.
 
 ### IMU
@@ -353,7 +353,7 @@ not a project secret (change it if you haven't already).
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="500"></a><br>
-<sub>The whole page (Full Simulation shown here). Top to bottom: the <strong>PiFinder</strong> tile (OLED mirror, quick keys, the Cam/Solve/IMU/GPS badge row, and — directly under it — the Mount Bridge connection diagram), the <strong>INDI Mount Bridge</strong> tile, <strong>Simulation, Test and Power</strong>, and <strong>Install or Update</strong> at the bottom. Every tile heading collapses; the state is remembered per browser.</sub>
+<sub>The whole page (Full Simulation shown here). Top to bottom: the <strong>PiFinder</strong> tile (OLED mirror, quick keys, the small <strong>Sky</strong> picture of mount, PiFinder and targets, the Cam/Solve/IMU/GPS badge row, and — directly under it — the Mount Bridge connection diagram), the <strong>INDI Mount Bridge</strong> tile, <strong>Simulation, Test and Power</strong>, and <strong>Install or Update</strong> at the bottom. Every tile heading collapses; the state is remembered per browser.</sub>
 </td>
 </tr>
 </table>
@@ -412,18 +412,28 @@ Running elsewhere: `INDI-only` (checkbox) installs just the INDI build dependenc
 drivers — no clone, no venv, no catalog — for a separate control host coupled to a PiFinder over the
 network (see [help.html#indi-only-mode](gui_installer/help.html)).
 
-### Next: create your equipment profile (mandatory)
+### Next: set up your equipment profile
 
-> **⚠️ A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari.** The
-> INDI drivers this install just built (`PiFinder LX200`, optionally `PiFinder Mount Bridge`) only
-> exist in the StellarMate Web Manager's own driver catalog — they don't appear anywhere inside
-> Ekos, and there is no profile for them until you create one yourself. Skipping this step is the
-> single most common reason the Mount Bridge tile below, or SkySafari, or Ekos's device list, all
-> stay empty after an otherwise successful install.
+> **A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari.** It needs an
+> equipment profile of your own: create one once in the StellarMate App or in the Web Manager
+> (`http://<pi-address>:8624`). The read-only "Simulators" default cannot be used — the Control
+> Center does not offer it.
 
-Do this once, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars) — full
-walkthrough with screenshots:
-[Readme_PiFinder_LX200.md — Step 2: create an equipment profile in the Web Manager](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
+The Control Center does the rest. In the **INDI Mount Bridge** tile (*Settings → Setup checklist &
+diagnostics*):
+
+1. **Profile** — select your profile.
+2. Click the **Role** card that fits this device (or **One-Click Setup**). The Control Center adds
+   the PiFinder drivers (`PiFinder LX200`, and `PiFinder Mount Bridge` where the role needs it) to
+   that profile itself and restarts a running profile to apply them. Nothing to tick in the Web
+   Manager's driver list.
+3. **Mount** — link your mount's driver (the one step that needs your judgement), then **Connect**.
+
+The drivers exist only in the Web Manager's catalog and never show up in Ekos's own driver list;
+Ekos reaches them as a **Remote Host** profile (*KStars Link* step, details in
+[Readme_PiFinder_LX200.md — Step 4](Readme_PiFinder_LX200.md#step-4-kstarsekos-remote-mode)). Building
+the profile by hand in the Web Manager works too:
+[Readme_PiFinder_LX200.md — Step 2](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
 
 ---
 
@@ -496,7 +506,7 @@ matches which side you trust:
 
 | Button | What it does | Use when |
 |---|---|---|
-| **Re-seed from mount** | Reads the mount's current position and injects *that* as PiFinder's position. | The mount is where you want to be; PiFinder's (simulated) solve is the odd one out. |
+| **Sync PiFinder from mount** | Tells PiFinder where the mount points: PiFinder's own Align on a real PiFinder, the mount's position injected as PiFinder's in Full Simulation. | The mount is where you want to be; PiFinder's solve is the odd one out. |
 | **Sync mount from PiFinder** | Syncs the mount to whatever PiFinder currently shows — an instant position update, no slew. | PiFinder's position is correct (a real solve, or one you deliberately set) and the mount's belief is wrong — e.g. after moving the mount by hand. |
 
 Either one, once it succeeds, clears the card. The same **Sync mount from PiFinder** button also
@@ -542,11 +552,29 @@ mount is below the horizon, since it wouldn't mean anything.
 
 The section splits into what you use every session and what you set once:
 
-- **Quick Actions** — the one-shot buttons: **Sync mount from PiFinder** (above), **Align to Held
-  Target** and **Goto Held Target** (correct PiFinder's or the mount's belief about the held target
-  — need an active coupling mode), and **Stop movement** (emergency stop; also sets Coupling to Off
-  so nothing re-triggers). **Threshold** (arcmin) is how far off before Verify/Alert warns or an
-  Auto-correct mode acts. **Decouple** sets Coupling back to Off.
+- **Quick Actions** — the one-shot buttons, in two groups:
+  - **Sync positions (once)**: **Sync mount from PiFinder** (PiFinder → mount) and **Sync PiFinder
+    from mount** (mount → PiFinder), side by side with the direction on each button. Use the second
+    one after you centred a star in the scope and PiFinder doesn't agree: on a real PiFinder it is
+    PiFinder's own **Align** (the same calibration as picking the star on the device), so real
+    plate-solving keeps running and there is nothing to switch off afterwards. It needs a current
+    plate solve and the mount inside PiFinder's field of view (about 6.9° from the centre with the
+    standard 16 mm lens); if it can't align it says why. One fixed line under the two buttons shows
+    the last result with its time; it never appears or disappears, so nothing else moves. In Full
+    Simulation (no camera) the button injects the mount's position instead. After **Sync mount
+    from PiFinder** the line also says whether the mount really took it, and a parked mount (it
+    ignores Sync) is caught before anything is sent. Yellow cards cover the two causes: **Mount is
+    parked** with an **Unpark mount** button, and **Mount not responding** (the driver says
+    connected but the position has not changed for 60 s, for example after the network dropped)
+    with a **Reconnect mount** button. The buttons only act when you click them, Reconnect is
+    refused while Ekos is guiding, and nothing is unparked or reconnected by itself. For a USB mount
+    that does not come back, unplug and replug the cable.
+  - **Held target**: **Align to Held Target** and **Goto Held Target** (correct PiFinder's or the
+    mount's belief about the held target — need an active coupling mode), **Revert to Held Target
+    Now**, and **Stop movement** (emergency stop; also sets Coupling to Off so nothing re-triggers).
+
+  **Threshold** (arcmin) is how far off before Verify/Alert warns or an Auto-correct mode acts.
+  **Decouple** sets Coupling back to Off.
 - **Coupling presets** — pick one:
   - **Verify/Alert only** — watches the drift, never moves the mount. The passive "is my mount still
     aligned?" check for astrophotography.
@@ -623,18 +651,20 @@ Simulation "there is a sky" switch. It drives the green `Injected` badge in the 
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
-<sub>Manual one-shot seed (Full Simulation), inside Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code>, and a direct RA/Dec entry.</sub>
+<sub>Manual one-shot seed (Full Simulation): <code>Sync PiFinder from mount</code>, <code>Set PiFinder position</code>, and a direct RA/Dec entry. It now lives in <em>Simulation, Test and Power</em>; the screenshot shows the earlier layout.</sub>
 </td>
 </tr>
 </table>
 
-**Manual one-shot seed** (collapsed inside Quick Actions) injects a *single* position and stops:
-**Re-seed from mount** reads the mount's current position once, **Set position** takes a literal
-RA/Dec (JNow, degrees), and either turns the injection on if it wasn't. PiFinder's normal IMU
-dead-reckoning tracks from that anchor exactly as it would from a real solve. Use this to place
-PiFinder at one known spot — e.g. to set up the disagreement for a Sync test — rather than have it
-follow the mount. `Turn off` returns PiFinder to real camera solving. Deliberately *not* reflected
-in the Synthetic Solve dot, to keep that one signal simple.
+**Manual one-shot seed** (collapsed, in *Simulation, Test and Power*) injects a *single* position
+and stops: **Sync PiFinder from mount** reads the mount's current position once, **Set PiFinder
+position** takes a literal RA/Dec (JNow, degrees), and either turns the injection on if it wasn't.
+PiFinder's normal IMU dead-reckoning tracks from that anchor exactly as it would from a real solve.
+Use this to place PiFinder at one known spot — e.g. to set up the disagreement for a Sync test —
+rather than have it follow the mount. An injected position pauses real camera solving, which is why
+this belongs to testing; **Stop injected solve** returns PiFinder to real camera solving. On a real
+PiFinder use the Quick Action **Sync PiFinder from mount** instead (PiFinder's own Align, no
+injection). Deliberately *not* reflected in the Synthetic Solve dot, to keep that one signal simple.
 
 ---
 

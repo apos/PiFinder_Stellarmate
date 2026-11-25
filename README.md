@@ -162,11 +162,13 @@ No dropdown here - switch branches with git itself before running the script, e.
 
 Full details: [Installation](#installation).
 
-> **⚠️ Mandatory next step, either way: create an equipment profile in the Web Manager.**
-> A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari — the drivers
-> only exist in the StellarMate Web Manager's own catalog, and there is no profile for them until
-> you create one, directly in the Web Manager (`http://<pi-address>:8624`, not through KStars).
-> See [Readme_PiFinder_LX200.md — Step 2](Readme_PiFinder_LX200.md#step-2-create-an-equipment-profile-in-the-web-manager).
+> **Next step, either way: pick your equipment profile — the Control Center adds the PiFinder drivers.**
+> A finished install alone does not make PiFinder usable via INDI/KStars/SkySafari: it needs an
+> equipment profile of your own (create one in the StellarMate App or in the Web Manager,
+> `http://<pi-address>:8624`; the read-only "Simulators" default does not count). In the Control
+> Center's **INDI Mount Bridge** tile, select that profile and click a **Role** card or **One-Click
+> Setup** — the PiFinder drivers are then added for you, nothing to tick by hand.
+> See [Readme_ControlCenter.md — Next: set up your equipment profile](Readme_ControlCenter.md#next-set-up-your-equipment-profile).
 
 ---
 

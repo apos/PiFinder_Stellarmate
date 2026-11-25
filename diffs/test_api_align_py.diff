@@ -1,0 +1,279 @@
+--- python/tests/test_api_align.py.orig
++++ python/tests/test_api_align.py
+@@ -0,0 +1,276 @@
++"""Tests for POST /api/align (PiFinder_Stellarmate): align PiFinder to the
++position a scope is centred on, without the on-device Align UI.
++
++The route validates, converts JNow -> J2000, hands the work to the main
++process through ``ui_queue`` ("align_on_radec", ra, dec) and reports the
++outcome it gets back on ``align_result_queue``. These tests stand in for the
++main process with a tiny consumer thread, and for ``shared_state`` with a stub.
++"""
++
++import queue
++import threading
++import time
++from types import SimpleNamespace
++
++import pytest
++from flask import Flask
++
++from PiFinder import api_extensions
++from PiFinder.api_extensions import _jnow_to_j2000, register_api_routes
++from PiFinder.types.positioning import (
++    Pointing,
++    PointingAxis,
++    PointingEstimate,
++    PointingMatrix,
++)
++
++# IMX296 + 16mm lens: 13.7 deg across, so 6.9 deg centre-to-edge and
++# 9.7 deg centre-to-corner.
++CAMERA_RA, CAMERA_DEC = 10.0, 20.0
++
++
++def _estimate(last_success):
++    cam = Pointing(RA=CAMERA_RA, Dec=CAMERA_DEC, Roll=0.0)
++    return PointingEstimate(
++        pointing=PointingMatrix(
++            camera=PointingAxis(solve=cam, estimate=cam),
++            aligned=PointingAxis(solve=cam, estimate=cam),
++        ),
++        last_solve_success=last_success,
++    )
++
++
++class _State:
++    def __init__(self, last_success, fake_active=False):
++        self._sol = _estimate(last_success)
++        self._fake = fake_active
++
++    def fake_solve_active(self):
++        return self._fake
++
++    def solution(self):
++        return self._sol
++
++    def camera_type(self):
++        return "imx296"
++
++    def camera_lens(self):
++        return "16mm"
++
++
++class _MainLoop(threading.Thread):
++    """Stands in for the main process: answers align requests."""
++
++    def __init__(self, server, ok):
++        super().__init__(daemon=True)
++        self.server, self.ok, self.seen = server, ok, []
++        self.stop = threading.Event()
++
++    def run(self):
++        while not self.stop.is_set():
++            try:
++                cmd = self.server.ui_queue.get(timeout=0.05)
++            except queue.Empty:
++                continue
++            self.seen.append(cmd)
++            self.server.align_result_queue.put({"ok": self.ok})
++
++
++def _client(state, with_queue=True):
++    server = SimpleNamespace(
++        shared_state=state,
++        ui_queue=queue.Queue(),
++        align_result_queue=queue.Queue() if with_queue else None,
++    )
++    app = Flask(__name__)
++    register_api_routes(app, server)
++    return app.test_client(), server
++
++
++def _jnow_at(sep_dec_offset):
++    """A JNow position the given number of degrees north of the camera centre."""
++    return {"ra": CAMERA_RA + 0.3, "dec": CAMERA_DEC + sep_dec_offset}
++
++
++@pytest.mark.unit
++def test_missing_fields_is_400():
++    client, _ = _client(_State(time.time()))
++    assert client.post("/api/align", json={"ra": 1}).status_code == 400
++    assert client.post("/api/align", json={"ra": 1, "dec": 95}).status_code == 400
++
++
++@pytest.mark.unit
++def test_standalone_mode_is_503():
++    client, _ = _client(_State(time.time()), with_queue=False)
++    assert client.post("/api/align", json=_jnow_at(0)).status_code == 503
++
++
++@pytest.mark.unit
++def test_refused_while_fake_solve_is_active():
++    client, server = _client(_State(time.time(), fake_active=True))
++    r = client.post("/api/align", json=_jnow_at(0))
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "fake_solve_active"
++    assert server.ui_queue.empty()
++
++
++@pytest.mark.unit
++@pytest.mark.parametrize("last", [None, 0.0])
++def test_no_current_solve(last):
++    client, server = _client(_State(last if last is None else time.time() - 600))
++    r = client.post("/api/align", json=_jnow_at(0))
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "no_solve"
++    assert server.ui_queue.empty()
++
++
++@pytest.mark.unit
++def test_beyond_the_corner_is_refused_with_the_distance_and_nothing_is_sent():
++    client, server = _client(_State(time.time()))
++    r = client.post("/api/align", json=_jnow_at(12.0))
++    body = r.get_json()
++    assert r.status_code == 409
++    assert body["reason"] == "outside_fov"
++    assert body["separation_deg"] > 11.0
++    assert body["fov_deg"] == pytest.approx(13.7, abs=0.1)
++    assert server.ui_queue.empty()
++
++
++@pytest.mark.unit
++def test_success_sends_j2000_to_the_main_process():
++    client, server = _client(_State(time.time()))
++    loop = _MainLoop(server, ok=True)
++    loop.start()
++    try:
++        jnow = _jnow_at(1.0)
++        r = client.post("/api/align", json=jnow)
++    finally:
++        loop.stop.set()
++    body = r.get_json()
++    assert r.status_code == 200 and body["success"] is True
++    assert len(loop.seen) == 1
++    tag, ra, dec = loop.seen[0]
++    assert tag == "align_on_radec"
++    exp_ra, exp_dec = _jnow_to_j2000(jnow["ra"], jnow["dec"])
++    assert (ra, dec) == pytest.approx((exp_ra, exp_dec))
++    # the conversion really moved the position (precession since J2000)
++    assert abs(ra - jnow["ra"]) > 0.05
++    assert body["ra"] == pytest.approx(exp_ra) and body["dec"] == pytest.approx(exp_dec)
++
++
++@pytest.mark.unit
++def test_no_pixel_in_the_edge_zone_means_outside_fov():
++    client, server = _client(_State(time.time()))
++    loop = _MainLoop(server, ok=False)
++    loop.start()
++    try:
++        r = client.post("/api/align", json=_jnow_at(8.0))  # past 6.9, inside 9.7
++    finally:
++        loop.stop.set()
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "outside_fov"
++
++
++@pytest.mark.unit
++def test_no_pixel_near_the_centre_means_timeout():
++    client, server = _client(_State(time.time()))
++    loop = _MainLoop(server, ok=False)
++    loop.start()
++    try:
++        r = client.post("/api/align", json=_jnow_at(1.0))
++    finally:
++        loop.stop.set()
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "timeout"
++
++
++@pytest.mark.unit
++def test_main_process_never_answers_is_a_timeout(monkeypatch):
++    monkeypatch.setattr(api_extensions, "_ALIGN_RESULT_TIMEOUT_S", 0.1)
++    client, _ = _client(_State(time.time()))
++    r = client.post("/api/align", json=_jnow_at(1.0))
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "timeout"
++
++
++@pytest.mark.unit
++def test_second_align_while_one_runs_is_busy():
++    client, _ = _client(_State(time.time()))
++    assert api_extensions._ALIGN_LOCK.acquire(blocking=False)
++    try:
++        r = client.post("/api/align", json=_jnow_at(1.0))
++    finally:
++        api_extensions._ALIGN_LOCK.release()
++    assert r.status_code == 409
++    assert r.get_json()["reason"] == "busy"
++
++
++@pytest.mark.unit
++def test_pole_keeps_the_callers_ra():
++    ra, dec = _jnow_to_j2000(123.0, 89.95)
++    assert ra == pytest.approx(123.0)
++    assert 89.0 < dec <= 90.0
++
++
++# ---- align_on_radec(record_align=...) ----------------------------------
++# POST /api/align passes record_align=False: the position came from the
++# mount, so stamping it would make the Mount Bridge Sync the mount to itself
++# (a pointless extra point in a pointing model such as OnStep's).
++
++class _AlignConfig:
++    def __init__(self):
++        self.options = {}
++
++    def set_option(self, k, v):
++        self.options[k] = v
++
++
++class _AlignResponseQueue:
++    """Delivers its reply only after align_on_radec()'s initial drain."""
++
++    def __init__(self, result):
++        self._result, self._drained = result, False
++
++    def get(self, block=False):
++        if not self._drained:
++            self._drained = True
++            raise queue.Empty
++        if self._result is None:
++            raise queue.Empty
++        r, self._result = self._result, None
++        return r
++
++
++def _run_align_on_radec(**kwargs):
++    import PiFinder.i18n  # noqa: F401  - installs gettext _() used by align.py
++    from PiFinder.state import SharedStateObj
++    from PiFinder.types.positioning import AlignedResult
++    from PiFinder.ui.align import align_on_radec
++
++    ss = SharedStateObj()
++    assert ss.last_align_time() is None
++    queues = {
++        "align_command": queue.Queue(),
++        "align_response": _AlignResponseQueue(AlignedResult(y_target=250.0, x_target=260.0)),
++        "console": queue.Queue(),
++    }
++    cfg = _AlignConfig()
++    ok = align_on_radec(10.0, 20.0, queues, cfg, ss, **kwargs)
++    return ok, ss, cfg
++
++
++@pytest.mark.unit
++def test_align_stamps_by_default():
++    ok, ss, cfg = _run_align_on_radec()
++    assert ok is True
++    assert ss.last_align_time() is not None
++    assert (ss.last_align_ra(), ss.last_align_dec()) == (10.0, 20.0)
++
++
++@pytest.mark.unit
++def test_align_without_record_still_calibrates_but_does_not_stamp():
++    ok, ss, cfg = _run_align_on_radec(record_align=False)
++    assert ok is True
++    assert "target_pixel" in cfg.options  # the calibration itself is stored
++    assert ss.last_align_time() is None  # but no Sync request for the mount
++

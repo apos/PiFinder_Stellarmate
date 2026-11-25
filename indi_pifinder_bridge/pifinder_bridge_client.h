@@ -16,6 +16,7 @@
 
 #include <mutex>
 #include <string>
+#include <atomic>
 
 class PiFinderBridgeClient : public INDI::BaseClient
 {
@@ -65,6 +66,22 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool getPiFinderRADE(double &ra, double &dec) const;
         bool getMountRADE(double &ra, double &dec) const;
 
+        // Observer location (degrees, latitude north, longitude east in
+        // -180..180) as the INDI world knows it: the standard
+        // GEOGRAPHIC_COORD property of the PiFinder device first, then of the
+        // mount - KStars and the StellarMate app write it to every device they
+        // drive, so it is the location the user actually set. An all-zero
+        // value is INDI's "never set" default and counts as unknown. `source`
+        // names where it came from (for the log). False: nothing usable.
+        bool getObserverLocation(double &lat, double &lon, std::string &source) const;
+
+        // The last Goto target the user sent (JNow, hours/degrees): either to the
+        // mount (KStars slews the mount directly) or to the PiFinder device
+        // (push-to, Goto Forward, a Dobsonian without mount) - whichever property
+        // was updated more recently. RA 0 / Dec 0 is INDI's "never set" default
+        // and counts as none. False: no target on either device.
+        bool getLastGotoTarget(double &ra, double &dec) const;
+
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
         // solved position and never changes just because a target was set.
@@ -93,6 +110,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
+
+        // The mount's own TELESCOPE_PARK state. False: the mount has no park
+        // property (nothing known); otherwise `parked` says whether PARK is on.
+        bool getMountParked(bool &parked) const;
 
         // coordSetName is one of the mount's ON_COORD_SET switch names, e.g. "SYNC", "TRACK", "SLEW"
         bool sendMountCoords(double ra, double dec, const char *coordSetName);
@@ -175,7 +196,13 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_piFinderEqNP = nullptr;
         INDI::PropertyViewNumber *m_piFinderTargetNP = nullptr;
         INDI::PropertyViewNumber *m_mountEqNP = nullptr;
+        INDI::PropertyViewNumber *m_piFinderGeoNP = nullptr;
+        INDI::PropertyViewNumber *m_mountGeoNP = nullptr;
+        INDI::PropertyViewNumber *m_mountTargetNP = nullptr;
+        std::atomic<long> m_lastMountTargetTime { 0 };
+        std::atomic<long> m_lastPiFinderTargetTime { 0 };
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountParkSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountMountTypeSP = nullptr;
         INDI::PropertyViewSwitch *m_mountAbortSP = nullptr;

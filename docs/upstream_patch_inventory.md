@@ -244,6 +244,26 @@ occasional `shared_state` slowness — CPU oversubscription, not a code defect, 
 
 ---
 
+### 1.10 `POST /api/align`: Align from an external RA/Dec
+
+**Files**: `diffs/api_extensions_py.diff` (route), `diffs/main_py.diff` (runs `align_on_radec` in the
+main process, which owns the config that persists `target_pixel`), `diffs/server_py.diff` (carries the
+result queue to the web handler), `diffs/test_api_align_py.diff` (new file, 12 tests).
+
+PiFinder's Align (`ui/align.py::align_on_radec`) is only reachable from the on-device UI. The route
+takes `{"ra", "dec"}` in JNow (converted to J2000, same conversion and pole handling as
+`/api/fake_solve`), asks the solver for the camera pixel of that position and stores it as
+`target_pixel`, exactly like picking the star in the Align screen. Real plate-solving keeps running.
+Instead of a silent "Align Timeout" it answers HTTP 409 with a reason: `no_solve` (no camera solve in
+the last 5 s), `outside_fov` (with the distance from the field centre and the field width, refused at
+once beyond the frame's corner), `timeout`, `fake_solve_active`, `busy`. 503 without a main process.
+
+Used by PiFinder_Stellarmate's "Sync PiFinder from mount" (an external mount is the trusted side, PiFinder
+is corrected) instead of the `/api/fake_solve` injection, which pauses real solving.
+
+**Upstream-relevant**: any external client that knows where the scope points (a mount, a planetarium)
+could use it. Not filed upstream yet.
+
 ## 2. StellarMate/SMOS-only (not relevant upstream)
 
 These only make sense because this project runs *inside* a StellarMate-managed install, sitting

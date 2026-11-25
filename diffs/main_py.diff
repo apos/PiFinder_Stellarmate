@@ -1,6 +1,14 @@
---- python/PiFinder/main.py.orig	2026-09-01 22:04:24.368892021 +0200
-+++ python/PiFinder/main.py	2026-09-01 21:49:03.827633414 +0200
-@@ -83,8 +83,37 @@
+--- python/PiFinder/main.py.orig
++++ python/PiFinder/main.py
+@@ -50,6 +50,7 @@
+ from PiFinder.calc_utils import sf_utils
+ from PiFinder.state_utils import sleep_for_framerate
+ 
++from PiFinder.ui.align import align_on_radec
+ from PiFinder.ui.console import UIConsole
+ from PiFinder.ui.menu_manager import MenuManager
+ 
+@@ -83,8 +84,37 @@
      global keypad_pwm
      global hardware_platform
      if hardware_platform == "Pi":
@@ -40,7 +48,7 @@
  
  
  def set_keypad_brightness(percentage: float):
-@@ -148,11 +177,27 @@
+@@ -148,11 +178,27 @@
  
  
  class PowerManager:
@@ -68,7 +76,7 @@
  
      def register_activity(self):
          """
-@@ -186,28 +231,93 @@
+@@ -186,28 +232,93 @@
          self.shared_state.set_power_state(0)
          self.sleep_screen()
  
@@ -174,7 +182,7 @@
      def get_sleep_timeout(self):
          """
          returns the sleep timeout amount
-@@ -367,6 +477,16 @@
+@@ -367,6 +478,20 @@
      alignment_command_queue: Queue = Queue()
      alignment_response_queue: Queue = Queue()
      ui_queue: Queue = Queue()
@@ -188,21 +196,26 @@
 +    # above - own dedicated queue, read by the fake-IMU fallback in
 +    # imu_fake.py, written by the /api/fake_imu web handler.
 +    fake_imu_command_queue: Queue = Queue()
++    # PiFinder_Stellarmate: POST /api/align (web process) asks this process to
++    # run align_on_radec() - it owns the config object that persists
++    # target_pixel - and gets the outcome back through this queue.
++    align_result_queue: Queue = Queue()
  
      # init queues for logging
      keyboard_logqueue: Queue = log_helper.get_queue()
-@@ -503,6 +623,10 @@
+@@ -503,6 +628,11 @@
                  server_logqueue,
                  verbose,
              ),
 +            kwargs={
 +                "fake_solve_command_queue": fake_solve_command_queue,
 +                "fake_imu_command_queue": fake_imu_command_queue,
++                "align_result_queue": align_result_queue,
 +            },
          )
          server_process.start()
  
-@@ -532,6 +656,7 @@
+@@ -532,6 +662,7 @@
              name="IMU",
              target=imu.imu_monitor,
              args=(shared_state, console_queue, imu_logqueue),
@@ -210,7 +223,7 @@
          )
          imu_process.start()
  
-@@ -607,6 +732,7 @@
+@@ -607,6 +738,7 @@
              kwargs={
                  "command_queue": integrator_command_queue,
                  "camera_command_queue": camera_command_queue,
@@ -218,7 +231,7 @@
              },
          )
          integrator_process.start()
-@@ -725,13 +851,6 @@
+@@ -725,13 +857,6 @@
                                  and not location.source.startswith("CONFIG:")
                                  and not location.source == "MANUAL"
                                  and not location.source == "replay"
@@ -232,7 +245,7 @@
                              ):
                                  logger.debug(
                                      f"Updating GPS location: new content: {gps_content}, old content: {location}"
-@@ -808,6 +927,12 @@
+@@ -815,6 +940,38 @@
                      if catalogs.catalog_filter is not None:
                          catalogs.catalog_filter.mark_dirty()
                      menu_manager.message(_("Catalogs\nFully Loaded"), 2)
@@ -242,10 +255,36 @@
 +                    # via the web API instead of simulating menu navigation
 +                    # keypresses through keyboard_queue.
 +                    command_queues["camera"].put("debug")
++                elif (
++                    isinstance(ui_command, tuple)
++                    and len(ui_command) == 3
++                    and ui_command[0] == "align_on_radec"
++                ):
++                    # POST /api/align (PiFinder_Stellarmate): same code path
++                    # as the on-device Align (UIAlign) - asks the solver for
++                    # the camera pixel of (ra, dec) [J2000, degrees] and stores
++                    # target_pixel (no last_align stamp - see record_align below). Blocks this loop for up
++                    # to align_on_radec()'s own 2 s timeout, exactly like the
++                    # on-device Align does.
++                    try:
++                        align_ok = align_on_radec(
++                            float(ui_command[1]),
++                            float(ui_command[2]),
++                            command_queues,
++                            cfg,
++                            shared_state,
++                            # the position came FROM the mount: no stamp, or the
++                            # Mount Bridge would Sync the mount to itself
++                            record_align=False,
++                        )
++                    except Exception:
++                        logger.exception("align_on_radec failed")
++                        align_ok = False
++                    align_result_queue.put({"ok": bool(align_ok)})
                  elif ui_command == "test_mode":
                      dt = timez.utc(2025, 6, 28, 11, 0, 0)
                      shared_state.set_datetime(dt)
-@@ -1284,7 +1409,26 @@
+@@ -1291,7 +1448,26 @@
          from rpi_hardware_pwm import HardwarePWM
  
          cfg = config.Config()
@@ -273,7 +312,7 @@
          integrator = importlib.import_module("PiFinder.integrator")
  
          # verify and sync GPSD baud rate
-@@ -1304,6 +1448,8 @@
+@@ -1311,6 +1487,8 @@
              gps_monitor = importlib.import_module("PiFinder.gps_fake")
          elif gps_type == "ublox":
              gps_monitor = importlib.import_module("PiFinder.gps_ubx")
@@ -282,7 +321,7 @@
          else:
              gps_monitor = importlib.import_module("PiFinder.gps_gpsd")
  
-@@ -1327,9 +1473,24 @@
+@@ -1334,9 +1512,24 @@
          from PiFinder import camera_none as camera  # type: ignore[no-redef]
  
      if args.keyboard.lower() == "pi":

@@ -298,6 +298,23 @@ either. Two directions floated, neither built/verified:
   this actually bypasses the check (it may key off the target's absolute Hour Angle vs. the mount's
   stored belief, not the size of the jump) or just delays hitting the same wall.
 
+
+#### 8.5.2 A second cause of "logged success, no mount movement": a connected but silent mount driver (#583, 2026-11-24)
+
+Same symptom as §8.5, a different cause. On 2026-11-24 the `LX200 OnStep` driver (TCP to the OnStep)
+was listed as connected but silent after the network dropped for 17 minutes: `Firmware Info`,
+`OnStep Status` and `:GU# return` empty, position frozen at RA 0 / Dec 0, the TCP session never
+re-established. INDI accepted the SYNC, nothing reached the mount, and the Control Center reported
+"Mount synced". The page now reads the mount's position back after "Sync mount from PiFinder" (6 s,
+3 arcmin) and says "Mount did not take the sync" otherwise; yellow cards (the usual showstopper cards) appear
+when the mount is parked ("Unpark mount"; a parked mount ignores Sync, found live on the OnStep "At Home
+and Parked", and the sync is not sent at all) or when the reported position has not changed for 60 s while
+the driver says connected ("Reconnect mount"). Both buttons are user-triggered only; Reconnect is refused
+while Ekos guides. For a USB mount a driver reconnect only helps while the adapter is still enumerated,
+otherwise the cable has to be replugged. A live mount's RA keeps
+moving even when parked (checked on the OnStep: RA advanced every poll while parked at Home), which is
+what the silence test relies on; simulators are exempt.
+
 ### 8.6 Daytime real-object align (constraint 5.2.4)
 
 **Not implemented; idea only**, per the user's own framing. Would need a new PiFinder-side UI flow

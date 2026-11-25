@@ -146,7 +146,7 @@ Produziert PiFinders Plate-Solver gerade eine Position? Aus PiFinders `solve_sou
 ### Injected
 
 Erscheint an `Solve`s rechtem Rand **nur solange ein [Injected Solve](#synthetic-solve-vs-manueller-einmal-seed)
-aktiv ist** (Synthetic Solve, Re-seed from mount, Set position oder Sync). Seine Anwesenheit ist das
+aktiv ist** (Synthetic Solve, Set PiFinder position oder, nur in der Full Simulation, Sync PiFinder from mount). Seine Anwesenheit ist das
 Signal — keine Farbskala. Wann immer er sichtbar ist, ist `Solve` rot.
 
 ### IMU
@@ -365,7 +365,7 @@ geschehen).
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="500"></a><br>
-<sub>Die ganze Seite (hier im Full-Simulation-Modus). Von oben nach unten: die <strong>PiFinder</strong>-Kachel (OLED-Spiegel, Quick Keys, die Cam/Solve/IMU/GPS-Badge-Zeile und direkt darunter das Mount-Bridge-Verbindungsdiagramm), die <strong>INDI Mount Bridge</strong>-Kachel, <strong>Simulation, Test and Power</strong> und ganz unten <strong>Install or Update</strong>. Jede Kachelüberschrift klappt ein; der Zustand wird pro Browser gemerkt.</sub>
+<sub>Die ganze Seite (hier im Full-Simulation-Modus). Von oben nach unten: die <strong>PiFinder</strong>-Kachel (OLED-Spiegel, Quick Keys, das kleine <strong>Sky</strong>-Himmelsbild mit Mount, PiFinder und Zielen, die Cam/Solve/IMU/GPS-Badge-Zeile und direkt darunter das Mount-Bridge-Verbindungsdiagramm), die <strong>INDI Mount Bridge</strong>-Kachel, <strong>Simulation, Test and Power</strong> und ganz unten <strong>Install or Update</strong>. Jede Kachelüberschrift klappt ein; der Zustand wird pro Browser gemerkt.</sub>
 </td>
 </tr>
 </table>
@@ -425,18 +425,29 @@ Auf einem anderen Gerät: `INDI-only` (Checkbox) installiert nur die INDI-Build-
 beide INDI-Treiber — kein Clone, kein venv, kein Katalog — für einen separaten Control-Host, der
 über das Netz an einen PiFinder gekoppelt ist (s. [help.html#indi-only-mode](gui_installer/help.html)).
 
-### Als Nächstes: Equipment-Profil anlegen (zwingend erforderlich)
+### Als Nächstes: Equipment-Profil einrichten
 
-> **⚠️ Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari
-> nutzbar.** Die gerade gebauten INDI-Treiber (`PiFinder LX200`, optional `PiFinder Mount Bridge`)
-> existieren nur im eigenen Treiber-Katalog des StellarMate Web Managers — sie tauchen nirgends in
-> Ekos auf, und es gibt kein Profil dafür, bis eines selbst angelegt wird. Diesen Schritt zu
-> überspringen ist der mit Abstand häufigste Grund, warum die Mount-Bridge-Kachel unten, SkySafari
-> oder Ekos' Geräteliste nach einer sonst erfolgreichen Installation leer bleiben.
+> **Eine fertige Installation allein macht PiFinder noch nicht über INDI/KStars/SkySafari
+> nutzbar.** Es braucht ein eigenes Equipment-Profil: einmal in der StellarMate App oder im Web
+> Manager anlegen (`http://<pi-adresse>:8624`). Der schreibgeschützte "Simulators"-Standard ist
+> nicht verwendbar — das Control Center bietet ihn gar nicht an.
 
-Das einmal direkt im Web Manager erledigen (`http://<pi-adresse>:8624`, nicht über KStars) —
-vollständige bebilderte Anleitung:
-[Readme_PiFinder_LX200_de.md — Schritt 2: Equipment-Profil im Web-Manager anlegen](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
+Den Rest erledigt das Control Center. In der Kachel **INDI Mount Bridge** (*Settings → Setup
+checklist & diagnostics*):
+
+1. **Profile** — das eigene Profil wählen.
+2. Die **Rollen**-Karte anklicken, die zu diesem Gerät passt (oder **One-Click Setup**). Das Control
+   Center trägt die PiFinder-Treiber (`PiFinder LX200`, und `PiFinder Mount Bridge`, wo die Rolle sie
+   braucht) selbst in dieses Profil ein und startet ein laufendes Profil neu, damit sie greifen.
+   In der Treiberliste des Web Managers ist nichts anzuhaken.
+3. **Mount** — den Treiber der eigenen Mount verknüpfen (der eine Schritt, der dein Urteil braucht),
+   dann **Connect**.
+
+Die Treiber existieren nur im Katalog des Web Managers und tauchen nie in Ekos' eigener Treiberliste
+auf; Ekos erreicht sie über ein Profil im Modus **Remote Host** (Schritt *KStars Link*, Details in
+[Readme_PiFinder_LX200_de.md — Schritt 4](Readme_PiFinder_LX200_de.md#schritt-4-kstarsekos-remote-modus)).
+Das Profil von Hand im Web Manager aufzubauen geht auch:
+[Readme_PiFinder_LX200_de.md — Schritt 2](Readme_PiFinder_LX200_de.md#schritt-2-equipment-profil-im-web-manager-anlegen).
 
 ---
 
@@ -513,7 +524,7 @@ die zwei Wege an, das zu ändern — nimm den, der zur vertrauenswürdigen Seite
 
 | Button | Was er tut | Wann |
 |---|---|---|
-| **Re-seed from mount** | Liest die aktuelle Position der Montierung und injiziert *diese* als PiFinders Position. | Die Montierung steht richtig; PiFinders (simulierter) Solve ist der Ausreißer. |
+| **Sync PiFinder from mount** | Sagt PiFinder, wohin die Montierung zeigt: auf einem echten PiFinder PiFinders eigener Align, in der Full Simulation wird die Position der Montierung als PiFinders Position injiziert. | Die Montierung steht richtig; PiFinders Solve ist der Ausreißer. |
 | **Sync mount from PiFinder** | Synct die Montierung auf das, was PiFinder gerade zeigt — sofortige Positionsaktualisierung, kein Slew. | PiFinders Position stimmt (ein echter Solve, oder eine bewusst gesetzte) und die Montierung glaubt Falsches — z. B. nach Bewegen der Montierung von Hand. |
 
 Sobald eine der beiden erfolgreich ist, verschwindet die Karte. Derselbe **Sync mount from
@@ -560,12 +571,32 @@ neu berechnet, da sie nichts bedeuten würde.
 
 Der Abschnitt trennt, was man jede Sitzung benutzt, von dem, was man einmal einstellt:
 
-- **Quick Actions** — die Einmal-Buttons: **Sync mount from PiFinder** (oben), **Align to Held
-  Target** und **Goto Held Target** (korrigieren PiFinders bzw. der Montierung Annahme über das
-  gehaltene Ziel — brauchen einen aktiven Coupling-Modus) und **Stop movement** (Not-Halt; setzt
-  außerdem Coupling auf Off, damit nichts nachtriggert). **Threshold** (Bogenmin.) ist, wie weit
-  daneben, bevor Verify/Alert warnt oder ein Auto-correct-Modus eingreift. **Decouple** setzt
-  Coupling zurück auf Off.
+- **Quick Actions** — die Einmal-Buttons, in zwei Gruppen:
+  - **Sync positions (once)**: **Sync mount from PiFinder** (PiFinder → Montierung) und **Sync
+    PiFinder from mount** (Montierung → PiFinder), nebeneinander, die Richtung steht am Button. Den
+    zweiten benutzt man, wenn man einen Stern im Scope zentriert hat und PiFinder nicht
+    übereinstimmt: Auf einem echten PiFinder ist das PiFinders eigener **Align** (dieselbe
+    Kalibrierung wie das Auswählen des Sterns am Gerät), das echte Plate-Solving läuft also weiter
+    und danach ist nichts abzuschalten. Er braucht einen aktuellen Plate-Solve und die Montierung
+    im Gesichtsfeld von PiFinder (beim Standardobjektiv 16 mm etwa 6,9° von der Mitte); kann er
+    nicht alignen, sagt er warum. Eine feste Zeile unter den beiden Buttons zeigt das letzte
+    Ergebnis mit Uhrzeit; sie erscheint und verschwindet nie, nichts anderes verschiebt sich. In der
+    Full Simulation (keine Kamera) injiziert der Button stattdessen die Position der Montierung. Nach
+    **Sync mount from PiFinder** sagt die Zeile auch, ob die Montierung den Sync wirklich übernommen
+    hat, und eine geparkte Montierung (sie ignoriert Sync) wird erkannt, bevor etwas gesendet wird.
+    Gelbe Karten decken die beiden Ursachen ab: **Mount is parked** mit einem Button **Unpark mount**
+    und **Mount not responding** (der Treiber sagt verbunden, aber die Position ändert sich 60 s lang
+    nicht, zum Beispiel nach einem Netzausfall) mit einem Button **Reconnect mount**. Die Buttons
+    wirken nur auf deinen Klick, Reconnect wird bei laufendem Guiding verweigert, und nichts wird von
+    selbst entparkt oder neu verbunden. Kommt eine USB-Montierung nicht zurück, hilft Ab- und
+    Anstecken des Kabels.
+  - **Held target**: **Align to Held Target** und **Goto Held Target** (korrigieren PiFinders bzw.
+    der Montierung Annahme über das gehaltene Ziel — brauchen einen aktiven Coupling-Modus),
+    **Revert to Held Target Now** und **Stop movement** (Not-Halt; setzt außerdem Coupling auf Off,
+    damit nichts nachtriggert).
+
+  **Threshold** (Bogenmin.) ist, wie weit daneben, bevor Verify/Alert warnt oder ein
+  Auto-correct-Modus eingreift. **Decouple** setzt Coupling zurück auf Off.
 - **Coupling-Presets** — eines wählen:
   - **Verify/Alert only** — überwacht die Drift, bewegt die Montierung nie. Der passive "steht meine
     Montierung noch richtig?"-Check für die Astrofotografie.
@@ -645,19 +676,22 @@ das grüne `Injected`-Badge in der PiFinder-Kachel.
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_mount_bridge_manual_seed.png"><img src="docs/images/readme/cc_mount_bridge_manual_seed.png" width="620"></a><br>
-<sub>Manueller Einmal-Seed (Full Simulation), in den Quick Actions: <code>Re-seed from mount</code>, <code>Set position</code> und eine direkte RA/Dec-Eingabe.</sub>
+<sub>Manueller Einmal-Seed (Full Simulation): <code>Sync PiFinder from mount</code>, <code>Set PiFinder position</code> und eine direkte RA/Dec-Eingabe. Er sitzt jetzt in <em>Simulation, Test and Power</em>; der Screenshot zeigt das frühere Layout.</sub>
 </td>
 </tr>
 </table>
 
-**Manueller Einmal-Seed** (eingeklappt in den Quick Actions) injiziert *eine einzelne* Position und
-hört dann auf: **Re-seed from mount** liest die aktuelle Position der Montierung einmal, **Set
-position** nimmt eine wörtliche RA/Dec (JNow, Grad), und beide schalten die Injektion ein, falls sie
-aus war. PiFinders normales IMU-Dead-Reckoning trackt von diesem Anker aus weiter, genau wie von
-einem echten Solve. Damit setzt man PiFinder an *eine* bekannte Stelle — z. B. um die Uneinigkeit
-für einen Sync-Test herzustellen — statt ihn der Montierung folgen zu lassen. `Turn off` bringt
-PiFinder zum echten Kamera-Solving zurück. Bewusst *nicht* im Synthetic-Solve-Punkt gespiegelt, um
-dieses eine Signal einfach zu halten.
+**Manueller Einmal-Seed** (eingeklappt, in *Simulation, Test and Power*) injiziert *eine einzelne*
+Position und hört dann auf: **Sync PiFinder from mount** liest die aktuelle Position der Montierung
+einmal, **Set PiFinder position** nimmt eine wörtliche RA/Dec (JNow, Grad), und beide schalten die
+Injektion ein, falls sie aus war. PiFinders normales IMU-Dead-Reckoning trackt von diesem Anker aus
+weiter, genau wie von einem echten Solve. Damit setzt man PiFinder an *eine* bekannte Stelle — z. B.
+um die Uneinigkeit für einen Sync-Test herzustellen — statt ihn der Montierung folgen zu lassen. Eine
+injizierte Position pausiert das echte Kamera-Solving, deshalb gehört das zum Testen; **Stop
+injected solve** bringt PiFinder zum echten Kamera-Solving zurück. Auf einem echten PiFinder nimmt
+man stattdessen die Quick Action **Sync PiFinder from mount** (PiFinders eigener Align, keine
+Injektion). Bewusst *nicht* im Synthetic-Solve-Punkt gespiegelt, um dieses eine Signal einfach zu
+halten.
 
 ---
 

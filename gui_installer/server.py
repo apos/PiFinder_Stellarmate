@@ -23,6 +23,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 import http.cookiejar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1548,6 +1549,57 @@ def _ekos_start_profile(profile_name: str) -> dict:
 
 
 _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log panel
+# Mount silence (issue #583): a mount driver can be "connected" but silent
+# (dead TCP session to the controller). A live mount's reported RA/Dec keeps
+# changing - even a parked one, its RA follows the sidereal clock - so a
+# position that has not changed at all for SILENT_AFTER_S while the driver
+# says connected is flagged. The 60 s debounce means a signal that comes back
+# by itself never raises it; the flag clears the moment the position moves.
+# Simulators legitimately sit still and are exempt. Nothing is ever restarted
+# automatically - the page only warns and offers "Reconnect mount".
+class _MountSilenceTracker:
+    SILENT_AFTER_S = 60.0
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.device = None
+        self.coords = None
+        self.since = None
+
+    def update(self, device, connected, coords, now=None) -> dict:
+        now = time.monotonic() if now is None else now
+        if not device or connected is not True or coords is None or "simulator" in device.lower():
+            self.reset()
+            return {"silent": False, "silent_for_s": 0, "device": device}
+        if device != self.device or coords != self.coords:
+            self.device, self.coords, self.since = device, coords, now
+        quiet = now - self.since
+        return {"silent": quiet >= self.SILENT_AFTER_S, "silent_for_s": int(quiet), "device": device}
+
+
+_mount_silence = _MountSilenceTracker()
+
+
+def _mount_silence_for(status: dict) -> dict:
+    """Silence verdict for the mount named in a mount_bridge_status() result,
+    plus whether it is parked ("parked": True/False/None). A failed or slow read
+    counts as "no information", never as silence."""
+    device = status.get("active_mount")
+    if not device or status.get("mount_connected") is not True:
+        out = _mount_silence.update(device, status.get("mount_connected"), None)
+        out["parked"] = None
+        return out
+    try:
+        state = indi_client.read_mount_state(device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
+    except indi_client.INDIClientError:
+        return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
+    out = _mount_silence.update(device, True, state["coords"])
+    out["parked"] = state["parked"]
+    return out
+
+
 _mb_last_running = None  # last known /api/mount_bridge_status "running" value, to log transitions
 
 
@@ -3780,6 +3832,93 @@ def _pifinder_solve_status(port: str, host: str = "127.0.0.1"):
         return None
 
 
+def _read_coupled_mount_position():
+    """The coupled mount's live position as (ra_deg, dec_deg, error): read once
+    via INDI, JNow (what the mount reports as EQUATORIAL_EOD_COORD), RA already
+    converted to degrees. Shared by the Injected-Solve re-seed and the Align-
+    based "Sync PiFinder from mount"; `error` is a short user-readable string
+    when the position can't be trusted (no mount, not connected, read failed).
+    The mount itself is always local to THIS device (Mount Bridge is a local
+    INDI driver); only the PiFinder being synced can be remote."""
+    try:
+        status = indi_client.mount_bridge_status()
+    except Exception as e:
+        return None, None, f"could not reach Mount Bridge: {e}"
+    active_mount = status.get("active_mount")
+    if not active_mount:
+        return None, None, "no mount configured in Mount Bridge"
+    # Live-found (2026-09-11, TE for #374): active_mount is just the
+    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
+    # (e.g. right after a Control Center restart) it can already be set
+    # while the device itself isn't connected yet. get_properties() below
+    # then either errors (caught, visible) or - the actually-observed,
+    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
+    # indiserver is still holding from before the reconnect, silently
+    # seeding the re-seed from an old position instead of the live one.
+    # mount_connected is the device's own live CONNECTION.CONNECT read, not
+    # a persisted name - check it explicitly before trusting the position.
+    if not status.get("mount_connected"):
+        return None, None, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
+    try:
+        props = indi_client.get_properties(device=active_mount)
+        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
+        dec_deg = float(eq["DEC"])
+    except Exception as e:
+        return None, None, f"could not read {active_mount}'s position: {e}"
+    return ra_deg, dec_deg, None
+
+
+def _pifinder_align_from_mount(port: str, host: str = "127.0.0.1") -> dict:
+    """"Sync PiFinder from mount" on real hardware: tell PiFinder where the
+    mount points, using PiFinder's own Align (POST /api/align) - the same
+    calibration step as picking the centred star on the device. Real plate-
+    solving keeps running (unlike /api/fake_solve, which pauses it).
+
+    Returns a dict: {"success": True, "ra", "dec" (J2000), "mount_ra_deg",
+    "mount_dec_deg" (JNow), "separation_deg", "fov_deg"} or {"success": False,
+    "reason": "no_solve"|"outside_fov"|"timeout"|"fake_solve_active"|"busy"|
+    "mount"|"unreachable"|"error", "message"/"error": str, plus
+    "separation_deg"/"fov_deg" when PiFinder reported them}. PiFinder answers
+    these refusals itself (HTTP 409 with a JSON body); the reason texts the page
+    shows are built from them, see triggerSyncPiFinderFromMount() in
+    status_page.html. Full Simulation has no camera/solve to align against and
+    uses the injected-solve path instead - the page picks, not this function."""
+    if port not in _ALLOWED_PIFINDER_PORTS:
+        return {"success": False, "reason": "error", "error": "invalid port"}
+    ra_deg, dec_deg, err = _read_coupled_mount_position()
+    if err:
+        return {"success": False, "reason": "mount", "error": err}
+    body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
+    req = urllib.request.Request(
+        f"http://{host}:{port}/api/align",
+        method="POST",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        # PiFinder's own timeout for the solver is 2 s; allow for the main loop.
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        try:
+            data = json.loads(e.read())
+        except Exception:
+            return {"success": False, "reason": "error", "error": f"PiFinder answered HTTP {e.code}"}
+        if e.code == 404:
+            return {
+                "success": False, "reason": "error",
+                "error": "this PiFinder has no Align API yet - update PiFinder_Stellarmate",
+            }
+        if "reason" not in data:
+            return {"success": False, "reason": "error", "error": data.get("error") or f"PiFinder answered HTTP {e.code}"}
+    except Exception as e:
+        return {"success": False, "reason": "unreachable", "error": f"could not reach PiFinder: {e}"}
+    data["mount_ra_deg"] = ra_deg
+    data["mount_dec_deg"] = dec_deg
+    return data
+
+
 def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", skip_auto_release: bool = False):
     """Turn Injected Solve on, seeded with the currently coupled mount's
     live RA/Dec (read once via INDI, same source as /api/mount_bridge_status'
@@ -3804,32 +3943,9 @@ def _pifinder_enable_fake_solve_from_mount(port: str, host: str = "127.0.0.1", s
     flag defaulting to False."""
     if port not in _ALLOWED_PIFINDER_PORTS:
         return False, "invalid port"
-    try:
-        status = indi_client.mount_bridge_status()
-    except Exception as e:
-        return False, f"could not reach Mount Bridge: {e}"
-    active_mount = status.get("active_mount")
-    if not active_mount:
-        return False, "no mount configured in Mount Bridge"
-    # Live-found (2026-09-11, TE for #374): active_mount is just the
-    # *configured* name (ACTIVE_DEVICES, persisted) - during a reconnect
-    # (e.g. right after a Control Center restart) it can already be set
-    # while the device itself isn't connected yet. get_properties() below
-    # then either errors (caught, visible) or - the actually-observed,
-    # more dangerous case - succeeds against a stale EQUATORIAL_EOD_COORD
-    # indiserver is still holding from before the reconnect, silently
-    # seeding the re-seed from an old position instead of the live one.
-    # mount_connected is the device's own live CONNECTION.CONNECT read, not
-    # a persisted name - check it explicitly before trusting the position.
-    if not status.get("mount_connected"):
-        return False, f"{active_mount} isn't connected yet - wait for it to finish reconnecting, then try again"
-    try:
-        props = indi_client.get_properties(device=active_mount)
-        eq = props.get(active_mount, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
-        ra_deg = float(eq["RA"]) * 15.0  # INDI reports RA in hours
-        dec_deg = float(eq["DEC"])
-    except Exception as e:
-        return False, f"could not read {active_mount}'s position: {e}"
+    ra_deg, dec_deg, err = _read_coupled_mount_position()
+    if err:
+        return False, err
     try:
         body = json.dumps({"ra": ra_deg, "dec": dec_deg}).encode()
         req = urllib.request.Request(
@@ -4989,6 +5105,11 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 )
                 _mb_last_running = status.get("running")
+            if status.get("running") is True:
+                try:
+                    status["mount_silence"] = _mount_silence_for(status)
+                except Exception as e:  # a diagnostic must never break the poll
+                    _mb_log(f"mount silence check failed: {e}")
             self._send_json(status)
             return
 
@@ -5794,6 +5915,16 @@ class Handler(BaseHTTPRequestHandler):
             skip_auto_release = qs.get("skip_auto_release", [""])[0] == "true"
             ok, err = _pifinder_enable_fake_solve_from_mount(port, host, skip_auto_release=skip_auto_release)
             self._send_json({"success": ok, "error": err})
+            return
+
+        if parsed.path == "/api/pifinder_align_from_mount":
+            qs = parse_qs(parsed.query)
+            port = qs.get("port", [""])[0]
+            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
+            if not _valid_pifinder_host(host):
+                self._send_json({"success": False, "reason": "error", "error": f"invalid host '{host}'"}, status=400)
+                return
+            self._send_json(_pifinder_align_from_mount(port, host))
             return
 
         if parsed.path == "/api/fake_solve_set":
@@ -6900,14 +7031,82 @@ class Handler(BaseHTTPRequestHandler):
             # position()'s own docstring for why this is a deliberately
             # separate primitive from /api/mount_bridge_manual_sync).
             _mb_log("syncing mount to PiFinder's currently visible position...")
+            # A parked mount ignores Sync (INDI refuses motion/sync commands
+            # while parked) - say so instead of sending something that goes
+            # nowhere (found live 2026-11-24, OnStep "At Home and Parked").
             try:
-                indi_client.sync_mount_to_pifinder_visible_position()
+                _mount = indi_client.active_mount_name()
+                if _mount and indi_client.read_mount_state(_mount)["parked"] is True:
+                    _mb_log(f"  not sent: {_mount} is parked.")
+                    self._send_json(
+                        {"success": False, "reason": "parked", "device": _mount,
+                         "error": "The mount is parked. Unpark it first, then sync."},
+                        status=409,
+                    )
+                    return
+            except indi_client.INDIClientError:
+                pass  # can't tell - fall through and let the sync + read-back decide
+            try:
+                target = indi_client.sync_mount_to_pifinder_visible_position()
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
                 return
-            _mb_log("  done.")
-            self._send_json({"success": True})
+            # INDI accepted the command; did the mount take it? (issue #583:
+            # a connected-but-silent driver accepts it and does nothing.)
+            check = {"verified": None}
+            try:
+                check = indi_client.verify_mount_position(target[0], target[1])
+            except Exception as e:
+                _mb_log(f"  could not verify the sync: {e}")
+            if check.get("verified") is False:
+                _mb_log(
+                    "  sent, but the mount did not take it: it still reports {:.3f}h {:+.2f} deg, {:.1f}' from the target".format(
+                        check.get("mount_ra_h", 0.0), check.get("mount_dec", 0.0), check.get("separation_arcmin", 0.0)
+                    )
+                )
+            else:
+                _mb_log("  done." if check.get("verified") else "  done (not verified).")
+            self._send_json({"success": True, **check})
+            return
+
+        if parsed.path == "/api/mount_unpark":
+            # User-triggered only: a parked mount ignores Sync and Goto.
+            try:
+                device = indi_client.active_mount_name()
+                if not device:
+                    self._send_json({"success": False, "error": "no mount is configured in the Mount Bridge"}, status=409)
+                    return
+                _mb_log(f"unparking '{device}' (user request)...")
+                ok = indi_client.unpark_mount(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  unparked." if ok else "  the mount did not report unparked within 20 s.")
+            self._send_json({"success": ok, "device": device, "error": None if ok else "the mount did not report unparked within 20 s"})
+            return
+
+        if parsed.path == "/api/mount_reconnect":
+            # User-triggered only (issue #583): disconnect/connect the coupled
+            # mount's INDI driver. Never while Ekos guides, and never on its own.
+            if _guiding_hold_active:
+                self._send_json({"success": False, "error": "Ekos is guiding - stop guiding before reconnecting the mount driver"}, status=409)
+                return
+            try:
+                device = indi_client.active_mount_name()
+                if not device:
+                    self._send_json({"success": False, "error": "no mount is configured in the Mount Bridge"}, status=409)
+                    return
+                _mb_log(f"reconnecting mount driver '{device}' (user request)...")
+                ok = indi_client.reconnect_device(device)
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mount_silence.reset()
+            _mb_log("  reconnected." if ok else "  the driver did not report connected again within 20 s.")
+            self._send_json({"success": ok, "device": device, "error": None if ok else "the driver did not report connected again within 20 s"})
             return
 
         if parsed.path == "/api/optical_train_sync":

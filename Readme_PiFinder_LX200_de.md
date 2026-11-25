@@ -12,18 +12,19 @@
 > StellarMate-OS- / Pi-Kombinationen s. die
 > [Versionskompatibilitäts-Tabelle in README.md](README.md#version-compatibility).
 
-> ### ⚠️ Zwingend erforderlich: geht nur über den StellarMate Web Manager
+> ### ⚠️ Das geht nur über ein Profil des StellarMate Web Managers
 >
 > Die PiFinder-LX200-/Mount-Bridge-Treiber existieren **ausschließlich** im eigenen Treiber-Katalog
 > des Web Managers, unter **"System INDI Drivers"** — sonst nirgends. Ekos hat seinen eigenen,
 > separaten, eingebauten Katalog und kann diese Treiber **in keinem Modus** selbst finden oder
-> starten. Es gibt keinen Weg, das komplett aus KStars/Ekos heraus einzurichten: Das
-> Equipment-Profil muss zuerst im Web Manager angelegt werden
-> ([Schritt 2](#schritt-2-equipment-profil-im-web-manager-anlegen)), Ekos verbindet sich danach nur
-> noch remote dazu, im Modus **"Remote Host"**, niemals "Local"
-> ([Schritt 4](#schritt-4-kstarsekos-remote-modus)). Wird der Web Manager übersprungen, oder bleibt
-> Ekos auf "Local" stehen, tauchen die Treiber schlicht nie auf — das ist mit Abstand die häufigste
-> Ursache, warum dieses Setup nicht funktioniert.
+> starten. Die Treiber laufen deshalb in einem Equipment-Profil des Web Managers (das Profil legst
+> du an, die **Treiber trägt das Control Center** für dich ein —
+> [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md#als-nächstes-equipment-profil-einrichten);
+> von Hand: [Schritt 2](#schritt-2-equipment-profil-im-web-manager-anlegen)), Ekos verbindet sich
+> danach nur noch remote dazu, im Modus **"Remote Host"**, niemals "Local"
+> ([Schritt 4](#schritt-4-kstarsekos-remote-modus)). Bleibt Ekos auf "Local" stehen, tauchen die
+> Treiber schlicht nie auf — das ist mit Abstand die häufigste Ursache, warum dieses Setup nicht
+> funktioniert.
 
 This document covers the **INDI integration layer** that connects PiFinder to KStars/Ekos,
 SkySafari, and (optionally) a real motorized mount. It is a companion to the main
@@ -187,9 +188,12 @@ Das muss aus der echten GUI/VNC-Desktop-Session laufen, nicht aus einer reinen S
 
 ### Schritt 2: Equipment-Profil im Web-Manager anlegen
 
-> **⚠️ Dieser Schritt ist zwingend erforderlich und geht nicht aus Ekos heraus.** Den StellarMate
-> Web Manager direkt öffnen (nicht über KStars) und das Profil hier anlegen — das ist der **einzige**
-> Ort, an dem die PiFinder-Treiber überhaupt existieren.
+> **Normalerweise erledigt das das Control Center für dich:** Bei gewähltem eigenem Profil tragen
+> seine **Rollen**-Karten und **One-Click Setup** die PiFinder-Treiber ein (siehe
+> [Readme_ControlCenter_de.md](Readme_ControlCenter_de.md#als-nächstes-equipment-profil-einrichten)).
+> Dieser Schritt ist der manuelle Weg. Er geht nicht aus Ekos heraus: den StellarMate Web Manager
+> direkt öffnen (nicht über KStars) — der **einzige** Ort, an dem die PiFinder-Treiber überhaupt
+> existieren.
 
 Im Browser: `http://<pi-adresse>:8624` öffnen. Der Web Manager ist eine einzige Seite:
 

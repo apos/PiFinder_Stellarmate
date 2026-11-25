@@ -922,12 +922,28 @@ bool PiFinderMountBridge::initProperties()
     // libnova output (degrees, -90..90); IPS_IDLE until the first real
     // reading, same convention as most other status properties here.
     IUFillNumber(&MountHorizonStatusN[0], "ALTITUDE_DEG", "Mount altitude (deg)", "%.1f", -90, 90, 0, 0);
-    IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 1, getDeviceName(), "MOUNT_HORIZON_STATUS",
+    IUFillNumber(&MountHorizonStatusN[1], "AZIMUTH_DEG", "Mount azimuth (deg, from north)", "%.1f", 0, 360, 0, 0);
+    IUFillNumberVector(&MountHorizonStatusNP, MountHorizonStatusN, 2, getDeviceName(), "MOUNT_HORIZON_STATUS",
                        "Mount horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
 
     IUFillNumber(&PiFinderHorizonStatusN[0], "ALTITUDE_DEG", "PiFinder altitude (deg)", "%.1f", -90, 90, 0, 0);
-    IUFillNumberVector(&PiFinderHorizonStatusNP, PiFinderHorizonStatusN, 1, getDeviceName(), "PIFINDER_HORIZON_STATUS",
+    IUFillNumber(&PiFinderHorizonStatusN[1], "AZIMUTH_DEG", "PiFinder azimuth (deg, from north)", "%.1f", 0, 360, 0, 0);
+    IUFillNumberVector(&PiFinderHorizonStatusNP, PiFinderHorizonStatusN, 2, getDeviceName(), "PIFINDER_HORIZON_STATUS",
                        "PiFinder horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+
+    // Sky Position Panel (issue #600): see the header comment.
+    IUFillNumber(&GotoTargetHorizonStatusN[0], "ALTITUDE_DEG", "Goto target altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumber(&GotoTargetHorizonStatusN[1], "AZIMUTH_DEG", "Goto target azimuth (deg, from north)", "%.1f", 0, 360, 0, 0);
+    IUFillNumberVector(&GotoTargetHorizonStatusNP, GotoTargetHorizonStatusN, 2, getDeviceName(), "GOTO_TARGET_HORIZON_STATUS",
+                       "Goto target horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+    IUFillNumber(&HeldTargetHorizonStatusN[0], "ALTITUDE_DEG", "Held target altitude (deg)", "%.1f", -90, 90, 0, 0);
+    IUFillNumber(&HeldTargetHorizonStatusN[1], "AZIMUTH_DEG", "Held target azimuth (deg, from north)", "%.1f", 0, 360, 0, 0);
+    IUFillNumberVector(&HeldTargetHorizonStatusNP, HeldTargetHorizonStatusN, 2, getDeviceName(), "HELD_TARGET_HORIZON_STATUS",
+                       "Held target horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+    IUFillNumber(&ObserverLocationN[0], "LAT", "Latitude (deg, north)", "%.4f", -90, 90, 0, 0);
+    IUFillNumber(&ObserverLocationN[1], "LONG", "Longitude (deg, east)", "%.4f", -180, 180, 0, 0);
+    IUFillNumberVector(&ObserverLocationNP, ObserverLocationN, 2, getDeviceName(), "OBSERVER_LOCATION",
+                       "Observer location", "Main Control", IP_RO, 60, IPS_IDLE);
 
     // See the header comment - durable (config-file) record of the mount's
     // last-seen position, read back at Connect()-time to tell a Bridge-only
@@ -1006,6 +1022,9 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&DriftStatusNP);
         defineProperty(&MountHorizonStatusNP);
         defineProperty(&PiFinderHorizonStatusNP);
+        defineProperty(&GotoTargetHorizonStatusNP);
+        defineProperty(&HeldTargetHorizonStatusNP);
+        defineProperty(&ObserverLocationNP);
         defineProperty(&LastKnownMountPosNP);
         defineProperty(&OriginalTargetNP);
         defineProperty(&OriginalTargetDriftNP);
@@ -1092,6 +1111,9 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(DriftStatusNP.name);
         deleteProperty(MountHorizonStatusNP.name);
         deleteProperty(PiFinderHorizonStatusNP.name);
+        deleteProperty(GotoTargetHorizonStatusNP.name);
+        deleteProperty(HeldTargetHorizonStatusNP.name);
+        deleteProperty(ObserverLocationNP.name);
         deleteProperty(LastKnownMountPosNP.name);
         deleteProperty(OriginalTargetNP.name);
         deleteProperty(OriginalTargetDriftNP.name);
@@ -2128,9 +2150,10 @@ void PiFinderMountBridge::TimerHit()
         double mountRA, mountDec;
         if (m_client->getMountRADE(mountRA, mountDec))
         {
-            double altitude = 90.0;
-            const bool above = isAboveHorizon(mountRA, mountDec, altitude);
+            double altitude = 90.0, azimuth = 0.0;
+            const bool above = isAboveHorizon(mountRA, mountDec, altitude, &azimuth);
             MountHorizonStatusN[0].value = altitude;
+            MountHorizonStatusN[1].value = azimuth;
             MountHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
             IDSetNumber(&MountHorizonStatusNP, nullptr);
         }
@@ -2156,22 +2179,27 @@ void PiFinderMountBridge::TimerHit()
     // IPS_OK/IPS_ALERT, without inventing a new property.
     if (havePiFinderPosition)
     {
-        double altitude = 90.0;
-        const bool above = isAboveHorizon(piRA, piDec, altitude);
+        double altitude = 90.0, azimuth = 0.0;
+        const bool above = isAboveHorizon(piRA, piDec, altitude, &azimuth);
         PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusN[1].value = azimuth;
         PiFinderHorizonStatusNP.s = above ? IPS_OK : IPS_ALERT;
         IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
     }
     else if (m_lastKnownPiFinderPositionTime > 0)
     {
-        double altitude = 90.0;
-        isAboveHorizon(m_lastKnownPiFinderRA, m_lastKnownPiFinderDec, altitude);
+        double altitude = 90.0, azimuth = 0.0;
+        isAboveHorizon(m_lastKnownPiFinderRA, m_lastKnownPiFinderDec, altitude, &azimuth);
         PiFinderHorizonStatusN[0].value = altitude;
+        PiFinderHorizonStatusN[1].value = azimuth;
         PiFinderHorizonStatusNP.s = IPS_BUSY; // stale - last known, not currently confirmed
         IDSetNumber(&PiFinderHorizonStatusNP, nullptr);
     }
     // else: never had a position at all this run - nothing to fall back to,
     // leave the property at its untouched startup default.
+
+    publishSkyPanelExtras();
+    checkPendingSyncVerification();
 
     // Deliberately published here, AFTER handleGotoForward()/
     // handleAutoCorrectGoto()/the plain-Sync branch above have all had a
@@ -2285,24 +2313,58 @@ bool PiFinderMountBridge::getOriginalTargetJNow(double &ra, double &dec)
 // below-local-horizon slew.
 static constexpr double HORIZON_SAFETY_MARGIN_DEG = -5.0;
 
-bool PiFinderMountBridge::isAboveHorizon(double ra, double dec, double &outAltitude)
+// Where the observer is. Order (issue #600, owner decision 2026-11-25: "der
+// Standort kommt aus der StellarMate App oder von KStars"): the INDI
+// GEOGRAPHIC_COORD of the PiFinder device / the mount, which is what those
+// apps write; then PiFinder's own GPS lock (/api/status). Resolved at most
+// once per LOCATION_CACHE_SEC - this used to be one or two HTTP requests on
+// EVERY horizon check, several per tick.
+bool PiFinderMountBridge::resolveObserverLocation(double &lat, double &lon)
+{
+    static constexpr long LOCATION_CACHE_SEC = 3;
+    const long now = static_cast<long>(time(nullptr));
+    if (m_locCacheTime != 0 && now - m_locCacheTime < LOCATION_CACHE_SEC)
+    {
+        lat = m_locCacheLat;
+        lon = m_locCacheLon;
+        return m_locCacheKnown;
+    }
+
+    double la = 0.0, lo = 0.0;
+    std::string source;
+    bool known = m_client != nullptr && m_client->getObserverLocation(la, lo, source);
+    if (!known)
+    {
+        const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
+        known = httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", la, lo) ||
+                httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", la, lo);
+        if (known)
+            source = "PiFinder GPS";
+    }
+
+    m_locCacheTime = now;
+    m_locCacheKnown = known;
+    m_locCacheLat = la;
+    m_locCacheLon = lo;
+    if (known && source != m_locSource)
+        LOGF_INFO("Observer location: %.4f N, %.4f E from %s.", la, lo, source.c_str());
+    else if (!known && !m_locSource.empty())
+        LOG_WARN("Observer location is no longer known - horizon checks fail open and the sky panel has no picture.");
+    m_locSource = known ? source : std::string();
+
+    lat = la;
+    lon = lo;
+    return known;
+}
+
+// Altitude and azimuth of a JNow position (RA in hours). Azimuth is in degrees
+// from NORTH, east 90: libnova counts it from the SOUTH, westwards, so it is
+// shifted by 180. False when the observer location is unknown.
+bool PiFinderMountBridge::horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth)
 {
     double lat, lon;
-    const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
-    const bool haveLocation =
-        httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", lat, lon) ||
-        httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", lat, lon);
-    if (!haveLocation)
-    {
-        // No location lock yet (e.g. very early startup) - nothing to
-        // check against. Fail OPEN here deliberately: refusing every
-        // command until a GPS lock exists would make the whole bridge
-        // unusable before one is acquired, and every caller of
-        // sendMountCoordsSafe() already has its own freshness/sanity gates
-        // upstream of this - this is defense in depth, not the only check.
-        outAltitude = 90.0;
-        return true;
-    }
+    if (!resolveObserverLocation(lat, lon))
+        return false;
 
     struct ln_lnlat_posn observer { lon, lat };
     struct ln_equ_posn object { ra * 15.0, dec }; // libnova wants RA in degrees
@@ -2311,7 +2373,146 @@ bool PiFinderMountBridge::isAboveHorizon(double ra, double dec, double &outAltit
     ln_get_hrz_from_equ(&object, &observer, jd, &horizontal);
 
     outAltitude = horizontal.alt;
-    return horizontal.alt >= HORIZON_SAFETY_MARGIN_DEG;
+    double az = std::fmod(horizontal.az + 180.0, 360.0);
+    if (az < 0.0)
+        az += 360.0;
+    outAzimuth = az;
+    return true;
+}
+
+bool PiFinderMountBridge::isAboveHorizon(double ra, double dec, double &outAltitude, double *outAzimuth)
+{
+    double altitude = 90.0, azimuth = 0.0;
+    if (!horizontalPosition(ra, dec, altitude, azimuth))
+    {
+        // No location known yet (e.g. very early startup) - nothing to
+        // check against. Fail OPEN here deliberately: refusing every
+        // command until a location exists would make the whole bridge
+        // unusable before one is acquired, and every caller of
+        // sendMountCoordsSafe() already has its own freshness/sanity gates
+        // upstream of this - this is defense in depth, not the only check.
+        outAltitude = 90.0;
+        if (outAzimuth != nullptr)
+            *outAzimuth = 0.0;
+        return true;
+    }
+
+    outAltitude = altitude;
+    if (outAzimuth != nullptr)
+        *outAzimuth = azimuth;
+    return altitude >= HORIZON_SAFETY_MARGIN_DEG;
+}
+
+// A target's place in the sky for the Sky Position Panel; IPS_IDLE when there
+// is no such target or no location. Publishes only on change.
+void PiFinderMountBridge::publishTargetHorizon(INumberVectorProperty &np, INumber *n, bool have, double ra, double dec)
+{
+    double altitude = n[0].value, azimuth = n[1].value;
+    IPState state = IPS_IDLE;
+    double alt = 90.0, az = 0.0;
+    if (have && horizontalPosition(ra, dec, alt, az))
+    {
+        altitude = alt;
+        azimuth = az;
+        state = alt >= HORIZON_SAFETY_MARGIN_DEG ? IPS_OK : IPS_ALERT;
+    }
+    if (n[0].value == altitude && n[1].value == azimuth && np.s == state)
+        return;
+    n[0].value = altitude;
+    n[1].value = azimuth;
+    np.s = state;
+    IDSetNumber(&np, nullptr);
+}
+
+void PiFinderMountBridge::startSyncVerification(double ra, double dec)
+{
+    m_syncVerify.active = true;
+    m_syncVerify.ra = ra;
+    m_syncVerify.dec = dec;
+    m_syncVerify.start = static_cast<long>(time(nullptr));
+    m_syncVerify.lastOffArcmin = -1.0;
+}
+
+void PiFinderMountBridge::checkPendingSyncVerification()
+{
+    if (!m_syncVerify.active)
+        return;
+    if (m_client == nullptr || m_client->isMountSlewing())
+    {
+        // A Goto took over: the mount is moving on purpose, this is no longer a Sync result.
+        m_syncVerify.active = false;
+        return;
+    }
+
+    static constexpr double TOLERANCE_ARCMIN = 3.0; // a tracking mount drifts well under this in the window
+    static constexpr long WINDOW_SEC = 6;
+
+    double mountRA, mountDec;
+    if (m_client->getMountRADE(mountRA, mountDec))
+    {
+        const double off = angularSeparationArcmin(mountRA, mountDec, m_syncVerify.ra, m_syncVerify.dec);
+        m_syncVerify.lastOffArcmin = off;
+        if (off <= TOLERANCE_ARCMIN)
+        {
+            LOGF_INFO("Mount took the Sync: it reports RA %.4fh, DEC %.4f deg (%.1f arcmin from the requested position).",
+                      mountRA, mountDec, off);
+            m_syncVerify.active = false;
+            return;
+        }
+    }
+
+    if (static_cast<long>(time(nullptr)) - m_syncVerify.start < WINDOW_SEC)
+        return;
+
+    bool parked = false;
+    const bool knowsPark = m_client->getMountParked(parked);
+    if (knowsPark && parked)
+    {
+        LOG_WARN("Mount did not take the Sync: it is parked, and a parked mount ignores Sync and Goto. Unpark it first.");
+    }
+    else if (m_syncVerify.lastOffArcmin < 0.0)
+    {
+        LOG_WARN("Mount did not confirm the Sync: its position could not be read within the check window. "
+                 "Is its driver connected but not answering?");
+    }
+    else
+    {
+        LOGF_WARN("Mount did not take the Sync to RA %.4fh, DEC %.4f deg: it still reports a position %.1f deg away. "
+                  "Is it not responding?",
+                  m_syncVerify.ra, m_syncVerify.dec, m_syncVerify.lastOffArcmin / 60.0);
+    }
+    m_syncVerify.active = false;
+}
+
+void PiFinderMountBridge::publishSkyPanelExtras()
+{
+    double lat = 0.0, lon = 0.0;
+    const bool known = resolveObserverLocation(lat, lon);
+    const IPState locState = known ? IPS_OK : IPS_IDLE;
+    if (known && (ObserverLocationN[0].value != lat || ObserverLocationN[1].value != lon || ObserverLocationNP.s != locState))
+    {
+        ObserverLocationN[0].value = lat;
+        ObserverLocationN[1].value = lon;
+        ObserverLocationNP.s = locState;
+        IDSetNumber(&ObserverLocationNP, nullptr);
+    }
+    else if (!known && ObserverLocationNP.s != locState)
+    {
+        ObserverLocationNP.s = locState;
+        IDSetNumber(&ObserverLocationNP, nullptr);
+    }
+
+    // Last Goto target the user sent (JNow): to the mount (KStars slews it
+    // directly) or to the PiFinder device (push-to, Goto Forward, Dobsonian),
+    // whichever is newer; RA 0 / Dec 0 counts as "none" (see
+    // PiFinderBridgeClient::getLastGotoTarget()).
+    double gotoRA = 0.0, gotoDec = 0.0;
+    const bool haveGoto = m_client != nullptr && m_client->getLastGotoTarget(gotoRA, gotoDec);
+    publishTargetHorizon(GotoTargetHorizonStatusNP, GotoTargetHorizonStatusN, haveGoto, gotoRA, gotoDec);
+
+    double heldRA = 0.0, heldDec = 0.0;
+    const bool haveHeld = getOriginalTargetJNow(heldRA, heldDec);
+    publishTargetHorizon(HeldTargetHorizonStatusNP, HeldTargetHorizonStatusN, haveHeld, heldRA, heldDec);
 }
 
 bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char *coordSetName)
@@ -3425,6 +3626,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 {
                     LOGF_INFO("Manual SYNC to explicit coords sent to mount (RA %.4fh, DEC %.4f deg).",
                               SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
+                    startSyncVerification(SyncToCoordsN[SYNC_TO_COORDS_RA].value, SyncToCoordsN[SYNC_TO_COORDS_DEC].value);
                     ManualTriggerSP.s = IPS_OK;
                 }
                 else
@@ -3535,6 +3737,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     if (sendMountCoordsSafe(piRA, piDec, coordSet))
                     {
                         LOGF_INFO("Manual %s sent to mount.", coordSet);
+                        if (!wantGoto)
+                            startSyncVerification(piRA, piDec);
                         ManualTriggerSP.s = IPS_OK;
                     }
                     else

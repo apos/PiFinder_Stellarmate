@@ -302,6 +302,7 @@
      the hostname/port readable instead of shouting it. */
   #mb-tile-loc {
     display: inline-block;
+    margin-left: 0.6rem;  /* gap after the (i), same as #pifinder-tile-loc */
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.68rem;
     font-weight: normal;
@@ -589,6 +590,13 @@
     gap: 1rem;
     margin-bottom: 0.7rem;
   }
+  /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
+  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. */
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 1 230px; min-width: 160px; max-width: 250px; }
+  #sky-panel-inner { flex: 1 1 auto; min-width: 0; }
+  #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
+  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
+  @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -941,6 +949,33 @@
   .mb-big-sync-btn { background: #222; color: #ddd; border-color: #444; font-weight: 500; }
   .mb-big-sync-btn:not(:disabled):hover { border-color: #777; }
   .mb-big-sync-btn:disabled { background: #1a1a1a; color: #666; border-color: #333; cursor: default; }
+  /* "Sync positions (once)" group: the two sync buttons side by side with the
+     direction on each, plus ONE fixed-height feedback line that is never
+     inserted or removed - only its content changes - so a result can't push
+     anything below it around (direct feedback, 2026-11-24). */
+  .mb-qa-groups { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-bottom: 0.5rem; }
+  .mb-qa-group { flex: 1 1 18rem; min-width: 0; border: 1px solid #2a2a2a; border-radius: 8px; padding: 0.55rem 0.6rem 0.6rem; display: flex; flex-direction: column; gap: 0.45rem; }
+  .mb-qa-group-wide { flex: 3 1 26rem; }
+  .mb-qa-group-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: #888; }
+  .mb-qa-group .mb-row { margin-bottom: 0; }
+  #mb-sync-actions-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .mb-sync-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; }
+  .mb-sync-dir { font-size: 0.72rem; font-weight: 600; color: #6cc46f; letter-spacing: 0.02em; }
+  .mb-sync-btn:disabled .mb-sync-dir { color: #666; }
+  #mb-sync-feedback {
+    height: 2.1rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.6rem;
+    border: 1px solid #2a2a2a; border-radius: 6px; background: #161616; color: #999;
+    font-size: 0.8rem; overflow: hidden; white-space: nowrap;
+  }
+  #mb-sync-feedback .mb-sync-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mb-sync-feedback .mb-sync-when { flex: none; color: #888; font-variant-numeric: tabular-nums; }
+  #mb-sync-feedback.mb-sync-ok { border-color: #3c7a3f; color: #ddd; }
+  #mb-sync-feedback.mb-sync-warn { border-color: #a8832e; color: #ddd; }
+  #mb-sync-feedback.mb-sync-work { border-color: #3d6fb5; color: #ddd; }
+  #mb-sync-feedback b { font-weight: 600; }
+  /* feedback line row */
+  #mb-sync-feedback-row { display: flex; align-items: center; gap: 0.5rem; }
+  #mb-sync-feedback-row #mb-sync-feedback { flex: 1 1 auto; min-width: 0; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -1102,7 +1137,10 @@
   }
   .mb-collapsed-summary:hover { border-color: #3a3a3a; }
   .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
-  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; flex-shrink: 0; }
+  /* margin-left: auto keeps "show"/"hide" at the right even when it is the only
+     visible child (expanded: the summary content is hidden, see below) - with
+     only justify-content: space-between a lone child sits at the left. */
+  .mb-collapsed-summary-chevron { color: #777; font-size: 0.75rem; flex-shrink: 0; margin-left: auto; }
   .mb-collapsed-summary-title { font-size: 0.85rem; color: #ccc; font-weight: 500; }
   .mb-collapsed-summary-sub { font-size: 0.75rem; color: #888; margin-top: 0.15rem; }
   /* #mb-role-line already has its own margin (see its base rule above) meant
@@ -1122,6 +1160,25 @@
      visible/clickable to collapse back. */
   .mb-collapsed-summary.mb-summary-expanded > *:not(.mb-collapsed-summary-chevron) {
     display: none !important;
+  }
+  /* Expanded: the header bar and the area it opens form one frame (header on
+     top with the "hide" at the right, the content joined below it), instead of
+     a separate bar with the cards floating underneath. The area is the next
+     sibling, the same one toggleCollapsibleSection() shows and hides. */
+  .mb-collapsed-summary.mb-summary-expanded {
+    margin-bottom: 0;
+    border-bottom: none;            /* no divider: header and content are one box */
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding-bottom: 0.2rem;         /* the bar only carries the "hide" - keep it slim */
+  }
+  .mb-collapsed-summary.mb-summary-expanded + * {
+    border: 1px solid #2a2a2a;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    background: #161616;
+    padding: 0.2rem 0.8rem 0.7rem;
+    margin-bottom: 0.5rem;
   }
   #hw-status {
     margin-top: 0.7rem;
@@ -2371,6 +2428,14 @@
           <div class="group-label">Remote (per IP)</div>
           <div id="pf-keypad-c-grid"></div>
         </div>
+        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
+             the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
+        <div id="sky-panel" style="display:none;">
+          <div id="sky-panel-inner">
+            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+          </div>
+          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
+        </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
            as the Mount Bridge diagram's icon nodes (bordered box, currentColor
@@ -2620,12 +2685,24 @@
            actions mean anything without an active Coupling relationship. -->
       <div class="mb-group-box">
         <div class="group-label">Quick Actions</div>
-        <div class="mb-row" id="mb-big-actions-row">
-          <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand.">Sync mount from PiFinder</button>
+        <div class="mb-qa-groups">
+          <div class="mb-qa-group" id="mb-sync-group">
+            <div class="mb-qa-group-label">Sync positions (once)</div>
+            <div id="mb-sync-actions-row">
+          <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand."><span class="mb-sync-dir">PiFinder &rarr; mount</span>Sync mount from PiFinder</button>
+          <button id="mb-sync-pifinder-btn" data-mb-action="sync-pifinder-from-mount" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncPiFinderFromMount()" disabled title="One-shot: tells PiFinder where the mount points - the mount is trusted, PiFinder is corrected. Use it after you centred a star in the scope and PiFinder doesn't agree. On a real PiFinder this is PiFinder's own Align (like picking the star on the device), real plate-solving keeps running; it needs a current plate solve and the mount inside PiFinder's field of view. In Full Simulation it injects the mount's position instead. Needs a connected mount."><span class="mb-sync-dir">mount &rarr; PiFinder</span>Sync PiFinder from mount</button>
+            </div>
+            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
+          </div>
+          <div class="mb-qa-group mb-qa-group-wide">
+            <div class="mb-qa-group-label">Held target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the held target? The target the Mount Bridge currently remembers: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
+            <div class="mb-row" id="mb-big-actions-row">
           <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
           <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
           <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the held target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Held Target Now</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
+            </div>
+          </div>
         </div>
         <div class="mb-row" id="mb-threshold-manual-row">
           <span id="mb-threshold-wrap" title="Used by Verify/Alert and the two Auto-correct presets: how far off before they warn/correct.">
@@ -2644,36 +2721,6 @@
              guess. See updateActionButtonsCouplingGate(). -->
         <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
 
-        <!-- #319: manual one-shot seed - relocated here from "Simulation, Test
-             and Power" (it's a one-shot mount-relative action, not a
-             Simulation-tile setting). Collapsed by default. No explicit
-             on/off toggle: Re-seed from mount / Set position each turn it on
-             themselves, and always visible (not hidden until active). A small
-             "Turn off" appears only while it's active (otherwise nothing to
-             turn off). Re-seed from mount needs the mount linked/connected -
-             NOT gated on Coupling mode (see docs/concepts/
-             session_start_position_reconciliation.md §8.2 - it reads the
-             mount's own position directly, no Coupling automation involved,
-             and gating it on Coupling != Off blocked exactly the
-             session-start case it's most needed for). Set position + the
-             RA/Dec inputs need neither a mount nor a solve - a manual RA/Dec
-             stands alone. The separate Synthetic Solve toggle in the other
-             tile is unchanged. -->
-        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-seed-advanced', 'mb-seed-advanced-chevron')">
-          <span>Manual one-shot seed<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-          <span id="mb-seed-advanced-chevron">&#9660; show</span>
-        </div>
-        <div id="mb-seed-advanced" style="display:none;">
-          <div id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Synthetic Solve above (which continuously feeds a position) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning - trusting PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose.">
-            <span id="fake-solve-advanced-status" class="mb-row-label" style="margin-right:0;">unknown</span>
-            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode - needs the mount linked and connected.">Re-seed from mount</button>
-            <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled title="Set Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't (#205).">Set position</button>
-            <input type="number" id="fake-solve-manual-ra" class="pf-num-input" step="0.01" min="0" max="360" placeholder="RA&deg;">
-            <input type="number" id="fake-solve-manual-dec" class="pf-num-input" step="0.01" min="-90" max="90" placeholder="Dec&deg;">
-            <button id="fake-solve-off-btn" class="ql-small-btn ql-small-btn-white" onclick="disableFakeSolve()" style="display:none;" title="Turn Injected Solve off - PiFinder resumes real camera solving. Shown only while a seed is active.">Turn off</button>
-            <span id="fake-solve-manual-status"></span>
-          </div>
-        </div>
       </div>
       <div class="mb-group-box">
         <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
@@ -2809,8 +2856,6 @@
         </div>
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       </div>
-
-      <div class="hgroup-divider"></div>
 
       <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
         <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
@@ -2973,11 +3018,42 @@
           <span class="status-dot dot-white" id="truth-injector-dot"></span>Synthetic Solve: <span id="truth-injector-text">off</span>
           <button id="truth-injector-btn" class="ql-small-btn" onclick="toggleTruthInjector()">Toggle</button>
         </div>
-        <!-- #319: the "manual one-shot seed" sub-section moved from here into
-             the Mount Bridge tile's Quick Actions group (#mb-seed-advanced) -
-             it's a one-shot mount-relative action, same family as Sync/Align/
-             Goto there, not a Simulation-tile setting. The Synthetic Solve
-             row/toggle above stays. -->
+        <!-- Manual one-shot seed (Set PiFinder position, RA/Dec, Stop injected
+             solve): lives here again (2026-11-24, direct feedback: "Turn off
+             ... aus meiner Sicht vollkommen unnötig") - it is a simulation/test
+             tool (an injected position pauses real plate-solving), not an
+             everyday Quick Action. The everyday "mount -> PiFinder" sync is the
+             Quick Action "Sync PiFinder from mount" (PiFinder's own Align). -->
+        <!-- #319: manual one-shot seed - relocated here from "Simulation, Test
+             and Power" (it's a one-shot mount-relative action, not a
+             Simulation-tile setting). Collapsed by default. No explicit
+             on/off toggle: Sync PiFinder from mount / Set position each turn it on
+             themselves, and always visible (not hidden until active). A small
+             "Turn off" appears only while it's active (otherwise nothing to
+             turn off). Sync PiFinder from mount needs the mount linked/connected -
+             NOT gated on Coupling mode (see docs/concepts/
+             session_start_position_reconciliation.md §8.2 - it reads the
+             mount's own position directly, no Coupling automation involved,
+             and gating it on Coupling != Off blocked exactly the
+             session-start case it's most needed for). Set position + the
+             RA/Dec inputs need neither a mount nor a solve - a manual RA/Dec
+             stands alone. The separate Synthetic Solve toggle in the other
+             tile is unchanged. -->
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-seed-advanced', 'mb-seed-advanced-chevron')">
+          <span>Manual one-shot seed<a class="help-link" href="/help.html#simulation-and-testing" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span id="mb-seed-advanced-chevron">&#9660; show</span>
+        </div>
+        <div id="mb-seed-advanced" style="display:none;">
+          <div id="fake-solve-row" title="A synthetic RA/Dec injected via PiFinder's /api/fake_solve (see #106) - real IMU dead-reckoning takes over from there, exactly as it would from a real solve. Distinct from Synthetic Solve above (which continuously feeds a position) and from a real solve - the reported position is not backed by an actual plate-solve while this is active. Whenever real IMU motion settles, the current dead-reckoned estimate is re-anchored as a fresh 'solve', same as a real solve landing right after you stop panning - trusting PiFinder's own estimate, with nothing independent to check it against. Not reflected in the Synthetic Solve dot above, on purpose.">
+            <span id="fake-solve-advanced-status" class="mb-row-label" style="margin-right:0;">unknown</span>
+            <button id="fake-solve-reseed-btn" class="ql-small-btn ql-small-btn-white" onclick="reseedFakeSolve()" disabled title="Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode - needs the mount linked and connected.">Sync PiFinder from mount</button>
+            <button id="fake-solve-manual-btn" class="ql-small-btn ql-small-btn-white" onclick="setFakeSolveManual()" disabled title="Set Injected Solve directly to a specific RA/Dec (JNow, degrees) via PiFinder's own /api/fake_solve - independent of any coupled mount. Turns Injected Solve on if it wasn't (#205).">Set PiFinder position</button>
+            <input type="number" id="fake-solve-manual-ra" class="pf-num-input" step="0.01" min="0" max="360" placeholder="RA&deg;">
+            <input type="number" id="fake-solve-manual-dec" class="pf-num-input" step="0.01" min="-90" max="90" placeholder="Dec&deg;">
+            <button id="fake-solve-off-btn" class="ql-small-btn ql-small-btn-white" onclick="disableFakeSolve()" style="display:none;" title="Stop the injected position - PiFinder resumes real camera solving. Shown only while a seed is active.">Stop injected solve</button>
+            <span id="fake-solve-manual-status"></span>
+          </div>
+        </div>
         <div class="collapsible-toggle" onclick="toggleCollapsibleSection('legacy-builtin-details', 'legacy-builtin-chevron')">
           <span>PiFinder built-in test tools (legacy)</span>
           <span id="legacy-builtin-chevron">&#9656; show</span>
@@ -4251,6 +4327,27 @@ function updatePiFinderHorizonStatus(altitudeDeg, belowHorizon) {
 // only.
 function collectActiveShowstoppers() {
   const items = [];
+  // Mount warnings (issue #583). The mount is parked: it ignores Sync and Goto.
+  if (_mountParked) {
+    items.push({
+      id: 'mount-parked',
+      category: 'mount-bridge',
+      title: 'Mount is parked',
+      text: 'A parked mount ignores Sync and Goto, so "Sync mount from PiFinder" would do nothing. Unpark it first.',
+      buttons: [{ label: 'Unpark mount', onclick: 'unparkMount()', action: 'unpark-mount' }],
+    });
+  }
+  // The mount driver says connected, but the position has not changed for a minute.
+  if (_mountSilent) {
+    const min = Math.max(1, Math.round(_mountSilent.forS / 60));
+    items.push({
+      id: 'mount-silent',
+      category: 'mount-bridge',
+      title: 'Mount not responding',
+      text: `${_mountSilent.device} is connected but its position has not changed for ${min} min, so a Sync would not reach it. This can happen after the network dropped. If the mount is connected over USB and Reconnect does not help, unplug and replug the USB cable. Nothing is reconnected automatically.`,
+      buttons: [{ label: 'Reconnect mount', onclick: 'reconnectMount()', action: 'reconnect-mount' }],
+    });
+  }
   // Below horizon: no software fix helps until the mount is physically
   // repositioned - Synthetic Solve wouldn't let Sync/Goto through either,
   // isAboveHorizon() would still refuse them. "Sync mount from PiFinder"
@@ -4284,7 +4381,7 @@ function collectActiveShowstoppers() {
   if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
     // A "PiFinder Client" has no mount at all on this device (that's the
     // role's whole point - it exists purely to be coupled BY a remote
-    // Control host) - "Sync mount from PiFinder"/"Re-seed from mount" are
+    // Control host) - "Sync mount from PiFinder"/"Sync PiFinder from mount" are
     // both meaningless here, there's nothing local to sync to or re-seed
     // from. Keep the informational half (still true and useful - the user
     // may not otherwise know PiFinder itself thinks it's below the
@@ -4296,9 +4393,9 @@ function collectActiveShowstoppers() {
       title: "PiFinder's own position is below the horizon",
       text: clientRole
         ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. Wait for a fresh solve once PiFinder is back above the horizon.`
-        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Re-seed from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
+        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Sync PiFinder from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
       buttons: clientRole ? [] : [
-        { label: 'Re-seed from mount', onclick: 'triggerReseedFromMountBanner()', action: 'reseed-from-mount' },
+        { label: 'Sync PiFinder from mount', onclick: 'triggerSyncPiFinderFromMount()', action: 'sync-pifinder-from-mount' },
       ],
     });
   }
@@ -4348,9 +4445,9 @@ function collectActiveShowstoppers() {
       id: 'sim-mismatch',
       category: 'pifinder',
       title: "PiFinder's simulated position isn't related to the mount",
-      text: "Started on an unrelated star. Re-seed PiFinder from the mount, or Sync the mount from PiFinder." + syncWarning,
+      text: "Started on an unrelated star. Sync PiFinder from the mount, or sync the mount from PiFinder." + syncWarning,
       buttons: [
-        { label: 'Re-seed from mount', onclick: 'triggerReseedFromMountBanner()', action: 'reseed-from-mount' },
+        { label: 'Sync PiFinder from mount', onclick: 'triggerSyncPiFinderFromMount()', action: 'sync-pifinder-from-mount' },
         {
           label: 'Sync mount from PiFinder', onclick: 'triggerSyncToPiFinderVisible()', action: 'sync-to-visible',
           disabled: pfBelowHorizon,
@@ -4712,7 +4809,7 @@ function applyFakeSolveAdvancedButtonStates(stateClass) {
 // apply and are combined here, since both a status poll (applyFakeSolveStatus)
 // and a mount-link change (updateMbDiagram) can move them:
 //   - status must be known (a confirmed true/false from /api/status)
-//   - Re-seed from mount additionally needs the mount linked and connected -
+//   - Sync PiFinder from mount additionally needs the mount linked and connected -
 //     it reads the mount's own EQUATORIAL_EOD_COORD directly via INDI, which
 //     needs no Coupling *automation* active at all (see
 //     docs/concepts/session_start_position_reconciliation.md §8.2 - found
@@ -4732,6 +4829,11 @@ function updateSeedControlsEnabled() {
   raEl.disabled = !_fakeSolveStatusKnown;
   decEl.disabled = !_fakeSolveStatusKnown;
   reseedBtn.disabled = !_fakeSolveStatusKnown || !_seedMountConnected;
+  // The Quick Action "Sync PiFinder from mount" (and its banner twins) read the
+  // mount the same way, but don't depend on the injected-solve status poll.
+  document.querySelectorAll('[data-mb-action="sync-pifinder-from-mount"]').forEach((b) => {
+    if (b.dataset.busy !== '1') b.disabled = !_seedMountConnected;
+  });
   reseedBtn.title = _seedMountConnected
     ? "Re-read the mount's current position and re-inject it (#205). Turns Injected Solve on if it wasn't. Works regardless of Coupling mode."
     : "No mount linked/connected yet - Re-seed reads the mount's position directly, so it needs a connected mount (not an active Coupling mode). Use Set position for a manual RA/Dec.";
@@ -4905,6 +5007,7 @@ function updateModeSummaryLine() {
 // until really settled" - replaced with a real poll-until-target loop that
 // needed this shared renderer to stay in sync with the periodic poll).
 function applyTruthInjectorState(desired, alive, errorText) {
+  refreshSyncIdleText(desired === true && !errorText);
   const dotEl = document.getElementById('truth-injector-dot');
   const textEl = document.getElementById('truth-injector-text');
   const btn = document.getElementById('truth-injector-btn');
@@ -4917,7 +5020,7 @@ function applyTruthInjectorState(desired, alive, errorText) {
   // 2026-09-09, direct feedback ("OFF IST OFF... ich sags jetzt nicht mehr
   // oft"): this text/dot used to reflect ONLY `desired` (Truth Injector's
   // own intent) - accurate for that one feature, but misleading whenever a
-  // DIFFERENT mechanism (Manual one-shot seed, Re-seed from mount, Sync
+  // DIFFERENT mechanism (Manual one-shot seed, Sync PiFinder from mount, Sync
   // mount from PiFinder - all of which inject as a side effect) was what
   // actually held the real, combined fake_solve_active true. The toggle's
   // own CLICK behavior was already fixed to force-clear regardless of
@@ -5451,21 +5554,7 @@ async function disableFakeSolve() {
 // off makes no difference), so this is also how Injected Solve gets turned
 // ON from the GUI (#319 dropped the separate Toggle). Gated on an active
 // Coupling mode by updateSeedControlsEnabled() - it reads the coupled mount.
-// sim-mismatch showstopper card's own instance of "Re-seed from mount"
-// (2026-09-09, direct feedback) - reseedFakeSolve() below hardcodes
-// #fake-solve-reseed-btn (the original Quick Actions button), so calling
-// it directly from this second instance would silently update the WRONG
-// button (same class of bug already fixed for triggerManualSync/
-// triggerGotoHome). Thin wrapper: own busy-state for this instance only,
-// then delegate to the real implementation unchanged.
-async function triggerReseedFromMountBanner() {
-  const btns = Array.from(document.querySelectorAll('[data-mb-action="reseed-from-mount"]'));
-  if (btns.some((b) => b.dataset.busy === '1')) return;
-  const originals = btns.map((b) => b.textContent);
-  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; b.textContent = 'reading…'; });
-  await reseedFakeSolve();
-  btns.forEach((b, i) => { b.textContent = originals[i]; b.disabled = false; delete b.dataset.busy; });
-}
+// (the banner instances of "Sync PiFinder from mount" share triggerSyncPiFinderFromMount() below.)
 
 async function reseedFakeSolve() {
   if (!pifinderScreenUrl) return;
@@ -5496,7 +5585,7 @@ async function reseedFakeSolve() {
     // Found live (2026-09-19): this toggled the Truth Injector off above to
     // avoid the race, but never toggled it back on - Full Simulation was
     // left silently, permanently without its position feed after every
-    // single "Re-seed from mount" click, with no error or indication
+    // single "Sync PiFinder from mount" click, with no error or indication
     // anywhere. Restore whatever was true before this one-shot action,
     // regardless of whether it succeeded - the temporary toggle-off was
     // never meant to be a lasting side effect of a one-shot re-seed.
@@ -5513,7 +5602,7 @@ async function reseedFakeSolve() {
         // /api/fake_solve_enable_from_mount call just above had already set
         // true, making this look like "something's on, so stop" instead of
         // the intended restart. Full Simulation was left silently,
-        // permanently off after every "Re-seed from mount". direction=on
+        // permanently off after every "Sync PiFinder from mount". direction=on
         // says unambiguously what this call means, bypassing that check.
         await fetch('/api/truth_injector_toggle?direction=on', { method: 'POST' });
       }
@@ -7633,7 +7722,7 @@ function updateThresholdInputRelevance(couplingMode) {
 //
 // mb-manual-sync-btn removed from this list (2026-09-09, direct feedback):
 // it never actually needed Coupling active - trigger_manual_sync() itself
-// works regardless of mode, same "Re-seed from mount" reasoning already
+// works regardless of mode, same "Sync PiFinder from mount" reasoning already
 // applied below. Was still gated here, so a second instance of the same
 // button (the below-horizon showstopper card, sharing data-mb-action=
 // "manual-sync") ended up enabled while this one was greyed out - same
@@ -7645,7 +7734,7 @@ function updateActionButtonsCouplingGate(couplingMode) {
   });
   const hint = document.getElementById('mb-quick-actions-hint');
   if (hint) hint.style.display = coupled ? 'none' : '';
-  // "Re-seed from mount" in the same group deliberately does NOT follow this
+  // "Sync PiFinder from mount" in the same group deliberately does NOT follow this
   // gate (see updateSeedControlsEnabled()'s own comment) - it's gated on the
   // mount being linked/connected instead, set separately from updateMbDiagram().
   // mb-manual-sync-btn is the same: see this function's own header comment.
@@ -7803,7 +7892,7 @@ function updateMbDiagram(data) {
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
   setMbNodeDot('mb-icon-mount', data.mount_connected);
-  // Re-seed from mount's own gate (see updateSeedControlsEnabled()) - independent
+  // Sync PiFinder from mount's own gate (see updateSeedControlsEnabled()) - independent
   // of Coupling mode, so set here rather than from updateActionButtonsCouplingGate().
   _seedMountConnected = data.mount_connected === true;
   updateSeedControlsEnabled();
@@ -8411,6 +8500,7 @@ async function refreshMountBridgeStatus() {
   try {
     const resp = await fetch('/api/mount_bridge_status', { cache: 'no-store' });
     const data = await resp.json();
+    applyMountSilence(data.mount_silence);
     if (data.running === false) {
       // /api/mount_bridge_status always resolves "running" to an explicit
       // true/false (see server.py) - false here is a *confirmed* answer,
@@ -8637,6 +8727,177 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   }
 }
 
+// ---- Sky Position Panel (begin) ----
+// docs/concepts/sky_position_panel.md. A small, display-only all-sky picture next to
+// PiFinder's screen and keys: zenith in the middle, horizon at the rim, north up, east left
+// (looking up). Fed by the 2 s /api/mount_bridge_drift poll ("sky" key). The geometry and
+// the model below are pure functions so test_tools/sky_panel_test.js can run them.
+const SKY_C = { ring: '#444444', ring2: '#333333', disc: '#1a1a1a', fg: '#dddddd', muted: '#888888',
+  blue: '#7ec8ff', green: '#4caf50', yellow: '#f5a623', red: '#e53935', redSoft: '#ff8a80' };
+const SKY_CX = 120, SKY_CY = 124, SKY_R = 90;
+const SKY_FOV_DEG = 13.7;        // PiFinder's field with the standard 16 mm lens
+const SKY_AGREE_DEG = 7;         // within about the field's half width: "they agree"
+function skyRad(d) { return d * Math.PI / 180; }
+function skySep(a, b) {
+  const x = Math.sin(skyRad(a.alt)) * Math.sin(skyRad(b.alt)) +
+    Math.cos(skyRad(a.alt)) * Math.cos(skyRad(b.alt)) * Math.cos(skyRad(a.az - b.az));
+  return Math.acos(Math.max(-1, Math.min(1, x))) * 180 / Math.PI;
+}
+// North up, east left. Below the horizon the marker sits just outside the rim, in the
+// direction of its azimuth.
+function skyPlace(o) {
+  const below = o.alt < 0;
+  const r = below ? SKY_R * 1.04 : (90 - o.alt) / 90 * SKY_R;
+  return { x: SKY_CX - r * Math.sin(skyRad(o.az)), y: SKY_CY - r * Math.cos(skyRad(o.az)), below: below };
+}
+function skyAlt(o) { return (o.alt < 0 ? '−' : '') + Math.abs(Math.round(o.alt)) + '°'; }
+// Mount state sets the colour of its dot and name: tracking green, stopped (not tracking)
+// yellow, parked red; unknown state stays blue.
+function skyMountStyle(state) {
+  if (state === 'parked') return { color: SKY_C.red, word: 'parked' };
+  if (state === 'not tracking') return { color: SKY_C.yellow, word: 'stopped' };
+  if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
+  return { color: SKY_C.blue, word: null };
+}
+// What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
+function skyBuildModel(sky) {
+  if (!sky) return null;
+  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [] };
+  const markers = [];
+  const add = (id, o, name, color, extra) => {
+    if (!o) return null;
+    const m = Object.assign({ id: id, o: o, p: skyPlace(o), name: name, color: color, stale: o.stale === true }, extra || {});
+    markers.push(m);
+    return m;
+  };
+  const ms = skyMountStyle(sky.mount_state);
+  const mount = add('mount', sky.mount,
+    'Mount' + (ms.word ? ' (' + ms.word + ')' : '') + (sky.mount && sky.mount.alt < 0 ? ' ' + skyAlt(sky.mount) : ''), ms.color);
+  const pf = add('pifinder', sky.pifinder,
+    'PiFinder' + (sky.pifinder && sky.pifinder.alt < 0 ? ' ' + skyAlt(sky.pifinder) : ''),
+    sky.pifinder && sky.pifinder.alt < 0 ? SKY_C.redSoft : SKY_C.fg);
+  add('goto', sky.goto, 'Goto', SKY_C.fg);
+  add('held', sky.held, 'Held', SKY_C.blue);
+  let line = null;
+  if (mount && pf) {
+    const below = mount.p.below || pf.p.below;
+    line = {
+      from: mount.p, to: pf.p,
+      color: below ? SKY_C.red : (skySep(sky.mount, sky.pifinder) <= SKY_AGREE_DEG ? SKY_C.green : SKY_C.yellow),
+      // The arrow (the direction to sync) only exists where it can be known: exactly one of
+      // the two is below the horizon, so that one is wrong and gets corrected from the other.
+      arrow: (pf.p.below && !mount.p.below) ? { from: mount.p, to: pf.p }
+        : (mount.p.below && !pf.p.below) ? { from: pf.p, to: mount.p } : null,
+    };
+  }
+  skyPlaceNames(markers);
+  // A position that is missing says so inside the picture instead of silently not appearing.
+  const notes = [];
+  if (!sky.pifinder) notes.push('PiFinder: no position');
+  if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
+  return { unknown: false, markers: markers, line: line, notes: notes };
+}
+// Name next to its marker: first free of "toward the middle", "other side", above, below.
+function skyPlaceNames(markers) {
+  const placed = [];
+  const h = 12;
+  markers.forEach((m) => {
+    const w = m.name.length * 6.9;  // bold, 12 px
+    const cands = m.p.x > SKY_CX
+      ? [[-10, 4, 'end'], [10, 4, 'start'], [0, -10, 'middle'], [0, 18, 'middle']]
+      : [[10, 4, 'start'], [-10, 4, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
+    let pick = cands[0], box = null;
+    for (let i = 0; i < cands.length; i++) {
+      const c = cands[i], x = m.p.x + c[0], y = m.p.y + c[1];
+      const x0 = c[2] === 'end' ? x - w : c[2] === 'middle' ? x - w / 2 : x;
+      const b = { x0: x0, x1: x0 + w, y0: y - h + 2, y1: y + 3 };
+      const hit = x0 < 2 || x0 + w > 238 || b.y0 < 2 || b.y1 > 238 ||
+        placed.some((o) => !(b.x1 < o.x0 || b.x0 > o.x1 || b.y1 < o.y0 || b.y0 > o.y1));
+      box = b; pick = c;
+      if (!hit) break;
+    }
+    placed.push(box);
+    m.label = { x: m.p.x + pick[0], y: m.p.y + pick[1], anchor: pick[2] };
+  });
+}
+function skyEl(name, attrs, parent, text) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function drawSkyPanel(svg, model) {
+  svg.textContent = '';
+  const C = SKY_C;
+  skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: SKY_R, fill: C.disc, stroke: model.unknown ? C.ring2 : C.ring, 'stroke-width': 1.5,
+    'stroke-dasharray': model.unknown ? '3 4' : 'none' }, svg);
+  if (model.unknown) {
+    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12.5, 'font-weight': 700 }, svg, 'Location unknown');
+    return;
+  }
+  [30, 60].forEach((alt) => skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: (90 - alt) / 90 * SKY_R, fill: 'none', stroke: C.ring2,
+    'stroke-width': 1, 'stroke-dasharray': '2 4' }, svg));
+  skyEl('line', { x1: SKY_CX, y1: SKY_CY - SKY_R, x2: SKY_CX, y2: SKY_CY + SKY_R, stroke: C.ring2, 'stroke-width': 1 }, svg);
+  skyEl('line', { x1: SKY_CX - SKY_R, y1: SKY_CY, x2: SKY_CX + SKY_R, y2: SKY_CY, stroke: C.ring2, 'stroke-width': 1 }, svg);
+  [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach((d) => {
+    const off = SKY_R + 11;
+    // About the size of the status lines next to it (13 px at the tile's usual width), all bold.
+    skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 5, 'text-anchor': 'middle',
+      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 13.5, 'font-weight': 700 }, svg, d[0]);
+  });
+  if (model.line) {
+    const L = model.line;
+    skyEl('line', { x1: L.from.x, y1: L.from.y, x2: L.to.x, y2: L.to.y, stroke: L.color, 'stroke-width': 1.4, 'stroke-dasharray': '4 3' }, svg);
+    if (L.arrow) {
+      const a = L.arrow, t = 0.6;
+      const x = a.from.x + (a.to.x - a.from.x) * t, y = a.from.y + (a.to.y - a.from.y) * t;
+      const ang = Math.atan2(a.to.y - a.from.y, a.to.x - a.from.x) * 180 / Math.PI;
+      skyEl('polygon', { points: '7,0 -5,-5 -5,5', transform: 'translate(' + x + ' ' + y + ') rotate(' + ang + ')', fill: C.red, stroke: C.disc, 'stroke-width': 1 }, svg);
+    }
+  }
+  const find = (id) => model.markers.find((m) => m.id === id);
+  const g = (m) => { const e = skyEl('g', { opacity: m.stale ? 0.5 : 1 }, svg); skyEl('title', {}, e, m.name + ' - altitude ' + Math.round(m.o.alt) + '°, azimuth ' + Math.round(m.o.az) + '°'); return e; };
+  const pf = find('pifinder'), held = find('held'), go = find('goto'), mount = find('mount');
+  if (pf && !pf.p.below) {
+    const f = SKY_FOV_DEG / 90 * SKY_R;
+    skyEl('rect', { x: pf.p.x - f / 2, y: pf.p.y - f / 2, width: f, height: f, fill: 'none', stroke: C.fg, 'stroke-width': 1, opacity: 0.8 }, g(pf));
+  }
+  if (held) {
+    const e = g(held);
+    skyEl('line', { x1: held.p.x - 6, y1: held.p.y, x2: held.p.x + 6, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 }, e);
+    skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
+  }
+  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
+  if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
+    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
+    stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
+  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
+    'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
+}
+let _skyLastOk = 0;
+function applySkyPanel(sky) {
+  const tile = document.getElementById('sky-panel');
+  const svg = document.getElementById('sky-panel-svg');
+  if (!tile || !svg) return;
+  const model = skyBuildModel(sky);
+  if (!model) { tile.style.display = 'none'; return; }
+  tile.style.display = '';
+  tile.style.opacity = '';
+  _skyLastOk = Date.now();
+  drawSkyPanel(svg, model);
+  svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
+    : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
+}
+// A picture that stopped updating must not look current.
+setInterval(() => {
+  const tile = document.getElementById('sky-panel');
+  if (tile && tile.style.display !== 'none' && _skyLastOk && Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
+}, 2000);
+// ---- Sky Position Panel (end) ----
+
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
@@ -8651,6 +8912,7 @@ async function refreshMbDrift() {
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
+      applySkyPanel(data.sky);
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
       // from mount' darf im Client Mode nicht auftauchen" - none of these
@@ -8666,6 +8928,7 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(null, false);
       updatePiFinderHorizonStatus(null, false);
       updateMountRejectWarning(false, null);
+      applySkyPanel(data.sky);  // no Mount Bridge: the server computes it from PiFinder LX200 alone
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
@@ -8813,14 +9076,26 @@ async function onDecoupleClick() {
 async function triggerSyncToPiFinderVisible() {
   const btns = Array.from(document.querySelectorAll('[data-mb-action="sync-to-visible"]'));
   if (btns.some((b) => b.dataset.busy === '1')) return;
-  const originals = btns.map((b) => b.textContent);
-  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; b.textContent = 'syncing…'; });
-  setMbActionStatus('⏳ Syncing mount to PiFinder’s visible position…');
+  // Plausibility first (issue #596): the driver refuses a sync from a position
+  // below the horizon and only logs it. Do not send it, and say whose position
+  // is wrong - the mount was not touched; the other direction is the fix.
+  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+    const below = Math.abs(_pifinderAltitudeDeg).toFixed(0);
+    setSyncFeedback('warn', 'Not synced',
+      `PiFinder is ${below}° below the horizon; the mount keeps its position. Use "Sync PiFinder from mount"`,
+      `PiFinder's own position is ${below}° below the horizon, so it cannot be right and the mount must not be synced to it. Nothing was sent, the mount was not changed. If the mount itself is pointed correctly, use "Sync PiFinder from mount" (in this group and in the yellow card above).`);
+    return;
+  }
+  const originals = btns.map((b) => b.innerHTML);
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
+  setSyncFeedback('work', 'Syncing mount to PiFinder …', 'checking the mount took it');
   let failure = null;
+  let verify = null;
   try {
     const resp = await fetch('/api/mount_bridge_sync_to_pifinder_visible', { method: 'POST' });
     const data = await resp.json();
     if (!data.success) failure = data.error || 'failed';
+    verify = data;
   } catch (e) {
     failure = String(e);
   }
@@ -8829,11 +9104,24 @@ async function triggerSyncToPiFinderVisible() {
   // at all, in the scroll-away #mb-log panel. Now the error itself shows
   // right at the button for a few seconds, same spot the "Syncing…" status
   // already used - not just relying on pollMbLog() to eventually catch it.
-  if (failure) {
-    setMbActionStatus(`⚠️ Sync failed: ${failure}`);
-    setTimeout(clearMbActionStatus, 6000);
+  if (verify && verify.reason === 'parked') {
+    // Nothing was sent: a parked mount ignores Sync. The yellow card has the Unpark button.
+    _mountParked = true;
+    setSyncFeedback('warn', 'Mount is parked', 'unpark it first, then sync');
+    renderNoSolveBanner();
+  } else if (failure) {
+    setSyncFeedback('warn', 'Mount not synced', failure, failure);
+  } else if (verify && verify.verified === false) {
+    // INDI took the command but the mount did not move to it - a connected
+    // but silent driver (issue #583). Not "synced"; say so and offer the way out.
+    const sep = typeof verify.separation_arcmin === 'number' ? verify.separation_arcmin : null;
+    setSyncFeedback('warn', 'Mount did not take the sync',
+      (sep !== null ? `it still reports a position ${(sep / 60).toFixed(1)}° away` : 'it still reports the old position') + '; is it parked or not responding?',
+      'The sync command was accepted, but the mount did not report PiFinder\'s position afterwards (' + (verify.device || 'mount') +
+      '). The mount may be parked, or its driver connected but not answering (e.g. after the network dropped); a yellow card appears if so.');
   } else {
-    clearMbActionStatus();
+    setSyncFeedback('ok', 'Mount synced to PiFinder',
+      verify && verify.verified === true ? 'the mount reports PiFinder\'s position' : 'sent (not verified)', '');
     // 2026-09-09, direct feedback ("ICH WILL NICHT Re-seeden, sondern
     // synch from PiFinder. Ist meine Entscheidung!"): the sim-mismatch
     // card itself offers both buttons as equally valid fixes ("Re-seed...
@@ -8844,7 +9132,202 @@ async function triggerSyncToPiFinderVisible() {
     _simMismatchAcknowledged = true;
     renderNoSolveBanner();
   }
-  btns.forEach((b, i) => { b.textContent = originals[i]; b.disabled = false; delete b.dataset.busy; });
+  btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
+}
+
+// ---- "Sync positions (once)": one fixed-height feedback line (#mb-sync-feedback) ----
+// Never inserted or removed, only its content changes, so a result can't move
+// anything else on the page; the last action stays with its time until the
+// next one replaces it (direct feedback, 2026-11-24).
+//   kinds: 'idle' (nothing yet), 'feed' (Synthetic Solve keeps PiFinder in step -
+//   nothing to sync by hand), 'work' (running), 'ok', 'warn' (a result).
+//   Only 'idle'/'feed' are replaced by refreshSyncIdleText(); a result stays.
+var _syncFeedbackIdle = true;
+function setSyncFeedback(kind, lead, rest, tooltip) {
+  const el = document.getElementById('mb-sync-feedback');
+  if (!el) return;
+  _syncFeedbackIdle = kind === 'idle' || kind === 'feed';
+  el.classList.remove('mb-sync-ok', 'mb-sync-warn', 'mb-sync-work');
+  if (kind === 'ok' || kind === 'warn' || kind === 'work') el.classList.add('mb-sync-' + kind);
+  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : 'dot-unconfirmed';
+  el.textContent = '';
+  const dot = document.createElement('span');
+  dot.className = 'status-dot ' + dotClass;
+  const msg = document.createElement('span');
+  msg.className = 'mb-sync-msg';
+  const b = document.createElement('b');
+  b.textContent = lead;
+  msg.appendChild(b);
+  if (rest) msg.appendChild(document.createTextNode(' · ' + rest));
+  const when = document.createElement('span');
+  when.className = 'mb-sync-when';
+  if (kind === 'ok' || kind === 'warn') {
+    when.textContent = new Date().toLocaleTimeString('de-DE', { hour12: false });
+  }
+  el.append(dot, msg, when);
+  el.title = tooltip || (rest ? lead + ' · ' + rest : lead);
+}
+
+// The idle line must not claim "no sync" while Synthetic Solve is feeding
+// PiFinder the simulated mount's position all the time (Full Simulation) -
+// that reads like a fault (direct feedback, 2026-11-24). Called from
+// applyTruthInjectorState(); leaves a real Sync result alone.
+function refreshSyncIdleText(syntheticSolveRunning) {
+  if (!_syncFeedbackIdle) return;
+  if (syntheticSolveRunning) {
+    setSyncFeedback('feed', 'Synthetic Solve is feeding PiFinder', 'no manual sync needed',
+      'Full Simulation: Synthetic Solve continuously gives PiFinder the simulated mount\'s position. Sync buttons still work for a one-off correction.');
+  } else {
+    setSyncFeedback('idle', 'No sync since page load', '');
+  }
+}
+
+// ---- mount warnings (issue #583): yellow cards, never automatic ----
+// State from the status poll: the server flags a mount whose reported position
+// has not changed for 60 s while its driver says connected ("silent"), and
+// whether the mount is parked. Both show as the usual yellow card
+// (collectActiveShowstoppers()) with a button the user presses themselves.
+// Debounced on the server, so a signal that comes back by itself never shows
+// the card, and it goes away as soon as the position moves again.
+var _mountSilent = null;      // {device, forS} while the mount is silent
+var _mountParked = false;
+function applyMountSilence(ms) {
+  if (!ms || ms.unknown) return;
+  const silent = ms.silent === true ? { device: ms.device || 'The mount', forS: ms.silent_for_s || 60 } : null;
+  const parked = ms.parked === true;
+  const changed = parked !== _mountParked ||
+    (silent === null) !== (_mountSilent === null) ||
+    (silent !== null && Math.round(silent.forS / 60) !== Math.round(_mountSilent.forS / 60));
+  _mountSilent = silent;
+  _mountParked = parked;
+  if (changed) renderNoSolveBanner();
+}
+async function reconnectMount() {
+  const btns = Array.from(document.querySelectorAll('[data-mb-action="reconnect-mount"]'));
+  if (btns.some((b) => b.dataset.busy === '1')) return;
+  if (!window.confirm('Reconnect the mount driver now? Do not do this during a slew or while guiding.')) return;
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; });
+  setSyncFeedback('work', 'Reconnecting the mount driver …', 'up to 20 s');
+  try {
+    const resp = await fetch('/api/mount_reconnect', { method: 'POST' });
+    const d = await resp.json();
+    if (d.success) {
+      _mountSilent = null;
+      setSyncFeedback('ok', 'Mount driver reconnected', d.device || '');
+    } else {
+      setSyncFeedback('warn', 'Mount not reconnected', d.error || 'failed');
+    }
+  } catch (e) {
+    setSyncFeedback('warn', 'Mount not reconnected', String(e));
+  }
+  btns.forEach((b) => { b.disabled = false; delete b.dataset.busy; });
+  renderNoSolveBanner();
+}
+async function unparkMount() {
+  const btns = Array.from(document.querySelectorAll('[data-mb-action="unpark-mount"]'));
+  if (btns.some((b) => b.dataset.busy === '1')) return;
+  if (!window.confirm('Unpark the mount now? It may start tracking.')) return;
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; });
+  setSyncFeedback('work', 'Unparking the mount …', 'up to 20 s');
+  try {
+    const resp = await fetch('/api/mount_unpark', { method: 'POST' });
+    const d = await resp.json();
+    if (d.success) {
+      _mountParked = false;
+      setSyncFeedback('ok', 'Mount unparked', d.device || '');
+    } else {
+      setSyncFeedback('warn', 'Mount not unparked', d.error || 'failed');
+    }
+  } catch (e) {
+    setSyncFeedback('warn', 'Mount not unparked', String(e));
+  }
+  btns.forEach((b) => { b.disabled = false; delete b.dataset.busy; });
+  renderNoSolveBanner();
+}
+
+function fmtRaHms(raDeg) {
+  const h = (((raDeg / 15) % 24) + 24) % 24;
+  const hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ss = Math.round(((h - hh) * 60 - mm) * 60);
+  return `${hh}h ${String(mm).padStart(2, '0')}m ${String(ss % 60).padStart(2, '0')}s`;
+}
+function fmtDecDms(decDeg) {
+  const sign = decDeg < 0 ? '-' : '+', a = Math.abs(decDeg);
+  const dd = Math.floor(a), mm = Math.floor((a - dd) * 60);
+  return `${sign}${dd}° ${String(mm).padStart(2, '0')}′`;
+}
+
+// "Sync PiFinder from mount": tell PiFinder where the mount points. On a real
+// PiFinder this is its own Align (POST /api/align via the Control Center) -
+// real plate-solving keeps running. Full Simulation has no camera or solve to
+// align against, so it injects the mount's position as before.
+async function triggerSyncPiFinderFromMount() {
+  const btns = Array.from(document.querySelectorAll('[data-mb-action="sync-pifinder-from-mount"]'));
+  if (btns.some((b) => b.dataset.busy === '1')) return;
+  if (!pifinderScreenUrl) {
+    setSyncFeedback('warn', 'Not synced', 'PiFinder is not reachable yet');
+    return;
+  }
+  const port = new URL(pifinderScreenUrl).port || '80';
+  const host = pifinderHost();
+  // Full Simulation = Synthetic Solve (Truth Injector) feeding the real PiFinder
+  // service, so lastPifinderMode stays 'real' there. 'fake' only means the
+  // separate fake-PiFinder service. Either one has no camera to align against,
+  // and PiFinder's Align would be refused while an injected position is active.
+  const simulation = lastTruthInjectorDesired === true || lastPifinderMode === 'fake';
+  const originals = btns.map((b) => b.innerHTML);
+  btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
+  setSyncFeedback('work', 'Syncing PiFinder to mount …', simulation ? '' : 'up to 2 s');
+  let ok = false;
+  try {
+    if (simulation) {
+      await reseedFakeSolve();
+      const st = (document.getElementById('fake-solve-advanced-status') || {}).textContent || '';
+      if (/^could not/i.test(st)) {
+        setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
+      } else {
+        ok = true;
+        setSyncFeedback('ok', 'PiFinder seeded from mount', 'simulation', 'Full Simulation: the mount\'s position was injected into the simulated PiFinder.');
+      }
+    } else {
+      const resp = await fetch(`/api/pifinder_align_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
+      const d = await resp.json();
+      if (d.success === true) {
+        ok = true;
+        setSyncFeedback('ok', 'PiFinder aligned to mount', `RA ${fmtRaHms(d.mount_ra_deg)}, Dec ${fmtDecDms(d.mount_dec_deg)}`);
+      } else {
+        const fov = typeof d.fov_deg === 'number' ? d.fov_deg : null;
+        const sep = typeof d.separation_deg === 'number' ? d.separation_deg : null;
+        if (d.reason === 'no_solve') {
+          setSyncFeedback('warn', 'Not aligned', 'PiFinder has no current solve. Point it at stars, then retry.',
+            'PiFinder has no plate solve from the last few seconds. The Align needs one. Point the camera at stars and try again.');
+        } else if (d.reason === 'outside_fov') {
+          const edge = fov !== null ? (fov / 2).toFixed(1) : '?';
+          setSyncFeedback('warn', 'Not aligned',
+            sep !== null ? `mount is ${sep.toFixed(1)}° off PiFinder's centre; its field reaches ${edge}°` : 'the mount is outside PiFinder\'s field of view',
+            `The position the mount points at is ${sep !== null ? sep.toFixed(1) + '°' : 'too far'} from the centre of PiFinder's image, which reaches about ${edge}° (field ${fov !== null ? fov.toFixed(1) : '?'}° wide). PiFinder can only align on something it sees. Adjust the PiFinder bracket until the star you centred in the scope shows on PiFinder's screen, then retry.`);
+        } else if (d.reason === 'timeout') {
+          setSyncFeedback('warn', 'Not aligned', 'the solver gave no alignment pixel within 2 s. Retry.');
+        } else if (d.reason === 'fake_solve_active') {
+          setSyncFeedback('warn', 'Not aligned', 'an injected position is active. Stop it in Simulation, Test and Power, then retry.');
+        } else if (d.reason === 'busy') {
+          setSyncFeedback('warn', 'Not aligned', 'another align is still running');
+        } else {
+          setSyncFeedback('warn', 'Not aligned', d.error || d.message || 'failed');
+        }
+      }
+    }
+  } catch (e) {
+    setSyncFeedback('warn', 'Not synced', String(e));
+  }
+  if (ok) {
+    // Same as a successful mount->PiFinder sync: a fix for the startup
+    // mismatch notice (see triggerSyncToPiFinderVisible()).
+    _simStartupMismatch = false;
+    _simMismatchAcknowledged = true;
+    renderNoSolveBanner();
+  }
+  btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
+  updateSeedControlsEnabled();
 }
 
 async function triggerGotoHome() {
@@ -10143,7 +10626,7 @@ function isControlHostRole() {
 // Meldung 'Reseed from mount' darf im Client mode nicht auftauchen" reported
 // AGAIN) - collectActiveShowstoppers()'s pifinder-horizon card used to
 // compute belowHorizon purely from PIFINDER_HORIZON_STATUS with no role
-// check at all, so it kept offering "Re-seed from mount" on a device that,
+// check at all, so it kept offering "Sync PiFinder from mount" on a device that,
 // by this very role's own definition ("No mount here"), has no mount to
 // re-seed from. Same underlying fact updateRoleUI() already used inline for
 // its card-highlight logic - shared here instead of re-deriving it a second

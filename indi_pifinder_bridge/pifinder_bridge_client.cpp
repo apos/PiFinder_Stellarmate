@@ -136,12 +136,20 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountEqNP = property.getNumber();
     else if (fromMount && property.isNameMatch("ON_COORD_SET"))
         m_mountOnCoordSetSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("TELESCOPE_PARK"))
+        m_mountParkSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_MOUNT_TYPE"))
         m_mountMountTypeSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
         m_mountAbortSP = property.getSwitch();
     else if (fromMount && property.isNameMatch("TELESCOPE_SLEW_RATE"))
         m_mountSlewRateSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("GEOGRAPHIC_COORD"))
+        m_mountGeoNP = property.getNumber();
+    else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
+        m_mountTargetNP = property.getNumber();
+    else if (fromPiFinder && property.isNameMatch("GEOGRAPHIC_COORD"))
+        m_piFinderGeoNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
         m_piFinderEqNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
@@ -164,8 +172,13 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         std::lock_guard<std::mutex> lock(m_mountRejectMutex);
         m_mountRejectedLastCoords = true;
     }
+    else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
+    {
+        m_lastMountTargetTime = static_cast<long>(time(nullptr));
+    }
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
     {
+        m_lastPiFinderTargetTime = static_cast<long>(time(nullptr));
         // Every genuine Goto request on the PiFinder device re-publishes
         // this property (see consumePiFinderTargetPending()'s own comment
         // in the header) - mark it pending regardless of whether the value
@@ -200,8 +213,16 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_piFinderTargetNP = nullptr;
     else if (property.getNumber() == m_mountEqNP)
         m_mountEqNP = nullptr;
+    else if (property.getNumber() == m_piFinderGeoNP)
+        m_piFinderGeoNP = nullptr;
+    else if (property.getNumber() == m_mountGeoNP)
+        m_mountGeoNP = nullptr;
+    else if (property.getNumber() == m_mountTargetNP)
+        m_mountTargetNP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
+    else if (property.getSwitch() == m_mountParkSP)
+        m_mountParkSP = nullptr;
     else if (property.getSwitch() == m_piFinderOnCoordSetSP)
         m_piFinderOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountMountTypeSP)
@@ -260,6 +281,83 @@ bool PiFinderBridgeClient::getMountRADE(double &ra, double &dec) const
     return isUsableCoordinateForWarn("mount", ra, dec);
 }
 
+bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::string &source) const
+{
+    auto read = [](INDI::PropertyViewNumber *np, double &la, double &lo) -> bool
+    {
+        if (np == nullptr)
+            return false;
+        auto latW = np->findWidgetByName("LAT");
+        auto lonW = np->findWidgetByName("LONG");
+        if (latW == nullptr || lonW == nullptr)
+            return false;
+        la = latW->getValue();
+        lo = lonW->getValue();
+        if (!std::isfinite(la) || !std::isfinite(lo) || std::fabs(la) > 90.0 || std::fabs(lo) > 360.0)
+            return false;
+        if (std::fabs(la) < 1e-9 && std::fabs(lo) < 1e-9)
+            return false; // INDI's default for "never set" - not a real location
+        if (lo > 180.0)
+            lo -= 360.0;
+        return true;
+    };
+
+    if (read(m_piFinderGeoNP, lat, lon))
+    {
+        source = "INDI location of the PiFinder device (KStars / StellarMate app)";
+        return true;
+    }
+    if (read(m_mountGeoNP, lat, lon))
+    {
+        source = "INDI location of the mount (KStars / StellarMate app)";
+        return true;
+    }
+    return false;
+}
+
+bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec) const
+{
+    auto read = [](INDI::PropertyViewNumber *np, double &r, double &d) -> bool
+    {
+        if (np == nullptr)
+            return false;
+        r = np->at(0)->getValue();
+        d = np->at(1)->getValue();
+        return std::isfinite(r) && std::isfinite(d) && d >= -90.0 && d <= 90.0 && !(r == 0.0 && d == 0.0);
+    };
+
+    double mountRA = 0.0, mountDec = 0.0, piRA = 0.0, piDec = 0.0;
+    const bool haveMount = read(m_mountTargetNP, mountRA, mountDec);
+    const bool havePi = read(m_piFinderTargetNP, piRA, piDec);
+    if (haveMount && havePi)
+    {
+        if (m_lastPiFinderTargetTime > m_lastMountTargetTime)
+        {
+            ra = piRA;
+            dec = piDec;
+        }
+        else
+        {
+            ra = mountRA;
+            dec = mountDec;
+        }
+        return true;
+    }
+    if (haveMount)
+    {
+        ra = mountRA;
+        dec = mountDec;
+        return true;
+    }
+    if (havePi)
+    {
+        ra = piRA;
+        dec = piDec;
+        return true;
+    }
+    return false;
+}
+
 bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
 {
     if (m_piFinderTargetNP == nullptr)
@@ -276,6 +374,17 @@ bool PiFinderBridgeClient::consumePiFinderTargetPending()
     const bool wasPending = m_piFinderTargetPending;
     m_piFinderTargetPending = false;
     return wasPending;
+}
+
+bool PiFinderBridgeClient::getMountParked(bool &parked) const
+{
+    if (m_mountParkSP == nullptr)
+        return false;
+    auto park = m_mountParkSP->findWidgetByName("PARK");
+    if (park == nullptr)
+        return false;
+    parked = park->getState() == ISS_ON;
+    return true;
 }
 
 bool PiFinderBridgeClient::isMountSlewing() const
