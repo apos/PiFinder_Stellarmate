@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- Control Center, PiFinder tile: the OLED mirror follows the picture PiFinder delivers. Rev 4 has a 1.91" OLED with 176 x 176 pixels (about 62 % more viewing area; PiFinder 2.6.4 detects it by itself and already serves the picture in that resolution): it is now shown at 244 px (the 27 % longer sides of the bigger display), smoothed, instead of being squeezed into the old 192 px box. The 128 x 128 picture of Rev 3 stays as before (192 px, hard pixels). A picture that is not square (for example a 320 x 240 LCD) keeps its aspect ratio instead of being squashed. Not yet seen with real Rev 4 hardware (the 176 picture in the mockup is an illustration).
+
 ## [2.5.0] - 2026-11-25
 
 > Clock warnings release: the Sky shows the moment it is computed for, and yellow strips warn when the mount's clock or the Pi's clock is wrong.
