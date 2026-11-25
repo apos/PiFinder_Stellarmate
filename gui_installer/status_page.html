@@ -595,7 +595,7 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; margin-top: 0.7rem; }
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
   #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
@@ -1562,13 +1562,25 @@
      feedback, this is the one thing in the tile the user actually needs at
      a glance, so it belongs next to the piece that produces it, at full
      size (not shrunk into a small badge). */
-  #mb-diagram {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin: 0.6rem 0 0.3rem 0;
+  #mb-sky-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem 1.1rem; margin: 0.6rem 0 0.3rem 0; }
+  #mb-diagram { flex: 1 1 330px; min-width: 0; container-type: inline-size; }
+  #mb-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+  .mb-grp { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
+  /* Middle group: Drift | Bridge (with Ekos, WM) | Alt on equal side columns, so the Bridge badge is always
+     the centre and PiFinder, Bridge and Mount line up on one axis when stacked. */
+  .mb-grp-mid { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 0.3rem; }
+  .mb-grp-mid > #mb-drift-badge { grid-column: 1; grid-row: 1; justify-self: end; }
+  .mb-grp-mid > .mb-node-nest-wrap { grid-column: 2; grid-row: 1; }
+  .mb-grp-mid > #mb-horizon-badge { grid-column: 3; grid-row: 1; justify-self: start; }
+  /* Not enough room for one row: stack the groups centred, the blue arrows turn vertical between them. */
+  @container (max-width: 600px) {
+    #mb-groups { flex-direction: column; align-items: center; gap: 0; }
+    #mb-groups > .mb-arrow { transform: rotate(90deg); min-width: 0; width: 2.2rem; height: 2.2rem; display: flex;
+      align-items: center; justify-content: center; margin: -0.15rem 0; }
   }
+  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: auto; }
+  #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
+  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
      verify this is still current" without claiming it's now wrong. */
@@ -2569,82 +2581,108 @@
           </div>
         </div>
       </div>
-      <div id="mb-diagram">
-        <div class="mb-node" id="mb-node-lx200" title="PiFinder">
-          <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
-          </svg>
-          <span>PiFinder</span>
-        </div>
-        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node-nest-wrap">
-          <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
-            <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-              <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-            </svg>
-            <span>Bridge</span>
-          </div>
-          <div class="mb-node-nest-stem"></div>
-          <!-- Ekos/INDI Web Manager (2026-09-12, direct feedback: "das
-               gehört in eine Reihe in die Sektion Mount-Bridge... die
-               Beziehung zwischen den Komponenten sollte man sehen" - hung
-               directly off Bridge rather than a free-floating row, since
-               Bridge is literally the INDI driver WM starts and Ekos talks
-               to; PiFinder/Mount don't depend on either the same way). -->
-          <div class="mb-node-nest-row">
-            <div class="mb-node-nest-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
-              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>
-              <span>Ekos</span>
+      <div id="mb-sky-layout">
+        <!-- Mount Bridge badges, grouped PiFinder | Drift, Bridge, Alt | Mount (the badges themselves unchanged). Row with room,
+             otherwise stacked and centred with the blue arrows turned vertical (container query below). -->
+        <div id="mb-diagram">
+          <div id="mb-groups">
+            <div class="mb-grp">
+              <div class="mb-node" id="mb-node-lx200" title="PiFinder">
+                <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
+                </svg>
+                <span>PiFinder</span>
+              </div>
             </div>
-            <div class="mb-node-nest-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
-              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
-                <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
-              </svg>
-              <span>WM</span>
+            <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
+            <div class="mb-grp mb-grp-mid">
+            <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera). Reconnecting: no fresh solve to compute drift from right now (e.g. issue #385) - last known value shown, resolves on its own.">
+              <span id="mb-drift-value">0.0'</span>
+              <span id="mb-drift-label">Drift</span>
+            </div>
+            <div class="mb-node-nest-wrap">
+              <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
+                <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg>
+                <span>Bridge</span>
+              </div>
+              <div class="mb-node-nest-stem"></div>
+              <!-- Ekos/INDI Web Manager (2026-09-12, direct feedback: "das
+                   gehört in eine Reihe in die Sektion Mount-Bridge... die
+                   Beziehung zwischen den Komponenten sollte man sehen" - hung
+                   directly off Bridge rather than a free-floating row, since
+                   Bridge is literally the INDI driver WM starts and Ekos talks
+                   to; PiFinder/Mount don't depend on either the same way). -->
+              <div class="mb-node-nest-row">
+                <div class="mb-node-nest-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
+                  <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  </svg>
+                  <span>Ekos</span>
+                </div>
+                <div class="mb-node-nest-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
+                  <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
+                    <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
+                  </svg>
+                  <span>WM</span>
+                </div>
+              </div>
+            </div>
+            <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
+              <span id="mb-horizon-value">0°</span>
+              <span>Alt</span>
+            </div>
+            </div>
+            <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
+            <div class="mb-grp">
+            <div class="mb-node" id="mb-node-mount" title="Mount">
+              <div class="orientation-icon-row">
+                <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
+                  <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
+                    <rect x="5" y="10" width="12" height="4" rx="1.6" fill="currentColor"/>
+                    <circle cx="17.5" cy="12" r="2.6" fill="currentColor"/>
+                    <circle cx="4" cy="12" r="1.3" fill="currentColor"/>
+                  </g>
+                  <path d="M11 14 L6.5 21.5 M11 14 L15.5 21.5 M11 14 L11 21.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span id="mb-node-mount-type" style="display:none;"></span>
+              </div>
+              <span id="mb-node-mount-name">Mount</span>
+            </div>
             </div>
           </div>
         </div>
-        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera). Reconnecting: no fresh solve to compute drift from right now (e.g. issue #385) - last known value shown, resolves on its own.">
-          <span id="mb-drift-value">0.0'</span>
-          <span id="mb-drift-label">Drift</span>
-        </div>
-        <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
-          <span id="mb-horizon-value">0°</span>
-          <span>Alt</span>
-        </div>
-        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-mount" title="Mount">
-          <div class="orientation-icon-row">
-            <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
-              <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
-                <rect x="5" y="10" width="12" height="4" rx="1.6" fill="currentColor"/>
-                <circle cx="17.5" cy="12" r="2.6" fill="currentColor"/>
-                <circle cx="4" cy="12" r="1.3" fill="currentColor"/>
-              </g>
-              <path d="M11 14 L6.5 21.5 M11 14 L15.5 21.5 M11 14 L11 21.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <span id="mb-node-mount-type" style="display:none;"></span>
+        <!-- Sky picture with the two status lines under it. Outside #mb-diagram, so it stays visible for a PiFinder-only
+             profile (Dobsonian), where the diagram is hidden. -->
+        <div id="mb-sky-col">
+        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
+             the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
+           the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
+           profile (Dobsonian) where the diagram is hidden. -->
+        <div id="sky-panel" style="display:none;">
+          <div id="sky-panel-inner">
+            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
           </div>
-          <span id="mb-node-mount-name">Mount</span>
+          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
-      </div>
-      <div id="mb-caption-status-row" style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">
-        <div id="mb-mode-caption-row">
-          <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
-          <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+        <div id="mb-caption-status-row">
+          <div id="mb-mode-caption-row">
+            <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
+            <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+          </div>
+          <div id="mb-status-row">
+            <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
+          </div>
         </div>
-        <div id="mb-status-row">
-          <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
         </div>
       </div>
       <div id="mb-mode-details" style="display:none;"></div>
@@ -2655,16 +2693,6 @@
            by category. Consistently BELOW the badges/status row here,
            same as the PiFinder tile's own placement below its badges. -->
       <div id="showstopper-banners-mount-bridge"></div>
-      <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
-           the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
-         the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
-         profile (Dobsonian) where the diagram is hidden. -->
-      <div id="sky-panel" style="display:none;">
-        <div id="sky-panel-inner">
-          <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-        </div>
-        <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
-      </div>
       </div>
     <div id="mount-bridge-tile">
       <!-- Current status first: connection diagram, Coupling, Threshold -

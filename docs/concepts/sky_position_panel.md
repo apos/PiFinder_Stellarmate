@@ -16,7 +16,7 @@ whole sky with both positions answers "who is wrong" at a glance, before any tex
 
 ## 2. Decisions (owner, 2026-11-25)
 
-1. **Small.** A block of its own at the bottom of the PiFinder tile, below the Mount Bridge status (since #628; it was
+1. **Small.** A block in the Mount Bridge section of the PiFinder tile, beside the badges, with the status lines under it (since #628; it was
    in the glance row next to the OLED mirror and the keypad before). It sits outside `#mb-diagram`, so it stays
    visible for a PiFinder-only profile. No buttons, no readout column, no text block beside it.
 2. **Text lives inside the graphic.** Short names, no exact values. Below the horizon the name carries the

@@ -353,7 +353,7 @@ not a project secret (change it if you haven't already).
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_full_page.png"><img src="docs/images/readme/cc_full_page.png" width="500"></a><br>
-<sub>The whole page (Full Simulation shown here). Top to bottom: the <strong>PiFinder</strong> tile (OLED mirror, quick keys, the Mount Bridge status and below it the small <strong>Sky</strong> picture of mount, PiFinder and targets, the Cam/Solve/IMU/GPS badge row, and — directly under it — the Mount Bridge connection diagram), the <strong>INDI Mount Bridge</strong> tile, <strong>Simulation, Test and Power</strong>, and <strong>Install or Update</strong> at the bottom. Every tile heading collapses; the state is remembered per browser.</sub>
+<sub>The whole page (Full Simulation shown here). Top to bottom: the <strong>PiFinder</strong> tile (OLED mirror, quick keys, the Mount Bridge badges with the small <strong>Sky</strong> picture beside them and the status lines under it, of mount, PiFinder and targets, the Cam/Solve/IMU/GPS badge row, and — directly under it — the Mount Bridge connection diagram), the <strong>INDI Mount Bridge</strong> tile, <strong>Simulation, Test and Power</strong>, and <strong>Install or Update</strong> at the bottom. Every tile heading collapses; the state is remembered per browser.</sub>
 </td>
 </tr>
 </table>
