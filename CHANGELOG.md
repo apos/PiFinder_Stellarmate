@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-25
+
+> Clock warnings release: the Sky shows the moment it is computed for, and yellow strips warn when the mount's clock or the Pi's clock is wrong.
+> No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `node test_tools/clock_warning_test.js` (21 checks), `python3 test_tools/clock_status_test.py`, `node test_tools/sky_panel_test.js`; on the Pi 5 the
+> time line under the Sky matches the clock of a KStars on another computer, no strip shows while the clocks agree, both strips and the yellow time line were
+> seen in the real page (values injected from the browser console), and a mount clock set 20 minutes wrong was corrected by the Control Center within about 10 s.
+>
+> **Not yet seen live:** a strip appearing by itself (the automatic correction is normally faster than the 60 s debounce, so it only stays when that correction fails),
+> and the *Set mount time now* button pressed in the page (it runs the same KStars pulse the automatic correction uses).
+
 ### Added
 
 - Control Center: **clock warnings**. Found live: a KStars on the desktop showed the mount below the horizon while the Sky said 72° (that KStars was set to 11:30 instead of 21:55); nothing on the page could have told the user. The Sky now shows the moment it is computed for (`Sky for 21:58 CET · 25 Nov`, the Pi's clock, in the Pi's timezone) so it can be compared with the KStars clock; a KStars on another computer keeps its own clock that INDI does not expose, so no warning is possible for that one. New yellow strips at the top of the page (same look as the other notices) appear after a minute when the mount's clock differs from the Pi's by more than 10 minutes (button *Set mount time now*, the existing KStars pulse) or when the Pi's clock is not NTP-synchronised; the line under the Sky turns yellow with them. New `GET /api/clock_status` and `POST /api/mount_time_refresh`; help section *Clock warnings* and, under the Sky's (i), *KStars on another computer shows the mount somewhere else* (symptom, cause, why no warning is possible, how to check and fix it).
