@@ -22,6 +22,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center, Mount Bridge: "Sync mount from PiFinder" no longer sends the sync when PiFinder's own position is below the horizon (the driver refuses it anyway) and no longer then claims the mount "may be parked or not responding". The feedback line says PiFinder is N° below the horizon, the mount was not changed, and points to "Sync PiFinder from mount" (#596).
 - Control Center, Mount Bridge: **Sync PiFinder from mount** now injects the mount's position in Full Simulation (Synthetic Solve running) instead of calling PiFinder's Align. It picked the Align path because it only looked at the fake-PiFinder service mode, so PiFinder refused it (injected position active / mount far from PiFinder) and the simulated PiFinder kept its old position (#594).
 - Control Center, Mount Bridge Quick Actions: the feedback line under the Sync buttons said "No sync since page load" while Synthetic Solve was running, which reads like a fault in Full Simulation. It now says "Synthetic Solve is feeding PiFinder · no manual sync needed" while Synthetic Solve runs and keeps "No sync since page load" otherwise. A Sync result already shown is never replaced.
 - `bin/restore_after_smos_update.sh`: on an x86 virtual machine the restore now re-applies `bin/utm_fix_display_setup_drm_race.sh`, because a SMOS update replaces `/etc` and with it the drop-in that stops the black UTM window after boot. Non-fatal, does nothing on bare metal or without a virtio-gpu
