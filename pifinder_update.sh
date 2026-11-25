@@ -1,16 +1,9 @@
 #! /usr/bin/bash
-source /home/pifinder/PiFinder_Stellarmate/bin/functions.sh
-
-git checkout release
-if ! git pull
-then
-    echo "PiFinder software update FAILED: the new version could not be downloaded."
-    echo "The currently installed version is unchanged. See the git error above."
-    exit 1
-fi
-source /home/pifinder/PiFinder/pifinder_post_update.sh
-
-# Make some Changes to the downloaded local installation files of PiFinder 
-bash ${pifinder_stellarmate_bin}/alter_PiFinder_installation_files.sh
-
-echo "PiFinder software update complete, please restart the Pi"
+# StellarMate (PFSM): PiFinder's own updater is not used here.
+# It would `git checkout release && git pull` - the newest PiFinder release, not the version PFSM
+# pins and tests - and then run upstream's migrations (sudo, /boot/config.txt, systemd) which are
+# written for a stock PiFinder image. PiFinder is updated through the StellarMate Control Center
+# (Install or Update), which installs the pinned version and re-applies the StellarMate patches.
+echo "PiFinder software update is done through the StellarMate Control Center (Install or Update)."
+echo "Nothing was changed."
+exit 1
