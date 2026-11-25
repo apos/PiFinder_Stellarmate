@@ -8797,34 +8797,65 @@ function skyBuildModel(sky) {
         : (mount.p.below && !pf.p.below) ? { from: pf.p, to: mount.p } : null,
     };
   }
-  skyPlaceNames(markers);
   // A position that is missing says so inside the picture instead of silently not appearing.
   const notes = [];
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
+  skyPlaceNames(markers, notes);
   return { unknown: false, markers: markers, line: line, notes: notes };
 }
-// Name next to its marker: first free of "toward the middle", "other side", above, below.
-function skyPlaceNames(markers) {
-  const placed = [];
-  const h = 12;
+// Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
+// cross), so a name never lands on a symbol - its own or another one.
+function skySymbolBox(m) {
+  const f = m.id === 'pifinder' && !m.p.below ? SKY_FOV_DEG / 90 * SKY_R / 2 : 0;
+  const r = Math.max(m.id === 'goto' ? 8 : m.id === 'held' ? 7 : 6.5, f + 1.5);
+  return { x0: m.p.x - r, x1: m.p.x + r, y0: m.p.y - r, y1: m.p.y + r };
+}
+function skyOverlapArea(a, b) {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+// Name next to its marker. Free space is looked for outward: on each ring (10, 18, 26 px
+// from the marker) right/left (the side toward the middle first), above, below and the four
+// corners. Obstacles are every marker symbol, the N/E/S/W letters, the notes and names
+// already placed. The first spot that is free wins; if none is, the one covering the least.
+function skyPlaceNames(markers, notes) {
+  const h = 12, obstacles = [];
+  markers.forEach((m) => obstacles.push(skySymbolBox(m)));
+  [0, 90, 180, 270].forEach((d) => {
+    const off = SKY_R + 11;
+    const x = SKY_CX - off * Math.sin(skyRad(d)), y = SKY_CY - off * Math.cos(skyRad(d));
+    obstacles.push({ x0: x - 6, x1: x + 6, y0: y - 8, y1: y + 7 });
+  });
+  (notes || []).forEach((t, i) => {
+    const w = t.length * 6.4, y = SKY_CY + 62 + i * 13;
+    obstacles.push({ x0: SKY_CX - w / 2, x1: SKY_CX + w / 2, y0: y - 10, y1: y + 3 });
+  });
   markers.forEach((m) => {
     const w = m.name.length * 6.9;  // bold, 12 px
-    const cands = m.p.x > SKY_CX
-      ? [[-10, 4, 'end'], [10, 4, 'start'], [0, -10, 'middle'], [0, 18, 'middle']]
-      : [[10, 4, 'start'], [-10, 4, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
-    let pick = cands[0], box = null;
-    for (let i = 0; i < cands.length; i++) {
-      const c = cands[i], x = m.p.x + c[0], y = m.p.y + c[1];
-      const x0 = c[2] === 'end' ? x - w : c[2] === 'middle' ? x - w / 2 : x;
-      const b = { x0: x0, x1: x0 + w, y0: y - h + 2, y1: y + 3 };
-      const hit = x0 < 2 || x0 + w > 238 || b.y0 < 2 || b.y1 > 238 ||
-        placed.some((o) => !(b.x1 < o.x0 || b.x0 > o.x1 || b.y1 < o.y0 || b.y0 > o.y1));
-      box = b; pick = c;
-      if (!hit) break;
-    }
-    placed.push(box);
-    m.label = { x: m.p.x + pick[0], y: m.p.y + pick[1], anchor: pick[2] };
+    const inward = m.p.x > SKY_CX ? -1 : 1;
+    let best = null;
+    [10, 18, 26].forEach((d, ring) => {
+      const k = d * 0.7;
+      // [box left edge, text baseline, anchor]; the box spans baseline-10 .. baseline+3
+      const spots = [
+        inward > 0 ? [m.p.x + d, m.p.y + 4, 'start'] : [m.p.x - d, m.p.y + 4, 'end'],
+        inward > 0 ? [m.p.x - d, m.p.y + 4, 'end'] : [m.p.x + d, m.p.y + 4, 'start'],
+        [m.p.x, m.p.y - d, 'middle'], [m.p.x, m.p.y + d + 8, 'middle'],
+        [m.p.x + k, m.p.y - k, 'start'], [m.p.x - k, m.p.y - k, 'end'],
+        [m.p.x + k, m.p.y + k + 8, 'start'], [m.p.x - k, m.p.y + k + 8, 'end'],
+      ];
+      spots.forEach((c, i) => {
+        const x0 = c[2] === 'end' ? c[0] - w : c[2] === 'middle' ? c[0] - w / 2 : c[0];
+        const b = { x0: x0, x1: x0 + w, y0: c[1] - 10, y1: c[1] + 3 };
+        let score = ring * 3 + i * 0.1;
+        if (b.x0 < 2 || b.x1 > 238 || b.y0 < 16 || b.y1 > 236) score += 5000;
+        obstacles.forEach((o) => { score += skyOverlapArea(b, o) * 10; });
+        if (!best || score < best.score) best = { score: score, c: c, b: b };
+      });
+    });
+    obstacles.push(best.b);
+    m.label = { x: best.c[0], y: best.c[1], anchor: best.c[2] };
   });
 }
 function skyEl(name, attrs, parent, text) {
@@ -8876,9 +8907,10 @@ function drawSkyPanel(svg, model) {
     skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
   }
   if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
-  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
     fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  // Drawn last: with both on (nearly) the same spot the dot stays visible on top of the diamond.
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
     stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
   model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
