@@ -4,7 +4,7 @@
 # See: https://github.com/apos/PiFinder_Stellarmate/tree/main
 
 # This script is known to work with
-pifinder_stellarmate_version_stable="2.6.3"
+pifinder_stellarmate_version_stable="2.6.4"
 
 # This script is actually tested against this version
 pifinder_stellarmate_version_testing="2.6.1"
@@ -72,7 +72,19 @@ SCRIPT_PATH="${SCRIPT_DIR}/$(basename "$0")"
 # model (mirrors self_update.sh: skip cleanly when there's nothing to do,
 # abort loudly rather than risk a dirty tree).
 source "${SCRIPT_DIR}/bin/switch_branch.sh"
+_head_before_switch="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null)"
 switch_pifinder_stellarmate_branch "$SCRIPT_DIR" "$BRANCH"
+# A branch switch can change this very script on disk, including the pinned
+# versions set at its top, which this process has already read. Restart once so
+# the run uses the new branch's script. Found live 2026-11-25: switching to a
+# branch that bumped the PiFinder pin still updated PiFinder to the OLD pin and
+# then patched it with the NEW patches (two hunks failed).
+if [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null)" != "$_head_before_switch" ] \
+   && [ -z "${PIFINDER_STELLARMATE_BRANCH_SWITCHED:-}" ]; then
+    export PIFINDER_STELLARMATE_BRANCH_SWITCHED=1
+    echo "🔁 Branch switched - restarting this script from the new branch ..."
+    cd "$SCRIPT_DIR" && exec bash "$SCRIPT_PATH" "$@"
+fi
 
 # Pull the latest PiFinder_Stellarmate before anything else runs - see
 # bin/self_update.sh for the safety model (skips cleanly during active

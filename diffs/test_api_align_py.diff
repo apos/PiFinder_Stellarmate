@@ -1,6 +1,6 @@
 --- python/tests/test_api_align.py.orig
 +++ python/tests/test_api_align.py
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,281 @@
 +"""Tests for POST /api/align (PiFinder_Stellarmate): align PiFinder to the
 +position a scope is centred on, without the on-device Align UI.
 +
@@ -226,6 +226,11 @@
 +
 +    def set_option(self, k, v):
 +        self.options[k] = v
++
++    def save_target_pixel(self, target_pixel):
++        # PiFinder 2.6.4 stores the alignment through this (per telescope);
++        # the fake keeps it in the option the assertions look at.
++        self.options["target_pixel"] = list(target_pixel)
 +
 +
 +class _AlignResponseQueue:

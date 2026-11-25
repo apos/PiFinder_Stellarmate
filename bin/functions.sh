@@ -410,6 +410,25 @@ stop_indi_driver_and_wait() {
   fi
 }
 
+# PiFinder 2.6.4 and later leave python/tetra3 untracked (upstream ADR 0035): it
+# must be a symlink to the tetra3 package inside the cedar-solve submodule, because
+# `import tetra3` resolves through it. In 2.6.3 and earlier the symlink was tracked,
+# so a checkout of the newer tag removes it, and a fresh clone of it never has it.
+# Anything else at that path is moved aside (kept, not deleted). Idempotent.
+ensure_tetra3_symlink() {
+  local link="${pifinder_dir}/python/tetra3"
+  local target="PiFinder/tetra3/tetra3"
+  if [ -e "$link" ] || [ -L "$link" ]; then
+    if [ "$(readlink "$link")" != "$target" ]; then
+      mv "$link" "${pifinder_home}/tetra3_old_$(date +%Y%m%d-%H%M%S)"
+    fi
+  fi
+  if ! [ -L "$link" ]; then
+    ln -s "$target" "$link"
+    echo "🔗 Created python/tetra3 -> $target (PiFinder 2.6.4+ does not track it)"
+  fi
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"
