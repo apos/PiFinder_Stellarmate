@@ -131,8 +131,10 @@ points at `/home/pifinder`, which does not exist on SMOS (user `stellarmate`, Ar
 
 State of the upstream migrations against PFSM (checked 2026-11-25, Pi 5): v2.2.1 (libinput, group `input`) covered; v2.2.2 (`dwc2,dr_mode=host`, USB-C host) not applied,
 not needed on a Pi 5 (not checked for Pi 4); v2.4.0 (cedar as a system service) not applied, PiFinder starts cedar itself; v2.6.0 (stale `flop_image`) not applied,
-the value is already false on the test Pi; **v2.6.1 (`RemoveIPC=no`) not applied and open**: without it logind removes the solver's `/dev/shm` segment when the last session of the user ends
-(no problem while a graphical session stays open, as on the test Pi).
+the value is already false on the test Pi; v2.6.1 (`RemoveIPC=no`) not applied, **moot on the test Pi**: logind's effective default is `RemoveIPC=yes` (checked with `busctl`), which would remove the
+solver's `/dev/shm` segment (and the single-instance lock file) when the last session of the user ends, but `stellarmate` has `Linger=yes` (set by the SMOS image, not by PFSM),
+so the user is never fully logged out and nothing is removed. It would matter if lingering were switched off. Everything in `/dev/shm` on the test Pi belongs to PiFinder
+(`cedar_detect_image`, `pifinder.lock`, `sem.loky-*`); nothing of PFSM, INDI or KStars was found there. The only collision seen was two PiFinder instances (see section 4.1).
 
 ## 5. Python and package requirements
 
