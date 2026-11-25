@@ -1137,6 +1137,9 @@ def sync_mount_to_pifinder_visible_position(
     driver's SYNC_TO_COORDS/TRIGGER_SYNC_TO_COORDS primitive, which the
     driver executes with no freshness check of its own either - the whole
     point being "what the user can see is what gets synced to."
+    Returns (ra_hours, dec_degrees) - what the mount was asked to sync to
+    (JNow, as INDI reports it) - so the caller can check that the mount
+    really took it (see verify_mount_position()).
     Raises INDIClientError if PiFinder LX200's position isn't available."""
     props = get_properties(device="PiFinder LX200", host=host, port=port, timeout=timeout)
     coord_prop = props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {})
@@ -1206,6 +1209,155 @@ def sync_mount_to_pifinder_visible_position(
     # agree (the Sync above just succeeded), bring the simulator to the same
     # place too - best-effort, never fails this function if it's not loaded.
     sync_pifinder_simulator_to(float(ra) * 15.0, float(dec), host, port, timeout)
+    return float(ra), float(dec)
+
+
+def active_mount_name(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """The mount device the Mount Bridge is coupled to (ACTIVE_DEVICES.ACTIVE_MOUNT),
+    or None if none is configured. A light read - unlike mount_bridge_status()."""
+    props = get_properties(
+        device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"ACTIVE_DEVICES"}
+    )
+    elements = props.get("PiFinder Mount Bridge", {}).get("ACTIVE_DEVICES", {}).get("elements", {})
+    return elements.get("ACTIVE_MOUNT") or None
+
+
+def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT):
+    """The mount's own EQUATORIAL_EOD_COORD as the raw INDI strings (ra, dec),
+    or None if it isn't available. Raw strings on purpose: "did it change at
+    all" must not be confused by float formatting."""
+    props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"EQUATORIAL_EOD_COORD"})
+    el = props.get(device, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = el.get("RA"), el.get("DEC")
+    if ra in (None, "") or dec in (None, ""):
+        return None
+    return ra, dec
+
+
+def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    """One light read of what the page needs to know about a mount:
+    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
+    `parked` is None for a mount that has no TELESCOPE_PARK property at all."""
+    props = get_properties(
+        device=device, host=host, port=port, timeout=timeout,
+        stop_after={"EQUATORIAL_EOD_COORD", "TELESCOPE_PARK"},
+    )
+    dev = props.get(device, {})
+    el = dev.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = el.get("RA"), el.get("DEC")
+    coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
+    park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
+    parked = None if park_el is None else park_el.get("PARK") == "On"
+    return {"coords": coords, "parked": parked}
+
+
+def unpark_mount(
+    device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    wait_s: float = 20.0,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> bool:
+    """User-triggered: unpark the mount (TELESCOPE_PARK.UNPARK). A parked mount
+    ignores Sync and Goto. Returns True once the mount reports not parked
+    within `wait_s`. Raises INDIClientError if the mount has no park control."""
+    set_switch(device, "TELESCOPE_PARK", "UNPARK", host, port, timeout)
+    deadline = _now() + wait_s
+    while _now() < deadline:
+        try:
+            if read_mount_state(device, host, port, timeout)["parked"] is False:
+                return True
+        except INDIClientError:
+            pass
+        _sleep(0.7)
+    return False
+
+
+def _separation_arcmin(ra1_h: float, dec1: float, ra2_h: float, dec2: float) -> float:
+    """Great-circle separation in arcmin between two RA(hours)/Dec(degrees) points."""
+    import math
+    r1, d1, r2, d2 = math.radians(ra1_h * 15.0), math.radians(dec1), math.radians(ra2_h * 15.0), math.radians(dec2)
+    a = math.sin((d2 - d1) / 2) ** 2 + math.cos(d1) * math.cos(d2) * math.sin((r2 - r1) / 2) ** 2
+    return math.degrees(2 * math.asin(min(1.0, math.sqrt(a)))) * 60.0
+
+
+def verify_mount_position(
+    target_ra_h: float,
+    target_dec: float,
+    tolerance_arcmin: float = 3.0,
+    wait_s: float = 6.0,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> dict:
+    """After a Sync: did the mount really take it? INDI accepts a sync command
+    even if the mount's driver is connected but silent (dead TCP session), so
+    "sent" is not "done" (issue #583). Reads the mount's reported position for
+    up to `wait_s` and returns {"verified": True/False/None, "mount_ra_h",
+    "mount_dec", "separation_arcmin", "device"}: True once it is within
+    `tolerance_arcmin` of the target, False if it never got there in time,
+    None if the check itself could not be made (no mount named, nothing
+    readable) - unknown is not reported as a failure."""
+    try:
+        device = active_mount_name(host, port, timeout)
+    except INDIClientError:
+        device = None
+    if not device:
+        return {"verified": None, "device": None}
+    deadline = _now() + wait_s
+    last = None
+    while True:
+        try:
+            pos = read_mount_position(device, host, port, timeout)
+        except INDIClientError:
+            pos = None
+        if pos is not None:
+            try:
+                ra_h, dec = float(pos[0]), float(pos[1])
+                sep = _separation_arcmin(ra_h, dec, target_ra_h, target_dec)
+                last = {"mount_ra_h": ra_h, "mount_dec": dec, "separation_arcmin": sep}
+                if sep <= tolerance_arcmin:
+                    return {"verified": True, "device": device, **last}
+            except ValueError:
+                pass
+        if _now() >= deadline:
+            break
+        _sleep(0.7)
+    if last is None:
+        return {"verified": None, "device": device}
+    return {"verified": False, "device": device, **last}
+
+
+def reconnect_device(
+    device: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+    settle_s: float = 2.0,
+    wait_s: float = 20.0,
+    _sleep=time.sleep,
+    _now=time.monotonic,
+) -> bool:
+    """User-triggered: disconnect and connect an INDI device again (what a
+    manual "Disconnect/Connect" in Ekos does). Returns True once the device
+    reports CONNECT=On again within `wait_s`. Never called automatically."""
+    set_switch(device, "CONNECTION", "DISCONNECT", host, port, timeout)
+    _sleep(settle_s)
+    set_switch(device, "CONNECTION", "CONNECT", host, port, timeout)
+    deadline = _now() + wait_s
+    while _now() < deadline:
+        try:
+            props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"CONNECTION"})
+            if _connection_state(props.get(device)) is True:
+                return True
+        except INDIClientError:
+            pass
+        _sleep(0.7)
+    return False
 
 
 def trigger_goto_held(
