@@ -103,8 +103,17 @@
   <li><strong>Goto</strong> (ring) is the last Goto target you sent, to the mount or to PiFinder. <strong>Held</strong> (cross) is the target the Mount Bridge holds the mount on, see <a href="#held-target">held target</a>.</li>
   <li>The dashed line between Mount and PiFinder is <strong>green</strong> when they agree, <strong>yellow</strong> when they are far apart and <strong>red</strong> when one of them is below the horizon. A position below the horizon is drawn hollow at the edge, with its altitude in the name, for example <em>PiFinder &minus;14&deg;</em>.</li>
   <li>The <strong>arrow</strong> on the line appears only when one of the two is below the horizon: that one cannot be right, so the arrow starts at it and points to the other one, which is the direction to sync (for example <em>Sync PiFinder from mount</em>: PiFinder moves onto the mount). When both are visible but far apart, only you can tell which one is right, so there is no arrow.</li>
+  <li>The small line under the picture, <em>Sky for 21:58 CET &middot; 25 Nov</em>, is the moment the picture is computed for, taken from the Pi's clock. Compare it with the clock of KStars: a KStars on another computer shows the sky of <em>its own</em> clock, which nothing here can read, so a mount marker that sits somewhere else in KStars is most often just a KStars clock that is not on "now" (KStars: Time &rarr; Set Time to Now, Ctrl+E). The line turns yellow when the mount's clock or the Pi's clock is wrong, see <a href="#clock-warnings">clock warnings</a>.</li>
   <li>The picture needs the observer location, which comes from KStars or the StellarMate app. Without it the picture says <em>Location unknown</em>. Without a mount (for example a Dobsonian) only PiFinder and the targets are shown.</li>
 </ul>
+
+<h2 id="clock-warnings">Clock warnings</h2>
+<p>A yellow strip at the top of the page appears when a clock this page can see is wrong for longer than a minute:</p>
+<ul>
+  <li><strong>The mount's clock differs from the Pi's clock by more than 10 minutes.</strong> The mount works out its sky position from its clock, so it may point wrongly. The strip shows both times. <em>Set mount time now</em> pushes the Pi's time to the mount again (through the KStars that runs on this Pi; it does nothing for a KStars on another computer). Usually the Control Center corrects a stale mount clock by itself, so the strip only stays when that did not work.</li>
+  <li><strong>The Pi's clock is not synchronised</strong> (NTP off or no internet). The Sky, the Alt value and every time on this page come from that clock. Connect the Pi to the internet or set the time, then reload the page.</li>
+</ul>
+<p><em>Dismiss</em> hides a strip until the clock is right again and goes wrong once more. The clock of a KStars on another computer cannot be checked from here; that is what the time under the Sky is for.</p>
 
 <h2 id="mode-power">Mode &amp; Power</h2>
 <p>Four collapsible groups: simulation/testing tools, a deeper hardware check, optional extra-hardware bridges, and service/power actions - each covers one part of running and exercising PiFinder on this device.</p>

@@ -31,6 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
+import clock_status
 import indi_client
 import webmanager_client
 
@@ -5155,6 +5156,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(drift)
             return
 
+        if parsed.path == "/api/clock_status":
+            # Polled every 30 s by the page: the time stamp under the Sky and the yellow clock
+            # strip. See clock_status.py for what can and cannot be seen (a KStars on another
+            # computer keeps its own clock that no INDI property exposes).
+            mount_name = None
+            mount_time = None
+            try:
+                mount_name = indi_client.active_mount_name()
+                if mount_name:
+                    props = indi_client.get_properties(device=mount_name, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
+                    mount_time = props.get(mount_name, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
+            except indi_client.INDIClientError:
+                pass  # no INDI answer: no mount reading, the Pi's own clock is still checked
+            result = clock_status.status(mount_time)
+            result["mount_device"] = mount_name
+            self._send_json(result)
+            return
+
         if parsed.path == "/api/truth_injector_status":
             # Polled by the toggle button's own status dot - reports the
             # user's last desired state plus whether the process is
@@ -7068,6 +7087,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 _mb_log("  done." if check.get("verified") else "  done (not verified).")
             self._send_json({"success": True, **check})
+            return
+
+        if parsed.path == "/api/mount_time_refresh":
+            # The "Set mount time now" button of the clock strip: the same KStars pulse the
+            # watchdog uses, so the mount driver gets the Pi's (NTP-synced) time pushed again.
+            ok, err = _kstars_refresh_mount_time_via_dbus()
+            _mb_log("Mount time refresh (user request): pushed." if ok else f"Mount time refresh (user request) failed: {err}")
+            self._send_json({"success": ok, "error": err}, status=200 if ok else 502)
             return
 
         if parsed.path == "/api/mount_unpark":

@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- Control Center: **clock warnings**. Found live: a KStars on the desktop showed the mount below the horizon while the Sky said 72° (that KStars was set to 11:30 instead of 21:55); nothing on the page could have told the user. The Sky now shows the moment it is computed for (`Sky for 21:58 CET · 25 Nov`, the Pi's clock, in the Pi's timezone) so it can be compared with the KStars clock; a KStars on another computer keeps its own clock that INDI does not expose, so no warning is possible for that one. New yellow strips at the top of the page (same look as the other notices) appear after a minute when the mount's clock differs from the Pi's by more than 10 minutes (button *Set mount time now*, the existing KStars pulse) or when the Pi's clock is not NTP-synchronised; the line under the Sky turns yellow with them. New `GET /api/clock_status` and `POST /api/mount_time_refresh`; help section *Clock warnings*.
+
 ## [2.4.0] - 2026-11-25
 
 > PiFinder 2.6.4 release: the pin moves from PiFinder v2.6.3 to **v2.6.4** (upstream release of 2026-11-22). Two patches were

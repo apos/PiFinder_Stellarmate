@@ -599,6 +599,12 @@
   #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
+  /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
+  #sky-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.35rem; margin-top: 4px; font-size: 0.75rem;
+    color: #8b93a1; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  #sky-time b { color: #e6e8ec; font-weight: 600; }
+  #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
+  #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; align-self: center; flex: none; }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -2098,6 +2104,17 @@
   @media (max-width: 767px) {
     #cc-pifinder-service-notice-banner, #cc-cold-profile-notice-banner { padding: 0.5rem 0.8rem; }
   }
+  /* Clock strips (mount clock differs / Pi clock not synchronised): same colours as the notices above. */
+  #cc-clock-mount-banner, #cc-clock-pi-banner {
+    background: #2a2214; color: #e0a030; border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem; font-size: 0.9rem; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  }
+  .cc-clock-msg { flex: 1 1 320px; min-width: 0; }
+  .cc-clock-msg small { display: block; color: #c9a45e; font-size: 0.8rem; margin-top: 2px; }
+  .cc-clock-cmp { display: grid; grid-template-columns: auto auto; gap: 2px 14px; justify-content: start; margin-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+  .cc-clock-cmp span:nth-child(odd) { color: #c9a45e; }
+  @media (max-width: 767px) { #cc-clock-mount-banner, #cc-clock-pi-banner { padding: 0.5rem 0.8rem; } }
   /* Same flush-strip pattern as the other header banners - replaces a
      native confirm()/alert() pair for the "Restart Control Center" action
      (see gui_installer/status_page.html's restartControlCenter()) per
@@ -2355,6 +2372,20 @@
 <div id="cc-pifinder-service-notice-banner" style="display:none;">
   <span id="cc-pifinder-service-notice-text"></span>
   <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
+</div>
+<div id="cc-clock-pi-banner" style="display:none;">
+  <div class="cc-clock-msg">The Pi's clock is not synchronised (NTP is off or has no connection). The Sky, the Alt value and every time shown here may be off.
+    <small>Connect the Pi to the internet, or set the time on the Pi, then reload this page.</small>
+  </div>
+  <button class="ql-small-btn" onclick="dismissClockBanner('pi_clock')">Dismiss</button>
+</div>
+<div id="cc-clock-mount-banner" style="display:none;">
+  <div class="cc-clock-msg"><span id="cc-clock-mount-text"></span>
+    <div class="cc-clock-cmp"><span>Pi clock</span><span id="cc-clock-mount-pi"></span><span>Mount clock</span><span id="cc-clock-mount-mount"></span></div>
+    <small id="cc-clock-mount-error" style="display:none;"></small>
+  </div>
+  <button class="ql-small-btn" id="cc-clock-mount-fix" onclick="refreshMountTime()">Set mount time now</button>
+  <button class="ql-small-btn" onclick="dismissClockBanner('mount_clock')">Dismiss</button>
 </div>
 <div id="cc-cold-profile-notice-banner" style="display:none;">
   <span id="cc-cold-profile-notice-text"></span>
@@ -2671,6 +2702,7 @@
         <div id="sky-panel" style="display:none;">
           <div id="sky-panel-inner">
             <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+            <div id="sky-time" style="display:none;"></div>
           </div>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
@@ -6441,6 +6473,122 @@ async function pollPifinderServiceNotice() {
   }
 }
 setInterval(pollPifinderServiceNotice, 10000);
+
+// ---- Clock warnings (begin) ----
+// The Sky is computed from the Pi's clock; the line under it shows that moment so it can be compared with the
+// clock of a KStars on another computer (its clock is not readable over INDI). The yellow strips cover what can be
+// seen: the Pi not synchronised, and the mount's clock differing from the Pi's by more than 10 minutes.
+function clockFormatParts(ms, tz) {
+  const opts = (o) => { try { return new Intl.DateTimeFormat('en-GB', Object.assign({ timeZone: tz || undefined }, o)); }
+    catch (e) { return new Intl.DateTimeFormat('en-GB', o); } };
+  const d = new Date(ms);
+  return {
+    time: opts({ hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(d).replace(/^[^,]*,\s*/, ''),
+    clock: opts({ hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(d).replace(/^[^,]*,\s*/, ''),
+    day: opts({ day: 'numeric', month: 'short' }).format(d),
+  };
+}
+function clockSkewText(sec) {
+  const a = Math.abs(sec), min = Math.round(a / 60);
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 48) return h + ' h' + (m ? ' ' + m + ' min' : '');
+  return Math.round(h / 24) + ' days';
+}
+// What the line under the Sky says; null while there is no reading yet.
+function clockSkyTimeModel(st, nowMs, offsetMs) {
+  if (!st || !st.pi_time_utc) return null;
+  const p = clockFormatParts(nowMs + offsetMs, st.timezone);
+  let tail = null;
+  if (st.mount_clock_warn) tail = 'mount clock differs';
+  else if (st.pi_clock_warn) tail = 'Pi clock not synchronised';
+  return { prefix: 'Sky for', time: p.time, day: p.day, tail, warn: !!tail };
+}
+function clockBannerModel(st, dismissed) {
+  const out = { pi: false, mount: false, text: '', piClock: '', mountClock: '' };
+  if (!st) return out;
+  out.pi = !!st.pi_clock_warn && !dismissed.pi_clock;
+  out.mount = !!st.mount_clock_warn && !dismissed.mount_clock;
+  if (out.mount) {
+    const behind = st.mount_skew_sec > 0;
+    out.text = "The mount's clock is " + clockSkewText(st.mount_skew_sec) + (behind ? ' behind' : ' ahead of') +
+      " the Pi's clock. The mount may point wrongly, because it works out its sky position from its clock.";
+    const piMs = Date.parse(st.pi_time_utc);
+    out.piClock = clockFormatParts(piMs, st.timezone).clock;
+    out.mountClock = clockFormatParts(Date.parse(st.mount_time_utc), st.timezone).clock;
+  }
+  return out;
+}
+// ---- Clock warnings (end) ----
+let _clockStatus = null, _clockOffsetMs = 0;
+const _clockDismissed = {};
+function renderSkyTime() {
+  const el = document.getElementById('sky-time');
+  if (!el) return;
+  const m = clockSkyTimeModel(_clockStatus, Date.now(), _clockOffsetMs);
+  if (!m) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = m.warn ? 'sky-time-warn' : '';
+  el.textContent = '';
+  if (m.warn) { const dot = document.createElement('span'); dot.className = 'sky-time-dot'; el.appendChild(dot); }
+  const a = document.createElement('span'); a.textContent = m.prefix; el.appendChild(a);
+  const b = document.createElement('b'); b.textContent = m.time; el.appendChild(b);
+  const c = document.createElement('span'); c.textContent = '· ' + (m.tail || m.day); el.appendChild(c);
+}
+function applyClockStatus(st) {
+  _clockStatus = st;
+  if (st && st.pi_time_utc) _clockOffsetMs = Date.parse(st.pi_time_utc) - Date.now();
+  // a streak that ended comes back as a new notice
+  if (st && !st.mount_clock_warn) delete _clockDismissed.mount_clock;
+  if (st && !st.pi_clock_warn) delete _clockDismissed.pi_clock;
+  const m = clockBannerModel(st, _clockDismissed);
+  const piB = document.getElementById('cc-clock-pi-banner');
+  const moB = document.getElementById('cc-clock-mount-banner');
+  if (piB) piB.style.display = m.pi ? 'flex' : 'none';
+  if (moB) {
+    moB.style.display = m.mount ? 'flex' : 'none';
+    if (m.mount) {
+      document.getElementById('cc-clock-mount-text').textContent = m.text;
+      document.getElementById('cc-clock-mount-pi').textContent = m.piClock;
+      document.getElementById('cc-clock-mount-mount').textContent = m.mountClock;
+    }
+  }
+  renderSkyTime();
+}
+async function pollClockStatus() {
+  try {
+    const resp = await fetch('/api/clock_status', { cache: 'no-store' });
+    applyClockStatus(await resp.json());
+  } catch (e) {
+    // transient: keep what is shown, the next tick retries
+  }
+}
+function dismissClockBanner(kind) {
+  _clockDismissed[kind] = true;
+  applyClockStatus(_clockStatus);
+}
+async function refreshMountTime() {
+  const btn = document.getElementById('cc-clock-mount-fix');
+  const err = document.getElementById('cc-clock-mount-error');
+  if (btn) btn.disabled = true;
+  if (err) err.style.display = 'none';
+  try {
+    const resp = await fetch('/api/mount_time_refresh', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success && err) {
+      err.textContent = 'Could not set the mount time: ' + (data.error || 'unknown error') +
+        ' (it needs the KStars that runs on this Pi).';
+      err.style.display = '';
+    }
+  } catch (e) {
+    if (err) { err.textContent = 'Could not set the mount time: no answer from the Control Center.'; err.style.display = ''; }
+  }
+  if (btn) btn.disabled = false;
+  setTimeout(pollClockStatus, 3000);
+}
+pollClockStatus();
+setInterval(pollClockStatus, 30000);
+setInterval(renderSkyTime, 10000);
 
 async function dismissPifinderServiceNotice() {
   applyPifinderServiceNotice(null);  // optimistic - the notice is about a past action, no need to wait on the round-trip

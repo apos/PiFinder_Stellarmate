@@ -140,6 +140,22 @@ to four entries (Mount, PiFinder, Goto, Held); a further kind is one more entry,
 Slicing: driver + `indi_client` first (invisible, testable through `indi_getprop`), then the tile. Each as its own
 PR into `dev`.
 
+### 6a. Time stamp and clock warnings (owner request 2026-11-25)
+
+Found live: KStars on the desktop (INDI client) drew the mount below the horizon while the tile said 72° altitude. The Pi's
+numbers were right; that KStars simulated 11:30 while it was 21:55 (confirmed by computing the mount's altitude for both
+times: +71.6° now, −7.5° at 11:30, exactly where KStars drew it). Nothing on the page could have told the user.
+
+- **What cannot be seen:** the simulation clock of a KStars on another computer is not an INDI property. No warning is possible for it.
+- **Time stamp under the Sky** (`#sky-time`): `Sky for 21:58 CET · 25 Nov`, from the Pi's clock (the driver computes with `time(nullptr)`), in the
+  Pi's timezone, so it can be compared with the KStars clock. Yellow with a tail (`mount clock differs`, `Pi clock not synchronised`) when a strip is active.
+- **Yellow strips** (same look as the other header notices), from `GET /api/clock_status` (`gui_installer/clock_status.py`), polled every 30 s:
+  (A) the mount's `TIME_UTC` differs from the Pi's clock by more than 600 s (the same figure after which the watchdog corrects it through the
+  KStars on the Pi); (B) `timedatectl` says the Pi is not NTP-synchronised. A condition must last 60 s before it is shown, so the automatic
+  correction and the NTP sync after a boot get their time. Unknown NTP state never warns. A button *Set mount time now* (`POST /api/mount_time_refresh`)
+  runs the existing KStars pulse. Dismiss lasts until the condition ends.
+- Tests: `node test_tools/clock_warning_test.js`, `python3 test_tools/clock_status_test.py`. Mockup (private): <https://claude.ai/artifact/5wjZyoKvnoZMRgknbpzwTZ>.
+
 ## 7. Risks
 
 - **Clock and location:** altitude/azimuth are only as good as the Pi's clock and the location PiFinder reports.
