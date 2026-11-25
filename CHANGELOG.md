@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-25
+
+> Mount Bridge and Control Center release: **Sync PiFinder from mount** is now PiFinder's own Align (real sky) or an
+> injection (Full Simulation); both Sync buttons check that the mount really took the position and warn when it did
+> not (parked, not answering); the new **Sky** tile shows mount, PiFinder, Goto and Held target on a small all-sky
+> picture; the driver writes the Sync result to the INDI log. No breaking changes.
+>
+> **Not yet verified on real hardware / real sky:** PiFinder's Align from "Sync PiFinder from mount" with a star in the
+> field (the Full Simulation path and the refusal paths were exercised on the Pi 5); the yellow mount cards with
+> Reconnect and Unpark against the real OnStep; the Sky tile on a Dobsonian profile without a Mount Bridge and on
+> narrow screens; the driver's "Mount took the Sync" line seen in KStars/Ekos' INDI log.
+
 ### Added
 
 - Control Center, Sky tile (#613): without a Mount Bridge (for example a Dobsonian with push-to only) the tile now works too: the Control Center computes altitude/azimuth itself from PiFinder LX200's own position, its Goto target and the observer location KStars or the StellarMate app set (maths checked against libnova, `python3 -I test_tools/sky_math_test.py`). A position that does not exist yet says so inside the picture ("PiFinder: no position", "Mount: no position") instead of silently being left out; the (i) now sits level with the top of the picture.
