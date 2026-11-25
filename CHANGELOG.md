@@ -25,6 +25,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center, Sky tile: no "SKY" caption any more, and its (i) sits at the top right of the picture, the same way as at the PiFinder screen (#611).
 - Mount Bridge driver, Sky Position Panel data: the Goto target is now the last target sent to the mount (KStars slews it directly) or to PiFinder, whichever is newer. It only looked at PiFinder's target before, so a Goto from KStars to the mount never showed (#603).
 - Control Center, Mount Bridge: "Sync mount from PiFinder" no longer sends the sync when PiFinder's own position is below the horizon (the driver refuses it anyway) and no longer then claims the mount "may be parked or not responding". The feedback line says PiFinder is N° below the horizon, the mount was not changed, and points to "Sync PiFinder from mount" (#596).
 - Control Center, Mount Bridge: **Sync PiFinder from mount** now injects the mount's position in Full Simulation (Synthetic Solve running) instead of calling PiFinder's Align. It picked the Align path because it only looked at the fake-PiFinder service mode, so PiFinder refused it (injected position active / mount far from PiFinder) and the simulated PiFinder kept its old position (#594).
