@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-25
+
+> Control Center layout release: the **Mount Bridge** block groups its badges (PiFinder | Drift, Bridge, Alt | Mount) and
+> shows the **Sky** picture beside them with the two status lines under it; the PiFinder tile's OLED mirror is larger;
+> the Sky's names no longer cover its symbols and its sync arrow now points the right way; "What is this device?" in
+> Install or Update uses two real buttons. No breaking changes, nothing changed in the drivers.
+>
+> **Checked:** the page rendered headless in Firefox at phone, tile and wide widths, `node test_tools/sky_panel_test.js`;
+> the Sky's name placement and its position below the status line were seen on the Pi 5.
+>
+> **Not yet seen live:** the grouped Mount Bridge block with the Sky beside it (built last), the Sky arrow direction fix,
+> the new device-choice buttons, and all of it on a phone and on a Dobsonian profile without a Mount Bridge.
+
+### Changed
+
+- Control Center, Mount Bridge block (#634): the badges are grouped as PiFinder | Drift, Bridge, Alt | Mount (Drift left, the Bridge badge always in the centre, Alt right). With room they sit in one row; otherwise the groups stack centred and the blue arrows turn vertical between them (PiFinder, Bridge and Mount on one axis). The Sky picture sits to the right of the badges (below them on a narrow screen), and the two status lines ("Drift exceeds threshold", "verify alert") now sit under the Sky. The badges themselves are unchanged. For a PiFinder-only profile (Dobsonian, no Mount Bridge) the Sky stays alone.
+- Control Center, Install or Update (#630): "What is this device?" now has an intro sentence and two real buttons (StellarMate + PiFinder, StellarMate + Control host only); the explanation of the selected setup is shown below them, with the same wording and colours as before. Only the look changed, the selection itself works as before.
+- Control Center, PiFinder tile (#620): the OLED mirror is 25 % larger (192 px instead of 154 px) and the LONG key sits in the free bottom-right cell of the key grid instead of beside it. In a read-only tab the Sky is no longer dimmed (nothing polls there). Keypad styles B and C only follow the new key order.
+
+### Fixed
+
+- Control Center, Sky tile (#632): the arrow now starts at the position that is below the horizon and points to the other one, matching the recommended action (PiFinder below the horizon: *Sync PiFinder from mount*, PiFinder moves onto the mount). It pointed the other way before. A position only a few tenths below the horizon now reads e.g. "PiFinder −0.4°" instead of "−0°".
+- Control Center, Sky tile (#622): names no longer cover marker symbols or each other when mount and PiFinder (or Goto and Held) are almost on one spot. Each name is placed on the nearest free spot (three rings around its marker, sides, above, below, corners), treating every symbol, the N/E/S/W letters and the notes as obstacles; the mount dot is drawn on top of PiFinder's diamond so both stay visible.
+
 ## [2.2.0] - 2026-11-25
 
 > Mount Bridge and Control Center release: **Sync PiFinder from mount** is now PiFinder's own Align (real sky) or an

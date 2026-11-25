@@ -199,8 +199,8 @@
   #bottom-logos img { height: 78px; width: auto; display: block; }
   #pifinder-screen {
     display: block;
-    width: 154px;
-    height: 154px;
+    width: 192px;
+    height: 192px;
     image-rendering: pixelated;
     border-radius: 4px;
     background: #000;
@@ -208,7 +208,7 @@
   /* Row: the OLED mirror itself, then the help icon in its own small
      column to the right - NOT an overlay on top of the image (see
      .pifinder-screen-help's own comment for why that changed). */
-  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; }
+  #pifinder-screen-wrap { display: flex; align-items: flex-start; gap: 0.3rem; flex-shrink: 0; order: 1; }
   /* Tightly wraps just the image + its waiting-overlay (inset:0 below) -
      kept separate from #pifinder-screen-wrap so the icon column doesn't
      also get covered by that overlay. */
@@ -407,18 +407,18 @@
      hardware/network setup instead. Same visual language (segmented
      two-option row) as install_devtype_copy_mockups.html, approved
      2026-09-12. */
-  .devtype-seg { display: flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; margin-bottom: 0.6rem; flex-wrap: wrap; }
-  .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.65rem 0.8rem; cursor: pointer; }
-  .devtype-seg-opt + .devtype-seg-opt { border-left: 1px solid #444; }
-  /* Direct feedback (2026-09-12): "Bei uns ist grün == ausgewählt" - this
-     used a one-off blue (matched install_devtype_copy_mockups.html's own
-     approval, but never reconciled with the established selected-state
-     color elsewhere on this page, e.g. .mb-role-card.mb-role-active).
-     Same green now, for the same reason: "selected" needs the one visual
-     language, not a second one just for this control. */
-  .devtype-seg-opt.devtype-seg-active { background: #1c2a1c; }
-  .devtype-seg-title { font-size: 0.8rem; font-weight: 600; color: #ddd; }
-  .devtype-seg-opt.devtype-seg-active .devtype-seg-title { color: #4caf50; }
+  .devtype-seg { display: flex; gap: 0.6rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+  #devtype-intro { font-size: 0.8rem; color: #ddd; line-height: 1.5; margin: 0 0 0.6rem; }
+  /* Two real buttons (border, own background, hover) - the explanation of the selected one is
+     the .devtype-info block below them. Direct feedback (2026-09-12): "Bei uns ist grün ==
+     ausgewählt", the same green as .mb-role-card.mb-role-active. */
+  .devtype-seg-opt { flex: 1; min-width: 220px; padding: 0.7rem 0.9rem; cursor: pointer; font: inherit;
+    font-size: 0.85rem; font-weight: 600; color: #ddd; background: #1e1e1e; border: 1px solid #444; border-radius: 8px; text-align: center; }
+  .devtype-seg-opt:hover { background: #262626; }
+  .devtype-seg-opt:focus-visible { outline: 2px solid #7ec8ff; outline-offset: 2px; }
+  .devtype-seg-opt.devtype-seg-active { background: #1c2a1c; border-color: #4caf50; color: #4caf50; }
+  .devtype-info { padding: 0.7rem 0.9rem; background: #1b1b1b; border: 1px solid #333; border-radius: 6px; margin-bottom: 0.6rem; }
+  .devtype-info > div > :first-child { margin-top: 0; }
   .devtype-seg-sub { font-size: 0.72rem; color: #999; margin-top: 0.3rem; line-height: 1.5; }
   .devtype-seg-hw { font-size: 0.68rem; color: #e0a030; margin-top: 0.45rem; line-height: 1.4; }
   .devtype-seg-compat { font-size: 0.68rem; color: #7fc97f; margin-top: 0.4rem; line-height: 1.4; }
@@ -584,19 +584,21 @@
     padding: 0.7rem 0.9rem;
     font-size: 0.82rem;
   }
+  /* OLED mirror and keys; the Sky sits below the Mount Bridge status (own block, #sky-panel). */
   #pifinder-glance-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.7rem;
   }
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
-  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; flex: 0 1 230px; min-width: 160px; max-width: 250px; }
-  #sky-panel-inner { flex: 1 1 auto; min-width: 0; }
+  /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
+     size: it never shrinks. */
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
+  #sky-panel-inner { flex: 0 0 230px; width: 230px; }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
-  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
-  @media (max-width: 640px) { #pifinder-glance-row { flex-wrap: wrap; } }
+  #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -657,7 +659,7 @@
   .pf-keypad-style-btn:first-child { border-radius: 10px 0 0 10px; border-right: none; }
   .pf-keypad-style-btn:last-child { border-radius: 0 10px 10px 0; }
   .pf-keypad-style-btn.active { background: #8a2e24; border-color: #c0392b; color: #fff; }
-  .pf-keypad { flex: 1; }
+  .pf-keypad { flex: 1 1 auto; order: 2; }
   .pf-keypad-busy { opacity: 0.5; pointer-events: none; }
   #pf-keypad-a {
     display: flex;
@@ -692,17 +694,21 @@
     background: #5c1f1f;
     border-color: #e53935;
   }
-  #pf-keypad-a .pf-key { height: 46px; }
+  #pf-keypad-a .pf-key { height: 58px; }
   .pf-arrow { width: 28px; height: 28px; fill: currentColor; }
-  #pf-keypad-a .pf-arrow { width: 23px; height: 23px; }
+  #pf-keypad-a .pf-arrow { width: 26px; height: 26px; }
   .pf-key-enter { background: #8a2e24; border-color: #c0392b; color: #fff; }
   .pf-key-long.pf-armed { background: #8a2e24; border-color: #c0392b; color: #fff; }
   .pf-keypad-a-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
-    width: 172px;
+    width: 210px;
     flex-shrink: 0;
+  }
+  /* LONG sits in the grid's free bottom-right cell (next to the down key). */
+  .pf-keypad-a-grid .pf-key-long-square {
+    grid-column: 3; grid-row: 3; width: 100%; height: 58px; border-radius: 6px; font-size: 0.7rem;
   }
   .pf-key-long-square {
     background: #232323;
@@ -1556,13 +1562,25 @@
      feedback, this is the one thing in the tile the user actually needs at
      a glance, so it belongs next to the piece that produces it, at full
      size (not shrunk into a small badge). */
-  #mb-diagram {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin: 0.6rem 0 0.3rem 0;
+  #mb-sky-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem 1.1rem; margin: 0.6rem 0 0.3rem 0; }
+  #mb-diagram { flex: 1 1 330px; min-width: 0; container-type: inline-size; }
+  #mb-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+  .mb-grp { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
+  /* Middle group: Drift | Bridge (with Ekos, WM) | Alt on equal side columns, so the Bridge badge is always
+     the centre and PiFinder, Bridge and Mount line up on one axis when stacked. */
+  .mb-grp-mid { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 0.3rem; }
+  .mb-grp-mid > #mb-drift-badge { grid-column: 1; grid-row: 1; justify-self: end; }
+  .mb-grp-mid > .mb-node-nest-wrap { grid-column: 2; grid-row: 1; }
+  .mb-grp-mid > #mb-horizon-badge { grid-column: 3; grid-row: 1; justify-self: start; }
+  /* Not enough room for one row: stack the groups centred, the blue arrows turn vertical between them. */
+  @container (max-width: 600px) {
+    #mb-groups { flex-direction: column; align-items: center; gap: 0; }
+    #mb-groups > .mb-arrow { transform: rotate(90deg); min-width: 0; width: 2.2rem; height: 2.2rem; display: flex;
+      align-items: center; justify-content: center; margin: -0.15rem 0; }
   }
+  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: auto; }
+  #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
+  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
      verify this is still current" without claiming it's now wrong. */
@@ -2402,8 +2420,8 @@
             <button class="pf-key pf-key-enter" style="grid-column:2; grid-row:2;" onclick="pfSendKey('SQUARE', this)" title="Enter">&#9632;</button>
             <button class="pf-key" style="grid-column:3; grid-row:2;" onclick="pfSendKey('RIGHT', this)"><svg class="pf-arrow" style="transform:rotate(90deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
             <button class="pf-key" style="grid-column:2; grid-row:3;" onclick="pfSendKey('DOWN', this)"><svg class="pf-arrow" style="transform:rotate(180deg);" viewBox="0 0 24 24"><path d="M12 4 L20 16 L4 16 Z"/></svg></button>
+            <button id="pf-key-long-a" class="pf-key-long-square" onclick="pfToggleLong(this)">LONG</button>
           </div>
-          <button id="pf-key-long-a" class="pf-key-long-square" onclick="pfToggleLong(this)">LONG</button>
         </div>
         <div id="pf-keypad-b" class="pf-keypad" style="display:none;">
           <div class="pf-keypad-b-grid">
@@ -2427,14 +2445,6 @@
         <div id="pf-keypad-c" class="pf-keypad" style="display:none;">
           <div class="group-label">Remote (per IP)</div>
           <div id="pf-keypad-c-grid"></div>
-        </div>
-        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
-             the Goto/Held targets are in the sky. Display only; hidden until the Mount Bridge reports. -->
-        <div id="sky-panel" style="display:none;">
-          <div id="sky-panel-inner">
-            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-          </div>
-          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
       </div>
       <!-- Compact, always-visible hardware summary - same visual language
@@ -2571,82 +2581,108 @@
           </div>
         </div>
       </div>
-      <div id="mb-diagram">
-        <div class="mb-node" id="mb-node-lx200" title="PiFinder">
-          <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
-          </svg>
-          <span>PiFinder</span>
-        </div>
-        <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node-nest-wrap">
-          <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
-            <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-              <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-            </svg>
-            <span>Bridge</span>
-          </div>
-          <div class="mb-node-nest-stem"></div>
-          <!-- Ekos/INDI Web Manager (2026-09-12, direct feedback: "das
-               gehört in eine Reihe in die Sektion Mount-Bridge... die
-               Beziehung zwischen den Komponenten sollte man sehen" - hung
-               directly off Bridge rather than a free-floating row, since
-               Bridge is literally the INDI driver WM starts and Ekos talks
-               to; PiFinder/Mount don't depend on either the same way). -->
-          <div class="mb-node-nest-row">
-            <div class="mb-node-nest-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
-              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>
-              <span>Ekos</span>
+      <div id="mb-sky-layout">
+        <!-- Mount Bridge badges, grouped PiFinder | Drift, Bridge, Alt | Mount (the badges themselves unchanged). Row with room,
+             otherwise stacked and centred with the blue arrows turned vertical (container query below). -->
+        <div id="mb-diagram">
+          <div id="mb-groups">
+            <div class="mb-grp">
+              <div class="mb-node" id="mb-node-lx200" title="PiFinder">
+                <svg class="mb-icon" id="mb-icon-lx200" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="12" cy="12" r="1.1" fill="currentColor"/>
+                </svg>
+                <span>PiFinder</span>
+              </div>
             </div>
-            <div class="mb-node-nest-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
-              <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
-                <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
-                <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
-              </svg>
-              <span>WM</span>
+            <div class="mb-arrow" id="mb-arrow-left">&sdot;&sdot;&sdot;</div>
+            <div class="mb-grp mb-grp-mid">
+            <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera). Reconnecting: no fresh solve to compute drift from right now (e.g. issue #385) - last known value shown, resolves on its own.">
+              <span id="mb-drift-value">0.0'</span>
+              <span id="mb-drift-label">Drift</span>
+            </div>
+            <div class="mb-node-nest-wrap">
+              <div class="mb-node" id="mb-node-bridge" title="Mount Bridge">
+                <svg class="mb-icon" id="mb-icon-bridge" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="8" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <circle cx="16" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg>
+                <span>Bridge</span>
+              </div>
+              <div class="mb-node-nest-stem"></div>
+              <!-- Ekos/INDI Web Manager (2026-09-12, direct feedback: "das
+                   gehört in eine Reihe in die Sektion Mount-Bridge... die
+                   Beziehung zwischen den Komponenten sollte man sehen" - hung
+                   directly off Bridge rather than a free-floating row, since
+                   Bridge is literally the INDI driver WM starts and Ekos talks
+                   to; PiFinder/Mount don't depend on either the same way). -->
+              <div class="mb-node-nest-row">
+                <div class="mb-node-nest-badge" title="Ekos - green once KStars' Ekos session is actually connected to this profile's devices. White while KStars itself isn't even running (nothing to connect yet, not a problem on its own); amber while KStars is running but Ekos hasn't connected (see Setup checklist &amp; diagnostics in the Mount Bridge tile for what to do).">
+                  <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-ekos-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  </svg>
+                  <span>Ekos</span>
+                </div>
+                <div class="mb-node-nest-badge" title="INDI Web Manager - green once this device's own Web Manager service actually answers. Red if it doesn't (a real problem - nothing profile/driver-related here can work without it).">
+                  <svg class="mode-ampel-icon mode-ampel-icon-unconfirmed mb-nest-icon" id="mode-ampel-wm-icon" style="color:#f5a623;" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                    <circle cx="7" cy="7.25" r="0.9" fill="currentColor"/>
+                    <circle cx="7" cy="16.25" r="0.9" fill="currentColor"/>
+                  </svg>
+                  <span>WM</span>
+                </div>
+              </div>
+            </div>
+            <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
+              <span id="mb-horizon-value">0°</span>
+              <span>Alt</span>
+            </div>
+            </div>
+            <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
+            <div class="mb-grp">
+            <div class="mb-node" id="mb-node-mount" title="Mount">
+              <div class="orientation-icon-row">
+                <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
+                  <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
+                    <rect x="5" y="10" width="12" height="4" rx="1.6" fill="currentColor"/>
+                    <circle cx="17.5" cy="12" r="2.6" fill="currentColor"/>
+                    <circle cx="4" cy="12" r="1.3" fill="currentColor"/>
+                  </g>
+                  <path d="M11 14 L6.5 21.5 M11 14 L15.5 21.5 M11 14 L11 21.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span id="mb-node-mount-type" style="display:none;"></span>
+              </div>
+              <span id="mb-node-mount-name">Mount</span>
+            </div>
             </div>
           </div>
         </div>
-        <div id="mb-drift-badge" style="display:none;" title="Angular drift between PiFinder's solved position and the mount's reported position. Green: within the configured threshold. Yellow: past threshold. Red: past ~0.5° (assumed field of view - varies by eyepiece/camera). Reconnecting: no fresh solve to compute drift from right now (e.g. issue #385) - last known value shown, resolves on its own.">
-          <span id="mb-drift-value">0.0'</span>
-          <span id="mb-drift-label">Drift</span>
-        </div>
-        <div id="mb-horizon-badge" style="display:none;" title="The mount's own altitude, computed continuously from its reported position. Red: at or below the horizon safety margin - the mount won't accept a Sync/Goto there.">
-          <span id="mb-horizon-value">0°</span>
-          <span>Alt</span>
-        </div>
-        <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
-        <div class="mb-node" id="mb-node-mount" title="Mount">
-          <div class="orientation-icon-row">
-            <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
-              <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
-                <rect x="5" y="10" width="12" height="4" rx="1.6" fill="currentColor"/>
-                <circle cx="17.5" cy="12" r="2.6" fill="currentColor"/>
-                <circle cx="4" cy="12" r="1.3" fill="currentColor"/>
-              </g>
-              <path d="M11 14 L6.5 21.5 M11 14 L15.5 21.5 M11 14 L11 21.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <span id="mb-node-mount-type" style="display:none;"></span>
+        <!-- Sky picture with the two status lines under it. Outside #mb-diagram, so it stays visible for a PiFinder-only
+             profile (Dobsonian), where the diagram is hidden. -->
+        <div id="mb-sky-col">
+        <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
+             the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
+           the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
+           profile (Dobsonian) where the diagram is hidden. -->
+        <div id="sky-panel" style="display:none;">
+          <div id="sky-panel-inner">
+            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
           </div>
-          <span id="mb-node-mount-name">Mount</span>
+          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
-      </div>
-      <div id="mb-caption-status-row" style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">
-        <div id="mb-mode-caption-row">
-          <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
-          <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+        <div id="mb-caption-status-row">
+          <div id="mb-mode-caption-row">
+            <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
+            <span id="mb-mode-details-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-mode-details', 'mb-mode-details-chevron')">Details <span id="mb-mode-details-chevron">&#9660;</span></span>
+          </div>
+          <div id="mb-status-row">
+            <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
+          </div>
         </div>
-        <div id="mb-status-row">
-          <div id="mb-status-line"><span class="status-dot dot-white" id="mount-bridge-dot"></span><span id="mount-bridge-text">checking&hellip;</span><span id="mount-bridge-unconfirmed" style="display:none;" title="Our own status check couldn't reach Mount Bridge just now - this is very likely just that check's own timing, not a real disconnect (see Help). Showing the last confirmed state below; interactive buttons are paused until we can confirm again."> (unconfirmed)</span><span id="mb-reject-warning-toggle" style="display:none;" onclick="toggleCollapsibleSection('mb-reject-warning-details', 'mb-reject-warning-chevron')" title="The mount's own driver reported that it refused the last Goto/Sync - most likely an elevation or cable-wrap/axis limit. Not retrying the same command automatically - check the mount and its limit settings.">&#9888; Warning - Details <span id="mb-reject-warning-chevron">&#9660;</span></span></div>
         </div>
       </div>
       <div id="mb-mode-details" style="display:none;"></div>
@@ -3179,15 +3215,20 @@ sudo systemctl start pifinder</pre>
 
     <div id="install-groups">
       <div class="group-label">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
-      <div id="devtype-seg" class="devtype-seg">
-        <div class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" onclick="onDeviceTypeClick('full')">
-          <div class="devtype-seg-title">StellarMate + PiFinder</div>
+      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
+      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
+        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
+        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
+      </div>
+      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
+           became real buttons); onDeviceTypeClick() shows the matching block. -->
+      <div id="devtype-info" class="devtype-info">
+        <div id="devtype-info-full">
           <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
           <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
           <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
         </div>
-        <div class="devtype-seg-opt" id="devtype-opt-indi_only" onclick="onDeviceTypeClick('indi_only')">
-          <div class="devtype-seg-title">StellarMate + Control host only</div>
+        <div id="devtype-info-indi_only" style="display:none;">
           <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
           <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
           <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
@@ -5854,6 +5895,10 @@ function onDeviceTypeClick(type) {
   indiOnlyMode = (type === 'indi_only');
   document.getElementById('devtype-opt-full').classList.toggle('devtype-seg-active', type === 'full');
   document.getElementById('devtype-opt-indi_only').classList.toggle('devtype-seg-active', type === 'indi_only');
+  ['full', 'indi_only'].forEach(function (t) {
+    document.getElementById('devtype-opt-' + t).setAttribute('aria-pressed', type === t ? 'true' : 'false');
+    document.getElementById('devtype-info-' + t).style.display = type === t ? '' : 'none';
+  });
   showChoices(lastExistingInstall);
 }
 
@@ -8750,7 +8795,11 @@ function skyPlace(o) {
   const r = below ? SKY_R * 1.04 : (90 - o.alt) / 90 * SKY_R;
   return { x: SKY_CX - r * Math.sin(skyRad(o.az)), y: SKY_CY - r * Math.cos(skyRad(o.az)), below: below };
 }
-function skyAlt(o) { return (o.alt < 0 ? '−' : '') + Math.abs(Math.round(o.alt)) + '°'; }
+// Whole degrees; within a degree of the horizon one decimal, so "-0.4" never reads as "-0".
+function skyAlt(o) {
+  const a = Math.abs(o.alt);
+  return (o.alt < 0 ? '−' : '') + (Math.round(a) === 0 && a > 0 ? a.toFixed(1) : String(Math.round(a))) + '°';
+}
 // Mount state sets the colour of its dot and name: tracking green, stopped (not tracking)
 // yellow, parked red; unknown state stays blue.
 function skyMountStyle(state) {
@@ -8785,39 +8834,72 @@ function skyBuildModel(sky) {
       from: mount.p, to: pf.p,
       color: below ? SKY_C.red : (skySep(sky.mount, sky.pifinder) <= SKY_AGREE_DEG ? SKY_C.green : SKY_C.yellow),
       // The arrow (the direction to sync) only exists where it can be known: exactly one of
-      // the two is below the horizon, so that one is wrong and gets corrected from the other.
-      arrow: (pf.p.below && !mount.p.below) ? { from: mount.p, to: pf.p }
-        : (mount.p.below && !pf.p.below) ? { from: pf.p, to: mount.p } : null,
+      // the two is below the horizon, so that one is wrong and moves onto the other: the arrow
+      // starts at the wrong one and points to the right one ("Sync PiFinder from mount" when
+      // PiFinder is the one below the horizon: PiFinder -> Mount).
+      arrow: (pf.p.below && !mount.p.below) ? { from: pf.p, to: mount.p }
+        : (mount.p.below && !pf.p.below) ? { from: mount.p, to: pf.p } : null,
     };
   }
-  skyPlaceNames(markers);
   // A position that is missing says so inside the picture instead of silently not appearing.
   const notes = [];
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
+  skyPlaceNames(markers, notes);
   return { unknown: false, markers: markers, line: line, notes: notes };
 }
-// Name next to its marker: first free of "toward the middle", "other side", above, below.
-function skyPlaceNames(markers) {
-  const placed = [];
-  const h = 12;
+// Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
+// cross), so a name never lands on a symbol - its own or another one.
+function skySymbolBox(m) {
+  const f = m.id === 'pifinder' && !m.p.below ? SKY_FOV_DEG / 90 * SKY_R / 2 : 0;
+  const r = Math.max(m.id === 'goto' ? 8 : m.id === 'held' ? 7 : 6.5, f + 1.5);
+  return { x0: m.p.x - r, x1: m.p.x + r, y0: m.p.y - r, y1: m.p.y + r };
+}
+function skyOverlapArea(a, b) {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+// Name next to its marker. Free space is looked for outward: on each ring (10, 18, 26 px
+// from the marker) right/left (the side toward the middle first), above, below and the four
+// corners. Obstacles are every marker symbol, the N/E/S/W letters, the notes and names
+// already placed. The first spot that is free wins; if none is, the one covering the least.
+function skyPlaceNames(markers, notes) {
+  const h = 12, obstacles = [];
+  markers.forEach((m) => obstacles.push(skySymbolBox(m)));
+  [0, 90, 180, 270].forEach((d) => {
+    const off = SKY_R + 11;
+    const x = SKY_CX - off * Math.sin(skyRad(d)), y = SKY_CY - off * Math.cos(skyRad(d));
+    obstacles.push({ x0: x - 6, x1: x + 6, y0: y - 8, y1: y + 7 });
+  });
+  (notes || []).forEach((t, i) => {
+    const w = t.length * 6.4, y = SKY_CY + 62 + i * 13;
+    obstacles.push({ x0: SKY_CX - w / 2, x1: SKY_CX + w / 2, y0: y - 10, y1: y + 3 });
+  });
   markers.forEach((m) => {
     const w = m.name.length * 6.9;  // bold, 12 px
-    const cands = m.p.x > SKY_CX
-      ? [[-10, 4, 'end'], [10, 4, 'start'], [0, -10, 'middle'], [0, 18, 'middle']]
-      : [[10, 4, 'start'], [-10, 4, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
-    let pick = cands[0], box = null;
-    for (let i = 0; i < cands.length; i++) {
-      const c = cands[i], x = m.p.x + c[0], y = m.p.y + c[1];
-      const x0 = c[2] === 'end' ? x - w : c[2] === 'middle' ? x - w / 2 : x;
-      const b = { x0: x0, x1: x0 + w, y0: y - h + 2, y1: y + 3 };
-      const hit = x0 < 2 || x0 + w > 238 || b.y0 < 2 || b.y1 > 238 ||
-        placed.some((o) => !(b.x1 < o.x0 || b.x0 > o.x1 || b.y1 < o.y0 || b.y0 > o.y1));
-      box = b; pick = c;
-      if (!hit) break;
-    }
-    placed.push(box);
-    m.label = { x: m.p.x + pick[0], y: m.p.y + pick[1], anchor: pick[2] };
+    const inward = m.p.x > SKY_CX ? -1 : 1;
+    let best = null;
+    [10, 18, 26].forEach((d, ring) => {
+      const k = d * 0.7;
+      // [box left edge, text baseline, anchor]; the box spans baseline-10 .. baseline+3
+      const spots = [
+        inward > 0 ? [m.p.x + d, m.p.y + 4, 'start'] : [m.p.x - d, m.p.y + 4, 'end'],
+        inward > 0 ? [m.p.x - d, m.p.y + 4, 'end'] : [m.p.x + d, m.p.y + 4, 'start'],
+        [m.p.x, m.p.y - d, 'middle'], [m.p.x, m.p.y + d + 8, 'middle'],
+        [m.p.x + k, m.p.y - k, 'start'], [m.p.x - k, m.p.y - k, 'end'],
+        [m.p.x + k, m.p.y + k + 8, 'start'], [m.p.x - k, m.p.y + k + 8, 'end'],
+      ];
+      spots.forEach((c, i) => {
+        const x0 = c[2] === 'end' ? c[0] - w : c[2] === 'middle' ? c[0] - w / 2 : c[0];
+        const b = { x0: x0, x1: x0 + w, y0: c[1] - 10, y1: c[1] + 3 };
+        let score = ring * 3 + i * 0.1;
+        if (b.x0 < 2 || b.x1 > 238 || b.y0 < 16 || b.y1 > 236) score += 5000;
+        obstacles.forEach((o) => { score += skyOverlapArea(b, o) * 10; });
+        if (!best || score < best.score) best = { score: score, c: c, b: b };
+      });
+    });
+    obstacles.push(best.b);
+    m.label = { x: best.c[0], y: best.c[1], anchor: best.c[2] };
   });
 }
 function skyEl(name, attrs, parent, text) {
@@ -8869,9 +8951,10 @@ function drawSkyPanel(svg, model) {
     skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
   }
   if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
-  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
     fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  // Drawn last: with both on (nearly) the same spot the dot stays visible on top of the diamond.
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
   model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
     stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
   model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
@@ -8894,7 +8977,10 @@ function applySkyPanel(sky) {
 // A picture that stopped updating must not look current.
 setInterval(() => {
   const tile = document.getElementById('sky-panel');
-  if (tile && tile.style.display !== 'none' && _skyLastOk && Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
+  if (!tile || tile.style.display === 'none' || !_skyLastOk) return;
+  // A read-only tab (another tab holds control) polls nothing, like the rest of the page: no dimming there.
+  if (typeof ccIsHost !== 'undefined' && !ccIsHost) { tile.style.opacity = ''; return; }
+  if (Date.now() - _skyLastOk > 10000) tile.style.opacity = '0.4';
 }, 2000);
 // ---- Sky Position Panel (end) ----
 
