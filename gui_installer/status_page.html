@@ -628,7 +628,7 @@
   #sky-positioning .pos-hist { border-top: 1px solid #2a2a2a; padding-top: 6px; font-size: 12px; color: #9aa0a6; }
   #sky-positioning .pos-hist summary { display: flex; justify-content: space-between; cursor: pointer; list-style: none; }
   #sky-positioning .pos-hist summary::-webkit-details-marker { display: none; }
-  #sky-positioning .pos-hist ol { margin: 4px 0 0; padding: 0; list-style: none; }
+  #sky-positioning .pos-hist ol { margin: 4px 0 0; padding: 0; list-style: none; height: 132px; overflow-y: auto; }
   #sky-positioning .pos-hist li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
   #sky-positioning .pos-hist .done { color: #8fd19a; }
   #sky-positioning .pos-hist .now { color: #f5a623; font-weight: 600; }
@@ -9575,26 +9575,24 @@ function applyPositioning(p) {
   const facts = skyPosEl('div', 'pos-facts', skyPositioningFacts(pp, m).join(' \u00b7 '));
   facts.title = [m.sub, m.why, m.running].filter(Boolean).join(' - ');
   box.appendChild(facts);
-  // the whole run, step by step
+  // the whole run, step by step: the row is always there (the card never gains or loses a row), closed unless the user opened it
   const hist = skyPositioningHistory(_posTrail, m.handsOff, Date.now());
-  if (hist && hist.length) {
-    const det = skyPosEl('details', 'pos-hist');
-    det.open = _posHistOpen === null ? !!m.handsOff : _posHistOpen;
-    det.addEventListener('toggle', () => { _posHistOpen = det.open; });
-    const sum = skyPosEl('summary');
-    sum.appendChild(skyPosEl('span', '', m.handsOff ? 'Run so far' : 'Last run'));
-    sum.appendChild(skyPosEl('span', '', m.running ? m.running.replace('Running for ', '') : (det.open ? 'hide \u25b4' : 'show \u25be')));
-    det.appendChild(sum);
-    const ol = skyPosEl('ol');
-    hist.forEach((r) => {
-      const li = skyPosEl('li');
-      li.appendChild(skyPosEl('span', r.state, r.text));
-      li.appendChild(skyPosEl('span', '', r.detail));
-      ol.appendChild(li);
-    });
-    det.appendChild(ol);
-    box.appendChild(det);
-  }
+  const det = skyPosEl('details', 'pos-hist');
+  det.open = _posHistOpen === true;
+  det.addEventListener('toggle', () => { _posHistOpen = det.open; });
+  const sum = skyPosEl('summary');
+  sum.appendChild(skyPosEl('span', '', m.handsOff ? 'Run so far' : 'Last run'));
+  sum.appendChild(skyPosEl('span', '', m.running ? m.running.replace('Running for ', '') : (!hist ? 'none yet' : det.open ? 'hide \u25b4' : 'show \u25be')));
+  det.appendChild(sum);
+  const ol = skyPosEl('ol');
+  (hist || []).forEach((r) => {
+    const li = skyPosEl('li');
+    li.appendChild(skyPosEl('span', r.state, r.text));
+    li.appendChild(skyPosEl('span', '', r.detail));
+    ol.appendChild(li);
+  });
+  det.appendChild(ol);
+  box.appendChild(det);
 }
 let _skyLastOk = 0;
 function applySkyPanel(sky) {
@@ -9610,7 +9608,8 @@ function applySkyPanel(sky) {
   const targetLine = document.getElementById('sky-target-line');
   if (targetLine) {
     targetLine.textContent = model.targetLine || '';
-    targetLine.style.display = model.targetLine ? '' : 'none';
+    targetLine.style.display = '';
+    targetLine.style.visibility = model.targetLine ? '' : 'hidden';   // keeps its row: the lines under the card do not move
   }
   svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
     : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
