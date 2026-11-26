@@ -22,12 +22,22 @@ for (const id of ['log', 'mb-log', 'last-run-banner-log']) {
   ok(html.indexOf('id="' + id + '"') < html.indexOf("copyTerminal('" + id + "'"), 'the button for #' + id + ' sits below the terminal');
 }
 
-// Multi-Point Alignment lives in the Quick Actions tile: its title on the right of the Threshold row, its settings right below, no divider bar
+// Multi-Point Alignment is a tile like "Sync positions", at the right of the Threshold row; its settings open inside that tile
 const row = html.indexOf('id="mb-threshold-manual-row"');
-const toggle = html.indexOf('id="mb-mpa-toggle"');
+const tile = html.indexOf('id="mb-mpa-tile"');
 const details = html.indexOf('id="mb-multialign-details"');
 const coupling = html.indexOf('id="mb-coupling-row"');
-ok(row > 0 && toggle > row && toggle < html.indexOf('</div>', html.indexOf('id="mb-decouple-btn"')) + 400, 'the Multi-Point Alignment title sits in the Threshold row');
-ok(details > toggle && details < coupling, 'its settings open inside the Quick Actions tile, before the Coupling tile');
-ok(!/class="collapsible-toggle"[^>]*multialign/.test(html), 'no separate divider-style toggle for it any more');
+ok(row > 0 && tile > row && tile < coupling, 'the Multi-Point Alignment tile sits in the Threshold row of the Quick Actions tile');
+ok(/class="mb-qa-group mb-mpa-tile"/.test(html), 'it is built like the Sync positions tile (mb-qa-group)');
+ok(details > tile && details < coupling, 'its settings open inside that tile');
+ok(!/class="collapsible-toggle"[^>]*multialign/.test(html), 'no divider-style toggle for it any more');
+
+// Settings: ONE tile around role, hardware mode, one-click and Web Manager rows; no rule above it or above Setup checklist
+const box = html.indexOf('id="mb-settings-box"');
+const label = html.indexOf('id="mb-settings-label"');
+const setup = html.indexOf("toggleCollapsibleSection('mb-details'");
+ok(box > 0 && box < label && label < html.indexOf('id="mode-tile-gsc"') && html.indexOf('id="mode-tile-gsc"') < setup, 'Settings label, role and mode tiles are inside one tile');
+ok(/collapsible-toggle collapsible-toggle-plain" onclick="toggleCollapsibleSection\('mb-details'/.test(html), 'Setup checklist & diagnostics has no rule above it');
+ok(/\.collapsible-toggle-plain \{[^}]*border-top: none[^}]*margin-top: 0\.[5-9]/.test(html), '... but a small gap');
+ok(!/hgroup-divider"><\/div>\n      <\/div>\n\n      <!-- Deliberately OUTSIDE/.test(html), 'no divider line above Settings');
 process.exit(failed ? 1 : 0);
