@@ -32,6 +32,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 - Mount Bridge: Auto-correct (Sync) only syncs to a frame exposed after the mount stopped (#659); the reposition detection no longer preempts the arrival verification (SETTLING, #663); nothing impossible reaches the mount, a (re)link never starts a Goto, a late mount driver is bound again; PiFinder LX200 does not republish a target within 1 arcminute of the published one (it started a second slew 30 s after a GoTo).
 - Sky follower: writes the sky again when something replaces PiFinder's test picture (an update put the original back and the simulation never solved).
+- Control Center: a mount that tracks and stands still no longer raises "Mount not responding". The check took "same RA/Dec for 60 s" as silence, but a tracking mount reports the same position for minutes (OnStep to one second). Unchanged coordinates now only count as silence when the driver marks them Alert too (it does when it cannot read the mount); a driver without a state keeps the old rule. New `test_tools/mount_silence_test.py`.
+- GSC simulation: the follower moves to the Bridge's active mount when the profile switches the mount (for example from a real mount to the Telescope Simulator). Before, it kept following a device that no longer existed, the picture never moved, and the tile still said "on". The watchdog restarts it on the new mount (bounded like a dead follower).
+- Control Center: one slow answer of the Bridge no longer turns the page to "Not coupled"; three missed polls in a row (about 6 s) do. The Bridge answers a `getProperties` in 0.1 ms and sends every 2 s; what is sometimes late is indiserver in between (measured 2026-11-26).
+- Control Center: the "Sky for" line in the card's details keeps a separator between time and date.
 
 ## [2.6.1] - 2026-11-26
 

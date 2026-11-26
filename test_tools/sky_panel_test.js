@@ -262,6 +262,8 @@ ok(/<svg id="sky-panel-svg"[^>]*><\/svg>\s*<a class="help-link"[^>]*>i<\/a>\s*<\
 ok(/#sky-panel \{ display: flex; justify-content: center; width: 100%;/.test(pageHtml), 'the picture is centred over the card');
 ok(/#mb-sky-col \{[^}]*width: 22rem; max-width: 100%;/.test(pageHtml) && /#sky-card \{ width: 100%;/.test(pageHtml), 'the sky column has a fixed width: the card and the picture do not change size with the text');
 ok(/#sky-card \{[^}]*background: #222;/.test(pageHtml), 'the card has the colour of the badges, not a black one');
+ok(/kv\('Sky for', Array\.from\(clk\.children\)/.test(pageHtml), 'the Sky for line joins time and date with a separator (no "CET26 Nov")');
+ok(/else if \(_mbDriftSeenRunning && \+\+_mbDriftMisses < MB_DRIFT_MISSES_BEFORE_OFF\) return;/.test(pageHtml) && /const MB_DRIFT_MISSES_BEFORE_OFF = 3;/.test(pageHtml), 'one slow answer after a good one does not turn the page to Not coupled');
 // not running: the card keeps what the status line said, it does not replace it with a generic sentence
 {
   const cm = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'no Mount Bridge in this profile yet', statusDot: 'status-dot dot-yellow' });

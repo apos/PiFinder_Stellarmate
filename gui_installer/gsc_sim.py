@@ -181,11 +181,8 @@ def start(landing="typical", device=DEFAULT_MOUNT, indi=None, popen=subprocess.P
     return dict(status(), ok=True, warnings=warnings)
 
 
-def stop(indi=None, wait=8.0):
-    """Stop the simulation: the follower (it puts PiFinder's original test picture back), Test Mode if the simulation switched it on,
-    and the old PiFinder Simulator device back on if the simulation disconnected it."""
-    state = read_state()
-    pid = state.get("pid")
+def _stop_follower(pid, wait=8.0):
+    """Stop the follower process (it puts PiFinder's original test picture back on Ctrl-C). Returns a list of warnings."""
     warnings = []
     if _alive(pid):
         try:
@@ -212,6 +209,15 @@ def stop(indi=None, wait=8.0):
                     shutil.copyfile(ORIGINAL_IMAGE_BACKUP, PF_TEST_IMAGE)
                 except OSError:
                     pass
+    return warnings
+
+
+def stop(indi=None, wait=8.0):
+    """Stop the simulation: the follower (it puts PiFinder's original test picture back), Test Mode if the simulation switched it on,
+    and the old PiFinder Simulator device back on if the simulation disconnected it."""
+    state = read_state()
+    pid = state.get("pid")
+    warnings = _stop_follower(pid, wait)
     if not state.get("test_mode_was_on", False):
         if set_test_mode(False) is None:
             warnings.append("PiFinder does not answer: Test Mode could not be switched off.")
@@ -291,7 +297,39 @@ def indi_device_answers(device, host="localhost", port=7624, wait=3.0):
         return False
 
 
-def restore(indi=None, popen=subprocess.Popen, now=time.time, mount_answers=indi_device_answers):
+def _follow_changed_mount(state, indi, popen, now, mount_answers, active_mount):
+    """The running follower names a mount that is gone while the Bridge's active mount is another one that answers: restart it there.
+    Bounded by the same window as a dead follower. Returns "followed-mount-changed" or None."""
+    if active_mount is None:
+        return None
+    try:
+        wanted = active_mount()
+    except Exception:
+        return None
+    followed = state.get("device", DEFAULT_MOUNT)
+    if not wanted or wanted == followed or mount_answers(followed) or not mount_answers(wanted):
+        return None
+    t = now()
+    _restore_times[:] = [x for x in _restore_times if t - x < RESTORE_WINDOW_SEC]
+    if len(_restore_times) >= RESTORE_MAX_PER_WINDOW:
+        return None
+    if _restore_times and t - _restore_times[-1] < RESTORE_MIN_GAP_SEC:
+        return None
+    _restore_times.append(t)
+    _stop_follower(state["pid"])
+    try:
+        STATE_PATH.unlink()
+    except OSError:
+        pass
+    result = start(state.get("landing", "typical"), wanted, indi=None, popen=popen)
+    fresh = read_state() if result.get("ok") else dict(state)
+    fresh["test_mode_was_on"] = state.get("test_mode_was_on", False)
+    fresh["old_simulator_disconnected"] = state.get("old_simulator_disconnected", False)
+    write_state(fresh)
+    return "followed-mount-changed" if result.get("ok") else None
+
+
+def restore(indi=None, popen=subprocess.Popen, now=time.time, mount_answers=indi_device_answers, active_mount=None):
     """Keep the simulation the way it was last chosen, across updates, crashes and reboots.
 
     The state file exists from "start" until "stop" - it is the memory of what the user wants. So:
@@ -300,12 +338,20 @@ def restore(indi=None, popen=subprocess.Popen, now=time.time, mount_answers=indi
                                         at least RESTORE_MIN_GAP_SEC apart), keeping what the first start recorded about Test Mode
                                         and the old PiFinder Simulator device
       * no state file                -> the user did not want it: nothing happens.
-    Returns a short word for logging: "none", "healthy", "healed", "restarted", "waiting", "waiting-for-indi", "gave-up", "unavailable".
+      * follower running, but the mount it follows is gone and the Bridge's active mount is another one that answers (the profile was
+        switched, e.g. from a real mount to the Telescope Simulator) -> the follower is restarted on the active mount. Without this it
+        follows a device that no longer exists and the picture never moves, while the tile says "on".
+    `active_mount` is a callable returning the Bridge's active mount (or None).
+    Returns a short word for logging: "none", "healthy", "healed", "restarted", "waiting", "waiting-for-indi", "gave-up", "unavailable",
+    "followed-mount-changed".
     """
     state = read_state()
     if not state.get("pid"):
         return "none"
     if _alive(state["pid"]):
+        moved = _follow_changed_mount(state, indi, popen, now, mount_answers, active_mount)
+        if moved:
+            return moved
         return "healed" if status(heal=True).get("healed") else "healthy"
     ok, _reason = availability()
     if not ok:

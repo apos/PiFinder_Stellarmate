@@ -331,6 +331,90 @@ class Restore(Base):
         self.assertEqual(self.started, [])
 
 
+class FollowChangedMount(Base):
+    """The profile was switched to another mount: the running follower must not keep following a device that is gone."""
+
+    def setUp(self):
+        super().setUp()
+        self._saved = (g.start, g.availability)
+        g._restore_times[:] = []
+        self.started = []
+        g.availability = lambda: (True, "")
+
+        def fake_start(landing="typical", device=g.DEFAULT_MOUNT, indi=None, popen=None):
+            self.started.append((landing, device))
+            g.write_state({"pid": os.getpid(), "landing": landing, "device": device, "test_mode_was_on": True,
+                           "old_simulator_disconnected": False})
+            return {"ok": True}
+        g.start = fake_start
+        g.FOLLOWER_MARK = "python"          # this very process stands in for the follower
+        self.stopped = []
+        self._saved_stop = g._stop_follower
+        g._stop_follower = lambda pid, wait=8.0: self.stopped.append(pid) or []
+        g.write_state({"pid": os.getpid(), "landing": "large", "device": "LX200 OnStep", "test_mode_was_on": False,
+                       "old_simulator_disconnected": True})
+        g.set_test_mode = lambda want: want
+
+    def tearDown(self):
+        g._stop_follower = self._saved_stop
+        g.start, g.availability = self._saved
+        try:
+            g.STATE_PATH.unlink()   # the stand-in pid is this very process: do not let stop() signal it
+        except OSError:
+            pass
+        super().tearDown()
+
+    def _answers(self, up):
+        return lambda d: d in up
+
+    def test_the_follower_moves_to_the_active_mount_when_the_old_one_is_gone(self):
+        what = g.restore(now=lambda: 1000.0, mount_answers=self._answers({"Telescope Simulator"}), active_mount=lambda: "Telescope Simulator")
+        self.assertEqual(what, "followed-mount-changed")
+        self.assertEqual(self.started, [("large", "Telescope Simulator")], "same landing, new mount")
+        self.assertEqual(self.stopped, [os.getpid()])
+
+    def test_what_the_first_start_recorded_is_kept(self):
+        g.restore(now=lambda: 1000.0, mount_answers=self._answers({"Telescope Simulator"}), active_mount=lambda: "Telescope Simulator")
+        st = g.read_state()
+        self.assertTrue(st["old_simulator_disconnected"])
+        self.assertFalse(st["test_mode_was_on"])
+
+    def test_nothing_happens_while_the_followed_mount_still_answers(self):
+        what = g.restore(now=lambda: 1000.0, mount_answers=self._answers({"LX200 OnStep", "Telescope Simulator"}),
+                         active_mount=lambda: "Telescope Simulator")
+        self.assertNotEqual(what, "followed-mount-changed")
+        self.assertEqual(self.started, [])
+
+    def test_nothing_happens_when_the_new_mount_does_not_answer_yet(self):
+        what = g.restore(now=lambda: 1000.0, mount_answers=self._answers(set()), active_mount=lambda: "Telescope Simulator")
+        self.assertNotEqual(what, "followed-mount-changed")
+        self.assertEqual(self.started, [])
+
+    def test_nothing_happens_when_the_active_mount_is_unknown_or_the_same(self):
+        for active in (lambda: None, lambda: "LX200 OnStep"):
+            g.restore(now=lambda: 1000.0, mount_answers=self._answers({"Telescope Simulator"}), active_mount=active)
+        self.assertEqual(self.started, [])
+        g.restore(now=lambda: 1000.0, mount_answers=self._answers({"Telescope Simulator"}), active_mount=None)
+        self.assertEqual(self.started, [])
+
+    def test_a_failing_lookup_never_breaks_the_watchdog(self):
+        def boom():
+            raise RuntimeError("indiserver not answering")
+        g.restore(now=lambda: 1000.0, mount_answers=self._answers({"Telescope Simulator"}), active_mount=boom)
+        self.assertEqual(self.started, [])
+
+    def test_a_follower_that_keeps_being_switched_is_bounded(self):
+        t = 1000.0
+        results = []
+        for i in range(g.RESTORE_MAX_PER_WINDOW + 2):
+            g.write_state({"pid": os.getpid(), "landing": "large", "device": "LX200 OnStep", "test_mode_was_on": False,
+                           "old_simulator_disconnected": True})
+            results.append(g.restore(now=lambda t=t: t, mount_answers=self._answers({"Telescope Simulator"}),
+                                     active_mount=lambda: "Telescope Simulator"))
+            t += g.RESTORE_MIN_GAP_SEC + 1
+        self.assertEqual(results.count("followed-mount-changed"), g.RESTORE_MAX_PER_WINDOW)
+
+
 class StatusShape(Base):
     def test_status_lists_the_landing_choices(self):
         ids = [x["id"] for x in g.status()["landings"]]

@@ -9687,7 +9687,7 @@ function renderSkyCard() {
       const cf = skyCouplingFacts(c, false);
       kv('Coupling', (cf[0] || 'unknown') + (c.threshold > 0 ? ' \u00b7 threshold ' + c.threshold + '\u2032' : ''));
       const clk = document.getElementById('sky-time');
-      if (clk && clk.textContent) kv('Sky for', clk.textContent.replace(/^Sky for\s*/, ''));
+      if (clk && clk.textContent) kv('Sky for', Array.from(clk.children).map((e) => (e.textContent || '').trim()).filter(Boolean).join(' \u00b7 '));   // time and date are two spans: keep a separator between them
     }
     box.appendChild(panel);
   }
@@ -9718,12 +9718,20 @@ setInterval(() => {
 }, 2000);
 // ---- Sky Position Panel (end) ----
 
+// A slow answer is not "Not coupled": indiserver sometimes needs more than the 2 s the server waits (found 2026-11-26: the Bridge itself
+// answers a getProperties in 0.1 ms and sends every 2 s, indiserver in between is what is late). One missed poll after a good one is
+// ignored; only MB_DRIFT_MISSES_BEFORE_OFF in a row turn the card and the badges to "not running". A page that never saw the Bridge
+// (another profile, no Bridge) shows it at once.
+const MB_DRIFT_MISSES_BEFORE_OFF = 3;
+let _mbDriftMisses = 0, _mbDriftSeenRunning = false;
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
   try {
     const resp = await fetch('/api/mount_bridge_drift', { cache: 'no-store' });
     const data = await resp.json();
+    if (data.running) { _mbDriftMisses = 0; _mbDriftSeenRunning = true; }
+    else if (_mbDriftSeenRunning && ++_mbDriftMisses < MB_DRIFT_MISSES_BEFORE_OFF) return;   // keep what the page shows
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
