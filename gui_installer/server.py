@@ -5196,7 +5196,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/gsc_sim_status":
             # The "Real hardware + GSC simulation" mode (gsc_sim.py): whether the sky follower runs, whether PiFinder is in Test
             # Mode and solving, and what this device can do at all. Polled by the mode tile.
-            self._send_json(gsc_sim.status())
+            self._send_json(gsc_sim.status(heal=True))
             return
 
         if parsed.path == "/api/truth_injector_status":

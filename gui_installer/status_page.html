@@ -1252,6 +1252,9 @@
      highlight) while the click handler itself (see toggleTruthInjector()'s
      own guard) refuses to act as the actual enforcement, not just the look. */
   .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+  .mode-tile.tile-pending { background: #2a2214; border-color: #f5a623; color: #eee; }
+  .mode-tile.tile-pending .mode-tile-name { color: #f5c46b; }
+  .gsc-sim-pending-text { color: #f5c46b; }
   /* The GSC simulation is the first choice for testing without a sky; the two older simulations step into the background. */
   .mode-tiles-minor-label { color: #777; font-size: 0.68rem; margin: 0.7rem 0 0.3rem 0; }
   .mode-tiles-minor { margin-bottom: 0.4rem; }
@@ -2931,6 +2934,7 @@
         </div>
         <div id="gsc-sim-panel" class="gsc-sim-info" style="display:none;">
           <div id="gsc-sim-chips" class="gsc-sim-line"></div>
+          <div id="gsc-sim-pending" class="gsc-sim-line gsc-sim-pending-text"></div>
           <div id="gsc-sim-landing-running" class="gsc-sim-note"></div>
           <div class="gsc-sim-note">The camera picture is replaced by the simulated sky. The old PiFinder Simulator device is left out of this mode.</div>
         </div>
@@ -5064,21 +5068,31 @@ function applyFakeModeTileState(dotClass, subText) {
 // "Real Hardware + GSC Simulation" (gui_installer/gsc_sim.py, #344): what the mode tile and its panel show for one
 // /api/gsc_sim_status value. Pure, so it is tested under node (test_tools/gsc_tile_test.js).
 function gscSimTileModel(s) {
-  if (!s) return { on: false, locked: false, dot: 'dot-white', sub: 'checking\u2026', chips: [], landing: '' };
-  if (!s.available) return { on: false, locked: true, dot: 'dot-white', sub: s.reason || 'not available on this device', chips: [], landing: '' };
-  if (!s.running) return { on: false, locked: false, dot: 'dot-white', sub: 'a simulated sky from the GSC catalogue, solved by the real solver', chips: [], landing: '' };
-  const solving = s.solve_source === 'CAM';
-  const testOn = s.test_mode === true;
-  const chips = [
-    { text: 'Sky renderer running', ok: true },
-    { text: 'Test Mode ' + (s.test_mode === null || s.test_mode === undefined ? '\u2026' : testOn ? 'on' : 'off'), ok: testOn },
-    { text: 'Solving: ' + (s.solve_source || '\u2026'), ok: solving },
-    { text: 'Following: ' + (s.device || 'mount'), ok: true },
-  ];
+  const off = { on: false, pending: false, locked: false, dot: 'dot-white', chips: [], landing: '', note: '' };
+  if (!s) return Object.assign({}, off, { sub: 'checking\u2026' });
+  if (!s.available) return Object.assign({}, off, { locked: true, sub: s.reason || 'not available on this device' });
+  const state = s.state || (s.running ? 'starting' : 'off');
   const label = ((s.landings || []).find((l) => l.id === s.landing) || {}).label;
-  return { on: true, locked: false, dot: chips.every((c) => c.ok) ? 'dot-green' : 'dot-yellow',
-    sub: solving ? 'running, solving the simulated sky' : 'running, waiting for the first solve',
-    chips: chips, landing: label ? 'Landing error of a GoTo: ' + label : '' };
+  const landing = label ? 'Landing error of a GoTo: ' + label : '';
+  // The tile is ON only when the simulation really works (the server decides, see gsc_sim.simulation_state()); between off and on it
+  // says what is going on instead of claiming "on" with a contradicting line below it.
+  switch (state) {
+    case 'on':
+      return { on: true, pending: false, locked: false, dot: 'dot-green', sub: 'running, solving the simulated sky', landing: landing, note: '',
+        chips: [{ text: 'Sky renderer running', ok: true }, { text: 'Test Mode on', ok: true }, { text: 'Solving: CAM', ok: true },
+                { text: 'Following: ' + (s.device || 'mount'), ok: true }] };
+    case 'starting':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'starting, waiting for the first solve', landing: landing,
+        note: 'Waiting for PiFinder to solve the first simulated picture.' });
+    case 'restoring':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'restoring Test Mode', landing: landing,
+        note: 'PiFinder was restarted, so Test Mode went off. It is being switched on again.' });
+    case 'waiting':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'waiting for PiFinder', landing: landing,
+        note: 'PiFinder is not answering (restarting?). The simulation carries on when it is back.' });
+    default:
+      return Object.assign({}, off, { sub: 'a simulated sky from the GSC catalogue, solved by the real solver' });
+  }
 }
 // ---- GSC simulation tile (end) ----
 
@@ -5092,11 +5106,13 @@ function applyGscSim(s) {
   setHwDot(document.getElementById('mode-tile-gsc-dot'), 'status-dot ' + m.dot);
   document.getElementById('mode-tile-gsc-sub').textContent = m.sub;
   tile.classList.toggle('tile-on', m.on);
+  tile.classList.toggle('tile-pending', m.pending);
   tile.classList.toggle('mode-tile-locked', m.locked);
   const panel = document.getElementById('gsc-sim-panel');
   const idle = document.getElementById('gsc-sim-idle');
-  panel.style.display = m.on ? '' : 'none';
-  idle.style.display = m.on || m.locked ? 'none' : '';
+  panel.style.display = m.on || m.pending ? '' : 'none';
+  idle.style.display = m.on || m.pending || m.locked ? 'none' : '';
+  document.getElementById('gsc-sim-pending').textContent = m.note;
   const chips = document.getElementById('gsc-sim-chips');
   while (chips.firstChild) chips.removeChild(chips.firstChild);
   m.chips.forEach((c) => {
@@ -5121,7 +5137,7 @@ async function refreshGscSim() {
 async function toggleGscSim() {
   if (gscSimBusy) return;
   const running = gscSimLast && gscSimLast.running;
-  if (running) { await stopGscSim(); return; }
+  if (running) { await stopGscSim(); return; }   // on or on its way: a click switches it off
   if (!pifinderScreenUrl) {
     await ccNoticeBanner("PiFinder isn't confirmed reachable yet - wait for it to come up, then try again.");
     return;
@@ -5169,7 +5185,8 @@ function updateRealHardwareTile() {
   if (!tile) return;
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on');
+  const gscTile = document.getElementById('mode-tile-gsc');
+  const gscOn = gscTile?.classList.contains('tile-on') || gscTile?.classList.contains('tile-pending');
   // The GSC simulation runs ON the real hardware (its real solver and drivers); only its camera picture is simulated. The
   // plain Real Hardware tile is still the "nothing simulated" state, so it is off while the sky is simulated.
   const active = !simOn && !fakeOn && !gscOn;
@@ -5214,7 +5231,7 @@ function updateModeSummaryLine() {
     // and "actually fully set up" are different questions (2026-09-07,
     // direct feedback).
     dotClass = wmSimAllReady ? 'dot-green' : 'dot-yellow';
-  } else if (document.getElementById('mode-tile-gsc')?.classList.contains('tile-on')) {
+  } else if (document.getElementById('mode-tile-gsc')?.classList.contains('tile-on') || document.getElementById('mode-tile-gsc')?.classList.contains('tile-pending')) {
     nameEl = 'Real Hardware + GSC Simulation';
     subText = document.getElementById('mode-tile-gsc-sub')?.textContent || '';
     dotClass = document.getElementById('mode-tile-gsc-dot')?.className.includes('dot-green') ? 'dot-green' : 'dot-yellow';
@@ -5376,7 +5393,7 @@ const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
 async function toggleRealHardware() {
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on');
+  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on') || document.getElementById('mode-tile-gsc')?.classList.contains('tile-pending');
   if (gscOn) {
     await stopGscSim();
   } else if (simOn) {

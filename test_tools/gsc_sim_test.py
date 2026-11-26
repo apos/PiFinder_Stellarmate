@@ -164,6 +164,71 @@ class StartStop(Base):
         self.assertFalse(g.status()["running"])
 
 
+class SimulationState(Base):
+    def test_off_when_nothing_runs(self):
+        self.assertEqual(g.simulation_state(False, True, "CAM"), "off")
+
+    def test_on_only_when_it_really_works(self):
+        self.assertEqual(g.simulation_state(True, True, "CAM"), "on")
+
+    def test_follower_without_test_mode_is_not_on(self):
+        """The inconsistent state seen after an update restarted PiFinder: the follower lives, Test Mode is off."""
+        self.assertEqual(g.simulation_state(True, False, "CAM_FAILED"), "restoring")
+
+    def test_no_solve_yet_is_starting(self):
+        self.assertEqual(g.simulation_state(True, True, "CAM_FAILED"), "starting")
+        self.assertEqual(g.simulation_state(True, True, None), "starting")
+
+    def test_pifinder_not_answering_is_waiting(self):
+        self.assertEqual(g.simulation_state(True, None, None), "waiting")
+
+
+class Heal(Base):
+    def setUp(self):
+        super().setUp()
+        g.write_state({"pid": os.getpid()})
+        g.FOLLOWER_MARK = "python"   # this very process stands in for the follower
+        g._last_heal = 0.0
+        self.sets = []
+        g.set_test_mode = lambda want: (self.sets.append(want), want)[1]
+
+    def tearDown(self):
+        # this process stands in for the follower: forget it BEFORE the base class calls stop(), which would send it a SIGINT
+        try:
+            g.STATE_PATH.unlink()
+        except OSError:
+            pass
+        super().tearDown()
+
+    def test_test_mode_that_went_off_is_switched_on_again(self):
+        self.test_mode["on"] = False
+        s = g.status(heal=True)
+        self.assertEqual(self.sets, [True])
+        self.assertTrue(s["healed"])
+
+    def test_it_does_not_toggle_twice_within_the_cooldown(self):
+        self.test_mode["on"] = False
+        g.status(heal=True)
+        g.status(heal=True)
+        self.assertEqual(self.sets, [True])
+
+    def test_nothing_to_heal_when_test_mode_is_on(self):
+        self.test_mode["on"] = True
+        g.status(heal=True)
+        self.assertEqual(self.sets, [])
+
+    def test_a_plain_status_never_changes_anything(self):
+        self.test_mode["on"] = False
+        g.status()
+        self.assertEqual(self.sets, [])
+
+    def test_status_carries_the_state(self):
+        self.test_mode["on"] = False
+        self.assertEqual(g.status()["state"], "restoring")
+        self.test_mode["on"] = True
+        self.assertEqual(g.status()["state"], "on")   # the stub PiFinder reports CAM
+
+
 class StatusShape(Base):
     def test_status_lists_the_landing_choices(self):
         ids = [x["id"] for x in g.status()["landings"]]

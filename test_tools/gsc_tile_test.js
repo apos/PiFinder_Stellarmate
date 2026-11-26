@@ -11,32 +11,40 @@ const T = new Function(html.slice(a, b) + '\nreturn { gscSimTileModel };')();
 let failed = 0;
 function ok(cond, msg) { if (!cond) { failed++; console.error('FAIL: ' + msg); } else console.log('ok:   ' + msg); }
 const landings = [{ id: 'off', label: 'none' }, { id: 'typical', label: 'typical (8′ E / 5′ S)' }];
-const running = (o) => Object.assign({ available: true, reason: '', running: true, landing: 'typical', device: 'Telescope Simulator', test_mode: true, solve_source: 'CAM', landings }, o);
+const running = (o) => Object.assign({ available: true, reason: '', running: true, state: 'on', landing: 'typical', device: 'Telescope Simulator', test_mode: true, solve_source: 'CAM', landings }, o);
 
 let m = T.gscSimTileModel(null);
-ok(!m.on && m.dot === 'dot-white' && m.sub === 'checking…', 'no data yet: checking');
+ok(!m.on && !m.pending && m.dot === 'dot-white' && m.sub === 'checking\u2026', 'no data yet: checking');
 m = T.gscSimTileModel({ available: false, reason: 'The GSC star catalogue tool (gsc) is not installed.' });
-ok(m.locked && !m.on && /gsc/.test(m.sub), 'not available: locked, says why');
-m = T.gscSimTileModel({ available: true, running: false, landings });
-ok(!m.on && !m.locked && /GSC catalogue/.test(m.sub), 'available but off: invites to start');
-m = T.gscSimTileModel(running());
-ok(m.on && m.dot === 'dot-green' && m.sub === 'running, solving the simulated sky', 'running and solving: green');
-ok(m.chips.length === 4 && m.chips.every((c) => c.ok), 'four chips, all fine');
-ok(m.chips[3].text === 'Following: Telescope Simulator', 'says which mount it follows');
-ok(m.landing === 'Landing error of a GoTo: typical (8′ E / 5′ S)', 'running: the landing error in words');
-m = T.gscSimTileModel(running({ solve_source: 'CAM_FAILED' }));
-ok(m.dot === 'dot-yellow' && m.sub === 'running, waiting for the first solve' && !m.chips[2].ok, 'running but not solving yet: yellow');
-m = T.gscSimTileModel(running({ test_mode: false }));
-ok(m.dot === 'dot-yellow' && m.chips[1].text === 'Test Mode off' && !m.chips[1].ok, 'Test Mode switched off behind its back: yellow');
-m = T.gscSimTileModel(running({ test_mode: null, solve_source: null }));
-ok(m.chips[1].text === 'Test Mode …' && m.chips[2].text === 'Solving: …', 'PiFinder not answering: dots, not a claim');
-ok(T.gscSimTileModel(running({ landing: 'unknown' })).landing === '', 'an unknown landing id shows nothing');
+ok(m.locked && !m.on && !m.pending && /gsc/.test(m.sub), 'not available: locked, says why');
+m = T.gscSimTileModel({ available: true, running: false, state: 'off', landings });
+ok(!m.on && !m.pending && !m.locked && /GSC catalogue/.test(m.sub), 'off: invites to start');
 
-ok(!html.includes('id="gsc-sim-stop-btn"') && !html.includes('Stop simulation') && !html.includes('Stop it to get the real camera back'), 'no second way to stop: Real Hardware is the switch back');
-ok(!/class="gsc-sim-chip\b/.test(html) && !html.includes('.gsc-sim-chip {'), 'the status is plain text, not pills that look clickable');
+m = T.gscSimTileModel(running({ state: 'on' }));
+ok(m.on && !m.pending && m.dot === 'dot-green' && m.sub === 'running, solving the simulated sky', 'on: solving, green');
+ok(m.chips.length === 4 && m.chips.every((c) => c.ok), 'on: four checkmarks, all fine');
+ok(m.chips[1].text === 'Test Mode on' && m.chips[2].text === 'Solving: CAM', 'on: Test Mode on, solving CAM');
+ok(m.chips[3].text === 'Following: Telescope Simulator', 'on: says which mount it follows');
+ok(m.landing === 'Landing error of a GoTo: typical (8\u2032 E / 5\u2032 S)', 'running: the landing error in words');
+
+// the contradiction seen live: follower running, Test Mode off after a PiFinder restart. Never "on", never "Test Mode off" as a chip.
+m = T.gscSimTileModel(running({ state: 'restoring', test_mode: false, solve_source: 'CAM_FAILED' }));
+ok(!m.on && m.pending && m.dot === 'dot-yellow' && m.sub === 'restoring Test Mode', 'Test Mode went off: pending, not on');
+ok(m.chips.length === 0 && /switched on again/.test(m.note), 'pending: no contradicting checkmarks, one honest sentence');
+m = T.gscSimTileModel(running({ state: 'starting', solve_source: 'CAM_FAILED' }));
+ok(!m.on && m.pending && /first solve/.test(m.sub) && m.chips.length === 0, 'no solve yet: starting, pending');
+m = T.gscSimTileModel(running({ state: 'waiting', test_mode: null, solve_source: null }));
+ok(!m.on && m.pending && m.sub === 'waiting for PiFinder' && /not answering/.test(m.note), 'PiFinder not answering: waiting, pending');
+m = T.gscSimTileModel(running({ state: undefined, solve_source: 'CAM' }));
+ok(!m.on && m.pending, 'an older server without a state: running counts as starting, never as on');
+for (const st of ['starting', 'restoring', 'waiting']) {
+  const x = T.gscSimTileModel(running({ state: st }));
+  ok(!x.chips.some((c) => /off/.test(c.text)), 'state ' + st + ': no chip says off');
+}
+ok(T.gscSimTileModel(running({ state: 'on', landing: 'unknown' })).landing === '', 'an unknown landing id shows nothing');
 
 // the page: four tiles, the older two grouped under "Other test modes"
-const ids = ['mode-tile-real', 'mode-tile-gsc', 'mode-tile-sim', 'mode-tile-fake', 'gsc-sim-panel', 'gsc-sim-idle', 'gsc-sim-landing'];
+const ids = ['mode-tile-real', 'mode-tile-gsc', 'mode-tile-sim', 'mode-tile-fake', 'gsc-sim-panel', 'gsc-sim-idle', 'gsc-sim-landing', 'gsc-sim-pending'];
 ids.forEach((id) => ok(html.includes('id="' + id + '"'), 'page has #' + id));
 const posGsc = html.indexOf('id="mode-tile-gsc"'), posOther = html.indexOf('Other test modes</div>'), posSim = html.indexOf('id="mode-tile-sim"'), posFake = html.indexOf('id="mode-tile-fake"');
 ok(posGsc > 0 && posGsc < posOther && posOther < posSim && posSim < posFake, 'GSC tile first; Full Simulation and Fake Mode after "Other test modes"');

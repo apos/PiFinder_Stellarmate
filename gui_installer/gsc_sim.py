@@ -227,17 +227,46 @@ def stop(indi=None, wait=8.0):
     return dict(status(), ok=True, warnings=warnings)
 
 
-def status(include_pifinder=True):
-    """What the settings tile shows."""
+HEAL_COOLDOWN_SEC = 40.0   # PiFinder's camera takes up to ~30 s to act on the Test Mode command: do not toggle it twice
+_last_heal = 0.0
+
+
+def simulation_state(running, test_mode, solve_source):
+    """The one truth the mode tile shows. The simulation is ON only when it actually works: the follower runs, PiFinder is in Test
+    Mode and solves the simulated picture. Everything in between is named, never shown as "on":
+      off        nothing runs
+      waiting    the follower runs but PiFinder does not answer (restarting)
+      restoring  the follower runs but Test Mode is off (PiFinder was restarted): it is switched on again
+      starting   follower and Test Mode are there, the first solve is not (yet)
+      on         solving the simulated sky
+    """
+    if not running:
+        return "off"
+    if test_mode is None:
+        return "waiting"
+    if not test_mode:
+        return "restoring"
+    return "on" if solve_source == "CAM" else "starting"
+
+
+def status(include_pifinder=True, heal=False):
+    """What the settings tile shows. With heal=True a running simulation whose Test Mode has gone off (PiFinder restarted, e.g. by an
+    update) gets it switched on again, at most once per HEAL_COOLDOWN_SEC."""
+    global _last_heal
     available, reason = availability()
     state = read_state()
     running = _alive(state.get("pid"))
     out = {"available": available, "reason": reason, "running": running, "landing": state.get("landing") if running else None,
            "device": state.get("device") if running else None, "started": state.get("started") if running else None,
-           "test_mode": None, "solve_source": None, "landings": [{"id": k, "label": v} for k, v in LANDING_LABELS.items()]}
+           "test_mode": None, "solve_source": None, "healed": False,
+           "landings": [{"id": k, "label": v} for k, v in LANDING_LABELS.items()]}
     if include_pifinder and running:
         pf = pifinder_status()
         if pf:
             out["test_mode"] = bool(pf.get("debug_solve"))
             out["solve_source"] = (pf.get("solution") or {}).get("solve_source")
+            if heal and not out["test_mode"] and time.time() - _last_heal >= HEAL_COOLDOWN_SEC:
+                _last_heal = time.time()
+                out["healed"] = set_test_mode(True) is not None
+    out["state"] = simulation_state(running, out["test_mode"], out["solve_source"]) if (include_pifinder or not running) else ("on" if running else "off")
     return out
