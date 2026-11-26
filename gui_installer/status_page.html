@@ -1947,6 +1947,10 @@
      next to Threshold/Decouple, since it's driven by the same Coupling
      row above (clicking a preset or Setup INDI can both trigger it). */
   #mb-autoconnect-status { flex: 1 1 auto; min-width: 12rem; }
+  /* Multi-Point Alignment sits in the Quick Actions tile: its title on the right of the Threshold row, the settings open below it */
+  .mb-mpa-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #999; font-size: 0.85rem; user-select: none; }
+  .mb-mpa-toggle:hover { color: #ccc; }
+  #mb-multialign-details { margin-top: 0.5rem; }
   #mb-threshold-manual-sep { width: 1px; height: 1rem; background: #333; }
   /* Shared collapsible-section header, reused wherever a tile has a
      "matters every time" part and a "one-time setup / rarely touched"
@@ -2011,7 +2015,8 @@
     white-space: pre-wrap;
   }
   /* one small "Copy to clipboard" button above the top right corner of every terminal window */
-  .term-bar { display: flex; justify-content: flex-end; margin: 0.4rem 0 0.2rem; }
+  .term-bar { display: flex; align-items: center; margin: 0.25rem 0 0; }
+  .term-bar .copy-log-btn { margin-left: auto; }
   .copy-log-btn {
     font-size: 0.7rem; line-height: 1.2; padding: 0.15rem 0.55rem;
     background: #1c1c1c; color: #bbb; border: 1px solid #444; border-radius: 4px; cursor: pointer;
@@ -2409,8 +2414,8 @@
     <span id="last-run-banner-headline">&#9989; The run you were watching before this restart finished successfully.</span>
     <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
   </div>
-  <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('last-run-banner-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
   <pre id="last-run-banner-log"></pre>
+  <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('last-run-banner-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
 </div>
 <div id="cc-readonly-banner" style="display:none;">
   <span id="cc-readonly-banner-text">Control Center open elsewhere - this tab is read-only.</span>
@@ -2827,6 +2832,7 @@
           <span id="mb-threshold-manual-sep"></span>
           <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
           <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
+          <span id="mb-mpa-toggle" class="mb-mpa-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')" title="Automatic alignment on several bright stars">Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a><span id="mb-multialign-chevron">&#9660; show</span></span>
         </div>
         <!-- 2026-09-07, direct feedback: the four action buttons above go
              quietly disabled with no visible reason otherwise - several
@@ -2835,6 +2841,55 @@
              of which the user watching greyed-out buttons can be expected to
              guess. See updateActionButtonsCouplingGate(). -->
         <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
+
+        <div id="mb-multialign-details" style="display:none;">
+          <!-- Follows this project's documented status-row convention
+             (Readme_ControlCenter.md "Design Principles" #1/#2, re-read
+             2026-08-10 after direct feedback that this row was missing it
+             entirely): <dot> Label: status, white/green/yellow/red. Adapted
+             for a discrete multi-step action rather than a component health
+             check - yellow means "running" here (there's no ongoing
+             degraded-but-working state for a one-shot sequence like there is
+             for e.g. hardware presence), green always carries a real
+             completion message (what was actually done), not just "Ok". -->
+          <div class="hw-row" id="mb-multialign-status-row" title="Status of the last (or currently running) Multi-Point Alignment sequence.">
+            <span class="status-dot dot-white" id="mb-multialign-dot"></span>Multi-Point Alignment: <span id="mb-multialign-status-text">not run yet</span>
+          </div>
+          <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
+            <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
+            <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+          </div>
+          <!-- #191/#217: candidate-selection settings already existed as INDI
+               properties (AlignConfigNP) since the catalog-driven selection
+               landed, but had no GUI control at all - direct feedback,
+               2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
+               debounced-input pattern as the Threshold field above. -->
+          <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
+            <span class="mb-row-label">Search radius:</span>
+            <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+            <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
+            <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
+            <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
+            <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+          </div>
+          <!-- Preferred-direction hard filter (#191) - added 2026-08-10, direct
+               feedback from the first real-sky test: "vom Zenith aus wandert
+               der PiFinder sonst gerne mal in eine Region, die z.B. nicht
+               geeignet ist" (a real local obstruction in one azimuth
+               quadrant, not modeled by min_altitude alone). Hard filter, not
+               a soft preference, per explicit confirmation - too few
+               candidates in the chosen quadrant fails the sequence outright
+               (see PiFinder's own /api/nearby_bright_stars contract) rather
+               than silently falling back to another direction. -->
+          <div class="mb-row" id="mb-align-direction-row" title="Preferred direction (#191) - a HARD filter: only candidates in that 90° azimuth quadrant (N=315-45°, E=45-135°, S=135-225°, W=225-315°) are considered. Too few candidates there fails Start outright rather than silently using another direction. Any = previous, direction-agnostic behavior.">
+            <span class="mb-row-label">Direction:</span>
+            <button class="ql-small-btn" id="mb-align-dir-any-btn" onclick="setAlignDirection('ANY')">Any</button>
+            <button class="ql-small-btn" id="mb-align-dir-n-btn" onclick="setAlignDirection('N')">N</button>
+            <button class="ql-small-btn" id="mb-align-dir-e-btn" onclick="setAlignDirection('E')">E</button>
+            <button class="ql-small-btn" id="mb-align-dir-s-btn" onclick="setAlignDirection('S')">S</button>
+            <button class="ql-small-btn" id="mb-align-dir-w-btn" onclick="setAlignDirection('W')">W</button>
+          </div>
+        </div>
 
       </div>
       <div class="mb-group-box">
@@ -3058,69 +3113,10 @@
         </div>
         </div>
 
-        <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('mb-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
         <div id="mb-log" title="What this tile has been doing, in order."></div>
+        <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('mb-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
       </div>
 
-      <!-- #191/#217: own collapsible section, not squeezed into
-           #mb-operate-rows above (direct feedback, 2026-08-10: pushed the
-           Threshold field down, and this is a distinct enough feature to
-           deserve its own "wie gewohnt" collapsible like Setup checklist
-           above). Positioned below Setup checklist & diagnostics (#266,
-           2026-09-05): checklist is the prerequisite/foundational step,
-           this is a subsequent, more advanced action. -->
-      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')">
-        <span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-        <span id="mb-multialign-chevron">&#9660; show</span>
-      </div>
-      <div id="mb-multialign-details" style="display:none;">
-        <!-- Follows this project's documented status-row convention
-           (Readme_ControlCenter.md "Design Principles" #1/#2, re-read
-           2026-08-10 after direct feedback that this row was missing it
-           entirely): <dot> Label: status, white/green/yellow/red. Adapted
-           for a discrete multi-step action rather than a component health
-           check - yellow means "running" here (there's no ongoing
-           degraded-but-working state for a one-shot sequence like there is
-           for e.g. hardware presence), green always carries a real
-           completion message (what was actually done), not just "Ok". -->
-        <div class="hw-row" id="mb-multialign-status-row" title="Status of the last (or currently running) Multi-Point Alignment sequence.">
-          <span class="status-dot dot-white" id="mb-multialign-dot"></span>Multi-Point Alignment: <span id="mb-multialign-status-text">not run yet</span>
-        </div>
-        <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
-          <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
-          <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
-        </div>
-        <!-- #191/#217: candidate-selection settings already existed as INDI
-             properties (AlignConfigNP) since the catalog-driven selection
-             landed, but had no GUI control at all - direct feedback,
-             2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
-             debounced-input pattern as the Threshold field above. -->
-        <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
-          <span class="mb-row-label">Search radius:</span>
-          <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-          <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
-          <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
-          <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
-          <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-        </div>
-        <!-- Preferred-direction hard filter (#191) - added 2026-08-10, direct
-             feedback from the first real-sky test: "vom Zenith aus wandert
-             der PiFinder sonst gerne mal in eine Region, die z.B. nicht
-             geeignet ist" (a real local obstruction in one azimuth
-             quadrant, not modeled by min_altitude alone). Hard filter, not
-             a soft preference, per explicit confirmation - too few
-             candidates in the chosen quadrant fails the sequence outright
-             (see PiFinder's own /api/nearby_bright_stars contract) rather
-             than silently falling back to another direction. -->
-        <div class="mb-row" id="mb-align-direction-row" title="Preferred direction (#191) - a HARD filter: only candidates in that 90° azimuth quadrant (N=315-45°, E=45-135°, S=135-225°, W=225-315°) are considered. Too few candidates there fails Start outright rather than silently using another direction. Any = previous, direction-agnostic behavior.">
-          <span class="mb-row-label">Direction:</span>
-          <button class="ql-small-btn" id="mb-align-dir-any-btn" onclick="setAlignDirection('ANY')">Any</button>
-          <button class="ql-small-btn" id="mb-align-dir-n-btn" onclick="setAlignDirection('N')">N</button>
-          <button class="ql-small-btn" id="mb-align-dir-e-btn" onclick="setAlignDirection('E')">E</button>
-          <button class="ql-small-btn" id="mb-align-dir-s-btn" onclick="setAlignDirection('S')">S</button>
-          <button class="ql-small-btn" id="mb-align-dir-w-btn" onclick="setAlignDirection('W')">W</button>
-        </div>
-      </div>
       </div>
     </div>
     <div id="mode-tile">
@@ -3365,9 +3361,8 @@ sudo systemctl start pifinder</pre>
       <span id="log-chevron">&#9650; hide</span>
     </div>
     <div id="log-wrap">
-      <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
       <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
-      <button id="log-expand-btn" class="ql-small-btn" style="display:none;margin-top:0.5rem;" onclick="toggleLogExpanded()"></button>
+      <div class="term-bar"><button id="log-expand-btn" class="ql-small-btn" style="display:none;" onclick="toggleLogExpanded()"></button><button type="button" class="copy-log-btn" onclick="copyTerminal('log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
     </div>
     </div>
     </div>

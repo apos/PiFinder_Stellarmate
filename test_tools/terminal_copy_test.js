@@ -19,6 +19,15 @@ ok(T.terminalText({ textContent: 'only textContent', classList: { contains: () =
 
 for (const id of ['log', 'mb-log', 'last-run-banner-log']) {
   ok(new RegExp('copyTerminal\\(\'' + id + '\', this\\)').test(html), 'terminal #' + id + ' has a Copy to clipboard button');
-  ok(html.indexOf('id="' + id + '"') > html.indexOf("copyTerminal('" + id + "'"), 'the button for #' + id + ' sits above the terminal');
+  ok(html.indexOf('id="' + id + '"') < html.indexOf("copyTerminal('" + id + "'"), 'the button for #' + id + ' sits below the terminal');
 }
+
+// Multi-Point Alignment lives in the Quick Actions tile: its title on the right of the Threshold row, its settings right below, no divider bar
+const row = html.indexOf('id="mb-threshold-manual-row"');
+const toggle = html.indexOf('id="mb-mpa-toggle"');
+const details = html.indexOf('id="mb-multialign-details"');
+const coupling = html.indexOf('id="mb-coupling-row"');
+ok(row > 0 && toggle > row && toggle < html.indexOf('</div>', html.indexOf('id="mb-decouple-btn"')) + 400, 'the Multi-Point Alignment title sits in the Threshold row');
+ok(details > toggle && details < coupling, 'its settings open inside the Quick Actions tile, before the Coupling tile');
+ok(!/class="collapsible-toggle"[^>]*multialign/.test(html), 'no separate divider-style toggle for it any more');
 process.exit(failed ? 1 : 0);
