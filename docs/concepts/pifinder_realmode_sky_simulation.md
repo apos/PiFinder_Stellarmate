@@ -358,3 +358,21 @@ what is missing instead of failing. State: `~/.pfsm/gsc_sim.json`, log: `~/.pfsm
 
 Checked on the real device: start, a `CAM` solve after a few seconds, the old device disconnected, stop, and everything back as it was
 (`test_tools/gsc_sim_test.py`, `test_tools/gsc_tile_test.js`).
+
+
+## Use cases played through in the simulation (2026-11-26)
+
+| Use case | Mode | Result |
+|---|---|---|
+| Misalignment of 10.7' | Verify/Alert | Alert, no action |
+| GoTo to the mount, landing error 9.4' | Auto-correct (Sync) | one Sync of 9.3' / 9.2' after the slew (#659) |
+| GoTo to the PiFinder device | Goto-Forward | refine in 2 steps, 26-30 s, ON_TARGET (#663), status on the Control Center, INDI and PiFinder |
+| GoTo to the mount | Auto-correct + Goto action | the Bridge adopts the landing position and wanders away from the object (#658, decision open) |
+| **Hand controller centres finely** (15' pulse via TELESCOPE_MOTION_NS) | Goto-Forward | "Mount moved 15.0 arcmin ... external control detected", confirmed by a fresh PiFinder solve, adopted as the new held target; the mount stays where the user put it |
+| **Clutch slips / scope bumped** (the real sky moves 45' against the mount's report) | Goto-Forward | "Drift 45.5 arcmin exceeds what passive sky motion could produce ... confirm within 45 s", no answer: "treating as unintentional, reverting to the held target", back to 0.4' |
+| GoTo from the real hand controller / OnStep app | needs the real OnStep | not played (#658) |
+| Multi-Point Alignment, PiFinder only (no mount) | - | not played |
+
+The follower reads TELESCOPE_MOTION_NS/WE: a mount moved by hand really moves the sky (it is not a Sync); `--nudge-file`
+(`~/.pfsm/gsc_sim_nudge.json` with `{"east": .., "north": ..}`) shifts the real sky once against the mount's report to play a
+disturbance. The Bridge was restarted by the Control Center (#385) in the middle of several runs, which cost two GoTos.
