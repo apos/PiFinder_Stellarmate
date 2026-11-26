@@ -84,5 +84,23 @@ class ReadMountState(unittest.TestCase):
         self.assertIsNone(s["coords"])
 
 
+class BridgeActiveMount(unittest.TestCase):
+    def setUp(self):
+        self._saved = indi_client.get_properties
+
+    def tearDown(self):
+        indi_client.get_properties = self._saved
+
+    def test_the_linked_mount_is_read(self):
+        indi_client.get_properties = lambda **kw: {"PiFinder Mount Bridge": {"ACTIVE_DEVICES": {"elements": {"ACTIVE_MOUNT": "Telescope Simulator "}}}}
+        self.assertEqual(indi_client.bridge_active_mount(), "Telescope Simulator")
+
+    def test_no_bridge_or_no_mount_is_none(self):
+        indi_client.get_properties = lambda **kw: {}
+        self.assertIsNone(indi_client.bridge_active_mount())
+        indi_client.get_properties = lambda **kw: {"PiFinder Mount Bridge": {"ACTIVE_DEVICES": {"elements": {"ACTIVE_MOUNT": ""}}}}
+        self.assertIsNone(indi_client.bridge_active_mount())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

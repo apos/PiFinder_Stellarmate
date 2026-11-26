@@ -3411,7 +3411,7 @@ def _gsc_sim_restore_watchdog(interval=15):
     while True:
         time.sleep(interval)
         try:
-            what = gsc_sim.restore(indi=indi_client, active_mount=lambda: indi_client.mount_bridge_status().get("active_mount"))
+            what = gsc_sim.restore(indi=indi_client, active_mount=indi_client.bridge_active_mount)
         except Exception as e:  # never let this thread die
             what = "error: %s" % e
         if what != last and what not in ("none", "healthy"):

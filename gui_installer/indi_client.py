@@ -1455,6 +1455,13 @@ def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAU
     return ra, dec
 
 
+def bridge_active_mount(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """The mount the Mount Bridge is linked to (its ACTIVE_DEVICES.ACTIVE_MOUNT), or None. One light read, one connection."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"ACTIVE_DEVICES"})
+    el = props.get("PiFinder Mount Bridge", {}).get("ACTIVE_DEVICES", {}).get("elements", {})
+    return (el.get("ACTIVE_MOUNT") or "").strip() or None
+
+
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
     {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
