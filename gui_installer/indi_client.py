@@ -697,6 +697,7 @@ def mount_bridge_drift(
         "pifinder_altitude_deg": pifinder_altitude_deg,
         "pifinder_below_horizon": pifinder_below_horizon,
         "sky": sky,
+        "positioning": _positioning_status(device_props),
     }
 
 
@@ -817,6 +818,32 @@ def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float
         state = None
     _MOUNT_MOTION_CACHE[device] = (_now(), state)
     return state
+
+
+def _positioning_status(device_props: dict):
+    """The Mount Bridge's POSITIONING_STATUS / POSITIONING_PHASE (what it is doing to get the scope onto the target, and whether
+    the user should keep their hands off the hand controller): {"phase", "attempt", "attempts_max", "residual_arcmin",
+    "elapsed_sec", "to_go_deg", "solve_age_sec" (None when unknown), "hands_off"} or None for an older driver without the
+    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, HOLDING."""
+    prop = device_props.get("POSITIONING_STATUS", {})
+    phase = device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("PHASE")
+    if not prop or not phase:
+        return None
+    el = prop.get("elements", {})
+    try:
+        solve_age = float(el["SOLVE_AGE_SEC"])
+        return {
+            "phase": phase,
+            "attempt": int(float(el["ATTEMPT"])),
+            "attempts_max": int(float(el["ATTEMPTS_MAX"])),
+            "residual_arcmin": float(el["RESIDUAL_ARCMIN"]),
+            "elapsed_sec": float(el["ELAPSED_SEC"]),
+            "to_go_deg": float(el["TO_GO_DEG"]),
+            "solve_age_sec": solve_age if solve_age >= 0 else None,
+            "hands_off": float(el["HANDS_OFF"]) >= 0.5,
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _target_status(device_props: dict):

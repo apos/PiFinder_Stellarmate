@@ -48,5 +48,29 @@ class TargetStatus(unittest.TestCase):
         self.assertEqual(sky["target"]["offset_arcmin"], 9.35)
 
 
+def positioning(phase="REFINING", **o):
+    el = {"ATTEMPT": "1", "ATTEMPTS_MAX": "3", "RESIDUAL_ARCMIN": "7.7", "ELAPSED_SEC": "16", "TO_GO_DEG": "0",
+          "SOLVE_AGE_SEC": "0.4", "HANDS_OFF": "1"}
+    el.update(o)
+    return {"POSITIONING_STATUS": {"state": "Busy", "elements": el}, "POSITIONING_PHASE": {"state": "Busy", "elements": {"PHASE": phase}}}
+
+
+class PositioningStatus(unittest.TestCase):
+    def test_refining(self):
+        p = indi_client._positioning_status(positioning())
+        self.assertEqual(p, {"phase": "REFINING", "attempt": 1, "attempts_max": 3, "residual_arcmin": 7.7, "elapsed_sec": 16.0,
+                             "to_go_deg": 0.0, "solve_age_sec": 0.4, "hands_off": True})
+
+    def test_hands_free_after_the_move(self):
+        self.assertFalse(indi_client._positioning_status(positioning("ON_TARGET", HANDS_OFF="0"))["hands_off"])
+
+    def test_unknown_solve_age_is_none(self):
+        self.assertIsNone(indi_client._positioning_status(positioning(SOLVE_AGE_SEC="-1"))["solve_age_sec"])
+
+    def test_older_driver_or_unreadable(self):
+        self.assertIsNone(indi_client._positioning_status({}))
+        self.assertIsNone(indi_client._positioning_status(positioning(ATTEMPT="x")))
+
+
 if __name__ == "__main__":
     unittest.main()

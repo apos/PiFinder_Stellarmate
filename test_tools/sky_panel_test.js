@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -160,6 +160,25 @@ ok(!find(m, 'held') && !/held /.test(m.targetLine), 'a mode without a held targe
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: true }));
 ok(find(m, 'held') && /held /.test(m.targetLine), 'a mode with a held target: it is shown');
 ok(!/warn|alert|wrong|error/i.test(T.skyTargetLine({ target: tgt({ offset_arcmin: 300 }) })), 'a large offset is a number, not a warning');
+
+// ---- Positioning status (section 12 of the concept): what the line under the picture says ----
+const pos = (o) => Object.assign({ phase: 'REFINING', attempt: 1, attempts_max: 3, residual_arcmin: 7.7, elapsed_sec: 16, to_go_deg: 0, solve_age_sec: 0.4, hands_off: true }, o);
+ok(T.skyPositioningModel(null) === null && T.skyPositioningModel({ phase: 'IDLE' }) === null && T.skyPositioningModel(pos({ phase: 'NOPE' })) === null, 'no status, idle or an unknown phase: no line');
+let q = T.skyPositioningModel(pos({ phase: 'SLEWING', attempt: 0, to_go_deg: 38.4, hands_off: true }));
+ok(q.head === 'Mount slewing to the target' && q.sub === '38\u00b0 to go' && q.handsOff && q.step === 0, 'slewing: distance to go, hands off, step 0');
+ok(T.skyPositioningModel(pos({ phase: 'SLEWING', to_go_deg: 0.2 })).sub === 'arriving', 'slewing with almost nothing to go: arriving');
+q = T.skyPositioningModel(pos({ phase: 'VERIFYING', attempt: 0 }));
+ok(q.head === 'Verifying arrival' && q.handsOff && q.step === 1 && /fresh PiFinder solve/.test(q.why), 'verifying: hands off, waiting for settle and solve');
+q = T.skyPositioningModel(pos({ phase: 'VERIFYING', attempt: 1, solve_age_sec: 14 }));
+ok(/attempt 1 of 3/.test(q.sub) && /No fresh PiFinder solve for 14 s: this is the solve, not your alignment/.test(q.why), 'verifying with an old solve: says it is the solve, not the alignment');
+q = T.skyPositioningModel(pos({}));
+ok(q.head === 'Fine-adjusting' && q.sub === 'attempt 1 of 3 \u00b7 7.7\u2032 to the target' && q.step === 2 && q.running === 'Running for 16 s', 'refining: attempt, residual, running time');
+q = T.skyPositioningModel(pos({ phase: 'ON_TARGET', hands_off: false, residual_arcmin: 0.7 }));
+ok(q.head === 'On target' && !q.handsOff && q.tone === 'free' && /0\.7\u2032/.test(q.sub) && q.running === null, 'on target: hands free, residual, no running time');
+q = T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 3, residual_arcmin: 2.4 }));
+ok(q.head === 'Still 2.4\u2032 off after 3 attempts' && q.tone === 'warn' && /not the Bridge/.test(q.why), 'gave up: says what is left and that it is not the Bridge');
+ok(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 1 })).head.endsWith('1 attempt'), 'singular for one attempt');
+ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding the target', 'holding');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');
