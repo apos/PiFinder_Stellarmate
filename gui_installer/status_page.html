@@ -9687,7 +9687,7 @@ function renderSkyCard() {
       const cf = skyCouplingFacts(c, false);
       kv('Coupling', (cf[0] || 'unknown') + (c.threshold > 0 ? ' \u00b7 threshold ' + c.threshold + '\u2032' : ''));
       const clk = document.getElementById('sky-time');
-      if (clk && clk.textContent) kv('Sky for', clk.textContent.replace(/^Sky for\s*/, ''));
+      if (clk && clk.textContent) kv('Sky for', Array.from(clk.children).map((e) => (e.textContent || '').trim()).filter(Boolean).join(' \u00b7 '));   // time and date are two spans: keep a separator between them
     }
     box.appendChild(panel);
   }
