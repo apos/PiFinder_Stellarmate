@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+> Merged from `alpha/sim-refine` (49 commits): the "Real Hardware + GSC Simulation" mode, the Bridge's target and positioning transparency (Control Center and PiFinder's screen), arrival checks of the Mount Bridge,
+> and the redesigned sky area of the Control Center. No breaking changes.
+>
+> **Checked:** all JS tests in `test_tools/` (`sky_panel_test.js`, `gsc_tile_test.js`, `clock_warning_test.js`, ...), `gsc_sim_test.py` (34), `pifinder_sky_follow_test.py` (35), `pifinder_sky_renderer_test.py` (8),
+> `pfsm_bridge_status_test.py` (14), `target_status_test.py` (11), `patch_drift_check_test.py` (4), `compat_check_test.py` (14); live on the Pi 5 with the GSC simulation and a real OnStep: Target/Positioning display, hand-controller GoTo
+> (adopted as the new target), clutch slip (asks, then reverts), the GSC mode tile in all states.
+>
+> **Not yet seen live:** an unattended long run (#385 is open: the Bridge stays silent for 15-60 s about every 5 minutes, not root-caused; the Control Center now restarts it only after 60 s of silence), Multi-Point Alignment on the new
+> sky card, a hand-controller GoTo with tracking on from start to end after the last layout changes, and a Mount Bridge GoTo with the real mount through the whole run.
+
+### Added
+
+- Control Center, mode "Real Hardware + GSC Simulation" (#664, #344): a fourth mode tile that replaces the camera frame with a star field from the GSC catalogue, solved by the real Cedar/tetra3 solver; follows the mount over INDI (`test_tools/pifinder_sky_follow.py`: alignment point, simulated misalignment, absorbs Syncs, GoTo landing error that grows with the slew length, hand-controller motion counts as real movement). It is "on" only when it really works, remembers what was last chosen (a watchdog restarts a dead follower and switches PiFinder's Test Mode on again after an update, a crash or a reboot, bounded against restart loops) and waits until INDI and the mount driver answer before restarting. Full Simulation and Fake Mode move into "Other test modes".
+- Mount Bridge: `TARGET_STATUS` (the requested GoTo target and PiFinder's offset from it, #657) and `POSITIONING_STATUS` / `POSITIONING_PHASE` (attempt, residual, elapsed time, hands off, #665) as INDI properties; the Bridge also reports to PiFinder, whose screen shows "HANDS OFF" in the title bar while the Bridge works, then "ON TARGET" / "Hand OK n'" (patch `pfsm_bridge_status.py`, `ui_base_py.diff`).
+- Control Center, sky area: one card under the sky picture for every state (headline with "Hands off / Hands free", a four-step band, one line, one reason, Why? / Run so far / Details), the Target and Hold position as markers in the picture, time left and date right in the picture's top corners, the (i) in its bottom left corner, a fixed column width, and no second text block under the card.
+- Control Center: "Sync PiFinder from mount" without a plate solve injects the mount's position instead of refusing; "Copy to clipboard" below every terminal window; Multi-Point Alignment as a tile in Quick Actions; Settings and "Setup checklist & diagnostics" as tiles of their own; a Branch selector above "What is this device?".
+- `test_tools/`: `bridge_props.py`, `onstep_watch.py`, `bridge_messages.py`, `bridge_stall_catcher.py` (catches a silent Bridge and what the other devices do at the same moment, #385); docs `docs/concepts/mount_bridge_target_transparency.md` and `pifinder_realmode_sky_simulation.md`.
+
+### Changed
+
+- Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
+- Drift and altitude badges have one fixed width, so the diagram does not move when the number or the label changes.
+
+### Fixed
+
+- Mount Bridge: Auto-correct (Sync) only syncs to a frame exposed after the mount stopped (#659); the reposition detection no longer preempts the arrival verification (SETTLING, #663); nothing impossible reaches the mount, a (re)link never starts a Goto, a late mount driver is bound again; PiFinder LX200 does not republish a target within 1 arcminute of the published one (it started a second slew 30 s after a GoTo).
+- Sky follower: writes the sky again when something replaces PiFinder's test picture (an update put the original back and the simulation never solved).
+
 ## [2.6.1] - 2026-11-26
 
 > Update safety release: PiFinder's own update path is closed, PiFinder's v2.6.0 data migration is run by PFSM, two early-warning tools (patch drift against upstream tags, compatibility with the system)
