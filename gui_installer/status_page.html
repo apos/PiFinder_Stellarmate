@@ -1251,7 +1251,6 @@
      own guard) refuses to act as the actual enforcement, not just the look. */
   .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
   /* The GSC simulation is the first choice for testing without a sky; the two older simulations step into the background. */
-  .mode-tile-new { margin-left: 0.5rem; font-size: 0.6rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #3a2c10; color: #f5c46b; }
   .mode-tiles-minor-label { color: #777; font-size: 0.68rem; margin: 0.7rem 0 0.3rem 0; }
   .mode-tiles-minor { margin-bottom: 0.4rem; }
   .mode-tile.mode-tile-minor { padding: 0.35rem 0.6rem; }
@@ -2926,7 +2925,7 @@
             <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
           </div>
           <div class="mode-tile" id="mode-tile-gsc" onclick="toggleGscSim()" title="Real hardware + GSC simulation: a star field rendered from the GSC catalogue replaces the camera picture, PiFinder's real solver (Cedar / tetra3) solves it, the mount is any INDI mount. Test the whole chain without a night sky. Click to start or stop.">
-            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-gsc-dot"></span>Real Hardware + GSC Simulation<span class="mode-tile-new">new</span></div>
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-gsc-dot"></span>Real Hardware + GSC Simulation</div>
             <div class="mode-tile-sub" id="mode-tile-gsc-sub">&hellip;</div>
           </div>
         </div>
@@ -2953,6 +2952,7 @@
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
             <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
           </div>
+        </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <!-- 2026-09-27, direct feedback: the old plain ql-small-btn was too
              inconspicuous next to the Real Hardware/Full Simulation/Fake Mode

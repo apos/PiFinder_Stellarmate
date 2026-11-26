@@ -224,6 +224,25 @@ def landing_error(goto_error, slew_deg, ref_deg=GOTO_ERROR_REF_DEG, floor=GOTO_E
     return (goto_error[0] * factor, goto_error[1] * factor)
 
 
+NUDGE_FILE = os.path.expanduser("~/.pfsm/gsc_sim_nudge.json")
+
+
+def take_nudge(path=NUDGE_FILE):
+    """A one-off shift of the real sky against what the mount reports, as if the clutch slipped or the scope was bumped: the file
+    {"east": arcmin, "north": arcmin} is read and removed. Returns (east, north) or None."""
+    try:
+        with open(path) as handle:
+            data = json.load(handle)
+        os.unlink(path)
+        return float(data.get("east", 0.0)), float(data.get("north", 0.0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return None
+
+
 def read_target_pixel(config_path=os.path.expanduser("~/PiFinder_data/config.json")):
     """PiFinder's alignment point as (Y, X) in the 512x512 solve frame: the active telescope's, else the global one, else the centre."""
     try:
@@ -307,6 +326,12 @@ def follow(args):
             look = (ra2000, dec2000, state)
             offset, jump = absorb_sync(prev_look, look, offset)
             prev_look = look
+            nudge = take_nudge(args.nudge_file)
+            if nudge is not None:
+                offset = (offset[0] + nudge[0], offset[1] + nudge[1])
+                print(f"{time.strftime('%H:%M:%S')} NUDGE: the real sky moved {nudge[0]:+.1f}' east, {nudge[1]:+.1f}' north against the mount's "
+                      f"report (as if the clutch slipped) -> misalignment now {offset[0]:+.1f}' east, {offset[1]:+.1f}' north", flush=True)
+                last = None
             slew_count, slew_from = watcher.slew_count, watcher.slew_from
             if slew_count > seen_slews and state != "Busy":
                 # a slew started since the last look and the mount is still again: it has landed, however short it was
@@ -371,6 +396,8 @@ def main(argv=None):
                     help="the slew length the --goto-error-* values belong to (0: every GoTo lands exactly that far off)")
     ap.add_argument("--goto-error-floor", type=float, default=GOTO_ERROR_FLOOR, metavar="FRACTION",
                     help="a very short slew still lands this fraction of the error off")
+    ap.add_argument("--nudge-file", default=NUDGE_FILE, help="a JSON file {east, north} (arcmin) shifts the real sky once, as if the "
+                    "clutch slipped (used for testing the Bridge's reaction to a disturbance)")
     ap.add_argument("--target-pixel", nargs=2, type=float, metavar=("Y", "X"),
                     help="PiFinder's alignment point (default: read from its config)")
     ap.add_argument("--camera-centre", action="store_true",

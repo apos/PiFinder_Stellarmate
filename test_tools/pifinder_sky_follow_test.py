@@ -159,6 +159,29 @@ class GotoErrorTest(unittest.TestCase):
         self.assertLess(steps[2], steps[1] + 1e-9)
 
 
+class NudgeTest(unittest.TestCase):
+    def test_a_nudge_is_taken_once(self):
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "nudge.json")
+        with open(path, "w") as handle:
+            json.dump({"east": 12.5, "north": -3}, handle)
+        self.assertEqual(f.take_nudge(path), (12.5, -3.0))
+        self.assertFalse(os.path.exists(path))
+        self.assertIsNone(f.take_nudge(path))
+
+    def test_a_broken_nudge_file_is_removed_and_ignored(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "nudge.json")
+        with open(path, "w") as handle:
+            handle.write("{not json")
+        self.assertIsNone(f.take_nudge(path))
+        self.assertFalse(os.path.exists(path))
+
+    def test_missing_file_is_none(self):
+        self.assertIsNone(f.take_nudge("/nonexistent/nudge.json"))
+
+
 class WatcherTest(unittest.TestCase):
     """A slew too short for a poll to catch is still seen: the watcher gets every update."""
 

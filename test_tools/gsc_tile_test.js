@@ -40,5 +40,11 @@ ok(posGsc > 0 && posGsc < posOther && posOther < posSim && posSim < posFake, 'GS
 ok(/class="mode-tile mode-tile-minor" id="mode-tile-sim"/.test(html) && /class="mode-tile mode-tile-minor" id="mode-tile-fake"/.test(html), 'the two older modes are the quiet tiles');
 ok(/Start GSC simulation/.test(html) && /No solve active'/.test(html) && !/neither real nor synthetic/.test(html), 'the no-solve message offers the GSC simulation');
 
+// the minor row is closed before the readiness line and the One-Click row (they must not sit between the switches)
+const rowStart = html.indexOf('<div class="mode-tiles mode-tiles-minor">'), readiness = html.indexOf('<div id="sim-readiness-line">');
+const between = html.slice(rowStart, readiness);
+ok((between.match(/<div\b/g) || []).length === (between.match(/<\/div>/g) || []).length, 'the "Other test modes" row is closed before the setup readiness line');
+ok(!/mode-tile-new|>new</.test(html.slice(html.indexOf('id="mode-tile-gsc"'), html.indexOf('id="mode-tile-gsc"') + 700)), 'no "new" badge on the GSC tile');
+
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all GSC tile tests passed');
