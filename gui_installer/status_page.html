@@ -1653,6 +1653,12 @@
   /* While the positioning card is shown it says what the caption line would say: the label goes, the Details toggle stays (alone in its row; no row without one) */
   /* The card says all of it (it reads these texts as data sinks): while it is shown the older caption and status lines are not. */
   #mb-sky-col.sky-card-on #mb-caption-status-row { display: none; }
+  /* The long explanation and the refusal text sit outside the column (below it); the card shows them behind Why?, so they are not shown twice. */
+  body:has(#mb-sky-col.sky-card-on) #mb-mode-details, body:has(#mb-sky-col.sky-card-on) #mb-reject-warning-details { display: none !important; }
+  /* Drift and altitude badges: one fixed width, so the diagram does not breathe when the number or the label changes. */
+  #mb-diagram #mb-drift-badge, #mb-diagram #mb-horizon-badge { box-sizing: border-box; width: 5.6rem; padding-inline: 0.3rem; white-space: nowrap; }
+  #mb-drift-value, #mb-horizon-value { font-variant-numeric: tabular-nums; }
+  #mb-diagram #mb-drift-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   #mb-sky-col #mb-mode-caption, #mb-sky-col #mb-status-line { font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't

@@ -257,6 +257,8 @@ const pageHtml = require('fs').readFileSync(require('path').join(__dirname, '..'
 ok(/classList\.toggle\('sky-card-on', !!m\)/.test(pageHtml), 'the page marks the sky column while the positioning card is shown');
 ok(!/#mb-sky-col\.sky-card-on #mb-status-row:has/.test(pageHtml), 'no leftover rule that keeps part of the old status line');
 
+ok(/body:has\(#mb-sky-col\.sky-card-on\) #mb-mode-details/.test(pageHtml), 'the long explanation below is not shown twice while the card is shown');
+ok(/#mb-diagram #mb-drift-badge, #mb-diagram #mb-horizon-badge \{[^}]*width: 5\.6rem/.test(pageHtml), 'drift and altitude badges have one fixed width');
 // not running: the card keeps what the status line said, it does not replace it with a generic sentence
 {
   const cm = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'no Mount Bridge in this profile yet', statusDot: 'status-dot dot-yellow' });
