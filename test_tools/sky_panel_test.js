@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, skyCouplingFacts, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -241,6 +241,14 @@ ok(h.map((r) => r.text + ':' + r.state + ':' + r.detail).join(' | ') === 'Slewin
 ok(T.skyPositioningHistory([], true, 0) === null, 'history: no run, nothing');
 h = T.skyPositioningHistory(timed.concat([at(30000, { phase: 'ON_TARGET', attempt: 1 })]), false, 31000);
 ok(h.length === 4 && h[3].text === 'On target' && h[3].state === 'done', 'history: a finished run ends with On target and no faint goal');
+
+// the coupling facts: what the old status line said, now the end of the card's facts row
+ok(T.skyCouplingFacts({ mode: 'MODE_GOTO_FORWARD', drift: 1.2, threshold: 2 }, true).join(' \u00b7 ') === '1.2\u2032 drift, within 2\u2032 \u00b7 Goto forward', 'coupling facts while holding: drift within the threshold, the mode');
+ok(T.skyCouplingFacts({ mode: 'MODE_GOTO_FORWARD', drift: 3.4, threshold: 2 }, true)[0] === '3.4\u2032 drift, over 2\u2032', 'coupling facts: over the threshold says so');
+ok(T.skyCouplingFacts({ mode: 'MODE_GOTO_FORWARD', drift: 3.4, threshold: 2 }, false).join('|') === 'Goto forward', 'coupling facts while the Bridge works: only the mode, the drift is the residual then');
+ok(T.skyCouplingFacts({ mode: 'MODE_AUTO_CORRECT', action: 'ACTION_GOTO' }, false)[0] === 'Auto-correct (Goto)' && T.skyCouplingFacts({ mode: 'MODE_AUTO_CORRECT', action: 'ACTION_SYNC' }, false)[0] === 'Auto-correct (Sync)', 'coupling facts: Auto-correct names its action');
+ok(T.skyCouplingFacts(null, true).length === 0 && T.skyCouplingFacts({ mode: 'MODE_OFF' }, true)[0] === 'Coupling off', 'coupling facts: nothing known, nothing said; off says off');
+ok(/#mb-sky-col\.sky-card-on #mb-status-row:has\(#mount-bridge-dot\.dot-green\) \{ display: none; \}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8')), 'the status line goes only while it is healthy');
 
 // the card owns the state: while it is shown the caption line under it is not
 const pageHtml = require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8');

@@ -630,9 +630,7 @@
   #sky-positioning .pos-hist summary::-webkit-details-marker { display: none; }
   #sky-positioning .pos-hist ol { margin: 4px 0 0; padding: 0; list-style: none; height: 132px; overflow-y: auto; }
   #sky-positioning .pos-hist li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
-  #sky-positioning .pos-hist .done { color: #8fd19a; }
-  #sky-positioning .pos-hist .now { color: #f5a623; font-weight: 600; }
-  #sky-positioning .pos-hist .warn { color: #f5c46b; }
+  #sky-positioning .pos-hist .now { color: #e6e8ec; }
   #sky-target-line { margin-top: 6px; height: 18px; font-size: 11px; color: #9aa0a6; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #sky-time { display: flex; align-items: center; gap: 0 0.35rem; margin-top: 2px; height: 18px; font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden;
     color: #8b93a1; font-variant-numeric: tabular-nums; }
@@ -1647,6 +1645,7 @@
   #mb-sky-col.sky-card-on #mb-mode-caption-dot-text { display: none; }
   #mb-sky-col.sky-card-on #mb-mode-caption-row:not(:has(#mb-mode-details-toggle:not([style*="none"]))) { display: none; }
   #mb-sky-col.sky-card-on #mb-mode-details-toggle { margin-left: 0; }
+  #mb-sky-col.sky-card-on #mb-status-row:has(#mount-bridge-dot.dot-green) { display: none; }
   #mb-sky-col #mb-mode-caption, #mb-sky-col #mb-status-line { font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
@@ -9351,6 +9350,20 @@ function skyPositioningHistory(trail, handsOff, nowMs) {
     return { text: it.text, state: it.state, detail: detail };
   });
 }
+// What the old status line said under the picture ("goto forward (drift 1.2')"), now the last part of the card's facts row:
+// ctx = {mode, action, drift, threshold}; every part optional.
+function skyCouplingFacts(ctx, holding) {
+  const out = [];
+  const c = ctx || {};
+  if (holding && typeof c.drift === 'number' && isFinite(c.drift)) {
+    const thr = typeof c.threshold === 'number' && isFinite(c.threshold) && c.threshold > 0 ? c.threshold : null;
+    out.push(c.drift.toFixed(1) + '\u2032 drift' + (thr === null ? '' : c.drift <= thr ? ', within ' + thr + '\u2032' : ', over ' + thr + '\u2032'));
+  }
+  const goto = /goto/i.test(c.action || '');
+  const label = { MODE_GOTO_FORWARD: 'Goto forward', MODE_AUTO_CORRECT: goto ? 'Auto-correct (Goto)' : 'Auto-correct (Sync)', MODE_VERIFY_ALERT: 'Verify/Alert only', MODE_OFF: 'Coupling off' }[c.mode];
+  if (label) out.push(label);
+  return out;
+}
 const SKY_POSITIONING_INTERRUPTED_SEC = 90;
 function skyPositioningInterrupted(last, secondsAgo) {
   if (!last || !last.handsOff || secondsAgo > SKY_POSITIONING_INTERRUPTED_SEC) return null;
@@ -9541,7 +9554,7 @@ function skyPosEl(tag, cls, text) {
   if (text !== undefined && text !== null) e.textContent = text;
   return e;
 }
-function applyPositioning(p) {
+function applyPositioning(p, ctx) {
   _posTrail = skyPositioningTrailUpdate(_posTrail, p);
   const box = document.getElementById('sky-positioning');
   if (!box) return;
@@ -9572,7 +9585,7 @@ function applyPositioning(p) {
   nowRow.appendChild(skyPosEl('span', '', now[1]));
   box.appendChild(nowRow);
   // one line of facts, the longer explanation is its tooltip
-  const facts = skyPosEl('div', 'pos-facts', skyPositioningFacts(pp, m).join(' \u00b7 '));
+  const facts = skyPosEl('div', 'pos-facts', skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(ctx, pp.phase === 'HOLDING')).join(' \u00b7 '));
   facts.title = [m.sub, m.why, m.running].filter(Boolean).join(' - ');
   box.appendChild(facts);
   // the whole run, step by step: the row is always there (the card never gains or loses a row), closed unless the user opened it
@@ -9581,8 +9594,10 @@ function applyPositioning(p) {
   det.open = _posHistOpen === true;
   det.addEventListener('toggle', () => { _posHistOpen = det.open; });
   const sum = skyPosEl('summary');
-  sum.appendChild(skyPosEl('span', '', m.handsOff ? 'Run so far' : 'Last run'));
-  sum.appendChild(skyPosEl('span', '', m.running ? m.running.replace('Running for ', '') : (!hist ? 'none yet' : det.open ? 'hide \u25b4' : 'show \u25be')));
+  sum.appendChild(skyPosEl('span', '', (m.handsOff ? 'Run so far' : 'Last run') + (m.running ? ' \u00b7 ' + m.running.replace('Running for ', '') : '')));
+  const hint = skyPosEl('span', '', !hist ? 'none yet' : det.open ? 'hide \u25b4' : 'show \u25be');
+  sum.appendChild(hint);
+  det.addEventListener('toggle', () => { if (hist) hint.textContent = det.open ? 'hide \u25b4' : 'show \u25be'; });
   det.appendChild(sum);
   const ol = skyPosEl('ol');
   (hist || []).forEach((r) => {
@@ -9639,7 +9654,7 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
       applySkyPanel(data.sky);
-      applyPositioning(data.positioning);
+      applyPositioning(data.positioning, { mode: data.coupling_mode, action: data.correction_action, drift: data.drift_arcmin, threshold: parseFloat(readThresholdInputRaw()) });
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
       // from mount' darf im Client Mode nicht auftauchen" - none of these
