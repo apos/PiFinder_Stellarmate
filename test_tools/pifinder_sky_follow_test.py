@@ -121,5 +121,16 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(f.absorb_sync(None, far, (3.0, 4.0)), ((3.0, 4.0), None))
 
 
+class GotoErrorTest(unittest.TestCase):
+    def test_finished_goto_replaces_the_offset(self):
+        self.assertEqual(f.after_slew("Busy", "Ok", (0.5, 0.3), (8.0, -5.0)), ((8.0, -5.0), True))
+
+    def test_nothing_else_does(self):
+        self.assertEqual(f.after_slew("Ok", "Ok", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
+        self.assertEqual(f.after_slew("Busy", "Busy", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
+        self.assertEqual(f.after_slew("Busy", "Ok", (0.5, 0.3), None), ((0.5, 0.3), False))
+        self.assertEqual(f.after_slew(None, "Ok", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
+
+
 if __name__ == "__main__":
     unittest.main()

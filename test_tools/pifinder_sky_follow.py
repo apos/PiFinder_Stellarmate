@@ -190,6 +190,17 @@ def absorb_sync(prev, cur, offset):
     return (offset[0] - east, offset[1] - north), jump
 
 
+def after_slew(prev_state, state, offset, goto_error):
+    """A GoTo that has just finished (Busy -> not Busy): the scope lands goto_error (east, north arcmin) off the target.
+
+    Replaces the current misalignment, since that is where the real sky is relative to the mount's reported target. With
+    goto_error None nothing changes.
+    """
+    if goto_error is not None and prev_state == "Busy" and state != "Busy":
+        return goto_error, True
+    return offset, False
+
+
 def read_target_pixel(config_path=os.path.expanduser("~/PiFinder_data/config.json")):
     """PiFinder's alignment point as (Y, X) in the 512x512 solve frame: the active telescope's, else the global one, else the centre."""
     try:
@@ -251,6 +262,7 @@ def follow(args):
           + ("ignored, the mount is rendered at the frame centre" if centre_xy is None else "the mount's position is rendered there")
           + f"; misalignment {args.misalign_east:+.1f}' east, {args.misalign_north:+.1f}' north", flush=True)
     offset = (args.misalign_east, args.misalign_north)
+    goto_error = (args.goto_error_east, args.goto_error_north) if (args.goto_error_east or args.goto_error_north) else None
     prev_look = None
     last = None
     rendered = 0
@@ -270,7 +282,11 @@ def follow(args):
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
             look = (ra2000, dec2000, state)
             offset, jump = absorb_sync(prev_look, look, offset)
+            offset, landed = after_slew(prev_look[2] if prev_look else None, state, offset, goto_error)
             prev_look = look
+            if landed:
+                print(f"{time.strftime('%H:%M:%S')} GoTo finished: the scope landed {offset[0]:+.1f}' east, {offset[1]:+.1f}' north of the target", flush=True)
+                last = None
             if jump is not None:
                 print(f"{time.strftime('%H:%M:%S')} mount reports a SYNC of {jump:.1f}' -> misalignment now "
                       f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north (the sky itself did not move)", flush=True)
@@ -311,6 +327,9 @@ def main(argv=None):
     ap.add_argument("--misalign-east", type=float, default=0.0, metavar="ARCMIN",
                     help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")
     ap.add_argument("--misalign-north", type=float, default=0.0, metavar="ARCMIN", help="same, towards the north")
+    ap.add_argument("--goto-error-east", type=float, default=0.0, metavar="ARCMIN",
+                    help="every finished GoTo lands the scope this far east of its target (simulated pointing error)")
+    ap.add_argument("--goto-error-north", type=float, default=0.0, metavar="ARCMIN", help="same, towards the north")
     ap.add_argument("--target-pixel", nargs=2, type=float, metavar=("Y", "X"),
                     help="PiFinder's alignment point (default: read from its config)")
     ap.add_argument("--camera-centre", action="store_true",
