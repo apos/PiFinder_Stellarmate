@@ -2872,7 +2872,11 @@ _mb_readiness_gave_up = False
 # strong contributing factor to the RA0/Dec0 jumps. Now requires this many
 # CONSECUTIVE not-running ticks (5s apart) before concluding the driver is
 # actually stuck rather than just momentarily slow to answer.
-_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
+# 2026-11-26 (#385, caught live with test_tools/mount_bridge_hang_catcher.py): the Bridge goes silent for 15-60 s about every 5 minutes
+# while only IT is silent (PiFinder LX200 and the mount answer at the same moment), both of its threads idle in select(), memory and CPU
+# fine - and it recovers by itself. A restart after 3 ticks (15 s) therefore only did harm (state lost, GoTos in flight lost, the
+# readiness panel flapping). 12 ticks = 60 s: a really dead driver is still restarted, a stall that passes is left alone.
+_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 12
 _mb_readiness_consecutive_fails = 0
 
 # Debounce for check 6 - found live 2026-09-05: an "PiFinder Simulator" INDI
