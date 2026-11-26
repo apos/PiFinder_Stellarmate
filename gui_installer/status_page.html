@@ -1588,8 +1588,8 @@
      size (not shrunk into a small badge). */
   #mb-sky-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem 1.1rem; margin: 0.6rem 0 0.3rem 0; }
   /* max-width: the diagram and the sky sit next to each other from the left edge instead of the sky being pushed to the far
-     right; below 600 px the diagram is stacked anyway. */
-  #mb-diagram { flex: 1 1 330px; min-width: 0; max-width: 36rem; container-type: inline-size; }
+     right (its content, three badges in a row, is about 21rem wide); below 600 px the diagram is stacked anyway. */
+  #mb-diagram { flex: 1 1 330px; min-width: 0; max-width: 22rem; container-type: inline-size; }
   #mb-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
   .mb-grp { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
   /* Middle group: Drift | Bridge (with Ekos, WM) | Alt on equal side columns, so the Bridge badge is always
