@@ -123,13 +123,15 @@ ok(m.notes.length === 0, 'no mount configured (Dobsonian): no mount note');
 m = T.skyBuildModel(mk({ mount_configured: true }));
 ok(m.notes.length === 2 && m.markers.length === 0, 'nothing known: both notes, no markers');
 const nv = mkEl('svg'); T.drawSkyPanel(nv, m);
-ok(nv.children.filter((c) => c.name === 'text').map((c) => c._text).includes('PiFinder: no position'), 'drawing writes the note');
+ok(m.legend.some((r) => r.id === 'pifinder' && r.off && r.sub === 'no position') && m.legend.some((r) => r.id === 'mount' && r.off), 'the legend names what has no position (the names are not in the picture)');
 
 // drawing runs and writes every name
 const svg = mkEl('svg');
 T.drawSkyPanel(svg, T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'not tracking', pifinder: pt(-14.4, 327.9) })));
 const texts = svg.children.filter((c) => c.name === 'text').map((c) => c._text);
-ok(texts.includes('Mount (stopped)') && texts.includes('PiFinder −14°') && ['N', 'E', 'S', 'W'].every((d) => texts.includes(d)), 'drawing contains the names and the four directions');
+ok(['N', 'E', 'S', 'W'].every((d) => texts.includes(d)) && !texts.includes('Mount (stopped)'), 'drawing contains the four directions, the names are in the legend');
+const lg = T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'not tracking', pifinder: pt(-14.4, 327.9) })).legend;
+ok(lg.find((r) => r.id === 'mount').sub.startsWith('stopped') && lg.find((r) => r.id === 'pifinder').below === true && /−14°/.test(lg.find((r) => r.id === 'pifinder').sub), 'the legend carries the mount state and the altitude of a PiFinder below the horizon');
 const u = mkEl('svg'); T.drawSkyPanel(u, T.skyBuildModel(mk({ location_known: false })));
 ok(u.children.some((c) => c._text === 'Location unknown'), 'drawing for unknown location says so');
 

@@ -597,46 +597,55 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
-  /* The picture keeps its size (230 px); the column under it is wider so the target sentence and the positioning line fit
-     on one line (narrower than the tile on a phone). */
-  #sky-panel-inner { flex: 0 0 auto; width: min(100%, 24rem); }
-  #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
-  #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
+  #sky-panel { position: relative; display: flex; align-items: center; gap: 10px; width: min(100%, 22rem); min-height: 176px; }
+  #sky-panel .help-link { position: absolute; right: 0; top: 0; margin: 0; }
+  #sky-panel-svg { flex: none; display: block; width: 168px; height: auto; margin-top: 8px; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
-  /* The positioning card under the sky picture (variant C of the three mockups): one headline row, a thin four-step band, one facts row,
-     the run so far. One typeface, three sizes (11 / 13 / 14 px), every row a fixed height and one line (ellipsis, the full text is the
-     tooltip): nothing moves when the column gets narrower or the state changes. */
-  #sky-positioning { margin-top: 8px; padding: 0.55rem 0.7rem 0.6rem; border: 1px solid #2a2a2a; border-radius: 8px; background: #161616;
+  /* Sky area and the card under it (mockup "one block, three states"): the picture with its legend beside it, the time in the corner, one
+     card for every state. One typeface, 11 / 13 / 15 px, fixed rows, ellipsis instead of wrapping, buttons at least 32 px high. */
+  #sky-card { width: min(100%, 22rem); box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #2a2a2a; border-radius: 12px; background: #161616;
     font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
-  #sky-positioning .pos-head { display: flex; align-items: center; gap: 8px; height: 28px; font-size: 14px; font-weight: 600; }
-  #sky-positioning .pos-head > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #sky-positioning .pos-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #4caf50; }
-  #sky-positioning.pos-off .pos-dot, #sky-positioning.pos-warn .pos-dot { background: #f5a623; }
-  #sky-positioning .pos-badge { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #1f3a24; color: #8fd19a; white-space: nowrap; }
-  #sky-positioning.pos-off .pos-badge { background: #f5a623; color: #2a1c00; }
-  #sky-positioning.pos-warn .pos-badge { background: #3a2c10; color: #f5c46b; }
-  #sky-positioning .pos-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 6px 0 4px; }
-  #sky-positioning .pos-seg { height: 4px; border-radius: 2px; background: #2a2a2a; }
-  #sky-positioning .pos-seg.d { background: #4caf50; }
-  #sky-positioning .pos-seg.n { background: #f5a623; }
-  #sky-positioning .pos-seg.w { background: #e57373; }
-  #sky-positioning .pos-now { display: flex; justify-content: space-between; gap: 8px; height: 18px; font-size: 11px; color: #9aa0a6; white-space: nowrap; }
-  #sky-positioning .pos-now span { overflow: hidden; text-overflow: ellipsis; }
-  #sky-positioning .pos-facts { height: 20px; margin: 6px 0; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #sky-positioning .pos-hist { border-top: 1px solid #2a2a2a; padding-top: 6px; font-size: 12px; color: #9aa0a6; }
-  #sky-positioning .pos-hist summary { display: flex; justify-content: space-between; cursor: pointer; list-style: none; }
-  #sky-positioning .pos-hist summary::-webkit-details-marker { display: none; }
-  #sky-positioning .pos-hist ol { margin: 4px 0 0; padding: 0; list-style: none; height: 132px; overflow-y: auto; }
-  #sky-positioning .pos-hist li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
-  #sky-positioning .pos-hist .now { color: #e6e8ec; }
-  #sky-target-line { margin-top: 6px; height: 18px; font-size: 11px; color: #9aa0a6; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #sky-time { display: flex; align-items: center; gap: 0 0.35rem; margin-top: 2px; height: 18px; font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden;
-    color: #8b93a1; font-variant-numeric: tabular-nums; }
-  #sky-time b { color: #e6e8ec; font-weight: 500; }
+  #sky-card .sc-head { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 15px; font-weight: 600; }
+  #sky-card .sc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sky-card .sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #4caf50; }
+  #sky-card.card-warn .sc-dot { background: #f5a623; }
+  #sky-card.card-bad .sc-dot { background: #e53935; }
+  #sky-card.card-idle .sc-dot { background: #777; }
+  #sky-card .sc-badge { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #1f3a24; color: #8fd19a; white-space: nowrap; }
+  #sky-card.card-warn .sc-badge { background: #3a2c10; color: #f5c46b; }
+  #sky-card.card-bad .sc-badge { background: #3a1a1a; color: #ff8a80; }
+  #sky-card.card-idle .sc-badge { background: #2a2a2a; color: #aaa; }
+  #sky-card .sc-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 4px 0 6px; }
+  #sky-card .sc-seg { height: 4px; border-radius: 2px; background: #2a2a2a; }
+  #sky-card .sc-seg.d { background: #4caf50; }
+  #sky-card .sc-seg.n { background: #f5a623; }
+  #sky-card .sc-seg.w { background: #e57373; }
+  #sky-card .sc-line { height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-card .sc-line.warn { color: #f5c46b; }
+  #sky-card .sc-why { height: 18px; font-size: 12px; line-height: 18px; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-card .sc-acts { display: flex; gap: 10px; height: 36px; align-items: center; margin-top: 4px; border-top: 1px solid #2a2a2a; }
+  #sky-card .sc-act { background: none; border: 0; color: #9aa0a6; font: inherit; font-size: 12px; padding: 0 6px 0 0; min-height: 32px; cursor: pointer; }
+  #sky-card .sc-act:hover, #sky-card .sc-act.open { color: #e6e8ec; }
+  #sky-card .sc-panel { border-top: 1px solid #2a2a2a; padding: 6px 0 4px; font-size: 12px; color: #9aa0a6; max-height: 150px; overflow-y: auto; }
+  #sky-card .sc-panel ol { margin: 0; padding: 0; list-style: none; }
+  #sky-card .sc-panel li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
+  #sky-card .sc-text { margin: 0 0 6px; line-height: 1.4; }
+  #sky-card .sc-kv { display: grid; grid-template-columns: 74px 1fr; min-height: 22px; align-items: center; }
+  #sky-card .sc-kv span:first-child { color: #777; }
+  #sky-time { position: absolute; left: 0; top: 0; font-size: 11px; line-height: 14px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #sky-time b { color: #c3c7cc; font-weight: 500; }
+  #sky-time .sky-time-prefix { display: none; }
   #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
-  #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; align-self: center; flex: none; }
+  #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  #sky-legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-top: 22px; }
+  .sl-row { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+  .sl-row.off { opacity: 0.5; }
+  .sl-row svg { flex: none; }
+  .sl-txt { min-width: 0; display: flex; flex-direction: column; line-height: 15px; }
+  .sl-name { font-size: 13px; color: #e6e8ec; }
+  .sl-sub { font-size: 11px; color: #8d9399; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-target-line { display: none; }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -2776,14 +2785,16 @@
            the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
            profile (Dobsonian) where the diagram is hidden. -->
         <div id="sky-panel" style="display:none;">
-          <div id="sky-panel-inner">
-            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-            <div id="sky-positioning" style="display:none;"></div>
-            <div id="sky-target-line" style="display:none;" title="The Target is what was last asked for (a Goto from KStars, another INDI client, the mount side or PiFinder). The offset is how far PiFinder's solved position is from it. It is information only: you may take the object out of the centre on purpose, nothing is corrected because of this number."></div>
-            <div id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></div>
-          </div>
+          <span id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></span>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
+          <svg id="sky-panel-svg" viewBox="14 16 212 216" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+          <div id="sky-legend"></div>
         </div>
+        <!-- One card for every state under the picture: the headline with Hands off/free, the four-step band, one line, one reason, and the
+             buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
+             never shown) and the Bridge's positioning status. -->
+        <div id="sky-card"></div>
+        <div id="sky-target-line" style="display:none;" title="The Target is what was last asked for. Shown in the card's Details."></div>
         <div id="mb-caption-status-row">
           <div id="mb-mode-caption-row">
             <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
@@ -6745,7 +6756,7 @@ function renderSkyTime() {
   el.className = m.warn ? 'sky-time-warn' : '';
   el.textContent = '';
   if (m.warn) { const dot = document.createElement('span'); dot.className = 'sky-time-dot'; el.appendChild(dot); }
-  const a = document.createElement('span'); a.textContent = m.prefix; el.appendChild(a);
+  const a = document.createElement('span'); a.className = 'sky-time-prefix'; a.textContent = m.prefix; el.appendChild(a);
   const b = document.createElement('b'); b.textContent = m.time; el.appendChild(b);
   const c = document.createElement('span'); c.textContent = '· ' + (m.tail || m.day); el.appendChild(c);
 }
@@ -9201,6 +9212,7 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
 const SKY_C = { ring: '#444444', ring2: '#333333', disc: '#1a1a1a', fg: '#dddddd', muted: '#888888',
   blue: '#7ec8ff', green: '#4caf50', yellow: '#f5a623', red: '#e53935', redSoft: '#ff8a80' };
 const SKY_CX = 120, SKY_CY = 124, SKY_R = 90;
+const SKY_SYMBOL_SCALE = 1.35;
 const SKY_FOV_DEG = 13.7;        // PiFinder's field with the standard 16 mm lens
 const SKY_AGREE_DEG = 7;         // within about the field's half width: "they agree"
 function skyRad(d) { return d * Math.PI / 180; }
@@ -9364,6 +9376,50 @@ function skyCouplingFacts(ctx, holding) {
   if (label) out.push(label);
   return out;
 }
+// The card under the picture, one model for every state (the mockup "one block, three states"). Inputs: the positioning model m (null when
+// the Bridge has no run to report), the raw status p, the run's trail, ctx {running, mode, action, drift, threshold} and fb, the texts the
+// older status lines wrote: {caption, captionDot, status, details}. Returns {tone: free|warn|bad|idle, head, badge, band[4], line,
+// lineWarn, why}; the long explanation (fb.details) is not in it, it sits behind the "Why?" button.
+function skyCardModel(m, p, trail, ctx, fb) {
+  const c = ctx || {}, f = fb || {}, pp = p || {};
+  const caption = (f.caption || '').trim();
+  const captionTone = /dot-red/.test(f.captionDot || '') ? 'bad' : /dot-yellow/.test(f.captionDot || '') ? 'warn' : 'free';
+  const out = { tone: 'idle', head: '', badge: '', band: ['later', 'later', 'later', 'later'], line: '', lineWarn: false, why: '' };
+  const attention = () => {
+    // what the older status line carried as small marks: the mount refused a command, or the status is not confirmed (stale poll)
+    if (f.reject) { out.tone = 'bad'; out.why = 'The mount refused a command'; }
+    else if (f.unconfirmed) { if (out.tone === 'free' || out.tone === 'idle') out.tone = 'warn'; out.why = out.why || 'Status not confirmed yet'; }
+    return out;
+  };
+  if (!m) {
+    out.head = caption || 'Not coupled';
+    out.tone = captionTone === 'free' ? 'idle' : captionTone;
+    out.badge = c.running === false ? 'Bridge off' : c.mode === 'MODE_OFF' ? 'Coupling off' : '';
+    out.line = f.status === 'not running' || c.running === false ? 'The Bridge is not running' : (f.status || '');
+    out.why = c.running === false ? 'Start it under Setup checklist' : '';
+    return attention();
+  }
+  const holding = pp.phase === 'HOLDING';
+  const thr = typeof c.threshold === 'number' && isFinite(c.threshold) && c.threshold > 0 ? c.threshold : null;
+  const high = holding && thr !== null && typeof c.drift === 'number' && c.drift > thr;
+  out.tone = m.interrupted || m.tone === 'warn' || m.tone === 'off' || high || captionTone !== 'free' ? (captionTone === 'bad' ? 'bad' : 'warn') : 'free';
+  out.head = high ? 'Holding, drift is high' : m.head;
+  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free';
+  out.band = skyPositioningBand(trail, pp, m);
+  const now = skyPositioningNow(pp, m);
+  const facts = skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(c, holding));
+  if (m.handsOff || m.interrupted || pp.phase === 'SLEWING' || pp.phase === 'VERIFYING' || pp.phase === 'REFINING') {
+    out.line = now.filter(Boolean).join(' \u00b7 ');        // step and attempt
+    out.why = facts.join(' \u00b7 ');                          // the numbers
+  } else {
+    out.line = [now[0]].concat(facts).filter(Boolean).join(' \u00b7 ');   // On target \u00b7 0.6\u2032 drift, within 2\u2032 \u00b7 Goto forward
+    out.lineWarn = high;
+    out.why = high ? 'Waiting for a fresh solve before correcting'
+      : captionTone !== 'free' && caption ? caption
+      : holding ? 'Position verified by a fresh solve' : '';
+  }
+  return attention();
+}
 const SKY_POSITIONING_INTERRUPTED_SEC = 90;
 function skyPositioningInterrupted(last, secondsAgo) {
   if (!last || !last.handsOff || secondsAgo > SKY_POSITIONING_INTERRUPTED_SEC) return null;
@@ -9389,10 +9445,28 @@ function skyTargetLine(sky) {
   }
   return s;
 }
+// The legend beside the picture: one row per thing in it, with the number that used to be a sentence under it. The names are not in the
+// picture any more (a phone cannot carry them). [{id, name, sub, color, below, off}]; "off" rows are known things without a position.
+function skyLegendRows(sky, markers) {
+  if (!sky) return [];
+  const t = sky.target;
+  const off = t && typeof t.offset_arcmin === 'number' ? (t.offset_arcmin < 0.5 ? 'on the target' : skyFmtOffset(t.offset_arcmin) + ' from target') : '';
+  const find = (id) => markers.find((m) => m.id === id);
+  const ms = skyMountStyle(sky.mount_state);
+  const mount = find('mount'), pf = find('pifinder'), go = find('goto'), held = find('held');
+  const rows = [];
+  if (mount) rows.push({ id: 'mount', name: 'Mount', sub: [ms.word, mount.p.below ? skyAlt(sky.mount) : ''].filter(Boolean).join(' \u00b7 '), color: ms.color, below: mount.p.below });
+  else if (sky.mount_configured) rows.push({ id: 'mount', name: 'Mount', sub: 'no position', off: true });
+  if (pf) rows.push({ id: 'pifinder', name: 'PiFinder', sub: pf.p.below ? skyAlt(sky.pifinder) + ' \u00b7 below horizon' : off, color: pf.color, below: pf.p.below });
+  else rows.push({ id: 'pifinder', name: 'PiFinder', sub: 'no position', off: true });
+  if (go) rows.push({ id: 'goto', name: 'Target', sub: t && t.source ? 'set on ' + t.source : '' });
+  if (held) rows.push({ id: 'held', name: 'Hold position', sub: go ? 'held ' + skyFmtOffset(skySep(sky.goto, sky.held) * 60) + ' from target' : '' });
+  return rows;
+}
 // What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
 function skyBuildModel(sky) {
   if (!sky) return null;
-  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [] };
+  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [], legend: [] };
   const markers = [];
   const add = (id, o, name, color, extra) => {
     if (!o) return null;
@@ -9431,7 +9505,7 @@ function skyBuildModel(sky) {
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
   skyPlaceNames(markers, notes);
-  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky) };
+  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky), legend: skyLegendRows(sky, markers) };
 }
 // Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
 // cross), so a name never lands on a symbol - its own or another one.
@@ -9500,7 +9574,7 @@ function drawSkyPanel(svg, model) {
   skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: SKY_R, fill: C.disc, stroke: model.unknown ? C.ring2 : C.ring, 'stroke-width': 1.5,
     'stroke-dasharray': model.unknown ? '3 4' : 'none' }, svg);
   if (model.unknown) {
-    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12.5, 'font-weight': 700 }, svg, 'Location unknown');
+    skyEl('text', { x: SKY_CX, y: SKY_CY + 5, 'text-anchor': 'middle', fill: C.muted, 'font-size': 16, 'font-weight': 700 }, svg, 'Location unknown');
     return;
   }
   [30, 60].forEach((alt) => skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: (90 - alt) / 90 * SKY_R, fill: 'none', stroke: C.ring2,
@@ -9511,7 +9585,7 @@ function drawSkyPanel(svg, model) {
     const off = SKY_R + 11;
     // About the size of the status lines next to it (13 px at the tile's usual width), all bold.
     skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 5, 'text-anchor': 'middle',
-      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 13.5, 'font-weight': 700 }, svg, d[0]);
+      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 16, 'font-weight': 700 }, svg, d[0]);
   });
   if (model.line) {
     const L = model.line;
@@ -9531,23 +9605,21 @@ function drawSkyPanel(svg, model) {
     skyEl('rect', { x: pf.p.x - f / 2, y: pf.p.y - f / 2, width: f, height: f, fill: 'none', stroke: C.fg, 'stroke-width': 1, opacity: 0.8 }, g(pf));
   }
   if (held) {
-    const e = g(held);
-    skyEl('line', { x1: held.p.x - 6, y1: held.p.y, x2: held.p.x + 6, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 }, e);
-    skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
+    const e = g(held), k = SKY_SYMBOL_SCALE;
+    skyEl('line', { x1: held.p.x - 6 * k, y1: held.p.y, x2: held.p.x + 6 * k, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 * k }, e);
+    skyEl('line', { x1: held.p.x, y1: held.p.y - 6 * k, x2: held.p.x, y2: held.p.y + 6 * k, stroke: C.blue, 'stroke-width': 1.6 * k }, e);
   }
-  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
-  if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
-    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  const K = SKY_SYMBOL_SCALE;   // the picture is drawn small: its symbols are drawn big
+  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5 * K, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 * K }, g(go));
+  if (pf) skyEl('rect', { x: pf.p.x - 4.5 * K, y: pf.p.y - 4.5 * K, width: 9 * K, height: 9 * K, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
+    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': (pf.p.below ? 2 : 1.5) * K }, g(pf));
   // Drawn last: with both on (nearly) the same spot the dot stays visible on top of the diamond.
-  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
-  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
-    stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
-  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
-    'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5 * K, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 * K }, g(mount));
 }
 let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
 let _posTrail = [];   // the phases of the current run, see skyPositioningTrailUpdate()
-let _posHistOpen = null;   // null: follow the run (open while the Bridge works, closed after); true/false: the user's own choice
+let _skyCard = { p: null, ctx: null, m: null, targetLine: null };   // what the card last got; renderSkyCard() draws it
+let _skyCardOpen = null;   // which panel under the card the user opened: 'why' | 'run' | 'details' | null (one at a time)
 function skyPosEl(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -9556,58 +9628,100 @@ function skyPosEl(tag, cls, text) {
 }
 function applyPositioning(p, ctx) {
   _posTrail = skyPositioningTrailUpdate(_posTrail, p);
-  const box = document.getElementById('sky-positioning');
-  if (!box) return;
   let m = skyPositioningModel(p);
   if (m) _posLast = m.handsOff ? { m: m, at: Date.now() } : null;
   else if (_posLast) m = skyPositioningInterrupted(_posLast.m, (Date.now() - _posLast.at) / 1000);
   if (!m) _posLast = null;
-  while (box.firstChild) box.removeChild(box.firstChild);
+  _skyCard.p = p; _skyCard.ctx = ctx || null; _skyCard.m = m;
+  renderSkyCard();
+}
+// The texts the older status lines wrote (caption under the picture, the status line, the long explanation). They stay in the page as
+// data sinks, nothing shows them any more; the card reads them. A MutationObserver redraws the card when one of them changes.
+function skyCardFallbackTexts() {
+  const t = (id) => { const e = document.getElementById(id); return e ? (e.textContent || '').trim() : ''; };
+  const dot = document.getElementById('mb-mode-caption-dot');
+  const shown = (id) => { const e = document.getElementById(id); return !!e && e.style.display !== 'none'; };
+  return { caption: t('mb-mode-caption'), captionDot: dot ? dot.className : '', status: t('mount-bridge-text'), details: t('mb-mode-details'),
+    reject: shown('mb-reject-warning-toggle') ? (t('mb-reject-warning-text') || 'Mount refused the last Goto/Sync.') : '', unconfirmed: shown('mount-bridge-unconfirmed') };
+}
+function renderSkyCard() {
+  const box = document.getElementById('sky-card');
+  if (!box) return;
+  const fb = skyCardFallbackTexts();
+  const m = skyCardModel(_skyCard.m, _skyCard.p, _posTrail, _skyCard.ctx, fb);
   const col = document.getElementById('mb-sky-col');
   if (col) col.classList.toggle('sky-card-on', !!m);   // the card owns the state: the caption line under it would say the same
-  if (!m) { box.style.display = 'none'; return; }
-  box.style.display = '';
-  box.className = 'pos-' + m.tone;
-  const pp = p || {};
-  // headline row: dot, what is happening, Hands off / Hands free
-  const head = skyPosEl('div', 'pos-head');
-  head.appendChild(skyPosEl('span', 'pos-dot'));
-  head.appendChild(skyPosEl('span', '', m.head));
-  head.appendChild(skyPosEl('span', 'pos-badge', m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free'));
+  const hist = _skyCard.m ? skyPositioningHistory(_posTrail, _skyCard.m.handsOff, Date.now()) : null;
+  while (box.firstChild) box.removeChild(box.firstChild);
+  box.className = 'card-' + m.tone;
+  const head = skyPosEl('div', 'sc-head');
+  head.appendChild(skyPosEl('span', 'sc-dot'));
+  head.appendChild(skyPosEl('span', 'sc-title', m.head));
+  if (m.badge) head.appendChild(skyPosEl('span', 'sc-badge', m.badge));
   box.appendChild(head);
-  // the four-step band and the line under it
-  const band = skyPosEl('div', 'pos-band');
-  skyPositioningBand(_posTrail, pp, m).forEach((st) => band.appendChild(skyPosEl('div', 'pos-seg' + (st === 'done' ? ' d' : st === 'now' ? ' n' : st === 'warn' ? ' w' : ''))));
+  const band = skyPosEl('div', 'sc-band');
+  m.band.forEach((st) => band.appendChild(skyPosEl('div', 'sc-seg' + (st === 'done' ? ' d' : st === 'now' ? ' n' : st === 'warn' ? ' w' : ''))));
   box.appendChild(band);
-  const now = skyPositioningNow(pp, m);
-  const nowRow = skyPosEl('div', 'pos-now');
-  nowRow.appendChild(skyPosEl('span', '', now[0]));
-  nowRow.appendChild(skyPosEl('span', '', now[1]));
-  box.appendChild(nowRow);
-  // one line of facts, the longer explanation is its tooltip
-  const facts = skyPosEl('div', 'pos-facts', skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(ctx, pp.phase === 'HOLDING')).join(' \u00b7 '));
-  facts.title = [m.sub, m.why, m.running].filter(Boolean).join(' - ');
-  box.appendChild(facts);
-  // the whole run, step by step: the row is always there (the card never gains or loses a row), closed unless the user opened it
-  const hist = skyPositioningHistory(_posTrail, m.handsOff, Date.now());
-  const det = skyPosEl('details', 'pos-hist');
-  det.open = _posHistOpen === true;
-  det.addEventListener('toggle', () => { _posHistOpen = det.open; });
-  const sum = skyPosEl('summary');
-  sum.appendChild(skyPosEl('span', '', (m.handsOff ? 'Run so far' : 'Last run') + (m.running ? ' \u00b7 ' + m.running.replace('Running for ', '') : '')));
-  const hint = skyPosEl('span', '', !hist ? 'none yet' : det.open ? 'hide \u25b4' : 'show \u25be');
-  sum.appendChild(hint);
-  det.addEventListener('toggle', () => { if (hist) hint.textContent = det.open ? 'hide \u25b4' : 'show \u25be'; });
-  det.appendChild(sum);
-  const ol = skyPosEl('ol');
-  (hist || []).forEach((r) => {
-    const li = skyPosEl('li');
-    li.appendChild(skyPosEl('span', r.state, r.text));
-    li.appendChild(skyPosEl('span', '', r.detail));
-    ol.appendChild(li);
+  const line = skyPosEl('div', 'sc-line' + (m.lineWarn ? ' warn' : ''), m.line);
+  line.title = m.line;
+  box.appendChild(line);
+  const why = skyPosEl('div', 'sc-why', m.why);
+  why.title = m.why;
+  box.appendChild(why);
+  // the three ways to look closer; one panel open at a time
+  const acts = skyPosEl('div', 'sc-acts');
+  const items = [];
+  if (fb.details || fb.reject) items.push(['why', 'Why?']);
+  if (hist && hist.length) items.push(['run', _skyCard.m.handsOff ? 'Run so far' : 'Last run']);
+  items.push(['details', 'Details']);
+  if (_skyCardOpen && !items.some((it) => it[0] === _skyCardOpen)) _skyCardOpen = null;
+  items.forEach((it) => {
+    const b = skyPosEl('button', 'sc-act' + (_skyCardOpen === it[0] ? ' open' : ''), it[1] + (_skyCardOpen === it[0] ? ' \u25b4' : ' \u25be'));
+    b.type = 'button';
+    b.addEventListener('click', () => { _skyCardOpen = _skyCardOpen === it[0] ? null : it[0]; renderSkyCard(); });
+    acts.appendChild(b);
   });
-  det.appendChild(ol);
-  box.appendChild(det);
+  box.appendChild(acts);
+  if (_skyCardOpen) {
+    const panel = skyPosEl('div', 'sc-panel');
+    if (_skyCardOpen === 'why') [fb.reject, fb.details].filter(Boolean).forEach((t) => panel.appendChild(skyPosEl('p', 'sc-text', t)));
+    else if (_skyCardOpen === 'run') {
+      const ol = skyPosEl('ol');
+      (hist || []).forEach((r) => { const li = skyPosEl('li'); li.appendChild(skyPosEl('span', '', r.text)); li.appendChild(skyPosEl('span', '', r.detail)); ol.appendChild(li); });
+      panel.appendChild(ol);
+    } else {
+      const c = _skyCard.ctx || {};
+      const kv = (k, v) => { const r = skyPosEl('div', 'sc-kv'); r.appendChild(skyPosEl('span', '', k)); r.appendChild(skyPosEl('span', '', v)); panel.appendChild(r); };
+      kv('Target', _skyCard.targetLine || 'none known');
+      const cf = skyCouplingFacts(c, false);
+      kv('Coupling', (cf[0] || 'unknown') + (c.threshold > 0 ? ' \u00b7 threshold ' + c.threshold + '\u2032' : ''));
+      const clk = document.getElementById('sky-time');
+      if (clk && clk.textContent) kv('Sky for', clk.textContent.replace(/^Sky for\s*/, ''));
+    }
+    box.appendChild(panel);
+  }
+}
+function renderSkyLegend(rows) {
+  const box = document.getElementById('sky-legend');
+  if (!box) return;
+  while (box.firstChild) box.removeChild(box.firstChild);
+  const NS = 'http://www.w3.org/2000/svg', C = SKY_C;
+  (rows || []).forEach((r) => {
+    const row = skyPosEl('div', 'sl-row' + (r.off ? ' off' : ''));
+    const sym = document.createElementNS(NS, 'svg');
+    sym.setAttribute('width', '16'); sym.setAttribute('height', '16'); sym.setAttribute('viewBox', '0 0 16 16');
+    const add = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); sym.appendChild(e); };
+    if (r.id === 'mount') add('circle', { cx: 8, cy: 8, r: 5, fill: r.off ? 'none' : r.color, stroke: r.off ? C.muted : 'none', 'stroke-width': 1.5 });
+    else if (r.id === 'pifinder') add('rect', { x: 4, y: 4, width: 8, height: 8, transform: 'rotate(45 8 8)', fill: r.below || r.off ? 'none' : C.fg, stroke: r.below ? C.red : r.off ? C.muted : C.fg, 'stroke-width': 1.5 });
+    else if (r.id === 'goto') add('circle', { cx: 8, cy: 8, r: 5.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 });
+    else { add('line', { x1: 2, y1: 8, x2: 14, y2: 8, stroke: C.blue, 'stroke-width': 1.8 }); add('line', { x1: 8, y1: 2, x2: 8, y2: 14, stroke: C.blue, 'stroke-width': 1.8 }); }
+    row.appendChild(sym);
+    const txt = skyPosEl('div', 'sl-txt');
+    txt.appendChild(skyPosEl('span', 'sl-name', r.name));
+    if (r.sub) txt.appendChild(skyPosEl('span', 'sl-sub', r.sub));
+    row.appendChild(txt);
+    box.appendChild(row);
+  });
 }
 let _skyLastOk = 0;
 function applySkyPanel(sky) {
@@ -9620,12 +9734,9 @@ function applySkyPanel(sky) {
   tile.style.opacity = '';
   _skyLastOk = Date.now();
   drawSkyPanel(svg, model);
-  const targetLine = document.getElementById('sky-target-line');
-  if (targetLine) {
-    targetLine.textContent = model.targetLine || '';
-    targetLine.style.display = '';
-    targetLine.style.visibility = model.targetLine ? '' : 'hidden';   // keeps its row: the lines under the card do not move
-  }
+  renderSkyLegend(model.legend);
+  _skyCard.targetLine = model.targetLine || null;
+  renderSkyCard();
   svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
     : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
 }
@@ -9654,7 +9765,7 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
       applySkyPanel(data.sky);
-      applyPositioning(data.positioning, { mode: data.coupling_mode, action: data.correction_action, drift: data.drift_arcmin, threshold: parseFloat(readThresholdInputRaw()) });
+      applyPositioning(data.positioning, { running: true, mode: data.coupling_mode, action: data.correction_action, drift: data.drift_arcmin, threshold: parseFloat(readThresholdInputRaw()) });
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
       // from mount' darf im Client Mode nicht auftauchen" - none of these
@@ -9671,7 +9782,7 @@ async function refreshMbDrift() {
       updatePiFinderHorizonStatus(null, false);
       updateMountRejectWarning(false, null);
       applySkyPanel(data.sky);  // no Mount Bridge: the server computes it from PiFinder LX200 alone
-      applyPositioning(null);
+      applyPositioning(null, { running: false });
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
