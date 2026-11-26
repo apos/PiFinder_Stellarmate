@@ -602,6 +602,7 @@
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
+  #sky-target-line { margin-top: 4px; font-size: 0.75rem; color: #9aa0a6; line-height: 1.35; }
   #sky-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.35rem; margin-top: 4px; font-size: 0.75rem;
     color: #8b93a1; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
   #sky-time b { color: #e6e8ec; font-weight: 600; }
@@ -2698,6 +2699,7 @@
         <div id="sky-panel" style="display:none;">
           <div id="sky-panel-inner">
             <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
+            <div id="sky-target-line" style="display:none;" title="The Target is what was last asked for (a Goto from KStars, another INDI client, the mount side or PiFinder). The offset is how far PiFinder's solved position is from it. It is information only: you may take the object out of the centre on purpose, nothing is corrected because of this number."></div>
             <div id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></div>
           </div>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
@@ -8967,6 +8969,24 @@ function skyMountStyle(state) {
   if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
   return { color: SKY_C.blue, word: null };
 }
+const SKY_HOLD_APART_DEG = 1;     // the Hold position gets its own marker only when it is farther than this from the Target
+function skyFmtOffset(arcmin) {
+  return arcmin < 60 ? arcmin.toFixed(1) + '\u2032' : (arcmin / 60).toFixed(1) + '\u00b0';
+}
+// The sentence under the picture: where PiFinder is relative to the Target. Information only, never a warning.
+// null: no Target known (or an older driver without TARGET_STATUS).
+function skyTargetLine(sky) {
+  const t = sky && sky.target;
+  if (!t || typeof t.offset_arcmin !== 'number') return null;
+  let s = 'Target' + (t.source ? ' (set on ' + t.source + ')' : '') + ': ' +
+    (t.offset_arcmin < 0.5 ? 'PiFinder is on the target' : 'PiFinder is ' + skyFmtOffset(t.offset_arcmin) + ' from the target');
+  if (t.fresh === false) s += ' (last value, no fresh solve)';
+  if (sky.hold_used !== false && sky.goto && sky.held) {
+    const apart = skySep(sky.goto, sky.held);
+    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 held ' + skyFmtOffset(apart * 60) + ' from the target';
+  }
+  return s;
+}
 // What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
 function skyBuildModel(sky) {
   if (!sky) return null;
@@ -8984,8 +9004,12 @@ function skyBuildModel(sky) {
   const pf = add('pifinder', sky.pifinder,
     'PiFinder' + (sky.pifinder && sky.pifinder.alt < 0 ? ' ' + skyAlt(sky.pifinder) : ''),
     sky.pifinder && sky.pifinder.alt < 0 ? SKY_C.redSoft : SKY_C.fg);
-  add('goto', sky.goto, 'Goto', SKY_C.fg);
-  add('held', sky.held, 'Held', SKY_C.blue);
+  // One Target (what was asked for; the ring). The Hold position (the cross; today's "Held target", where the Bridge keeps
+  // the scope) is only drawn on its own when it is clearly not at the Target; closer than that the picture could not
+  // show the difference anyway, and the sentence under the picture gives the number.
+  add('goto', sky.goto, 'Target', SKY_C.fg);
+  if (sky.hold_used !== false && (!sky.goto || !sky.held || skySep(sky.goto, sky.held) > SKY_HOLD_APART_DEG))
+    add('held', sky.held, 'Hold position', SKY_C.blue);
   let line = null;
   if (mount && pf) {
     const below = mount.p.below || pf.p.below;
@@ -9005,7 +9029,7 @@ function skyBuildModel(sky) {
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
   skyPlaceNames(markers, notes);
-  return { unknown: false, markers: markers, line: line, notes: notes };
+  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky) };
 }
 // Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
 // cross), so a name never lands on a symbol - its own or another one.
@@ -9130,6 +9154,11 @@ function applySkyPanel(sky) {
   tile.style.opacity = '';
   _skyLastOk = Date.now();
   drawSkyPanel(svg, model);
+  const targetLine = document.getElementById('sky-target-line');
+  if (targetLine) {
+    targetLine.textContent = model.targetLine || '';
+    targetLine.style.display = model.targetLine ? '' : 'none';
+  }
   svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
     : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
 }

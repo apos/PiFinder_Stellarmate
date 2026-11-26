@@ -607,6 +607,10 @@ def mount_bridge_drift(
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
+    # The Hold position (the driver's held target) only means something in the modes that keep the scope on a target:
+    # Goto-Forward, and Auto-correct with the Goto action. Verify/Alert and Auto-correct (Sync) never use it, so what
+    # the property still holds from an earlier mode is not shown as "where the scope is held".
+    sky["hold_used"] = coupling_mode == "MODE_GOTO_FORWARD" or (coupling_mode == "MODE_AUTO_CORRECT" and correction_action == "goto")
     drift_raw = drift_status.get("DRIFT_ARCMIN")
     mount_reject_prop = device_props.get("MOUNT_REJECT", {})
     mount_reject_active = mount_reject_prop.get("state") == "Alert"
@@ -815,6 +819,26 @@ def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float
     return state
 
 
+def _target_status(device_props: dict):
+    """The Mount Bridge's TARGET_STATUS (the target as REQUESTED, and PiFinder's offset from it), for the Sky Position
+    Panel: {"ra", "dec" (JNow hours/degrees), "offset_arcmin", "age_sec", "source" ("Mount"/"PiFinder"/None),
+    "fresh" (offset is current: the property is Ok, not Busy)} or None when there is no target (Idle, missing, a driver
+    without the property, or an unreadable value)."""
+    prop = device_props.get("TARGET_STATUS", {})
+    if prop.get("state") not in ("Ok", "Busy"):
+        return None
+    el = prop.get("elements", {})
+    try:
+        ra, dec = float(el["RA"]), float(el["DEC"])
+        offset, age = float(el["OFFSET_ARCMIN"]), float(el["AGE_SEC"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ra == 0.0 and dec == 0.0:
+        return None
+    source = device_props.get("TARGET_STATUS_SOURCE", {}).get("elements", {}).get("SOURCE") or None
+    return {"ra": ra, "dec": dec, "offset_arcmin": offset, "age_sec": age, "source": source, "fresh": prop.get("state") == "Ok"}
+
+
 def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
     """Everything the Sky Position Panel draws, from the Mount Bridge's own
     properties: {"location_known", "lat", "lon", "mount", "mount_state",
@@ -845,6 +869,7 @@ def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
         "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
         "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
         "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
+        "target": _target_status(device_props),
     }
 
 
