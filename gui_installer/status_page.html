@@ -598,7 +598,9 @@
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
   #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
-  #sky-panel-inner { flex: 0 0 230px; width: 230px; }
+  /* The picture keeps its size (230 px); the column under it is wider so the target sentence and the positioning line fit
+     on one line (narrower than the tile on a phone). */
+  #sky-panel-inner { flex: 0 0 auto; width: min(100%, 24rem); }
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
@@ -1585,7 +1587,9 @@
      a glance, so it belongs next to the piece that produces it, at full
      size (not shrunk into a small badge). */
   #mb-sky-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem 1.1rem; margin: 0.6rem 0 0.3rem 0; }
-  #mb-diagram { flex: 1 1 330px; min-width: 0; container-type: inline-size; }
+  /* max-width: the diagram and the sky sit next to each other from the left edge instead of the sky being pushed to the far
+     right; below 600 px the diagram is stacked anyway. */
+  #mb-diagram { flex: 1 1 330px; min-width: 0; max-width: 36rem; container-type: inline-size; }
   #mb-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
   .mb-grp { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
   /* Middle group: Drift | Bridge (with Ekos, WM) | Alt on equal side columns, so the Bridge badge is always
@@ -1596,11 +1600,12 @@
   .mb-grp-mid > #mb-horizon-badge { grid-column: 3; grid-row: 1; justify-self: start; }
   /* Not enough room for one row: stack the groups centred, the blue arrows turn vertical between them. */
   @container (max-width: 600px) {
-    #mb-groups { flex-direction: column; align-items: center; gap: 0; }
+    /* fit-content: the stacked diagram as a whole sits at the left edge; its elements stay centred on one axis inside it. */
+    #mb-groups { flex-direction: column; align-items: center; gap: 0; width: fit-content; }
     #mb-groups > .mb-arrow { transform: rotate(90deg); min-width: 0; width: 2.2rem; height: 2.2rem; display: flex;
       align-items: center; justify-content: center; margin: -0.15rem 0; }
   }
-  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: auto; }
+  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: 0; }
   #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
   #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
