@@ -55,5 +55,31 @@ class SeparationTest(unittest.TestCase):
         self.assertAlmostEqual(f.angular_sep_deg(10, 0, 11, 0), 1.0, places=6)
 
 
+class KeepAwakeTest(unittest.TestCase):
+    def test_posts_to_the_endpoint_and_reports_success(self):
+        import http.server
+        import threading
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok": true}')
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.handle_request, daemon=True).start()
+        self.assertTrue(f.keep_awake(f"http://127.0.0.1:{srv.server_port}/api/keep_awake"))
+        self.assertEqual(seen, ["/api/keep_awake"])
+        srv.server_close()
+
+    def test_unreachable_is_false_not_an_exception(self):
+        self.assertFalse(f.keep_awake("http://127.0.0.1:9/api/keep_awake"))
+
+
 if __name__ == "__main__":
     unittest.main()

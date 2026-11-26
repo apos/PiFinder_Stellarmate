@@ -22,11 +22,29 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pifinder_sky_renderer as renderer  # noqa: E402
 
 DEFAULT_IMAGE = os.path.expanduser("~/PiFinder/test_images/pifinder_debug_02.png")
+KEEP_AWAKE_URL = "http://127.0.0.1:8080/api/keep_awake"
+KEEP_AWAKE_EVERY_SEC = 2.0
+
+
+def keep_awake(url=KEEP_AWAKE_URL):
+    """Tell PiFinder it is in use: the same call the Mount Bridge makes during a GoTo-Forward.
+
+    PiFinder goes to sleep when nobody touches it and then takes a picture only every ~30 s; a slew would be solved at its
+    start and its end only. One call counts for about 10 s, so it is repeated. Loopback only; changes no setting, and
+    PiFinder falls back to its own sleep a few seconds after this script stops. True when PiFinder answered.
+    """
+    try:
+        req = urllib.request.Request(url, method="POST", data=b"")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except OSError:
+        return False
 
 
 # ---- JNow -> J2000 -------------------------------------------------------------------------------------------------
@@ -175,8 +193,16 @@ def follow(args):
     last = None
     rendered = 0
     started = time.time()
+    awake_at = 0.0
+    awake_ok = None
     try:
         while args.duration is None or time.time() - started < args.duration:
+            if not args.no_keep_awake and time.time() - awake_at >= KEEP_AWAKE_EVERY_SEC:
+                awake_at = time.time()
+                ok = keep_awake(args.keep_awake_url)
+                if ok != awake_ok:
+                    print(f"{time.strftime('%H:%M:%S')} keep-awake: {'PiFinder answers' if ok else 'PiFinder does NOT answer (it may sleep between slew steps)'}", flush=True)
+                    awake_ok = ok
             ra_h, dec, state = watcher.position
             ra_now = ra_h * 15.0
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
@@ -212,6 +238,8 @@ def main(argv=None):
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between looks at the mount")
     ap.add_argument("--min-move", type=float, default=0.02, help="degrees the mount must move before a new picture")
     ap.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: until Ctrl-C)")
+    ap.add_argument("--no-keep-awake", action="store_true", help="do not stop PiFinder from going to sleep while this runs")
+    ap.add_argument("--keep-awake-url", default=KEEP_AWAKE_URL)
     ap.add_argument("--slew-to", nargs=2, type=float, metavar=("RA_H", "DEC"), help="send the mount to this JNow position first")
     ap.add_argument("--restore", metavar="PNG", help="put this picture back when the script ends")
     return follow(ap.parse_args(argv))
