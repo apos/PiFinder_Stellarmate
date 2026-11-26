@@ -597,12 +597,13 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
-  #sky-panel { position: relative; display: flex; align-items: center; gap: 10px; width: min(100%, 22rem); min-height: 176px; }
-  #sky-panel .help-link { position: absolute; right: 0; top: 0; margin: 0; }
-  #sky-panel-svg { flex: none; display: block; width: 168px; height: auto; margin-top: 8px; font-family: inherit; }
+  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
+  #sky-pic { flex: none; width: 230px; max-width: 100%; }
+  #sky-panel .help-link { margin: 2px 0 0 0; flex-shrink: 0; }
+  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
-  /* Sky area and the card under it (mockup "one block, three states"): the picture with its legend beside it, the time in the corner, one
+  /* Sky area and the card under it (mockup "one block, three states"): the picture with the names inside it, the time left and the date right above it, one
      card for every state. One typeface, 11 / 13 / 15 px, fixed rows, ellipsis instead of wrapping, buttons at least 32 px high. */
   #sky-card { width: min(100%, 22rem); box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #2a2a2a; border-radius: 12px; background: #161616;
     font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
@@ -633,18 +634,12 @@
   #sky-card .sc-text { margin: 0 0 6px; line-height: 1.4; }
   #sky-card .sc-kv { display: grid; grid-template-columns: 74px 1fr; min-height: 22px; align-items: center; }
   #sky-card .sc-kv span:first-child { color: #777; }
-  #sky-time { position: absolute; left: 0; top: 0; font-size: 11px; line-height: 14px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* Above the picture, on its own row: the time left, the date right (nothing covers the N). */
+  #sky-time { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; font-size: 12px; line-height: 16px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
   #sky-time b { color: #c3c7cc; font-weight: 500; }
   #sky-time .sky-time-prefix { display: none; }
   #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
   #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; display: inline-block; margin-right: 4px; vertical-align: middle; }
-  #sky-legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-top: 22px; }
-  .sl-row { display: flex; align-items: center; gap: 8px; min-height: 30px; }
-  .sl-row.off { opacity: 0.5; }
-  .sl-row svg { flex: none; }
-  .sl-txt { min-width: 0; display: flex; flex-direction: column; line-height: 15px; }
-  .sl-name { font-size: 13px; color: #e6e8ec; }
-  .sl-sub { font-size: 11px; color: #8d9399; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #sky-target-line { display: none; }
   #pifinder-glance-status-stack {
     display: flex;
@@ -2789,10 +2784,11 @@
            the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
            profile (Dobsonian) where the diagram is hidden. -->
         <div id="sky-panel" style="display:none;">
+          <div id="sky-pic">
           <span id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></span>
-          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
           <svg id="sky-panel-svg" viewBox="14 16 212 216" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-          <div id="sky-legend"></div>
+          </div>
+          <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
         </div>
         <!-- One card for every state under the picture: the headline with Hands off/free, the four-step band, one line, one reason, and the
              buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
@@ -6762,7 +6758,7 @@ function renderSkyTime() {
   if (m.warn) { const dot = document.createElement('span'); dot.className = 'sky-time-dot'; el.appendChild(dot); }
   const a = document.createElement('span'); a.className = 'sky-time-prefix'; a.textContent = m.prefix; el.appendChild(a);
   const b = document.createElement('b'); b.textContent = m.time; el.appendChild(b);
-  const c = document.createElement('span'); c.textContent = '· ' + (m.tail || m.day); el.appendChild(c);
+  const c = document.createElement('span'); c.textContent = m.tail || m.day; el.appendChild(c);
 }
 function applyClockStatus(st) {
   _clockStatus = st;
@@ -9216,7 +9212,7 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
 const SKY_C = { ring: '#444444', ring2: '#333333', disc: '#1a1a1a', fg: '#dddddd', muted: '#888888',
   blue: '#7ec8ff', green: '#4caf50', yellow: '#f5a623', red: '#e53935', redSoft: '#ff8a80' };
 const SKY_CX = 120, SKY_CY = 124, SKY_R = 90;
-const SKY_SYMBOL_SCALE = 1.35;
+const SKY_SYMBOL_SCALE = 1;   // the picture is drawn at its full size again, the symbols are not enlarged
 const SKY_FOV_DEG = 13.7;        // PiFinder's field with the standard 16 mm lens
 const SKY_AGREE_DEG = 7;         // within about the field's half width: "they agree"
 function skyRad(d) { return d * Math.PI / 180; }
@@ -9450,28 +9446,10 @@ function skyTargetLine(sky) {
   }
   return s;
 }
-// The legend beside the picture: one row per thing in it, with the number that used to be a sentence under it. The names are not in the
-// picture any more (a phone cannot carry them). [{id, name, sub, color, below, off}]; "off" rows are known things without a position.
-function skyLegendRows(sky, markers) {
-  if (!sky) return [];
-  const t = sky.target;
-  const off = t && typeof t.offset_arcmin === 'number' ? (t.offset_arcmin < 0.5 ? 'on the target' : skyFmtOffset(t.offset_arcmin) + ' from target') : '';
-  const find = (id) => markers.find((m) => m.id === id);
-  const ms = skyMountStyle(sky.mount_state);
-  const mount = find('mount'), pf = find('pifinder'), go = find('goto'), held = find('held');
-  const rows = [];
-  if (mount) rows.push({ id: 'mount', name: 'Mount', sub: [ms.word, mount.p.below ? skyAlt(sky.mount) : ''].filter(Boolean).join(' \u00b7 '), color: ms.color, below: mount.p.below });
-  else if (sky.mount_configured) rows.push({ id: 'mount', name: 'Mount', sub: 'no position', off: true });
-  if (pf) rows.push({ id: 'pifinder', name: 'PiFinder', sub: pf.p.below ? skyAlt(sky.pifinder) + ' \u00b7 below horizon' : off, color: pf.color, below: pf.p.below });
-  else rows.push({ id: 'pifinder', name: 'PiFinder', sub: 'no position', off: true });
-  if (go) rows.push({ id: 'goto', name: 'Target', sub: t && t.source ? 'set on ' + t.source : '' });
-  if (held) rows.push({ id: 'held', name: 'Hold position', sub: go ? 'held ' + skyFmtOffset(skySep(sky.goto, sky.held) * 60) + ' from target' : '' });
-  return rows;
-}
 // What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
 function skyBuildModel(sky) {
   if (!sky) return null;
-  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [], legend: [] };
+  if (!sky.location_known) return { unknown: true, markers: [], line: null, notes: [] };
   const markers = [];
   const add = (id, o, name, color, extra) => {
     if (!o) return null;
@@ -9510,7 +9488,7 @@ function skyBuildModel(sky) {
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
   skyPlaceNames(markers, notes);
-  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky), legend: skyLegendRows(sky, markers) };
+  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky) };
 }
 // Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
 // cross), so a name never lands on a symbol - its own or another one.
@@ -9579,7 +9557,7 @@ function drawSkyPanel(svg, model) {
   skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: SKY_R, fill: C.disc, stroke: model.unknown ? C.ring2 : C.ring, 'stroke-width': 1.5,
     'stroke-dasharray': model.unknown ? '3 4' : 'none' }, svg);
   if (model.unknown) {
-    skyEl('text', { x: SKY_CX, y: SKY_CY + 5, 'text-anchor': 'middle', fill: C.muted, 'font-size': 16, 'font-weight': 700 }, svg, 'Location unknown');
+    skyEl('text', { x: SKY_CX, y: SKY_CY + 4, 'text-anchor': 'middle', fill: C.muted, 'font-size': 12.5, 'font-weight': 700 }, svg, 'Location unknown');
     return;
   }
   [30, 60].forEach((alt) => skyEl('circle', { cx: SKY_CX, cy: SKY_CY, r: (90 - alt) / 90 * SKY_R, fill: 'none', stroke: C.ring2,
@@ -9590,7 +9568,7 @@ function drawSkyPanel(svg, model) {
     const off = SKY_R + 11;
     // About the size of the status lines next to it (13 px at the tile's usual width), all bold.
     skyEl('text', { x: SKY_CX - off * Math.sin(skyRad(d[1])), y: SKY_CY - off * Math.cos(skyRad(d[1])) + 5, 'text-anchor': 'middle',
-      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 16, 'font-weight': 700 }, svg, d[0]);
+      fill: d[0] === 'N' ? C.fg : C.muted, 'font-size': 13.5, 'font-weight': 700 }, svg, d[0]);
   });
   if (model.line) {
     const L = model.line;
@@ -9620,6 +9598,10 @@ function drawSkyPanel(svg, model) {
     fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': (pf.p.below ? 2 : 1.5) * K }, g(pf));
   // Drawn last: with both on (nearly) the same spot the dot stays visible on top of the diamond.
   if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5 * K, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 * K }, g(mount));
+  model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
+    stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
+  model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
+    'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
 }
 let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
 let _posTrail = [];   // the phases of the current run, see skyPositioningTrailUpdate()
@@ -9707,28 +9689,6 @@ function renderSkyCard() {
     box.appendChild(panel);
   }
 }
-function renderSkyLegend(rows) {
-  const box = document.getElementById('sky-legend');
-  if (!box) return;
-  while (box.firstChild) box.removeChild(box.firstChild);
-  const NS = 'http://www.w3.org/2000/svg', C = SKY_C;
-  (rows || []).forEach((r) => {
-    const row = skyPosEl('div', 'sl-row' + (r.off ? ' off' : ''));
-    const sym = document.createElementNS(NS, 'svg');
-    sym.setAttribute('width', '16'); sym.setAttribute('height', '16'); sym.setAttribute('viewBox', '0 0 16 16');
-    const add = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); sym.appendChild(e); };
-    if (r.id === 'mount') add('circle', { cx: 8, cy: 8, r: 5, fill: r.off ? 'none' : r.color, stroke: r.off ? C.muted : 'none', 'stroke-width': 1.5 });
-    else if (r.id === 'pifinder') add('rect', { x: 4, y: 4, width: 8, height: 8, transform: 'rotate(45 8 8)', fill: r.below || r.off ? 'none' : C.fg, stroke: r.below ? C.red : r.off ? C.muted : C.fg, 'stroke-width': 1.5 });
-    else if (r.id === 'goto') add('circle', { cx: 8, cy: 8, r: 5.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 });
-    else { add('line', { x1: 2, y1: 8, x2: 14, y2: 8, stroke: C.blue, 'stroke-width': 1.8 }); add('line', { x1: 8, y1: 2, x2: 8, y2: 14, stroke: C.blue, 'stroke-width': 1.8 }); }
-    row.appendChild(sym);
-    const txt = skyPosEl('div', 'sl-txt');
-    txt.appendChild(skyPosEl('span', 'sl-name', r.name));
-    if (r.sub) txt.appendChild(skyPosEl('span', 'sl-sub', r.sub));
-    row.appendChild(txt);
-    box.appendChild(row);
-  });
-}
 let _skyLastOk = 0;
 function applySkyPanel(sky) {
   const tile = document.getElementById('sky-panel');
@@ -9740,7 +9700,6 @@ function applySkyPanel(sky) {
   tile.style.opacity = '';
   _skyLastOk = Date.now();
   drawSkyPanel(svg, model);
-  renderSkyLegend(model.legend);
   _skyCard.targetLine = model.targetLine || null;
   renderSkyCard();
   svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
