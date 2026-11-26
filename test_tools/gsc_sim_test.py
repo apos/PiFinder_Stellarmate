@@ -257,12 +257,12 @@ class Restore(Base):
         super().tearDown()
 
     def test_no_state_means_the_user_did_not_want_it(self):
-        self.assertEqual(g.restore(now=lambda: 1000.0), "none")
+        self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: True), "none")
         self.assertEqual(self.started, [])
 
     def test_a_dead_follower_is_started_again_with_its_old_settings(self):
         g.write_state(self.dead)
-        self.assertEqual(g.restore(now=lambda: 1000.0), "restarted")
+        self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: True), "restarted")
         self.assertEqual(self.started, [("large", "Telescope Simulator")])
         state = g.read_state()
         self.assertFalse(state["test_mode_was_on"], "what the first start recorded is kept, not overwritten")
@@ -271,40 +271,53 @@ class Restore(Base):
     def test_the_old_simulator_device_is_kept_out_of_the_way_again(self):
         g.write_state(self.dead)
         indi = FakeIndi()
-        g.restore(indi=indi, now=lambda: 1000.0)
+        g.restore(indi=indi, now=lambda: 1000.0, mount_answers=lambda d: True)
         self.assertEqual(indi.calls, [("disconnect", "PiFinder Simulator")])
 
     def test_two_restarts_are_not_closer_than_the_gap(self):
         g.write_state(self.dead)
-        g.restore(now=lambda: 1000.0)
+        g.restore(now=lambda: 1000.0, mount_answers=lambda d: True)
         g.write_state(self.dead)
-        self.assertEqual(g.restore(now=lambda: 1000.0 + g.RESTORE_MIN_GAP_SEC - 1), "waiting")
+        self.assertEqual(g.restore(now=lambda: 1000.0 + g.RESTORE_MIN_GAP_SEC - 1, mount_answers=lambda d: True), "waiting")
         self.assertEqual(len(self.started), 1)
 
     def test_a_follower_that_keeps_dying_is_given_up_on(self):
         t = 1000.0
         for _ in range(g.RESTORE_MAX_PER_WINDOW):
             g.write_state(self.dead)
-            self.assertEqual(g.restore(now=lambda: t), "restarted")
+            self.assertEqual(g.restore(now=lambda: t, mount_answers=lambda d: True), "restarted")
             t += g.RESTORE_MIN_GAP_SEC + 1
         g.write_state(self.dead)
-        self.assertEqual(g.restore(now=lambda: t), "gave-up")
+        self.assertEqual(g.restore(now=lambda: t, mount_answers=lambda d: True), "gave-up")
         self.assertEqual(g.read_state()["pid"], self.dead["pid"], "the wish stays on file")
 
     def test_after_the_window_it_tries_again(self):
         t = 1000.0
         for _ in range(g.RESTORE_MAX_PER_WINDOW):
             g.write_state(self.dead)
-            g.restore(now=lambda: t)
+            g.restore(now=lambda: t, mount_answers=lambda d: True)
             t += g.RESTORE_MIN_GAP_SEC + 1
         g.write_state(self.dead)
-        self.assertEqual(g.restore(now=lambda: t + g.RESTORE_WINDOW_SEC), "restarted")
+        self.assertEqual(g.restore(now=lambda: t + g.RESTORE_WINDOW_SEC, mount_answers=lambda d: True), "restarted")
 
     def test_unavailable_keeps_the_wish(self):
         g.availability = lambda: (False, "no gsc")
         g.write_state(self.dead)
-        self.assertEqual(g.restore(now=lambda: 1000.0), "unavailable")
+        self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: True), "unavailable")
         self.assertEqual(g.read_state()["pid"], self.dead["pid"])
+
+    def test_no_restart_while_the_mount_does_not_answer_and_it_is_not_counted(self):
+        g.write_state(self.dead)
+        for _ in range(g.RESTORE_MAX_PER_WINDOW + 2):
+            self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: False), "waiting-for-indi")
+        self.assertEqual(self.started, [], "a follower started before INDI is up only dies with 'no position'")
+        self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: True), "restarted", "the attempts were not used up")
+
+    def test_the_mount_that_has_to_answer_is_the_one_the_simulation_follows(self):
+        g.write_state(self.dead)
+        asked = []
+        g.restore(now=lambda: 1000.0, mount_answers=lambda d: asked.append(d) or True)
+        self.assertEqual(asked, ["Telescope Simulator"])
 
     def test_a_running_follower_gets_its_test_mode_back(self):
         g.write_state({"pid": os.getpid()})
@@ -313,7 +326,7 @@ class Restore(Base):
         sets = []
         g.set_test_mode = lambda want: (sets.append(want), want)[1]
         self.test_mode["on"] = False
-        self.assertEqual(g.restore(now=lambda: 1000.0), "healed")
+        self.assertEqual(g.restore(now=lambda: 1000.0, mount_answers=lambda d: True), "healed")
         self.assertEqual(sets, [True])
         self.assertEqual(self.started, [])
 

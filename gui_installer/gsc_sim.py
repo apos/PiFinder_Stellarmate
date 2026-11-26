@@ -278,7 +278,20 @@ RESTORE_WINDOW_SEC = 600.0
 _restore_times = []
 
 
-def restore(indi=None, popen=subprocess.Popen, now=time.time):
+def indi_device_answers(device, host="localhost", port=7624, wait=3.0):
+    """Whether the INDI server answers for `device` (it is there and defines properties). Right after a boot indiserver and the mount driver
+    come up well after the Control Center: a follower started before that only dies with "no position" and would use up its restarts."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=2) as sock:
+            sock.sendall(('<getProperties version="1.7" device="%s"/>\n' % device).encode())
+            sock.settimeout(wait)
+            return b'device="%s"' % device.encode() in sock.recv(4096)
+    except (OSError, ValueError):
+        return False
+
+
+def restore(indi=None, popen=subprocess.Popen, now=time.time, mount_answers=indi_device_answers):
     """Keep the simulation the way it was last chosen, across updates, crashes and reboots.
 
     The state file exists from "start" until "stop" - it is the memory of what the user wants. So:
@@ -287,7 +300,7 @@ def restore(indi=None, popen=subprocess.Popen, now=time.time):
                                         at least RESTORE_MIN_GAP_SEC apart), keeping what the first start recorded about Test Mode
                                         and the old PiFinder Simulator device
       * no state file                -> the user did not want it: nothing happens.
-    Returns a short word for logging: "none", "healthy", "healed", "restarted", "waiting", "gave-up", "unavailable".
+    Returns a short word for logging: "none", "healthy", "healed", "restarted", "waiting", "waiting-for-indi", "gave-up", "unavailable".
     """
     state = read_state()
     if not state.get("pid"):
@@ -297,6 +310,8 @@ def restore(indi=None, popen=subprocess.Popen, now=time.time):
     ok, _reason = availability()
     if not ok:
         return "unavailable"
+    if not mount_answers(state.get("device", DEFAULT_MOUNT)):
+        return "waiting-for-indi"    # not counted as an attempt: INDI or the mount driver is not up yet (boot, profile switch)
     t = now()
     _restore_times[:] = [x for x in _restore_times if t - x < RESTORE_WINDOW_SEC]
     if len(_restore_times) >= RESTORE_MAX_PER_WINDOW:
