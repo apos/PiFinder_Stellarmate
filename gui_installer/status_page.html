@@ -604,6 +604,7 @@
   #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
+  .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
   #sky-positioning { margin-top: 6px; font-size: 0.78rem; line-height: 1.35; }
   #sky-positioning .pos-steps { display: flex; gap: 4px; margin: 0 0 6px; }
   #sky-positioning .pos-step { flex: 1; height: 4px; border-radius: 2px; background: #3a3a3c; }
@@ -1249,6 +1250,23 @@
      highlight) while the click handler itself (see toggleTruthInjector()'s
      own guard) refuses to act as the actual enforcement, not just the look. */
   .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+  /* The GSC simulation is the first choice for testing without a sky; the two older simulations step into the background. */
+  .mode-tile-new { margin-left: 0.5rem; font-size: 0.6rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #3a2c10; color: #f5c46b; }
+  .mode-tiles-minor-label { color: #777; font-size: 0.68rem; margin: 0.7rem 0 0.3rem 0; }
+  .mode-tiles-minor { margin-bottom: 0.4rem; }
+  .mode-tile.mode-tile-minor { padding: 0.35rem 0.6rem; }
+  .mode-tile.mode-tile-minor .mode-tile-name { font-weight: 400; font-size: 0.78rem; }
+  .mode-tile.mode-tile-minor .mode-tile-sub { font-size: 0.64rem; }
+  #gsc-sim-panel { margin: 0.5rem 0; padding: 0.7rem; border: 1px solid #2f6e3d; border-radius: 8px; background: #122317; }
+  .gsc-sim-title { color: #7fe0a0; font-weight: 700; font-size: 0.8rem; margin-bottom: 0.4rem; }
+  .gsc-sim-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .gsc-sim-chip { font-size: 0.72rem; padding: 2px 9px; border-radius: 12px; border: 1px solid #555; color: #8d9399; }
+  .gsc-sim-chip.gsc-ok { border-color: #2f6e3d; color: #8fd19a; }
+  .gsc-sim-controls { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+  .gsc-sim-muted { color: #8d9399; font-size: 0.74rem; }
+  .gsc-sim-note { color: #8d9399; font-size: 0.7rem; margin-top: 0.5rem; }
+  .gsc-sim-idle { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; color: #777; font-size: 0.72rem; margin: 0.4rem 0; }
+  .gsc-sim-landing select { margin-left: 0.3rem; }
   .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
   .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
   .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
@@ -2907,15 +2925,34 @@
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
             <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
           </div>
-          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+          <div class="mode-tile" id="mode-tile-gsc" onclick="toggleGscSim()" title="Real hardware + GSC simulation: a star field rendered from the GSC catalogue replaces the camera picture, PiFinder's real solver (Cedar / tetra3) solves it, the mount is any INDI mount. Test the whole chain without a night sky. Click to start or stop.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-gsc-dot"></span>Real Hardware + GSC Simulation<span class="mode-tile-new">new</span></div>
+            <div class="mode-tile-sub" id="mode-tile-gsc-sub">&hellip;</div>
+          </div>
+        </div>
+        <div id="gsc-sim-panel" style="display:none;">
+          <div class="gsc-sim-title">Simulated sky</div>
+          <div id="gsc-sim-chips" class="gsc-sim-chips"></div>
+          <div class="gsc-sim-controls">
+            <button id="gsc-sim-stop-btn" class="ql-small-btn" onclick="stopGscSim()">Stop simulation</button>
+            <span id="gsc-sim-landing-running" class="gsc-sim-muted"></span>
+          </div>
+          <div class="gsc-sim-note">The camera picture is replaced by the simulated sky while this runs. Stop it to get the real camera back. The old PiFinder Simulator device is left out of this mode.</div>
+        </div>
+        <div id="gsc-sim-idle" class="gsc-sim-idle">
+          <span>No simulated sky. Click &quot;Real Hardware + GSC Simulation&quot; to test without a night sky.</span>
+          <label class="gsc-sim-landing">Landing error of a GoTo: <select id="gsc-sim-landing"></select></label>
+        </div>
+        <div class="mode-tiles-minor-label">Other test modes</div>
+        <div class="mode-tiles mode-tiles-minor">
+          <div class="mode-tile mode-tile-minor" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span><span id="mode-tile-sim-name-text">Full Simulation (INDI/Mount Bridge)</span></div>
             <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
           </div>
-          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+          <div class="mode-tile mode-tile-minor" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
             <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
           </div>
-        </div>
         <div id="sim-readiness-line">Checking setup readiness&hellip;</div>
         <!-- 2026-09-27, direct feedback: the old plain ql-small-btn was too
              inconspicuous next to the Real Hardware/Full Simulation/Fake Mode
@@ -4490,13 +4527,18 @@ function collectActiveShowstoppers() {
     items.push({
       id: 'no-solve',
       category: 'pifinder',
-      title: 'No solve active - neither real nor synthetic',
-      text: "No position to sync from. Turn on Synthetic Solve, or wait for a real camera solve.",
-      buttons: [{
-        label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()',
-        disabled: !pifinderScreenUrl,
-        title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.",
-      }],
+      title: 'No solve active',
+      text: "PiFinder has no position to sync from. Wait for a real camera solve, or start a simulation: the GSC simulation tests the real solver and the whole chain, the other two skip the solver.",
+      buttons: [
+        { label: 'Start GSC simulation', onclick: 'toggleGscSim()',
+          disabled: !pifinderScreenUrl || (gscSimLast && gscSimLast.available === false),
+          title: !pifinderScreenUrl ? "PiFinder isn't confirmed reachable yet - wait for it to come up before starting this."
+            : (gscSimLast && gscSimLast.available === false ? gscSimLast.reason : null) },
+        { label: 'Synthetic solve (Full Simulation)', onclick: 'toggleTruthInjector()', secondary: true,
+          disabled: !pifinderScreenUrl,
+          title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on." },
+        { label: 'Fake mode (legacy)', onclick: 'toggleMode()', secondary: true },
+      ],
     });
   }
   // Live drift overrides the frozen startup snapshot (see
@@ -4715,7 +4757,7 @@ function renderShowstopperGroup(wrapId, items) {
   wrap.innerHTML = items.map((item) => {
     const buttonsHtml = item.buttons.length
       ? `<div class="mb-drift-banner-actions">${item.buttons.map((b) =>
-          `<button${b.action ? ` data-mb-action="${b.action}"` : ''}${b.disabled ? ' disabled' : ''}${b.title ? ` title="${b.title}"` : ''} class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="${b.onclick}">${b.label}</button>`
+          `<button${b.action ? ` data-mb-action="${b.action}"` : ''}${b.disabled ? ' disabled' : ''}${b.title ? ` title="${b.title}"` : ''} class="mb-drift-banner-btn ${b.secondary ? 'mb-drift-banner-btn-secondary' : 'mb-drift-banner-btn-primary'}" onclick="${b.onclick}">${b.label}</button>`
         ).join('')}</div>`
       : '';
     const extraHtml = item.extraHtml || '';
@@ -5022,6 +5064,108 @@ function applyFakeModeTileState(dotClass, subText) {
 // is currently on. Clicking it (toggleRealHardware() below) turns off
 // whichever of those two is on; recomputed here from the two tiles it
 // depends on whenever either changes.
+// ---- GSC simulation tile (begin) ----
+// "Real Hardware + GSC Simulation" (gui_installer/gsc_sim.py, #344): what the mode tile and its panel show for one
+// /api/gsc_sim_status value. Pure, so it is tested under node (test_tools/gsc_tile_test.js).
+function gscSimTileModel(s) {
+  if (!s) return { on: false, locked: false, dot: 'dot-white', sub: 'checking\u2026', chips: [], landing: '' };
+  if (!s.available) return { on: false, locked: true, dot: 'dot-white', sub: s.reason || 'not available on this device', chips: [], landing: '' };
+  if (!s.running) return { on: false, locked: false, dot: 'dot-white', sub: 'a simulated sky from the GSC catalogue, solved by the real solver', chips: [], landing: '' };
+  const solving = s.solve_source === 'CAM';
+  const testOn = s.test_mode === true;
+  const chips = [
+    { text: 'Sky renderer running', ok: true },
+    { text: 'Test Mode ' + (s.test_mode === null || s.test_mode === undefined ? '\u2026' : testOn ? 'on' : 'off'), ok: testOn },
+    { text: 'Solving: ' + (s.solve_source || '\u2026'), ok: solving },
+    { text: 'Following: ' + (s.device || 'mount'), ok: true },
+  ];
+  const label = ((s.landings || []).find((l) => l.id === s.landing) || {}).label;
+  return { on: true, locked: false, dot: chips.every((c) => c.ok) ? 'dot-green' : 'dot-yellow',
+    sub: solving ? 'running, solving the simulated sky' : 'running, waiting for the first solve',
+    chips: chips, landing: label ? 'Landing error of a GoTo: ' + label : '' };
+}
+// ---- GSC simulation tile (end) ----
+
+let gscSimLast = null;
+let gscSimBusy = false;
+function applyGscSim(s) {
+  gscSimLast = s;
+  const m = gscSimTileModel(s);
+  const tile = document.getElementById('mode-tile-gsc');
+  if (!tile) return;
+  setHwDot(document.getElementById('mode-tile-gsc-dot'), 'status-dot ' + m.dot);
+  document.getElementById('mode-tile-gsc-sub').textContent = m.sub;
+  tile.classList.toggle('tile-on', m.on);
+  tile.classList.toggle('mode-tile-locked', m.locked);
+  const panel = document.getElementById('gsc-sim-panel');
+  const idle = document.getElementById('gsc-sim-idle');
+  panel.style.display = m.on ? '' : 'none';
+  idle.style.display = m.on || m.locked ? 'none' : '';
+  const chips = document.getElementById('gsc-sim-chips');
+  while (chips.firstChild) chips.removeChild(chips.firstChild);
+  m.chips.forEach((c) => {
+    const e = document.createElement('span'); e.className = 'gsc-sim-chip' + (c.ok ? ' gsc-ok' : ''); e.textContent = c.text; chips.appendChild(e);
+  });
+  document.getElementById('gsc-sim-landing-running').textContent = m.landing;
+  const select = document.getElementById('gsc-sim-landing');
+  if (s && s.landings && select.options.length === 0) {
+    s.landings.forEach((l) => { const o = document.createElement('option'); o.value = l.id; o.textContent = l.label; select.appendChild(o); });
+    select.value = 'typical';
+  }
+  updateRealHardwareTile();
+}
+async function refreshGscSim() {
+  if (gscSimBusy) return;
+  if (typeof ccIsHost !== 'undefined' && !ccIsHost) return;
+  try {
+    const resp = await fetch('/api/gsc_sim_status', { cache: 'no-store' });
+    applyGscSim(await resp.json());
+  } catch (e) { /* best effort: the next poll tries again */ }
+}
+async function toggleGscSim() {
+  if (gscSimBusy) return;
+  const running = gscSimLast && gscSimLast.running;
+  if (running) { await stopGscSim(); return; }
+  if (!pifinderScreenUrl) {
+    await ccNoticeBanner("PiFinder isn't confirmed reachable yet - wait for it to come up, then try again.");
+    return;
+  }
+  gscSimBusy = true;
+  setHwDot(document.getElementById('mode-tile-gsc-dot'), 'status-dot dot-yellow dot-unconfirmed');
+  document.getElementById('mode-tile-gsc-sub').textContent = 'starting\u2026';
+  try {
+    const landing = document.getElementById('gsc-sim-landing').value || 'typical';
+    const resp = await fetch('/api/gsc_sim_start?landing=' + encodeURIComponent(landing), { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) await ccNoticeBanner('The simulation did not start: ' + (data.error || 'unknown error'));
+    else if (data.warnings && data.warnings.length) await ccNoticeBanner(data.warnings.join(' '));
+    applyGscSim(data);
+  } catch (e) {
+    await ccNoticeBanner('The simulation did not start: ' + e);
+  } finally {
+    gscSimBusy = false;
+    refreshGscSim();
+  }
+}
+async function stopGscSim() {
+  if (gscSimBusy) return;
+  gscSimBusy = true;
+  document.getElementById('mode-tile-gsc-sub').textContent = 'stopping\u2026';
+  try {
+    const resp = await fetch('/api/gsc_sim_stop', { method: 'POST' });
+    const data = await resp.json();
+    if (data.warnings && data.warnings.length) await ccNoticeBanner(data.warnings.join(' '));
+    applyGscSim(data);
+  } catch (e) {
+    await ccNoticeBanner('The simulation did not stop cleanly: ' + e);
+  } finally {
+    gscSimBusy = false;
+    refreshGscSim();
+  }
+}
+setInterval(refreshGscSim, 4000);
+setTimeout(refreshGscSim, 800);
+
 function updateRealHardwareTile() {
   const tile = document.getElementById('mode-tile-real');
   const dotEl = document.getElementById('mode-tile-real-dot');
@@ -5029,7 +5173,10 @@ function updateRealHardwareTile() {
   if (!tile) return;
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  const active = !simOn && !fakeOn;
+  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on');
+  // The GSC simulation runs ON the real hardware (its real solver and drivers); only its camera picture is simulated. The
+  // plain Real Hardware tile is still the "nothing simulated" state, so it is off while the sky is simulated.
+  const active = !simOn && !fakeOn && !gscOn;
   tile.classList.toggle('tile-on', active);
   setHwDot(dotEl, 'status-dot ' + (active ? 'dot-green' : 'dot-white'));
   subEl.textContent = active ? 'current mode' : 'inactive while a simulation mode is on';
@@ -5071,6 +5218,10 @@ function updateModeSummaryLine() {
     // and "actually fully set up" are different questions (2026-09-07,
     // direct feedback).
     dotClass = wmSimAllReady ? 'dot-green' : 'dot-yellow';
+  } else if (document.getElementById('mode-tile-gsc')?.classList.contains('tile-on')) {
+    nameEl = 'Real Hardware + GSC Simulation';
+    subText = document.getElementById('mode-tile-gsc-sub')?.textContent || '';
+    dotClass = document.getElementById('mode-tile-gsc-dot')?.className.includes('dot-green') ? 'dot-green' : 'dot-yellow';
   } else if (document.getElementById('mode-tile-fake')?.classList.contains('tile-on')) {
     nameEl = 'PiFinder-only Fake Mode (legacy)';
     subText = document.getElementById('mode-tile-fake-sub')?.textContent || '';
@@ -5229,7 +5380,10 @@ const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
 async function toggleRealHardware() {
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  if (simOn) {
+  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on');
+  if (gscOn) {
+    await stopGscSim();
+  } else if (simOn) {
     await toggleTruthInjector();
   } else if (fakeOn) {
     await toggleMode();

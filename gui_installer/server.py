@@ -32,6 +32,7 @@ from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
 import clock_status
+import gsc_sim
 import indi_client
 import webmanager_client
 
@@ -5192,6 +5193,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
 
+        if parsed.path == "/api/gsc_sim_status":
+            # The "Real hardware + GSC simulation" mode (gsc_sim.py): whether the sky follower runs, whether PiFinder is in Test
+            # Mode and solving, and what this device can do at all. Polled by the mode tile.
+            self._send_json(gsc_sim.status())
+            return
+
         if parsed.path == "/api/truth_injector_status":
             # Polled by the toggle button's own status dot - reports the
             # user's last desired state plus whether the process is
@@ -7277,6 +7284,31 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _mb_log("  done.")
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/gsc_sim_start":
+            # Start the GSC sky simulation (gsc_sim.py). landing: off | typical | large; the mount followed is the Bridge's active
+            # mount (the Telescope Simulator by default). The old PiFinder Simulator device is disconnected while it runs.
+            qs = parse_qs(parsed.query)
+            landing = qs.get("landing", ["typical"])[0]
+            if landing not in gsc_sim.LANDING:
+                self._send_json({"ok": False, "error": f"invalid landing '{landing}'"}, status=400)
+                return
+            try:
+                mount = indi_client.mount_bridge_status().get("active_mount") or gsc_sim.DEFAULT_MOUNT
+            except indi_client.INDIClientError:
+                mount = gsc_sim.DEFAULT_MOUNT
+            _mb_log(f"GSC simulation: starting (landing '{landing}', following '{mount}')...")
+            result = gsc_sim.start(landing=landing, device=mount, indi=indi_client)
+            _mb_log("GSC simulation: " + ("started." if result.get("ok") else f"not started - {result.get('error')}"))
+            self._send_json(result, status=200 if result.get("ok") else 409)
+            return
+
+        if parsed.path == "/api/gsc_sim_stop":
+            _mb_log("GSC simulation: stopping...")
+            result = gsc_sim.stop(indi=indi_client)
+            _mb_log("GSC simulation: stopped.")
+            self._send_json(result)
             return
 
         if parsed.path == "/api/truth_injector_toggle":

@@ -335,3 +335,26 @@ dead-reckoning-follow work settles, since it reuses that truth-source plumbing.
    hand-off / Ekos align. *(depends on 1; independent of 3–6)*
 8. **Optional Control Center integration** — "Setup Sky Sim" start/stop + target picker, mirroring
    the #176 "Setup Simulator" button. *(depends on 5)*
+
+
+## Using it: the mode "Real Hardware + GSC Simulation" (Control Center, #664)
+
+The Control Center's mode picker has four modes. **Real Hardware** and **Real Hardware + GSC Simulation** are the two to choose
+from; **Full Simulation (INDI/Mount Bridge)** and **PiFinder-only Fake Mode (legacy)** sit under "Other test modes", smaller and grey.
+
+Clicking "Real Hardware + GSC Simulation" (or "Start GSC simulation" in the "No solve active" message):
+1. starts `test_tools/pifinder_sky_follow.py` as a background process (`gui_installer/gsc_sim.py`), following the Bridge's active
+   mount (the Telescope Simulator by default), with the chosen landing error of a GoTo (none / typical 8' E 5' S / large 16' E 10' S;
+   a short corrective slew lands proportionally closer),
+2. switches PiFinder's Test Mode on (its camera picture is replaced by the simulated sky, solved by the real Cedar / tetra3 solver),
+3. disconnects the old "PiFinder Simulator" INDI device, which would show a stale second PiFinder in KStars.
+
+The panel shows four chips: sky renderer running, Test Mode on, Solving: CAM, Following: <mount>. "Stop simulation" (or a click on
+"Real Hardware") stops the follower, which puts PiFinder's original test picture back (taken from PiFinder's git checkout, not from
+whatever file is on disk), switches Test Mode off if the simulation had switched it on, and connects the old device again.
+
+Needs on the device: PiFinder (its Python environment and the `test_images` folder), the `gsc` tool and the GSC data. The tile says
+what is missing instead of failing. State: `~/.pfsm/gsc_sim.json`, log: `~/.pfsm/gsc_sim.log`.
+
+Checked on the real device: start, a `CAM` solve after a few seconds, the old device disconnected, stop, and everything back as it was
+(`test_tools/gsc_sim_test.py`, `test_tools/gsc_tile_test.js`).

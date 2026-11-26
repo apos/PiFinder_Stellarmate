@@ -17,6 +17,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import socket
 import sys
 import json
@@ -341,7 +342,12 @@ def follow(args):
     return 0
 
 
+def _stop_on_sigterm(signum, frame):
+    raise KeyboardInterrupt  # the same clean exit as Ctrl-C: the original picture is put back
+
+
 def main(argv=None):
+    signal.signal(signal.SIGTERM, _stop_on_sigterm)  # stopped by the Control Center
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--device", default="Telescope Simulator", help="INDI device whose position is followed")
     ap.add_argument("--host", default="localhost")
