@@ -1627,6 +1627,16 @@ void PiFinderMountBridge::updateMountMotionTracker()
 bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double piRA, double piDec, double mountRA,
                                                      double mountDec, double drift)
 {
+    // A mount position of exactly RA 0 / Dec 0 is the INDI default of a property the mount driver has not published yet (just bound, e.g.
+    // after a profile switch), never a real pointing. Taking it as "where the mount was" turned the first real position into a 5777'
+    // "external move" and set the whole Goto machinery going (live, OnStep, 2026-11-26). Treated as unknown: no baseline, no decision.
+    if (std::fabs(mountRA) < 1e-9 && std::fabs(mountDec) < 1e-9)
+    {
+        m_lastPolledMountRA = std::nan("");
+        m_lastPolledMountDec = std::nan("");
+        return true;
+    }
+
     // --- A Fall-4 confirmation from a previous tick is still open: only check its timeout here. ---
     if (m_repositionConfirmPending)
     {
@@ -2791,6 +2801,15 @@ void PiFinderMountBridge::publishSkyPanelExtras(bool havePiFinderPosition, doubl
 
 bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char *coordSetName)
 {
+    // Every command to the mount passes here. A coordinate that cannot exist (seen live on the OnStep: Dec 113.5, RA 31.5 h) is a bug
+    // somewhere upstream: it is refused loudly, never "corrected", never sent.
+    if (!std::isfinite(ra) || !std::isfinite(dec) || ra < 0.0 || ra > 24.0 || dec < -90.0 || dec > 90.0)
+    {
+        LOGF_ERROR("Refusing to send RA %.4fh / DEC %.4f deg (%s) to the mount - not a possible position. This is a bug "
+                   "in how that value was computed; nothing was sent.", ra, dec, coordSetName);
+        return false;
+    }
+
     double altitude = 90.0;
     if (!isAboveHorizon(ra, dec, altitude))
     {

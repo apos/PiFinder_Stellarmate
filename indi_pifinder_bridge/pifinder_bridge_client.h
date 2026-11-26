@@ -216,6 +216,12 @@ class PiFinderBridgeClient : public INDI::BaseClient
         static constexpr int BINDING_RETRY_GRACE_TICKS = 2;    // ~4s: let the original subscription resolve on its own first
         static constexpr int BINDING_RETRY_INTERVAL_TICKS = 2; // ~4s between retry attempts
         static constexpr int BINDING_RETRY_MAX_ATTEMPTS = 3;   // "a handful", ~16s total budget incl. grace
+        // After those, the subscription is asked for again every ~30 s for as long as the Bridge is not ready, instead of never again:
+        // a mount whose driver connects late (OnStep after a profile switch) must still be bound without anybody restarting the Bridge.
+        static constexpr int BINDING_RETRY_LONG_INTERVAL_TICKS = 15;
+        // A PiFinder target update in the first seconds after (re)binding is the property being re-sent to us, not a push-to from a human.
+        static constexpr long TARGET_EVENT_IGNORE_AFTER_BIND_SEC = 10;
+        long m_bindTime = 0;
         int m_bindingRetryTicksElapsed = 0;
         int m_bindingRetryCooldownTicks = 0;
         int m_bindingRetryAttempts = 0;
