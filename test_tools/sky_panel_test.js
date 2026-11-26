@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, skyCouplingFacts, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, skyCouplingFacts, skyCardModel, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -250,12 +250,20 @@ ok(T.skyCouplingFacts({ mode: 'MODE_GOTO_FORWARD', drift: 3.4, threshold: 2 }, t
 ok(T.skyCouplingFacts({ mode: 'MODE_GOTO_FORWARD', drift: 3.4, threshold: 2 }, false).join('|') === 'Goto forward', 'coupling facts while the Bridge works: only the mode, the drift is the residual then');
 ok(T.skyCouplingFacts({ mode: 'MODE_AUTO_CORRECT', action: 'ACTION_GOTO' }, false)[0] === 'Auto-correct (Goto)' && T.skyCouplingFacts({ mode: 'MODE_AUTO_CORRECT', action: 'ACTION_SYNC' }, false)[0] === 'Auto-correct (Sync)', 'coupling facts: Auto-correct names its action');
 ok(T.skyCouplingFacts(null, true).length === 0 && T.skyCouplingFacts({ mode: 'MODE_OFF' }, true)[0] === 'Coupling off', 'coupling facts: nothing known, nothing said; off says off');
-ok(/#mb-sky-col\.sky-card-on #mb-status-row:has\(#mount-bridge-dot\.dot-green\) \{ display: none; \}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8')), 'the status line goes only while it is healthy');
+ok(/#mb-sky-col\.sky-card-on #mb-caption-status-row \{ display: none; \}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8')), 'while the card is shown the older caption and status lines are not: it says all of it');
 
 // the card owns the state: while it is shown the caption line under it is not
 const pageHtml = require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8');
 ok(/classList\.toggle\('sky-card-on', !!m\)/.test(pageHtml), 'the page marks the sky column while the positioning card is shown');
-ok(/#mb-sky-col\.sky-card-on #mb-mode-caption-dot-text \{ display: none; \}/.test(pageHtml), 'then the caption label under it is hidden');
+ok(!/#mb-sky-col\.sky-card-on #mb-status-row:has/.test(pageHtml), 'no leftover rule that keeps part of the old status line');
+
+// not running: the card keeps what the status line said, it does not replace it with a generic sentence
+{
+  const cm = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'no Mount Bridge in this profile yet', statusDot: 'status-dot dot-yellow' });
+  ok(cm.line === 'no Mount Bridge in this profile yet' && cm.badge === 'Bridge off', 'not running: the card says why (no Mount Bridge in this profile yet)');
+  const cn = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'not running', statusDot: 'status-dot dot-white' });
+  ok(cn.line === 'The Bridge is not running', 'not running: the plain case');
+}
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');
