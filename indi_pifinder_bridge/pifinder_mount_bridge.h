@@ -17,6 +17,7 @@
 #include "defaultdevice.h"
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -532,6 +533,42 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty HeldTargetHorizonStatusNP;
         INumber HeldTargetHorizonStatusN[2];
 
+        // Target transparency (docs/concepts/mount_bridge_target_transparency.md, slice 2, #657): the Target as it was
+        // REQUESTED - the last GoTo target any client sent to the mount or to the PiFinder device (JNow) - and how far
+        // PiFinder's solved position is from it. Read-only, display only: nothing in this driver reads it back, and hand
+        // moves, Syncs and reposition adoption do not change it (it only follows the clients' own target properties).
+        // State: IPS_IDLE = no target yet; IPS_OK = OFFSET_ARCMIN is current (fresh PiFinder solve this tick);
+        // IPS_BUSY = target known, but PiFinder has no fresh solve now, so OFFSET_ARCMIN is the last value (or 0).
+        // AGE_SEC: seconds since this Bridge saw the target change (0 = unknown). SOURCE: "Mount" or "PiFinder".
+        enum { TARGET_STATUS_RA, TARGET_STATUS_DEC, TARGET_STATUS_OFFSET, TARGET_STATUS_AGE };
+
+        // Positioning status (docs/concepts/mount_bridge_target_transparency.md §12, #665): what the Bridge is doing about getting
+        // the scope onto the target right now, so the user knows whether to keep their hands off the hand controller. Read-only,
+        // derived from the existing forward/correct state machines (it changes none of them). HANDS_OFF is 1 while the Bridge
+        // moves the mount or verifies the arrival (SLEWING, REFINING, VERIFYING). Phases (POSITIONING_PHASE.PHASE): IDLE, SLEWING
+        // (first slew), VERIFYING (waiting for a PiFinder solve), REFINING (a corrective slew after a Sync), ON_TARGET, GAVE_UP
+        // (retry budget used up or residual beyond the sync sanity limit), HOLDING. State: Busy = hands off, Ok = on target or
+        // holding, Alert = gave up, Idle = nothing going on.
+        enum { POSITIONING_ATTEMPT, POSITIONING_ATTEMPTS_MAX, POSITIONING_RESIDUAL, POSITIONING_ELAPSED, POSITIONING_TO_GO,
+               POSITIONING_SOLVE_AGE, POSITIONING_HANDS_OFF };
+        INumberVectorProperty PositioningStatusNP;
+        INumber PositioningStatusN[7];
+        ITextVectorProperty PositioningPhaseTP;
+        IText PositioningPhaseT[1];
+        enum class PositioningResult { NONE, ON_TARGET, GAVE_UP };
+        PositioningResult m_positioningResult = PositioningResult::NONE;
+        double m_positioningResidual = 0.0;      // arcmin left at the last verification
+        int m_positioningAttempts = 0;           // refine attempts used in the last or current move
+        double m_positioningStart = 0.0;         // epoch seconds at which the current hands-off stretch began
+        double m_positioningElapsedFinal = 0.0;  // length of the last finished stretch
+        bool m_positioningHandsOff = false;
+        void setPositioningResult(PositioningResult result, double residualArcmin);
+        void publishPositioningStatus();
+        INumberVectorProperty TargetStatusNP;
+        INumber TargetStatusN[4];
+        ITextVectorProperty TargetStatusSourceTP;
+        IText TargetStatusSourceT[1];
+
         // The observer location every altitude/azimuth above was computed
         // with (LAT north, LONG east, degrees). IPS_IDLE = unknown: then the
         // altitude values above are the fail-open placeholder (90) and must
@@ -540,7 +577,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber ObserverLocationN[2];
         bool resolveObserverLocation(double &lat, double &lon);
         bool horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth);
-        void publishSkyPanelExtras();
+        void publishSkyPanelExtras(bool havePiFinderPosition, double piRA, double piDec);
 
         // Result of a manual Sync in the INDI log (issue #609): after a Sync is sent to the
         // mount, its reported position is checked for a few seconds and the outcome logged
@@ -839,6 +876,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // own existing timestamp convention elsewhere in this file.
         long m_lastConfirmedGoodTime = 0;
         static constexpr double MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC = 0.35; // measured live 2026-08-08 (~0.25-0.3'/s), generous margin
+
+        // #659: when the mount last moved (epoch seconds, same clock as PiFinder's last_solve_success), tracked every
+        // tick by updateMountMotionTracker(). Auto-correct (Sync) only syncs to a frame whose exposure ended at least
+        // MOUNT_STOP_SOLVE_MARGIN_SEC after that.
+        void updateMountMotionTracker();
+        double m_lastMountMotionEpoch = 0.0;
+        double m_motionPrevRA = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevDec = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevEpoch = 0.0;
+        static constexpr double MOUNT_STOP_SOLVE_MARGIN_SEC = 1.0;      // covers the exposure itself and readout latency
+        static constexpr double MOUNT_MOTION_TOLERANCE_ARCMIN = 0.5;   // readout jitter / guide pulses are not "moving"
 
         // Found live (2026-08-08): right after a restart/mode-switch,
         // m_lastConfirmedGoodTime gets baselined on the very first tick

@@ -19,6 +19,16 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_mountMountTypeSP = nullptr;
     m_mountAbortSP = nullptr;
     m_mountSlewRateSP = nullptr;
+    // These belonged to the previous mount (or are bound again below); a pointer into a device that is gone must never be read.
+    m_mountParkSP = nullptr;
+    m_mountGeoNP = nullptr;
+    m_mountTargetNP = nullptr;
+    m_piFinderGeoNP = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
+        m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
+    }
+    m_bindTime = static_cast<long>(time(nullptr));
 
     m_bindingRetryTicksElapsed = 0;
     m_bindingRetryCooldownTicks = 0;
@@ -36,8 +46,13 @@ bool PiFinderBridgeClient::isReady() const
 
 bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
 {
-    if (isReady() || m_bindingGaveUp)
+    if (isReady())
+    {
+        // bound: a later loss of the device starts over with the short budget and its one-time error
+        m_bindingRetryTicksElapsed = m_bindingRetryCooldownTicks = m_bindingRetryAttempts = 0;
+        m_bindingGaveUp = false;
         return false;
+    }
 
     ++m_bindingRetryTicksElapsed;
 
@@ -50,9 +65,12 @@ bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
         return false;
     }
 
-    if (m_bindingRetryAttempts >= BINDING_RETRY_MAX_ATTEMPTS)
+    // Past the short budget: report it once (bindingGaveUp() drives the one-time error in the driver) but keep asking, slowly.
+    const bool longPhase = m_bindingRetryAttempts >= BINDING_RETRY_MAX_ATTEMPTS;
+    if (longPhase && !m_bindingGaveUp)
     {
         m_bindingGaveUp = true;
+        m_bindingRetryCooldownTicks = BINDING_RETRY_LONG_INTERVAL_TICKS;
         return false;
     }
 
@@ -71,9 +89,10 @@ bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
     if (!m_piFinderOnCoordSetSP)
         watchProperty(m_piFinderName.c_str(), "ON_COORD_SET");
 
-    ++m_bindingRetryAttempts;
-    m_bindingRetryCooldownTicks = BINDING_RETRY_INTERVAL_TICKS;
-    return true;
+    if (!longPhase)
+        ++m_bindingRetryAttempts;
+    m_bindingRetryCooldownTicks = longPhase ? BINDING_RETRY_LONG_INTERVAL_TICKS : BINDING_RETRY_INTERVAL_TICKS;
+    return !longPhase;   // the slow retries are silent: the one-time error has been logged already
 }
 
 void PiFinderBridgeClient::setShadowDevice(const std::string &shadowName)
@@ -183,8 +202,11 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         // this property (see consumePiFinderTargetPending()'s own comment
         // in the header) - mark it pending regardless of whether the value
         // actually changed from last time.
-        std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
-        m_piFinderTargetPending = true;
+        if (static_cast<long>(time(nullptr)) - m_bindTime >= TARGET_EVENT_IGNORE_AFTER_BIND_SEC)
+        {
+            std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
+            m_piFinderTargetPending = true;
+        }
     }
 }
 
@@ -315,7 +337,7 @@ bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::st
     return false;
 }
 
-bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec) const
+bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const
 {
     auto read = [](INDI::PropertyViewNumber *np, double &r, double &d) -> bool
     {
@@ -331,28 +353,33 @@ bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec) const
     const bool havePi = read(m_piFinderTargetNP, piRA, piDec);
     if (haveMount && havePi)
     {
-        if (m_lastPiFinderTargetTime > m_lastMountTargetTime)
-        {
-            ra = piRA;
-            dec = piDec;
-        }
-        else
-        {
-            ra = mountRA;
-            dec = mountDec;
-        }
+        const bool piNewer = m_lastPiFinderTargetTime > m_lastMountTargetTime;
+        ra = piNewer ? piRA : mountRA;
+        dec = piNewer ? piDec : mountDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = piNewer;
+        if (setTime != nullptr)
+            *setTime = piNewer ? m_lastPiFinderTargetTime.load() : m_lastMountTargetTime.load();
         return true;
     }
     if (haveMount)
     {
         ra = mountRA;
         dec = mountDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = false;
+        if (setTime != nullptr)
+            *setTime = m_lastMountTargetTime.load();
         return true;
     }
     if (havePi)
     {
         ra = piRA;
         dec = piDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = true;
+        if (setTime != nullptr)
+            *setTime = m_lastPiFinderTargetTime.load();
         return true;
     }
     return false;
@@ -432,9 +459,18 @@ bool PiFinderBridgeClient::setSlewRateIndex(int index)
     return true;
 }
 
+// The last line of defence before anything reaches a mount: a coordinate that cannot exist is never sent (seen live: Dec 113.5, RA 31.5 h).
+static bool plausibleEquatorial(double ra, double dec)
+{
+    return std::isfinite(ra) && std::isfinite(dec) && ra >= 0.0 && ra <= 24.0 && dec >= -90.0 && dec <= 90.0;
+}
+
 bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *coordSetName)
 {
     if (!isReady())
+        return false;
+
+    if (!plausibleEquatorial(ra, dec))
         return false;
 
     auto coordSetSwitch = m_mountOnCoordSetSP->findWidgetByName(coordSetName);

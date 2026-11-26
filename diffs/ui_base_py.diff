@@ -1,0 +1,40 @@
+--- python/PiFinder/ui/base.py.orig
++++ python/PiFinder/ui/base.py
+@@ -11,6 +11,7 @@
+ from typing import Type, Union
+ 
+ from PIL import Image, ImageDraw
++from PiFinder import pfsm_bridge_status
+ from PiFinder import utils
+ from PiFinder.image_util import make_red
+ from PiFinder.displays import DisplayBase
+@@ -441,6 +442,11 @@
+         if title_bar:
+             fg = self.colors.get(0)
+             bg = self.colors.get(64)
++            # PiFinder_Stellarmate: while the Mount Bridge moves the mount or verifies the arrival the title bar says
++            # HANDS OFF (bright bar); briefly "On target" afterwards. A stale status is ignored (see pfsm_bridge_status).
++            bridge_banner = pfsm_bridge_status.titlebar()
++            if bridge_banner is not None and bridge_banner[1]:
++                bg = self.colors.get(255)
+             tb_height = self.display_class.titlebar_height
+             self.draw.rectangle(
+                 [0, 0, self.display_class.resX, tb_height],
+@@ -451,6 +457,8 @@
+             title_y = max(0, (tb_height - self.fonts.bold.height) // 2)
+             icon_y = (tb_height - self.fonts.icon_bold_large.height) // 2
+             title_text = str(self.fps) if self.ui_state.show_fps() else _(self.title)
++            if bridge_banner is not None:
++                title_text = bridge_banner[0]
+             # Truncate so the title never runs under the right-side status icons.
+             # They start at the GPS icon (~0.8*resX); leave a small gap. Derived
+             # from the screen size + bold font, so it adapts to 128/176/320.
+@@ -510,7 +518,7 @@
+                             fill=var_fg,
+                         )
+ 
+-                    if len(self.title) < 9:
++                    if len(self.title) < 9 and bridge_banner is None:
+                         # Draw rotating constellation/SQM wheel (replaces static constellation)
+ 
+                         # Adjust spacing a bit if the battery indicator is present

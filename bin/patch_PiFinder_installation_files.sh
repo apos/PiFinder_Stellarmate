@@ -620,6 +620,27 @@ python3 -m py_compile "${pifinder_dir}/python/tests/test_api_align.py" \
 echo "------------------------------------"
 
 ##################################################
+# PiFinder: the Mount Bridge's positioning status on PiFinder's screen (#665). "HANDS OFF" in the title bar while the Bridge
+# moves the mount or verifies the arrival, briefly "On target" afterwards. Three pieces: a new module (create-diff, -N makes
+# re-runs a no-op) that holds the status and the POST /api/bridge_positioning route, a hook that registers the route in
+# api_extensions.py, and the title bar in ui/base.py. A "hands off" status that is not renewed is ignored (fail safe).
+
+echo "🔧 Adding pfsm_bridge_status.py ..."
+apply_patch_or_warn "${pfsm_bridge_status_py}" "${pifinder_stellarmate_dir}/diffs/pfsm_bridge_status_py.diff"
+python3 -m py_compile "${pfsm_bridge_status_py}" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+echo "🔧 Registering POST /api/bridge_positioning in api_extensions.py ..."
+apply_patch_or_warn "$api_extensions_py" "${pifinder_stellarmate_dir}/diffs/api_extensions_bridge_status_py.diff"
+python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+echo "🔧 Updating ui/base.py (title bar) ..."
+cp "$ui_base_py" "$ui_base_py.bak"
+apply_patch_or_warn "$ui_base_py" "${pifinder_stellarmate_dir}/diffs/ui_base_py.diff"
+show_diff_if_changed "$ui_base_py"
+python3 -m py_compile "$ui_base_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/object_details.py - surfaces the on-device push-to target
 # (UIState's own target()/set_target(), previously never called) so GET
 # /api/current_target (see api_extensions.py above) can report it - see

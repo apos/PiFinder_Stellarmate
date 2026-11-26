@@ -531,6 +531,25 @@ void LX200_PIFINDER::pollCurrentTarget()
     const double jd = ln_get_julian_from_sys();
     ln_get_equ_prec(&meanPosition, jd, &nowPosition);
 
+    // The same object arrives twice when a client sends the GoTo to this device: once as the client's own TARGET_EOD_COORD (set
+    // by Goto() from the client's JNow coordinates) and, about half a minute later, as PiFinder's pushed object, precessed back to
+    // JNow here. The two JNow values differ by a few arcseconds to a fraction of an arcminute (precession models), enough for
+    // the Mount Bridge to treat the second one as a NEW target and slew a second time right after arrival (found live
+    // 2026-11-26, sky simulation: a second 10 s "hands off" stretch after ON_TARGET). A target within 1 arcminute of the one
+    // already published is that same object: remember it, but do not publish it again.
+    const double currentRA = TargetNP[0].getValue(), currentDec = TargetNP[1].getValue();
+    if (!(currentRA == 0.0 && currentDec == 0.0))
+    {
+        const double dRaArcmin = (nowPosition.ra - currentRA * 15.0) * std::cos(nowPosition.dec * M_PI / 180.0) * 60.0;
+        const double dDecArcmin = (nowPosition.dec - currentDec) * 60.0;
+        if (std::hypot(dRaArcmin, dDecArcmin) < 1.0)
+        {
+            LOGF_DEBUG("PiFinder's current target %s matches the target already published (%.2f arcmin) - not republishing.",
+                       name.c_str(), std::hypot(dRaArcmin, dDecArcmin));
+            return;
+        }
+    }
+
     TargetNP[0].setValue(nowPosition.ra / 15.0); // back to hours for INDI's own convention
     TargetNP[1].setValue(nowPosition.dec);
     TargetNP.setState(IPS_OK);

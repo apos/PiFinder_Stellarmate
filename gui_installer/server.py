@@ -32,6 +32,7 @@ from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
 import clock_status
+import gsc_sim
 import indi_client
 import webmanager_client
 
@@ -2871,7 +2872,11 @@ _mb_readiness_gave_up = False
 # strong contributing factor to the RA0/Dec0 jumps. Now requires this many
 # CONSECUTIVE not-running ticks (5s apart) before concluding the driver is
 # actually stuck rather than just momentarily slow to answer.
-_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
+# 2026-11-26 (#385, caught live with test_tools/mount_bridge_hang_catcher.py): the Bridge goes silent for 15-60 s about every 5 minutes
+# while only IT is silent (PiFinder LX200 and the mount answer at the same moment), both of its threads idle in select(), memory and CPU
+# fine - and it recovers by itself. A restart after 3 ticks (15 s) therefore only did harm (state lost, GoTos in flight lost, the
+# readiness panel flapping). 12 ticks = 60 s: a really dead driver is still restarted, a stall that passes is left alone.
+_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 12
 _mb_readiness_consecutive_fails = 0
 
 # Debounce for check 6 - found live 2026-09-05: an "PiFinder Simulator" INDI
@@ -3392,6 +3397,21 @@ def _refresh_stale_mount_time_if_needed(status: dict) -> None:
         )
     else:
         _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
+
+
+def _gsc_sim_restore_watchdog(interval=15):
+    """The GSC simulation stays the way it was last chosen: after an update (PiFinder restarted, Test Mode off, test picture put back),
+    a crash or a reboot it is brought back without anybody opening the page. See gsc_sim.restore()."""
+    last = None
+    while True:
+        time.sleep(interval)
+        try:
+            what = gsc_sim.restore(indi=indi_client)
+        except Exception as e:  # never let this thread die
+            what = "error: %s" % e
+        if what != last and what not in ("none", "healthy"):
+            _mb_log("GSC simulation self-heal: %s" % what)
+        last = what
 
 
 def _mount_bridge_readiness_watchdog(interval=5):
@@ -5190,6 +5210,12 @@ class Handler(BaseHTTPRequestHandler):
             result = clock_status.status(mount_time)
             result["mount_device"] = mount_name
             self._send_json(result)
+            return
+
+        if parsed.path == "/api/gsc_sim_status":
+            # The "Real hardware + GSC simulation" mode (gsc_sim.py): whether the sky follower runs, whether PiFinder is in Test
+            # Mode and solving, and what this device can do at all. Polled by the mode tile.
+            self._send_json(gsc_sim.status(heal=True))
             return
 
         if parsed.path == "/api/truth_injector_status":
@@ -7279,6 +7305,31 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/gsc_sim_start":
+            # Start the GSC sky simulation (gsc_sim.py). landing: off | typical | large; the mount followed is the Bridge's active
+            # mount (the Telescope Simulator by default). The old PiFinder Simulator device is disconnected while it runs.
+            qs = parse_qs(parsed.query)
+            landing = qs.get("landing", ["typical"])[0]
+            if landing not in gsc_sim.LANDING:
+                self._send_json({"ok": False, "error": f"invalid landing '{landing}'"}, status=400)
+                return
+            try:
+                mount = indi_client.mount_bridge_status().get("active_mount") or gsc_sim.DEFAULT_MOUNT
+            except indi_client.INDIClientError:
+                mount = gsc_sim.DEFAULT_MOUNT
+            _mb_log(f"GSC simulation: starting (landing '{landing}', following '{mount}')...")
+            result = gsc_sim.start(landing=landing, device=mount, indi=indi_client)
+            _mb_log("GSC simulation: " + ("started." if result.get("ok") else f"not started - {result.get('error')}"))
+            self._send_json(result, status=200 if result.get("ok") else 409)
+            return
+
+        if parsed.path == "/api/gsc_sim_stop":
+            _mb_log("GSC simulation: stopping...")
+            result = gsc_sim.stop(indi=indi_client)
+            _mb_log("GSC simulation: stopped.")
+            self._send_json(result)
+            return
+
         if parsed.path == "/api/truth_injector_toggle":
             global _truth_injector_desired
             # device: optional override, see TRUTH_INJECTOR_DEFAULT_DEVICE's
@@ -7447,6 +7498,7 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    threading.Thread(target=_gsc_sim_restore_watchdog, daemon=True).start()
     # #372 (simplified) - independent of the readiness watchdog above; see
     # _guiding_hold_watchdog()'s own docstring.
     threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()
