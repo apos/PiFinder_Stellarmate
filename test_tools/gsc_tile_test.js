@@ -57,5 +57,13 @@ const between = html.slice(rowStart, readiness);
 ok((between.match(/<div\b/g) || []).length === (between.match(/<\/div>/g) || []).length, 'the "Other test modes" row is closed before the setup readiness line');
 ok(!/mode-tile-new|>new</.test(html.slice(html.indexOf('id="mode-tile-gsc"'), html.indexOf('id="mode-tile-gsc"') + 700)), 'no "new" badge on the GSC tile');
 
+// "Sync PiFinder from mount" without a solve falls back to injecting the mount's position instead of refusing
+const syncStart = html.indexOf('async function triggerSyncPiFinderFromMount()');
+const syncBody = html.slice(syncStart, html.indexOf('\n}\n', syncStart));
+const noSolve = syncBody.slice(syncBody.indexOf("d.reason === 'no_solve'"), syncBody.indexOf("d.reason === 'outside_fov'"));
+ok(/await reseedFakeSolve\(\)/.test(noSolve), 'no solve: the mount position is injected (reseedFakeSolve)');
+ok(!/Point it at stars/.test(noSolve), 'no solve: no longer sends the user away to point the camera at stars');
+ok(/not a camera solve/.test(noSolve), 'no solve: says plainly that this is an injected position, not a camera solve');
+
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all GSC tile tests passed');

@@ -42,16 +42,35 @@ def get_pid() -> int | None:
         return None
 
 
-def check_responsive() -> bool:
+def check_device(device: str) -> bool:
     try:
         sock = socket.create_connection((HOST, PORT), timeout=CHECK_TIMEOUT)
-        sock.sendall(f'<getProperties version="1.7" device="{DEVICE}"/>\n'.encode())
+        sock.sendall(f'<getProperties version="1.7" device="{device}"/>\n'.encode())
         sock.settimeout(CHECK_TIMEOUT)
         chunk = sock.recv(4096)
         sock.close()
         return len(chunk) > 0
     except OSError:
         return False
+
+
+# Other devices on the same indiserver: when they stop answering together with the Bridge, the stall is in indiserver (or the whole
+# machine, e.g. swapping), not in the Bridge driver.
+OTHER_DEVICES = ("PiFinder LX200", "Telescope Simulator")
+
+
+def check_responsive() -> bool:
+    ok = check_device(DEVICE)
+    if not ok:
+        others = {d: check_device(d) for d in OTHER_DEVICES}
+        print(f"[{time.strftime('%H:%M:%S')}] Bridge silent; the others: " + ", ".join(f"{d}={'answers' if v else 'SILENT'}" for d, v in others.items()))
+        try:
+            meminfo = {l.split(":")[0]: int(l.split()[1]) for l in Path("/proc/meminfo").read_text().splitlines() if l.split()[1:2]}
+            print(f"[{time.strftime('%H:%M:%S')}] memory: free {meminfo['MemFree'] // 1024} MB, available {meminfo['MemAvailable'] // 1024} MB, "
+                  f"swap used {(meminfo['SwapTotal'] - meminfo['SwapFree']) // 1024} MB")
+        except (OSError, KeyError, ValueError):
+            pass
+    return ok
 
 
 def get_indiserver_pid() -> int:

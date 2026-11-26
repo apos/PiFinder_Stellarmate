@@ -9869,8 +9869,19 @@ async function triggerSyncPiFinderFromMount() {
         const fov = typeof d.fov_deg === 'number' ? d.fov_deg : null;
         const sep = typeof d.separation_deg === 'number' ? d.separation_deg : null;
         if (d.reason === 'no_solve') {
-          setSyncFeedback('warn', 'Not aligned', 'PiFinder has no current solve. Point it at stars, then retry.',
-            'PiFinder has no plate solve from the last few seconds. The Align needs one. Point the camera at stars and try again.');
+          // No plate solve (the scope sits in its home position, the camera sees no stars, or it is daylight): the mount knows where it
+          // points, so its position is injected into PiFinder as the starting point (the same one-shot as "Re-seed from mount"; it
+          // releases itself again, so the real camera solves as soon as there are stars). A real solve replaces it. Found 2026-11-26:
+          // "Sync PiFinder from mount" was exactly what was wanted at home position and it refused for lack of a solve.
+          await reseedFakeSolve();
+          const st = (document.getElementById('fake-solve-advanced-status') || {}).textContent || '';
+          if (/^could not/i.test(st)) {
+            setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
+          } else {
+            ok = true;
+            setSyncFeedback('ok', 'PiFinder set to the mount\'s position', 'no solve: injected',
+              'PiFinder had no plate solve, so the mount\'s position was injected as its starting point. It is not a camera solve: the first real solve replaces it.');
+          }
         } else if (d.reason === 'outside_fov') {
           const edge = fov !== null ? (fov / 2).toFixed(1) : '?';
           setSyncFeedback('warn', 'Not aligned',
