@@ -245,3 +245,26 @@ Setup: Telescope Simulator, landing error 8' E / 5' S for a 45 deg slew, scaled 
   second landing 0.4', verified. About 26 s from GoTo to 0.47' off the target; `TARGET_STATUS` offset 0.47'.
 - Not covered: a hand-paddle move during the few seconds of SETTLING is now refined back like a landing error (it does not ask
   "Adopt new position?"); to be judged by the owner, see the open question on the issue.
+
+## 12. Positioning status: tell the user when the Bridge is still fine-adjusting (#665)
+
+After a GoTo the Bridge slews, waits for a PiFinder solve, refines and verifies (about 26-30 s in the sky simulation). The user could
+not tell whether the wait was their own misalignment or the program, nor when to keep their hands off the hand controller.
+
+Three surfaces, one source:
+1. **Bridge, INDI** (done): `POSITIONING_STATUS` (ATTEMPT, ATTEMPTS_MAX, RESIDUAL_ARCMIN, ELAPSED_SEC, TO_GO_DEG, SOLVE_AGE_SEC,
+   HANDS_OFF) and `POSITIONING_PHASE.PHASE`: IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, HOLDING. Derived from the forward
+   and correct state machines, changes none of them. HANDS_OFF = 1 from the start of the slew until the arrival is verified.
+2. **Control Center**: a line under the sky chart (phase, attempt, residual, the cause of a wait, a Hands off / Hands free badge,
+   a four-step bar).
+3. **PiFinder screen**: an inverted "HANDS OFF" bar while the Bridge works, "HANDS FREE" after.
+
+Measured in the sky simulation (Goto-Forward, 38 deg slew): SLEWING 8 s (TO_GO 28.9 -> 0.4 deg), VERIFYING 8 s, REFINING 1 attempt
+(residual 8.1'), VERIFYING 8 s, ON_TARGET after 28.4 s, residual 0.7'. Each verification costs about 8 s (SETTLE_TICKS 3 x 2 s, then
+the wait for a fresh solve): the main part of the delay the user noticed.
+
+**A second finding while building it:** the same GoTo was executed twice. The client's GoTo set the PiFinder LX200 device's
+`TARGET_EOD_COORD`; about 30 s later `pollCurrentTarget()` republished PiFinder's pushed object converted back to JNow, 0.25' away;
+the Bridge took it for a new target and slewed again (a second "hands off" stretch right after ON_TARGET). Fix in the PiFinder
+LX200 driver: a target within 1' of the one already published is the same object and is not republished. After it: one run,
+ON_TARGET stays.

@@ -541,6 +541,29 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // IPS_BUSY = target known, but PiFinder has no fresh solve now, so OFFSET_ARCMIN is the last value (or 0).
         // AGE_SEC: seconds since this Bridge saw the target change (0 = unknown). SOURCE: "Mount" or "PiFinder".
         enum { TARGET_STATUS_RA, TARGET_STATUS_DEC, TARGET_STATUS_OFFSET, TARGET_STATUS_AGE };
+
+        // Positioning status (docs/concepts/mount_bridge_target_transparency.md §12, #665): what the Bridge is doing about getting
+        // the scope onto the target right now, so the user knows whether to keep their hands off the hand controller. Read-only,
+        // derived from the existing forward/correct state machines (it changes none of them). HANDS_OFF is 1 while the Bridge
+        // moves the mount or verifies the arrival (SLEWING, REFINING, VERIFYING). Phases (POSITIONING_PHASE.PHASE): IDLE, SLEWING
+        // (first slew), VERIFYING (waiting for a PiFinder solve), REFINING (a corrective slew after a Sync), ON_TARGET, GAVE_UP
+        // (retry budget used up or residual beyond the sync sanity limit), HOLDING. State: Busy = hands off, Ok = on target or
+        // holding, Alert = gave up, Idle = nothing going on.
+        enum { POSITIONING_ATTEMPT, POSITIONING_ATTEMPTS_MAX, POSITIONING_RESIDUAL, POSITIONING_ELAPSED, POSITIONING_TO_GO,
+               POSITIONING_SOLVE_AGE, POSITIONING_HANDS_OFF };
+        INumberVectorProperty PositioningStatusNP;
+        INumber PositioningStatusN[7];
+        ITextVectorProperty PositioningPhaseTP;
+        IText PositioningPhaseT[1];
+        enum class PositioningResult { NONE, ON_TARGET, GAVE_UP };
+        PositioningResult m_positioningResult = PositioningResult::NONE;
+        double m_positioningResidual = 0.0;      // arcmin left at the last verification
+        int m_positioningAttempts = 0;           // refine attempts used in the last or current move
+        double m_positioningStart = 0.0;         // epoch seconds at which the current hands-off stretch began
+        double m_positioningElapsedFinal = 0.0;  // length of the last finished stretch
+        bool m_positioningHandsOff = false;
+        void setPositioningResult(PositioningResult result, double residualArcmin);
+        void publishPositioningStatus();
         INumberVectorProperty TargetStatusNP;
         INumber TargetStatusN[4];
         ITextVectorProperty TargetStatusSourceTP;
