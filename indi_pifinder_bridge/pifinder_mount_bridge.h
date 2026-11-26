@@ -17,6 +17,7 @@
 #include "defaultdevice.h"
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -839,6 +840,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // own existing timestamp convention elsewhere in this file.
         long m_lastConfirmedGoodTime = 0;
         static constexpr double MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC = 0.35; // measured live 2026-08-08 (~0.25-0.3'/s), generous margin
+
+        // #659: when the mount last moved (epoch seconds, same clock as PiFinder's last_solve_success), tracked every
+        // tick by updateMountMotionTracker(). Auto-correct (Sync) only syncs to a frame whose exposure ended at least
+        // MOUNT_STOP_SOLVE_MARGIN_SEC after that.
+        void updateMountMotionTracker();
+        double m_lastMountMotionEpoch = 0.0;
+        double m_motionPrevRA = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevDec = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevEpoch = 0.0;
+        static constexpr double MOUNT_STOP_SOLVE_MARGIN_SEC = 1.0;      // covers the exposure itself and readout latency
+        static constexpr double MOUNT_MOTION_TOLERANCE_ARCMIN = 0.5;   // readout jitter / guide pulses are not "moving"
 
         // Found live (2026-08-08): right after a restart/mode-switch,
         // m_lastConfirmedGoodTime gets baselined on the very first tick

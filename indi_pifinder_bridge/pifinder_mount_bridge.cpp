@@ -245,7 +245,7 @@ bool httpGetPiFinderAlignEvent(const std::string &url, double &alignTime, double
 // maxAgeSeconds, and RA/Dec both parsed - the position and the freshness/
 // source guarantee always come from one atomic snapshot.
 bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSeconds, double &ra, double &dec,
-                                      bool *httpLevelFailure = nullptr)
+                                      bool *httpLevelFailure = nullptr, double *solveEpochOut = nullptr)
 {
     if (httpLevelFailure != nullptr)
         *httpLevelFailure = false;
@@ -388,6 +388,10 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
 
         ra = jnow.rightascension;
         dec = jnow.declination;
+        // #659: last_solve_success is the END OF THE EXPOSURE of the frame this position was solved from, so a caller
+        // can tell whether that frame was taken before or after the mount last moved.
+        if (solveEpochOut != nullptr)
+            *solveEpochOut = lastSolveSuccess;
         DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_DEBUG,
                      "freshCamPosition(%s): accepted - ageSeconds=%.3f, RA=%.4fh, DEC=%.4f deg (JNow)",
                      url.c_str(), nowEpochSeconds() - lastSolveSuccess, ra, dec);
@@ -433,7 +437,8 @@ static constexpr double FRESH_POSITION_FAILURE_COOLDOWN_SEC = 5.0;
 // local case). Callers now pass PIFINDER_HTTP_HOST (SettingsTP - defaults to
 // "127.0.0.1", updated by the Control Center whenever it knows PiFinder is
 // remote - see server.py's own comment on where that push happens).
-bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinderHost, double &ra, double &dec)
+bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinderHost, double &ra, double &dec,
+                                double *solveEpochOut = nullptr)
 {
     static time_t s_lastFailureTime = 0;
     const time_t now = time(nullptr);
@@ -460,9 +465,9 @@ bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinde
     bool fallbackHttpFailed = false;
     const bool ok =
         httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
-                                         &primaryHttpFailed) ||
+                                         &primaryHttpFailed, solveEpochOut) ||
         httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec,
-                                         &fallbackHttpFailed);
+                                         &fallbackHttpFailed, solveEpochOut);
 
     s_lastFailureTime = (!ok && primaryHttpFailed && fallbackHttpFailed) ? now : 0;
     return ok;
@@ -1413,6 +1418,31 @@ void PiFinderMountBridge::runModeReadinessCheck()
     }
 }
 
+// #659: remember when the mount last moved, whatever moved it (a slew by any client, the hand paddle, our own Sync).
+// Moving = the INDI client reports a slew, or the reported position changed by more than passive sidereal drift
+// (MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC, as reposition detection uses it) plus a small tolerance for readout jitter.
+// Runs every tick, in every coupling mode: unlike reposition detection it must also work for Verify/Alert and Auto-correct.
+void PiFinderMountBridge::updateMountMotionTracker()
+{
+    double ra = 0.0, dec = 0.0;
+    if (m_client == nullptr || !m_client->getMountRADE(ra, dec))
+        return;
+    const double now = nowEpochSeconds();
+    bool moving = m_client->isMountSlewing();
+    if (!std::isnan(m_motionPrevRA))
+    {
+        const double deltaArcmin = angularSeparationArcmin(ra, dec, m_motionPrevRA, m_motionPrevDec);
+        const double allowed = std::max(0.0, now - m_motionPrevEpoch) * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+        if (deltaArcmin > allowed + MOUNT_MOTION_TOLERANCE_ARCMIN)
+            moving = true;
+    }
+    m_motionPrevRA = ra;
+    m_motionPrevDec = dec;
+    m_motionPrevEpoch = now;
+    if (moving)
+        m_lastMountMotionEpoch = now;
+}
+
 bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double piRA, double piDec, double mountRA,
                                                      double mountDec, double drift)
 {
@@ -1930,7 +1960,9 @@ void PiFinderMountBridge::TimerHit()
     // arcminutes whenever PiFinder's real position was actively changing, which this driver's own
     // top-level drift readout (the value everything else reacts to) was still exposed to.
     double piRA, piDec, mountRA, mountDec;
-    const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec);
+    updateMountMotionTracker();
+    double piSolveEpoch = 0.0; // exposure end of the frame piRA/piDec came from (#659)
+    const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec, &piSolveEpoch);
     const bool havePositions = havePiFinderPosition && m_client->getMountRADE(mountRA, mountDec);
     // Remember the last genuinely fresh PiFinder position (no extra HTTP call -
     // this is the same fetch every other consequential read this tick already
@@ -2070,6 +2102,20 @@ void PiFinderMountBridge::TimerHit()
             // one-shot fire-and-forget - see handleAutoCorrectGoto()'s
             // header comment for why (#170).
             handleAutoCorrectGoto(exceeded, piRA, piDec, drift, DriftThresholdN[0].value);
+        }
+        else if (exceeded && piSolveEpoch < m_lastMountMotionEpoch + MOUNT_STOP_SOLVE_MARGIN_SEC)
+        {
+            // #659 (found live 2026-11-26, simulator): after a slew the first PiFinder solve can still be of a frame
+            // exposed DURING the slew, yet it is younger than SolveFreshnessMaxAgeN. Syncing to it moves the mount to a
+            // position the scope was at moments earlier (24.5' instead of the real 9.4'). Wait for a frame whose
+            // exposure ended at least MOUNT_STOP_SOLVE_MARGIN_SEC after the mount last moved. IPS_ALERT, like the other
+            // "exceeded but gated" cases, so the GUI does not say "correcting" while this waits.
+            DriftStatusNP.s = IPS_ALERT;
+            LOGF_DEBUG("Drift %.1f arcmin exceeded threshold, but the newest PiFinder frame (exposure end %.1fs ago) "
+                       "is not at least %.1fs newer than the mount's last movement (%.1fs ago) - waiting for a "
+                       "frame taken after it stopped.",
+                       drift, nowEpochSeconds() - piSolveEpoch, MOUNT_STOP_SOLVE_MARGIN_SEC,
+                       nowEpochSeconds() - m_lastMountMotionEpoch);
         }
         else if (exceeded && !isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
         {
