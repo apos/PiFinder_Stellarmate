@@ -54,7 +54,19 @@ def check_responsive() -> bool:
         return False
 
 
-INDISERVER_PID = 1425  # found live 2026-09-03 - Mount Bridge's own two threads were
+def get_indiserver_pid() -> int:
+    """The indiserver that serves HOST:PORT (there can be a second one, e.g. KStars' flatpak, on another port)."""
+    try:
+        out = subprocess.run(["pgrep", "-f", "-o", f"^indiserver .*-p {PORT} "], capture_output=True, text=True, timeout=3)
+        line = out.stdout.strip().splitlines()
+        if line:
+            return int(line[0])
+    except Exception:
+        pass
+    return 1425  # the pid it was first used with (2026-09-03)
+
+
+INDISERVER_PID = get_indiserver_pid()  # was fixed to 1425 (2026-09-03) - Mount Bridge's own two threads were
 # both cleanly parked in select() at the moment a responsiveness check failed
 # (looks like healthy idle, not a deadlock) - capturing indiserver itself
 # alongside it now, to see whether IT is what's actually slow to relay under

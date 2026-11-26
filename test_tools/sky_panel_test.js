@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -179,6 +179,15 @@ q = T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 3, 
 ok(q.head === 'Still 2.4\u2032 off after 3 attempts' && q.tone === 'warn' && /not the Bridge/.test(q.why), 'gave up: says what is left and that it is not the Bridge');
 ok(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 1 })).head.endsWith('1 attempt'), 'singular for one attempt');
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding the target', 'holding');
+
+// the Bridge stops answering during a hands-off move: a notice instead of a vanished line
+const lastOff = T.skyPositioningModel(pos({}));
+let iq = T.skyPositioningInterrupted(lastOff, 12);
+ok(iq && iq.interrupted && iq.tone === 'warn' && !iq.handsOff && iq.head === 'Bridge stopped answering' && iq.sub === 'positioning interrupted 12 s ago', 'bridge silent during a move: says so, with the time');
+ok(/may still be moving/.test(iq.why) && /restarts the Bridge/.test(iq.why), 'says what is unknown and why');
+ok(T.skyPositioningInterrupted(lastOff, 91) === null, 'after 90 s the notice goes');
+ok(T.skyPositioningInterrupted(T.skyPositioningModel(pos({ phase: 'ON_TARGET', hands_off: false })), 5) === null, 'a move that had finished is not reported as interrupted');
+ok(T.skyPositioningInterrupted(null, 5) === null, 'nothing before: nothing to report');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');

@@ -9023,6 +9023,16 @@ function skyPositioningModel(p) {
   if (m.handsOff) m.running = 'Running for ' + Math.round(p.elapsed_sec) + ' s';
   return m;
 }
+// The Bridge stopped answering while it was moving the mount (hands off): say so instead of letting the line vanish. The Control
+// Center restarts an unresponsive Bridge on its own (#385) and the restarted Bridge has forgotten the move, so the state is
+// unknown: the mount may still be moving or may not have reached the target. Shown for a minute and a half, then it goes.
+const SKY_POSITIONING_INTERRUPTED_SEC = 90;
+function skyPositioningInterrupted(last, secondsAgo) {
+  if (!last || !last.handsOff || secondsAgo > SKY_POSITIONING_INTERRUPTED_SEC) return null;
+  return { handsOff: false, interrupted: true, tone: 'warn', step: last.step, head: 'Bridge stopped answering',
+    sub: 'positioning interrupted ' + Math.round(secondsAgo) + ' s ago',
+    why: 'The mount may still be moving, or not on the target. The Control Center restarts the Bridge on its own.', running: null };
+}
 const SKY_HOLD_APART_DEG = 1;     // the Hold position gets its own marker only when it is farther than this from the Target
 function skyFmtOffset(arcmin) {
   return arcmin < 60 ? arcmin.toFixed(1) + '\u2032' : (arcmin / 60).toFixed(1) + '\u00b0';
@@ -9197,10 +9207,14 @@ function drawSkyPanel(svg, model) {
   model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
     'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
 }
+let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
 function applyPositioning(p) {
   const box = document.getElementById('sky-positioning');
   if (!box) return;
-  const m = skyPositioningModel(p);
+  let m = skyPositioningModel(p);
+  if (m) _posLast = m.handsOff ? { m: m, at: Date.now() } : null;
+  else if (_posLast) m = skyPositioningInterrupted(_posLast.m, (Date.now() - _posLast.at) / 1000);
+  if (!m) _posLast = null;
   while (box.firstChild) box.removeChild(box.firstChild);
   if (!m) { box.style.display = 'none'; return; }
   box.style.display = '';
@@ -9208,14 +9222,14 @@ function applyPositioning(p) {
   const steps = document.createElement('div'); steps.className = 'pos-steps';
   for (let i = 0; i < 4; i++) {
     const s = document.createElement('span');
-    s.className = 'pos-step' + (m.handsOff ? (i < m.step ? ' pos-done' : i === m.step ? ' pos-now' : '') : ' pos-done');
+    s.className = 'pos-step' + (m.interrupted ? '' : m.handsOff ? (i < m.step ? ' pos-done' : i === m.step ? ' pos-now' : '') : ' pos-done');
     steps.appendChild(s);
   }
   box.appendChild(steps);
   const head = document.createElement('div'); head.className = 'pos-head';
   const dot = document.createElement('span'); dot.className = 'pos-dot';
   const text = document.createElement('span'); text.textContent = m.head;
-  const badge = document.createElement('span'); badge.className = 'pos-badge'; badge.textContent = m.handsOff ? 'Hands off' : 'Hands free';
+  const badge = document.createElement('span'); badge.className = 'pos-badge'; badge.textContent = m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free';
   head.appendChild(dot); head.appendChild(text); head.appendChild(badge);
   box.appendChild(head);
   [['pos-sub', m.sub], ['pos-why', m.why], ['pos-why', m.running]].forEach((x) => {
