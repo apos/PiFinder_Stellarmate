@@ -605,25 +605,38 @@
   #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
-  #sky-positioning { margin-top: 6px; font-size: 0.78rem; line-height: 1.35; }
-  #sky-positioning .pos-trail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.4rem; margin: 0 0 5px; font-size: 0.74rem; }
-  #sky-positioning .pos-trail-sep { color: #555; }
-  #sky-positioning .pos-trail-done { color: #4caf50; }
-  #sky-positioning .pos-trail-now { color: #f5a623; font-weight: 600; }
-  #sky-positioning .pos-trail-warn { color: #f5c46b; }
-  #sky-positioning .pos-trail-later { color: #555; }
-  #sky-positioning .pos-head { display: flex; align-items: center; gap: 6px; color: #e6e8ec; font-weight: 600; }
-  #sky-positioning .pos-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #4caf50; }
+  /* The positioning card under the sky picture (variant C of the three mockups): one headline row, a thin four-step band, one facts row,
+     the run so far. One typeface, three sizes (11 / 13 / 14 px), every row a fixed height and one line (ellipsis, the full text is the
+     tooltip): nothing moves when the column gets narrower or the state changes. */
+  #sky-positioning { margin-top: 8px; padding: 0.55rem 0.7rem 0.6rem; border: 1px solid #2a2a2a; border-radius: 8px; background: #161616;
+    font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
+  #sky-positioning .pos-head { display: flex; align-items: center; gap: 8px; height: 28px; font-size: 14px; font-weight: 600; }
+  #sky-positioning .pos-head > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sky-positioning .pos-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #4caf50; }
   #sky-positioning.pos-off .pos-dot, #sky-positioning.pos-warn .pos-dot { background: #f5a623; }
-  #sky-positioning .pos-badge { margin-left: auto; font-size: 0.68rem; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: #1f3a24; color: #8fd19a; white-space: nowrap; }
+  #sky-positioning .pos-badge { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #1f3a24; color: #8fd19a; white-space: nowrap; }
   #sky-positioning.pos-off .pos-badge { background: #f5a623; color: #2a1c00; }
   #sky-positioning.pos-warn .pos-badge { background: #3a2c10; color: #f5c46b; }
-  #sky-positioning .pos-sub { color: #c3c7cc; margin: 3px 0 0 15px; }
-  #sky-positioning .pos-why { color: #8d9399; font-size: 0.72rem; margin: 3px 0 0 15px; }
-  #sky-target-line { margin-top: 4px; font-size: 0.75rem; color: #9aa0a6; line-height: 1.35; }
-  #sky-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.35rem; margin-top: 4px; font-size: 0.75rem;
-    color: #8b93a1; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
-  #sky-time b { color: #e6e8ec; font-weight: 600; }
+  #sky-positioning .pos-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 6px 0 4px; }
+  #sky-positioning .pos-seg { height: 4px; border-radius: 2px; background: #2a2a2a; }
+  #sky-positioning .pos-seg.d { background: #4caf50; }
+  #sky-positioning .pos-seg.n { background: #f5a623; }
+  #sky-positioning .pos-seg.w { background: #e57373; }
+  #sky-positioning .pos-now { display: flex; justify-content: space-between; gap: 8px; height: 18px; font-size: 11px; color: #9aa0a6; white-space: nowrap; }
+  #sky-positioning .pos-now span { overflow: hidden; text-overflow: ellipsis; }
+  #sky-positioning .pos-facts { height: 20px; margin: 6px 0; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-positioning .pos-hist { border-top: 1px solid #2a2a2a; padding-top: 6px; font-size: 12px; color: #9aa0a6; }
+  #sky-positioning .pos-hist summary { display: flex; justify-content: space-between; cursor: pointer; list-style: none; }
+  #sky-positioning .pos-hist summary::-webkit-details-marker { display: none; }
+  #sky-positioning .pos-hist ol { margin: 4px 0 0; padding: 0; list-style: none; }
+  #sky-positioning .pos-hist li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
+  #sky-positioning .pos-hist .done { color: #8fd19a; }
+  #sky-positioning .pos-hist .now { color: #f5a623; font-weight: 600; }
+  #sky-positioning .pos-hist .warn { color: #f5c46b; }
+  #sky-target-line { margin-top: 6px; height: 18px; font-size: 11px; color: #9aa0a6; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-time { display: flex; align-items: center; gap: 0 0.35rem; margin-top: 2px; height: 18px; font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden;
+    color: #8b93a1; font-variant-numeric: tabular-nums; }
+  #sky-time b { color: #e6e8ec; font-weight: 500; }
   #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
   #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; align-self: center; flex: none; }
   #pifinder-glance-status-stack {
@@ -1627,7 +1640,10 @@
   }
   #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: 0; }
   #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
-  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.2rem; width: min(100%, 24rem); }
+  /* the two status lines under the card use the card's rhythm: 13 px, one line each, the same width as the card, ellipsis not wrapping */
+  #mb-sky-col #mb-mode-caption-row, #mb-sky-col #mb-status-row { width: 100%; margin-bottom: 0; }
+  #mb-sky-col #mb-mode-caption, #mb-sky-col #mb-status-line { font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
      verify this is still current" without claiming it's now wrong. */
@@ -9260,9 +9276,9 @@ function skyPositioningTrailUpdate(trail, p) {
   if (p.hands_off) {
     if (ended) t = [];                       // a new run begins
     const tail = t[t.length - 1];
-    if (!tail || tail.phase !== p.phase || (p.phase === 'REFINING' && tail.attempt !== p.attempt)) t.push({ phase: p.phase, attempt: p.attempt });
+    if (!tail || tail.phase !== p.phase || (p.phase === 'REFINING' && tail.attempt !== p.attempt)) t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
   } else if ((p.phase === 'ON_TARGET' || p.phase === 'GAVE_UP') && (!last || last.phase !== p.phase)) {
-    t.push({ phase: p.phase, attempt: p.attempt });
+    t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
   }
   return t;
 }
@@ -9276,6 +9292,60 @@ function skyPositioningTrailItems(trail, handsOff) {
   });
   if (handsOff) items.push({ text: SKY_TRAIL_LABEL.ON_TARGET, state: 'later' });
   return items;
+}
+// ---- the card's rows (variant C) ----
+const SKY_BAND_STEP = { SLEWING: 0, VERIFYING: 1, REFINING: 2, ON_TARGET: 3, HOLDING: 3, GAVE_UP: 2 };
+const SKY_BAND_LABEL = ['slewing', 'verifying', 'refining', 'on target'];
+// The four-step band: how far this run has come. It never goes backwards (a refine means another slew and another check, the detailed
+// order is in the run list below it); segments are 'done', 'now', 'warn' (the run gave up) or 'later'.
+function skyPositioningBand(trail, p, m) {
+  if (m && m.interrupted) return [0, 1, 2, 3].map((i) => (i < (m.step || 0) ? 'done' : i === (m.step || 0) ? 'warn' : 'later'));
+  const phase = p && p.phase;
+  if (phase === 'GAVE_UP') return ['done', 'done', 'done', 'warn'];
+  if (phase === 'ON_TARGET' || phase === 'HOLDING') return ['done', 'done', 'done', 'done'];
+  let reached = SKY_BAND_STEP[phase] || 0;
+  (trail || []).forEach((t) => { reached = Math.max(reached, SKY_BAND_STEP[t.phase] || 0); });
+  return [0, 1, 2, 3].map((i) => (i < reached ? 'done' : i === reached ? 'now' : 'later'));
+}
+// [left, right] of the line under the band.
+function skyPositioningNow(p, m) {
+  if (m.interrupted) return ['Interrupted', 'state unknown'];
+  const attempt = p.attempt > 0 ? 'attempt ' + p.attempt + ' of ' + p.attempts_max : '';
+  switch (p.phase) {
+    case 'SLEWING': return ['Step 1 of 4: slewing', m.sub];
+    case 'VERIFYING': return ['Step 2 of 4: verifying', attempt];
+    case 'REFINING': return ['Step 3 of 4: refining', attempt];
+    case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
+    case 'GAVE_UP': return ['Gave up', p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's')];
+    default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
+  }
+}
+// The one line of facts; the longer explanation (m.why) is its tooltip.
+function skyPositioningFacts(p, m) {
+  const arc = (v) => v.toFixed(1) + '\u2032';
+  if (m.interrupted) return ['positioning interrupted ' + m.sub.replace(/\D+/g, ' ').trim() + ' s ago', 'the mount may still be moving'];
+  switch (p.phase) {
+    case 'SLEWING': return ['the Bridge is moving the mount'];
+    case 'VERIFYING': return [p.solve_age_sec !== null && p.solve_age_sec > 5 ? 'no fresh solve for ' + Math.round(p.solve_age_sec) + ' s' : 'waiting for a fresh solve'];
+    case 'REFINING': return [arc(p.residual_arcmin) + ' off the target', 'correcting'];
+    case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
+    case 'GAVE_UP': return [arc(p.residual_arcmin) + ' off', 'the hand controller is yours'];
+    default: return [];
+  }
+}
+// The run so far: [{text, state, detail}] from the trail ('later' goal left out), the time each step took in detail; null without a run.
+function skyPositioningHistory(trail, handsOff, nowMs) {
+  const items = skyPositioningTrailItems(trail, handsOff);
+  if (!items) return null;
+  const rows = items.filter((it) => it.state !== 'later');
+  return rows.map((it, i) => {
+    const t0 = trail[i] && trail[i].at;
+    const t1 = i + 1 < trail.length ? trail[i + 1].at : (it.state === 'now' ? nowMs : null);
+    let detail = '';
+    if (it.state === 'now') detail = 'now';
+    else if (typeof t0 === 'number' && typeof t1 === 'number') detail = Math.max(1, Math.round((t1 - t0) / 1000)) + ' s';
+    return { text: it.text, state: it.state, detail: detail };
+  });
 }
 const SKY_POSITIONING_INTERRUPTED_SEC = 90;
 function skyPositioningInterrupted(last, secondsAgo) {
@@ -9460,6 +9530,13 @@ function drawSkyPanel(svg, model) {
 }
 let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
 let _posTrail = [];   // the phases of the current run, see skyPositioningTrailUpdate()
+let _posHistOpen = null;   // null: follow the run (open while the Bridge works, closed after); true/false: the user's own choice
+function skyPosEl(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
 function applyPositioning(p) {
   _posTrail = skyPositioningTrailUpdate(_posTrail, p);
   const box = document.getElementById('sky-positioning');
@@ -9472,26 +9549,46 @@ function applyPositioning(p) {
   if (!m) { box.style.display = 'none'; return; }
   box.style.display = '';
   box.className = 'pos-' + m.tone;
-  const items = m.interrupted ? null : skyPositioningTrailItems(_posTrail, m.handsOff);
-  if (items) {
-    const trail = document.createElement('div'); trail.className = 'pos-trail';
-    items.forEach((it, i) => {
-      if (i > 0) { const sep = document.createElement('span'); sep.className = 'pos-trail-sep'; sep.textContent = '\u203a'; trail.appendChild(sep); }
-      const e = document.createElement('span'); e.className = 'pos-trail-' + it.state; e.textContent = it.text + (it.state === 'now' ? '\u2026' : '');
-      trail.appendChild(e);
-    });
-    box.appendChild(trail);
-  }
-  const head = document.createElement('div'); head.className = 'pos-head';
-  const dot = document.createElement('span'); dot.className = 'pos-dot';
-  const text = document.createElement('span'); text.textContent = m.head;
-  const badge = document.createElement('span'); badge.className = 'pos-badge'; badge.textContent = m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free';
-  head.appendChild(dot); head.appendChild(text); head.appendChild(badge);
+  const pp = p || {};
+  // headline row: dot, what is happening, Hands off / Hands free
+  const head = skyPosEl('div', 'pos-head');
+  head.appendChild(skyPosEl('span', 'pos-dot'));
+  head.appendChild(skyPosEl('span', '', m.head));
+  head.appendChild(skyPosEl('span', 'pos-badge', m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free'));
   box.appendChild(head);
-  [['pos-sub', m.sub], ['pos-why', m.why], ['pos-why', m.running]].forEach((x) => {
-    if (!x[1]) return;
-    const d = document.createElement('div'); d.className = x[0]; d.textContent = x[1]; box.appendChild(d);
-  });
+  // the four-step band and the line under it
+  const band = skyPosEl('div', 'pos-band');
+  skyPositioningBand(_posTrail, pp, m).forEach((st) => band.appendChild(skyPosEl('div', 'pos-seg' + (st === 'done' ? ' d' : st === 'now' ? ' n' : st === 'warn' ? ' w' : ''))));
+  box.appendChild(band);
+  const now = skyPositioningNow(pp, m);
+  const nowRow = skyPosEl('div', 'pos-now');
+  nowRow.appendChild(skyPosEl('span', '', now[0]));
+  nowRow.appendChild(skyPosEl('span', '', now[1]));
+  box.appendChild(nowRow);
+  // one line of facts, the longer explanation is its tooltip
+  const facts = skyPosEl('div', 'pos-facts', skyPositioningFacts(pp, m).join(' \u00b7 '));
+  facts.title = [m.sub, m.why, m.running].filter(Boolean).join(' - ');
+  box.appendChild(facts);
+  // the whole run, step by step
+  const hist = skyPositioningHistory(_posTrail, m.handsOff, Date.now());
+  if (hist && hist.length) {
+    const det = skyPosEl('details', 'pos-hist');
+    det.open = _posHistOpen === null ? !!m.handsOff : _posHistOpen;
+    det.addEventListener('toggle', () => { _posHistOpen = det.open; });
+    const sum = skyPosEl('summary');
+    sum.appendChild(skyPosEl('span', '', m.handsOff ? 'Run so far' : 'Last run'));
+    sum.appendChild(skyPosEl('span', '', m.running ? m.running.replace('Running for ', '') : (det.open ? 'hide \u25b4' : 'show \u25be')));
+    det.appendChild(sum);
+    const ol = skyPosEl('ol');
+    hist.forEach((r) => {
+      const li = skyPosEl('li');
+      li.appendChild(skyPosEl('span', r.state, r.text));
+      li.appendChild(skyPosEl('span', '', r.detail));
+      ol.appendChild(li);
+    });
+    det.appendChild(ol);
+    box.appendChild(det);
+  }
 }
 let _skyLastOk = 0;
 function applySkyPanel(sky) {

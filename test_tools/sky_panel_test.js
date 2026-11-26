@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -210,6 +210,37 @@ tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'ON_TARGET', attempt: 0, ha
 ok(txt(tr, true) === 'Slewing:now > On target:later', 'the next GoTo starts a new trail');
 ok(txt(T.skyPositioningTrailUpdate([], pos({ phase: 'IDLE', hands_off: false })), false) === '', 'idle adds nothing');
 ok(T.skyPositioningTrailItems([], true) === null && T.skyPositioningTrailItems(null, true) === null, 'no run: nothing to draw');
+
+
+// ---- the card's rows: band, line under it, facts, run so far (variant C) ----
+const model = (o) => T.skyPositioningModel(pos(o));
+const band = (trail, o) => T.skyPositioningBand(trail, pos(o), model(o)).join(' ');
+ok(band([], { phase: 'SLEWING', attempt: 0 }) === 'now later later later', 'band: the run has just begun');
+ok(band(run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }]), { phase: 'REFINING' }) === 'done done now later', 'band: refining is step three');
+ok(band(run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }, { phase: 'VERIFYING', attempt: 1 }]), { phase: 'VERIFYING' }) === 'done done now later',
+  'band: it never goes back while the Bridge verifies the refine again');
+ok(band([], { phase: 'ON_TARGET', hands_off: false }) === 'done done done done' && band([], { phase: 'HOLDING', hands_off: false }) === 'done done done done', 'band: on target and holding are all done');
+ok(band([], { phase: 'GAVE_UP', hands_off: false, attempt: 3 }) === 'done done done warn', 'band: a run that gave up ends with a warning segment');
+ok(T.skyPositioningBand([], pos({}), T.skyPositioningInterrupted(model({}), 5)).join(' ') === 'done done warn later', 'band: an interrupted run marks the step it stopped at');
+const nowOf = (o) => T.skyPositioningNow(pos(o), model(o));
+ok(nowOf({ phase: 'REFINING', attempt: 2 }).join('|') === 'Step 3 of 4: refining|attempt 2 of 3', 'now: step three, attempt two of three');
+ok(nowOf({ phase: 'SLEWING', attempt: 0, to_go_deg: 28.9 }).join('|') === 'Step 1 of 4: slewing|29\u00b0 to go', 'now: slewing says how far to go');
+ok(nowOf({ phase: 'VERIFYING', attempt: 0 }).join('|') === 'Step 2 of 4: verifying|', 'now: the first verification has no attempt yet');
+ok(nowOf({ phase: 'ON_TARGET', hands_off: false, residual_arcmin: 0.7 }).join('|') === 'On target|0.7\u2032 off', 'now: on target with the residual');
+ok(nowOf({ phase: 'HOLDING', hands_off: false, attempt: 2 }).join('|') === 'On target|done in 2 attempts', 'now: holding says how many attempts it took');
+const factsOf = (o) => T.skyPositioningFacts(pos(o), model(o)).join(' \u00b7 ');
+ok(factsOf({ phase: 'REFINING', residual_arcmin: 8.1 }) === '8.1\u2032 off the target \u00b7 correcting', 'facts: refining');
+ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 14 }) === 'no fresh solve for 14 s', 'facts: a stale solve is named');
+ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 1 }) === 'waiting for a fresh solve', 'facts: waiting for the solve');
+ok(factsOf({ phase: 'HOLDING', hands_off: false }) === '', 'facts: holding has none, the drift is in the status row');
+// the run so far, with the time each step took
+const at = (t, o) => Object.assign({}, o, { at: t });
+const timed = [at(0, { phase: 'SLEWING' }), at(8000, { phase: 'VERIFYING' }), at(16000, { phase: 'REFINING', attempt: 1 })];
+let h = T.skyPositioningHistory(timed, true, 21000);
+ok(h.map((r) => r.text + ':' + r.state + ':' + r.detail).join(' | ') === 'Slewing:done:8 s | Verifying:done:8 s | Fine-adjusting 1:now:now', 'history: finished steps with their time, the current one as now');
+ok(T.skyPositioningHistory([], true, 0) === null, 'history: no run, nothing');
+h = T.skyPositioningHistory(timed.concat([at(30000, { phase: 'ON_TARGET', attempt: 1 })]), false, 31000);
+ok(h.length === 4 && h[3].text === 'On target' && h[3].state === 'done', 'history: a finished run ends with On target and no faint goal');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');
