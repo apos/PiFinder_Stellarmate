@@ -1462,6 +1462,13 @@ def bridge_active_mount(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, time
     return (el.get("ACTIVE_MOUNT") or "").strip() or None
 
 
+def bridge_binding_state(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """The state INDI gives the Mount Bridge's MOUNT_HORIZON_STATUS: the Bridge publishes it every tick once it is bound to its mount and
+    PiFinder, so "Idle" means it has never read the mount ("Ok" or "Alert" mean it did). None when the property is not there."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"MOUNT_HORIZON_STATUS"})
+    return props.get("PiFinder Mount Bridge", {}).get("MOUNT_HORIZON_STATUS", {}).get("state") or None
+
+
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
     {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
