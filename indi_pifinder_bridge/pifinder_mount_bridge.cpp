@@ -54,6 +54,40 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
     return res == CURLE_OK && httpCode == 200;
 }
 
+// #665: tell PiFinder what the Bridge is doing about getting the scope onto the target, for its title bar ("HANDS OFF" while the
+// Bridge moves the mount or verifies the arrival). POST /api/bridge_positioning (PFSM patch of PiFinder's api_extensions). Best
+// effort: a PiFinder without the patch answers 404 and simply shows nothing.
+bool httpPostPositioning(const std::string &url, const std::string &phase, int attempt, int attemptsMax, double residualArcmin,
+                         double toGoDeg)
+{
+    CURL *curl = curl_easy_init();
+    if (curl == nullptr)
+        return false;
+
+    char body[256];
+    snprintf(body, sizeof(body),
+             R"({"phase":"%s","attempt":%d,"attempts_max":%d,"residual_arcmin":%.2f,"to_go_deg":%.2f})", phase.c_str(),
+             attempt, attemptsMax, residualArcmin, toGoDeg);
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && httpCode == 200;
+}
+
 // #227 follow-up (2026-08-19): Goto-Forward needs full-cadence, fresh
 // PiFinder solves throughout (to Sync from before every Goto, and to verify
 // arrival), but PiFinder's own battery-friendly sleep (keypad/IMU activity
@@ -1515,6 +1549,33 @@ void PiFinderMountBridge::publishPositioningStatus()
         state = IPS_ALERT;
     else if (std::strcmp(phase, "IDLE") != 0)
         state = IPS_OK;
+
+    // Tell PiFinder (its title bar). On a change of phase, attempt or hands-off, and every few seconds while hands off so the
+    // status stays fresh there (PiFinder ignores a hands-off status that is not renewed). After a failure wait a while: a
+    // PiFinder without the patch or an unreachable one must not cost a timeout on every tick.
+    {
+        static double s_lastPost = 0.0, s_lastFailure = 0.0;
+        static std::string s_lastPostedPhase;
+        static int s_lastPostedAttempt = -1;
+        const bool phaseChanged = s_lastPostedPhase != phase || s_lastPostedAttempt != attempt;
+        const bool renew = handsOff && now - s_lastPost >= 3.0;
+        const bool cooledDown = s_lastFailure == 0.0 || now - s_lastFailure >= 30.0;
+        const bool somethingToTell = phaseChanged || renew;
+        if (somethingToTell && cooledDown && std::strcmp(phase, "IDLE") != 0)
+        {
+            const std::string host = SettingsT[PIFINDER_HTTP_HOST].text;
+            const int attemptsMax = static_cast<int>(PositioningStatusN[POSITIONING_ATTEMPTS_MAX].value);
+            const bool ok = httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg) ||
+                            httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg);
+            s_lastFailure = ok ? 0.0 : now;
+            if (ok)
+            {
+                s_lastPost = now;
+                s_lastPostedPhase = phase;
+                s_lastPostedAttempt = attempt;
+            }
+        }
+    }
 
     const bool changed = std::strcmp(PositioningPhaseT[0].text != nullptr ? PositioningPhaseT[0].text : "", phase) != 0 ||
                          PositioningStatusN[POSITIONING_ATTEMPT].value != attempt ||

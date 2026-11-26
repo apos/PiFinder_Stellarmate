@@ -268,3 +268,19 @@ the wait for a fresh solve): the main part of the delay the user noticed.
 the Bridge took it for a new target and slewed again (a second "hands off" stretch right after ON_TARGET). Fix in the PiFinder
 LX200 driver: a target within 1' of the one already published is the same object and is not republished. After it: one run,
 ON_TARGET stays.
+
+### 12.1 Built and checked (2026-11-26)
+
+- **Bridge** posts the status to PiFinder (`POST /api/bridge_positioning`) on every change of phase or attempt and every 3 s while
+  hands off; after a failed post it waits 30 s (a PiFinder without the patch answers 404 and shows nothing).
+- **PiFinder** (three diffs: `pfsm_bridge_status_py.diff` new module, `api_extensions_bridge_status_py.diff` registers the route,
+  `ui_base_py.diff` title bar): "HANDS OFF" in a bright title bar while the Bridge moves the mount or verifies, "ON TARGET" for
+  12 s, "Hand OK 2.4'" for 20 s after giving up. The rotating constellation/SQM text is suppressed meanwhile (it ran into the longer
+  title). A hands-off status that is not renewed within 8 s is ignored (fail safe). The title bar holds about 13 characters on the
+  128 px display.
+- Checked on the real PiFinder screen (`/api/screen`) and with the sky simulation end to end: SLEWING -> VERIFYING -> REFINING ->
+  VERIFYING -> ON_TARGET in 30 s.
+- Bugs found by running it, not by the tests: a Unix timestamp above 1e9 was thrown away by the number guard (every status looked
+  stale; the tests used small times, they now use a real one); a residual of 123' made the text too long for the bar.
+- Seen, not fixed: the Bridge did not follow the PiFinder LX200 target for two GoTos after it was started while PiFinder had just
+  been restarted; a second restart of the Bridge fixed it (same family as #662 / #118).
