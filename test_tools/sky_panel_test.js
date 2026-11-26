@@ -257,6 +257,9 @@ ok(!/#mb-sky-col\.sky-card-on #mb-status-row:has/.test(pageHtml), 'no leftover r
 
 ok(/body:has\(#mb-sky-col\.sky-card-on\) #mb-mode-details/.test(pageHtml), 'the long explanation below is not shown twice while the card is shown');
 ok(/#mb-diagram #mb-drift-badge, #mb-diagram #mb-horizon-badge \{[^}]*width: 5\.6rem/.test(pageHtml), 'drift and altitude badges have one fixed width');
+ok(/#sky-time \{ position: absolute; left: 0; right: 0; top: 0;/.test(pageHtml), 'time left and date right sit on the row of the N, not on a row of their own');
+ok(/<svg id="sky-panel-svg"[^>]*><\/svg>\s*<a class="help-link"[^>]*>i<\/a>\s*<\/div>/.test(pageHtml) && /#sky-panel \.help-link \{ position: absolute; left: 0; bottom: 0;/.test(pageHtml), 'the (i) sits in the bottom left corner of the picture');
+ok(/#sky-panel \{ display: flex; justify-content: center; width: min\(100%, 22rem\);/.test(pageHtml), 'the picture is centred over the card');
 // not running: the card keeps what the status line said, it does not replace it with a generic sentence
 {
   const cm = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'no Mount Bridge in this profile yet', statusDot: 'status-dot dot-yellow' });

@@ -597,9 +597,10 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
-  #sky-pic { flex: none; width: 230px; max-width: 100%; }
-  #sky-panel .help-link { margin: 2px 0 0 0; flex-shrink: 0; }
+  /* The picture sits in the middle over the card below it. Time and date share the row of the N (the corners of a round picture are empty), the (i) sits in the empty bottom left corner. */
+  #sky-panel { display: flex; justify-content: center; width: min(100%, 22rem); }
+  #sky-pic { position: relative; flex: none; width: 230px; max-width: 100%; }
+  #sky-panel .help-link { position: absolute; left: 0; bottom: 0; margin: 0; }
   #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
@@ -635,8 +636,9 @@
   #sky-card .sc-kv { display: grid; grid-template-columns: 74px 1fr; min-height: 22px; align-items: center; }
   #sky-card .sc-kv span:first-child { color: #777; }
   /* Above the picture, on its own row: the time left, the date right (nothing covers the N). */
-  #sky-time { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; font-size: 12px; line-height: 16px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #sky-time { position: absolute; left: 0; right: 0; top: 0; z-index: 1; pointer-events: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
   #sky-time b { color: #c3c7cc; font-weight: 500; }
+  #sky-time > span:not(.sky-time-prefix):not(.sky-time-dot) { max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
   #sky-time .sky-time-prefix { display: none; }
   #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
   #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; display: inline-block; margin-right: 4px; vertical-align: middle; }
@@ -2787,8 +2789,8 @@
           <div id="sky-pic">
           <span id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></span>
           <svg id="sky-panel-svg" viewBox="14 16 212 216" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-          </div>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
+          </div>
         </div>
         <!-- One card for every state under the picture: the headline with Hands off/free, the four-step band, one line, one reason, and the
              buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
