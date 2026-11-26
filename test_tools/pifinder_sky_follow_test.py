@@ -81,5 +81,45 @@ class KeepAwakeTest(unittest.TestCase):
         self.assertFalse(f.keep_awake("http://127.0.0.1:9/api/keep_awake"))
 
 
+class MisalignTest(unittest.TestCase):
+    def test_offset_east_and_north(self):
+        ra, dec = f.offset_position(100.0, 0.0, 6.0, 12.0)
+        self.assertAlmostEqual(ra, 100.1, places=6)
+        self.assertAlmostEqual(dec, 0.2, places=6)
+
+    def test_east_offset_grows_with_dec_in_ra(self):
+        ra, _ = f.offset_position(100.0, 60.0, 6.0, 0.0)
+        self.assertAlmostEqual(ra, 100.2, places=6)   # 0.1 deg on the sky is 0.2 deg of RA at Dec 60
+
+    def test_target_pixel_from_config(self):
+        import json, tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump({"target_pixel": [300.0, 310.0], "equipment": {"active_telescope_index": 0,
+                       "telescopes": [{"target_pixel": [320.5, 330.5]}]}}, fh)
+        self.assertEqual(f.read_target_pixel(fh.name), (320.5, 330.5))
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh2:
+            json.dump({"target_pixel": [300.0, 310.0], "equipment": {"active_telescope_index": 0, "telescopes": [{"target_pixel": None}]}}, fh2)
+        self.assertEqual(f.read_target_pixel(fh2.name), (300.0, 310.0))
+        self.assertEqual(f.read_target_pixel("/nonexistent.json"), (256.0, 256.0))
+
+
+class SyncTest(unittest.TestCase):
+    def test_sync_reduces_the_offset_by_the_jump(self):
+        prev = (100.0, 20.0, "Ok")
+        east, north = 10.0, 5.0
+        # the bridge syncs the mount to where PiFinder says it is: 10' east, 5' north of what the mount reported
+        cur_ra, cur_dec = f.offset_position(100.0, 20.0, 10.0, 5.0)
+        offset, jump = f.absorb_sync(prev, (cur_ra, cur_dec, "Ok"), (east, north))
+        self.assertAlmostEqual(jump, math.hypot(10.0, 5.0), delta=0.05)
+        self.assertAlmostEqual(offset[0], 0.0, delta=0.05)
+        self.assertAlmostEqual(offset[1], 0.0, delta=0.05)
+
+    def test_slew_and_tracking_are_not_syncs(self):
+        far = (110.0, 20.0, "Busy")
+        self.assertEqual(f.absorb_sync((100.0, 20.0, "Ok"), far, (3.0, 4.0)), ((3.0, 4.0), None))
+        self.assertEqual(f.absorb_sync((100.0, 20.0, "Ok"), (100.003, 20.0, "Ok"), (3.0, 4.0)), ((3.0, 4.0), None))
+        self.assertEqual(f.absorb_sync(None, far, (3.0, 4.0)), ((3.0, 4.0), None))
+
+
 if __name__ == "__main__":
     unittest.main()

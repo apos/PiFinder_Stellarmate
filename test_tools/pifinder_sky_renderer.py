@@ -62,10 +62,12 @@ def parse_gsc(text):
     return stars
 
 
-def project(stars, ra0_deg, dec0_deg, fov_deg, size, roll_deg=0.0, mirror=False):
+def project(stars, ra0_deg, dec0_deg, fov_deg, size, roll_deg=0.0, mirror=False, centre_xy=None):
     """Pixel positions (x, y) and mags for the stars in front of the tangent plane, inside the frame.
 
     Gnomonic projection about (ra0, dec0). x grows to the right, y grows downwards, north is up and east is left at roll 0.
+    centre_xy: array coordinates (x, y) at which (ra0, dec0) lands; default the frame centre. Used to put the point PiFinder
+    reports (its target pixel) on a chosen sky position.
     """
     ra = np.radians([s[0] for s in stars])
     dec = np.radians([s[1] for s in stars])
@@ -83,9 +85,9 @@ def project(stars, ra0_deg, dec0_deg, fov_deg, size, roll_deg=0.0, mirror=False)
         right = -right
     scale = size / (2.0 * math.tan(math.radians(fov_deg) / 2.0))  # pixels per unit of tangent plane
     # array index i is the CENTRE of pixel i, so the frame centre lies half a pixel before index size/2
-    centre = size / 2.0 - 0.5
-    x = centre + right * scale
-    y = centre - up * scale
+    cx, cy = centre_xy if centre_xy is not None else (size / 2.0 - 0.5, size / 2.0 - 0.5)
+    x = cx + right * scale
+    y = cy - up * scale
     keep = front & (x > -8) & (x < size + 8) & (y > -8) & (y < size + 8)
     return x[keep], y[keep], mag[keep]
 
@@ -114,11 +116,14 @@ def render(x, y, mag, size=512, seeing_px=1.4, mag_saturation=6.0, bias=8.0, noi
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
-def render_field(ra_deg, dec_deg, fov_deg=13.7, roll_deg=0.0, size=512, faint_mag=9.0, mirror=False, seed=None, runner=None):
+def render_field(ra_deg, dec_deg, fov_deg=13.7, roll_deg=0.0, size=512, faint_mag=9.0, mirror=False, seed=None, runner=None,
+                 centre_xy=None):
     # radius: half the frame diagonal plus a margin, in arcminutes
     radius = fov_deg * 60.0 * math.sqrt(2) / 2.0 * 1.05
+    if centre_xy is not None:  # the field is centred elsewhere in the frame: ask for a wider circle so the corners are filled
+        radius += 60.0 * math.hypot(centre_xy[0] - size / 2.0, centre_xy[1] - size / 2.0) * fov_deg / size
     stars = query_gsc(ra_deg, dec_deg, radius, faint_mag, runner=runner)
-    x, y, mag = project(stars, ra_deg, dec_deg, fov_deg, size, roll_deg, mirror)
+    x, y, mag = project(stars, ra_deg, dec_deg, fov_deg, size, roll_deg, mirror, centre_xy)
     return render(x, y, mag, size=size, seed=seed), len(x)
 
 

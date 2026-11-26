@@ -19,6 +19,7 @@ import re
 import shutil
 import socket
 import sys
+import json
 import tempfile
 import threading
 import time
@@ -156,6 +157,59 @@ class MountWatcher(threading.Thread):
 
 # ---- the loop ------------------------------------------------------------------------------------------------------
 
+def offset_position(ra_deg, dec_deg, east_arcmin, north_arcmin):
+    """A sky position moved by a small east/north offset (the misalignment between what the mount says and where it points)."""
+    dec = dec_deg + north_arcmin / 60.0
+    ra = ra_deg + east_arcmin / 60.0 / max(math.cos(math.radians(dec_deg)), 1e-6)
+    return ra % 360.0, max(-90.0, min(90.0, dec))
+
+
+SYNC_JUMP_ARCMIN = 1.0
+
+
+def east_north_arcmin(ra_deg, dec_deg, ra2_deg, dec2_deg):
+    """(east, north) in arcminutes from the first position to the second (small angles)."""
+    d_ra = (ra2_deg - ra_deg + 180.0) % 360.0 - 180.0
+    return d_ra * math.cos(math.radians(dec_deg)) * 60.0, (dec2_deg - dec_deg) * 60.0
+
+
+def absorb_sync(prev, cur, offset):
+    """A Sync moves only what the mount REPORTS; the real sky does not move. prev/cur: (ra_deg, dec_deg, state) of two looks
+    at the mount; offset: (east, north) arcmin of the misalignment. Returns (new_offset, jump_arcmin_or_None).
+
+    A jump of more than SYNC_JUMP_ARCMIN between two looks while the mount is not slewing in either of them is a Sync (a
+    tracking mount moves a fraction of an arcminute between looks). The offset shrinks by that jump so that the rendered
+    sky stays where it is.
+    """
+    if prev is None or prev[2] == "Busy" or cur[2] == "Busy":
+        return offset, None
+    east, north = east_north_arcmin(prev[0], prev[1], cur[0], cur[1])
+    jump = math.hypot(east, north)
+    if jump <= SYNC_JUMP_ARCMIN:
+        return offset, None
+    return (offset[0] - east, offset[1] - north), jump
+
+
+def read_target_pixel(config_path=os.path.expanduser("~/PiFinder_data/config.json")):
+    """PiFinder's alignment point as (Y, X) in the 512x512 solve frame: the active telescope's, else the global one, else the centre."""
+    try:
+        cfg = json.load(open(config_path))
+    except (OSError, ValueError):
+        return (256.0, 256.0)
+
+    def usable(v):
+        return isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(n, (int, float)) for n in v)
+
+    equipment = cfg.get("equipment") or {}
+    scopes = equipment.get("telescopes") or []
+    idx = equipment.get("active_telescope_index")
+    if isinstance(idx, int) and 0 <= idx < len(scopes) and usable(scopes[idx].get("target_pixel")):
+        return tuple(float(n) for n in scopes[idx]["target_pixel"])
+    if usable(cfg.get("target_pixel")):
+        return tuple(float(n) for n in cfg["target_pixel"])
+    return (256.0, 256.0)
+
+
 def angular_sep_deg(ra1, dec1, ra2, dec2):
     a1, d1, a2, d2 = map(math.radians, (ra1, dec1, ra2, dec2))
     c = math.sin(d1) * math.sin(d2) + math.cos(d1) * math.cos(d2) * math.cos(a1 - a2)
@@ -190,6 +244,14 @@ def follow(args):
         print(f"slewing '{args.device}' to RA {args.slew_to[0]} h, Dec {args.slew_to[1]} (JNow)")
         watcher.slew(*args.slew_to)
 
+    target_yx = tuple(args.target_pixel) if args.target_pixel else read_target_pixel()
+    # PiFinder's pixel p is the CENTRE of array index p - 0.5 (see the renderer); (Y, X) -> array (x, y)
+    centre_xy = None if args.camera_centre else (target_yx[1] - 0.5, target_yx[0] - 0.5)
+    print(f"alignment point (Y, X) = ({target_yx[0]:.1f}, {target_yx[1]:.1f}): "
+          + ("ignored, the mount is rendered at the frame centre" if centre_xy is None else "the mount's position is rendered there")
+          + f"; misalignment {args.misalign_east:+.1f}' east, {args.misalign_north:+.1f}' north", flush=True)
+    offset = (args.misalign_east, args.misalign_north)
+    prev_look = None
     last = None
     rendered = 0
     started = time.time()
@@ -206,9 +268,17 @@ def follow(args):
             ra_h, dec, state = watcher.position
             ra_now = ra_h * 15.0
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
+            look = (ra2000, dec2000, state)
+            offset, jump = absorb_sync(prev_look, look, offset)
+            prev_look = look
+            if jump is not None:
+                print(f"{time.strftime('%H:%M:%S')} mount reports a SYNC of {jump:.1f}' -> misalignment now "
+                      f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north (the sky itself did not move)", flush=True)
+                last = None
+            ra2000, dec2000 = offset_position(ra2000, dec2000, *offset)
             if last is None or angular_sep_deg(ra2000, dec2000, *last) >= args.min_move:
                 t0 = time.time()
-                frame, count = renderer.render_field(ra2000, dec2000, args.fov, args.roll, 512, args.faint_mag, False, args.seed)
+                frame, count = renderer.render_field(ra2000, dec2000, args.fov, args.roll, 512, args.faint_mag, False, args.seed, centre_xy=centre_xy)
                 write_atomically(frame, args.image)
                 last = (ra2000, dec2000)
                 rendered += 1
@@ -238,6 +308,13 @@ def main(argv=None):
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between looks at the mount")
     ap.add_argument("--min-move", type=float, default=0.02, help="degrees the mount must move before a new picture")
     ap.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: until Ctrl-C)")
+    ap.add_argument("--misalign-east", type=float, default=0.0, metavar="ARCMIN",
+                    help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")
+    ap.add_argument("--misalign-north", type=float, default=0.0, metavar="ARCMIN", help="same, towards the north")
+    ap.add_argument("--target-pixel", nargs=2, type=float, metavar=("Y", "X"),
+                    help="PiFinder's alignment point (default: read from its config)")
+    ap.add_argument("--camera-centre", action="store_true",
+                    help="render the mount at the frame centre instead of at PiFinder's alignment point")
     ap.add_argument("--no-keep-awake", action="store_true", help="do not stop PiFinder from going to sleep while this runs")
     ap.add_argument("--keep-awake-url", default=KEEP_AWAKE_URL)
     ap.add_argument("--slew-to", nargs=2, type=float, metavar=("RA_H", "DEC"), help="send the mount to this JNow position first")
