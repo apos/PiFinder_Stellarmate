@@ -80,7 +80,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // (push-to, Goto Forward, a Dobsonian without mount) - whichever property
         // was updated more recently. RA 0 / Dec 0 is INDI's "never set" default
         // and counts as none. False: no target on either device.
-        bool getLastGotoTarget(double &ra, double &dec) const;
+        // `fromPiFinder` (optional): true when the PiFinder device's target is the newer one, false for the mount's;
+        // `setTime` (optional): epoch seconds at which this Bridge saw that target property update (0 if unknown).
+        bool getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder = nullptr, long *setTime = nullptr) const;
 
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live

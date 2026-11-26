@@ -315,7 +315,7 @@ bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::st
     return false;
 }
 
-bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec) const
+bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const
 {
     auto read = [](INDI::PropertyViewNumber *np, double &r, double &d) -> bool
     {
@@ -331,28 +331,33 @@ bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec) const
     const bool havePi = read(m_piFinderTargetNP, piRA, piDec);
     if (haveMount && havePi)
     {
-        if (m_lastPiFinderTargetTime > m_lastMountTargetTime)
-        {
-            ra = piRA;
-            dec = piDec;
-        }
-        else
-        {
-            ra = mountRA;
-            dec = mountDec;
-        }
+        const bool piNewer = m_lastPiFinderTargetTime > m_lastMountTargetTime;
+        ra = piNewer ? piRA : mountRA;
+        dec = piNewer ? piDec : mountDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = piNewer;
+        if (setTime != nullptr)
+            *setTime = piNewer ? m_lastPiFinderTargetTime.load() : m_lastMountTargetTime.load();
         return true;
     }
     if (haveMount)
     {
         ra = mountRA;
         dec = mountDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = false;
+        if (setTime != nullptr)
+            *setTime = m_lastMountTargetTime.load();
         return true;
     }
     if (havePi)
     {
         ra = piRA;
         dec = piDec;
+        if (fromPiFinder != nullptr)
+            *fromPiFinder = true;
+        if (setTime != nullptr)
+            *setTime = m_lastPiFinderTargetTime.load();
         return true;
     }
     return false;

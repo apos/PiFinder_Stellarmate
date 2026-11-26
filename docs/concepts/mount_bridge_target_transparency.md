@@ -171,7 +171,7 @@ verified in the code before this is scheduled.
    differs), show the target from the moment the command is issued, add the neutral offset number and the status
    sentence. Data: `TARGET_EOD_COORD` of mount/PiFinder (already used for the Goto marker), `TARGET_SOURCE`,
    `TARGET_SOURCE_AGE`, `HELD_TARGET_HORIZON_STATUS`, PiFinder and mount positions.
-2. **Driver, additive.** One new read-only property `TARGET` (coordinates, source, time) fed from
+2. **Driver, additive - implemented on branch `feat/657-target-status`, verified on the simulator 2026-11-26.** One new read-only property `TARGET` (coordinates, source, time) fed from
    `getLastGotoTarget()`, set when a GoTo command with coordinates is seen. It is written by nothing else: hand moves,
    mount motion, Sync and reposition adoption do not touch it. Open test points: a KStars **Sync** must not become a
    Target (check `ON_COORD_SET`); a PiFinder target that was only selected, not pushed, is not a Target.
@@ -211,3 +211,19 @@ The follower must see the slew (the Simulator's slew rate has to be low enough t
 - [mount_bridge_sync_on_pifinder_align.md](mount_bridge_sync_on_pifinder_align.md)
 - [mount_bridge_external_hold.md](mount_bridge_external_hold.md)
 - [pifinder_realmode_sky_simulation.md](pifinder_realmode_sky_simulation.md)
+
+## 10. Slice 2 result (2026-11-26)
+
+`TARGET_STATUS` (RA, DEC JNow, OFFSET_ARCMIN = PiFinder's solved position vs the Target, AGE_SEC) and `TARGET_STATUS_SOURCE`
+(`Mount` / `PiFinder`) on the Mount Bridge, read-only, fed from the clients' own target properties (`getLastGotoTarget()`).
+Simulator, landing error 8' E / 5' S, Auto-correct with the **Sync** action: GoTo M3 gave Target 13.7135 h / +28.32, offset
+9.35', source Mount; after the Auto-correct Sync (drift 0.04') the Target and the offset **stayed** (9.24'). A Sync sent by
+an INDI client to the Telescope Simulator does not change its `TARGET_EOD_COORD` (not yet checked for the LX200 OnStep driver).
+
+Known limit, same root as #658: with Auto-correct + the **Goto** action (or Goto-Forward) reposition detection adopts the
+landing position and pushes it to PiFinder as a "PUSH n" target; the Bridge then reports that PiFinder target, which is newer
+than the mount's. The Target then is the landing position, not the requested object.
+
+Testing note: the Control Center's readiness self-heal re-applies the coupling *mode* last chosen in the page but not the
+*correction action*, so after a driver restart the action comes from the saved driver config (it came back as Goto
+instead of Sync). Choose both in the Control Center after a restart, and check `CORRECTION_ACTION`.

@@ -533,6 +533,19 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty HeldTargetHorizonStatusNP;
         INumber HeldTargetHorizonStatusN[2];
 
+        // Target transparency (docs/concepts/mount_bridge_target_transparency.md, slice 2, #657): the Target as it was
+        // REQUESTED - the last GoTo target any client sent to the mount or to the PiFinder device (JNow) - and how far
+        // PiFinder's solved position is from it. Read-only, display only: nothing in this driver reads it back, and hand
+        // moves, Syncs and reposition adoption do not change it (it only follows the clients' own target properties).
+        // State: IPS_IDLE = no target yet; IPS_OK = OFFSET_ARCMIN is current (fresh PiFinder solve this tick);
+        // IPS_BUSY = target known, but PiFinder has no fresh solve now, so OFFSET_ARCMIN is the last value (or 0).
+        // AGE_SEC: seconds since this Bridge saw the target change (0 = unknown). SOURCE: "Mount" or "PiFinder".
+        enum { TARGET_STATUS_RA, TARGET_STATUS_DEC, TARGET_STATUS_OFFSET, TARGET_STATUS_AGE };
+        INumberVectorProperty TargetStatusNP;
+        INumber TargetStatusN[4];
+        ITextVectorProperty TargetStatusSourceTP;
+        IText TargetStatusSourceT[1];
+
         // The observer location every altitude/azimuth above was computed
         // with (LAT north, LONG east, degrees). IPS_IDLE = unknown: then the
         // altitude values above are the fail-open placeholder (90) and must
@@ -541,7 +554,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber ObserverLocationN[2];
         bool resolveObserverLocation(double &lat, double &lon);
         bool horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth);
-        void publishSkyPanelExtras();
+        void publishSkyPanelExtras(bool havePiFinderPosition, double piRA, double piDec);
 
         // Result of a manual Sync in the INDI log (issue #609): after a Sync is sent to the
         // mount, its reported position is checked for a few seconds and the outcome logged

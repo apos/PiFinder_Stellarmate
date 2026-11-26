@@ -945,6 +945,15 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumber(&HeldTargetHorizonStatusN[1], "AZIMUTH_DEG", "Held target azimuth (deg, from north)", "%.1f", 0, 360, 0, 0);
     IUFillNumberVector(&HeldTargetHorizonStatusNP, HeldTargetHorizonStatusN, 2, getDeviceName(), "HELD_TARGET_HORIZON_STATUS",
                        "Held target horizon status", "Main Control", IP_RO, 60, IPS_IDLE);
+    IUFillNumber(&TargetStatusN[TARGET_STATUS_RA], "RA", "Target RA (JNow, h)", "%.6f", 0, 24, 0, 0);
+    IUFillNumber(&TargetStatusN[TARGET_STATUS_DEC], "DEC", "Target DEC (JNow, deg)", "%.6f", -90, 90, 0, 0);
+    IUFillNumber(&TargetStatusN[TARGET_STATUS_OFFSET], "OFFSET_ARCMIN", "PiFinder offset from the target (arcmin)", "%.2f", 0, 10800, 0, 0);
+    IUFillNumber(&TargetStatusN[TARGET_STATUS_AGE], "AGE_SEC", "Age of the target request (s)", "%.0f", 0, 1e9, 0, 0);
+    IUFillNumberVector(&TargetStatusNP, TargetStatusN, 4, getDeviceName(), "TARGET_STATUS",
+                       "Target (as requested)", "Main Control", IP_RO, 60, IPS_IDLE);
+    IUFillText(&TargetStatusSourceT[0], "SOURCE", "Requested on", "");
+    IUFillTextVector(&TargetStatusSourceTP, TargetStatusSourceT, 1, getDeviceName(), "TARGET_STATUS_SOURCE",
+                     "Target source", "Main Control", IP_RO, 60, IPS_IDLE);
     IUFillNumber(&ObserverLocationN[0], "LAT", "Latitude (deg, north)", "%.4f", -90, 90, 0, 0);
     IUFillNumber(&ObserverLocationN[1], "LONG", "Longitude (deg, east)", "%.4f", -180, 180, 0, 0);
     IUFillNumberVector(&ObserverLocationNP, ObserverLocationN, 2, getDeviceName(), "OBSERVER_LOCATION",
@@ -1029,6 +1038,8 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&PiFinderHorizonStatusNP);
         defineProperty(&GotoTargetHorizonStatusNP);
         defineProperty(&HeldTargetHorizonStatusNP);
+        defineProperty(&TargetStatusNP);
+        defineProperty(&TargetStatusSourceTP);
         defineProperty(&ObserverLocationNP);
         defineProperty(&LastKnownMountPosNP);
         defineProperty(&OriginalTargetNP);
@@ -1118,6 +1129,8 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(PiFinderHorizonStatusNP.name);
         deleteProperty(GotoTargetHorizonStatusNP.name);
         deleteProperty(HeldTargetHorizonStatusNP.name);
+        deleteProperty(TargetStatusNP.name);
+        deleteProperty(TargetStatusSourceTP.name);
         deleteProperty(ObserverLocationNP.name);
         deleteProperty(LastKnownMountPosNP.name);
         deleteProperty(OriginalTargetNP.name);
@@ -2244,7 +2257,7 @@ void PiFinderMountBridge::TimerHit()
     // else: never had a position at all this run - nothing to fall back to,
     // leave the property at its untouched startup default.
 
-    publishSkyPanelExtras();
+    publishSkyPanelExtras(havePiFinderPosition, piRA, piDec);
     checkPendingSyncVerification();
 
     // Deliberately published here, AFTER handleGotoForward()/
@@ -2530,7 +2543,7 @@ void PiFinderMountBridge::checkPendingSyncVerification()
     m_syncVerify.active = false;
 }
 
-void PiFinderMountBridge::publishSkyPanelExtras()
+void PiFinderMountBridge::publishSkyPanelExtras(bool havePiFinderPosition, double piRA, double piDec)
 {
     double lat = 0.0, lon = 0.0;
     const bool known = resolveObserverLocation(lat, lon);
@@ -2553,8 +2566,45 @@ void PiFinderMountBridge::publishSkyPanelExtras()
     // whichever is newer; RA 0 / Dec 0 counts as "none" (see
     // PiFinderBridgeClient::getLastGotoTarget()).
     double gotoRA = 0.0, gotoDec = 0.0;
-    const bool haveGoto = m_client != nullptr && m_client->getLastGotoTarget(gotoRA, gotoDec);
+    bool gotoFromPiFinder = false;
+    long gotoSetTime = 0;
+    const bool haveGoto = m_client != nullptr && m_client->getLastGotoTarget(gotoRA, gotoDec, &gotoFromPiFinder, &gotoSetTime);
     publishTargetHorizon(GotoTargetHorizonStatusNP, GotoTargetHorizonStatusN, haveGoto, gotoRA, gotoDec);
+
+    // Target transparency (#657, slice 2): the requested target itself, plus PiFinder's offset from it. Only set when
+    // something changed, like the other status properties above.
+    {
+        const IPState newState = !haveGoto ? IPS_IDLE : (havePiFinderPosition ? IPS_OK : IPS_BUSY);
+        const double ra = haveGoto ? gotoRA : 0.0, dec = haveGoto ? gotoDec : 0.0;
+        double offset = TargetStatusN[TARGET_STATUS_OFFSET].value; // keep the last one while there is no fresh solve
+        if (!haveGoto)
+            offset = 0.0;
+        else if (havePiFinderPosition)
+            offset = angularSeparationArcmin(piRA, piDec, gotoRA, gotoDec);
+        const double age = (haveGoto && gotoSetTime > 0) ? std::max(0.0, nowEpochSeconds() - static_cast<double>(gotoSetTime)) : 0.0;
+        const char *source = !haveGoto ? "" : (gotoFromPiFinder ? "PiFinder" : "Mount");
+
+        const bool targetChanged = TargetStatusN[TARGET_STATUS_RA].value != ra || TargetStatusN[TARGET_STATUS_DEC].value != dec;
+        const bool offsetChanged = std::fabs(TargetStatusN[TARGET_STATUS_OFFSET].value - offset) >= 0.005;
+        const bool ageChanged = std::fabs(TargetStatusN[TARGET_STATUS_AGE].value - age) >= 5.0; // coarse: not worth a message per tick
+        if (targetChanged || offsetChanged || ageChanged || TargetStatusNP.s != newState)
+        {
+            TargetStatusN[TARGET_STATUS_RA].value = ra;
+            TargetStatusN[TARGET_STATUS_DEC].value = dec;
+            TargetStatusN[TARGET_STATUS_OFFSET].value = offset;
+            TargetStatusN[TARGET_STATUS_AGE].value = age;
+            TargetStatusNP.s = newState;
+            IDSetNumber(&TargetStatusNP, nullptr);
+        }
+        // IUFillText() leaves .text as a null pointer for an empty initial value: never strcmp() it unchecked.
+        const char *currentSource = TargetStatusSourceT[0].text != nullptr ? TargetStatusSourceT[0].text : "";
+        if (std::strcmp(currentSource, source) != 0 || TargetStatusSourceTP.s != newState)
+        {
+            IUSaveText(&TargetStatusSourceT[0], source);
+            TargetStatusSourceTP.s = newState;
+            IDSetText(&TargetStatusSourceTP, nullptr);
+        }
+    }
 
     double heldRA = 0.0, heldDec = 0.0;
     const bool haveHeld = getOriginalTargetJNow(heldRA, heldDec);
