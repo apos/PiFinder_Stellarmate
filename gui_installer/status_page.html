@@ -598,7 +598,7 @@
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
   /* The picture sits in the middle over the card below it. Time and date share the row of the N (the corners of a round picture are empty), the (i) sits in the empty bottom left corner. */
-  #sky-panel { display: flex; justify-content: center; width: min(100%, 22rem); }
+  #sky-panel { display: flex; justify-content: center; width: 100%; }
   #sky-pic { position: relative; flex: none; width: 230px; max-width: 100%; }
   #sky-panel .help-link { position: absolute; left: 0; bottom: 0; margin: 0; }
   #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
@@ -606,7 +606,7 @@
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
   /* Sky area and the card under it (mockup "one block, three states"): the picture with the names inside it, the time left and the date right above it, one
      card for every state. One typeface, 11 / 13 / 15 px, fixed rows, ellipsis instead of wrapping, buttons at least 32 px high. */
-  #sky-card { width: min(100%, 22rem); box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #2a2a2a; border-radius: 12px; background: #161616;
+  #sky-card { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #3a3a3a; border-radius: 12px; background: #222;
     font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
   #sky-card .sc-head { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 15px; font-weight: 600; }
   #sky-card .sc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -619,17 +619,17 @@
   #sky-card.card-bad .sc-badge { background: #3a1a1a; color: #ff8a80; }
   #sky-card.card-idle .sc-badge { background: #2a2a2a; color: #aaa; }
   #sky-card .sc-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 4px 0 6px; }
-  #sky-card .sc-seg { height: 4px; border-radius: 2px; background: #2a2a2a; }
+  #sky-card .sc-seg { height: 4px; border-radius: 2px; background: #3a3a3a; }
   #sky-card .sc-seg.d { background: #4caf50; }
   #sky-card .sc-seg.n { background: #f5a623; }
   #sky-card .sc-seg.w { background: #e57373; }
   #sky-card .sc-line { height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #sky-card .sc-line.warn { color: #f5c46b; }
   #sky-card .sc-why { height: 18px; font-size: 12px; line-height: 18px; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #sky-card .sc-acts { display: flex; gap: 10px; height: 36px; align-items: center; margin-top: 4px; border-top: 1px solid #2a2a2a; }
+  #sky-card .sc-acts { display: flex; gap: 10px; height: 36px; align-items: center; margin-top: 4px; border-top: 1px solid #3a3a3a; }
   #sky-card .sc-act { background: none; border: 0; color: #9aa0a6; font: inherit; font-size: 12px; padding: 0 6px 0 0; min-height: 32px; cursor: pointer; }
   #sky-card .sc-act:hover, #sky-card .sc-act.open { color: #e6e8ec; }
-  #sky-card .sc-panel { border-top: 1px solid #2a2a2a; padding: 6px 0 4px; font-size: 12px; color: #9aa0a6; max-height: 150px; overflow-y: auto; }
+  #sky-card .sc-panel { border-top: 1px solid #3a3a3a; padding: 6px 0 4px; font-size: 12px; color: #9aa0a6; max-height: 150px; overflow-y: auto; }
   #sky-card .sc-panel ol { margin: 0; padding: 0; list-style: none; }
   #sky-card .sc-panel li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
   #sky-card .sc-text { margin: 0 0 6px; line-height: 1.4; }
@@ -1642,7 +1642,8 @@
     #mb-groups > .mb-arrow { transform: rotate(90deg); min-width: 0; width: 2.2rem; height: 2.2rem; display: flex;
       align-items: center; justify-content: center; margin: -0.15rem 0; }
   }
-  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: 0; }
+  /* A fixed width (not what the content wants): the card and the picture never change size when a text changes. */
+  #mb-sky-col { flex: 0 0 auto; width: 22rem; max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: 0; }
   #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
   #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.2rem; width: min(100%, 24rem); }
   /* the two status lines under the card use the card's rhythm: 13 px, one line each, the same width as the card, ellipsis not wrapping */
