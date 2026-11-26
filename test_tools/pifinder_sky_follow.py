@@ -324,6 +324,21 @@ def write_atomically(frame, path):
             os.unlink(tmp)
 
 
+def file_signature(path):
+    """(mtime_ns, size) of the picture, None when it is not there: what tells us somebody else replaced it."""
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def picture_replaced(path, written):
+    """True when the file on disk is no longer the one this script wrote (an update or a git checkout put PiFinder's original
+    picture back): the sky must be written again, even though the mount has not moved."""
+    return written is not None and file_signature(path) != written
+
+
 def follow(args):
     watcher = MountWatcher(args.device, args.host, args.port)
     watcher.start()
@@ -352,6 +367,7 @@ def follow(args):
     started = time.time()
     awake_at = 0.0
     awake_ok = None
+    written = None
     try:
         while args.duration is None or time.time() - started < args.duration:
             if not args.no_keep_awake and time.time() - awake_at >= KEEP_AWAKE_EVERY_SEC:
@@ -388,10 +404,14 @@ def follow(args):
                       f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north (the sky itself did not move)", flush=True)
                 last = None
             ra2000, dec2000 = offset_position(ra2000, dec2000, *offset)
+            if picture_replaced(args.image, written):
+                print(f"{time.strftime('%H:%M:%S')} the picture {args.image} was replaced by something else: writing the sky again", flush=True)
+                last = None
             if last is None or angular_sep_deg(ra2000, dec2000, *last) >= args.min_move:
                 t0 = time.time()
                 frame, count = renderer.render_field(ra2000, dec2000, args.fov, args.roll, 512, args.faint_mag, False, args.seed, centre_xy=centre_xy)
                 write_atomically(frame, args.image)
+                written = file_signature(args.image)
                 last = (ra2000, dec2000)
                 rendered += 1
                 print(f"{time.strftime('%H:%M:%S')} mount {state:5} RA {ra_h:8.5f} h Dec {dec:+8.4f}  ->  J2000 {ra2000:8.4f} {dec2000:+8.4f}"

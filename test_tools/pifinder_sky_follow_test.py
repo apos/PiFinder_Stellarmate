@@ -244,5 +244,37 @@ class WatcherTest(unittest.TestCase):
         w.on_update(16.0, 36.0, "Busy")
         self.assertEqual((w.slew_count, w.slew_from), (1, None))
 
+class PictureReplacedTest(unittest.TestCase):
+    """An update put PiFinder's original test picture back while the simulation ran: the follower must write the sky again."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "pic.png")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_nothing_written_yet_is_not_a_replacement(self):
+        self.assertFalse(f.picture_replaced(self.path, None))
+
+    def test_unchanged_file_is_not_replaced(self):
+        open(self.path, "wb").write(b"sky")
+        self.assertFalse(f.picture_replaced(self.path, f.file_signature(self.path)))
+
+    def test_other_content_is_replaced(self):
+        open(self.path, "wb").write(b"sky")
+        written = f.file_signature(self.path)
+        open(self.path, "wb").write(b"original picture, longer")
+        self.assertTrue(f.picture_replaced(self.path, written))
+
+    def test_deleted_file_is_replaced(self):
+        open(self.path, "wb").write(b"sky")
+        written = f.file_signature(self.path)
+        os.unlink(self.path)
+        self.assertTrue(f.picture_replaced(self.path, written))
+
+
 if __name__ == "__main__":
     unittest.main()
