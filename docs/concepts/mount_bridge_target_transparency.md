@@ -1,6 +1,8 @@
 # Concept: Mount Bridge target transparency — one Target, shown from the moment a GoTo is issued
 
-> **Status: concept — not yet implemented, no GitHub issue yet.**
+> **Status: concept — not yet implemented.** Tracked as #657 (this concept), #658 (controller-side GoTo target never reaches
+> the Bridge), #659 (Auto-correct syncs to a pre-stop solve), #660 (Goto-Forward "Waiting on fresh solve"), #661 (Auto-correct
+> Goto action not selectable), #662 (no rebind after a mount switch).
 > Found while testing the Mount Bridge against the realmode sky simulation
 > ([pifinder_realmode_sky_simulation.md](pifinder_realmode_sky_simulation.md), #344, 2026-11-26) and agreed with the
 > project owner the same day. **Nothing here changes the existing hand-control, reposition-detection, external-hold or
