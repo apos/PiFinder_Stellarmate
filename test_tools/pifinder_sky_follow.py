@@ -93,6 +93,27 @@ _ATTR = re.compile(r'(\w+)="([^"]*)"')
 _ONE_NUMBER = re.compile(r'<(?:def|one)Number\b([^>]*)>\s*([^<\s]+)\s*</(?:def|one)Number>', re.S)
 
 
+_SWITCH_VECTOR = re.compile(r"<(?:set|def)SwitchVector\b([^>]*)>(.*?)</(?:set|def)SwitchVector>", re.S)
+_ONE_SWITCH = re.compile(r"<one(?:Switch)\b([^>]*)>\s*(\w+)\s*</oneSwitch>|<def(?:Switch)\b([^>]*)>\s*(\w+)\s*</defSwitch>", re.S)
+
+
+def parse_switch_vectors(buffer: str):
+    """[(device, name, state, {switch: "On"/"Off"})] for the complete switch vectors in the text (set and def)."""
+    found = []
+    for m in _SWITCH_VECTOR.finditer(buffer):
+        attrs = dict(_ATTR.findall(m.group(1)))
+        values = {}
+        for one in _ONE_SWITCH.finditer(m.group(2)):
+            attr_text, raw = (one.group(1), one.group(2)) if one.group(1) is not None else (one.group(3), one.group(4))
+            values[dict(_ATTR.findall(attr_text)).get("name")] = raw
+        found.append((attrs.get("device"), attrs.get("name"), attrs.get("state"), values))
+    return found
+
+
+MOTION_PROPERTIES = ("TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE")
+MANUAL_SETTLE_SEC = 1.5  # after the last motion switch goes off, positions that were already on their way still count as motion
+
+
 def parse_number_vectors(buffer: str):
     """([(device, name, state, {element: float})], rest_of_buffer) for the complete number vectors in the text."""
     found = []
@@ -133,6 +154,21 @@ class MountWatcher(threading.Thread):
         self.slew_from = None
         self._last_idle = None
         self._prev_state = None
+        # The hand controller (or any client) moving the mount by hand sets TELESCOPE_MOTION_NS/WE, not a slew: the scope really moves.
+        self._motion = {}
+        self._manual_until = 0.0
+
+    def on_motion(self, name, values, now=None):
+        """A TELESCOPE_MOTION_NS/WE update: while any direction is on, the mount moves by hand."""
+        now = time.time() if now is None else now
+        was = any(self._motion.values())
+        self._motion[name] = any(v == "On" for v in values.values())
+        if was and not any(self._motion.values()):
+            self._manual_until = now + MANUAL_SETTLE_SEC
+
+    def manual_active(self, now=None):
+        now = time.time() if now is None else now
+        return any(self._motion.values()) or now < self._manual_until
 
     def on_update(self, ra_hours, dec_deg, state):
         if state == "Busy" and self._prev_state != "Busy":
@@ -146,7 +182,8 @@ class MountWatcher(threading.Thread):
     def run(self):
         try:
             self._sock = socket.create_connection((self.host, self.port), timeout=10)
-            self._sock.sendall(f'<getProperties version="1.7" device="{self.device}" name="EQUATORIAL_EOD_COORD"/>'.encode())
+            for prop in ("EQUATORIAL_EOD_COORD",) + MOTION_PROPERTIES:
+                self._sock.sendall(f'<getProperties version="1.7" device="{self.device}" name="{prop}"/>'.encode())
             self._sock.settimeout(None)
             buffer = ""
             while True:
@@ -155,6 +192,9 @@ class MountWatcher(threading.Thread):
                     self.error = "INDI server closed the connection"
                     return
                 buffer += chunk.decode("utf-8", "replace")
+                for device, name, _state, values in parse_switch_vectors(buffer):
+                    if device == self.device and name in MOTION_PROPERTIES:
+                        self.on_motion(name, values)
                 vectors, buffer = parse_number_vectors(buffer)
                 buffer = buffer[-200000:]
                 for device, name, state, values in vectors:
@@ -189,7 +229,7 @@ def east_north_arcmin(ra_deg, dec_deg, ra2_deg, dec2_deg):
     return d_ra * math.cos(math.radians(dec_deg)) * 60.0, (dec2_deg - dec_deg) * 60.0
 
 
-def absorb_sync(prev, cur, offset):
+def absorb_sync(prev, cur, offset, manual=False):
     """A Sync moves only what the mount REPORTS; the real sky does not move. prev/cur: (ra_deg, dec_deg, state) of two looks
     at the mount; offset: (east, north) arcmin of the misalignment. Returns (new_offset, jump_arcmin_or_None).
 
@@ -197,8 +237,8 @@ def absorb_sync(prev, cur, offset):
     tracking mount moves a fraction of an arcminute between looks). The offset shrinks by that jump so that the rendered
     sky stays where it is.
     """
-    if prev is None or prev[2] == "Busy" or cur[2] == "Busy":
-        return offset, None
+    if prev is None or prev[2] == "Busy" or cur[2] == "Busy" or manual:
+        return offset, None  # moving (a slew, or the hand controller): the scope really moves, the sky follows it
     east, north = east_north_arcmin(prev[0], prev[1], cur[0], cur[1])
     jump = math.hypot(east, north)
     if jump <= SYNC_JUMP_ARCMIN:
@@ -324,7 +364,7 @@ def follow(args):
             ra_now = ra_h * 15.0
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
             look = (ra2000, dec2000, state)
-            offset, jump = absorb_sync(prev_look, look, offset)
+            offset, jump = absorb_sync(prev_look, look, offset, watcher.manual_active())
             prev_look = look
             nudge = take_nudge(args.nudge_file)
             if nudge is not None:

@@ -32,8 +32,11 @@ m = T.gscSimTileModel(running({ test_mode: null, solve_source: null }));
 ok(m.chips[1].text === 'Test Mode …' && m.chips[2].text === 'Solving: …', 'PiFinder not answering: dots, not a claim');
 ok(T.gscSimTileModel(running({ landing: 'unknown' })).landing === '', 'an unknown landing id shows nothing');
 
+ok(!html.includes('id="gsc-sim-stop-btn"') && !html.includes('Stop simulation') && !html.includes('Stop it to get the real camera back'), 'no second way to stop: Real Hardware is the switch back');
+ok(!/class="gsc-sim-chip\b/.test(html) && !html.includes('.gsc-sim-chip {'), 'the status is plain text, not pills that look clickable');
+
 // the page: four tiles, the older two grouped under "Other test modes"
-const ids = ['mode-tile-real', 'mode-tile-gsc', 'mode-tile-sim', 'mode-tile-fake', 'gsc-sim-panel', 'gsc-sim-idle', 'gsc-sim-landing', 'gsc-sim-stop-btn'];
+const ids = ['mode-tile-real', 'mode-tile-gsc', 'mode-tile-sim', 'mode-tile-fake', 'gsc-sim-panel', 'gsc-sim-idle', 'gsc-sim-landing'];
 ids.forEach((id) => ok(html.includes('id="' + id + '"'), 'page has #' + id));
 const posGsc = html.indexOf('id="mode-tile-gsc"'), posOther = html.indexOf('Other test modes</div>'), posSim = html.indexOf('id="mode-tile-sim"'), posFake = html.indexOf('id="mode-tile-fake"');
 ok(posGsc > 0 && posGsc < posOther && posOther < posSim && posSim < posFake, 'GSC tile first; Full Simulation and Fake Mode after "Other test modes"');

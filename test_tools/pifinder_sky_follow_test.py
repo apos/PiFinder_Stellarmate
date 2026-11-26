@@ -159,6 +159,41 @@ class GotoErrorTest(unittest.TestCase):
         self.assertLess(steps[2], steps[1] + 1e-9)
 
 
+class ManualMotionTest(unittest.TestCase):
+    SAMPLE = ('<setSwitchVector device="Telescope Simulator" name="TELESCOPE_MOTION_NS" state="Ok">'
+              '<oneSwitch name="MOTION_NORTH">On</oneSwitch><oneSwitch name="MOTION_SOUTH">Off</oneSwitch></setSwitchVector>'
+              '<defSwitchVector device="Telescope Simulator" name="TELESCOPE_MOTION_WE" state="Idle">'
+              '<defSwitch name="MOTION_WEST">Off</defSwitch><defSwitch name="MOTION_EAST">Off</defSwitch></defSwitchVector>')
+
+    def test_switch_vectors_are_read(self):
+        found = f.parse_switch_vectors(self.SAMPLE)
+        self.assertEqual(found[0][:2], ("Telescope Simulator", "TELESCOPE_MOTION_NS"))
+        self.assertEqual(found[0][3], {"MOTION_NORTH": "On", "MOTION_SOUTH": "Off"})
+        self.assertEqual(found[1][3], {"MOTION_WEST": "Off", "MOTION_EAST": "Off"})
+
+    def test_manual_motion_lasts_a_moment_after_the_switch_goes_off(self):
+        w = f.MountWatcher("x")
+        self.assertFalse(w.manual_active(now=100.0))
+        w.on_motion("TELESCOPE_MOTION_NS", {"MOTION_NORTH": "On", "MOTION_SOUTH": "Off"}, now=100.0)
+        self.assertTrue(w.manual_active(now=101.0))
+        w.on_motion("TELESCOPE_MOTION_NS", {"MOTION_NORTH": "Off", "MOTION_SOUTH": "Off"}, now=102.0)
+        self.assertTrue(w.manual_active(now=102.0 + f.MANUAL_SETTLE_SEC - 0.1))
+        self.assertFalse(w.manual_active(now=102.0 + f.MANUAL_SETTLE_SEC + 0.1))
+
+    def test_two_directions_keep_it_active(self):
+        w = f.MountWatcher("x")
+        w.on_motion("TELESCOPE_MOTION_NS", {"MOTION_NORTH": "On"}, now=1.0)
+        w.on_motion("TELESCOPE_MOTION_WE", {"MOTION_EAST": "On"}, now=1.0)
+        w.on_motion("TELESCOPE_MOTION_NS", {"MOTION_NORTH": "Off"}, now=2.0)
+        self.assertTrue(w.manual_active(now=50.0))
+
+    def test_a_jump_while_moving_by_hand_is_not_a_sync(self):
+        far = (100.0, 20.0 + 45 / 60.0, "Ok")
+        self.assertEqual(f.absorb_sync((100.0, 20.0, "Ok"), far, (3.0, 4.0), manual=True), ((3.0, 4.0), None))
+        offset, jump = f.absorb_sync((100.0, 20.0, "Ok"), far, (3.0, 4.0), manual=False)
+        self.assertIsNotNone(jump, "the same jump without the switch on is a Sync")
+
+
 class NudgeTest(unittest.TestCase):
     def test_a_nudge_is_taken_once(self):
         import json

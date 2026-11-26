@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -188,6 +188,28 @@ ok(/may still be moving/.test(iq.why) && /restarts the Bridge/.test(iq.why), 'sa
 ok(T.skyPositioningInterrupted(lastOff, 91) === null, 'after 90 s the notice goes');
 ok(T.skyPositioningInterrupted(T.skyPositioningModel(pos({ phase: 'ON_TARGET', hands_off: false })), 5) === null, 'a move that had finished is not reported as interrupted');
 ok(T.skyPositioningInterrupted(null, 5) === null, 'nothing before: nothing to report');
+
+// ---- the whole run as a growing trail ----
+const run = (phases) => phases.reduce((tr, p) => T.skyPositioningTrailUpdate(tr, pos(p)), []);
+const txt = (tr, off) => (T.skyPositioningTrailItems(tr, off) || []).map((i) => i.text + ':' + i.state).join(' > ');
+let tr = run([{ phase: 'SLEWING', attempt: 0 }]);
+ok(txt(tr, true) === 'Slewing:now > On target:later', 'a run that has just begun: the current step and the goal');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }, { phase: 'VERIFYING', attempt: 1 }]);
+ok(txt(tr, true) === 'Slewing:done > Verifying:done > Fine-adjusting 1:done > Verifying:now > On target:later', 'the whole run is visible, the trail does not restart');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }]);
+ok(tr.length === 2, 'the same phase seen again and again is one step');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }, { phase: 'VERIFYING', attempt: 1 }, { phase: 'REFINING', attempt: 2 }]);
+ok(/Fine-adjusting 1:done > Verifying:done > Fine-adjusting 2:now/.test(txt(tr, true)), 'a second refine is its own step');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'ON_TARGET', attempt: 0, hands_off: false }]);
+ok(txt(tr, false) === 'Slewing:done > Verifying:done > On target:done', 'the end: everything green, the goal reached');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'REFINING', attempt: 3 }, { phase: 'GAVE_UP', attempt: 3, hands_off: false }]);
+ok(/Gave up:warn$/.test(txt(tr, false)), 'giving up ends the trail in amber');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'ON_TARGET', attempt: 0, hands_off: false }, { phase: 'HOLDING', hands_off: false }]);
+ok(txt(tr, false) === 'Slewing:done > On target:done', 'holding afterwards keeps the finished trail');
+tr = run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'ON_TARGET', attempt: 0, hands_off: false }, { phase: 'SLEWING', attempt: 0 }]);
+ok(txt(tr, true) === 'Slewing:now > On target:later', 'the next GoTo starts a new trail');
+ok(txt(T.skyPositioningTrailUpdate([], pos({ phase: 'IDLE', hands_off: false })), false) === '', 'idle adds nothing');
+ok(T.skyPositioningTrailItems([], true) === null && T.skyPositioningTrailItems(null, true) === null, 'no run: nothing to draw');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');

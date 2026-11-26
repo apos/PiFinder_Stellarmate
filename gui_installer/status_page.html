@@ -606,10 +606,12 @@
   /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
   .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
   #sky-positioning { margin-top: 6px; font-size: 0.78rem; line-height: 1.35; }
-  #sky-positioning .pos-steps { display: flex; gap: 4px; margin: 0 0 6px; }
-  #sky-positioning .pos-step { flex: 1; height: 4px; border-radius: 2px; background: #3a3a3c; }
-  #sky-positioning .pos-step.pos-done { background: #4caf50; }
-  #sky-positioning .pos-step.pos-now { background: #f5a623; }
+  #sky-positioning .pos-trail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.4rem; margin: 0 0 5px; font-size: 0.74rem; }
+  #sky-positioning .pos-trail-sep { color: #555; }
+  #sky-positioning .pos-trail-done { color: #4caf50; }
+  #sky-positioning .pos-trail-now { color: #f5a623; font-weight: 600; }
+  #sky-positioning .pos-trail-warn { color: #f5c46b; }
+  #sky-positioning .pos-trail-later { color: #555; }
   #sky-positioning .pos-head { display: flex; align-items: center; gap: 6px; color: #e6e8ec; font-weight: 600; }
   #sky-positioning .pos-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #4caf50; }
   #sky-positioning.pos-off .pos-dot, #sky-positioning.pos-warn .pos-dot { background: #f5a623; }
@@ -1256,14 +1258,12 @@
   .mode-tile.mode-tile-minor { padding: 0.35rem 0.6rem; }
   .mode-tile.mode-tile-minor .mode-tile-name { font-weight: 400; font-size: 0.78rem; }
   .mode-tile.mode-tile-minor .mode-tile-sub { font-size: 0.64rem; }
-  #gsc-sim-panel { margin: 0.5rem 0; padding: 0.7rem; border: 1px solid #2f6e3d; border-radius: 8px; background: #122317; }
-  .gsc-sim-title { color: #7fe0a0; font-weight: 700; font-size: 0.8rem; margin-bottom: 0.4rem; }
-  .gsc-sim-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
-  .gsc-sim-chip { font-size: 0.72rem; padding: 2px 9px; border-radius: 12px; border: 1px solid #555; color: #8d9399; }
-  .gsc-sim-chip.gsc-ok { border-color: #2f6e3d; color: #8fd19a; }
-  .gsc-sim-controls { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
-  .gsc-sim-muted { color: #8d9399; font-size: 0.74rem; }
-  .gsc-sim-note { color: #8d9399; font-size: 0.7rem; margin-top: 0.5rem; }
+  /* Information only, no frame and no pills: nothing in here can be clicked. Same look as the setup readiness line. */
+  .gsc-sim-info { margin: 0.4rem 0; }
+  .gsc-sim-line { font-size: 0.74rem; line-height: 1.6; }
+  .gsc-sim-check { color: #4caf50; margin-right: 0.9rem; white-space: nowrap; }
+  .gsc-sim-check.gsc-wait { color: #f5a623; }
+  .gsc-sim-note { color: #777; font-size: 0.7rem; margin-top: 0.2rem; }
   .gsc-sim-idle { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; color: #777; font-size: 0.72rem; margin: 0.4rem 0; }
   .gsc-sim-landing select { margin-left: 0.3rem; }
   .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
@@ -2929,14 +2929,10 @@
             <div class="mode-tile-sub" id="mode-tile-gsc-sub">&hellip;</div>
           </div>
         </div>
-        <div id="gsc-sim-panel" style="display:none;">
-          <div class="gsc-sim-title">Simulated sky</div>
-          <div id="gsc-sim-chips" class="gsc-sim-chips"></div>
-          <div class="gsc-sim-controls">
-            <button id="gsc-sim-stop-btn" class="ql-small-btn" onclick="stopGscSim()">Stop simulation</button>
-            <span id="gsc-sim-landing-running" class="gsc-sim-muted"></span>
-          </div>
-          <div class="gsc-sim-note">The camera picture is replaced by the simulated sky while this runs. Stop it to get the real camera back. The old PiFinder Simulator device is left out of this mode.</div>
+        <div id="gsc-sim-panel" class="gsc-sim-info" style="display:none;">
+          <div id="gsc-sim-chips" class="gsc-sim-line"></div>
+          <div id="gsc-sim-landing-running" class="gsc-sim-note"></div>
+          <div class="gsc-sim-note">The camera picture is replaced by the simulated sky. The old PiFinder Simulator device is left out of this mode.</div>
         </div>
         <div id="gsc-sim-idle" class="gsc-sim-idle">
           <span>No simulated sky. Click &quot;Real Hardware + GSC Simulation&quot; to test without a night sky.</span>
@@ -5104,7 +5100,7 @@ function applyGscSim(s) {
   const chips = document.getElementById('gsc-sim-chips');
   while (chips.firstChild) chips.removeChild(chips.firstChild);
   m.chips.forEach((c) => {
-    const e = document.createElement('span'); e.className = 'gsc-sim-chip' + (c.ok ? ' gsc-ok' : ''); e.textContent = c.text; chips.appendChild(e);
+    const e = document.createElement('span'); e.className = 'gsc-sim-check' + (c.ok ? '' : ' gsc-wait'); e.textContent = (c.ok ? '\u2713 ' : '\u2026 ') + c.text; chips.appendChild(e);
   });
   document.getElementById('gsc-sim-landing-running').textContent = m.landing;
   const select = document.getElementById('gsc-sim-landing');
@@ -9180,6 +9176,35 @@ function skyPositioningModel(p) {
 // The Bridge stopped answering while it was moving the mount (hands off): say so instead of letting the line vanish. The Control
 // Center restarts an unresponsive Bridge on its own (#385) and the restarted Bridge has forgotten the move, so the state is
 // unknown: the mount may still be moving or may not have reached the target. Shown for a minute and a half, then it goes.
+// The whole run as a growing trail: Slewing > Verifying > Fine-adjusting 1 > Verifying > On target. The Bridge goes through the phases
+// more than once (a refine means another slew and another check), so a bar of four steps would jump back; the trail only grows until
+// the run is over. The current step is amber, finished ones green, the goal ("On target") is shown faintly at the end while it runs.
+const SKY_TRAIL_LABEL = { SLEWING: 'Slewing', VERIFYING: 'Verifying', REFINING: 'Fine-adjusting', ON_TARGET: 'On target', GAVE_UP: 'Gave up' };
+function skyPositioningTrailUpdate(trail, p) {
+  if (!p || !p.phase || p.phase === 'IDLE' || !SKY_TRAIL_LABEL[p.phase]) return trail || [];
+  let t = (trail || []).slice();
+  const last = t[t.length - 1];
+  const ended = last && (last.phase === 'ON_TARGET' || last.phase === 'GAVE_UP');
+  if (p.hands_off) {
+    if (ended) t = [];                       // a new run begins
+    const tail = t[t.length - 1];
+    if (!tail || tail.phase !== p.phase || (p.phase === 'REFINING' && tail.attempt !== p.attempt)) t.push({ phase: p.phase, attempt: p.attempt });
+  } else if ((p.phase === 'ON_TARGET' || p.phase === 'GAVE_UP') && (!last || last.phase !== p.phase)) {
+    t.push({ phase: p.phase, attempt: p.attempt });
+  }
+  return t;
+}
+// What to draw for a trail: [{text, state: 'done' | 'now' | 'warn' | 'later'}]; null when there is no run to show.
+function skyPositioningTrailItems(trail, handsOff) {
+  if (!trail || !trail.length) return null;
+  const items = trail.map((s, i) => {
+    const text = SKY_TRAIL_LABEL[s.phase] + (s.phase === 'REFINING' ? ' ' + s.attempt : '');
+    const lastOne = i === trail.length - 1;
+    return { text: text, state: s.phase === 'GAVE_UP' ? 'warn' : (lastOne && handsOff ? 'now' : 'done') };
+  });
+  if (handsOff) items.push({ text: SKY_TRAIL_LABEL.ON_TARGET, state: 'later' });
+  return items;
+}
 const SKY_POSITIONING_INTERRUPTED_SEC = 90;
 function skyPositioningInterrupted(last, secondsAgo) {
   if (!last || !last.handsOff || secondsAgo > SKY_POSITIONING_INTERRUPTED_SEC) return null;
@@ -9362,7 +9387,9 @@ function drawSkyPanel(svg, model) {
     'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
 }
 let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
+let _posTrail = [];   // the phases of the current run, see skyPositioningTrailUpdate()
 function applyPositioning(p) {
+  _posTrail = skyPositioningTrailUpdate(_posTrail, p);
   const box = document.getElementById('sky-positioning');
   if (!box) return;
   let m = skyPositioningModel(p);
@@ -9373,13 +9400,16 @@ function applyPositioning(p) {
   if (!m) { box.style.display = 'none'; return; }
   box.style.display = '';
   box.className = 'pos-' + m.tone;
-  const steps = document.createElement('div'); steps.className = 'pos-steps';
-  for (let i = 0; i < 4; i++) {
-    const s = document.createElement('span');
-    s.className = 'pos-step' + (m.interrupted ? '' : m.handsOff ? (i < m.step ? ' pos-done' : i === m.step ? ' pos-now' : '') : ' pos-done');
-    steps.appendChild(s);
+  const items = m.interrupted ? null : skyPositioningTrailItems(_posTrail, m.handsOff);
+  if (items) {
+    const trail = document.createElement('div'); trail.className = 'pos-trail';
+    items.forEach((it, i) => {
+      if (i > 0) { const sep = document.createElement('span'); sep.className = 'pos-trail-sep'; sep.textContent = '\u203a'; trail.appendChild(sep); }
+      const e = document.createElement('span'); e.className = 'pos-trail-' + it.state; e.textContent = it.text + (it.state === 'now' ? '\u2026' : '');
+      trail.appendChild(e);
+    });
+    box.appendChild(trail);
   }
-  box.appendChild(steps);
   const head = document.createElement('div'); head.className = 'pos-head';
   const dot = document.createElement('span'); dot.className = 'pos-dot';
   const text = document.createElement('span'); text.textContent = m.head;
