@@ -1973,9 +1973,9 @@
     margin: 0.3rem 0 0.6rem 0;
   }
   .collapsible-toggle:hover { color: #ccc; }
-  /* Setup checklist & diagnostics is a tile of its own, like Settings: the header sits in it without a rule, the checklist opens below it */
-  .collapsible-toggle-plain { border-top: none; padding-top: 0; margin: 0; }
-  #mb-setup-box #mb-details { margin-top: 0.7rem; }
+  /* Setup checklist & diagnostics is the last part of the Settings tile: no rule above its header, a small gap to the rows above */
+  .collapsible-toggle-plain { border-top: none; padding-top: 0; margin: 0.9rem 0 0; }
+  #mb-settings-box #mb-details { margin-top: 0.7rem; }
   .mb-hint {
     color: #e0a030;
     font-size: 0.74rem;
@@ -3051,9 +3051,6 @@
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       </div>
 
-      </div>
-
-      <div class="mb-group-box" id="mb-setup-box">
         <div class="collapsible-toggle collapsible-toggle-plain" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
           <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
           <span id="mb-details-chevron">&#9660; show</span>
