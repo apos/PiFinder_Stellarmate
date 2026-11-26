@@ -1973,8 +1973,9 @@
     margin: 0.3rem 0 0.6rem 0;
   }
   .collapsible-toggle:hover { color: #ccc; }
-  /* no rule above, a small gap to the Settings tile instead */
-  .collapsible-toggle-plain { border-top: none; padding-top: 0; margin-top: 0.9rem; }
+  /* Setup checklist & diagnostics is a tile of its own, like Settings: the header sits in it without a rule, the checklist opens below it */
+  .collapsible-toggle-plain { border-top: none; padding-top: 0; margin: 0; }
+  #mb-setup-box #mb-details { margin-top: 0.7rem; }
   .mb-hint {
     color: #e0a030;
     font-size: 0.74rem;
@@ -3052,77 +3053,79 @@
 
       </div>
 
-      <div class="collapsible-toggle collapsible-toggle-plain" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
-        <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-        <span id="mb-details-chevron">&#9660; show</span>
-      </div>
-      <div id="mb-details" style="display:none;">
-        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>INDI Web Manager<span id="wm-config-badge" class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
+      <div class="mb-group-box" id="mb-setup-box">
+        <div class="collapsible-toggle collapsible-toggle-plain" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
+          <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span id="mb-details-chevron">&#9660; show</span>
+        </div>
+        <div id="mb-details" style="display:none;">
+          <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>INDI Web Manager<span id="wm-config-badge" class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
-        <div class="mb-row mb-step-row mb-step-row-key" style="display:none;" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
-        </div>
-        <div id="wm-profile-health-row" class="mb-row mb-step-row" style="display:none;" title="Whether this device's own active profile is clean (no stray drivers left behind) and its PiFinder devices are actually connected right now - not tied to any particular role. Direct request (2026-09-16): each CC should be able to tell on its own whether its profile actually works, after a real case where a profile had picked up unrelated drivers unnoticed.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label">Profile health:</span></span>
-          <span id="wm-profile-health-text" class="mb-step-widget"></span>
-        </div>
-        <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
-          <span id="wm-kstars-link-text" class="mb-step-widget"></span>
-          <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
-        </div>
+          <div class="mb-row mb-step-row mb-step-row-key" style="display:none;" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+            <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+          </div>
+          <div id="wm-profile-health-row" class="mb-row mb-step-row" style="display:none;" title="Whether this device's own active profile is clean (no stray drivers left behind) and its PiFinder devices are actually connected right now - not tied to any particular role. Direct request (2026-09-16): each CC should be able to tell on its own whether its profile actually works, after a real case where a profile had picked up unrelated drivers unnoticed.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label">Profile health:</span></span>
+            <span id="wm-profile-health-text" class="mb-step-widget"></span>
+          </div>
+          <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
+            <span id="wm-kstars-link-text" class="mb-step-widget"></span>
+            <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+          </div>
 
-        <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-lx200-remote-edit-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
-        </div>
-        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
-             Bridge, no mount here) - wrapper for the same reason as
-             #mb-operate-rows above. -->
-        <div id="mb-steps-4-6">
-        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount (INDI WM Profile):</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-          <span id="wm-mount-profile-tag"></span>
-          <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
-          <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
-          <button id="wm-optical-train-sync-btn" class="ql-small-btn" onclick="syncOpticalTrainsToMount()" disabled title="Ekos optical trains (Mount/Guide via/etc.) keep whichever device they last had - switching the mount driver does not update them on its own. This finds every optical-train field currently set to &quot;Telescope Simulator&quot; and switches it to the mount selected above (docs/concepts/optical_train_device_sync.md).">Sync optical trains to this mount</button>
-        </div>
-        <div id="wm-optical-train-sync-status" class="mb-hint" style="display:none;"></div>
-        <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
-        <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+          <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+            <button id="wm-lx200-remote-edit-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button>
+            <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
+          </div>
+          <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
+               Bridge, no mount here) - wrapper for the same reason as
+               #mb-operate-rows above. -->
+          <div id="mb-steps-4-6">
+          <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount (INDI WM Profile):</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+            <span id="wm-mount-profile-tag"></span>
+            <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
+            <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+            <button id="wm-optical-train-sync-btn" class="ql-small-btn" onclick="syncOpticalTrainsToMount()" disabled title="Ekos optical trains (Mount/Guide via/etc.) keep whichever device they last had - switching the mount driver does not update them on its own. This finds every optical-train field currently set to &quot;Telescope Simulator&quot; and switches it to the mount selected above (docs/concepts/optical_train_device_sync.md).">Sync optical trains to this mount</button>
+          </div>
+          <div id="wm-optical-train-sync-status" class="mb-hint" style="display:none;"></div>
+          <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+          <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
 
-        <!-- Steps 1-4 above are all configuration facts (profile/driver/
-             mount-name selections) - they persist across reboots and stay
-             green regardless of whether anything is actually connected
-             right now. Only 5-6 below read live state (Ekos's own D-Bus
-             indiStatus, real CONNECTION properties) - found live (2026-08-05,
-             #133-adjacent): right after a cold reboot, before Setup was ever
-             clicked, 1-4 already showed done while nothing was connected,
-             easy to misread as "everything's fine". Badges make the
-             config-vs-live distinction explicit instead of six visually
-             identical checkmarks. -->
-        <div class="mb-checklist-divider"></div>
-        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
+          <!-- Steps 1-4 above are all configuration facts (profile/driver/
+               mount-name selections) - they persist across reboots and stay
+               green regardless of whether anything is actually connected
+               right now. Only 5-6 below read live state (Ekos's own D-Bus
+               indiStatus, real CONNECTION properties) - found live (2026-08-05,
+               #133-adjacent): right after a cold reboot, before Setup was ever
+               clicked, 1-4 already showed done while nothing was connected,
+               easy to misread as "everything's fine". Badges make the
+               config-vs-live distinction explicit instead of six visually
+               identical checkmarks. -->
+          <div class="mb-checklist-divider"></div>
+          <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
 
-        <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos (EKOS Profile):</span></span>
-          <span id="wm-ekos-profile-tag"></span>
-          <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
-        </div>
-        <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
-          <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
-          <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-          <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-        </div>
-        </div>
+          <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos (EKOS Profile):</span></span>
+            <span id="wm-ekos-profile-tag"></span>
+            <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
+          </div>
+          <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+            <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+            <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+            <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+          </div>
+          </div>
 
-        <div id="mb-log" title="What this tile has been doing, in order."></div>
-        <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('mb-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
+          <div id="mb-log" title="What this tile has been doing, in order."></div>
+          <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('mb-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
+        </div>
       </div>
 
       </div>
