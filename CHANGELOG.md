@@ -36,6 +36,7 @@ All notable changes to this project are documented in this file. Format loosely 
 - GSC simulation: the follower moves to the Bridge's active mount when the profile switches the mount (for example from a real mount to the Telescope Simulator). Before, it kept following a device that no longer existed, the picture never moved, and the tile still said "on". The watchdog restarts it on the new mount (bounded like a dead follower).
 - Control Center: one slow answer of the Bridge no longer turns the page to "Not coupled"; three missed polls in a row (about 6 s) do. The Bridge answers a `getProperties` in 0.1 ms and sends every 2 s; what is sometimes late is indiserver in between (measured 2026-11-26).
 - Control Center: the "Sky for" line in the card's details keeps a separator between time and date.
+- Mount Bridge readiness watchdog, new check 3.5: a Bridge that is connected and answers everything but was never bound to its mount and PiFinder (it published nothing for 15 minutes after a profile switch to the Telescope Simulator) is found by its `MOUNT_HORIZON_STATUS` staying `Idle` for 45 s, and its connection is cycled (at most 3 times per 10 minutes, not while guiding is held). New `test_tools/bridge_binding_test.py`. The cause of the missed binding itself is not yet found (see the issue).
 
 ## [2.6.1] - 2026-11-26
 

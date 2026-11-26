@@ -2950,6 +2950,52 @@ _mb_readiness_profile_desync_consecutive = 0
 _mb_desired_mount_missing_from_profile_warned = None
 
 
+# Check 3.5 (found live 2026-11-27): after a profile switch to the Telescope Simulator the Bridge was connected, answered every request
+# and its devices were connected, but it had never bound to them (its INDI client was connected to indiserver, yet the mount and PiFinder
+# properties never arrived): no drift, no status, no Goto forwarding, for 15 minutes, until somebody cycled its CONNECTION. Nothing showed
+# it, because every other check looks at answers, not at whether the Bridge works. The signal: the Bridge publishes MOUNT_HORIZON_STATUS
+# every tick once bound, so that property staying Idle with both devices connected is "not bound". Heal: cycle the Bridge's CONNECTION
+# (what fixed it by hand), bounded, never while guiding is held.
+class _BridgeBindingTracker:
+    UNBOUND_AFTER_S = 45.0
+    MAX_PER_WINDOW = 3
+    WINDOW_S = 600.0
+    MIN_GAP_S = 60.0
+
+    def __init__(self):
+        self.idle_since = None
+        self.heals = []
+
+    def reset(self):
+        self.idle_since = None
+
+    def unbound_for(self, state, now):
+        """Seconds the Bridge has been unbound ("Idle" in a row), 0.0 when it is bound or we do not know."""
+        if state != "Idle":
+            self.idle_since = None
+            return 0.0
+        if self.idle_since is None:
+            self.idle_since = now
+        return now - self.idle_since
+
+    def may_heal(self, state, now):
+        if self.unbound_for(state, now) < self.UNBOUND_AFTER_S:
+            return False
+        self.heals = [x for x in self.heals if now - x < self.WINDOW_S]
+        if len(self.heals) >= self.MAX_PER_WINDOW:
+            return False
+        if self.heals and now - self.heals[-1] < self.MIN_GAP_S:
+            return False
+        return True
+
+    def healed(self, now):
+        self.heals.append(now)
+        self.idle_since = None
+
+
+_bridge_binding = _BridgeBindingTracker()
+
+
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
     tick. Checks are ordered per the concept doc's table and this only ever
@@ -3246,6 +3292,31 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                     _mb_log(f"Mount Bridge self-heal: '{_mb_desired_mount}' connect attempt failed: {e}")
 
             _mb_readiness_retrier.trigger(_do_connect_mount)
+            return
+
+    # --- Check 3.5: the Bridge is bound to its devices and actually working ---
+    if _mb_desired_mount and _mb_desired_coupling_mode not in (None, "MODE_OFF"):
+        try:
+            binding = indi_client.bridge_binding_state()
+        except indi_client.INDIClientError:
+            binding = None
+        if binding is None:
+            _bridge_binding.reset()
+        elif _bridge_binding.may_heal(binding, time.monotonic()):
+            if _guiding_hold_active:
+                return
+            def _do_rebind():
+                try:
+                    indi_client.disconnect_device("PiFinder Mount Bridge")
+                    time.sleep(2.0)
+                    indi_client.connect_device("PiFinder Mount Bridge")
+                    _mb_log("Mount Bridge self-heal: the Bridge was connected but never bound to its mount and PiFinder "
+                            "(it published nothing) - cycled its connection.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: cycling the Bridge's connection failed: {e}")
+
+            if _mb_readiness_retrier.trigger(_do_rebind):
+                _bridge_binding.healed(time.monotonic())
             return
 
     # --- Check 4: coupling mode matches what was last actually chosen ----
