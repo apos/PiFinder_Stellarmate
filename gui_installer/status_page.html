@@ -3242,30 +3242,7 @@ sudo systemctl start pifinder</pre>
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="install-groups">
-      <div class="group-label">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
-      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
-      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
-        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
-        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
-      </div>
-      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
-           became real buttons); onDeviceTypeClick() shows the matching block. -->
-      <div id="devtype-info" class="devtype-info">
-        <div id="devtype-info-full">
-          <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
-          <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
-          <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
-        </div>
-        <div id="devtype-info-indi_only" style="display:none;">
-          <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
-          <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
-          <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
-        </div>
-      </div>
-
-      <div class="hgroup-divider"></div>
-
-      <div class="group-label">Branch</div>
+      <div class="group-label">Branch<a class="help-link" href="/help.html#install-branch" target="_blank" rel="noopener" title="Which branch of this project's own scripts and patches (not PiFinder itself) is used the moment you click the action below: main (stable), dev (beta) or any other. Click for the details.">i</a></div>
       <div id="branch-picker-row">
         <select id="branch-select" onchange="onBranchSelectChange(true)">
           <option value="main">main (stable)</option>
@@ -3277,7 +3254,26 @@ sudo systemctl start pifinder</pre>
         <span id="branch-current-hint" style="display:none;"></span>
       </div>
 
-      <div class="hgroup-divider"></div>
+      <div class="group-label" style="margin-top:0.9rem;">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
+      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
+      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
+        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
+        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
+      </div>
+      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
+           became real buttons); onDeviceTypeClick() shows the matching block. -->
+      <div id="devtype-info" class="devtype-info" style="margin-bottom:0.7rem;">
+        <div id="devtype-info-full">
+          <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
+          <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
+          <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
+        </div>
+        <div id="devtype-info-indi_only" style="display:none;">
+          <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
+          <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
+          <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
+        </div>
+      </div>
 
       <div id="choices" style="display:none;"></div>
 
