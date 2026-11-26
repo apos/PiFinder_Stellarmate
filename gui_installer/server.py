@@ -1560,6 +1560,10 @@ _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log
 # by itself never raises it; the flag clears the moment the position moves.
 # Simulators legitimately sit still and are exempt. Nothing is ever restarted
 # automatically - the page only warns and offers "Reconnect mount".
+# Correction (2026-11-26, found live): the first sentence is wrong for a mount that TRACKS. A tracking mount that stands still reports
+# the same RA/Dec for minutes (OnStep gives them to a second), so "position unchanged" alone raised the warning on a healthy, connected
+# mount. A mount that cannot be read, on the other hand, is marked by its driver: the coordinates get the state Alert. So unchanged
+# coordinates only count as silence when the driver says so too (state Alert); a driver that gives no state at all keeps the old rule.
 class _MountSilenceTracker:
     SILENT_AFTER_S = 60.0
 
@@ -1571,7 +1575,7 @@ class _MountSilenceTracker:
         self.coords = None
         self.since = None
 
-    def update(self, device, connected, coords, now=None) -> dict:
+    def update(self, device, connected, coords, now=None, coord_state=None) -> dict:
         now = time.monotonic() if now is None else now
         if not device or connected is not True or coords is None or "simulator" in device.lower():
             self.reset()
@@ -1579,7 +1583,8 @@ class _MountSilenceTracker:
         if device != self.device or coords != self.coords:
             self.device, self.coords, self.since = device, coords, now
         quiet = now - self.since
-        return {"silent": quiet >= self.SILENT_AFTER_S, "silent_for_s": int(quiet), "device": device}
+        driver_agrees = coord_state is None or str(coord_state).lower() == "alert"
+        return {"silent": quiet >= self.SILENT_AFTER_S and driver_agrees, "silent_for_s": int(quiet), "device": device}
 
 
 _mount_silence = _MountSilenceTracker()
@@ -1598,7 +1603,7 @@ def _mount_silence_for(status: dict) -> dict:
         state = indi_client.read_mount_state(device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
     except indi_client.INDIClientError:
         return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
-    out = _mount_silence.update(device, True, state["coords"])
+    out = _mount_silence.update(device, True, state["coords"], coord_state=state.get("coord_state"))
     out["parked"] = state["parked"]
     return out
 

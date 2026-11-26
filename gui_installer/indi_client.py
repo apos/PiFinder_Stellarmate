@@ -1458,18 +1458,20 @@ def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAU
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
     {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
-    `parked` is None for a mount that has no TELESCOPE_PARK property at all."""
+    `parked` is None for a mount that has no TELESCOPE_PARK property at all. "coord_state" is the state INDI gives the coordinates
+    ("Ok", "Busy", "Idle" or "Alert"; the driver sets Alert when it cannot read the mount), None when the mount does not define them."""
     props = get_properties(
         device=device, host=host, port=port, timeout=timeout,
         stop_after={"EQUATORIAL_EOD_COORD", "TELESCOPE_PARK"},
     )
     dev = props.get(device, {})
     el = dev.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    coord_state = dev.get("EQUATORIAL_EOD_COORD", {}).get("state") or None
     ra, dec = el.get("RA"), el.get("DEC")
     coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
     park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
     parked = None if park_el is None else park_el.get("PARK") == "On"
-    return {"coords": coords, "parked": parked}
+    return {"coords": coords, "parked": parked, "coord_state": coord_state}
 
 
 def unpark_mount(
