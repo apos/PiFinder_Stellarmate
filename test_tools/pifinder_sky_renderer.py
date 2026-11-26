@@ -114,7 +114,7 @@ def render(x, y, mag, size=512, seeing_px=1.4, mag_saturation=6.0, bias=8.0, noi
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
-def render_field(ra_deg, dec_deg, fov_deg=12.0, roll_deg=0.0, size=512, faint_mag=9.0, mirror=False, seed=None, runner=None):
+def render_field(ra_deg, dec_deg, fov_deg=13.7, roll_deg=0.0, size=512, faint_mag=9.0, mirror=False, seed=None, runner=None):
     # radius: half the frame diagonal plus a margin, in arcminutes
     radius = fov_deg * 60.0 * math.sqrt(2) / 2.0 * 1.05
     stars = query_gsc(ra_deg, dec_deg, radius, faint_mag, runner=runner)
@@ -128,7 +128,8 @@ def main(argv=None):
     ra.add_argument("--ra", type=float, help="right ascension J2000, degrees")
     ra.add_argument("--ra-hours", type=float, help="right ascension J2000, hours")
     ap.add_argument("--dec", type=float, required=True, help="declination J2000, degrees")
-    ap.add_argument("--fov", type=float, default=12.0, help="field of view across the frame, degrees (default 12)")
+    ap.add_argument("--fov", type=float, default=13.7,
+                    help="field of view across the frame, degrees (default 13.7 = imx296 with the 16 mm lens; PiFinder's solver gate rejects fields outside the real optics' window)")
     ap.add_argument("--roll", type=float, default=0.0, help="field rotation, degrees (default 0)")
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--faint-mag", type=float, default=9.0)
