@@ -242,5 +242,10 @@ ok(T.skyPositioningHistory([], true, 0) === null, 'history: no run, nothing');
 h = T.skyPositioningHistory(timed.concat([at(30000, { phase: 'ON_TARGET', attempt: 1 })]), false, 31000);
 ok(h.length === 4 && h[3].text === 'On target' && h[3].state === 'done', 'history: a finished run ends with On target and no faint goal');
 
+// the card owns the state: while it is shown the caption line under it is not
+const pageHtml = require('fs').readFileSync(require('path').join(__dirname, '..', 'gui_installer', 'status_page.html'), 'utf8');
+ok(/classList\.toggle\('sky-card-on', !!m\)/.test(pageHtml), 'the page marks the sky column while the positioning card is shown');
+ok(/#mb-sky-col\.sky-card-on #mb-mode-caption-dot-text \{ display: none; \}/.test(pageHtml), 'then the caption label under it is hidden');
+
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');

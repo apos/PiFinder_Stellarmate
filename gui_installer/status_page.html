@@ -1643,6 +1643,10 @@
   #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.2rem; width: min(100%, 24rem); }
   /* the two status lines under the card use the card's rhythm: 13 px, one line each, the same width as the card, ellipsis not wrapping */
   #mb-sky-col #mb-mode-caption-row, #mb-sky-col #mb-status-row { width: 100%; margin-bottom: 0; }
+  /* While the positioning card is shown it says what the caption line would say: the label goes, the Details toggle stays (alone in its row; no row without one) */
+  #mb-sky-col.sky-card-on #mb-mode-caption-dot-text { display: none; }
+  #mb-sky-col.sky-card-on #mb-mode-caption-row:not(:has(#mb-mode-details-toggle:not([style*="none"]))) { display: none; }
+  #mb-sky-col.sky-card-on #mb-mode-details-toggle { margin-left: 0; }
   #mb-sky-col #mb-mode-caption, #mb-sky-col #mb-status-line { font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
@@ -9546,6 +9550,8 @@ function applyPositioning(p) {
   else if (_posLast) m = skyPositioningInterrupted(_posLast.m, (Date.now() - _posLast.at) / 1000);
   if (!m) _posLast = null;
   while (box.firstChild) box.removeChild(box.firstChild);
+  const col = document.getElementById('mb-sky-col');
+  if (col) col.classList.toggle('sky-card-on', !!m);   // the card owns the state: the caption line under it would say the same
   if (!m) { box.style.display = 'none'; return; }
   box.style.display = '';
   box.className = 'pos-' + m.tone;
