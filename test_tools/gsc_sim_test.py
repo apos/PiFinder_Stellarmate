@@ -229,6 +229,95 @@ class Heal(Base):
         self.assertEqual(g.status()["state"], "on")   # the stub PiFinder reports CAM
 
 
+class Restore(Base):
+    """The simulation stays the way it was last chosen: across an update, a crash and a reboot."""
+
+    def setUp(self):
+        super().setUp()
+        self._saved = (g.start, g.availability)
+        g._restore_times[:] = []
+        self.started = []
+        g.availability = lambda: (True, "")
+
+        def fake_start(landing="typical", device=g.DEFAULT_MOUNT, indi=None, popen=None):
+            self.started.append((landing, device))
+            g.write_state({"pid": os.getpid(), "landing": landing, "device": device, "test_mode_was_on": True,
+                           "old_simulator_disconnected": False})
+            return {"ok": True}
+        g.start = fake_start
+        self.dead = {"pid": 2 ** 22 + 12345, "landing": "large", "device": "Telescope Simulator", "test_mode_was_on": False,
+                     "old_simulator_disconnected": True}
+
+    def tearDown(self):
+        g.start, g.availability = self._saved
+        try:
+            g.STATE_PATH.unlink()   # the stand-in pid is this very process: do not let stop() signal it
+        except OSError:
+            pass
+        super().tearDown()
+
+    def test_no_state_means_the_user_did_not_want_it(self):
+        self.assertEqual(g.restore(now=lambda: 1000.0), "none")
+        self.assertEqual(self.started, [])
+
+    def test_a_dead_follower_is_started_again_with_its_old_settings(self):
+        g.write_state(self.dead)
+        self.assertEqual(g.restore(now=lambda: 1000.0), "restarted")
+        self.assertEqual(self.started, [("large", "Telescope Simulator")])
+        state = g.read_state()
+        self.assertFalse(state["test_mode_was_on"], "what the first start recorded is kept, not overwritten")
+        self.assertTrue(state["old_simulator_disconnected"])
+
+    def test_the_old_simulator_device_is_kept_out_of_the_way_again(self):
+        g.write_state(self.dead)
+        indi = FakeIndi()
+        g.restore(indi=indi, now=lambda: 1000.0)
+        self.assertEqual(indi.calls, [("disconnect", "PiFinder Simulator")])
+
+    def test_two_restarts_are_not_closer_than_the_gap(self):
+        g.write_state(self.dead)
+        g.restore(now=lambda: 1000.0)
+        g.write_state(self.dead)
+        self.assertEqual(g.restore(now=lambda: 1000.0 + g.RESTORE_MIN_GAP_SEC - 1), "waiting")
+        self.assertEqual(len(self.started), 1)
+
+    def test_a_follower_that_keeps_dying_is_given_up_on(self):
+        t = 1000.0
+        for _ in range(g.RESTORE_MAX_PER_WINDOW):
+            g.write_state(self.dead)
+            self.assertEqual(g.restore(now=lambda: t), "restarted")
+            t += g.RESTORE_MIN_GAP_SEC + 1
+        g.write_state(self.dead)
+        self.assertEqual(g.restore(now=lambda: t), "gave-up")
+        self.assertEqual(g.read_state()["pid"], self.dead["pid"], "the wish stays on file")
+
+    def test_after_the_window_it_tries_again(self):
+        t = 1000.0
+        for _ in range(g.RESTORE_MAX_PER_WINDOW):
+            g.write_state(self.dead)
+            g.restore(now=lambda: t)
+            t += g.RESTORE_MIN_GAP_SEC + 1
+        g.write_state(self.dead)
+        self.assertEqual(g.restore(now=lambda: t + g.RESTORE_WINDOW_SEC), "restarted")
+
+    def test_unavailable_keeps_the_wish(self):
+        g.availability = lambda: (False, "no gsc")
+        g.write_state(self.dead)
+        self.assertEqual(g.restore(now=lambda: 1000.0), "unavailable")
+        self.assertEqual(g.read_state()["pid"], self.dead["pid"])
+
+    def test_a_running_follower_gets_its_test_mode_back(self):
+        g.write_state({"pid": os.getpid()})
+        g.FOLLOWER_MARK = "python"
+        g._last_heal = 0.0
+        sets = []
+        g.set_test_mode = lambda want: (sets.append(want), want)[1]
+        self.test_mode["on"] = False
+        self.assertEqual(g.restore(now=lambda: 1000.0), "healed")
+        self.assertEqual(sets, [True])
+        self.assertEqual(self.started, [])
+
+
 class StatusShape(Base):
     def test_status_lists_the_landing_choices(self):
         ids = [x["id"] for x in g.status()["landings"]]

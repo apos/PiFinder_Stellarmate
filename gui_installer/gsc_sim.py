@@ -270,3 +270,55 @@ def status(include_pifinder=True, heal=False):
                 out["healed"] = set_test_mode(True) is not None
     out["state"] = simulation_state(running, out["test_mode"], out["solve_source"]) if (include_pifinder or not running) else ("on" if running else "off")
     return out
+
+
+RESTORE_MIN_GAP_SEC = 30.0     # between two restarts of a dead follower
+RESTORE_MAX_PER_WINDOW = 3     # a follower that keeps dying (mount missing, ...) is not restarted forever
+RESTORE_WINDOW_SEC = 600.0
+_restore_times = []
+
+
+def restore(indi=None, popen=subprocess.Popen, now=time.time):
+    """Keep the simulation the way it was last chosen, across updates, crashes and reboots.
+
+    The state file exists from "start" until "stop" - it is the memory of what the user wants. So:
+      * state file, follower running -> PiFinder's Test Mode is switched on again if an update/restart put it off (status(heal=True))
+      * state file, follower dead    -> the follower is started again (at most RESTORE_MAX_PER_WINDOW times per RESTORE_WINDOW_SEC,
+                                        at least RESTORE_MIN_GAP_SEC apart), keeping what the first start recorded about Test Mode
+                                        and the old PiFinder Simulator device
+      * no state file                -> the user did not want it: nothing happens.
+    Returns a short word for logging: "none", "healthy", "healed", "restarted", "waiting", "gave-up", "unavailable".
+    """
+    state = read_state()
+    if not state.get("pid"):
+        return "none"
+    if _alive(state["pid"]):
+        return "healed" if status(heal=True).get("healed") else "healthy"
+    ok, _reason = availability()
+    if not ok:
+        return "unavailable"
+    t = now()
+    _restore_times[:] = [x for x in _restore_times if t - x < RESTORE_WINDOW_SEC]
+    if len(_restore_times) >= RESTORE_MAX_PER_WINDOW:
+        return "gave-up"
+    if _restore_times and t - _restore_times[-1] < RESTORE_MIN_GAP_SEC:
+        return "waiting"
+    _restore_times.append(t)
+    try:
+        STATE_PATH.unlink()          # start() refuses to start while the old state names a living follower; it is dead, so write anew
+    except OSError:
+        pass
+    result = start(state.get("landing", "typical"), state.get("device", DEFAULT_MOUNT), indi=None, popen=popen)
+    if not result.get("ok"):
+        write_state(state)           # keep the wish, try again later
+        return "unavailable"
+    fresh = read_state()
+    fresh["test_mode_was_on"] = state.get("test_mode_was_on", False)
+    fresh["old_simulator_disconnected"] = state.get("old_simulator_disconnected", False)
+    write_state(fresh)
+    if indi is not None and fresh["old_simulator_disconnected"]:
+        try:
+            indi.disconnect_device(OLD_SIMULATOR_DEVICE)   # a restart of the INDI drivers may have brought it back
+        except Exception:
+            pass
+    return "restarted"

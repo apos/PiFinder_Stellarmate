@@ -3399,6 +3399,21 @@ def _refresh_stale_mount_time_if_needed(status: dict) -> None:
         _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
 
 
+def _gsc_sim_restore_watchdog(interval=15):
+    """The GSC simulation stays the way it was last chosen: after an update (PiFinder restarted, Test Mode off, test picture put back),
+    a crash or a reboot it is brought back without anybody opening the page. See gsc_sim.restore()."""
+    last = None
+    while True:
+        time.sleep(interval)
+        try:
+            what = gsc_sim.restore(indi=indi_client)
+        except Exception as e:  # never let this thread die
+            what = "error: %s" % e
+        if what != last and what not in ("none", "healthy"):
+            _mb_log("GSC simulation self-heal: %s" % what)
+        last = what
+
+
 def _mount_bridge_readiness_watchdog(interval=5):
     """Same shape/cadence as _truth_injector_watchdog() above, extended to
     cover Mount Bridge itself - see docs/concepts/
@@ -7483,6 +7498,7 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    threading.Thread(target=_gsc_sim_restore_watchdog, daemon=True).start()
     # #372 (simplified) - independent of the readiness watchdog above; see
     # _guiding_hold_watchdog()'s own docstring.
     threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()
