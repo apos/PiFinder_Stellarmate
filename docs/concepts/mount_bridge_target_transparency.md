@@ -227,3 +227,21 @@ than the mount's. The Target then is the landing position, not the requested obj
 Testing note: the Control Center's readiness self-heal re-applies the coupling *mode* last chosen in the page but not the
 *correction action*, so after a driver restart the action comes from the saved driver config (it came back as Goto
 instead of Sync). Choose both in the Control Center after a restart, and check `CORRECTION_ACTION`.
+
+## 11. Refine after a GoTo through the PiFinder device (2026-11-26, sky simulation, Goto-Forward)
+
+Setup: Telescope Simulator, landing error 8' E / 5' S for a 45 deg slew, scaled with the slew length (a 38 deg slew landed 6.8' E /
+4.3' N, a 9' corrective slew 0.4' / 0.2'). GoTo M13 / M3 sent to the PiFinder LX200 device, as KStars does.
+
+- **Before the fix:** the first landing took 34 s of silence, then reposition detection (Fall 4) classified the 8' landing error as
+  "likely a deliberate reposition or a disturbance", the 45 s confirmation timed out and the refine only ran as a "revert to
+  the held target". About 70 s from GoTo to 0.6'.
+- **Cause:** `handleRepositionDetection()` gated Fall 3/4 with `weCommandedIt`, which covers SLEWING but not SETTLING, although the
+  comment above it says "SLEWING/SETTLING". SETTLING (the arrival verification with the Sync + re-Goto refine) was preempted every
+  tick the drift could be measured and the landing error exceeded what passive sky motion allows since the last confirmed-good time.
+- **Fix:** Fall 3/4 are skipped while our own forward or correct state is SETTLING. Fall 2 (the mount moving without our command) is
+  unchanged. SETTLING is bounded (freshness wait, retry budget), then HOLDING applies reposition detection again.
+- **After the fix:** landing, "Arrival verified ... residual 7.7 arcmin exceeds threshold 2.0 - synced and re-issued Goto" 2 s later,
+  second landing 0.4', verified. About 26 s from GoTo to 0.47' off the target; `TARGET_STATUS` offset 0.47'.
+- Not covered: a hand-paddle move during the few seconds of SETTLING is now refined back like a landing error (it does not ask
+  "Adopt new position?"); to be judged by the owner, see the open question on the issue.

@@ -1664,7 +1664,16 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     // Our own correction is already mid-flight (SLEWING/SETTLING) - let
     // handleGotoForward()/handleAutoCorrectGoto() manage it uninterrupted,
     // don't reclassify a transitional position as anything.
-    if (weCommandedIt)
+    //
+    // weCommandedIt above only covers SLEWING (and our own alignment/recent-command cases). SETTLING - the arrival
+    // verification that follows a slew, which owns the Sync + re-Goto refine of the landing error - was missing here
+    // although this comment always said it was covered: found live 2026-11-26 in the sky simulation (landing error 7-11'),
+    // Fall 4 read the ordinary landing error as a disturbance (drift above what passive sky motion allows since the last
+    // confirmed-good moment), took over for the 45 s confirmation window and the verification never ran; the refine then only
+    // happened as a "revert to the held target" after the timeout. Only this Fall-3/4 classification is gated, Fall 2
+    // (the mount moving without our command) is unchanged. SETTLING is bounded (freshness wait + retry budget), after it
+    // the state is HOLDING and this classification applies again.
+    if (weCommandedIt || m_forwardState == ForwardState::SETTLING || m_correctState == CorrectState::SETTLING)
         return false;
 
     // --- Fall 3 vs Fall 4: no command signal seen, but PiFinder-vs-mount disagree past Threshold. ---
