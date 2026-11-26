@@ -126,6 +126,21 @@ class MountWatcher(threading.Thread):
         self.position = None
         self.error = None
         self._sock = None
+        # Every update arrives here, so a slew too short for a poll to catch is still seen: slew_count counts the starts
+        # (state turns Busy), slew_from is where the mount reported itself just before the latest one.
+        self.slew_count = 0
+        self.slew_from = None
+        self._last_idle = None
+        self._prev_state = None
+
+    def on_update(self, ra_hours, dec_deg, state):
+        if state == "Busy" and self._prev_state != "Busy":
+            self.slew_count += 1
+            self.slew_from = self._last_idle
+        if state != "Busy":
+            self._last_idle = (ra_hours, dec_deg)
+        self._prev_state = state
+        self.position = (ra_hours, dec_deg, state)
 
     def run(self):
         try:
@@ -143,7 +158,7 @@ class MountWatcher(threading.Thread):
                 buffer = buffer[-200000:]
                 for device, name, state, values in vectors:
                     if device == self.device and name == "EQUATORIAL_EOD_COORD" and "RA" in values and "DEC" in values:
-                        self.position = (values["RA"], values["DEC"], state)
+                        self.on_update(values["RA"], values["DEC"], state)
         except OSError as exc:
             self.error = str(exc)
 
@@ -190,15 +205,22 @@ def absorb_sync(prev, cur, offset):
     return (offset[0] - east, offset[1] - north), jump
 
 
-def after_slew(prev_state, state, offset, goto_error):
-    """A GoTo that has just finished (Busy -> not Busy): the scope lands goto_error (east, north arcmin) off the target.
+GOTO_ERROR_REF_DEG = 45.0   # the slew length the --goto-error-* values belong to
+GOTO_ERROR_FLOOR = 0.05     # even a tiny slew lands this fraction of that error off (the mount is not perfect)
+GOTO_ERROR_CAP = 1.5        # and a longer slew does not land more than this multiple off
 
-    Replaces the current misalignment, since that is where the real sky is relative to the mount's reported target. With
-    goto_error None nothing changes.
+
+def landing_error(goto_error, slew_deg, ref_deg=GOTO_ERROR_REF_DEG, floor=GOTO_ERROR_FLOOR):
+    """(east, north) arcmin a finished GoTo lands off its target, or None for a perfect mount.
+
+    goto_error is the error of a slew of ref_deg degrees. It grows with the length of the slew (a real mount points a short
+    corrective slew much better than a long one), never below `floor` of it and never above GOTO_ERROR_CAP times it. An
+    unknown slew length (None) counts as a reference slew.
     """
-    if goto_error is not None and prev_state == "Busy" and state != "Busy":
-        return goto_error, True
-    return offset, False
+    if goto_error is None:
+        return None
+    factor = 1.0 if slew_deg is None or ref_deg <= 0 else max(floor, min(slew_deg / ref_deg, GOTO_ERROR_CAP))
+    return (goto_error[0] * factor, goto_error[1] * factor)
 
 
 def read_target_pixel(config_path=os.path.expanduser("~/PiFinder_data/config.json")):
@@ -263,6 +285,7 @@ def follow(args):
           + f"; misalignment {args.misalign_east:+.1f}' east, {args.misalign_north:+.1f}' north", flush=True)
     offset = (args.misalign_east, args.misalign_north)
     goto_error = (args.goto_error_east, args.goto_error_north) if (args.goto_error_east or args.goto_error_north) else None
+    seen_slews = watcher.slew_count
     prev_look = None
     last = None
     rendered = 0
@@ -282,11 +305,18 @@ def follow(args):
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
             look = (ra2000, dec2000, state)
             offset, jump = absorb_sync(prev_look, look, offset)
-            offset, landed = after_slew(prev_look[2] if prev_look else None, state, offset, goto_error)
             prev_look = look
-            if landed:
-                print(f"{time.strftime('%H:%M:%S')} GoTo finished: the scope landed {offset[0]:+.1f}' east, {offset[1]:+.1f}' north of the target", flush=True)
-                last = None
+            slew_count, slew_from = watcher.slew_count, watcher.slew_from
+            if slew_count > seen_slews and state != "Busy":
+                # a slew started since the last look and the mount is still again: it has landed, however short it was
+                seen_slews = slew_count
+                slew_deg = angular_sep_deg(slew_from[0] * 15.0, slew_from[1], ra_now, dec) if slew_from else None
+                error = landing_error(goto_error, slew_deg, args.goto_error_ref_deg, args.goto_error_floor)
+                if error is not None:
+                    offset = error
+                    print(f"{time.strftime('%H:%M:%S')} GoTo finished ({'?' if slew_deg is None else f'{slew_deg:.2f}'} deg): the scope landed "
+                          f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north of the target", flush=True)
+                    last = None
             if jump is not None:
                 print(f"{time.strftime('%H:%M:%S')} mount reports a SYNC of {jump:.1f}' -> misalignment now "
                       f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north (the sky itself did not move)", flush=True)
@@ -328,8 +358,13 @@ def main(argv=None):
                     help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")
     ap.add_argument("--misalign-north", type=float, default=0.0, metavar="ARCMIN", help="same, towards the north")
     ap.add_argument("--goto-error-east", type=float, default=0.0, metavar="ARCMIN",
-                    help="every finished GoTo lands the scope this far east of its target (simulated pointing error)")
+                    help="a finished GoTo of --goto-error-ref-deg degrees lands the scope this far east of its target "
+                         "(simulated pointing error); shorter slews land proportionally closer, longer ones farther")
     ap.add_argument("--goto-error-north", type=float, default=0.0, metavar="ARCMIN", help="same, towards the north")
+    ap.add_argument("--goto-error-ref-deg", type=float, default=GOTO_ERROR_REF_DEG, metavar="DEG",
+                    help="the slew length the --goto-error-* values belong to (0: every GoTo lands exactly that far off)")
+    ap.add_argument("--goto-error-floor", type=float, default=GOTO_ERROR_FLOOR, metavar="FRACTION",
+                    help="a very short slew still lands this fraction of the error off")
     ap.add_argument("--target-pixel", nargs=2, type=float, metavar=("Y", "X"),
                     help="PiFinder's alignment point (default: read from its config)")
     ap.add_argument("--camera-centre", action="store_true",

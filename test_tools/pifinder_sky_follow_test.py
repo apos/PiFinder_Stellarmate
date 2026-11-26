@@ -122,15 +122,69 @@ class SyncTest(unittest.TestCase):
 
 
 class GotoErrorTest(unittest.TestCase):
-    def test_finished_goto_replaces_the_offset(self):
-        self.assertEqual(f.after_slew("Busy", "Ok", (0.5, 0.3), (8.0, -5.0)), ((8.0, -5.0), True))
+    def test_reference_slew_lands_the_full_error_off(self):
+        self.assertEqual(f.landing_error((8.0, -5.0), 45.0, 45.0, 0.05), (8.0, -5.0))
 
-    def test_nothing_else_does(self):
-        self.assertEqual(f.after_slew("Ok", "Ok", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
-        self.assertEqual(f.after_slew("Busy", "Busy", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
-        self.assertEqual(f.after_slew("Busy", "Ok", (0.5, 0.3), None), ((0.5, 0.3), False))
-        self.assertEqual(f.after_slew(None, "Ok", (0.5, 0.3), (8.0, -5.0)), ((0.5, 0.3), False))
+    def test_the_error_grows_with_the_slew(self):
+        e = f.landing_error((8.0, -5.0), 22.5, 45.0, 0.05)
+        self.assertAlmostEqual(e[0], 4.0)
+        self.assertAlmostEqual(e[1], -2.5)
 
+    def test_a_short_corrective_slew_lands_close_but_not_exactly(self):
+        e = f.landing_error((8.0, -5.0), 0.15, 45.0, 0.05)  # about 9': the floor applies
+        self.assertAlmostEqual(e[0], 0.4)
+        self.assertAlmostEqual(e[1], -0.25)
+
+    def test_a_very_long_slew_is_capped(self):
+        e = f.landing_error((8.0, -5.0), 170.0, 45.0, 0.05)
+        self.assertAlmostEqual(e[0], 8.0 * f.GOTO_ERROR_CAP)
+
+    def test_unknown_length_counts_as_a_reference_slew(self):
+        self.assertEqual(f.landing_error((8.0, -5.0), None, 45.0, 0.05), (8.0, -5.0))
+
+    def test_reference_zero_means_a_fixed_error(self):
+        self.assertEqual(f.landing_error((8.0, -5.0), 0.15, 0.0, 0.05), (8.0, -5.0))
+
+    def test_a_perfect_mount_has_none(self):
+        self.assertIsNone(f.landing_error(None, 10.0))
+
+    def test_refining_converges(self):
+        """Sync to the real position, then GoTo the target again: each corrective slew is shorter, so the error shrinks."""
+        error, steps = (8.0, -5.0), []
+        for slew_deg in (45.0, 9.4 / 60.0, 0.5 / 60.0):
+            error = f.landing_error((8.0, -5.0), slew_deg, 45.0, 0.05)
+            steps.append(math.hypot(*error))
+        self.assertGreater(steps[0], 9.0)
+        self.assertLess(steps[1], 1.0)
+        self.assertLess(steps[2], steps[1] + 1e-9)
+
+
+class WatcherTest(unittest.TestCase):
+    """A slew too short for a poll to catch is still seen: the watcher gets every update."""
+
+    def test_counts_every_slew_start_and_remembers_where_it_came_from(self):
+        w = f.MountWatcher("x")
+        w.on_update(16.0, 36.0, "Ok")
+        self.assertEqual((w.slew_count, w.slew_from), (0, None))
+        w.on_update(16.0, 36.1, "Busy")
+        w.on_update(16.01, 36.2, "Busy")  # still the same slew
+        w.on_update(16.02, 36.3, "Ok")
+        self.assertEqual((w.slew_count, w.slew_from), (1, (16.0, 36.0)))
+        w.on_update(16.02, 36.3, "Busy")   # a second, very short one
+        w.on_update(16.0201, 36.3, "Ok")
+        self.assertEqual((w.slew_count, w.slew_from), (2, (16.02, 36.3)))
+
+    def test_a_sync_is_not_a_slew(self):
+        w = f.MountWatcher("x")
+        w.on_update(16.0, 36.0, "Ok")
+        w.on_update(16.2, 36.0, "Ok")  # the position jumps, the state stays Ok
+        self.assertEqual(w.slew_count, 0)
+        self.assertEqual(w.position, (16.2, 36.0, "Ok"))
+
+    def test_the_first_look_may_already_be_busy(self):
+        w = f.MountWatcher("x")
+        w.on_update(16.0, 36.0, "Busy")
+        self.assertEqual((w.slew_count, w.slew_from), (1, None))
 
 if __name__ == "__main__":
     unittest.main()
