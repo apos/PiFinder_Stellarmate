@@ -19,7 +19,7 @@ ok(T.syncConfirmStep(600, 5, 1, 3).hits === 0, 'a reading far apart starts the c
 ok(T.syncConfirmStep(null, 5, 1, 3).state === 'wait', 'no position is no confirmation');
 ok(T.syncConfirmStep(600, 5, 0, T.SYNC_CONFIRM_TIMEOUT_S).state === 'fail', 'still apart after the timeout: said so');
 ok(T.syncApartText(10630) === '177\u00b0 apart' && T.syncApartText(0.34) === '0.3\u2032 apart' && T.syncApartText(null) === 'no position yet', 'the distance in words');
-ok(/await confirmSync\('Mount synced to PiFinder'\)/.test(html) && /await confirmSync\(done, doneHint\)/.test(html), 'both sync directions wait for the confirmation');
+ok(/await confirmSync\('Mount synced to PiFinder'\)/.test(html) && /await confirmSync\(done, doneHint, doneInjected\)/.test(html), 'both sync directions wait for the confirmation');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sync confirmation tests passed');

@@ -111,6 +111,15 @@ def parse_switch_vectors(buffer: str):
 
 
 MOTION_PROPERTIES = ("TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE")
+
+
+def altitude_deg(ra_hours, dec_deg, lat_deg, lon_deg, now=None):
+    """Altitude of an equatorial position (JNow) above the horizon at the site, in degrees (no refraction)."""
+    days = (time.time() if now is None else now) / 86400.0 + 2440587.5 - 2451545.0
+    hour_angle = math.radians((280.46061837 + 360.98564736629 * days + lon_deg - ra_hours * 15.0) % 360.0)
+    dec, lat = math.radians(dec_deg), math.radians(lat_deg)
+    s = math.sin(dec) * math.sin(lat) + math.cos(dec) * math.cos(lat) * math.cos(hour_angle)
+    return math.degrees(math.asin(max(-1.0, min(1.0, s))))
 MANUAL_SETTLE_SEC = 1.5  # after the last motion switch goes off, positions that were already on their way still count as motion
 
 
@@ -146,6 +155,7 @@ class MountWatcher(threading.Thread):
         super().__init__(daemon=True)
         self.device, self.host, self.port = device, host, port
         self.position = None
+        self.location = None   # (lat, lon) from the mount's GEOGRAPHIC_COORD, None until known (0/0 = never set)
         self.error = None
         self._sock = None
         # Every update arrives here, so a slew too short for a poll to catch is still seen: slew_count counts the starts
@@ -182,7 +192,7 @@ class MountWatcher(threading.Thread):
     def run(self):
         try:
             self._sock = socket.create_connection((self.host, self.port), timeout=10)
-            for prop in ("EQUATORIAL_EOD_COORD",) + MOTION_PROPERTIES:
+            for prop in ("EQUATORIAL_EOD_COORD", "GEOGRAPHIC_COORD") + MOTION_PROPERTIES:
                 self._sock.sendall(f'<getProperties version="1.7" device="{self.device}" name="{prop}"/>'.encode())
             self._sock.settimeout(None)
             buffer = ""
@@ -198,6 +208,9 @@ class MountWatcher(threading.Thread):
                 vectors, buffer = parse_number_vectors(buffer)
                 buffer = buffer[-200000:]
                 for device, name, state, values in vectors:
+                    if device == self.device and name == "GEOGRAPHIC_COORD" and "LAT" in values and "LONG" in values:
+                        if values["LAT"] or values["LONG"]:
+                            self.location = (values["LAT"], values["LONG"])
                     if device == self.device and name == "EQUATORIAL_EOD_COORD" and "RA" in values and "DEC" in values:
                         self.on_update(values["RA"], values["DEC"], state)
         except OSError as exc:
@@ -389,6 +402,7 @@ def follow(args):
     written = None
     lost = False
     settle_until = 0.0
+    was_below = False
     try:
         while args.duration is None or time.time() - started < args.duration:
             if not watcher.is_alive():
@@ -450,6 +464,17 @@ def follow(args):
                       f"{offset[0]:+.1f}' east, {offset[1]:+.1f}' north (the sky itself did not move)", flush=True)
                 last = None
             ra2000, dec2000 = offset_position(ra2000, dec2000, *offset)
+            below = watcher.location is not None and altitude_deg(ra_h, dec, *watcher.location) < 0.0
+            if below:
+                # Like the real sky: below the horizon the camera sees no stars, so PiFinder gets no plate solve there.
+                if not was_below or picture_replaced(args.image, written):
+                    write_atomically(renderer.render([], [], [], size=512, seed=args.seed), args.image)
+                    written = file_signature(args.image)
+                    print(f"{time.strftime('%H:%M:%S')} the mount points below the horizon: no stars", flush=True)
+                was_below, last = True, None
+                time.sleep(args.interval)
+                continue
+            was_below = False
             if picture_replaced(args.image, written):
                 print(f"{time.strftime('%H:%M:%S')} the picture {args.image} was replaced by something else: writing the sky again", flush=True)
                 last = None

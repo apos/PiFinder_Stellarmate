@@ -5287,6 +5287,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(drift)
             return
 
+        if parsed.path == "/api/pifinder_mount_apart":
+            # For the sync confirmation: how far PiFinder's reported position (camera, motion sensor or set) is from the mount's.
+            try:
+                apart = indi_client.pifinder_mount_apart_arcmin()
+            except indi_client.INDIClientError:
+                apart = None
+            self._send_json({"apart_arcmin": apart})
+            return
+
         if parsed.path == "/api/clock_status":
             # Polled every 30 s by the page: the time stamp under the Sky and the yellow clock
             # strip. See clock_status.py for what can and cannot be seen (a KStars on another

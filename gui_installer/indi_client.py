@@ -1469,6 +1469,22 @@ def bridge_binding_state(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, tim
     return props.get("PiFinder Mount Bridge", {}).get("MOUNT_HORIZON_STATUS", {}).get("state") or None
 
 
+def pifinder_mount_apart_arcmin(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """Distance in arcminutes between the position "PiFinder LX200" reports and the Bridge's active mount (both JNow), or None."""
+    mount = bridge_active_mount(host=host, port=port, timeout=timeout)
+    if not mount:
+        return None
+    positions = []
+    for device in ("PiFinder LX200", mount):
+        props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"EQUATORIAL_EOD_COORD"})
+        el = props.get(device, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        try:
+            positions.append((float(el["RA"]), float(el["DEC"])))
+        except (KeyError, TypeError, ValueError):
+            return None
+    return _separation_arcmin(positions[0][0], positions[0][1], positions[1][0], positions[1][1])
+
+
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
     {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None, "tracking": True/False/None}.
