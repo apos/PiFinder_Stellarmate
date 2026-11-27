@@ -7390,7 +7390,7 @@ function piFinderProbeUrls() {
   // setup" stuck on "not available yet" and the OLED mirror frozen, even
   // though the fake instance was reachable the whole time, just on a port
   // this probe never looked at.
-  return [`http://${host}/image`, `http://${host}:8080/image`, `http://${host}:8081/image`];
+  return [`http://${host}:8080/image`, `http://${host}/image`, `http://${host}:8081/image`];
 }
 
 function tryPiFinderScreenUrls(urls, index) {
@@ -10103,7 +10103,7 @@ function syncApartArcmin(data) {
   if (sky && sky.mount && sky.pifinder && !sky.pifinder.stale && !sky.mount.stale) return skySep(sky.mount, sky.pifinder) * 60;
   return data && data.running && typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null;
 }
-async function confirmSync(lead) {
+async function confirmSync(lead, failHint) {
   const threshold = parseFloat(readThresholdInputRaw());
   const limit = Math.max(isFinite(threshold) ? threshold : 5, 5);
   const start = Date.now();
@@ -10124,7 +10124,7 @@ async function confirmSync(lead) {
       return true;
     }
     if (step.state === 'fail') {
-      setSyncFeedback('warn', lead + ': NOT confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart) + '. Retry.');
+      setSyncFeedback('warn', lead + ': NOT confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart) + '. ' + (failHint || 'Retry.'));
       return false;
     }
     setSyncFeedback('work', 'Sent, waiting for the confirmation \u2026 ' + secs + ' s', syncApartText(apart));
@@ -10229,6 +10229,7 @@ async function triggerSyncPiFinderFromMount() {
   setSyncFeedback('work', 'Syncing PiFinder to mount …', simulation ? '' : 'up to 2 s');
   let ok = false;
   let done = 'PiFinder synced to mount';   // the lead of the confirmation line, see confirmSync()
+  let doneHint = null;
   try {
     if (simulation) {
       await reseedFakeSolve();
@@ -10244,11 +10245,13 @@ async function triggerSyncPiFinderFromMount() {
       const d = await resp.json();
       if (d.success === true) {
         ok = true;
-        done = 'PiFinder aligned to mount';
+        done = d.method === 'simulation_recentred' ? 'Sky simulation moved to the mount' : 'PiFinder aligned to mount';
       } else {
         const fov = typeof d.fov_deg === 'number' ? d.fov_deg : null;
         const sep = typeof d.separation_deg === 'number' ? d.separation_deg : null;
-        if (d.reason === 'no_solve') {
+        if (d.reason === 'no_solve' || d.reason === 'outside_fov') {
+          // outside_fov: PiFinder cannot align on something it does not see, but the user asked for "PiFinder where the mount
+          // points": its position is set all the same, and the confirmation below says whether the camera agrees.
           // No plate solve (the scope sits in its home position, the camera sees no stars, or it is daylight): the mount knows where it
           // points, so its position is injected into PiFinder as the starting point (the same one-shot as "Re-seed from mount"; it
           // releases itself again, so the real camera solves as soon as there are stars). A real solve replaces it. Found 2026-11-26:
@@ -10260,12 +10263,8 @@ async function triggerSyncPiFinderFromMount() {
           } else {
             ok = true;
             done = 'PiFinder set to the mount\'s position (injected, not a camera solve)';
+            if (d.reason === 'outside_fov') doneHint = 'The camera sees another part of the sky: check that the scope points where the mount says, or use Sync mount from PiFinder.';
           }
-        } else if (d.reason === 'outside_fov') {
-          const edge = fov !== null ? (fov / 2).toFixed(1) : '?';
-          setSyncFeedback('warn', 'Not aligned',
-            sep !== null ? `mount is ${sep.toFixed(1)}° off PiFinder's centre; its field reaches ${edge}°` : 'the mount is outside PiFinder\'s field of view',
-            `The position the mount points at is ${sep !== null ? sep.toFixed(1) + '°' : 'too far'} from the centre of PiFinder's image, which reaches about ${edge}° (field ${fov !== null ? fov.toFixed(1) : '?'}° wide). PiFinder can only align on something it sees. Adjust the PiFinder bracket until the star you centred in the scope shows on PiFinder's screen, then retry.`);
         } else if (d.reason === 'timeout') {
           setSyncFeedback('warn', 'Not aligned', 'the solver gave no alignment pixel within 2 s. Retry.');
         } else if (d.reason === 'fake_solve_active') {
@@ -10286,7 +10285,7 @@ async function triggerSyncPiFinderFromMount() {
     _simStartupMismatch = false;
     _simMismatchAcknowledged = true;
     renderNoSolveBanner();
-    await confirmSync(done);
+    await confirmSync(done, doneHint);
   }
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
   updateSeedControlsEnabled();

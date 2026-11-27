@@ -447,5 +447,52 @@ class SimulatorModelTest(unittest.TestCase):
         self.assertEqual(indi.calls, [])
 
 
+class SwitchingAndRecentreTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.saved = g.STATE_PATH, g.NUDGE_PATH, g._alive
+        g.STATE_PATH = Path(self.dir) / "gsc_sim.json"
+        g.NUDGE_PATH = Path(self.dir) / "nudge.json"
+
+    def tearDown(self):
+        g.STATE_PATH, g.NUDGE_PATH, g._alive = self.saved
+
+    def test_the_watchdog_stays_out_while_somebody_switches(self):
+        import threading
+        answers = []
+        with g.switching():
+            other = threading.Thread(target=lambda: answers.append(g.restore()))
+            other.start()
+            other.join(5)
+        self.assertEqual(answers, ["busy"])
+        self.assertNotEqual(g.restore(), "busy")
+
+    def test_another_process_holds_it_off_too(self):
+        code = ("import sys, time; sys.path.insert(0, %r); import gsc_sim as g; from pathlib import Path; "
+                "g.STATE_PATH = Path(%r); ctx = g.switching(); ctx.__enter__(); print('held', flush=True); time.sleep(20)"
+                % (os.path.dirname(g.__file__), str(g.STATE_PATH)))
+        child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "held")
+            self.assertEqual(g.restore(), "busy")
+        finally:
+            child.kill()
+            child.wait()
+            child.stdout.close()
+
+    def test_start_and_stop_can_be_nested(self):
+        with g.switching():
+            with g.switching() as free:
+                self.assertTrue(free)
+
+    def test_recentre_only_while_a_simulation_runs(self):
+        g._alive = lambda pid: False
+        self.assertFalse(g.recentre())
+        self.assertFalse(g.NUDGE_PATH.exists())
+        g._alive = lambda pid: True
+        self.assertTrue(g.recentre())
+        self.assertIn("recentre", g.NUDGE_PATH.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

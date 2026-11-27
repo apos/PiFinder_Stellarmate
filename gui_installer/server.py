@@ -803,7 +803,7 @@ def _gps_hardware_present():
         return None
 
 
-def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
+def _pifinder_status_snapshot(ports=("8080", "80", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
     """GETs PiFinder's own /api/status from whichever of `ports` answers
     first (real service on 80/8080, or the fake-hardware instance). Returns
     the parsed dict, or None if none of them are reachable. Shared by the
@@ -4025,6 +4025,12 @@ def _pifinder_align_from_mount(port: str, host: str = "127.0.0.1") -> dict:
         return {"success": False, "reason": "unreachable", "error": f"could not reach PiFinder: {e}"}
     data["mount_ra_deg"] = ra_deg
     data["mount_dec_deg"] = dec_deg
+    # PiFinder can only align on something its camera sees. In the sky simulation the "camera" is our rendered picture: if it shows
+    # another part of the sky, the picture is wrong, and what the user asked for - PiFinder where the mount points - is reached by
+    # rendering the sky there again (direct feedback, 2026-11-27: a sensible action must not just be refused).
+    if data.get("reason") == "outside_fov" and host in ("127.0.0.1", "localhost") and gsc_sim.recentre():
+        _mb_log("Sync PiFinder from mount: the simulated sky was elsewhere - rendering it at the mount's position again.")
+        return {"success": True, "method": "simulation_recentred", "mount_ra_deg": ra_deg, "mount_dec_deg": dec_deg}
     return data
 
 

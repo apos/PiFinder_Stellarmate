@@ -33,6 +33,20 @@ size_t discardResponse(char *, size_t size, size_t nmemb, void *)
     return size * nmemb;
 }
 
+// libcurl's verdict on the last request to PiFinder. Port 80 is only tried when nothing at all listens on 8080: on StellarMate port
+// 80 is nginx/EkosLive, so asking it whenever PiFinder had no answer yet (no solve, an unpatched endpoint) only reached the wrong
+// service. A PiFinder on its own operating system has nothing on 8080 - the connection is refused - and is reached on 80.
+static CURLcode g_lastPiFinderResult = CURLE_OK;
+static CURLcode performPiFinderRequest(CURL *curl)
+{
+    g_lastPiFinderResult = curl_easy_perform(curl);
+    return g_lastPiFinderResult;
+}
+static bool nothingOn8080()
+{
+    return g_lastPiFinderResult == CURLE_COULDNT_CONNECT;
+}
+
 // Single-threaded INDI driver (TimerHit callback style) - no explicit
 // curl_global_init() needed, curl_easy_init() does it lazily on first use.
 bool httpPostMountType(const std::string &url, const std::string &mountType)
@@ -53,7 +67,7 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
@@ -88,7 +102,7 @@ bool httpPostPositioning(const std::string &url, const std::string &phase, int a
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
@@ -123,7 +137,7 @@ bool httpPostKeepAwake(const std::string &url)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
@@ -185,7 +199,7 @@ bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -237,7 +251,7 @@ bool httpGetPiFinderAlignEvent(const std::string &url, double &alignTime, double
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -310,7 +324,7 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 800L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -511,8 +525,8 @@ bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinde
     const bool ok =
         httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec,
                                          &primaryHttpFailed, solveEpochOut) ||
-        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
-                                         &fallbackHttpFailed, solveEpochOut);
+        (nothingOn8080() && httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
+                                         &fallbackHttpFailed, solveEpochOut));
 
     s_lastFailureTime = (!ok && primaryHttpFailed && fallbackHttpFailed) ? now : 0;
     return ok;
@@ -542,7 +556,7 @@ bool httpGetPiFinderOrientation(const std::string &url, std::string &mountType, 
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -584,7 +598,7 @@ bool httpGetPiFinderLocation(const std::string &url, double &lat, double &lon)
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -654,7 +668,7 @@ bool httpGetNearbyBrightStars(const std::string &url, double radius, int count, 
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -723,7 +737,7 @@ bool isPiFinderSolveFresh(double maxAgeSeconds, const std::string &piFinderHost)
     std::string solveSource;
     double lastSolveSuccess = 0.0;
     const bool ok = httpGetPiFinderSolveStatus("http://" + piFinderHost + ":8080/api/status", solveSource, lastSolveSuccess) ||
-                    httpGetPiFinderSolveStatus("http://" + piFinderHost + "/api/status", solveSource, lastSolveSuccess);
+                    (nothingOn8080() && httpGetPiFinderSolveStatus("http://" + piFinderHost + "/api/status", solveSource, lastSolveSuccess));
     if (!ok || solveSource != "CAM" || lastSolveSuccess <= 0.0)
         return false;
 
@@ -1273,7 +1287,7 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     // gui_installer status page already uses for its OLED mirror.
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     if (httpPostMountType("http://" + piFinderHost + ":8080/api/set_mount_type", mountType) ||
-        httpPostMountType("http://" + piFinderHost + "/api/set_mount_type", mountType))
+        (nothingOn8080() && httpPostMountType("http://" + piFinderHost + "/api/set_mount_type", mountType)))
     {
         LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
         m_lastSyncedMountType = mountType;
@@ -1289,7 +1303,7 @@ void PiFinderMountBridge::keepPiFinderAwake()
     // mechanism existed.
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     httpPostKeepAwake("http://" + piFinderHost + ":8080/api/keep_awake") ||
-        httpPostKeepAwake("http://" + piFinderHost + "/api/keep_awake");
+        (nothingOn8080() && httpPostKeepAwake("http://" + piFinderHost + "/api/keep_awake"));
 }
 
 void PiFinderMountBridge::syncOrientationStatus()
@@ -1316,7 +1330,7 @@ void PiFinderMountBridge::syncOrientationStatus()
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool gotOrientation =
         httpGetPiFinderOrientation("http://" + piFinderHost + ":8080/api/orientation_status", piFinderMountType, screenDirection) ||
-        httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection);
+        (nothingOn8080() && httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection));
     s_lastOrientationFailureTime = gotOrientation ? 0 : nowOrientation;
     if (!gotOrientation)
         return; // PiFinder unreachable this tick - leave the last-known values/state showing rather than blank them
@@ -1596,7 +1610,7 @@ void PiFinderMountBridge::publishPositioningStatus()
             const std::string host = SettingsT[PIFINDER_HTTP_HOST].text;
             const int attemptsMax = static_cast<int>(PositioningStatusN[POSITIONING_ATTEMPTS_MAX].value);
             const bool ok = httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg) ||
-                            httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg);
+                            (nothingOn8080() && httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg));
             s_lastFailure = ok ? 0.0 : now;
             if (ok)
             {
@@ -1993,7 +2007,7 @@ void PiFinderMountBridge::handlePiFinderAlignSync()
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool haveAlign =
         httpGetPiFinderAlignEvent("http://" + piFinderHost + ":8080/api/status", alignTime, alignRA, alignDec) ||
-        httpGetPiFinderAlignEvent("http://" + piFinderHost + "/api/status", alignTime, alignRA, alignDec);
+        (nothingOn8080() && httpGetPiFinderAlignEvent("http://" + piFinderHost + "/api/status", alignTime, alignRA, alignDec));
     if (!haveAlign)
         return;
 
@@ -2623,7 +2637,7 @@ bool PiFinderMountBridge::resolveObserverLocation(double &lat, double &lon)
     {
         const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
         known = httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", la, lo) ||
-                httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", la, lo);
+                (nothingOn8080() && httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", la, lo));
         if (known)
             source = "PiFinder GPS";
     }
@@ -3671,8 +3685,8 @@ bool PiFinderMountBridge::fetchAlignmentCandidates()
     const bool ok =
         httpGetNearbyBrightStars("http://" + piFinderHost + ":8080/api/nearby_bright_stars", radius, count, minAltitude,
                                   direction, m_alignPoints, m_alignPointNames, error) ||
-        httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
-                                  direction, m_alignPoints, m_alignPointNames, error);
+        (nothingOn8080() && httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
+                                  direction, m_alignPoints, m_alignPointNames, error));
     if (!ok)
     {
         LOGF_ERROR("Multi-Point Alignment: could not get candidate points from PiFinder (%s).", error.c_str());
@@ -3916,7 +3930,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.
                 double piRA, piDec;
                 if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                    (nothingOn8080() && httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)))
                 {
                     if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
                         LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
@@ -4087,7 +4101,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 const bool haveFreshCamPosition =
                     m_client->isReady() &&
                     (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                     httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec));
+                     (nothingOn8080() && httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)));
                 if (!haveFreshCamPosition)
                 {
                     LOG_ERROR("Not ready, or no fresh PiFinder camera solve available - not sending a manual correction off a guess.");
@@ -4191,7 +4205,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // separate, laggier INDI mirror.
                 double piRA, piDec;
                 if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                    (nothingOn8080() && httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)))
                 {
                     m_lastForwardedRA = piRA;
                     m_lastForwardedDec = piDec;
@@ -4220,7 +4234,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // HTTP-backed read as the Yes branch above.
                 double piRA, piDec;
                 if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                    (nothingOn8080() && httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec)))
                 {
                     // Same fix as the timeout path above (see its comment) -
                     // route through the normal SLEWING state so the existing

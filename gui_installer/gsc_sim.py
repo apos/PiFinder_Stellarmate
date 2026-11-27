@@ -9,6 +9,9 @@ way while the simulation runs (it would show a stale second PiFinder in KStars).
 Everything that touches the system takes its paths from the module constants, so the tests can point them at a temporary directory.
 """
 import json
+import contextlib
+import fcntl
+import threading
 import os
 import shutil
 import signal
@@ -41,6 +44,9 @@ LANDING_LABELS = {
     "large": "large (16′ E / 10′ S)",
 }
 FOLLOWER_MARK = "pifinder_sky_follow.py"
+NUDGE_PATH = Path(os.path.expanduser("~/.pfsm/gsc_sim_nudge.json"))   # the follower's NUDGE_FILE
+_switch_lock = threading.RLock()
+_switch_depth = 0
 
 
 def availability():
@@ -154,6 +160,45 @@ SIMULATOR_MODEL_SWITCHES = (
 )
 
 
+def recentre():
+    """Render the sky where the mount points again (drops the follower's offset). False if no simulation is running."""
+    if not _alive(read_state().get("pid")):
+        return False
+    NUDGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    NUDGE_PATH.write_text('{"recentre": true}')
+    return True
+
+
+@contextlib.contextmanager
+def switching(blocking=True):
+    """Held while the simulation is started, stopped or restarted - across processes. Without it the watchdog saw the follower gone in
+    the middle of a stop/start and started a second one; the two painted over each other (found 2026-11-27). Re-entrant.
+    Yields False (only with blocking=False) if somebody else is switching."""
+    global _switch_depth
+    if not _switch_lock.acquire(blocking=blocking):
+        yield False
+        return
+    handle = None
+    try:
+        if _switch_depth == 0:
+            STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(str(STATE_PATH) + ".lock", "a")
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            except BlockingIOError:
+                yield False
+                return
+        _switch_depth += 1
+        try:
+            yield True
+        finally:
+            _switch_depth -= 1
+    finally:
+        if handle is not None:
+            handle.close()   # closing drops the file lock
+        _switch_lock.release()
+
+
 def prepare_simulator_mount(device, indi):
     """Give the Telescope Simulator a sound mount model. Only for the simulator - a real mount's alignment is never touched.
     Returns a warning text or None."""
@@ -169,6 +214,11 @@ def prepare_simulator_mount(device, indi):
 
 
 def start(landing="typical", device=DEFAULT_MOUNT, indi=None, popen=subprocess.Popen):
+    with switching():
+        return _start(landing, device, indi, popen)
+
+
+def _start(landing, device, indi, popen):
     """Start the simulation: the follower, Test Mode, and the old PiFinder Simulator device disconnected.
 
     `indi` is the indi_client module (or a stand-in): only disconnect_device() is used. Returns the status dict, with a "warnings"
@@ -240,6 +290,11 @@ def _stop_follower(pid, wait=8.0):
 
 
 def stop(indi=None, wait=8.0):
+    with switching():
+        return _stop(indi, wait)
+
+
+def _stop(indi, wait):
     """Stop the simulation: the follower (it puts PiFinder's original test picture back), Test Mode if the simulation switched it on,
     and the old PiFinder Simulator device back on if the simulation disconnected it."""
     state = read_state()
@@ -357,6 +412,13 @@ def _follow_changed_mount(state, indi, popen, now, mount_answers, active_mount):
 
 
 def restore(indi=None, popen=subprocess.Popen, now=time.time, mount_answers=indi_device_answers, active_mount=None):
+    with switching(blocking=False) as free:
+        if not free:
+            return "busy"   # somebody is switching the simulation right now
+        return _restore(indi, popen, now, mount_answers, active_mount)
+
+
+def _restore(indi, popen, now, mount_answers, active_mount):
     """Keep the simulation the way it was last chosen, across updates, crashes and reboots.
 
     The state file exists from "start" until "stop" - it is the memory of what the user wants. So:
