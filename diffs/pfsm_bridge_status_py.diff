@@ -1,6 +1,6 @@
 --- python/PiFinder/pfsm_bridge_status.py.orig
 +++ python/PiFinder/pfsm_bridge_status.py
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,146 @@
 +"""PiFinder_Stellarmate: what the Mount Bridge is doing to get the scope onto the target, shown on PiFinder's screen.
 +
 +After a GoTo the Mount Bridge slews, waits for a PiFinder solve, refines and verifies. While it does, the user must keep
@@ -9,7 +9,7 @@
 +separate processes.
 +
 +Fail safe: a "hands off" status that is not renewed within FRESH_SEC (the Bridge keeps posting every few seconds while it works)
-+is ignored, so a stopped or lost Bridge can never leave "HANDS OFF" stuck on the screen.
++is ignored, so a stopped or lost Bridge can never leave "MOUNT MOVING" stuck on the screen.
 +"""
 +import json
 +import os
@@ -20,6 +20,7 @@
 +FRESH_SEC = 8.0        # a hands-off status older than this is not trusted
 +SHOW_DONE_SEC = 12.0   # how long "on target" stays in the title bar
 +SHOW_GAVE_UP_SEC = 20.0
++WARNING_PREFIX = "MOUNT OFF"
 +PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "HOLDING")
 +HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING")
 +
@@ -119,13 +120,21 @@
 +    if not data:
 +        return None
 +    if data["hands_off"]:
-+        return ("HANDS OFF", True)
++        return ("MOUNT MOVING", True)
 +    if data["phase"] == "ON_TARGET":
 +        return ("ON TARGET", False)
 +    if data["phase"] == "GAVE_UP":
++        # The number is how far the mount and PiFinder are apart - PiFinder's own push-to numbers may well read zero.
 +        residual = data["residual_arcmin"]
-+        return ("Hand OK %s'" % (("%.1f" if residual < 10 else "%.0f") % residual), False)
++        if residual >= 60:
++            return (WARNING_PREFIX + " %.0f°" % (residual / 60.0), False)
++        return (WARNING_PREFIX + " %s'" % (("%.1f" if residual < 10 else "%.0f") % residual), False)
 +    return None
++
++
++def is_warning(banner):
++    """True for the title bar text that reports mount and PiFinder apart: drawn bright on black across the whole bar."""
++    return bool(banner) and banner[0].startswith(WARNING_PREFIX)
 +
 +
 +def register(app):

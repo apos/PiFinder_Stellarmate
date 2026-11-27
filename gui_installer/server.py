@@ -1592,8 +1592,8 @@ _mount_silence = _MountSilenceTracker()
 
 def _mount_silence_for(status: dict) -> dict:
     """Silence verdict for the mount named in a mount_bridge_status() result,
-    plus whether it is parked ("parked": True/False/None). A failed or slow read
-    counts as "no information", never as silence."""
+    plus whether it is parked ("parked": True/False/None), tracking ("tracking": True/False/None) and the state INDI gives the
+    coordinates ("coord_state", "Busy" while slewing). A failed or slow read counts as "no information", never as silence."""
     device = status.get("active_mount")
     if not device or status.get("mount_connected") is not True:
         out = _mount_silence.update(device, status.get("mount_connected"), None)
@@ -1605,6 +1605,8 @@ def _mount_silence_for(status: dict) -> dict:
         return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
     out = _mount_silence.update(device, True, state["coords"], coord_state=state.get("coord_state"))
     out["parked"] = state["parked"]
+    out["tracking"] = state.get("tracking")
+    out["coord_state"] = state.get("coord_state")
     return out
 
 
@@ -7152,7 +7154,7 @@ class Handler(BaseHTTPRequestHandler):
             # trigger_reposition_revert()'s own docstring for why this is
             # PushTo-safe (verified live, doesn't touch PiFinder's own
             # push-to counter/target).
-            _mb_log("reverting to the held target now...")
+            _mb_log("reverting to the target now...")
             try:
                 indi_client.trigger_reposition_revert()
             except indi_client.INDIClientError as e:
@@ -7289,7 +7291,7 @@ class Handler(BaseHTTPRequestHandler):
             # when the mount was physically disturbed (bumped, a
             # friction-clutch slip, overbalance) and PiFinder's own live
             # solve reflects that same disturbance, not the original intent.
-            _mb_log("sending mount back to the held target...")
+            _mb_log("sending mount back to the target...")
             try:
                 indi_client.trigger_goto_held()
             except indi_client.INDIClientError as e:
@@ -7307,7 +7309,7 @@ class Handler(BaseHTTPRequestHandler):
             # about "what am I pushed-to" rather than the mount, so a later
             # Mount Bridge restart doesn't re-read PiFinder's still-wrong
             # target as its recovery baseline and slew the mount right back.
-            _mb_log("sending held target to PiFinder...")
+            _mb_log("sending the target to PiFinder...")
             try:
                 indi_client.trigger_align_held()
             except indi_client.INDIClientError as e:

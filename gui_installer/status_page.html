@@ -1390,6 +1390,18 @@
   #mb-node-mount-type { font-size: 0.68rem; color: #888; }
   #mb-node-mount-type.orientation-ok { color: #4caf50; }
   #mb-node-mount-type.orientation-alert { color: #e53935; }
+  /* Mount state symbol in the top right corner of the mount node. Side padding on both sides keeps the icon row centred and
+     clear of the symbol. */
+  #mb-node-mount { position: relative; padding-left: 1.5rem; padding-right: 1.5rem; }
+  #mb-mount-state { position: absolute; top: 4px; right: 4px; width: 17px; height: 17px; }
+  #mb-mount-state > [class^="ms-"] { display: none; }
+  #mb-mount-state.tracking, #mb-mount-state.slewing { color: #4caf50; }
+  #mb-mount-state.stopped { color: #f5a623; }
+  #mb-mount-state.parked { color: #e53935; }
+  #mb-mount-state.unknown { color: #777; }
+  #mb-mount-state.tracking .ms-tracking, #mb-mount-state.slewing .ms-tracking, #mb-mount-state.stopped .ms-stopped,
+  #mb-mount-state.parked .ms-parked, #mb-mount-state.unknown .ms-unknown { display: inline; }
+  #mb-mount-state.slewing { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
      color itself is set inline (currentColor is already #f5a623 by then),
      this only adds the animation. */
@@ -2763,6 +2775,15 @@
             <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
             <div class="mb-grp">
             <div class="mb-node" id="mb-node-mount" title="Mount">
+              <!-- Mount state, symbol only: green play = tracking (blinks while slewing), amber pause = stopped, red square =
+                   parked, grey ? = the mount does not say. Set by updateMountStateBadge(). -->
+              <svg id="mb-mount-state" viewBox="0 0 20 20" role="img" aria-label="" style="display:none;">
+                <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <path class="ms-tracking" d="M7 5.5L15 10L7 14.5Z" fill="currentColor"/>
+                <g class="ms-stopped" fill="currentColor"><rect x="6.5" y="5.5" width="2.6" height="9"/><rect x="10.9" y="5.5" width="2.6" height="9"/></g>
+                <rect class="ms-parked" x="6" y="6" width="8" height="8" rx="1" fill="currentColor"/>
+                <text class="ms-unknown" x="10" y="14" text-anchor="middle" font-size="12" fill="currentColor">?</text>
+              </svg>
               <div class="orientation-icon-row">
                 <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
                   <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
@@ -2783,7 +2804,7 @@
              profile (Dobsonian), where the diagram is hidden. -->
         <div id="mb-sky-col">
         <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
-             the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
+             the Target and the Hold position are. Display only; hidden until there is data. Own block below
            the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
            profile (Dobsonian) where the diagram is hidden. -->
         <div id="sky-panel" style="display:none;">
@@ -2793,7 +2814,7 @@
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
           </div>
         </div>
-        <!-- One card for every state under the picture: the headline with Hands off/free, the four-step band, one line, one reason, and the
+        <!-- One card for every state under the picture: the headline (plus "Don't touch the mount" while it moves), the four-step band, one line, one reason, and the
              buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
              never shown) and the Bridge's positioning status. -->
         <div id="sky-card"></div>
@@ -2855,11 +2876,11 @@
             <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
-            <div class="mb-qa-group-label">Held target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the held target? The target the Mount Bridge currently remembers: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
+            <div class="mb-qa-group-label">Target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the target? The position the Mount Bridge keeps and returns to: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
             <div class="mb-row" id="mb-big-actions-row">
-          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
-          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
-          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the held target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Held Target Now</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Target</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Target</button>
+          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Target Now</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
             </div>
           </div>
@@ -2943,7 +2964,7 @@
               </div>
             </div>
             <div class="mb-coupling-group">
-              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
+              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the current target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
               <div class="mb-coupling-group-buttons">
                 <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
               </div>
@@ -8355,7 +8376,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
       busy
         ? `Correcting the mount now - drift ${formatDrift(driftArcmin)} exceeds ${threshold}'`
         : unverified
-        ? "PiFinder hasn't produced a fresh solve recently - can't confirm the mount is still on the held target"
+        ? "PiFinder hasn't produced a fresh solve recently - can't confirm the mount is still on the target"
         : exceeded
         ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting (the Solve badge above can still show green here - it has no age limit of its own, see its tooltip)`
         : `Holding target - drift ${driftArcmin !== null ? formatDrift(driftArcmin) : '0.0\''} within ${threshold}'`
@@ -8367,7 +8388,33 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   return true;
 }
 
+// The mount's state as one word, from /api/mount_bridge_status: null hides the symbol (no linked, connected mount).
+function mountStateOf(data) {
+  if (!data.active_mount || data.mount_connected !== true) return null;
+  const ms = data.mount_silence;
+  if (!ms || ms.unknown || ms.silent) return 'unknown';
+  if (ms.parked === true) return 'parked';
+  if (ms.coord_state === 'Busy') return 'slewing';
+  if (ms.tracking === true) return 'tracking';
+  if (ms.tracking === false) return 'stopped';
+  return 'unknown';
+}
+const MOUNT_STATE_TITLES = { tracking: 'Mount is tracking', slewing: 'Mount is slewing', stopped: 'Mount is stopped (not tracking)',
+  parked: 'Mount is parked', unknown: 'Mount state unknown' };
+function updateMountStateBadge(data) {
+  const badge = document.getElementById('mb-mount-state');
+  const state = mountStateOf(data);
+  badge.style.display = state ? '' : 'none';
+  if (!state) return;
+  badge.setAttribute('class', state);
+  badge.setAttribute('aria-label', MOUNT_STATE_TITLES[state]);
+  let title = badge.querySelector('title');
+  if (!title) { title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); badge.prepend(title); }
+  title.textContent = MOUNT_STATE_TITLES[state];
+}
+
 function updateMbDiagram(data) {
+  updateMountStateBadge(data);
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
@@ -8954,6 +9001,7 @@ function setMbStatusInapplicable(text) {
   setMbStatusUnconfirmed(false);
   document.getElementById('mount-bridge-dot').className = 'status-dot dot-white';
   document.getElementById('mount-bridge-text').textContent = text;
+  document.getElementById('mb-mount-state').style.display = 'none';
   updateWmCouplingGate();
   refreshWmActiveButton();
   refreshConnectButtons();
@@ -9246,7 +9294,7 @@ function skyMountStyle(state) {
 }
 // The Bridge's positioning status (POSITIONING_STATUS / POSITIONING_PHASE) as what the line under the picture says.
 // null: nothing to say (no status, an older driver, or idle). Wording agreed with the owner (docs/concepts/
-// mount_bridge_target_transparency.md section 12): "Hands off" from the start of the slew until the arrival is verified.
+// mount_bridge_target_transparency.md section 12): "Don't touch the mount" from the start of the slew until the arrival is verified.
 function skyPositioningModel(p) {
   if (!p || !p.phase || p.phase === 'IDLE') return null;
   const arc = (v) => v.toFixed(1) + '\u2032';
@@ -9408,7 +9456,7 @@ function skyCardModel(m, p, trail, ctx, fb) {
   const high = holding && thr !== null && typeof c.drift === 'number' && c.drift > thr;
   out.tone = m.interrupted || m.tone === 'warn' || m.tone === 'off' || high || captionTone !== 'free' ? (captionTone === 'bad' ? 'bad' : 'warn') : 'free';
   out.head = high ? 'Holding, drift is high' : m.head;
-  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free';
+  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Don\u2019t touch the mount' : '';
   out.band = skyPositioningBand(trail, pp, m);
   const now = skyPositioningNow(pp, m);
   const facts = skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(c, holding));
@@ -9445,7 +9493,7 @@ function skyTargetLine(sky) {
   if (t.fresh === false) s += ' (last value, no fresh solve)';
   if (sky.hold_used !== false && sky.goto && sky.held) {
     const apart = skySep(sky.goto, sky.held);
-    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 held ' + skyFmtOffset(apart * 60) + ' from the target';
+    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 holding ' + skyFmtOffset(apart * 60) + ' from the target';
   }
   return s;
 }
@@ -10223,7 +10271,7 @@ async function triggerManualSync() {
 
 async function triggerGotoHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending mount to held target…');
+  setMbActionStatus('⏳ Sending mount to the target…');
   const btn = document.getElementById('mb-goto-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -10257,7 +10305,7 @@ async function triggerRepositionRevert() {
   btn.dataset.busy = '1';
   btn.disabled = true;
   btn.textContent = 'reverting…';
-  setMbActionStatus('⏳ Reverting to held target…');
+  setMbActionStatus('⏳ Reverting to the target…');
   try {
     const resp = await fetch('/api/mount_bridge_reposition_revert', { method: 'POST' });
     const data = await resp.json();
@@ -10275,7 +10323,7 @@ async function triggerRepositionRevert() {
 
 async function triggerAlignHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending held target to PiFinder…');
+  setMbActionStatus('⏳ Sending the target to PiFinder…');
   const btn = document.getElementById('mb-align-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;

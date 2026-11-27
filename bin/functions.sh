@@ -492,6 +492,11 @@ apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"
   rm -f "${target_file}.rej"
+  # A diff that creates a file ("@@ -0,0 ...") must start without that file: patch cannot tell it was applied before and adds the
+  # content again at the top. After N updates the file held N copies and the OLDEST one, at the bottom, won (found 2026-11-27).
+  if grep -q '^@@ -0,0 ' "$diff_file"; then
+    rm -f "$target_file"
+  fi
   patch -N "$target_file" < "$diff_file"
   if [ -f "${target_file}.rej" ]; then
     add_warning "Patch didn't fully apply: $(basename "$diff_file") -> $target_file (see ${target_file}.rej) - upstream PiFinder likely changed nearby lines; the diff needs regenerating."

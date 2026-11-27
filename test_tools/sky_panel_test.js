@@ -142,7 +142,7 @@ ok(!find(m, 'held'), 'the Hold position is not drawn separately when it is withi
 // farther away: both, and the sentence says by how much
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(58, 200), target: tgt() }));
 ok(find(m, 'held') && find(m, 'held').name === 'Hold position', 'a Hold position well away from the Target is drawn and called Hold position');
-ok(/held 3\.0\u00b0 from the target/.test(m.targetLine), 'the sentence says how far the Hold position is from the Target');
+ok(/holding 3\.0\u00b0 from the target/.test(m.targetLine), 'the sentence says how far the Hold position is from the Target');
 // no Target known, only a held position: it is still drawn, as Hold position
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), held: pt(55, 201) }));
 ok(find(m, 'held') && find(m, 'held').name === 'Hold position' && !find(m, 'goto'), 'only a held position: drawn as Hold position, no Target');
@@ -156,9 +156,9 @@ ok(T.skyTargetLine({ target: tgt({ source: null }) }).startsWith('Target: '), 'u
 ok(T.skyTargetLine({}) === null && T.skyTargetLine(null) === null && T.skyTargetLine({ target: null }) === null, 'no target: no sentence');
 // modes that never use a held target (Verify/Alert, Auto-correct Sync): a leftover Hold position is not shown
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: false }));
-ok(!find(m, 'held') && !/held /.test(m.targetLine), 'a mode without a held target: no Hold position marker, no "held ... from the target"');
+ok(!find(m, 'held') && !/holding /.test(m.targetLine), 'a mode without a held target: no Hold position marker, no "held ... from the target"');
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: true }));
-ok(find(m, 'held') && /held /.test(m.targetLine), 'a mode with a held target: it is shown');
+ok(find(m, 'held') && /holding /.test(m.targetLine), 'a mode with a held target: it is shown');
 ok(!/warn|alert|wrong|error/i.test(T.skyTargetLine({ target: tgt({ offset_arcmin: 300 }) })), 'a large offset is a number, not a warning');
 
 // ---- Positioning status (section 12 of the concept): what the line under the picture says ----
@@ -270,6 +270,12 @@ ok(/else if \(_mbDriftSeenRunning && \+\+_mbDriftMisses < MB_DRIFT_MISSES_BEFORE
   ok(cm.line === 'no Mount Bridge in this profile yet' && cm.badge === 'Bridge off', 'not running: the card says why (no Mount Bridge in this profile yet)');
   const cn = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'not running', statusDot: 'status-dot dot-white' });
   ok(cn.line === 'The Bridge is not running', 'not running: the plain case');
+}
+// the badge says something only while the user must act: "Don't touch the mount" while it is moved, nothing afterwards
+{
+  const card = (o) => { const p = pos(o); return T.skyCardModel(T.skyPositioningModel(p), p, [], { running: true }, {}); };
+  ok(card({ phase: 'SLEWING', hands_off: true }).badge === 'Don\u2019t touch the mount', 'badge while the Bridge moves the mount');
+  ok(card({ phase: 'ON_TARGET', hands_off: false }).badge === '' && card({ phase: 'GAVE_UP', hands_off: false }).badge === '' && card({ phase: 'HOLDING', hands_off: false }).badge === '', 'no badge when the user need not leave the mount alone');
 }
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }

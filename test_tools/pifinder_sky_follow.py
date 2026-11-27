@@ -368,8 +368,15 @@ def follow(args):
     awake_at = 0.0
     awake_ok = None
     written = None
+    lost = False
     try:
         while args.duration is None or time.time() - started < args.duration:
+            if not watcher.is_alive():
+                # An INDI restart (profile stop/start) ends the connection. Going on would leave the picture frozen at the last position
+                # while the page says the simulation runs: end instead, the Control Center's watchdog starts it again (gsc_sim.restore).
+                lost = True
+                print(f"{time.strftime('%H:%M:%S')} lost the connection to INDI ({watcher.error}): ending", flush=True)
+                break
             if not args.no_keep_awake and time.time() - awake_at >= KEEP_AWAKE_EVERY_SEC:
                 awake_at = time.time()
                 ok = keep_awake(args.keep_awake_url)
@@ -424,7 +431,7 @@ def follow(args):
             shutil.copyfile(args.restore, args.image)
             print(f"restored {args.image} from {args.restore}")
     print(f"done, {rendered} pictures written")
-    return 0
+    return 3 if lost else 0
 
 
 def _stop_on_sigterm(signum, frame):
