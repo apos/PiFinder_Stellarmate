@@ -201,6 +201,11 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
 }
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
 {
+  const al = pos({ phase: 'ALIGNING', point: 'point 1 of 2 (Capella)' });
+  const mm = T.skyPositioningModel(al);
+  ok(mm.head === 'Aligning' && mm.handsOff && T.skyPositioningNow(al, mm).join('|') === 'Aligning|point 1 of 2 (Capella)', 'a multi-point alignment is shown as such, with its point');
+}
+{
   const q = T.skyPositioningModel(pos({ phase: 'CHECK_SCOPE', hands_off: false, residual_arcmin: 185 }));
   ok(q.tone === 'warn' && q.head === 'Check the mount: 3\u00b0 apart' && /Nothing moves/.test(q.why), 'an open question is shown as such, not as on target');
 }

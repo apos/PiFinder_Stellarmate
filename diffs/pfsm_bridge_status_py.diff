@@ -23,8 +23,8 @@
 +WARNING_PREFIX = "MOUNT OFF"      # mount and PiFinder are apart
 +OFF_TARGET_PREFIX = "OFF TARGET"   # they agree, away from the GoTo target
 +CHECK_TEXT = "CHECK MOUNT"         # the Bridge has a question: they suddenly differ although the mount did not move
-+PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING", "CHECK_SCOPE")
-+HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING")
++PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING", "CHECK_SCOPE", "ALIGNING")
++HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING", "ALIGNING")
 +
 +_cache = {"mtime": None, "data": None}
 +
@@ -122,7 +122,7 @@
 +    if not data:
 +        return None
 +    if data["hands_off"]:
-+        return ("MOUNT MOVING", True)
++        return ("ALIGNING" if data["phase"] == "ALIGNING" else "MOUNT MOVING", True)
 +    if data["phase"] == "CHECK_SCOPE":
 +        return (CHECK_TEXT, False)
 +    if data["phase"] == "ON_TARGET":

@@ -39,6 +39,11 @@ class BridgeStatusTest(unittest.TestCase):
         self.assertIsNone(m.titlebar(self.path, now=T0 + 60), "a lost Bridge leaves nothing stuck on the screen")
         self.assertLessEqual(len(m.CHECK_TEXT), 13)
 
+    def test_an_alignment_run_is_shown_as_aligning(self):
+        m.write(status("ALIGNING"), self.path, now=T0)
+        self.assertEqual(m.titlebar(self.path, now=T0 + 2), ("ALIGNING", True))
+        self.assertIsNone(m.titlebar(self.path, now=T0 + 60))
+
     def test_clean_accepts_a_status_and_derives_hands_off(self):
         self.assertTrue(m.clean(status("SLEWING"))["hands_off"])
         self.assertTrue(m.clean(status("VERIFYING"))["hands_off"])
