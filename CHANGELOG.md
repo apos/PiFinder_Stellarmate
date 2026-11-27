@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Mount Bridge, OnStep over the network (#658): GoTos started on the hand controller, the OnStep app or SkySafari are followed (the controller's target is read on a second network port, read only), and an alignment running on the controller pauses the Bridge.
 - Control Center: a yellow card for the Mount Bridge's question after a sudden disagreement without mount movement (what happened, what to do, two buttons; PiFinder shows CHECK MOUNT), and a red card and red status when the Bridge does not read its mount or PiFinder (`BRIDGE_BINDING`).
 - Mount Bridge pauses during Ekos alignments (plate solve, polar alignment, mount model); after a solve with a Sync, PiFinder is aligned to the mount's position.
 - README: which GoTo does what (PiFinder, KStars, the StellarMate app's SLEW and GO); concept for aligning PiFinder after an Ekos solve.
@@ -52,6 +53,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 - Multi-Point Alignment: the Bridge's holding check could slew back to the Hold position in the middle of a run when a star was close to it.
 - "Align PiFinder to Hold Position" no longer counts as a push-to that moves the mount; a manual Sync no longer ends the waiting for the next GoTo.
+- Multi-Point Alignment keeps PiFinder awake in every coupling mode; more room between Start and Stop alignment.
 - The warning "PiFinder has drifted ... from the Hold position" is not logged while the mount is meant to be elsewhere (slewing, aligning, waiting).
 - Control Center, Multi-Point Alignment: room between the rows; the first direction button starts under the search radius field.
 - During a Multi-Point Alignment the card says "Aligning" with the point and "Don't touch the mount", PiFinder "ALIGNING" (before: the earlier GoTo's "On target").

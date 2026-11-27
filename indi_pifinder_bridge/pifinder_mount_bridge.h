@@ -15,6 +15,7 @@
 #pragma once
 
 #include "defaultdevice.h"
+#include "onstep_watcher.h"
 
 #include <cmath>
 #include <limits>
@@ -965,6 +966,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ITextVectorProperty BindingTP;
         IText BindingT[1];
         void publishBinding();
+
+        // A GoTo started on an OnStep hand controller or app never appears in INDI (#658): it is read from the controller
+        // (onstep_watcher.h), as is an alignment running there - during that the Bridge neither moves nor syncs the mount,
+        // because OnStep counts a Sync as an alignment star.
+        OnStepWatcher m_onstep;
+        bool m_onstepAligning = false;
+        static constexpr double CONTROLLER_GOTO_DELAY_SEC = 1.5;  // time for INDI to report the same GoTo
+        static constexpr double CONTROLLER_GOTO_KNOWN_SEC = 30.0;
+        ITextVectorProperty OnStepWatchTP;
+        IText OnStepWatchT[1];
+        void handleOnStepController();
 
         // Where the mount was when a hold began, and whether a GoTo was sent while held: an alignment that moved the mount
         // without any command (turned by hand controller) is one the Bridge keeps off after, too.

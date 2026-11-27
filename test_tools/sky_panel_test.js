@@ -201,6 +201,10 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
 }
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
 {
+  const o = T.skyPositioningModel(pos({ phase: 'ALIGNING', hands_off: false }));
+  ok(o.head === 'Aligning' && o.sub === 'on the OnStep controller' && !o.handsOff && /neither moves nor syncs/.test(o.why), 'an alignment on the controller: the Bridge only waits');
+}
+{
   const w = T.skyPositioningModel(pos({ phase: 'WAITING', hands_off: false, residual_arcmin: 3120 }));
   ok(w.head === 'Waiting for the next GoTo' && w.sub === '52\u00b0 from the Hold position' && !w.handsOff, 'waiting: says so, with the distance, and does not claim to hold');
 }

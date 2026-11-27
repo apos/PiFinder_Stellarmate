@@ -389,14 +389,14 @@ der Fahrt wartet die Bridge auf einen Plate-Solve von PiFinder. Sieht PiFinder d
 | KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | ja |
 | KStars / Ekos: Goto auf dem Mount, StellarMate-App **SLEW**, jeder andere INDI-Client | ja |
 | StellarMate-App: **GO** | ja. Zusätzlich macht Ekos eine Aufnahme durch die **Teleskopkamera** und löst sie, s. unten "Alignment in Ekos" |
-| OnStep-Handsteuerung oder OnStep-App (Katalog-GoTo) | **noch nicht** ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)): Das Ziel kommt in INDI nicht an. Übernommen wird die Stelle, die PiFinder nach der Fahrt sieht |
+| OnStep-Handsteuerung, OnStep-App oder SkySafari direkt am OnStep-Controller | ja, wenn das Mount **über das Netzwerk** verbunden ist: Die Bridge liest das Ziel des Controllers über einen zweiten Netzwerk-Port, nur lesend ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)). Über USB/seriell nicht: Übernommen wird die Stelle, die PiFinder nach der Fahrt sieht |
 
 **Wird das Objekt nach 3 Versuchen nicht erreicht,** hört die Bridge auf, zeigt `OFF TARGET` und bewegt bis zum nächsten GoTo
 nichts mehr. Dann das Ausrichtungsmodell des Mounts prüfen.
 
 **Von Hand** (Richtungstasten, Pfeile der Handsteuerung): Die neue Position wird übernommen und das Mount auf PiFinder
 abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bewegt (Klemmung offen, Teleskop angestoßen),
-fragt die Bridge nach - derzeit nur im INDI-Log - und fährt ohne Antwort nach 45 s zurück.
+zeigt das Control Center eine gelbe Karte mit der Frage; bis zur Antwort bewegt sich nichts.
 
 **Stopp**: Nach einem Abort in KStars/Ekos bewegt die Bridge das Mount erst wieder beim nächsten GoTo. "Stop movement" im
 Control Center schaltet zusätzlich die Kopplung aus.
@@ -410,7 +410,9 @@ oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.
 | Nothing, gelöst | unverändert | bewegt nichts bis zum nächsten GoTo |
 | Solve fehlgeschlagen, Mount weder gesynct noch gedreht | unverändert | führt ein laufendes GoTo zu Ende |
 
-Ein Alignment von der OnStep-Handsteuerung oder -App wird noch nicht erkannt.
+Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App, Mount über das Netzwerk verbunden) pausiert die
+Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell wird es
+nicht erkannt.
 
 ## SMOS-Updates
 

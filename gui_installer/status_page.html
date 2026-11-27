@@ -2003,6 +2003,7 @@
   /* Rows with room between them, and the first field / button of both setting rows in one line (direct feedback, 2026-11-27).
      Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
   #mb-multialign-details .mb-row { margin-top: 0.65rem; }
+  #mb-multialign-stop-btn { margin-left: 0.7rem; }   /* Start and Stop apart: no slip of the finger from one to the other */
   #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
   #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
   #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */
@@ -9364,8 +9365,15 @@ function skyPositioningModel(p) {
       m.head = 'Waiting for the next GoTo'; m.sub = skyDistance(p.residual_arcmin) + ' from the Hold position';
       m.why = 'The Bridge moves nothing until the next GoTo, for example after a Multi-Point Alignment.'; break;
     case 'ALIGNING':
-      m.step = 0; m.head = 'Aligning'; m.sub = p.point || 'Multi-Point Alignment';
-      m.why = 'The Bridge moves the mount from point to point and syncs it at each one.'; break;
+      m.step = 0; m.head = 'Aligning';
+      if (p.hands_off) {
+        m.sub = p.point || 'Multi-Point Alignment';
+        m.why = 'The Bridge moves the mount from point to point and syncs it at each one.';
+      } else {   // an alignment on the OnStep controller: the Bridge only waits
+        m.sub = 'on the OnStep controller';
+        m.why = 'An alignment is running on the OnStep controller. The Bridge neither moves nor syncs the mount until it ends.';
+      }
+      break;
     case 'CHECK_SCOPE':
       m.tone = 'warn'; m.head = 'Check the mount: ' + skyDistance(p.residual_arcmin) + ' apart';
       m.sub = 'answer the yellow card';
@@ -9454,7 +9462,7 @@ function skyPositioningFacts(p, m) {
     case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
     case 'GAVE_UP': return [skyDistance(p.residual_arcmin) + ' apart', 'you can steer by hand'];
     case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
-    case 'ALIGNING': return ['the Bridge is moving the mount'];
+    case 'ALIGNING': return [p.hands_off ? 'the Bridge is moving the mount' : 'the Bridge leaves the mount alone'];
     case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
     case 'WAITING': return [skyDistance(p.residual_arcmin) + ' from the Hold position', 'the Bridge moves nothing'];
     default: return [];

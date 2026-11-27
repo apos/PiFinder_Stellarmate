@@ -79,7 +79,16 @@ every GoTo whose coordinates are known, whoever sent it (see §4.1).
 
 ### 4.1 The same refine for a GoTo sent straight to the mount
 
-> **Implemented for GoTos through INDI (2026-11-27), see §13. Still open: a GoTo started on the controller side (#658).**
+> **Implemented for GoTos through INDI (2026-11-27), see §13. Controller side (#658), built 2026-11-27 as "way A": the Mount
+> Bridge reads the controller itself (`indi_pifinder_bridge/onstep_watcher.cpp`), no patch of the INDI driver.** Get commands
+> only (`:GU# :Gr# :Gd# :GR# :GD# :A?#`) once a second, on port 9998, 9997 or 9996 (never the driver's own: each port serves one
+> client, checked on the real controller). GoTo = the target changed and `:GU#` shows a slew, or a slew ends on the unchanged
+> target (the same object again); a Sync, parking and homing are no GoTo; a GoTo also seen through INDI counts once; during an
+> alignment (`:A?#`) the Bridge neither moves nor syncs. Test: `test_tools/onstep_controller_test.py` (stand-in controller).
+> Checked on the real mount (OnStep 10.14a, moves of at most 1.2 deg): hand controller commands detected, an INDI GoTo counted
+> once, a Sync ignored. The mount pointed 30 deg below the horizon then, so the Bridge did not take those targets as Hold
+> position and **the refine run after a controller GoTo has not been seen on the real mount**; neither have the physical hand
+> controller and a real alignment. The text below is the earlier design (driver patch) and is kept for its findings.
 
 Wanted by the project owner: same behaviour whoever initiates the GoTo (hand controller, any INDI client, KStars,
 StellarMate, PiFinder). Today the PiFinder-device path refines to the commanded target and the mount-device path does
