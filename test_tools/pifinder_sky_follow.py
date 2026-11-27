@@ -339,6 +339,22 @@ def picture_replaced(path, written):
     return written is not None and file_signature(path) != written
 
 
+def reconnect(args, wait_sec, retry_sec=1.0):
+    """A new watcher that has the mount's position, or None if INDI or the mount did not come back within wait_sec."""
+    deadline = time.time() + wait_sec
+    while time.time() < deadline:
+        watcher = MountWatcher(args.device, args.host, args.port)
+        watcher.start()
+        while watcher.position is None and watcher.error is None and watcher.is_alive() and time.time() < deadline:
+            time.sleep(0.1)
+        if watcher.position is not None and watcher.is_alive():
+            return watcher
+        if watcher._sock is not None:
+            watcher._sock.close()
+        time.sleep(retry_sec)
+    return None
+
+
 def follow(args):
     watcher = MountWatcher(args.device, args.host, args.port)
     watcher.start()
@@ -373,10 +389,16 @@ def follow(args):
         while args.duration is None or time.time() - started < args.duration:
             if not watcher.is_alive():
                 # An INDI restart (profile stop/start) ends the connection. Going on would leave the picture frozen at the last position
-                # while the page says the simulation runs: end instead, the Control Center's watchdog starts it again (gsc_sim.restore).
-                lost = True
-                print(f"{time.strftime('%H:%M:%S')} lost the connection to INDI ({watcher.error}): ending", flush=True)
-                break
+                # while the page says the simulation runs: connect again. Only if INDI stays away, end - the Control Center's watchdog
+                # then starts the simulation anew (gsc_sim.restore, which allows only a few restarts per ten minutes).
+                print(f"{time.strftime('%H:%M:%S')} lost the connection to INDI ({watcher.error}): connecting again", flush=True)
+                watcher = reconnect(args, args.reconnect_sec)
+                if watcher is None:
+                    lost = True
+                    print(f"{time.strftime('%H:%M:%S')} INDI did not come back within {args.reconnect_sec:.0f} s: ending", flush=True)
+                    break
+                print(f"{time.strftime('%H:%M:%S')} connected again", flush=True)
+                seen_slews, prev_look, last = watcher.slew_count, None, None
             if not args.no_keep_awake and time.time() - awake_at >= KEEP_AWAKE_EVERY_SEC:
                 awake_at = time.time()
                 ok = keep_awake(args.keep_awake_url)
@@ -451,6 +473,7 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=1, help="fixed noise seed: the same field gives the same picture")
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between looks at the mount")
     ap.add_argument("--min-move", type=float, default=0.02, help="degrees the mount must move before a new picture")
+    ap.add_argument("--reconnect-sec", type=float, default=180.0, help="how long to wait for INDI after it closed the connection")
     ap.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: until Ctrl-C)")
     ap.add_argument("--misalign-east", type=float, default=0.0, metavar="ARCMIN",
                     help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")

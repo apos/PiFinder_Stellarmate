@@ -277,34 +277,49 @@ class PictureReplacedTest(unittest.TestCase):
 
 
 class LostConnectionTest(unittest.TestCase):
-    def test_the_follower_ends_when_indi_closes_the_connection(self):
+    VECTOR = (b'<setNumberVector device="M" name="EQUATORIAL_EOD_COORD" state="Ok"><oneNumber name="RA">%s</oneNumber>'
+              b'<oneNumber name="DEC">20.0</oneNumber></setNumberVector>')
+
+    def run_against(self, positions, extra):
+        """A fake INDI server that serves one connection per entry of positions (and closes it after a second), then stays away."""
         import socket as sock
         import tempfile
         import threading
         import time
         server = sock.socket()
         server.bind(("127.0.0.1", 0))
-        server.listen(1)
+        server.listen(4)
+        port = server.getsockname()[1]
 
         def serve():
-            c, _ = server.accept()
-            c.recv(4096)
-            c.sendall(b'<setNumberVector device="M" name="EQUATORIAL_EOD_COORD" state="Ok"><oneNumber name="RA">5.0</oneNumber>'
-                      b'<oneNumber name="DEC">20.0</oneNumber></setNumberVector>')
-            time.sleep(1.0)
-            c.close()
+            for ra in positions:
+                c, _ = server.accept()
+                c.recv(4096)
+                c.sendall(self.VECTOR % ra)
+                time.sleep(1.0)
+                c.close()
+            server.close()
         threading.Thread(target=serve, daemon=True).start()
+        rendered = []
         saved = f.renderer.render_field, f.write_atomically, f.file_signature
-        f.renderer.render_field = lambda *a, **kw: (None, 0)
+        f.renderer.render_field = lambda ra, *a, **kw: (rendered.append(round(ra)) or None, 0)
         f.write_atomically = lambda *a: None
         f.file_signature = lambda path: None
         try:
             with tempfile.TemporaryDirectory() as d:
-                code = f.main(["--device", "M", "--host", "127.0.0.1", "--port", str(server.getsockname()[1]), "--image", d + "/p.png",
-                               "--no-keep-awake", "--interval", "0.2", "--duration", "15"])
+                code = f.main(["--device", "M", "--host", "127.0.0.1", "--port", str(port), "--image", d + "/p.png", "--no-keep-awake",
+                               "--interval", "0.2"] + extra)
         finally:
             f.renderer.render_field, f.write_atomically, f.file_signature = saved
-            server.close()
+        return code, rendered
+
+    def test_the_follower_connects_again_and_follows_the_new_position(self):
+        code, rendered = self.run_against([b"5.0", b"9.0"], ["--reconnect-sec", "10", "--duration", "4"])
+        self.assertEqual(rendered[0], 75)
+        self.assertIn(135, rendered)
+
+    def test_the_follower_ends_when_indi_stays_away(self):
+        code, _ = self.run_against([b"5.0"], ["--reconnect-sec", "2", "--duration", "15"])
         self.assertEqual(code, 3)
 
 
