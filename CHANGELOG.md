@@ -48,6 +48,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- "PiFinder LX200" is reconnected when PiFinder was restarted together with the Control Center (before, it stayed on a dead link and PiFinder got no targets).
+- Mount Bridge: "Adopt this position" syncs the mount to it; before, the same question came back at once.
 - Control Center: restarting the Mount Bridge uses the FIFO of the INDI server it runs on (profiles that mix driver sources run two).
 - Mount Bridge: a mount that started after the Bridge connected, or was selected later, is read again without restarting the driver (#662).
 - Mount Bridge: "Goto to Target" is verified and refined; before, the Bridge took its own slew for somebody else's and kept the landing position.

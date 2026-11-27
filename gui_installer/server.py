@@ -2316,9 +2316,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
         # First observation since this Control Center process started -
         # assume whatever's currently connected is already healthy rather
         # than forcing a reconnect for no reason on every restart of the
-        # Control Center itself.
-        _pifinder_lx200_healed_for_start = current_start
-        return
+        # Control Center itself - unless the driver cannot read PiFinder:
+        # if PiFinder was restarted together with the Control Center (an
+        # update, an install) it still says "connected" over a dead link and
+        # nothing would ever reconnect it (found 2026-11-27: PiFinder got no
+        # targets for 14 minutes).
+        if not (status.get("pifinder_connected") is True and _pifinder_lx200_link_failing()):
+            _pifinder_lx200_healed_for_start = current_start
+            return
+        _pifinder_lx200_healed_for_start = -1
     if current_start == _pifinder_lx200_healed_for_start:
         return
     was_connected = status.get("pifinder_connected") is True
@@ -2353,6 +2359,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
             f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
             "attempting reconnect (#118)"
         )
+
+
+def _pifinder_lx200_link_failing() -> bool:
+    """Whether "PiFinder LX200" currently cannot read PiFinder's position (INDI state Alert)."""
+    try:
+        props = indi_client.get_properties(device="PiFinder LX200", stop_after={"EQUATORIAL_EOD_COORD"})
+    except indi_client.INDIClientError:
+        return False
+    return props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {}).get("state") == "Alert"
 
 
 def _pifinder_lx200_reconnect_watchdog(interval=20):

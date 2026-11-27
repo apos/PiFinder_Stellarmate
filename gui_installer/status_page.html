@@ -10198,7 +10198,7 @@ function bridgeProblemCards(blind, question) {
     items.push({
       id: 'reposition-question', category: 'mount-bridge',
       title: `Mount and PiFinder suddenly differ${apart}`,
-      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position. Not on purpose: send the mount back to the target (it slews).',
+      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the target (it slews).',
       buttons: [
         { label: 'Adopt this position', onclick: 'triggerRepositionAdopt()', action: 'reposition-adopt' },
         { label: 'Back to the target (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },

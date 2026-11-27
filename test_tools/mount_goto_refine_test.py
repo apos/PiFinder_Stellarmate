@@ -161,7 +161,9 @@ def scenario_hand(threshold):
 
 def scenario_stop(threshold):
     here = mount_position()
-    ra, dec = max(targets(), key=lambda t: separation_deg(here[0], here[1], t[0], t[1]))
+    lst = lst_hours(numbers(MOUNT, "GEOGRAPHIC_COORD").get("LONG", 0))
+    far = [((lst - 4.0) % 24, 15.0), ((lst + 4.0) % 24, 15.0)]   # far enough that the stop comes while the mount still slews
+    ra, dec = max(targets() + far, key=lambda t: separation_deg(here[0], here[1], t[0], t[1]))
     run = Run()
     send_coords(MOUNT, "SLEW", ra, dec)
     run.watch(3)
@@ -202,7 +204,8 @@ def scenario_bounded(threshold):
     indi_client.set_number(BRIDGE, "DRIFT_THRESHOLD", {"THRESHOLD_ARCMIN": 0.1})
     try:
         send_coords(MOUNT, "SLEW", ra, dec)
-        ended = run.watch(180, lambda: phase() in ("GAVE_UP", "OFF_TARGET"))
+        # a verdict of the previous run may still be shown: only one reached after this slew counts
+        ended = run.watch(180, lambda: "SLEWING" in run.phases and run.phases[-1] in ("GAVE_UP", "OFF_TARGET"))
         slews = []
 
         def note_slew():

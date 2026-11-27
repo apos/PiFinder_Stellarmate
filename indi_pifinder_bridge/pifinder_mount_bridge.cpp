@@ -4455,9 +4455,24 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     m_correctState = CorrectState::IDLE;
                     m_lastConfirmedGoodTime = time(nullptr);
                     setTargetSource(TARGET_SOURCE_MOUNT);
+                    m_waitForNextGoto = false;
                     LOGF_INFO("Reposition confirmed - adopted (RA %.4fh, DEC %.4f deg) as the new target.",
                               piRA, piDec);
                     RepositionConfirmSP.s = IPS_OK;
+                    // The mount never noticed this movement: its report is set to where PiFinder sees the scope (nothing
+                    // moves). Without this the next tick found the same difference and asked again (found live 2026-11-27).
+                    // The user has just confirmed the position, so the automatic Sync limit does not apply.
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
+                    {
+                        m_lastPolledMountRA = piRA;
+                        m_lastPolledMountDec = piDec;
+                        m_lastPolledMountTime = time(nullptr);
+                    }
+                    else
+                    {
+                        LOG_ERROR("Adopted, but the mount refused the Sync - it still reports the old position.");
+                        RepositionConfirmSP.s = IPS_ALERT;
+                    }
                 }
                 else
                 {
