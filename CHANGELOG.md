@@ -33,7 +33,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
-- Sky simulation: the sky follower ends when INDI closes its connection (profile restart) so the Control Center starts it again; before, PiFinder's picture stayed frozen.
+- Control Center: a profile restart from Ekos or the SMOS app no longer puts every driver into indiserver twice (the Control Center started the profile in the gap between stop and start; it now waits 30 s).
+- Sky picture: names near the edge are no longer cut off ("Mount (stopped").
+- Mount Bridge went silent for about 51 s at a time and the Control Center reacted late (#385): three requests to PiFinder printed the response (an HTML error page from port 80) into the driver's INDI stream. The response is now discarded.
+- Sky simulation: the sky follower connects again when INDI closes its connection (profile restart); before, PiFinder's picture stayed frozen.
 - Installer: patches that create a file no longer append the content again on every update (the oldest copy won, so changes never arrived).
 - Mount Bridge: Auto-correct (Sync) only syncs to a frame exposed after the mount stopped (#659); the reposition detection no longer preempts the arrival verification (SETTLING, #663); nothing impossible reaches the mount, a (re)link never starts a Goto, a late mount driver is bound again; PiFinder LX200 does not republish a target within 1 arcminute of the published one (it started a second slew 30 s after a GoTo).
 - Sky follower: writes the sky again when something replaces PiFinder's test picture (an update put the original back and the simulation never solved).

@@ -9586,7 +9586,8 @@ function skyPlaceNames(markers, notes) {
         const x0 = c[2] === 'end' ? c[0] - w : c[2] === 'middle' ? c[0] - w / 2 : c[0];
         const b = { x0: x0, x1: x0 + w, y0: c[1] - 10, y1: c[1] + 3 };
         let score = ring * 3 + i * 0.1;
-        if (b.x0 < 2 || b.x1 > 238 || b.y0 < 16 || b.y1 > 236) score += 5000;
+        // inside what the picture shows (its viewBox is 14 16 212 216): a name outside it is cut off
+        if (b.x0 < 15 || b.x1 > 225 || b.y0 < 17 || b.y1 > 231) score += 5000;
         obstacles.forEach((o) => { score += skyOverlapArea(b, o) * 10; });
         if (!best || score < best.score) best = { score: score, c: c, b: b };
       });
