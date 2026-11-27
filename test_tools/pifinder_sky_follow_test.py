@@ -276,5 +276,37 @@ class PictureReplacedTest(unittest.TestCase):
         self.assertTrue(f.picture_replaced(self.path, written))
 
 
+class LostConnectionTest(unittest.TestCase):
+    def test_the_follower_ends_when_indi_closes_the_connection(self):
+        import socket as sock
+        import tempfile
+        import threading
+        import time
+        server = sock.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+
+        def serve():
+            c, _ = server.accept()
+            c.recv(4096)
+            c.sendall(b'<setNumberVector device="M" name="EQUATORIAL_EOD_COORD" state="Ok"><oneNumber name="RA">5.0</oneNumber>'
+                      b'<oneNumber name="DEC">20.0</oneNumber></setNumberVector>')
+            time.sleep(1.0)
+            c.close()
+        threading.Thread(target=serve, daemon=True).start()
+        saved = f.renderer.render_field, f.write_atomically, f.file_signature
+        f.renderer.render_field = lambda *a, **kw: (None, 0)
+        f.write_atomically = lambda *a: None
+        f.file_signature = lambda path: None
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                code = f.main(["--device", "M", "--host", "127.0.0.1", "--port", str(server.getsockname()[1]), "--image", d + "/p.png",
+                               "--no-keep-awake", "--interval", "0.2", "--duration", "15"])
+        finally:
+            f.renderer.render_field, f.write_atomically, f.file_signature = saved
+            server.close()
+        self.assertEqual(code, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
