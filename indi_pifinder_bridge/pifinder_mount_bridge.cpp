@@ -3083,6 +3083,37 @@ void PiFinderMountBridge::followMountGoto(double ra, double dec)
     notifyPiFinderOfReposition(ra, dec); // PiFinder shows the same target from the start
 }
 
+// A GoTo the user triggered through the Bridge itself. Without this it ran outside the state machines: a few seconds after
+// sending it, reposition detection took the Bridge's own slew for somebody else's movement, made the landing position the new
+// target and stayed there (found 2026-11-27, "Goto to Target" ended 14' beside the target).
+void PiFinderMountBridge::refineOwnGoto(double ra, double dec)
+{
+    m_externalSlewInProgress = false;
+    if (m_repositionConfirmPending)
+    {
+        m_repositionConfirmPending = false;
+        IUResetSwitch(&RepositionConfirmSP);
+        RepositionConfirmSP.s = IPS_IDLE;
+        IDSetSwitch(&RepositionConfirmSP, nullptr);
+    }
+    if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+    {
+        m_lastForwardedRA = ra;
+        m_lastForwardedDec = dec;
+        m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
+        m_foreignGotoSettling = true; // wait until the mount stands still, as for any other GoTo
+        m_foreignGotoSeenEpoch = nowEpochSeconds();
+        m_forwardState = ForwardState::SLEWING;
+    }
+    else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON)
+    {
+        m_correctTargetRA = ra;
+        m_correctTargetDec = dec;
+        m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
+        m_correctState = CorrectState::SLEWING;
+    }
+}
+
 void PiFinderMountBridge::endRefining(bool stopped)
 {
     const bool forwardBusy = m_forwardState == ForwardState::SLEWING || m_forwardState == ForwardState::SETTLING;
@@ -4295,6 +4326,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     {
                         LOGF_INFO("Manual Goto to target (RA %.4fh, DEC %.4f deg) sent to mount.",
                                   heldRA, heldDec);
+                        refineOwnGoto(heldRA, heldDec);
                         ManualTriggerSP.s = IPS_OK;
                     }
                     else
@@ -4336,6 +4368,11 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                         LOGF_INFO("Manual %s sent to mount.", coordSet);
                         if (!wantGoto)
                             startSyncVerification(piRA, piDec);
+                        else
+                        {
+                            setOriginalTarget(piRA, piDec);
+                            refineOwnGoto(piRA, piDec);
+                        }
                         ManualTriggerSP.s = IPS_OK;
                     }
                     else

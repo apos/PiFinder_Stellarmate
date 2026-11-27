@@ -1373,8 +1373,42 @@ def _ekos_align_status():
 
 _ALIGN_BUSY_STATES = {4, 6, 7, 8, 9}
 _ALIGN_SOLVED_STATES = {1, 5}
-# "successful" is not a resting state in the Sync and slew actions, and polar alignment turns the mount after it: wait longer.
-_ALIGN_SUCCESSFUL_DEBOUNCE_S = 120
+
+
+def _ekos_align_log_head():
+    """The newest line of Ekos' alignment log (it is delivered newest first), or None. A new line means Ekos is at work."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Align", "org.kde.kstars.Ekos.Align.logText"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.split("\n", 1)[0].strip() or None
+
+
+def _alignment_activity(als):
+    """What is observably going on that belongs to an alignment right now, in words, or None. Used to keep a running alignment
+    hold: Ekos' own status, a new line in its alignment log, and the mount being turned by direction motion (how polar alignment
+    moves it, between two images). No fixed waiting time stands in for any of these. (Camera exposures add nothing: measured
+    2026-11-27, they happen only while Ekos is "in progress", and the alignment camera may be the imaging or guide camera.)"""
+    global _align_log_head
+    head = _ekos_align_log_head()
+    new_line = head is not None and _align_log_head is not None and head != _align_log_head
+    if head is not None:
+        _align_log_head = head
+    if als in _ALIGN_BUSY_STATES:
+        return {4: "Ekos is taking or solving an image", 6: "Ekos is syncing the mount", 7: "Ekos is slewing the mount",
+                8: "Ekos is turning the rotator", 9: "Ekos has suspended the alignment"}[als]
+    if indi_client.mount_direction_motion():
+        return "the mount is being turned"
+    if new_line:
+        return "Ekos is working (new alignment log entry)"
+    return None
 
 
 def _align_pifinder_after_solve():
@@ -1462,7 +1496,7 @@ def _guiding_hold_watchdog(interval=3):
 
 def _guiding_hold_watchdog_tick():
     global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
-    global _guiding_hold_adopted_initial_state, _guiding_hold_seen, _align_hold_seen
+    global _guiding_hold_adopted_initial_state, _guiding_hold_seen, _align_hold_seen, _guiding_hold_reason
     if _guiding_hold_supported is False:
         return  # confirmed missing on this build - already logged once, stay quiet
 
@@ -1492,7 +1526,9 @@ def _guiding_hold_watchdog_tick():
     if gs is None and (als is None or _guiding_hold_seen):
         return
     guiding_now = gs is not None and gs not in _GUIDE_SAFE_STATES
-    aligning_now = als in _ALIGN_BUSY_STATES
+    # Only Ekos' own status starts an alignment hold; once started, any alignment activity keeps it.
+    activity = _alignment_activity(als) if als is not None else None
+    aligning_now = als in _ALIGN_BUSY_STATES or (_align_hold_seen and activity is not None)
     if guiding_now:
         _guiding_hold_seen = True
     if aligning_now:
@@ -1502,11 +1538,17 @@ def _guiding_hold_watchdog_tick():
         want_hold = True
     elif _guiding_hold_active:
         _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
-        debounce = _ALIGN_SUCCESSFUL_DEBOUNCE_S if _align_hold_seen and als == 5 else _GUIDING_RELEASE_DEBOUNCE_S
-        want_hold = (time.monotonic() - _guiding_hold_idle_since) < debounce
+        # bridges the gap between two steps (measured: below 1 s between the steps of one solve)
+        want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
     else:
         want_hold = False
-    reason = f"alignment (Ekos AlignState {als})" if aligning_now else f"guiding (Ekos GuideState {gs})"
+    reason = f"alignment: {activity}" if aligning_now else f"guiding (Ekos GuideState {gs})"
+    if want_hold and _guiding_hold_active and aligning_now and reason != _guiding_hold_reason:
+        try:
+            indi_client.set_text("PiFinder Mount Bridge", "EXTERNAL_HOLD_REASON", {"REASON": reason})   # shown on the page
+            _guiding_hold_reason = reason
+        except indi_client.INDIClientError:
+            pass
 
     if want_hold and not _guiding_hold_active:
         # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
@@ -1523,6 +1565,7 @@ def _guiding_hold_watchdog_tick():
             indi_client.set_mount_bridge_external_hold(True, reason)
             _guiding_hold_supported = True
             _guiding_hold_active = True
+            _guiding_hold_reason = reason
             _mb_log(f"Hold: {reason} - the Mount Bridge keeps off the mount.")
         except indi_client.INDIClientError as e:
             if _guiding_hold_supported is None:
@@ -2369,6 +2412,8 @@ _guiding_hold_active = False
 _guiding_hold_idle_since = None
 _guiding_hold_seen = False   # what caused the current hold: guiding, an Ekos alignment, or both
 _align_hold_seen = False
+_align_log_head = None       # newest line of Ekos' alignment log at the last look
+_guiding_hold_reason = None
 # None = not yet determined, True = confirmed present, False = confirmed
 # missing (older Mount Bridge build without #372) - set on the first
 # successful/failed hold attempt, see _guiding_hold_watchdog_tick().

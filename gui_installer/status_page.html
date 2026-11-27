@@ -9301,6 +9301,7 @@ function skyMountStyle(state) {
   if (state === 'parked') return { color: SKY_C.red, word: 'parked' };
   if (state === 'not tracking') return { color: SKY_C.yellow, word: 'stopped' };
   if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
+  if (state === 'slewing') return { color: SKY_C.green, word: 'slewing' };
   return { color: SKY_C.blue, word: null };
 }
 // A distance in words: degrees from 60' on, arcminutes below (the same rule as PiFinder's title bar).

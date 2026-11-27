@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live test: a GoTo sent to the mount is refined like one sent to PiFinder. MOVES THE MOUNT - Telescope Simulator only.
 
-    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder,bounded,hold]
+    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder,bounded,hold,held]
 
 Needs the running Full Simulation: Mount Bridge on the Telescope Simulator in the GoTo coupling and the simulated sky with a landing
 error larger than the threshold ("typical"). Refuses any other mount.
@@ -13,6 +13,7 @@ stop      Stop during a GoTo to the mount: nothing drives on afterwards.
 bounded   A target that cannot be reached (threshold set to 0.1' for this scenario): the attempts end, nothing moves any more.
 hold      An alignment (the hold the Control Center sets): a Sync during it, then released as solved: the Bridge moves and syncs
           nothing afterwards; the next GoTo works again.
+held      "Goto to Target" (the Control Center's button) from elsewhere: ends on the target, which stays the target.
 pifinder  GoTo to the PiFinder device (as KStars does on "PiFinder LX200"): unchanged, ends on target.
 
 Exit 0 = every scenario passed.
@@ -25,6 +26,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gui_installer"))
+import gsc_sim  # noqa: E402
 import indi_client  # noqa: E402
 from mount_model_check import lst_hours, separation_deg  # noqa: E402
 
@@ -237,10 +239,36 @@ def scenario_hold(threshold):
     quiet = check("hold", seen >= 1 and not slews and changed < 3 and not run.asked,
                   "syncs seen during the hold %d, after the release: slewing at %s, mount position changed %.1f', asked %s" %
                   (seen, slews or "never", changed, run.asked))
+    # the Sync above was deliberately wrong (0.5 degrees): it stays in the simulator's alignment model and later GoTos would land
+    # beside their target for that reason alone
+    gsc_sim.prepare_simulator_mount(MOUNT, indi_client)
+    time.sleep(3)
     return scenario_goto(threshold, "hold, next GoTo") and quiet
 
 
-SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold}
+def scenario_held(threshold):
+    ra, dec = targets()[1]
+    first = Run()
+    send_coords(MOUNT, "SLEW", ra, dec)
+    first.watch(150, lambda: phase() == "ON_TARGET" and len(first.phases) > 1)
+    indi_client.set_mount_bridge_external_hold(True, "alignment (live test)")
+    try:
+        send_coords(MOUNT, "SLEW", ra, dec + 1.0)   # while held: the mount goes elsewhere, the target stays
+        time.sleep(15)
+    finally:
+        indi_client.set_mount_bridge_external_hold(False, "alignment ended: solved")
+    time.sleep(5)
+    run = Run()
+    indi_client.trigger_goto_held()
+    run.watch(150, lambda: phase() == "ON_TARGET" and len(run.phases) > 1)
+    run.watch(20)
+    m = mount_position()
+    off = separation_deg(m[0], m[1], ra, dec) * 60
+    return check("held", phase() == "ON_TARGET" and off <= threshold + 1 and not run.asked,
+                 "phase %s, mount %.1f' from the target after the button, asked %s" % (phase(), off, run.asked))
+
+
+SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold, "held": scenario_held}
 
 
 def main(argv=None):

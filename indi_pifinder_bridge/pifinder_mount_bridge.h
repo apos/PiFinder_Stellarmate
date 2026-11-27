@@ -767,6 +767,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // A stop or a direction button ends that sequence.
         void handleMountClientEvents();
         void followMountGoto(double ra, double dec);
+        void refineOwnGoto(double ra, double dec);
         void endRefining(bool stopped);
         // A mount GoTo from another client is under way: it may not show as Busy yet (or at all), so SLEWING also waits until
         // the mount has stood still for FOREIGN_GOTO_STILL_SEC.
