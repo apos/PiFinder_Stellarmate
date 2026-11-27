@@ -26,6 +26,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Control Center, both Sync buttons: the line stays on "waiting for the confirmation" (seconds, distance) until PiFinder and mount really agree, then says after how many seconds, or that it was not confirmed after 60 s. Messages are shown in full.
 - Control Center: in a profile without a Mount Bridge (PiFinder alone, e.g. on a Dobsonian) the card under the sky picture is hidden.
 - The drivers ask PiFinder on port 8080 first, then 80 (on StellarMate port 80 is nginx in front of EkosLive).
 - Plain wording: "Mount and PiFinder differ by 103°" (was "Still 6157′ off after 0 attempts"), "you can steer by hand", "No manual sync yet" with a grey dot.

@@ -1014,11 +1014,11 @@
   .mb-sync-dir { font-size: 0.72rem; font-weight: 600; color: #6cc46f; letter-spacing: 0.02em; }
   .mb-sync-btn:disabled .mb-sync-dir { color: #666; }
   #mb-sync-feedback {
-    height: 2.1rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.6rem;
+    height: 3.6rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.6rem;
     border: 1px solid #2a2a2a; border-radius: 6px; background: #161616; color: #999;
-    font-size: 0.8rem; overflow: hidden; white-space: nowrap;
+    font-size: 0.78rem; line-height: 1.25; overflow: hidden;
   }
-  #mb-sync-feedback .mb-sync-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mb-sync-feedback .mb-sync-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
   #mb-sync-feedback .mb-sync-when { flex: none; color: #888; font-variant-numeric: tabular-nums; }
   #mb-sync-feedback.mb-sync-ok { border-color: #3c7a3f; color: #ddd; }
   #mb-sync-feedback.mb-sync-warn { border-color: #a8832e; color: #ddd; }
@@ -10020,8 +10020,7 @@ async function triggerSyncToPiFinderVisible() {
       'The sync command was accepted, but the mount did not report PiFinder\'s position afterwards (' + (verify.device || 'mount') +
       '). The mount may be parked, or its driver connected but not answering (e.g. after the network dropped); a yellow card appears if so.');
   } else {
-    setSyncFeedback('ok', 'Mount synced to PiFinder',
-      verify && verify.verified === true ? 'the mount reports PiFinder\'s position' : 'sent (not verified)', '');
+    await confirmSync('Mount synced to PiFinder');
     // 2026-09-09, direct feedback ("ICH WILL NICHT Re-seeden, sondern
     // synch from PiFinder. Ist meine Entscheidung!"): the sim-mismatch
     // card itself offers both buttons as equally valid fixes ("Re-seed...
@@ -10079,6 +10078,57 @@ function refreshSyncIdleText(syntheticSolveRunning) {
       'Full Simulation: Synthetic Solve continuously gives PiFinder the simulated mount\'s position. Sync buttons still work for a one-off correction.');
   } else {
     setSyncFeedback('idle', 'No manual sync yet', '');
+  }
+}
+
+// ---- Sync confirmation (begin) ----
+// A sync is only done when the positions really agree - what the sky picture shows, a few seconds after the command was accepted.
+// Until then the line stays on "working" with the seconds and the distance, so nobody takes silence for failure (direct feedback,
+// 2026-11-27: the message went away, the sky still showed PiFinder far off, and much later the sync turned out to have worked).
+const SYNC_CONFIRM_TIMEOUT_S = 60;
+const SYNC_CONFIRM_HITS = 2;   // two readings in a row: a single one may still be the old position's
+function syncConfirmStep(apartArcmin, limitArcmin, hits, secs) {
+  const agree = typeof apartArcmin === 'number' && isFinite(apartArcmin) && apartArcmin <= limitArcmin;
+  const n = agree ? hits + 1 : 0;
+  return { hits: n, state: n >= SYNC_CONFIRM_HITS ? 'ok' : secs >= SYNC_CONFIRM_TIMEOUT_S ? 'fail' : 'wait' };
+}
+function syncApartText(a) {
+  if (typeof a !== 'number' || !isFinite(a)) return 'no position yet';
+  return (a >= 60 ? Math.round(a / 60) + '\u00b0' : a.toFixed(1) + '\u2032') + ' apart';
+}
+// ---- Sync confirmation (end) ----
+// Distance between PiFinder and the mount as the sky picture has it (both current), else the Bridge's drift; null if unknown.
+function syncApartArcmin(data) {
+  const sky = data && data.sky;
+  if (sky && sky.mount && sky.pifinder && !sky.pifinder.stale && !sky.mount.stale) return skySep(sky.mount, sky.pifinder) * 60;
+  return data && data.running && typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null;
+}
+async function confirmSync(lead) {
+  const threshold = parseFloat(readThresholdInputRaw());
+  const limit = Math.max(isFinite(threshold) ? threshold : 5, 5);
+  const start = Date.now();
+  let hits = 0, apart = null;
+  for (;;) {
+    const secs = Math.round((Date.now() - start) / 1000);
+    try {
+      const data = await (await fetch('/api/mount_bridge_drift', { cache: 'no-store' })).json();
+      apart = syncApartArcmin(data);
+      if (data.sky) applySkyPanel(data.sky);
+    } catch (e) {
+      apart = null;
+    }
+    const step = syncConfirmStep(apart, limit, hits, secs);
+    hits = step.hits;
+    if (step.state === 'ok') {
+      setSyncFeedback('ok', lead + ': confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart));
+      return true;
+    }
+    if (step.state === 'fail') {
+      setSyncFeedback('warn', lead + ': NOT confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart) + '. Retry.');
+      return false;
+    }
+    setSyncFeedback('work', 'Sent, waiting for the confirmation \u2026 ' + secs + ' s', syncApartText(apart));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 }
 
@@ -10178,6 +10228,7 @@ async function triggerSyncPiFinderFromMount() {
   btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
   setSyncFeedback('work', 'Syncing PiFinder to mount …', simulation ? '' : 'up to 2 s');
   let ok = false;
+  let done = 'PiFinder synced to mount';   // the lead of the confirmation line, see confirmSync()
   try {
     if (simulation) {
       await reseedFakeSolve();
@@ -10186,14 +10237,14 @@ async function triggerSyncPiFinderFromMount() {
         setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
       } else {
         ok = true;
-        setSyncFeedback('ok', 'PiFinder seeded from mount', 'simulation', 'Full Simulation: the mount\'s position was injected into the simulated PiFinder.');
+        done = 'PiFinder seeded from mount (simulation)';
       }
     } else {
       const resp = await fetch(`/api/pifinder_align_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
       const d = await resp.json();
       if (d.success === true) {
         ok = true;
-        setSyncFeedback('ok', 'PiFinder aligned to mount', `RA ${fmtRaHms(d.mount_ra_deg)}, Dec ${fmtDecDms(d.mount_dec_deg)}`);
+        done = 'PiFinder aligned to mount';
       } else {
         const fov = typeof d.fov_deg === 'number' ? d.fov_deg : null;
         const sep = typeof d.separation_deg === 'number' ? d.separation_deg : null;
@@ -10208,8 +10259,7 @@ async function triggerSyncPiFinderFromMount() {
             setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
           } else {
             ok = true;
-            setSyncFeedback('ok', 'PiFinder set to the mount\'s position', 'no solve: injected',
-              'PiFinder had no plate solve, so the mount\'s position was injected as its starting point. It is not a camera solve: the first real solve replaces it.');
+            done = 'PiFinder set to the mount\'s position (injected, not a camera solve)';
           }
         } else if (d.reason === 'outside_fov') {
           const edge = fov !== null ? (fov / 2).toFixed(1) : '?';
@@ -10236,6 +10286,7 @@ async function triggerSyncPiFinderFromMount() {
     _simStartupMismatch = false;
     _simMismatchAcknowledged = true;
     renderNoSolveBanner();
+    await confirmSync(done);
   }
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
   updateSeedControlsEnabled();
