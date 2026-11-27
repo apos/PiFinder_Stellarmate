@@ -35,6 +35,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Sky simulation: no longer crashes when a mount reports a right ascension outside 0..24 h (the picture stayed frozen).
 - Mount Bridge: after a binding retry the Bridge no longer saw PiFinder's target and forwarded no GoTo (libindi's watchProperty() drops every other property of the device for good); it now reconnects instead.
 - Mount Bridge: checks after every slew that the mount arrived where it was sent (wrong alignment model, limit, abort) and does not Sync if not; positions below the horizon are no longer adopted as the target.
 - Sky simulation: starts the Telescope Simulator with a sound alignment model (after one far Sync its GoTos landed 180 degrees off). New live check: test_tools/mount_model_check.py.

@@ -323,5 +323,18 @@ class LostConnectionTest(unittest.TestCase):
         self.assertEqual(code, 3)
 
 
+class RightAscensionRangeTest(unittest.TestCase):
+    def test_gsc_is_asked_with_a_right_ascension_inside_0_to_360(self):
+        seen = []
+
+        def runner(cmd, **kw):
+            seen.append(float(cmd[2]))
+            raise StopIteration
+        for ra in (452.7, -10.0, 15.0):
+            with self.assertRaises(StopIteration):
+                f.renderer.query_gsc(ra, 20.0, 60.0, 9.0, runner=runner)
+        self.assertEqual([round(v, 1) for v in seen], [92.7, 350.0, 15.0])
+
+
 if __name__ == "__main__":
     unittest.main()
