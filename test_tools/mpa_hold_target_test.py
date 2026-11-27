@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Live test: Target and Hold position around a Multi-Point Alignment. MOVES THE MOUNT - Telescope Simulator only.
+"""Live test: Push-To and last GoTo around a Multi-Point Alignment. MOVES THE MOUNT - Telescope Simulator only.
 
     ~/PiFinder/python/.venv/bin/python test_tools/mpa_hold_target_test.py --move
 
 Needs the same setup as mount_goto_refine_test.py (running Full Simulation, Mount Bridge in the GoTo coupling, simulated sky).
 
-1. A GoTo sets Target and Hold position.
-2. Multi-Point Alignment (2 points): Target and Hold position stay, the Bridge drives nowhere on its own while it runs.
+1. A GoTo sets the last GoTo (TARGET_STATUS) and the Push-To (ORIGINAL_TARGET).
+2. Multi-Point Alignment (2 points): both stay, the Bridge drives nowhere on its own while it runs, and a point only counts
+   when the mount took its Sync (the Telescope Simulator ignores one close to a point it already has).
 3. Afterwards: "Waiting for the next GoTo", nothing moves; a manual Sync starts nothing.
-4. "Align PiFinder to Hold Position": the mount stays where it is.
-5. "Goto Hold Position": the scope returns there.
-6. Stopped alignment: the same - Target unchanged, nothing moves; the next GoTo is followed again.
+4. "Send Push-To to PiFinder": the mount stays where it is.
+5. "Goto Push-To": the scope returns there.
+6. Stopped alignment: the same - both unchanged, nothing moves; the next GoTo is followed again.
 
 Exit 0 = every check passed.
 """
@@ -97,12 +98,20 @@ def main(argv=None):
         check("1 goto", goto(ra, dec) and separation_deg(*target(), ra, dec) < AWAY, "on target, Target set")
         target0, hold0 = target(), hold()
 
+        points = lambda: next(iter(t.numbers(t.MOUNT, "ALIGNMENT_POINTSET_SIZE").values()))
+        before_points = points()
         run = t.Run()
         state, phases, seen = alignment(run)
+        synced = int(t.numbers(t.BRIDGE, "ALIGN_PROGRESS")["POINT_SYNCED"])
+        taken = int(points() - before_points)
+        # A model point added is not the same as the mount reporting the position (the simulator fits all its points), so only
+        # the run's own verdict is checked against its count; both numbers are shown.
+        check("2 counted syncs", 0 <= synced <= 2 and (synced > 0) == (state == "Ok"),
+              "counted %d of 2 as reported by the mount, the simulator added %d model point(s), state %s" % (synced, taken, state))
         moved_target = max(separation_deg(*x, *target0) for x in seen) * 60
-        check("2 alignment", state == "Ok" and "ALIGNING" in phases and moved_target < 1
+        check("2 alignment", state in ("Ok", "Alert") and "ALIGNING" in phases and moved_target < 1
               and separation_deg(*hold(), *hold0) < AWAY,
-              "state %s, phases %s, Target moved %.1f', Hold position moved %.1f'" %
+              "state %s, phases %s, last GoTo moved %.1f', Push-To moved %.1f'" %
               (state, phases, moved_target, separation_deg(*hold(), *hold0) * 60))
 
         end = t.mount_position()
@@ -114,13 +123,13 @@ def main(argv=None):
         slews += watch_still(run, 30)
         expected = "WAITING" if away > threshold else "HOLDING"
         check("3 afterwards", not slews and t.phase() == expected and separation_deg(*target(), *target0) < AWAY and not run.asked,
-              "%.0f' from the Hold position: phase %s (expected %s), slewing at %s, asked %s" %
+              "%.0f' from the Push-To: phase %s (expected %s), slewing at %s, asked %s" %
               (away, t.phase(), expected, slews or "never", run.asked))
 
         before = t.mount_position()
         run = t.Run()
         t.indi_client.trigger_align_held()
-        run.say("Align PiFinder to Hold Position")
+        run.say("Send Push-To to PiFinder")
         slews = watch_still(run, 30)
         moved = separation_deg(*before, *t.mount_position()) * 60
         check("4 align pifinder", not slews and moved < threshold and separation_deg(*hold(), *hold0) < AWAY,
@@ -128,11 +137,11 @@ def main(argv=None):
 
         run = t.Run()
         t.indi_client.trigger_goto_held()
-        run.say("Goto Hold Position")
+        run.say("Goto Push-To")
         arrived = run.watch(150, lambda: t.phase() == "ON_TARGET" and not slewing())
         off = separation_deg(*t.mount_position(), ra, dec) * 60   # the Hold position is the GoTo of step 1 (here in JNow)
         check("5 goto hold", arrived and off <= 2 * threshold and separation_deg(*target(), ra, dec) < AWAY,
-              "phase %s, mount %.1f' from the Hold position" % (t.phase(), off))
+              "phase %s, mount %.1f' from the Push-To" % (t.phase(), off))
 
         target1, hold1 = target(), hold()
         run = t.Run()
@@ -141,7 +150,7 @@ def main(argv=None):
         slews = watch_still(run, 45)
         moved_target = max(separation_deg(*x, *target1) for x in seen + [target()]) * 60
         check("6 stopped", not [s for s in slews if s > 3] and moved_target < 1 and not run.asked,
-              "slewing after the stop at %s, Target moved %.1f', Hold position moved %.1f', phase %s" %
+              "slewing after the stop at %s, last GoTo moved %.1f', Push-To moved %.1f', phase %s" %
               (slews or "never", moved_target, separation_deg(*hold(), *hold1) * 60, t.phase()))
         ra, dec = t.targets()[1]
         ok = goto(ra, dec)

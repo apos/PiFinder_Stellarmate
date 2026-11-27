@@ -186,6 +186,13 @@ Two things flagged as genuinely unresolved, not just left as vague future work:
 > mount's position to the target and does not touch the model. The statement above that repeated Syncs alone build a multi-point
 > model therefore does not hold for this firmware unless an OnStep alignment is running. Whether Multi-Point Alignment should start
 > one (`:An#`) is an open decision.
+>
+> **How an OnStep model is built (source `main`, 2026-11-28, not tried):** `:A<n>#` starts an alignment of n stars (at most 9); it
+> takes the mount's present position as home (without home sensors: no motion) and switches tracking on. Each `:CM#` then
+> accepts one star at the synced coordinates; after the n-th the model is computed; `:AW#` stores it. Starting discards the old
+> model at the first star, a refused star aborts the whole alignment, `:A?#` reports progress. The INDI driver offers this as
+> `AlignStars`, `NewAlignStar` (start / issue) and `NewAlignStar2` (write); its Sync sends `:CM#`.
+> **Check after each Sync (2026-11-28):** a point counts only when the mount reports the synced position.
 
 ## 5. ADR: Sync-only for a first OnStep-scoped implementation, revisit Align primitive if generalized
 

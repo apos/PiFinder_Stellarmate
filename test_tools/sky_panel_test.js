@@ -148,30 +148,32 @@ ok(u.children.some((c) => c._text === 'Location unknown'), 'drawing for unknown 
 
 // ---- Target and Hold position (docs/concepts/mount_bridge_target_transparency.md, slice 1) ----
 const tgt = (o) => Object.assign({ ra: 16.7, dec: 36.4, offset_arcmin: 9.2, age_sec: 3, source: 'Mount', fresh: true }, o);
-// one Target marker, named "Target"; Hold position next to it (closer than 1 degree) is not drawn on its own
+// Push-To and the last GoTo on the same spot (within 1 degree): only the cross, named Push-To
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55.2, 201), held: pt(55.3, 201.2), target: tgt() }));
-ok(find(m, 'goto') && find(m, 'goto').name === 'Target', 'the requested target is called Target');
-ok(!find(m, 'held'), 'the Hold position is not drawn separately when it is within 1 degree of the Target');
+ok(find(m, 'held') && find(m, 'held').name === 'Push-To' && !find(m, 'goto'), 'the same spot: the cross "Push-To" only');
 // farther away: both, and the sentence says by how much
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(58, 200), target: tgt() }));
-ok(find(m, 'held') && find(m, 'held').name === 'Hold position', 'a Hold position well away from the Target is drawn and called Hold position');
-ok(/Hold position 3\.0\u00b0 from the target/.test(m.targetLine), 'the sentence says how far the Hold position is from the Target');
-// no Target known, only a held position: it is still drawn, as Hold position
+ok(find(m, 'held') && find(m, 'goto') && find(m, 'goto').name === 'Last GoTo', 'a last GoTo well away from the Push-To is drawn and called Last GoTo');
+ok(/Push-To 3\.0\u00b0 from it/.test(m.targetLine), 'the sentence says how far the Push-To is from the last GoTo');
+// no GoTo known, only a Push-To
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), held: pt(55, 201) }));
-ok(find(m, 'held') && find(m, 'held').name === 'Hold position' && !find(m, 'goto'), 'only a held position: drawn as Hold position, no Target');
+ok(find(m, 'held') && find(m, 'held').name === 'Push-To' && !find(m, 'goto'), 'only a Push-To: the cross, no ring');
 ok(m.targetLine === null, 'no TARGET_STATUS: no sentence');
+// only a last GoTo (a Dobsonian before anything was held): the ring
+m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 201) }));
+ok(find(m, 'goto') && find(m, 'goto').name === 'Last GoTo' && !find(m, 'held'), 'only a last GoTo: the ring');
 // the sentence: information only
-ok(T.skyTargetLine({ target: tgt() }) === 'Target (set on Mount): PiFinder is 9.2\u2032 from the target', 'offset in arcminutes, with where the target was set');
-ok(T.skyTargetLine({ target: tgt({ offset_arcmin: 0.2 }) }) === 'Target (set on Mount): PiFinder is on the target', 'below half an arcminute: on the target');
-ok(T.skyTargetLine({ target: tgt({ offset_arcmin: 150 }) }) === 'Target (set on Mount): PiFinder is 2.5\u00b0 from the target', 'from one degree on: degrees');
+ok(T.skyTargetLine({ target: tgt() }) === 'Last GoTo (set on Mount): PiFinder is 9.2\u2032 from it', 'offset in arcminutes, with where the GoTo was set');
+ok(T.skyTargetLine({ target: tgt({ offset_arcmin: 0.2 }) }) === 'Last GoTo (set on Mount): PiFinder is on it', 'below half an arcminute: on it');
+ok(T.skyTargetLine({ target: tgt({ offset_arcmin: 150 }) }) === 'Last GoTo (set on Mount): PiFinder is 2.5\u00b0 from it', 'from one degree on: degrees');
 ok(T.skyTargetLine({ target: tgt({ fresh: false }) }).endsWith('(last value, no fresh solve)'), 'no fresh solve: says it is the last value');
-ok(T.skyTargetLine({ target: tgt({ source: null }) }).startsWith('Target: '), 'unknown source: no "set on"');
+ok(T.skyTargetLine({ target: tgt({ source: null }) }).startsWith('Last GoTo: '), 'unknown source: no "set on"');
 ok(T.skyTargetLine({}) === null && T.skyTargetLine(null) === null && T.skyTargetLine({ target: null }) === null, 'no target: no sentence');
-// modes that never use a held target (Verify/Alert, Auto-correct Sync): a leftover Hold position is not shown
-m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: false }));
-ok(!find(m, 'held') && !/Hold position /.test(m.targetLine), 'a mode without a held target: no Hold position marker, no "held ... from the target"');
+// modes that keep no position (Verify/Alert, Auto-correct Sync): no cross, the ring stays even on the same spot
+m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(55, 200), target: tgt(), hold_used: false }));
+ok(!find(m, 'held') && find(m, 'goto') && !/Push-To/.test(m.targetLine), 'a mode that keeps no position: the ring only');
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: true }));
-ok(find(m, 'held') && /Hold position /.test(m.targetLine), 'a mode with a held target: it is shown');
+ok(find(m, 'held') && /Push-To/.test(m.targetLine), 'a mode that keeps a position: it is shown');
 ok(!/warn|alert|wrong|error/i.test(T.skyTargetLine({ target: tgt({ offset_arcmin: 300 }) })), 'a large offset is a number, not a warning');
 
 // ---- Positioning status (section 12 of the concept): what the line under the picture says ----
@@ -199,14 +201,14 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
   const t = T.skyPositioningTrailUpdate(T.skyPositioningTrailUpdate([], pos({ phase: 'SLEWING', hands_off: true })), pos({ phase: 'OFF_TARGET', hands_off: false }));
   ok(t.length === 2 && T.skyPositioningTrailItems(t, false)[1].text === 'Off target' && T.skyPositioningBand(t, pos({ phase: 'OFF_TARGET' }), off).join(' ') === 'done done done warn', 'off target ends a run with a warning');
 }
-ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
+ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding Push-To', 'holding');
 {
   const o = T.skyPositioningModel(pos({ phase: 'ALIGNING', hands_off: false }));
   ok(o.head === 'Aligning' && o.sub === 'on the OnStep controller' && !o.handsOff && /neither moves nor syncs/.test(o.why), 'an alignment on the controller: the Bridge only waits');
 }
 {
   const w = T.skyPositioningModel(pos({ phase: 'WAITING', hands_off: false, residual_arcmin: 3120 }));
-  ok(w.head === 'Waiting for the next GoTo' && w.sub === '52\u00b0 from the Hold position' && !w.handsOff, 'waiting: says so, with the distance, and does not claim to hold');
+  ok(w.head === 'Waiting for the next GoTo' && w.sub === '52\u00b0 from the Push-To' && !w.handsOff, 'waiting: says so, with the distance, and does not claim to hold');
 }
 {
   const al = pos({ phase: 'ALIGNING', point: 'point 1 of 2 (Capella)' });
@@ -265,7 +267,7 @@ ok(nowOf({ phase: 'REFINING', attempt: 2 }).join('|') === 'Step 3 of 4: refining
 ok(nowOf({ phase: 'SLEWING', attempt: 0, to_go_deg: 28.9 }).join('|') === 'Step 1 of 4: slewing|29\u00b0 to go', 'now: slewing says how far to go');
 ok(nowOf({ phase: 'VERIFYING', attempt: 0 }).join('|') === 'Step 2 of 4: verifying|', 'now: the first verification has no attempt yet');
 ok(nowOf({ phase: 'ON_TARGET', hands_off: false, residual_arcmin: 0.7 }).join('|') === 'On target|0.7\u2032 off', 'now: on target with the residual');
-ok(nowOf({ phase: 'HOLDING', hands_off: false, attempt: 2 }).join('|') === 'Holding target|', 'now: holding does not say "on target"');
+ok(nowOf({ phase: 'HOLDING', hands_off: false, attempt: 2 }).join('|') === 'Holding Push-To|', 'now: holding does not say "on target"');
 const factsOf = (o) => T.skyPositioningFacts(pos(o), model(o)).join(' \u00b7 ');
 ok(factsOf({ phase: 'REFINING', residual_arcmin: 8.1 }) === '8.1\u2032 off the target \u00b7 correcting', 'facts: refining');
 ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 14 }) === 'no fresh solve for 14 s', 'facts: a stale solve is named');
@@ -314,6 +316,13 @@ ok(/else if \(_mbDriftSeenRunning && \+\+_mbDriftMisses < MB_DRIFT_MISSES_BEFORE
 // the badge says something only while the user must act: "Don't touch the mount" while it is moved, nothing afterwards
 {
   const card = (o) => { const p = pos(o); return T.skyCardModel(T.skyPositioningModel(p), p, [], { running: true }, {}); };
+  {
+    const high = (reason) => { const p = pos({ phase: 'HOLDING', hands_off: false, reason: reason });
+      return T.skyCardModel(T.skyPositioningModel(p), p, [], { running: true, mode: 'MODE_GOTO_FORWARD', drift: 13.8, threshold: 5 }, {}); };
+    const far = high('Not correcting: 52 deg from the Push-To, more than the automatic limit of 2 deg');
+    ok(far.head === 'Holding, drift is high' && far.why === 'Not correcting: 52 deg from the Push-To, more than the automatic limit of 2 deg', 'high drift: the card gives the Bridge\'s reason');
+    ok(high('').why === 'Not corrected yet' && !/fresh solve/.test(high('').why), 'no reason from the Bridge: the page does not invent one');
+  }
   ok(card({ phase: 'SLEWING', hands_off: true }).badge === 'Don\u2019t touch the mount', 'badge while the Bridge moves the mount');
   ok(card({ phase: 'ON_TARGET', hands_off: false }).badge === '' && card({ phase: 'GAVE_UP', hands_off: false }).badge === '' && card({ phase: 'HOLDING', hands_off: false }).badge === '', 'no badge when the user need not leave the mount alone');
 }
