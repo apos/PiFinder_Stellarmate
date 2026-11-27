@@ -109,6 +109,18 @@ const ids = m.markers.map((x) => x.id).sort().join(',');
 ok(ids === 'goto,held,mount,pifinder', 'goto and held are drawn');
 let clash = false; for (let i = 0; i < m.markers.length; i++) for (let j = i + 1; j < m.markers.length; j++) if (overlap(m.markers[i], m.markers[j])) clash = true;
 ok(!clash, 'four names around coincident markers do not overlap');
+// every name stays inside what the picture shows (viewBox 14 16 212 216): found "Mount (stopped" cut off at the right edge
+{
+  let outside = [];
+  for (let az = 0; az < 360; az += 15) for (const alt of [0, 5, 20, 45, 85]) {
+    const mm = T.skyBuildModel(mk({ mount: pt(alt, az), mount_state: 'not tracking', pifinder: pt(alt, (az + 1) % 360), goto: pt(alt, az) }));
+    mm.markers.forEach((k) => {
+      const w = k.name.length * 6.9, x0 = k.label.anchor === 'end' ? k.label.x - w : k.label.anchor === 'middle' ? k.label.x - w / 2 : k.label.x;
+      if (x0 < 15 || x0 + w > 225 || k.label.y - 10 < 17 || k.label.y + 3 > 231) outside.push(k.name + ' alt ' + alt + ' az ' + az);
+    });
+  }
+  ok(outside.length === 0, 'no name leaves the picture' + (outside.length ? ': ' + outside.slice(0, 4).join('; ') : ''));
+}
 // stale position is flagged
 m = T.skyBuildModel(mk({ pifinder: pt(40, 60, true) }));
 ok(find(m, 'pifinder').stale === true, 'stale (last known) position is flagged');

@@ -25,6 +25,14 @@ static std::unique_ptr<PiFinderMountBridge> pifinder_bridge(new PiFinderMountBri
 
 namespace
 {
+// Every request MUST say where the response goes. Without a write function libcurl prints it to stdout, and an INDI driver's stdout
+// is its protocol stream to indiserver. PiFinder's port 80 answers these POSTs with an HTML error page (404); its unclosed <meta>
+// made indiserver's XML parser deliver nothing from this driver for about 51 s at a time (issue #385).
+size_t discardResponse(char *, size_t size, size_t nmemb, void *)
+{
+    return size * nmemb;
+}
+
 // Single-threaded INDI driver (TimerHit callback style) - no explicit
 // curl_global_init() needed, curl_easy_init() does it lazily on first use.
 bool httpPostMountType(const std::string &url, const std::string &mountType)
@@ -43,6 +51,7 @@ bool httpPostMountType(const std::string &url, const std::string &mountType)
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
     const CURLcode res = curl_easy_perform(curl);
     long httpCode = 0;
@@ -77,6 +86,7 @@ bool httpPostPositioning(const std::string &url, const std::string &phase, int a
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
     const CURLcode res = curl_easy_perform(curl);
     long httpCode = 0;
@@ -111,6 +121,7 @@ bool httpPostKeepAwake(const std::string &url)
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{}");
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponse);
 
     const CURLcode res = curl_easy_perform(curl);
     long httpCode = 0;

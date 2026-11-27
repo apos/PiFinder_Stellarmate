@@ -2583,6 +2583,10 @@ _cold_profile_start_cooldown_until = 0.0  # time.monotonic() deadline, not a wal
 _cold_profile_start_gave_up = False
 _COLD_PROFILE_START_MAX_ATTEMPTS = 3
 _COLD_PROFILE_START_COOLDOWN_SEC = 30.0
+# A profile restart from Ekos or the SMOS app is a stop followed by a start. Starting the profile in that gap put every driver into
+# indiserver twice (found 2026-11-27), so it must have been without a running profile this long before it counts as cold.
+_COLD_PROFILE_MIN_IDLE_SEC = 30.0
+_cold_profile_idle_since = None  # time.monotonic() when the Web Manager was first seen with no profile running
 
 
 def _autostart_cold_profile():
@@ -2605,7 +2609,7 @@ def _autostart_cold_profile():
     attempt budget - only a run of CONSECUTIVE failures right now exhausts
     it."""
     global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
-    global _cold_profile_start_gave_up
+    global _cold_profile_start_gave_up, _cold_profile_idle_since
     if _maintenance_mode_since is not None:
         return  # deliberately stopped - see /api/maintenance_mode_toggle. Found live 2026-09-19:
         # this self-heal has no maintenance-mode gate of its own, so it was starting the profile
@@ -2629,6 +2633,11 @@ def _autostart_cold_profile():
         _note_active_profile(wm_status["active_profile"])
         _cold_profile_start_attempts = 0
         _cold_profile_start_gave_up = False
+        _cold_profile_idle_since = None
+        return
+    if _cold_profile_idle_since is None:
+        _cold_profile_idle_since = time.monotonic()
+    if time.monotonic() - _cold_profile_idle_since < _COLD_PROFILE_MIN_IDLE_SEC:
         return
     if _cold_profile_start_gave_up or time.monotonic() < _cold_profile_start_cooldown_until:
         return
