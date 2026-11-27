@@ -45,6 +45,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Sky simulation: after a reboot the simulated sky could start tens of degrees off, because the start-up position changes of the mount were taken for Syncs.
 - Mount Bridge: an unreachable target no longer leads to endless re-slewing; after 3 attempts nothing moves until the next GoTo.
 - PiFinder received declinations between 0 and -1 degree with the wrong sign (patch to PiFinder's pos_server.py).
 - Mount Bridge: a GoTo sent to the mount (KStars, Ekos, StellarMate app SLEW/GO, any INDI client) is brought onto the requested object like a GoTo sent to PiFinder, instead of keeping the position the scope happened to land on (#170).

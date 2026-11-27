@@ -323,6 +323,10 @@ class LostConnectionTest(unittest.TestCase):
         code, rendered = self.run_against([b"5.0", (b"0.0", b"12.0")], ["--reconnect-sec", "10", "--duration", "5"])
         self.assertEqual(rendered[-1], 180, "the sky follows the restarted mount instead of staying where it was")
 
+    def test_start_up_jumps_after_the_start_are_not_syncs(self):
+        code, rendered = self.run_against([(b"0.0", b"12.0")], ["--reconnect-sec", "1", "--duration", "3"])
+        self.assertEqual(rendered[-1], 180, "after a reboot the sky follows the mount that is still setting itself up")
+
     def test_the_follower_ends_when_indi_stays_away(self):
         code, _ = self.run_against([b"5.0"], ["--reconnect-sec", "2", "--duration", "15"])
         self.assertEqual(code, 3)
