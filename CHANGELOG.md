@@ -26,6 +26,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- "Held target" is now just "Target": the buttons Align to / Goto / Revert to Target, the help page, and the Bridge driver's labels and log texts (property names unchanged).
 - Wording of the positioning status, which was not understood: PiFinder's title bar says "MOUNT MOVING" (was "HANDS OFF") and "MOUNT OFF 103°" (was "Hand OK 6157'"; distance between mount and PiFinder, bright on black); the Control Center card shows "Don't touch the mount" only while the mount is moved (no "Hands free" badge).
 - Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
 - Drift and altitude badges have one fixed width, so the diagram does not move when the number or the label changes.
