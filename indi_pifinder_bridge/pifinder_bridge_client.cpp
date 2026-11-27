@@ -1,5 +1,6 @@
 #include "pifinder_bridge_client.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -42,6 +43,11 @@ void PiFinderBridgeClient::forgetProperties()
     {
         std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
         m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        m_mountEvent = MountEvent::NONE;
+        m_ownGotos.clear();
     }
     m_bindTime = static_cast<long>(time(nullptr));
     m_shadowOnline = false;
@@ -185,6 +191,95 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_shadowOnCoordSetSP = property.getSwitch();
 }
 
+namespace
+{
+double separationArcmin(double ra1, double dec1, double ra2, double dec2)
+{
+    const double toRad = M_PI / 180.0;
+    double cosSep = std::sin(dec1 * toRad) * std::sin(dec2 * toRad) +
+                    std::cos(dec1 * toRad) * std::cos(dec2 * toRad) * std::cos((ra1 - ra2) * 15.0 * toRad);
+    cosSep = std::max(-1.0, std::min(1.0, cosSep));
+    return std::acos(cosSep) / toRad * 60.0;
+}
+}
+
+bool PiFinderBridgeClient::justBound() const
+{
+    return static_cast<long>(time(nullptr)) - m_bindTime < TARGET_EVENT_IGNORE_AFTER_BIND_SEC;
+}
+
+void PiFinderBridgeClient::noteMountEvent(MountEvent event, double ra, double dec)
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_mountEvent = event;
+    m_mountEventRA = ra;
+    m_mountEventDec = dec;
+}
+
+void PiFinderBridgeClient::noteMountTarget(INDI::Property property)
+{
+    auto target = property.getNumber();
+    const double ra = target->at(0)->getValue(), dec = target->at(1)->getValue();
+    if (justBound())
+        return noteIgnoredTarget("it arrived right after the Bridge (re)connected", ra, dec);
+    if (property.getState() == IPS_ALERT)
+        return noteIgnoredTarget("the mount driver marks it as failed", ra, dec);
+    if (!std::isfinite(ra) || !std::isfinite(dec) || ra < 0.0 || ra > 24.0 || dec < -90.0 || dec > 90.0 ||
+        (ra == 0.0 && dec == 0.0))
+        return;
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        const long now = static_cast<long>(time(nullptr));
+        while (!m_ownGotos.empty() && now - m_ownGotos.front().time > OWN_GOTO_ECHO_SEC)
+            m_ownGotos.pop_front();
+        for (auto it = m_ownGotos.begin(); it != m_ownGotos.end(); ++it)
+        {
+            if (separationArcmin(ra, dec, it->ra, it->dec) < OWN_GOTO_ECHO_ARCMIN)
+            {
+                m_ownGotos.erase(it);
+                return;
+            }
+        }
+    }
+    double mountRA, mountDec;
+    if (getMountRADE(mountRA, mountDec) && separationArcmin(ra, dec, mountRA, mountDec) < TARGET_AT_MOUNT_ARCMIN)
+        return noteIgnoredTarget("the mount already reports that position (a direction button was released)", ra, dec);
+    noteMountEvent(MountEvent::GOTO, ra, dec);
+}
+
+void PiFinderBridgeClient::noteIgnoredTarget(const char *why, double ra, double dec)
+{
+    char text[200];
+    snprintf(text, sizeof(text), "New mount target RA %.4fh, DEC %.4f deg not taken as a GoTo: %s.", ra, dec, why);
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_ignoredTargetNote = text;
+}
+
+std::string PiFinderBridgeClient::consumeIgnoredTargetNote()
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    std::string note;
+    note.swap(m_ignoredTargetNote);
+    return note;
+}
+
+PiFinderBridgeClient::MountEvent PiFinderBridgeClient::consumeMountEvent(double &ra, double &dec)
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    const MountEvent event = m_mountEvent;
+    ra = m_mountEventRA;
+    dec = m_mountEventDec;
+    m_mountEvent = MountEvent::NONE;
+    return event;
+}
+
+double PiFinderBridgeClient::secondsSinceForeignMountSync() const
+{
+    if (m_lastForeignSyncTime == 0)
+        return 1e9;
+    return static_cast<double>(static_cast<long>(time(nullptr)) - m_lastForeignSyncTime);
+}
+
 void PiFinderBridgeClient::updateProperty(INDI::Property property)
 {
     const bool fromMount = m_mountName == property.getDeviceName();
@@ -198,6 +293,24 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
     else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
     {
         m_lastMountTargetTime = static_cast<long>(time(nullptr));
+        noteMountTarget(property);
+    }
+    else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
+    {
+        if (!justBound())
+            noteMountEvent(MountEvent::ABORT);
+    }
+    else if (fromMount && (property.isNameMatch("TELESCOPE_MOTION_NS") || property.isNameMatch("TELESCOPE_MOTION_WE")))
+    {
+        if (!justBound() && property.getSwitch()->findOnSwitchIndex() >= 0)
+            noteMountEvent(MountEvent::HAND_MOTION);
+    }
+    else if (fromMount && property.isNameMatch("ON_COORD_SET"))
+    {
+        auto sync = property.getSwitch()->findWidgetByName("SYNC");
+        if (!justBound() && sync != nullptr && sync->getState() == ISS_ON &&
+            secondsSinceLastMountCommand() > OWN_COMMAND_SWITCH_SEC)
+            m_lastForeignSyncTime = static_cast<long>(time(nullptr));
     }
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
     {
@@ -487,6 +600,14 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
         m_mountRejectMessage.clear();
     }
 
+    // Both noted before anything is sent: the answers arrive on the client's own thread.
+    m_lastMountCommandTime = static_cast<long>(time(nullptr));
+    if (std::string(coordSetName) != "SYNC")
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        m_ownGotos.push_back({ ra, dec, static_cast<long>(time(nullptr)) });
+    }
+
     m_mountOnCoordSetSP->reset();
     coordSetSwitch->setState(ISS_ON);
     sendNewSwitch(m_mountOnCoordSetSP);
@@ -495,8 +616,6 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
     m_mountEqNP->at(1)->setValue(dec);
     m_mountEqNP->setState(IPS_BUSY);
     sendNewNumber(m_mountEqNP);
-
-    m_lastMountCommandTime = static_cast<long>(time(nullptr));
 
     return true;
 }

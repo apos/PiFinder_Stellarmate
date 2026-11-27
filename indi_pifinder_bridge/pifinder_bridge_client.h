@@ -14,6 +14,7 @@
 #include "baseclient.h"
 #include "basedevice.h"
 
+#include <deque>
 #include <mutex>
 #include <string>
 #include <atomic>
@@ -101,6 +102,24 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // clears it atomically so each real event is only ever acted on once.
         bool consumePiFinderTargetPending();
 
+        // What somebody else did to the mount since the last call; the newest event wins.
+        //   GOTO         - a GoTo this Bridge did not send (KStars, the StellarMate app, any INDI client): the mount driver
+        //                  published new target coordinates (TARGET_EOD_COORD) away from where the mount is. A Sync does not
+        //                  change that property; releasing a direction button does, but copies the current position into it.
+        //   ABORT        - TELESCOPE_ABORT_MOTION was sent to the mount (by anybody, this Bridge included).
+        //   HAND_MOTION  - a direction button (TELESCOPE_MOTION_NS / WE) was pressed.
+        enum class MountEvent { NONE, GOTO, ABORT, HAND_MOTION };
+        // `ra`/`dec` (JNow, hours/degrees) are set for GOTO only. Consumed on read.
+        MountEvent consumeMountEvent(double &ra, double &dec);
+
+        // Why the last new mount target was not taken as a GoTo (empty: nothing to tell; the echo of an own GoTo is not told).
+        // Consumed on read - the driver logs it, so a GoTo that went unnoticed can be explained afterwards.
+        std::string consumeIgnoredTargetNote();
+
+        // Seconds since another client switched the mount to Sync (ON_COORD_SET), i.e. a jump of the mount's position that
+        // follows is that client's Sync and no movement. A very large value if never seen.
+        double secondsSinceForeignMountSync() const;
+
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
 
@@ -182,6 +201,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
     private:
         void forgetProperties();
+        void noteMountTarget(INDI::Property property);
+        void noteMountEvent(MountEvent event, double ra = 0.0, double dec = 0.0);
+        void noteIgnoredTarget(const char *why, double ra, double dec);
+        bool justBound() const;
         std::string m_piFinderName;
         std::string m_mountName;
         bool m_piFinderOnline = false;
@@ -229,7 +252,27 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         // 0 = never sent this run - secondsSinceLastMountCommand() reports a
         // large sentinel in that case, see its own comment.
-        long m_lastMountCommandTime = 0;
+        std::atomic<long> m_lastMountCommandTime { 0 };
+
+        // The GoTos this Bridge sent itself: the mount driver publishes their coordinates as its target too, and that echo
+        // must not count as somebody else's GoTo. An entry is used up by its echo or expires.
+        struct OwnGoto
+        {
+            double ra, dec;
+            long time;
+        };
+        static constexpr long OWN_GOTO_ECHO_SEC = 60;
+        static constexpr double OWN_GOTO_ECHO_ARCMIN = 1.0;
+        // A new target this close to the mount's position is not a GoTo (a direction button was released).
+        static constexpr double TARGET_AT_MOUNT_ARCMIN = 0.5;
+        // A switch to Sync within this time of our own command is our own.
+        static constexpr double OWN_COMMAND_SWITCH_SEC = 5.0;
+        std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
+        std::deque<OwnGoto> m_ownGotos;
+        MountEvent m_mountEvent = MountEvent::NONE;
+        double m_mountEventRA = 0.0, m_mountEventDec = 0.0;
+        std::string m_ignoredTargetNote;
+        std::atomic<long> m_lastForeignSyncTime { 0 };
 
         // Guards m_piFinderTargetPending - same cross-thread reasoning as
         // m_mountRejectMutex above (written from updateProperty()'s I/O

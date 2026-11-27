@@ -27,6 +27,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Mount Bridge, GoTo coupling: after a movement by hand the mount is synced to PiFinder at once instead of asking the 45 s question; after a stop (abort) the Bridge does not move the mount until the next GoTo.
 - Below the horizon PiFinder's position is treated as what it is, never a plate solve: the cards say so, "Sync PiFinder from mount" is confirmed without asking the camera, and mount and PiFinder both below show one calm "end of session or start-up" card.
 - Sky simulation: no stars are rendered while the mount points below the horizon.
 - "Sync PiFinder from mount" reaches its goal instead of refusing when the mount is outside the camera's field of view: the sky simulation is rendered at the mount again; on real hardware the position is set and the confirmation says whether the camera agrees.
@@ -42,6 +43,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Mount Bridge: a GoTo sent to the mount (KStars, Ekos, StellarMate app SLEW/GO, any INDI client) is brought onto the requested object like a GoTo sent to PiFinder, instead of keeping the position the scope happened to land on (#170).
 - Control Center: the card under the sky picture shows whole sentences (two lines, fixed height) instead of cutting them off.
 - Sky simulation: switching it off and on can no longer leave two programs painting the picture.
 - Sky simulation: after reconnecting (profile restart, update) the start-up jumps of the mount are no longer taken for Syncs (the simulated sky ended up 180 degrees off).
