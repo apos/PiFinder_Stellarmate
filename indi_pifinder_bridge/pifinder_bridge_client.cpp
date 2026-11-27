@@ -527,6 +527,22 @@ bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
     return isUsableCoordinateForWarn("PiFinder target", ra, dec);
 }
 
+bool PiFinderBridgeClient::hasPiFinderTargetPending() const
+{
+    std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
+    return m_piFinderTargetPending;
+}
+
+std::string PiFinderBridgeClient::missingDevices() const
+{
+    std::string missing;
+    if (m_piFinderEqNP == nullptr)
+        missing = m_piFinderName;
+    if (m_mountEqNP == nullptr || m_mountOnCoordSetSP == nullptr)
+        missing += (missing.empty() ? "" : ", ") + m_mountName;
+    return missing;
+}
+
 bool PiFinderBridgeClient::consumePiFinderTargetPending()
 {
     std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);

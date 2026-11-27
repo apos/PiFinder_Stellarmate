@@ -1744,6 +1744,8 @@
     margin-bottom: 0.7rem;
   }
   .showstopper-card svg { flex-shrink: 0; width: 20px; height: 20px; color: #e0a030; margin-top: 0.1rem; }
+  .showstopper-card.showstopper-bad { background: #2a1414; border-color: #e53935; }
+  .showstopper-card.showstopper-bad svg { color: #e53935; }
   .showstopper-card .mb-drift-banner-body { flex: 1; min-width: 0; }
   .showstopper-card .mb-drift-banner-title { color: #f5c877; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
   .showstopper-card .mb-drift-banner-text { color: #ddd0b0; font-size: 0.76rem; line-height: 1.45; margin-bottom: 0.55rem; }
@@ -4519,7 +4521,7 @@ function updatePiFinderHorizonStatus(altitudeDeg, belowHorizon) {
 // put the most fundamental blocker first as a reading-order convenience
 // only.
 function collectActiveShowstoppers() {
-  const items = [];
+  const items = bridgeProblemCards(_mbBlind, _mbQuestion);
   // Mount warnings (issue #583). The mount is parked: it ignores Sync and Goto.
   if (_mountParked) {
     items.push({
@@ -4841,7 +4843,7 @@ function renderShowstopperGroup(wrapId, items) {
         ).join('')}</div>`
       : '';
     const extraHtml = item.extraHtml || '';
-    return `<div class="showstopper-card" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${extraHtml}${buttonsHtml}</div></div>`;
+    return `<div class="showstopper-card${item.tone === 'bad' ? ' showstopper-bad' : ''}" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${extraHtml}${buttonsHtml}</div></div>`;
   }).join('');
 }
 
@@ -8184,7 +8186,10 @@ function updateBridgeSettingsInfo(data) {
   el.style.display = '';
   const pifinderName = data.active_pifinder || '(none)';
   const mountName = data.active_mount || '(none)';
-  if (data.settings_correct) {
+  if (_mbBlind) {
+    el.className = 'mb-hint';
+    el.textContent = `⚠ Settings are right, but the Mount Bridge does not read ${_mbBlind}.`;
+  } else if (data.settings_correct) {
     el.className = 'mb-hint mb-hint-ok';
     el.textContent = `✓ Settings: ${data.settings_host}:${data.settings_port}, linked to ${pifinderName} / ${mountName}.`;
   } else {
@@ -8303,6 +8308,15 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
     return false;
   }
   decoupleBtnEl.disabled = false;
+
+  if (_mbBlind) {
+    setMbArrow('mb-arrow-left', 'off');
+    setMbArrow('mb-arrow-right', 'off');
+    setMbCaption('dot-red', `Bridge does not read ${_mbBlind}`,
+      `The Mount Bridge is connected but gets nothing from ${_mbBlind}: it checks and moves nothing. See the red card.`);
+    document.getElementById('mount-bridge-text').textContent = `not reading ${_mbBlind}`;
+    return true;
+  }
 
   // #372, docs/concepts/mount_bridge_external_hold.md §4: takes priority
   // over the normal per-mode caption below - the driver stays passive
@@ -9340,6 +9354,10 @@ function skyPositioningModel(p) {
       m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
     case 'HOLDING':
       m.head = 'Holding target'; break;
+    case 'CHECK_SCOPE':
+      m.tone = 'warn'; m.head = 'Check the mount: ' + skyDistance(p.residual_arcmin) + ' apart';
+      m.sub = 'answer the yellow card';
+      m.why = 'Mount and PiFinder suddenly differ although the mount did not move. Nothing moves until you decide.'; break;
     default:
       return null;
   }
@@ -9387,6 +9405,7 @@ const SKY_BAND_LABEL = ['slewing', 'verifying', 'refining', 'on target'];
 function skyPositioningBand(trail, p, m) {
   if (m && m.interrupted) return [0, 1, 2, 3].map((i) => (i < (m.step || 0) ? 'done' : i === (m.step || 0) ? 'warn' : 'later'));
   const phase = p && p.phase;
+  if (phase === 'CHECK_SCOPE') return ['later', 'later', 'later', 'warn'];
   if (phase === 'GAVE_UP' || phase === 'OFF_TARGET') return ['done', 'done', 'done', 'warn'];
   if (phase === 'ON_TARGET') return ['done', 'done', 'done', 'done'];
   if (phase === 'HOLDING') return ['later', 'later', 'later', 'later'];   // no run: nothing was driven to a target
@@ -9405,6 +9424,7 @@ function skyPositioningNow(p, m) {
     case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
     case 'GAVE_UP': return ['Gave up', p.attempt > 0 ? p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
     case 'OFF_TARGET': return ['Off target', ''];
+    case 'CHECK_SCOPE': return ['Check the mount', ''];
     case 'HOLDING': return ['Holding target', ''];   // no verdict about "on target": e.g. after a movement by hand
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
   }
@@ -9420,6 +9440,7 @@ function skyPositioningFacts(p, m) {
     case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
     case 'GAVE_UP': return [skyDistance(p.residual_arcmin) + ' apart', 'you can steer by hand'];
     case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
+    case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
     default: return [];
   }
 }
@@ -9815,6 +9836,7 @@ async function refreshMbDrift() {
     const data = await resp.json();
     if (data.running) { _mbDriftMisses = 0; _mbDriftSeenRunning = true; }
     else if (_mbDriftSeenRunning && ++_mbDriftMisses < MB_DRIFT_MISSES_BEFORE_OFF) return;   // keep what the page shows
+    applyBridgeProblems(data);
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
@@ -10146,6 +10168,67 @@ async function confirmSync(lead, failHint, injected) {
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
+
+// ---- Bridge problems (begin) ----
+// Two things the user must not miss: a Mount Bridge that is connected but reads nothing (shown red - green connections lied for
+// 11 minutes on 2026-11-27), and its question after a sudden disagreement without any mount movement (a yellow card; nothing
+// moves until it is answered).
+var _mbBlind = null;      // names of the devices the Bridge does not read, or null
+var _mbQuestion = null;   // {driftArcmin} while the question is open
+function bridgeProblems(data) {
+  const on = data && data.running;
+  return {
+    blind: on && data.binding_state === 'Alert' ? (data.binding_missing || 'its devices') : null,
+    question: on && data.reposition_question ? { driftArcmin: typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null } : null,
+  };
+}
+function bridgeProblemCards(blind, question) {
+  const items = [];
+  if (blind) {
+    items.push({
+      id: 'bridge-blind', category: 'mount-bridge', tone: 'bad',
+      title: `Mount Bridge does not read ${blind}`,
+      text: `It is connected, but gets nothing from ${blind}: it checks nothing and moves nothing. <b>What to do:</b> make sure ${blind} is running and connected (Ekos or the StellarMate app), then reconnect the Mount Bridge. If that does not help, stop and start the profile.`,
+      buttons: [{ label: 'Reconnect Mount Bridge', onclick: 'reconnectBridge()', action: 'reconnect-bridge' }],
+    });
+  }
+  if (question) {
+    const d = question.driftArcmin;
+    const apart = d === null ? '' : ' by ' + (d >= 60 ? Math.round(d / 60) + '\u00b0' : d.toFixed(1) + '\u2032');
+    items.push({
+      id: 'reposition-question', category: 'mount-bridge',
+      title: `Mount and PiFinder suddenly differ${apart}`,
+      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position. Not on purpose: send the mount back to the target (it slews).',
+      buttons: [
+        { label: 'Adopt this position', onclick: 'triggerRepositionAdopt()', action: 'reposition-adopt' },
+        { label: 'Back to the target (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
+      ],
+    });
+  }
+  return items;
+}
+// ---- Bridge problems (end) ----
+function applyBridgeProblems(data) {
+  const now = bridgeProblems(data);
+  const key = (b, q) => `${b}|${q ? Math.round((q.driftArcmin || 0) * 10) : 'none'}`;
+  if (key(now.blind, now.question) === key(_mbBlind, _mbQuestion)) return;
+  const blindChanged = now.blind !== _mbBlind;
+  _mbBlind = now.blind;
+  _mbQuestion = now.question;
+  renderNoSolveBanner();
+  if (blindChanged) updateProfileRoleLine();
+}
+async function postBridgeAnswer(path, what) {
+  setSyncFeedback('work', what + ' \u2026', '');
+  try {
+    const d = await (await fetch(path, { method: 'POST' })).json();
+    setSyncFeedback(d.success ? 'ok' : 'warn', d.success ? what + ': sent' : what + ' failed', d.success ? '' : (d.error || ''));
+  } catch (e) {
+    setSyncFeedback('warn', what + ' failed', String(e));
+  }
+}
+function triggerRepositionAdopt() { return postBridgeAnswer('/api/mount_bridge_reposition_adopt', 'Adopt this position'); }
+function reconnectBridge() { return postBridgeAnswer('/api/mount_bridge_reconnect', 'Reconnect Mount Bridge'); }
 
 // ---- mount warnings (issue #583): yellow cards, never automatic ----
 // State from the status poll: the server flags a mount whose reported position
@@ -11875,7 +11958,9 @@ function updateProfileRoleLine() {
   }
   el.textContent = '';
   const dotEl = document.createElement('span');
-  dotEl.className = 'status-dot ' + (ok ? 'dot-green' : 'dot-white');
+  const blind = _mbBlind && role !== 'client';   // a Bridge that reads nothing: never green, whatever else is connected
+  if (blind) detail = `Mount Bridge does not read ${_mbBlind}`;
+  dotEl.className = 'status-dot ' + (blind ? 'dot-red' : ok ? 'dot-green' : 'dot-white');
   el.appendChild(dotEl);
   const nameEl = document.createElement('span');
   nameEl.className = 'role-name';

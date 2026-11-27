@@ -101,6 +101,11 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // from before never does. consumePiFinderTargetPending() reads and
         // clears it atomically so each real event is only ever acted on once.
         bool consumePiFinderTargetPending();
+        bool hasPiFinderTargetPending() const;
+
+        // The watched devices whose properties have not arrived ("A, B"); empty when bound. A connected Bridge that misses one
+        // checks and moves nothing, however green its connection looks.
+        std::string missingDevices() const;
 
         // What somebody else did to the mount since the last call; the newest event wins.
         //   GOTO         - a GoTo this Bridge did not send (KStars, the StellarMate app, any INDI client): the mount driver

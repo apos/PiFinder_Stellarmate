@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live test: a GoTo sent to the mount is refined like one sent to PiFinder. MOVES THE MOUNT - Telescope Simulator only.
 
-    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder,bounded,hold,held]
+    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder,bounded,hold,held,question]
 
 Needs the running Full Simulation: Mount Bridge on the Telescope Simulator in the GoTo coupling and the simulated sky with a landing
 error larger than the threshold ("typical"). Refuses any other mount.
@@ -14,6 +14,8 @@ bounded   A target that cannot be reached (threshold set to 0.1' for this scenar
 hold      An alignment (the hold the Control Center sets): a Sync during it, then released as solved: the Bridge moves and syncs
           nothing afterwards; the next GoTo works again.
 held      "Goto to Target" (the Control Center's button) from elsewhere: ends on the target, which stays the target.
+question  The scope "bumped" (the simulated sky moves, the mount does not): a question, nothing moves for longer than the former
+          45 s; "adopt" and "back to the target" both do what they say.
 pifinder  GoTo to the PiFinder device (as KStars does on "PiFinder LX200"): unchanged, ends on target.
 
 Exit 0 = every scenario passed.
@@ -269,7 +271,64 @@ def scenario_held(threshold):
                  "phase %s, mount %.1f' from the target after the button, asked %s" % (phase(), off, run.asked))
 
 
-SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold, "held": scenario_held}
+def bump(east, north):
+    """The simulated sky (what PiFinder sees) moves against the mount's report: clutch slip."""
+    with open(os.path.expanduser("~/.pfsm/gsc_sim_nudge.json"), "w") as f:
+        f.write('{"east": %d, "north": %d}' % (east, north))
+
+
+def quiet_for(run, seconds):
+    slews = []
+
+    def note():
+        if read(MOUNT, "EQUATORIAL_EOD_COORD").get("state") == "Busy":
+            slews.append(round(time.time() - run.t0))
+        return False
+
+    run.watch(seconds, note)
+    return not slews
+
+
+def scenario_question(threshold):
+    ra, dec = targets()[0]
+    results = []
+    for answer in ("adopt", "back"):
+        first = Run()
+        send_coords(MOUNT, "SLEW", ra, dec)
+        first.watch(150, lambda: phase() == "ON_TARGET" and len(first.phases) > 1)
+        first.watch(8)
+        before = mount_position()
+        run = Run()
+        bump(60, 0)
+        asked = run.watch(60, asking)
+        still = quiet_for(run, 60)          # longer than the former 45 s
+        open_still = asking() and phase() == "CHECK_SCOPE"
+        moved = separation_deg(before[0], before[1], *mount_position()) * 60
+        results.append(check("question (%s): asked" % answer, asked and still and open_still and moved < 2,
+                             "asked %s, nothing moved for 60 s %s, still open %s, mount moved %.1f'" % (asked, still, open_still, moved)))
+        if answer == "adopt":
+            indi_client.trigger_reposition_adopt()
+            run.watch(30)
+            d = drift_arcmin()
+            moved = separation_deg(before[0], before[1], *mount_position()) * 60
+            results.append(check("question: adopt", not asking() and d is not None and d <= threshold and 30 < moved < 90,
+                                 "mount-PiFinder %s', mount now %.1f' from before (the bump was 60')" % (d and round(d, 1), moved)))
+        else:
+            indi_client.trigger_reposition_revert()
+            run.watch(90, lambda: phase() == "ON_TARGET")
+            off = pifinder_off_target_arcmin(ra, dec)
+            results.append(check("question: back to the target", not asking() and phase() == "ON_TARGET",
+                                 "phase %s, PiFinder %s' from the target" % (phase(), off and round(off, 1))))
+    bump(60, 0)
+    run = Run()
+    run.watch(60, asking)
+    send_coords(MOUNT, "SLEW", *targets()[1])
+    run.watch(150, lambda: phase() == "ON_TARGET" and len(run.phases) > 1)
+    results.append(check("question: a new GoTo withdraws it", not asking() and phase() == "ON_TARGET", "phase %s, asking %s" % (phase(), asking())))
+    return all(results)
+
+
+SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold, "held": scenario_held, "question": scenario_question}
 
 
 def main(argv=None):

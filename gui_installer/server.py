@@ -7281,6 +7281,32 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_reposition_adopt":
+            _mb_log("adopting the position PiFinder sees (answer to the Mount Bridge's question)...")
+            try:
+                indi_client.trigger_reposition_adopt()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_reconnect":
+            _mb_log("reconnecting the Mount Bridge (it does not read one of its devices)...")
+            try:
+                indi_client.disconnect_device("PiFinder Mount Bridge")
+                time.sleep(2.0)
+                indi_client.connect_device("PiFinder Mount Bridge")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_reposition_revert":
             # 2026-09-11, direct feedback: exposes REPOSITION_CONFIRM_NO
             # ("Revert to held target") - already-existing, already-safe

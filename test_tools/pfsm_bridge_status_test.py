@@ -32,6 +32,13 @@ class BridgeStatusTest(unittest.TestCase):
         m._cache["mtime"] = None
         m._cache["data"] = None
 
+    def test_the_open_question_stays_while_it_is_renewed(self):
+        m.write(status("CHECK_SCOPE", residual_arcmin=185), self.path, now=T0)
+        self.assertEqual(m.titlebar(self.path, now=T0 + 5), ("CHECK MOUNT", False))
+        self.assertTrue(m.is_warning(m.titlebar(self.path, now=T0 + 5)))
+        self.assertIsNone(m.titlebar(self.path, now=T0 + 60), "a lost Bridge leaves nothing stuck on the screen")
+        self.assertLessEqual(len(m.CHECK_TEXT), 13)
+
     def test_clean_accepts_a_status_and_derives_hands_off(self):
         self.assertTrue(m.clean(status("SLEWING"))["hands_off"])
         self.assertTrue(m.clean(status("VERIFYING"))["hands_off"])

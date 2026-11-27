@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center: a yellow card for the Mount Bridge's question after a sudden disagreement without mount movement (what happened, what to do, two buttons; PiFinder shows CHECK MOUNT), and a red card and red status when the Bridge does not read its mount or PiFinder (`BRIDGE_BINDING`).
 - Mount Bridge pauses during Ekos alignments (plate solve, polar alignment, mount model); after a solve with a Sync, PiFinder is aligned to the mount's position.
 - README: which GoTo does what (PiFinder, KStars, the StellarMate app's SLEW and GO); concept for aligning PiFinder after an Ekos solve.
 - Control Center: the mount's node in the Mount Bridge diagram shows its state as a symbol (tracking, blinking while slewing, stopped, parked, unknown).
@@ -28,6 +29,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Mount Bridge: that question no longer times out after 45 s and drives back; nothing moves until it is answered, a new GoTo is given, or mount and PiFinder agree again. After an alignment that moved the mount without any command the Bridge keeps off, too.
 - Alignment pause: ends when nothing alignment-related is observably going on (no fixed 2 minutes); the page shows what keeps it.
 - Control Center: after a movement by hand the card says "Holding target" instead of "On target".
 - Mount Bridge, GoTo coupling: after a movement by hand the mount is synced to PiFinder at once instead of asking the 45 s question; after a stop (abort) the Bridge does not move the mount until the next GoTo.

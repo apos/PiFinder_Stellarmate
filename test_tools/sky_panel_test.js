@@ -200,6 +200,10 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
   ok(t.length === 2 && T.skyPositioningTrailItems(t, false)[1].text === 'Off target' && T.skyPositioningBand(t, pos({ phase: 'OFF_TARGET' }), off).join(' ') === 'done done done warn', 'off target ends a run with a warning');
 }
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
+{
+  const q = T.skyPositioningModel(pos({ phase: 'CHECK_SCOPE', hands_off: false, residual_arcmin: 185 }));
+  ok(q.tone === 'warn' && q.head === 'Check the mount: 3\u00b0 apart' && /Nothing moves/.test(q.why), 'an open question is shown as such, not as on target');
+}
 
 // the Bridge stops answering during a hands-off move: a notice instead of a vanished line
 const lastOff = T.skyPositioningModel(pos({}));
