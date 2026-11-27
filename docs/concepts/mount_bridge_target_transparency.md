@@ -275,7 +275,7 @@ ON_TARGET stays.
   hands off; after a failed post it waits 30 s (a PiFinder without the patch answers 404 and shows nothing).
 - **PiFinder** (three diffs: `pfsm_bridge_status_py.diff` new module, `api_extensions_bridge_status_py.diff` registers the route,
   `ui_base_py.diff` title bar): "MOUNT MOVING" in a bright title bar while the Bridge moves the mount or verifies, "ON TARGET" for
-  12 s, "MOUNT OFF 2.4'" (from 60' on in degrees, "MOUNT OFF 103°"; bright on black, no status icons) for 20 s after giving up. The number is the distance between mount and PiFinder. The Control Center card shows the badge "Don't touch the mount" only while the mount is moved (wording changed 2026-11-27: "Hands off / Hands free / Hand OK" was not understood). The rotating constellation/SQM text is suppressed meanwhile (it ran into the longer
+  12 s, "MOUNT OFF 2.4'" (from 60' on in degrees, "MOUNT OFF 103°"; bright on black, no status icons) for 20 s after giving up. The number is the distance between mount and PiFinder. If both agree but PiFinder is more than the threshold from the GoTo target, the phase is `OFF_TARGET` ("OFF TARGET 103°"; card: "Not on the target") - "On target" needs both. The Control Center card shows the badge "Don't touch the mount" only while the mount is moved (wording changed 2026-11-27: "Hands off / Hands free / Hand OK" was not understood). The rotating constellation/SQM text is suppressed meanwhile (it ran into the longer
   title). A hands-off status that is not renewed within 8 s is ignored (fail safe). The title bar holds about 13 characters on the
   128 px display.
 - Checked on the real PiFinder screen (`/api/screen`) and with the sky simulation end to end: SLEWING -> VERIFYING -> REFINING ->

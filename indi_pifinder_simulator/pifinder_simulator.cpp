@@ -42,7 +42,7 @@ size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
 bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName,
                               double centerRA = NAN, double centerDec = NAN, double radiusDeg = 180.0)
 {
-    for (const char *url : {"http://127.0.0.1/api/nearby_bright_stars", "http://127.0.0.1:8080/api/nearby_bright_stars"})
+    for (const char *url : {"http://127.0.0.1:8080/api/nearby_bright_stars", "http://127.0.0.1/api/nearby_bright_stars"})
     {
         CURL *curl = curl_easy_init();
         if (curl == nullptr)

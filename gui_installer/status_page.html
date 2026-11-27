@@ -799,6 +799,7 @@
     border: 1px solid #555;
   }
   .status-dot.dot-white { background: #e8e8e8; }
+  .status-dot.dot-idle { background: #777; border-color: #777; }
   .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
@@ -2873,7 +2874,7 @@
           <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand."><span class="mb-sync-dir">PiFinder &rarr; mount</span>Sync mount from PiFinder</button>
           <button id="mb-sync-pifinder-btn" data-mb-action="sync-pifinder-from-mount" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncPiFinderFromMount()" disabled title="One-shot: tells PiFinder where the mount points - the mount is trusted, PiFinder is corrected. Use it after you centred a star in the scope and PiFinder doesn't agree. On a real PiFinder this is PiFinder's own Align (like picking the star on the device), real plate-solving keeps running; it needs a current plate solve and the mount inside PiFinder's field of view. In Full Simulation it injects the mount's position instead. Needs a connected mount."><span class="mb-sync-dir">mount &rarr; PiFinder</span>Sync PiFinder from mount</button>
             </div>
-            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
+            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
             <div class="mb-qa-group-label">Target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the target? The position the Mount Bridge keeps and returns to: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
@@ -9292,6 +9293,8 @@ function skyMountStyle(state) {
   if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
   return { color: SKY_C.blue, word: null };
 }
+// A distance in words: degrees from 60' on, arcminutes below (the same rule as PiFinder's title bar).
+function skyDistance(arcmin) { return arcmin >= 60 ? Math.round(arcmin / 60) + '\u00b0' : arcmin.toFixed(1) + '\u2032'; }
 // The Bridge's positioning status (POSITIONING_STATUS / POSITIONING_PHASE) as what the line under the picture says.
 // null: nothing to say (no status, an older driver, or idle). Wording agreed with the owner (docs/concepts/
 // mount_bridge_target_transparency.md section 12): "Don't touch the mount" from the start of the slew until the arrival is verified.
@@ -9317,8 +9320,13 @@ function skyPositioningModel(p) {
     case 'ON_TARGET':
       m.head = 'On target'; m.sub = arc(p.residual_arcmin) + ' \u00b7 you can fine-centre now'; break;
     case 'GAVE_UP':
-      m.tone = 'warn'; m.head = 'Still ' + arc(p.residual_arcmin) + ' off after ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's');
-      m.sub = 'the hand controller is yours'; m.why = 'The mount or its alignment limits this, not the Bridge.'; break;
+      m.tone = 'warn'; m.head = 'Mount and PiFinder differ by ' + skyDistance(p.residual_arcmin);
+      m.sub = 'you can steer by hand';
+      m.why = p.attempt > 0 ? 'Still apart after ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') + '. The mount or its alignment limits this, not the Bridge.'
+        : 'Too far apart for an automatic correction.'; break;
+    case 'OFF_TARGET':
+      m.tone = 'warn'; m.head = 'Not on the target: ' + skyDistance(p.residual_arcmin) + ' away';
+      m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo.'; break;
     case 'HOLDING':
       m.head = 'Holding the target'; break;
     default:
@@ -9333,17 +9341,18 @@ function skyPositioningModel(p) {
 // The whole run as a growing trail: Slewing > Verifying > Fine-adjusting 1 > Verifying > On target. The Bridge goes through the phases
 // more than once (a refine means another slew and another check), so a bar of four steps would jump back; the trail only grows until
 // the run is over. The current step is amber, finished ones green, the goal ("On target") is shown faintly at the end while it runs.
-const SKY_TRAIL_LABEL = { SLEWING: 'Slewing', VERIFYING: 'Verifying', REFINING: 'Fine-adjusting', ON_TARGET: 'On target', GAVE_UP: 'Gave up' };
+const SKY_TRAIL_LABEL = { SLEWING: 'Slewing', VERIFYING: 'Verifying', REFINING: 'Fine-adjusting', ON_TARGET: 'On target', GAVE_UP: 'Gave up', OFF_TARGET: 'Off target' };
+const SKY_END_PHASES = ['ON_TARGET', 'GAVE_UP', 'OFF_TARGET'];
 function skyPositioningTrailUpdate(trail, p) {
   if (!p || !p.phase || p.phase === 'IDLE' || !SKY_TRAIL_LABEL[p.phase]) return trail || [];
   let t = (trail || []).slice();
   const last = t[t.length - 1];
-  const ended = last && (last.phase === 'ON_TARGET' || last.phase === 'GAVE_UP');
+  const ended = last && SKY_END_PHASES.includes(last.phase);
   if (p.hands_off) {
     if (ended) t = [];                       // a new run begins
     const tail = t[t.length - 1];
     if (!tail || tail.phase !== p.phase || (p.phase === 'REFINING' && tail.attempt !== p.attempt)) t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
-  } else if ((p.phase === 'ON_TARGET' || p.phase === 'GAVE_UP') && (!last || last.phase !== p.phase)) {
+  } else if (SKY_END_PHASES.includes(p.phase) && (!last || last.phase !== p.phase)) {
     t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
   }
   return t;
@@ -9354,20 +9363,20 @@ function skyPositioningTrailItems(trail, handsOff) {
   const items = trail.map((s, i) => {
     const text = SKY_TRAIL_LABEL[s.phase] + (s.phase === 'REFINING' ? ' ' + s.attempt : '');
     const lastOne = i === trail.length - 1;
-    return { text: text, state: s.phase === 'GAVE_UP' ? 'warn' : (lastOne && handsOff ? 'now' : 'done') };
+    return { text: text, state: s.phase === 'GAVE_UP' || s.phase === 'OFF_TARGET' ? 'warn' : (lastOne && handsOff ? 'now' : 'done') };
   });
   if (handsOff) items.push({ text: SKY_TRAIL_LABEL.ON_TARGET, state: 'later' });
   return items;
 }
 // ---- the card's rows (variant C) ----
-const SKY_BAND_STEP = { SLEWING: 0, VERIFYING: 1, REFINING: 2, ON_TARGET: 3, HOLDING: 3, GAVE_UP: 2 };
+const SKY_BAND_STEP = { SLEWING: 0, VERIFYING: 1, REFINING: 2, ON_TARGET: 3, HOLDING: 3, GAVE_UP: 2, OFF_TARGET: 3 };
 const SKY_BAND_LABEL = ['slewing', 'verifying', 'refining', 'on target'];
 // The four-step band: how far this run has come. It never goes backwards (a refine means another slew and another check, the detailed
 // order is in the run list below it); segments are 'done', 'now', 'warn' (the run gave up) or 'later'.
 function skyPositioningBand(trail, p, m) {
   if (m && m.interrupted) return [0, 1, 2, 3].map((i) => (i < (m.step || 0) ? 'done' : i === (m.step || 0) ? 'warn' : 'later'));
   const phase = p && p.phase;
-  if (phase === 'GAVE_UP') return ['done', 'done', 'done', 'warn'];
+  if (phase === 'GAVE_UP' || phase === 'OFF_TARGET') return ['done', 'done', 'done', 'warn'];
   if (phase === 'ON_TARGET' || phase === 'HOLDING') return ['done', 'done', 'done', 'done'];
   let reached = SKY_BAND_STEP[phase] || 0;
   (trail || []).forEach((t) => { reached = Math.max(reached, SKY_BAND_STEP[t.phase] || 0); });
@@ -9382,7 +9391,8 @@ function skyPositioningNow(p, m) {
     case 'VERIFYING': return ['Step 2 of 4: verifying', attempt];
     case 'REFINING': return ['Step 3 of 4: refining', attempt];
     case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
-    case 'GAVE_UP': return ['Gave up', p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's')];
+    case 'GAVE_UP': return ['Gave up', p.attempt > 0 ? p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
+    case 'OFF_TARGET': return ['Off target', ''];
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
   }
 }
@@ -9395,7 +9405,8 @@ function skyPositioningFacts(p, m) {
     case 'VERIFYING': return [p.solve_age_sec !== null && p.solve_age_sec > 5 ? 'no fresh solve for ' + Math.round(p.solve_age_sec) + ' s' : 'waiting for a fresh solve'];
     case 'REFINING': return [arc(p.residual_arcmin) + ' off the target', 'correcting'];
     case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
-    case 'GAVE_UP': return [arc(p.residual_arcmin) + ' off', 'the hand controller is yours'];
+    case 'GAVE_UP': return [skyDistance(p.residual_arcmin) + ' apart', 'you can steer by hand'];
+    case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
     default: return [];
   }
 }
@@ -10028,7 +10039,7 @@ function setSyncFeedback(kind, lead, rest, tooltip) {
   _syncFeedbackIdle = kind === 'idle' || kind === 'feed';
   el.classList.remove('mb-sync-ok', 'mb-sync-warn', 'mb-sync-work');
   if (kind === 'ok' || kind === 'warn' || kind === 'work') el.classList.add('mb-sync-' + kind);
-  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : 'dot-unconfirmed';
+  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : kind === 'idle' ? 'dot-idle' : 'dot-unconfirmed';
   el.textContent = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot ' + dotClass;
@@ -10057,7 +10068,7 @@ function refreshSyncIdleText(syntheticSolveRunning) {
     setSyncFeedback('feed', 'Synthetic Solve is feeding PiFinder', 'no manual sync needed',
       'Full Simulation: Synthetic Solve continuously gives PiFinder the simulated mount\'s position. Sync buttons still work for a one-off correction.');
   } else {
-    setSyncFeedback('idle', 'No sync since page load', '');
+    setSyncFeedback('idle', 'No manual sync yet', '');
   }
 }
 

@@ -78,6 +78,14 @@ class BridgeStatusTest(unittest.TestCase):
         m.write(status("GAVE_UP", residual_arcmin=6157.4), self.path, now=T0)
         self.assertEqual(m.titlebar(self.path, now=T0 + 1.0), ("MOUNT OFF 103°", False))
 
+    def test_agreeing_away_from_the_goto_target_says_off_target(self):
+        m.write(status("OFF_TARGET", residual_arcmin=6157.4), self.path, now=T0)
+        banner = m.titlebar(self.path, now=T0 + 1.0)
+        self.assertEqual(banner, ("OFF TARGET 103°", False))
+        self.assertTrue(m.is_warning(banner))
+        self.assertLessEqual(len(banner[0]), 16)
+        self.assertIsNone(m.titlebar(self.path, now=T0 + m.SHOW_GAVE_UP_SEC + 1))
+
     def test_the_other_banners_are_no_warning(self):
         self.assertFalse(m.is_warning(("MOUNT MOVING", True)))
         self.assertFalse(m.is_warning(("ON TARGET", False)))

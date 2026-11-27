@@ -824,7 +824,7 @@ def _positioning_status(device_props: dict):
     """The Mount Bridge's POSITIONING_STATUS / POSITIONING_PHASE (what it is doing to get the scope onto the target, and whether
     the user should keep their hands off the hand controller): {"phase", "attempt", "attempts_max", "residual_arcmin",
     "elapsed_sec", "to_go_deg", "solve_age_sec" (None when unknown), "hands_off"} or None for an older driver without the
-    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, HOLDING."""
+    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, OFF_TARGET, HOLDING."""
     prop = device_props.get("POSITIONING_STATUS", {})
     phase = device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("PHASE")
     if not prop or not phase:
