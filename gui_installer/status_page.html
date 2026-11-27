@@ -9336,9 +9336,9 @@ function skyPositioningModel(p) {
         : 'Too far apart for an automatic correction.'; break;
     case 'OFF_TARGET':
       m.tone = 'warn'; m.head = 'Not on the target: ' + skyDistance(p.residual_arcmin) + ' away';
-      m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo.'; break;
+      m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
     case 'HOLDING':
-      m.head = 'Holding the target'; break;
+      m.head = 'Holding target'; break;
     default:
       return null;
   }
@@ -9387,7 +9387,8 @@ function skyPositioningBand(trail, p, m) {
   if (m && m.interrupted) return [0, 1, 2, 3].map((i) => (i < (m.step || 0) ? 'done' : i === (m.step || 0) ? 'warn' : 'later'));
   const phase = p && p.phase;
   if (phase === 'GAVE_UP' || phase === 'OFF_TARGET') return ['done', 'done', 'done', 'warn'];
-  if (phase === 'ON_TARGET' || phase === 'HOLDING') return ['done', 'done', 'done', 'done'];
+  if (phase === 'ON_TARGET') return ['done', 'done', 'done', 'done'];
+  if (phase === 'HOLDING') return ['later', 'later', 'later', 'later'];   // no run: nothing was driven to a target
   let reached = SKY_BAND_STEP[phase] || 0;
   (trail || []).forEach((t) => { reached = Math.max(reached, SKY_BAND_STEP[t.phase] || 0); });
   return [0, 1, 2, 3].map((i) => (i < reached ? 'done' : i === reached ? 'now' : 'later'));
@@ -9403,6 +9404,7 @@ function skyPositioningNow(p, m) {
     case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
     case 'GAVE_UP': return ['Gave up', p.attempt > 0 ? p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
     case 'OFF_TARGET': return ['Off target', ''];
+    case 'HOLDING': return ['Holding target', ''];   // no verdict about "on target": e.g. after a movement by hand
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
   }
 }

@@ -388,14 +388,29 @@ der Fahrt wartet die Bridge auf einen Plate-Solve von PiFinder. Sieht PiFinder d
 | PiFinder: Objekt anwählen (Push-to) | ja |
 | KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | ja |
 | KStars / Ekos: Goto auf dem Mount, StellarMate-App **SLEW**, jeder andere INDI-Client | ja |
-| StellarMate-App: **GO** | ja. Zusätzlich macht Ekos eine Aufnahme durch die **Teleskopkamera**, löst sie und korrigiert je nach Ekos-Aktion selbst mit Sync und Fahrt ([geplant](docs/concepts/mount_bridge_ekos_align_pifinder.md): PiFinder mit diesem Solve ausrichten) |
+| StellarMate-App: **GO** | ja. Zusätzlich macht Ekos eine Aufnahme durch die **Teleskopkamera** und löst sie, s. unten "Alignment in Ekos" |
 | OnStep-Handsteuerung oder OnStep-App (Katalog-GoTo) | **noch nicht** ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)): Das Ziel kommt in INDI nicht an. Übernommen wird die Stelle, die PiFinder nach der Fahrt sieht |
 
-**Von Hand** (Richtungstasten, Pfeile der Handsteuerung, Klemmung): Die neue Position wird übernommen und das Mount auf PiFinder
-abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bewegt (Klemmung offen, Teleskop angestoßen), fragt
-sie vorher.
+**Wird das Objekt nach 3 Versuchen nicht erreicht,** hört die Bridge auf, zeigt `OFF TARGET` und bewegt bis zum nächsten GoTo
+nichts mehr. Dann das Ausrichtungsmodell des Mounts prüfen.
 
-**Stopp** (Abort in KStars/Ekos, "Stop movement" im Control Center): Die Bridge bewegt das Mount erst wieder beim nächsten GoTo.
+**Von Hand** (Richtungstasten, Pfeile der Handsteuerung): Die neue Position wird übernommen und das Mount auf PiFinder
+abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bewegt (Klemmung offen, Teleskop angestoßen),
+fragt die Bridge nach - derzeit nur im INDI-Log - und fährt ohne Antwort nach 45 s zurück.
+
+**Stopp**: Nach einem Abort in KStars/Ekos bewegt die Bridge das Mount erst wieder beim nächsten GoTo. "Stop movement" im
+Control Center schaltet zusätzlich die Kopplung aus.
+
+**Alignment in Ekos** (Plate-Solve, Polar Alignment, Mount-Modell; auch GO): Die Bridge pausiert, solange Ekos aufnimmt, löst
+oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.
+
+| Ekos-Aktion des Solvers | PiFinder | Mount Bridge |
+|---|---|---|
+| Sync / Slew to target, gelöst | wird auf die Mount-Position ausgerichtet | bewegt nichts bis zum nächsten GoTo |
+| Nothing, gelöst | unverändert | bewegt nichts bis zum nächsten GoTo |
+| Solve fehlgeschlagen, Mount weder gesynct noch gedreht | unverändert | führt ein laufendes GoTo zu Ende |
+
+Ein Alignment von der OnStep-Handsteuerung oder -App wird noch nicht erkannt.
 
 ## SMOS-Updates
 

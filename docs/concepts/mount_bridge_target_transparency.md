@@ -317,3 +317,11 @@ GoTo.
 Not covered: the real OnStep; a stop on the hand controller itself (not visible in INDI); Ekos correcting during a **GO** at the
 same time as the Bridge; a first landing further off than the auto-Sync limit (120') ends in "gave up"; alignment routines and
 polar alignment, which slew the mount themselves - switch the coupling off for those.
+
+### 13.1 The attempts are bounded (2026-11-27)
+
+Found live the same day: a mount whose model landed 23' off every time was driven again every 12 s for minutes, because holding
+restarted the Goto with three fresh attempts. Now a run that ends without reaching the target (attempts used up, residual beyond
+the sync limit, mount refused or stopped elsewhere) ends all movement until the next GoTo. The attempts are also used when mount
+and PiFinder agree but both are beside the target. Checked: scenario `bounded`, and the original case (SLEW to Caph on the
+distorted simulator model: 3 attempts, then at rest).

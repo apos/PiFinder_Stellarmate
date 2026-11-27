@@ -1188,6 +1188,17 @@ def set_coupling_mode(
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
 
 
+def mount_bridge_hold_syncs(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> int:
+    """How many Syncs another client sent to the mount during the current external hold (Ekos after a plate solve); 0 if the
+    driver does not say."""
+    try:
+        props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout,
+                               stop_after={"EXTERNAL_HOLD_SEEN"})
+        return int(float(props["PiFinder Mount Bridge"]["EXTERNAL_HOLD_SEEN"]["elements"]["MOUNT_SYNCS"]))
+    except (INDIClientError, KeyError, TypeError, ValueError):
+        return 0
+
+
 def set_mount_bridge_external_hold(
     on: bool,
     reason: str = "",

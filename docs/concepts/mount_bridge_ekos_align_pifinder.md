@@ -1,8 +1,8 @@
 # Align PiFinder automatically after an Ekos plate solve ("GO" in the StellarMate app)
 
-> **Status: concept, not implemented.** Asked for by the project owner on 2026-11-27: "GO can be useful if one also wants a solve
-> through the telescope camera in order to align the PiFinder afterwards. It would be great if PFSM did that automatically when it
-> comes from SMOS/GO and a solve actually happens."
+> **Status: implemented 2026-11-27 (§5), not yet observed with a real Ekos solve.** Asked for by the project owner on 2026-11-27:
+> "GO can be useful if one also wants a solve through the telescope camera in order to align the PiFinder afterwards", and: polar
+> alignment and mount alignment must pause the Bridge like guiding does. §1-§4 are the first draft; §5 is what was built.
 
 ## 1. Idea
 
@@ -35,3 +35,20 @@ cannot see what the telescope sees (outside the camera's field of view PiFinder 
 - Does a successful GO end with the mount on the target (Ekos action "slew to target") on the real OnStep?
 - Interaction with the planned refine of mount-side GoTos (target transparency §4.1): during a GO, Ekos refines; the Bridge must not.
 - Test: Telescope Simulator with the CCD Simulator (it renders GSC stars, so Ekos can solve) before the real camera and mount.
+
+## 5. What was built
+
+Owner's rule for the Ekos solver action: Sync -> do the same for PiFinder; Slew to target -> the scope ends on the object;
+Nothing -> PFSM does nothing either.
+
+- **Control Center** (same watchdog as guiding): reads `org.kde.kstars.Ekos.Align.status` every 3 s. KStars 3.8.5 values: 0 idle,
+  1 complete, 2 failed, 3 aborted, 4 in progress, 5 successful, 6 syncing, 7 slewing, 8 rotating, 9 suspended. 4, 6-9 set
+  `EXTERNAL_HOLD`; released after 15 s without them, after 120 s if the last value is 5 (not a resting state, and polar alignment
+  turns the mount after it; no separate polar alignment state exists on D-Bus).
+- If the end state is solved (1 or 5) **and** another client synced the mount during the hold (`EXTERNAL_HOLD_SEEN.MOUNT_SYNCS`)
+  and the coupling is on: PiFinder's Align on the mount's position, while still held. A refusal is logged, never forced.
+- Release reason `alignment ended: solved` / `alignment ended: not solved`. **Driver:** after a solved end, or if the mount was
+  synced or turned by its direction buttons during the hold, it moves and syncs nothing until the next GoTo; otherwise an
+  interrupted GoTo is carried on.
+- Checked: `test_tools/alignment_hold_test.py` (7, stand-ins), live on the Telescope Simulator the driver side
+  (`mount_goto_refine_test.py --only hold`). **Not yet:** a real Ekos solve, polar alignment, the mount model tool.

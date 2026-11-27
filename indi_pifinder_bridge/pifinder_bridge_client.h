@@ -120,6 +120,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // follows is that client's Sync and no movement. A very large value if never seen.
         double secondsSinceForeignMountSync() const;
 
+        // How many times another client has switched the mount to Sync since this process started.
+        int foreignMountSyncs() const { return m_foreignSyncCount; }
+
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
 
@@ -273,6 +276,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         double m_mountEventRA = 0.0, m_mountEventDec = 0.0;
         std::string m_ignoredTargetNote;
         std::atomic<long> m_lastForeignSyncTime { 0 };
+        std::atomic<int> m_foreignSyncCount { 0 };
 
         // Guards m_piFinderTargetPending - same cross-thread reasoning as
         // m_mountRejectMutex above (written from updateProperty()'s I/O

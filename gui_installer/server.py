@@ -1349,6 +1349,50 @@ def _ekos_guide_status():
         return None
 
 
+def _ekos_align_status():
+    """Ekos::AlignState as an int, or None if the Align module isn't reachable. KStars 3.8.5 (kstars/ekos/ekos.h): 0 idle,
+    1 complete, 2 failed, 3 aborted, 4 in progress, 5 successful, 6 syncing, 7 slewing, 8 rotating, 9 suspended. The numbers
+    come from the position in that enum - re-check after a KStars upgrade. Polar alignment and the mount model tool work through
+    the same module: their captures, solves and slews show here (Ekos exposes no separate state for them on D-Bus)."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Align", "org.kde.kstars.Ekos.Align.status"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+_ALIGN_BUSY_STATES = {4, 6, 7, 8, 9}
+_ALIGN_SOLVED_STATES = {1, 5}
+# "successful" is not a resting state in the Sync and slew actions, and polar alignment turns the mount after it: wait longer.
+_ALIGN_SUCCESSFUL_DEBOUNCE_S = 120
+
+
+def _align_pifinder_after_solve():
+    """Ekos solved and synced the mount: PiFinder gets the same truth (its own Align on the mount's position). Does nothing with
+    the coupling off. A refusal (PiFinder cannot see that position, no solve) is logged and never forced."""
+    try:
+        if indi_client.mount_bridge_drift().get("coupling_mode") in (None, "MODE_OFF"):
+            return
+    except indi_client.INDIClientError:
+        return
+    result = _pifinder_align_from_mount("8080")
+    if result.get("success"):
+        _mb_log("Alignment solved and synced the mount: PiFinder aligned to the mount's position.")
+    else:
+        _mb_log("Alignment solved and synced the mount, but PiFinder was NOT aligned: "
+                f"{result.get('message') or result.get('error') or result.get('reason')}")
+
+
 # Fail-safe by design (2026-09-27, re-reviewed against the original
 # EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
 # before reviving this branch): an allow-list of "held" states (the
@@ -1418,7 +1462,7 @@ def _guiding_hold_watchdog(interval=3):
 
 def _guiding_hold_watchdog_tick():
     global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
-    global _guiding_hold_adopted_initial_state
+    global _guiding_hold_adopted_initial_state, _guiding_hold_seen, _align_hold_seen
     if _guiding_hold_supported is False:
         return  # confirmed missing on this build - already logged once, stay quiet
 
@@ -1437,20 +1481,32 @@ def _guiding_hold_watchdog_tick():
         _guiding_hold_supported = True
         _guiding_hold_active = live
         if live:
+            try:
+                _align_hold_seen = str(indi_client.mount_bridge_drift().get("external_hold_reason") or "").startswith("alignment")
+            except indi_client.INDIClientError:
+                pass
             _mb_log("Guiding watchdog: adopted an external hold already engaged on the driver from before this restart.")
 
     gs = _ekos_guide_status()
-    if gs is None:
+    als = _ekos_align_status()
+    if gs is None and (als is None or _guiding_hold_seen):
         return
-    guiding_now = gs not in _GUIDE_SAFE_STATES
+    guiding_now = gs is not None and gs not in _GUIDE_SAFE_STATES
+    aligning_now = als in _ALIGN_BUSY_STATES
     if guiding_now:
+        _guiding_hold_seen = True
+    if aligning_now:
+        _align_hold_seen = True
+    if guiding_now or aligning_now:
         _guiding_hold_idle_since = None
         want_hold = True
     elif _guiding_hold_active:
         _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
-        want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
+        debounce = _ALIGN_SUCCESSFUL_DEBOUNCE_S if _align_hold_seen and als == 5 else _GUIDING_RELEASE_DEBOUNCE_S
+        want_hold = (time.monotonic() - _guiding_hold_idle_since) < debounce
     else:
         want_hold = False
+    reason = f"alignment (Ekos AlignState {als})" if aligning_now else f"guiding (Ekos GuideState {gs})"
 
     if want_hold and not _guiding_hold_active:
         # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
@@ -1464,20 +1520,28 @@ def _guiding_hold_watchdog_tick():
         except indi_client.INDIClientError:
             pass  # can't tell either way - proceed rather than block forever
         try:
-            indi_client.set_mount_bridge_external_hold(True, f"guiding (Ekos GuideState {gs})")
+            indi_client.set_mount_bridge_external_hold(True, reason)
             _guiding_hold_supported = True
             _guiding_hold_active = True
-            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - Mount Bridge external hold engaged.")
+            _mb_log(f"Hold: {reason} - the Mount Bridge keeps off the mount.")
         except indi_client.INDIClientError as e:
             if _guiding_hold_supported is None:
                 _guiding_hold_supported = False
                 _mb_log(f"Guiding watchdog: EXTERNAL_HOLD not available on this Mount Bridge build - "
                         f"guiding protection disabled until it's rebuilt/updated ({e}).")
     elif not want_hold and _guiding_hold_active:
+        release_reason = ""
+        if _align_hold_seen:
+            solved = als in _ALIGN_SOLVED_STATES
+            release_reason = "alignment ended: solved" if solved else "alignment ended: not solved"
+            # While still held, so the Bridge does not turn PiFinder's Align into a Sync of its own.
+            if solved and indi_client.mount_bridge_hold_syncs() > 0:
+                _align_pifinder_after_solve()
         try:
-            indi_client.set_mount_bridge_external_hold(False)
+            indi_client.set_mount_bridge_external_hold(False, release_reason)
             _guiding_hold_active = False
-            _mb_log("Guiding watchdog: guiding stopped - Mount Bridge external hold released.")
+            _guiding_hold_seen = _align_hold_seen = False
+            _mb_log(f"Hold released{' - ' + release_reason if release_reason else ' - guiding stopped'}.")
         except indi_client.INDIClientError as e:
             # Deliberately keep _guiding_hold_active True on failure - a
             # transient INDI error here must not silently let something
@@ -2303,6 +2367,8 @@ _mb_readiness_retrier = _BackgroundRetrier()
 # default is only trusted once that adoption step has actually run.
 _guiding_hold_active = False
 _guiding_hold_idle_since = None
+_guiding_hold_seen = False   # what caused the current hold: guiding, an Ekos alignment, or both
+_align_hold_seen = False
 # None = not yet determined, True = confirmed present, False = confirmed
 # missing (older Mount Bridge build without #372) - set on the first
 # successful/failed hold attempt, see _guiding_hold_watchdog_tick().

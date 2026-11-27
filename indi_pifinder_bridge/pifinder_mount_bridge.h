@@ -773,9 +773,11 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         bool m_foreignGotoSettling = false;
         double m_foreignGotoSeenEpoch = 0.0;
         static constexpr double FOREIGN_GOTO_STILL_SEC = 4.0;
-        // Somebody stopped the mount while it was being brought to a target: until the next GoTo (or a coupling change, or a
-        // manual trigger) the Bridge starts no movement on its own. Syncs, which move nothing, still happen.
-        bool m_stoppedByUser = false;
+        // Until the next GoTo (or a coupling change, or a manual trigger) the Bridge starts no movement on its own. Set when
+        // somebody stopped the mount, when an alignment ended, and when a target was not reached after all attempts - without
+        // that last one the holding logic restarted the same Goto with fresh attempts every 12 s, for ever (found live
+        // 2026-11-27: a mount whose alignment model lands 23' off every time).
+        bool m_waitForNextGoto = false;
         double m_lastPiSolveEpoch = 0.0; // exposure end of this tick's PiFinder frame (0: none yet)
         // The external movement being watched is another client's Sync: no movement, the mount is not synced back at once.
         bool m_externalMoveWasSync = false;
@@ -986,6 +988,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // actually needs to set it. Cleared to "" on release.
         ITextVectorProperty ExternalHoldReasonTP;
         IText ExternalHoldReasonT[1];
+
+        // What happened to the mount while it was held: Syncs sent by another client (Ekos after a plate solve). The Control
+        // Center reads this to decide whether PiFinder is aligned afterwards.
+        INumberVectorProperty ExternalHoldSeenNP;
+        INumber ExternalHoldSeenN[1];
+        int m_holdSyncsAtStart = 0;
+        bool m_movedByHandDuringHold = false; // direction buttons while held (polar alignment turns the mount that way)
+        void publishHoldSeen();
+        // A hold that ended an alignment: the mount is where the alignment left it, the Bridge stays off it until the next
+        // GoTo. Release reason sent by the Control Center: "alignment ended: solved" or "alignment ended: not solved".
+        void keepOffAfterAlignment();
 
         // Read-only "who does the currently held target come from" badge
         // (#178 GUI unification, 2026-08-08): with Reposition Detection
