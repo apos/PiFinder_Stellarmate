@@ -385,6 +385,7 @@ def follow(args):
     awake_ok = None
     written = None
     lost = False
+    settle_until = 0.0
     try:
         while args.duration is None or time.time() - started < args.duration:
             if not watcher.is_alive():
@@ -399,6 +400,10 @@ def follow(args):
                     break
                 print(f"{time.strftime('%H:%M:%S')} connected again", flush=True)
                 seen_slews, prev_look, last = watcher.slew_count, None, None
+                # A restarted mount driver is a new session: no Sync history, and its position still jumps while it starts up. Taking
+                # those jumps for Syncs moved the rendered sky by 180 degrees (found 2026-11-27, after an update).
+                offset = (args.misalign_east, args.misalign_north)
+                settle_until = time.time() + args.settle_sec
             if not args.no_keep_awake and time.time() - awake_at >= KEEP_AWAKE_EVERY_SEC:
                 awake_at = time.time()
                 ok = keep_awake(args.keep_awake_url)
@@ -409,7 +414,9 @@ def follow(args):
             ra_now = ra_h * 15.0
             ra2000, dec2000 = jnow_to_j2000(ra_now, dec)
             look = (ra2000, dec2000, state)
-            offset, jump = absorb_sync(prev_look, look, offset, watcher.manual_active())
+            jump = None
+            if time.time() >= settle_until:
+                offset, jump = absorb_sync(prev_look, look, offset, watcher.manual_active())
             prev_look = look
             nudge = take_nudge(args.nudge_file)
             if nudge is not None:
@@ -474,6 +481,7 @@ def main(argv=None):
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between looks at the mount")
     ap.add_argument("--min-move", type=float, default=0.02, help="degrees the mount must move before a new picture")
     ap.add_argument("--reconnect-sec", type=float, default=180.0, help="how long to wait for INDI after it closed the connection")
+    ap.add_argument("--settle-sec", type=float, default=20.0, help="after reconnecting, position jumps are not taken for Syncs this long")
     ap.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: until Ctrl-C)")
     ap.add_argument("--misalign-east", type=float, default=0.0, metavar="ARCMIN",
                     help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")
