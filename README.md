@@ -522,6 +522,7 @@ repo it's uninstalling.
 
 ## See Also
 
+*   **[FAQ](docs/FAQ.md)** — short answers, for example whether PFSM keeps running while the phone's screen is locked. ([Deutsche Version](docs/FAQ_de.md))
 *   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, Mount Bridge & Sync workflows, API reference. ([Deutsche Version](Readme_ControlCenter_de.md))
 *   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — the INDI layer: illustrated step-by-step setup (Web Manager equipment profile, INDI Control Panel, KStars/Ekos, SkySafari), LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
 *   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — the numpad-as-keypad bridge: architecture, key mapping, self-healing design. ([Deutsche Version](Readme_KeyboardBridge_de.md))

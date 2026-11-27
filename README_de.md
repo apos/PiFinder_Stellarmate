@@ -535,6 +535,7 @@ heraus ausgeführt werden kann, das er gerade deinstalliert.
 
 ## Siehe auch
 
+*   **[FAQ](docs/FAQ_de.md)** — kurze Antworten, zum Beispiel ob PFSM bei gesperrtem Handy-Display weiterläuft. ([English version](docs/FAQ.md))
 *   **[Readme_ControlCenter_de.md](Readme_ControlCenter_de.md)** — vollständige Control-Center-Dokumentation: Architektur, Designprinzipien, Feature-Übersicht, Mount-Bridge- & Sync-Workflows, API-Referenz. ([English version](Readme_ControlCenter.md))
 *   **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)** — die INDI-Schicht: bebilderte Schritt-für-Schritt-Einrichtung (Equipment-Profil im Web Manager, INDI Control Panel, KStars/Ekos, SkySafari), LX200-Kommando-/Property-Referenz, Code- und Deployment-Strategie. ([English version](Readme_PiFinder_LX200.md))
 *   **[Readme_KeyboardBridge_de.md](Readme_KeyboardBridge_de.md)** — die Numpad-als-Tastatur-Bridge: Architektur, Tastenbelegung, Selbstheilungs-Design. ([English version](Readme_KeyboardBridge.md))
