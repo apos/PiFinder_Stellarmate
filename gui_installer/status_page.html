@@ -9449,7 +9449,7 @@ function skyCardModel(m, p, trail, ctx, fb) {
   const out = { tone: 'idle', head: '', badge: '', band: ['later', 'later', 'later', 'later'], line: '', lineWarn: false, why: '' };
   const attention = () => {
     // what the older status line carried as small marks: the mount refused a command, or the status is not confirmed (stale poll)
-    if (f.reject) { out.tone = 'bad'; out.why = 'The mount refused a command'; }
+    if (f.reject) { out.tone = 'bad'; out.why = 'The mount did not carry out a command'; }
     else if (m && f.status && /dot-(yellow|red)/.test(f.statusDot || '') && !out.why) { out.tone = /dot-red/.test(f.statusDot) ? 'bad' : (out.tone === 'bad' ? 'bad' : 'warn'); out.why = f.status; }
     else if (f.unconfirmed) { if (out.tone === 'free' || out.tone === 'idle') out.tone = 'warn'; out.why = out.why || 'Status not confirmed yet'; }
     return out;

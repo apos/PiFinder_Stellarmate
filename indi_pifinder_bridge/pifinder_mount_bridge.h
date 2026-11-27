@@ -563,6 +563,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_positioningElapsedFinal = 0.0;  // length of the last finished stretch
         bool m_positioningHandsOff = false;
         void setPositioningResult(PositioningResult result, double residualArcmin);
+        // After a slew the mount must report the position it was sent to. If it does not (wrong alignment model, a limit, an aborted
+        // slew), say so and do not Sync: a Sync on top of a wrong model only adds to it. Returns true if the mount arrived.
+        bool mountArrivedWhereSent(double sentRA, double sentDec, double mountRA, double mountDec);
+        static constexpr double MOUNT_ARRIVAL_LIMIT_ARCMIN = 60.0;
         void publishPositioningStatus();
         INumberVectorProperty TargetStatusNP;
         INumber TargetStatusN[4];

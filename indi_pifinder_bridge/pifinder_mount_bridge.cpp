@@ -1498,6 +1498,23 @@ void PiFinderMountBridge::setPositioningResult(PositioningResult result, double 
     m_positioningResidual = residualArcmin;
 }
 
+bool PiFinderMountBridge::mountArrivedWhereSent(double sentRA, double sentDec, double mountRA, double mountDec)
+{
+    if (std::isnan(sentRA) || std::isnan(sentDec))
+        return true;
+    const double missed = angularSeparationArcmin(mountRA, mountDec, sentRA, sentDec);
+    if (missed <= MOUNT_ARRIVAL_LIMIT_ARCMIN)
+        return true;
+    char message[240];
+    snprintf(message, sizeof(message),
+             "The mount stopped %.1f deg from where it was sent (aborted slew, a limit, or a wrong alignment model - check or clear its alignment points)",
+             missed / 60.0);
+    LOGF_ERROR("%s. Not syncing.", message);
+    setMountRejectWarning(true, message);
+    setPositioningResult(PositioningResult::OFF_TARGET, missed);
+    return false;
+}
+
 // Positioning status (#665): derived from the forward/correct state machines, changes none of them.
 void PiFinderMountBridge::publishPositioningStatus()
 {
@@ -1836,6 +1853,15 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
             return true; // finished moving, but waiting for a fresh solve to confirm before trusting it (#79)
 
         m_externalSlewInProgress = false;
+        double adoptedAltitude = 90.0;
+        if (!isAboveHorizon(piRA, piDec, adoptedAltitude))
+        {
+            // Nothing below the horizon can be what the user wants to look at: a wrong mount model or a bad position (found
+            // 2026-11-27: such a position became the Hold position and stayed).
+            LOGF_WARN("Position after the external move is %.1f deg below the horizon (RA %.4fh, DEC %.4f deg) - not adopted as the target.",
+                      -adoptedAltitude, piRA, piDec);
+            return true;
+        }
         m_lastForwardedRA = piRA;
         m_lastForwardedDec = piDec;
         m_correctTargetRA = piRA;
@@ -3097,7 +3123,11 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift > MaxSyncDriftN[0].value)
+            if (!mountArrivedWhereSent(m_lastForwardedRA, m_lastForwardedDec, mountRA, mountDec))
+            {
+                m_forwardState = ForwardState::HOLDING;
+            }
+            else if (drift > MaxSyncDriftN[0].value)
             {
                 // See MaxSyncDriftNP's header comment - a residual this
                 // large is almost certainly a bad/outlier solve, not a
@@ -3528,7 +3558,13 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
             // drift/threshold reflect this tick's freshly-computed
             // separation (passed in from TimerHit), i.e. the actual residual
             // now that the mount has stopped and PiFinder has a fresh solve.
-            if (drift > MaxSyncDriftN[0].value)
+            double arrivedRA, arrivedDec;
+            if (m_client->getMountRADE(arrivedRA, arrivedDec) &&
+                !mountArrivedWhereSent(m_correctTargetRA, m_correctTargetDec, arrivedRA, arrivedDec))
+            {
+                m_correctState = CorrectState::IDLE;
+            }
+            else if (drift > MaxSyncDriftN[0].value)
             {
                 // See MaxSyncDriftNP's header comment - don't Sync off a
                 // likely-bad solve; fall back to normal monitoring instead.
