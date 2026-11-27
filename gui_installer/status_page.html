@@ -2828,7 +2828,7 @@
              buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
              never shown) and the Bridge's positioning status. -->
         <div id="sky-card"></div>
-        <div id="sky-target-line" style="display:none;" title="The Target is what was last asked for. Shown in the card's Details."></div>
+        <div id="sky-target-line" style="display:none;" title="Last GoTo: what was last asked for, by whom. Shown in the card's Details."></div>
         <div id="mb-caption-status-row">
           <div id="mb-mode-caption-row">
             <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
@@ -2886,11 +2886,11 @@
             <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
-            <div class="mb-qa-group-label">Hold Position<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="Hold position (blue cross in the sky picture): where the Mount Bridge keeps the scope, and what these three buttons act on. It is not the same as the Target (ring). Click for the details." onclick="event.stopPropagation()">i</a></div>
+            <div class="mb-qa-group-label">Push-To<a class="help-link" href="/help.html#push-to" target="_blank" rel="noopener" title="Push-To (blue cross in the sky picture): the object PiFinder points you to, where the Mount Bridge keeps the scope - and what these three buttons act on. Click for the details." onclick="event.stopPropagation()">i</a></div>
             <div class="mb-row" id="mb-big-actions-row">
-          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the Hold position to PiFinder as what it is pushed to. The mount is left alone. Needs an active Coupling mode.">Align PiFinder to Hold Position</button>
-          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the Hold position - NOT to PiFinder's current position (unlike Sync mount from PiFinder above). Use it after a bump or a slipped clutch, where PiFinder's own solve shows the disturbed position. Needs an active Coupling mode.">Goto Hold Position</button>
-          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="First corrects the mount's own position belief (Sync to PiFinder's current position), then goes to the Hold position. Does not touch PiFinder's own push-to target. Works in every Coupling mode.">Revert to Hold Position</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the Push-To to PiFinder again, so that PiFinder shows it. The mount is left alone. Needs an active Coupling mode.">Send Push-To to PiFinder</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the Push-To - NOT to PiFinder's current position (unlike Sync mount from PiFinder above). Use it after a bump or a slipped clutch, where PiFinder's own solve shows the disturbed position. Needs an active Coupling mode.">Goto Push-To</button>
+          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="First corrects the mount's own position belief (Sync to PiFinder's current position), then goes to the Push-To. Works in every Coupling mode.">Revert to Push-To</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
             </div>
           </div>
@@ -9360,9 +9360,9 @@ function skyPositioningModel(p) {
       m.tone = 'warn'; m.head = 'Not on the target: ' + skyDistance(p.residual_arcmin) + ' away';
       m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
     case 'HOLDING':
-      m.head = 'Holding target'; break;
+      m.head = 'Holding Push-To'; break;
     case 'WAITING':
-      m.head = 'Waiting for the next GoTo'; m.sub = skyDistance(p.residual_arcmin) + ' from the Hold position';
+      m.head = 'Waiting for the next GoTo'; m.sub = skyDistance(p.residual_arcmin) + ' from the Push-To';
       m.why = 'The Bridge moves nothing until the next GoTo, for example after a Multi-Point Alignment.'; break;
     case 'ALIGNING':
       m.step = 0; m.head = 'Aligning';
@@ -9446,7 +9446,7 @@ function skyPositioningNow(p, m) {
     case 'OFF_TARGET': return ['Off target', ''];
     case 'ALIGNING': return ['Aligning', m.sub];
     case 'CHECK_SCOPE': return ['Check the mount', ''];
-    case 'HOLDING': return ['Holding target', ''];   // no verdict about "on target": e.g. after a movement by hand
+    case 'HOLDING': return ['Holding Push-To', ''];   // no verdict about "on target": e.g. after a movement by hand
     case 'WAITING': return ['Waiting for the next GoTo', ''];
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
   }
@@ -9464,7 +9464,7 @@ function skyPositioningFacts(p, m) {
     case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
     case 'ALIGNING': return [p.hands_off ? 'the Bridge is moving the mount' : 'the Bridge leaves the mount alone'];
     case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
-    case 'WAITING': return [skyDistance(p.residual_arcmin) + ' from the Hold position', 'the Bridge moves nothing'];
+    case 'WAITING': return [skyDistance(p.residual_arcmin) + ' from the Push-To', 'the Bridge moves nothing'];
     default: return [];
   }
 }
@@ -9537,7 +9537,7 @@ function skyCardModel(m, p, trail, ctx, fb) {
   } else {
     out.line = [now[0]].concat(facts).filter(Boolean).join(' \u00b7 ');   // On target \u00b7 0.6\u2032 drift, within 2\u2032 \u00b7 Goto forward
     out.lineWarn = high;
-    out.why = high ? 'Waiting for a fresh solve before correcting'
+    out.why = high ? (pp.reason || 'Not corrected yet')   // the Bridge's own reason, never a guess made here
       : captionTone !== 'free' && caption ? caption
       : holding ? 'Position verified by a fresh solve' : '';
   }
@@ -9550,21 +9550,21 @@ function skyPositioningInterrupted(last, secondsAgo) {
     sub: 'positioning interrupted ' + Math.round(secondsAgo) + ' s ago',
     why: 'The mount may still be moving, or not on the target. The Control Center restarts the Bridge on its own.', running: null };
 }
-const SKY_HOLD_APART_DEG = 1;     // the Hold position gets its own marker only when it is farther than this from the Target
+const SKY_HOLD_APART_DEG = 1;     // the last GoTo gets its own marker only when it is farther than this from the Push-To
 function skyFmtOffset(arcmin) {
   return arcmin < 60 ? arcmin.toFixed(1) + '\u2032' : (arcmin / 60).toFixed(1) + '\u00b0';
 }
-// The sentence under the picture: where PiFinder is relative to the Target. Information only, never a warning.
-// null: no Target known (or an older driver without TARGET_STATUS).
+// The sentence under the picture: where PiFinder is relative to the last GoTo. Information only, never a warning.
+// null: no GoTo known (or an older driver without TARGET_STATUS).
 function skyTargetLine(sky) {
   const t = sky && sky.target;
   if (!t || typeof t.offset_arcmin !== 'number') return null;
-  let s = 'Target' + (t.source ? ' (set on ' + t.source + ')' : '') + ': ' +
-    (t.offset_arcmin < 0.5 ? 'PiFinder is on the target' : 'PiFinder is ' + skyFmtOffset(t.offset_arcmin) + ' from the target');
+  let s = 'Last GoTo' + (t.source ? ' (set on ' + t.source + ')' : '') + ': ' +
+    (t.offset_arcmin < 0.5 ? 'PiFinder is on it' : 'PiFinder is ' + skyFmtOffset(t.offset_arcmin) + ' from it');
   if (t.fresh === false) s += ' (last value, no fresh solve)';
   if (sky.hold_used !== false && sky.goto && sky.held) {
     const apart = skySep(sky.goto, sky.held);
-    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 Hold position ' + skyFmtOffset(apart * 60) + ' from the target';
+    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 Push-To ' + skyFmtOffset(apart * 60) + ' from it';
   }
   return s;
 }
@@ -9585,12 +9585,11 @@ function skyBuildModel(sky) {
   const pf = add('pifinder', sky.pifinder,
     'PiFinder' + (sky.pifinder && sky.pifinder.alt < 0 ? ' ' + skyAlt(sky.pifinder) : ''),
     sky.pifinder && sky.pifinder.alt < 0 ? SKY_C.redSoft : SKY_C.fg);
-  // One Target (what was asked for; the ring). The Hold position (the cross; today's "Held target", where the Bridge keeps
-  // the scope) is only drawn on its own when it is clearly not at the Target; closer than that the picture could not
-  // show the difference anyway, and the sentence under the picture gives the number.
-  add('goto', sky.goto, 'Target', SKY_C.fg);
-  if (sky.hold_used !== false && (!sky.goto || !sky.held || skySep(sky.goto, sky.held) > SKY_HOLD_APART_DEG))
-    add('held', sky.held, 'Hold position', SKY_C.blue);
+  // Push-To (the cross): what PiFinder points to and where the Bridge keeps the scope; only in the modes that keep it.
+  // Last GoTo (the ring): what was last asked for. Drawn only when it is clearly somewhere else - or when there is no cross.
+  const pushTo = sky.hold_used !== false ? sky.held : null;
+  if (!pushTo || !sky.goto || skySep(sky.goto, pushTo) > SKY_HOLD_APART_DEG) add('goto', sky.goto, 'Last GoTo', SKY_C.fg);
+  if (pushTo) add('held', pushTo, 'Push-To', SKY_C.blue);
   let line = null;
   if (mount && pf) {
     const below = mount.p.below || pf.p.below;
@@ -9811,7 +9810,7 @@ function renderSkyCard() {
     } else {
       const c = _skyCard.ctx || {};
       const kv = (k, v) => { const r = skyPosEl('div', 'sc-kv'); r.appendChild(skyPosEl('span', '', k)); r.appendChild(skyPosEl('span', '', v)); panel.appendChild(r); };
-      kv('Target', _skyCard.targetLine || 'none known');
+      kv('Last GoTo', _skyCard.targetLine || 'none known');
       const cf = skyCouplingFacts(c, false);
       kv('Coupling', (cf[0] || 'unknown') + (c.threshold > 0 ? ' \u00b7 threshold ' + c.threshold + '\u2032' : ''));
       const clk = document.getElementById('sky-time');
@@ -10226,10 +10225,10 @@ function bridgeProblemCards(blind, question) {
     items.push({
       id: 'reposition-question', category: 'mount-bridge',
       title: `Mount and PiFinder suddenly differ${apart}`,
-      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the Hold position (it slews).',
+      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the Push-To (it slews).',
       buttons: [
         { label: 'Adopt this position', onclick: 'triggerRepositionAdopt()', action: 'reposition-adopt' },
-        { label: 'Revert to Hold Position (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
+        { label: 'Revert to Push-To (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
       ],
     });
   }
@@ -10472,7 +10471,7 @@ async function triggerManualSync() {
 
 async function triggerGotoHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending mount to the Hold position…');
+  setMbActionStatus('⏳ Sending mount to the Push-To…');
   const btn = document.getElementById('mb-goto-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -10506,7 +10505,7 @@ async function triggerRepositionRevert() {
   btn.dataset.busy = '1';
   btn.disabled = true;
   btn.textContent = 'reverting…';
-  setMbActionStatus('⏳ Reverting to the Hold position…');
+  setMbActionStatus('⏳ Reverting to the Push-To…');
   try {
     const resp = await fetch('/api/mount_bridge_reposition_revert', { method: 'POST' });
     const data = await resp.json();
@@ -10524,7 +10523,7 @@ async function triggerRepositionRevert() {
 
 async function triggerAlignHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending the Hold position to PiFinder…');
+  setMbActionStatus('⏳ Sending the Push-To to PiFinder…');
   const btn = document.getElementById('mb-align-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;

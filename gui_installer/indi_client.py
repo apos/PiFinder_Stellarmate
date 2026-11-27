@@ -834,7 +834,7 @@ def _positioning_status(device_props: dict):
     the user should keep their hands off the hand controller): {"phase", "attempt", "attempts_max", "residual_arcmin",
     "elapsed_sec", "to_go_deg", "solve_age_sec" (None when unknown), "hands_off"} or None for an older driver without the
     property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, OFF_TARGET, HOLDING,
-    CHECK_SCOPE (an open question, see "reposition_question"), ALIGNING (a Multi-Point Alignment run), WAITING (nothing moves until the next GoTo and the mount is away from the Hold position; residual = that distance)."""
+    CHECK_SCOPE (an open question, see "reposition_question"), ALIGNING (a Multi-Point Alignment run), WAITING (nothing moves until the next GoTo and the mount is away from the Push-To; residual = that distance). "reason": why the Bridge corrects nothing while HOLDING (empty: nothing to explain)."""
     prop = device_props.get("POSITIONING_STATUS", {})
     phase = device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("PHASE")
     if not prop or not phase:
@@ -851,6 +851,7 @@ def _positioning_status(device_props: dict):
             "to_go_deg": float(el["TO_GO_DEG"]),
             "solve_age_sec": solve_age if solve_age >= 0 else None,
             "hands_off": float(el["HANDS_OFF"]) >= 0.5,
+            "reason": device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("REASON") or "",
         }
     except (KeyError, TypeError, ValueError):
         return None

@@ -334,3 +334,13 @@ restarted the Goto with three fresh attempts. Now a run that ends without reachi
 the sync limit, mount refused or stopped elsewhere) ends all movement until the next GoTo. The attempts are also used when mount
 and PiFinder agree but both are beside the target. Checked: scenario `bounded`, and the original case (SLEW to Caph on the
 distorted simulator model: 3 attempts, then at rest).
+
+## 14. Names, reasons and checks (2026-11-27, owner's decisions)
+
+- The position the Bridge keeps is called **Push-To** (PiFinder's own word), not "Hold position": it is what PiFinder points to,
+  and the Bridge sends every change to PiFinder. The ring is the **Last GoTo**, drawn only when it is more than 1 degree from
+  the cross (or when there is no cross). Two accepted cases in which PiFinder shows something else: a target below the horizon
+  (the Bridge does not take it) and a restarted PiFinder. Internal names (`ORIGINAL_TARGET`, `TRIGGER_GOTO_HELD`, ...) are
+  unchanged. Earlier sections use the old names.
+- `POSITIONING_PHASE.REASON`: why nothing is corrected while holding. The page shows it and invents none of its own.
+- `ON_TARGET` carries PiFinder's distance from the target; `GAVE_UP` the distance between mount and PiFinder.

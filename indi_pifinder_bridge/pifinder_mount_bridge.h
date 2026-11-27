@@ -345,7 +345,11 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         IText AlignProgressT[2];
         enum { ALIGN_CURRENT_NAME, ALIGN_SYNCED_NAMES };
 
-        enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
+        enum class AlignState { IDLE, SLEWING, SETTLING, CONFIRMING, DONE };
+        // CONFIRMING: the Sync of this point was sent, the mount has to report it before the point counts.
+        double m_alignSyncRA = 0.0, m_alignSyncDec = 0.0, m_alignSyncSent = 0.0;
+        static constexpr double SYNC_TAKEN_ARCMIN = 3.0; // a tracking mount drifts well under this while it is checked
+        static constexpr double SYNC_TAKEN_WINDOW_SEC = 6.0;
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - populated fresh by
         // fetchAlignmentCandidates() every time Start is clicked, not
@@ -555,7 +559,9 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty PositioningStatusNP;
         INumber PositioningStatusN[7];
         ITextVectorProperty PositioningPhaseTP;
-        IText PositioningPhaseT[1];
+        IText PositioningPhaseT[2]; // PHASE, and REASON: why nothing is corrected while HOLDING (empty: nothing to explain)
+        std::string m_holdReason;
+        static std::string distanceText(double arcmin);
         enum class PositioningResult { NONE, ON_TARGET, GAVE_UP, OFF_TARGET };
         PositioningResult m_positioningResult = PositioningResult::NONE;
         double m_positioningResidual = 0.0;      // arcmin left at the last verification

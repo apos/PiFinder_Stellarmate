@@ -59,7 +59,7 @@ class PositioningStatus(unittest.TestCase):
     def test_refining(self):
         p = indi_client._positioning_status(positioning())
         self.assertEqual(p, {"phase": "REFINING", "attempt": 1, "attempts_max": 3, "residual_arcmin": 7.7, "elapsed_sec": 16.0,
-                             "to_go_deg": 0.0, "solve_age_sec": 0.4, "hands_off": True})
+                             "to_go_deg": 0.0, "solve_age_sec": 0.4, "hands_off": True, "reason": ""})
 
     def test_hands_free_after_the_move(self):
         self.assertFalse(indi_client._positioning_status(positioning("ON_TARGET", HANDS_OFF="0"))["hands_off"])

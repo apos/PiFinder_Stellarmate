@@ -24,17 +24,17 @@ All notable changes to this project are documented in this file. Format loosely 
 - Control Center: the mount's node in the Mount Bridge diagram shows its state as a symbol (tracking, blinking while slewing, stopped, parked, unknown).
 - Control Center, mode "Real Hardware + GSC Simulation" (#664, #344): a fourth mode tile that replaces the camera frame with a star field from the GSC catalogue, solved by the real Cedar/tetra3 solver; follows the mount over INDI (`test_tools/pifinder_sky_follow.py`: alignment point, simulated misalignment, absorbs Syncs, GoTo landing error that grows with the slew length, hand-controller motion counts as real movement). It is "on" only when it really works, remembers what was last chosen (a watchdog restarts a dead follower and switches PiFinder's Test Mode on again after an update, a crash or a reboot, bounded against restart loops) and waits until INDI and the mount driver answer before restarting. Full Simulation and Fake Mode move into "Other test modes".
 - Mount Bridge: `TARGET_STATUS` (the requested GoTo target and PiFinder's offset from it, #657) and `POSITIONING_STATUS` / `POSITIONING_PHASE` (attempt, residual, elapsed time, hands off, #665) as INDI properties; the Bridge also reports to PiFinder, whose screen shows "HANDS OFF" in the title bar while the Bridge works, then "ON TARGET" / "Hand OK n'" (patch `pfsm_bridge_status.py`, `ui_base_py.diff`).
-- Control Center, sky area: one card under the sky picture for every state (headline with "Hands off / Hands free", a four-step band, one line, one reason, Why? / Run so far / Details), the Target and Hold position as markers in the picture, time left and date right in the picture's top corners, the (i) in its bottom left corner, a fixed column width, and no second text block under the card.
+- Control Center, sky area: one card under the sky picture for every state (headline with "Hands off / Hands free", a four-step band, one line, one reason, Why? / Run so far / Details), the targets as markers in the picture, time left and date right in the picture's top corners, the (i) in its bottom left corner, a fixed column width, and no second text block under the card.
 - Control Center: "Sync PiFinder from mount" without a plate solve injects the mount's position instead of refusing; "Copy to clipboard" below every terminal window; Multi-Point Alignment as a tile in Quick Actions; Settings and "Setup checklist & diagnostics" as tiles of their own; a Branch selector above "What is this device?".
 - `test_tools/`: `bridge_props.py`, `onstep_watch.py`, `bridge_messages.py`, `bridge_stall_catcher.py` (catches a silent Bridge and what the other devices do at the same moment, #385); docs `docs/concepts/mount_bridge_target_transparency.md` and `pifinder_realmode_sky_simulation.md`.
 
 ### Changed
 
-- The three buttons that act on the Hold position are named after it: **Align PiFinder to Hold Position**, **Goto Hold Position**, **Revert to Hold Position** (before: "... Target", although the ring called Target in the sky picture is something else). The help explains Target and Hold position side by side.
-- Multi-Point Alignment: its stars are no Target, the Hold position stays, and afterwards (also after Stop) the Bridge moves nothing until the next GoTo; the screen says "Waiting for the next GoTo" while the mount is away from the Hold position.
+- One name for what PiFinder points to and the Bridge keeps: **Push-To** (blue cross; buttons **Goto Push-To**, **Send Push-To to PiFinder**, **Revert to Push-To**; before: "... Target"). The ring is the **Last GoTo** and appears only when it is somewhere else.
+- Multi-Point Alignment: its stars are neither Push-To nor last GoTo, and afterwards (also after Stop) the Bridge moves nothing until the next GoTo; the screen says "Waiting for the next GoTo" while the mount is away from the Push-To.
 - Mount Bridge: that question no longer times out after 45 s and drives back; nothing moves until it is answered, a new GoTo is given, or mount and PiFinder agree again. After an alignment that moved the mount without any command the Bridge keeps off, too.
 - Alignment pause: ends when nothing alignment-related is observably going on (no fixed 2 minutes); the page shows what keeps it.
-- Control Center: after a movement by hand the card says "Holding target" instead of "On target".
+- Control Center: after a movement by hand the card says "Holding Push-To" instead of "On target".
 - Mount Bridge, GoTo coupling: after a movement by hand the mount is synced to PiFinder at once instead of asking the 45 s question; after a stop (abort) the Bridge does not move the mount until the next GoTo.
 - Below the horizon PiFinder's position is treated as what it is, never a plate solve: the cards say so, "Sync PiFinder from mount" is confirmed without asking the camera, and mount and PiFinder both below show one calm "end of session or start-up" card.
 - Sky simulation: no stars are rendered while the mount points below the horizon.
@@ -51,10 +51,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
-- Multi-Point Alignment: the Bridge's holding check could slew back to the Hold position in the middle of a run when a star was close to it.
-- "Align PiFinder to Hold Position" no longer counts as a push-to that moves the mount; a manual Sync no longer ends the waiting for the next GoTo.
+- Multi-Point Alignment: the Bridge's holding check could slew back to the Push-To in the middle of a run when a star was close to it.
+- "Send Push-To to PiFinder" no longer counts as a push-to that moves the mount; a manual Sync no longer ends the waiting for the next GoTo.
+- Card under the sky picture: with a high drift it names the Bridge's own reason for not correcting (before: always "Waiting for a fresh solve"), and "On target" shows PiFinder's distance from the target (before: the distance between mount and PiFinder).
+- Multi-Point Alignment: a point counts only when the mount reports the synced position; an ignored Sync is logged and not counted.
 - Multi-Point Alignment keeps PiFinder awake in every coupling mode; more room between Start and Stop alignment.
-- The warning "PiFinder has drifted ... from the Hold position" is not logged while the mount is meant to be elsewhere (slewing, aligning, waiting).
+- The warning "PiFinder has drifted ... from the Push-To" is not logged while the mount is meant to be elsewhere (slewing, aligning, waiting).
 - Control Center, Multi-Point Alignment: room between the rows; the first direction button starts under the search radius field.
 - During a Multi-Point Alignment the card says "Aligning" with the point and "Don't touch the mount", PiFinder "ALIGNING" (before: the earlier GoTo's "On target").
 - "PiFinder LX200" is reconnected when PiFinder was restarted together with the Control Center (before, it stayed on a dead link and PiFinder got no targets).
