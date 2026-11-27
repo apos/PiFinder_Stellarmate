@@ -73,11 +73,14 @@ class Indi(threading.Thread):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--action", choices=sorted(ACTIONS), required=True)
+    ap.add_argument("--action", choices=sorted(ACTIONS))
+    ap.add_argument("--watch-only", action="store_true", help="only record (for something started in Ekos by hand), send nothing")
     ap.add_argument("--goto-offset", type=float, default=None)
     ap.add_argument("--goto-high", action="store_true", help="GoTo to a position high in the sky first")
     ap.add_argument("--seconds", type=float, default=120)
     args = ap.parse_args(argv)
+    if not args.watch_only and not args.action:
+        ap.error("--action or --watch-only")
     drivers = indi_client.get_properties(timeout=15)
     real = sorted(d for d, p in drivers.items() if ("CCD_EXPOSURE" in p or "EQUATORIAL_EOD_COORD" in p)
                   and "Simulator" not in d and d != "PiFinder LX200")
@@ -91,7 +94,8 @@ def main(argv=None):
     log_before = set(align("logText").split("\n"))
     t0 = time.time()
     say = lambda text: print("%6.1f s  %s" % (time.time() - t0, text), flush=True)
-    align("setSolverAction", ACTIONS[args.action])
+    if not args.watch_only:
+        align("setSolverAction", ACTIONS[args.action])
     if args.goto_offset is not None or args.goto_high:
         pos = indi_client.get_properties(device=mount, timeout=8, stop_after={"EQUATORIAL_EOD_COORD"})[mount]
         ra = float(pos["EQUATORIAL_EOD_COORD"]["elements"]["RA"])
@@ -105,12 +109,16 @@ def main(argv=None):
         indi.sock.sendall(('<newNumberVector device="%s" name="EQUATORIAL_EOD_COORD"><oneNumber name="RA">%.6f</oneNumber>'
                            '<oneNumber name="DEC">%.6f</oneNumber></newNumberVector>\n' % (mount, ra, dec)).encode())
         say("GoTo sent: RA %.4f h, Dec %.3f" % (ra, dec))
+        align("setTargetCoords", ra, dec)   # the app's GO goes through Ekos, which takes the GoTo as its align target
         time.sleep(2)
         while indi.states.get((mount, "EQUATORIAL_EOD_COORD")) == "Busy" and time.time() - t0 < 90:
             time.sleep(0.3)
         say("slew finished")
         time.sleep(2.7)   # the StellarMate app's GO sends its solve about 3 s after the slew (KStars log, 2026-11-27)
-    say("capture & solve, action %s, camera %s: %s" % (args.action, camera, align("captureAndSolve")))
+    if args.watch_only:
+        say("watching, camera %s" % camera)
+    else:
+        say("capture & solve, action %s, camera %s: %s" % (args.action, camera, align("captureAndSolve")))
     shown, seen_log, samples = None, set(log_before), []
     quiet_since = None
     while time.time() - t0 < args.seconds:
@@ -132,7 +140,7 @@ def main(argv=None):
         if samples[-1][1] or held:
             quiet_since = None
         quiet_since = quiet_since or (None if samples[-1][1] or held else time.time())
-        if quiet_since and time.time() - quiet_since > 25 and any(s[1] for s in samples):
+        if quiet_since and time.time() - quiet_since > 25 and any(s[1] for s in samples) and not args.watch_only:
             break
         time.sleep(0.3)
     active = [t for t, a, _ in samples if a]
