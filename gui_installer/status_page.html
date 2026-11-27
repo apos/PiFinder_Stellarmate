@@ -2814,7 +2814,7 @@
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
           </div>
         </div>
-        <!-- One card for every state under the picture: the headline with Hands off/free, the four-step band, one line, one reason, and the
+        <!-- One card for every state under the picture: the headline (plus "Don't touch the mount" while it moves), the four-step band, one line, one reason, and the
              buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
              never shown) and the Bridge's positioning status. -->
         <div id="sky-card"></div>
@@ -9294,7 +9294,7 @@ function skyMountStyle(state) {
 }
 // The Bridge's positioning status (POSITIONING_STATUS / POSITIONING_PHASE) as what the line under the picture says.
 // null: nothing to say (no status, an older driver, or idle). Wording agreed with the owner (docs/concepts/
-// mount_bridge_target_transparency.md section 12): "Hands off" from the start of the slew until the arrival is verified.
+// mount_bridge_target_transparency.md section 12): "Don't touch the mount" from the start of the slew until the arrival is verified.
 function skyPositioningModel(p) {
   if (!p || !p.phase || p.phase === 'IDLE') return null;
   const arc = (v) => v.toFixed(1) + '\u2032';
@@ -9456,7 +9456,7 @@ function skyCardModel(m, p, trail, ctx, fb) {
   const high = holding && thr !== null && typeof c.drift === 'number' && c.drift > thr;
   out.tone = m.interrupted || m.tone === 'warn' || m.tone === 'off' || high || captionTone !== 'free' ? (captionTone === 'bad' ? 'bad' : 'warn') : 'free';
   out.head = high ? 'Holding, drift is high' : m.head;
-  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Hands off' : 'Hands free';
+  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Don\u2019t touch the mount' : '';
   out.band = skyPositioningBand(trail, pp, m);
   const now = skyPositioningNow(pp, m);
   const facts = skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(c, holding));

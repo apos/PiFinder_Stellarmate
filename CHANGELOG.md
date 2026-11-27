@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center: the mount's node in the Mount Bridge diagram shows its state as a symbol (tracking, blinking while slewing, stopped, parked, unknown).
 - Control Center, mode "Real Hardware + GSC Simulation" (#664, #344): a fourth mode tile that replaces the camera frame with a star field from the GSC catalogue, solved by the real Cedar/tetra3 solver; follows the mount over INDI (`test_tools/pifinder_sky_follow.py`: alignment point, simulated misalignment, absorbs Syncs, GoTo landing error that grows with the slew length, hand-controller motion counts as real movement). It is "on" only when it really works, remembers what was last chosen (a watchdog restarts a dead follower and switches PiFinder's Test Mode on again after an update, a crash or a reboot, bounded against restart loops) and waits until INDI and the mount driver answer before restarting. Full Simulation and Fake Mode move into "Other test modes".
 - Mount Bridge: `TARGET_STATUS` (the requested GoTo target and PiFinder's offset from it, #657) and `POSITIONING_STATUS` / `POSITIONING_PHASE` (attempt, residual, elapsed time, hands off, #665) as INDI properties; the Bridge also reports to PiFinder, whose screen shows "HANDS OFF" in the title bar while the Bridge works, then "ON TARGET" / "Hand OK n'" (patch `pfsm_bridge_status.py`, `ui_base_py.diff`).
 - Control Center, sky area: one card under the sky picture for every state (headline with "Hands off / Hands free", a four-step band, one line, one reason, Why? / Run so far / Details), the Target and Hold position as markers in the picture, time left and date right in the picture's top corners, the (i) in its bottom left corner, a fixed column width, and no second text block under the card.
@@ -25,11 +26,14 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Wording of the positioning status, which was not understood: PiFinder's title bar says "MOUNT MOVING" (was "HANDS OFF") and "MOUNT OFF 103°" (was "Hand OK 6157'"; distance between mount and PiFinder, bright on black); the Control Center card shows "Don't touch the mount" only while the mount is moved (no "Hands free" badge).
 - Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
 - Drift and altitude badges have one fixed width, so the diagram does not move when the number or the label changes.
 
 ### Fixed
 
+- Sky simulation: the sky follower ends when INDI closes its connection (profile restart) so the Control Center starts it again; before, PiFinder's picture stayed frozen.
+- Installer: patches that create a file no longer append the content again on every update (the oldest copy won, so changes never arrived).
 - Mount Bridge: Auto-correct (Sync) only syncs to a frame exposed after the mount stopped (#659); the reposition detection no longer preempts the arrival verification (SETTLING, #663); nothing impossible reaches the mount, a (re)link never starts a Goto, a late mount driver is bound again; PiFinder LX200 does not republish a target within 1 arcminute of the published one (it started a second slew 30 s after a GoTo).
 - Sky follower: writes the sky again when something replaces PiFinder's test picture (an update put the original back and the simulation never solved).
 - Control Center: a mount that tracks and stands still no longer raises "Mount not responding". The check took "same RA/Dec for 60 s" as silence, but a tracking mount reports the same position for minutes (OnStep to one second). Unchanged coordinates now only count as silence when the driver marks them Alert too (it does when it cannot read the mount); a driver without a state keeps the old rule. New `test_tools/mount_silence_test.py`.

@@ -620,7 +620,7 @@ python3 -m py_compile "${pifinder_dir}/python/tests/test_api_align.py" \
 echo "------------------------------------"
 
 ##################################################
-# PiFinder: the Mount Bridge's positioning status on PiFinder's screen (#665). "HANDS OFF" in the title bar while the Bridge
+# PiFinder: the Mount Bridge's positioning status on PiFinder's screen (#665). "MOUNT MOVING" in the title bar while the Bridge
 # moves the mount or verifies the arrival, briefly "On target" afterwards. Three pieces: a new module (create-diff, -N makes
 # re-runs a no-op) that holds the status and the POST /api/bridge_positioning route, a hook that registers the route in
 # api_extensions.py, and the title bar in ui/base.py. A "hands off" status that is not renewed is ignored (fail safe).

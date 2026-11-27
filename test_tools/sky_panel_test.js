@@ -271,6 +271,12 @@ ok(/else if \(_mbDriftSeenRunning && \+\+_mbDriftMisses < MB_DRIFT_MISSES_BEFORE
   const cn = T.skyCardModel(null, null, [], { running: false }, { caption: 'Not coupled yet', captionDot: 'status-dot dot-white', status: 'not running', statusDot: 'status-dot dot-white' });
   ok(cn.line === 'The Bridge is not running', 'not running: the plain case');
 }
+// the badge says something only while the user must act: "Don't touch the mount" while it is moved, nothing afterwards
+{
+  const card = (o) => { const p = pos(o); return T.skyCardModel(T.skyPositioningModel(p), p, [], { running: true }, {}); };
+  ok(card({ phase: 'SLEWING', hands_off: true }).badge === 'Don\u2019t touch the mount', 'badge while the Bridge moves the mount');
+  ok(card({ phase: 'ON_TARGET', hands_off: false }).badge === '' && card({ phase: 'GAVE_UP', hands_off: false }).badge === '' && card({ phase: 'HOLDING', hands_off: false }).badge === '', 'no badge when the user need not leave the mount alone');
+}
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');

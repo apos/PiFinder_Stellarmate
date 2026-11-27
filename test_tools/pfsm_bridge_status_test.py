@@ -52,12 +52,12 @@ class BridgeStatusTest(unittest.TestCase):
 
     def test_hands_off_in_the_title_bar_while_fresh(self):
         m.write(status("REFINING"), self.path, now=T0)
-        self.assertEqual(m.titlebar(self.path, now=T0 + 3.0), ("HANDS OFF", True))
+        self.assertEqual(m.titlebar(self.path, now=T0 + 3.0), ("MOUNT MOVING", True))
         m.write(status("SLEWING"), self.path, now=T0)
-        self.assertEqual(m.titlebar(self.path, now=T0 + 3.0), ("HANDS OFF", True))
+        self.assertEqual(m.titlebar(self.path, now=T0 + 3.0), ("MOUNT MOVING", True))
 
     def test_a_stale_hands_off_is_ignored(self):
-        """The fail-safe: a Bridge that stopped posting must not leave HANDS OFF on the screen."""
+        """The fail-safe: a Bridge that stopped posting must not leave MOUNT MOVING on the screen."""
         m.write(status("SLEWING"), self.path, now=T0)
         self.assertIsNotNone(m.titlebar(self.path, now=T0 + m.FRESH_SEC - 0.1))
         self.assertIsNone(m.titlebar(self.path, now=T0 + m.FRESH_SEC + 0.1))
@@ -67,10 +67,21 @@ class BridgeStatusTest(unittest.TestCase):
         self.assertEqual(m.titlebar(self.path, now=T0 + 5.0), ("ON TARGET", False))
         self.assertIsNone(m.titlebar(self.path, now=T0 + m.SHOW_DONE_SEC + 1))
 
-    def test_gave_up_says_the_hand_controller_is_free(self):
+    def test_gave_up_says_how_far_mount_and_pifinder_are_apart(self):
         m.write(status("GAVE_UP", residual_arcmin=2.4), self.path, now=T0)
-        self.assertEqual(m.titlebar(self.path, now=T0 + 10.0), ("Hand OK 2.4'", False))
+        banner = m.titlebar(self.path, now=T0 + 10.0)
+        self.assertEqual(banner, ("MOUNT OFF 2.4'", False))
+        self.assertTrue(m.is_warning(banner))
         self.assertIsNone(m.titlebar(self.path, now=T0 + m.SHOW_GAVE_UP_SEC + 1))
+
+    def test_a_large_distance_is_shown_in_degrees(self):
+        m.write(status("GAVE_UP", residual_arcmin=6157.4), self.path, now=T0)
+        self.assertEqual(m.titlebar(self.path, now=T0 + 1.0), ("MOUNT OFF 103°", False))
+
+    def test_the_other_banners_are_no_warning(self):
+        self.assertFalse(m.is_warning(("MOUNT MOVING", True)))
+        self.assertFalse(m.is_warning(("ON TARGET", False)))
+        self.assertFalse(m.is_warning(None))
 
     def test_idle_and_holding_leave_the_normal_title(self):
         for phase in ("IDLE", "HOLDING"):
@@ -85,7 +96,7 @@ class BridgeStatusTest(unittest.TestCase):
 
     def test_a_newer_post_replaces_the_old_one(self):
         m.write(status("SLEWING"), self.path, now=T0)
-        self.assertEqual(m.titlebar(self.path, now=T0 + 1.0)[0], "HANDS OFF")
+        self.assertEqual(m.titlebar(self.path, now=T0 + 1.0)[0], "MOUNT MOVING")
         os.utime(self.path, (1.0, 1.0))  # make sure the mtime differs for the cache
         m.write(status("ON_TARGET", residual_arcmin=0.5), self.path, now=T0 + 2.0)
         self.assertEqual(m.titlebar(self.path, now=T0 + 3.0), ("ON TARGET", False))
@@ -93,7 +104,7 @@ class BridgeStatusTest(unittest.TestCase):
     def test_a_real_world_timestamp_survives_the_round_trip(self):
         stored = m.write(status("SLEWING"), self.path)
         self.assertGreater(stored["ts"], 1.7e9)
-        self.assertEqual(m.titlebar(self.path), ("HANDS OFF", True))
+        self.assertEqual(m.titlebar(self.path), ("MOUNT MOVING", True))
 
     def test_the_title_fits_the_title_bar(self):
         """The title bar holds about 13 characters on a 128 px display; longer text is cut with an ellipsis (seen live)."""
