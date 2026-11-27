@@ -48,6 +48,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- During a Multi-Point Alignment the card says "Aligning" with the point and "Don't touch the mount", PiFinder "ALIGNING" (before: the earlier GoTo's "On target").
 - "PiFinder LX200" is reconnected when PiFinder was restarted together with the Control Center (before, it stayed on a dead link and PiFinder got no targets).
 - Mount Bridge: "Adopt this position" syncs the mount to it; before, the same question came back at once.
 - Control Center: restarting the Mount Bridge uses the FIFO of the INDI server it runs on (profiles that mix driver sources run two).

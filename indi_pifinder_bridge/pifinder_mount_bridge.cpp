@@ -1569,10 +1569,22 @@ void PiFinderMountBridge::publishPositioningStatus()
     }
 
     double residual = m_positioningResidual;
+    // A Multi-Point Alignment moves the mount from point to point: that comes before any verdict of an earlier GoTo (the screen
+    // kept saying "On target" during the whole run, found 2026-11-27).
+    const bool aligning = m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE;
+    if (aligning)
+        handsOff = true;
     if (m_repositionConfirmPending)
     {
         phase = "CHECK_SCOPE"; // the open question comes before any older verdict
         residual = DriftStatusN[0].value;
+    }
+    else if (aligning)
+    {
+        phase = "ALIGNING";
+        m_positioningResult = PositioningResult::NONE;
+        m_positioningAttempts = 0;
+        residual = 0.0;
     }
     else if (handsOff)
     {

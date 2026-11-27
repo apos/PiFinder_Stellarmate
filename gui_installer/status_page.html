@@ -9354,6 +9354,9 @@ function skyPositioningModel(p) {
       m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
     case 'HOLDING':
       m.head = 'Holding target'; break;
+    case 'ALIGNING':
+      m.step = 0; m.head = 'Aligning'; m.sub = p.point || 'Multi-Point Alignment';
+      m.why = 'The Bridge moves the mount from point to point and syncs it at each one.'; break;
     case 'CHECK_SCOPE':
       m.tone = 'warn'; m.head = 'Check the mount: ' + skyDistance(p.residual_arcmin) + ' apart';
       m.sub = 'answer the yellow card';
@@ -9424,6 +9427,7 @@ function skyPositioningNow(p, m) {
     case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
     case 'GAVE_UP': return ['Gave up', p.attempt > 0 ? p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
     case 'OFF_TARGET': return ['Off target', ''];
+    case 'ALIGNING': return ['Aligning', m.sub];
     case 'CHECK_SCOPE': return ['Check the mount', ''];
     case 'HOLDING': return ['Holding target', ''];   // no verdict about "on target": e.g. after a movement by hand
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
@@ -9440,6 +9444,7 @@ function skyPositioningFacts(p, m) {
     case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
     case 'GAVE_UP': return [skyDistance(p.residual_arcmin) + ' apart', 'you can steer by hand'];
     case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
+    case 'ALIGNING': return ['the Bridge is moving the mount'];
     case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
     default: return [];
   }
@@ -9507,7 +9512,7 @@ function skyCardModel(m, p, trail, ctx, fb) {
   out.band = skyPositioningBand(trail, pp, m);
   const now = skyPositioningNow(pp, m);
   const facts = skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(c, holding));
-  if (m.handsOff || m.interrupted || pp.phase === 'SLEWING' || pp.phase === 'VERIFYING' || pp.phase === 'REFINING') {
+  if (m.handsOff || m.interrupted || pp.phase === 'ALIGNING' || pp.phase === 'SLEWING' || pp.phase === 'VERIFYING' || pp.phase === 'REFINING') {
     out.line = now.filter(Boolean).join(' \u00b7 ');        // step and attempt
     out.why = facts.join(' \u00b7 ');                          // the numbers
   } else {
@@ -9846,6 +9851,10 @@ async function refreshMbDrift() {
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
       applySkyPanel(data.sky);
+      if (data.positioning && data.positioning.phase === 'ALIGNING' && data.align_point_index) {
+        data.positioning.point = `point ${data.align_point_index} of ${data.align_point_count}` +
+          (data.align_current_name ? ` (${data.align_current_name})` : '');
+      }
       applyPositioning(data.positioning, { running: true, mode: data.coupling_mode, action: data.correction_action, drift: data.drift_arcmin, threshold: parseFloat(readThresholdInputRaw()) });
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
