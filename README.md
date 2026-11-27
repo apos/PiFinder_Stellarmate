@@ -380,14 +380,14 @@ set in the Control Center) away from it, syncs the mount and sends the GoTo agai
 | KStars: right-click an object → **PiFinder LX200** → Goto | yes |
 | KStars / Ekos: Goto on the mount, StellarMate app **SLEW**, any other INDI client | yes |
 | StellarMate app: **GO** | yes. Ekos then also takes an image through the **telescope camera** and solves it; see "Alignment in Ekos" below |
-| OnStep hand controller or OnStep app (catalogue GoTo) | **not yet** ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)): the target does not reach INDI. The position PiFinder sees after the slew is taken over |
+| OnStep hand controller, OnStep app or SkySafari connected to the OnStep controller | yes, when the mount is connected **over the network**: the Bridge reads the controller's target on a second network port, read only ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)). Over USB/serial not: the position PiFinder sees after the slew is taken over |
 
 **If the object is not reached** after 3 attempts, the Bridge stops, shows `OFF TARGET` and moves nothing until the next GoTo.
 Check the mount's alignment model then.
 
 **By hand** (direction buttons, hand controller arrows): the new position is taken over and the mount is synced to PiFinder;
-the Bridge does not pull back. If the mount did not move itself (clutch open, scope bumped), the Bridge asks - today only in the
-INDI log - and drives back after 45 s without an answer.
+the Bridge does not pull back. If the mount did not move itself (clutch open, scope bumped), the Control Center shows a yellow
+card with the question; nothing moves until it is answered.
 
 **Stop**: after an Abort in KStars/Ekos the Bridge does not move the mount again until the next GoTo. "Stop movement" in the
 Control Center also switches the coupling off.
@@ -401,7 +401,8 @@ or slews. Afterwards it moves nothing until the next GoTo.
 | Nothing, solved | unchanged | moves nothing until the next GoTo |
 | Solve failed, mount neither synced nor turned | unchanged | carries on a GoTo that was under way |
 
-An alignment run from the OnStep hand controller or app is not detected yet.
+An alignment running on the OnStep controller (hand controller or app, mount connected over the network) pauses the Bridge
+too: it neither moves nor syncs the mount (OnStep would count a Sync as an alignment star). Over USB/serial it is not detected.
 
 ## SMOS Updates
 

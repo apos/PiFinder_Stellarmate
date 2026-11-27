@@ -180,6 +180,13 @@ Two things flagged as genuinely unresolved, not just left as vague future work:
   resolved by this document — flagged here so it isn't quietly implemented without that research
   first.
 
+> **Correction (2026-11-27, firmware source, not tested on a mount):** OnStepX (`Goto.command.cpp`, `Goto.cpp`, branch `main`;
+> the connected controller reports `On-Step 10.14a` and `:A?#` = `900`, no alignment running) handles `:CM#` in two ways. While an
+> alignment started with `:An#` is running, the Sync accepts an alignment star and adds it to the model. Otherwise it only moves the
+> mount's position to the target and does not touch the model. The statement above that repeated Syncs alone build a multi-point
+> model therefore does not hold for this firmware unless an OnStep alignment is running. Whether Multi-Point Alignment should start
+> one (`:An#`) is an open decision.
+
 ## 5. ADR: Sync-only for a first OnStep-scoped implementation, revisit Align primitive if generalized
 
 **Context**: §4.5 identified that whether repeated Syncs actually build a multi-point model is

@@ -15,6 +15,8 @@
 #include "basedevice.h"
 
 #include <deque>
+#include <utility>
+#include <vector>
 #include <mutex>
 #include <string>
 #include <atomic>
@@ -69,12 +71,27 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         // The last Goto target the user sent (JNow, hours/degrees): either to the
         // mount (KStars slews the mount directly) or to the PiFinder device
-        // (push-to, Goto Forward, a Dobsonian without mount) - whichever property
-        // was updated more recently. RA 0 / Dec 0 is INDI's "never set" default
-        // and counts as none. False: no target on either device.
-        // `fromPiFinder` (optional): true when the PiFinder device's target is the newer one, false for the mount's;
-        // `setTime` (optional): epoch seconds at which this Bridge saw that target property update (0 if unknown).
-        bool getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder = nullptr, long *setTime = nullptr) const;
+        // (push-to, Goto Forward, a Dobsonian without mount), or one started on
+        // the mount's own controller (noteControllerGoto()) - whichever is the
+        // most recent. RA 0 / Dec 0 is INDI's "never set" default and counts as
+        // none. False: no target anywhere.
+        // `source` (optional): where it was set; `setTime` (optional): epoch seconds at which this Bridge saw it (0 if unknown).
+        enum class TargetOrigin { MOUNT, PIFINDER, CONTROLLER };
+        bool getLastGotoTarget(double &ra, double &dec, TargetOrigin *source = nullptr, long *setTime = nullptr) const;
+
+        // The mount's network address, when it is an OnStep connected over TCP (the driver's own connection settings).
+        bool getOnStepAddress(std::string &host, int &driverPort) const;
+        // True when this GoTo (JNow) was seen through INDI within `maxAgeSec`: sent by this Bridge or by another client.
+        bool sawIndiGoto(double ra, double dec, double maxAgeSec);
+        // A GoTo read from the mount's controller (it did not come through INDI): it is the newest target, and a
+        // MountEvent::GOTO like any other client's.
+        void noteControllerGoto(double ra, double dec);
+
+        // A run that moves the mount for its own purpose (Multi-Point Alignment) sends GoTos and Syncs nobody asked to look at:
+        // between these two calls getLastGotoTarget() keeps answering what it answered before the run. It stays that way
+        // until the mount or the PiFinder device gets a target that is not one of the run's own.
+        void beginOwnRun();
+        void endOwnRun();
 
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
@@ -227,6 +244,31 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_mountTargetNP = nullptr;
         std::atomic<long> m_lastMountTargetTime { 0 };
         std::atomic<long> m_lastPiFinderTargetTime { 0 };
+
+        // The target getLastGotoTarget() reports during and after an own run (see beginOwnRun()). Guarded by m_mountEventMutex.
+        struct KeptTarget
+        {
+            bool active = false, have = false;
+            TargetOrigin source = TargetOrigin::MOUNT;
+            double ra = 0.0, dec = 0.0;
+            long time = 0;
+        };
+        KeptTarget m_keptTarget;
+        bool m_ownRun = false;
+        std::vector<std::pair<double, double>> m_ownRunCoords; // what the run sent: late echoes of it are not a new target
+        void releaseKeptTarget(bool fromMount, double ra, double dec);
+        bool getReportedGotoTarget(double &ra, double &dec, TargetOrigin *source, long *setTime) const;
+
+        INDI::PropertyViewText *m_mountAddressTP = nullptr;
+        INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
+        INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;
+        // Guarded by m_mountEventMutex: every GoTo seen through INDI lately, and the newest one read from the controller.
+        std::deque<std::pair<std::pair<double, double>, long>> m_indiGotos;
+        static constexpr long INDI_GOTO_MEMORY_SEC = 120;
+        void rememberIndiGoto(double ra, double dec); // m_mountEventMutex held
+        bool m_haveControllerTarget = false;
+        double m_controllerTargetRA = 0.0, m_controllerTargetDec = 0.0;
+        long m_controllerTargetTime = 0;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountParkSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
@@ -276,7 +318,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         static constexpr double TARGET_AT_MOUNT_ARCMIN = 0.5;
         // A switch to Sync within this time of our own command is our own.
         static constexpr double OWN_COMMAND_SWITCH_SEC = 5.0;
-        std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
+        mutable std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
         std::deque<OwnGoto> m_ownGotos;
         MountEvent m_mountEvent = MountEvent::NONE;
         double m_mountEventRA = 0.0, m_mountEventDec = 0.0;

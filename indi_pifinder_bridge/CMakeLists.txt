@@ -23,12 +23,16 @@ find_library(NOVA_LIBRARIES NAMES nova REQUIRED)
 add_executable(indi_pifinder_mount_bridge
     pifinder_mount_bridge.cpp
     pifinder_bridge_client.cpp
+    onstep_watcher.cpp
 )
 
 target_include_directories(indi_pifinder_mount_bridge PRIVATE ${INDI_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} ${NLOHMANN_JSON_INCLUDE_DIRS})
 target_compile_definitions(indi_pifinder_mount_bridge PRIVATE _XOPEN_SOURCE=700)
 
+find_package(Threads REQUIRED)
+
 target_link_libraries(indi_pifinder_mount_bridge
+    Threads::Threads
     indidriver
     indiclient
     ${CURL_LIBRARIES}

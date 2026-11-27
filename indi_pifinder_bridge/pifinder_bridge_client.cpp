@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 
 PiFinderBridgeClient::PiFinderBridgeClient()
@@ -51,6 +52,9 @@ void PiFinderBridgeClient::forgetProperties()
     m_mountGeoNP = nullptr;
     m_mountTargetNP = nullptr;
     m_piFinderGeoNP = nullptr;
+    m_mountAddressTP = nullptr;
+    m_mountDriverInfoTP = nullptr;
+    m_mountConnectionModeSP = nullptr;
     {
         std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
         m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
@@ -59,6 +63,8 @@ void PiFinderBridgeClient::forgetProperties()
         std::lock_guard<std::mutex> lock(m_mountEventMutex);
         m_mountEvent = MountEvent::NONE;
         m_ownGotos.clear();
+        m_indiGotos.clear();
+        m_haveControllerTarget = false;
     }
     m_bindTime = static_cast<long>(time(nullptr));
     m_shadowOnline = false;
@@ -189,6 +195,12 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountGeoNP = property.getNumber();
     else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
         m_mountTargetNP = property.getNumber();
+    else if (fromMount && property.isNameMatch("DEVICE_ADDRESS"))
+        m_mountAddressTP = property.getText();
+    else if (fromMount && property.isNameMatch("DRIVER_INFO"))
+        m_mountDriverInfoTP = property.getText();
+    else if (fromMount && property.isNameMatch("CONNECTION_MODE"))
+        m_mountConnectionModeSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("GEOGRAPHIC_COORD"))
         m_piFinderGeoNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
@@ -213,6 +225,55 @@ double separationArcmin(double ra1, double dec1, double ra2, double dec2)
     cosSep = std::max(-1.0, std::min(1.0, cosSep));
     return std::acos(cosSep) / toRad * 60.0;
 }
+}
+
+void PiFinderBridgeClient::rememberIndiGoto(double ra, double dec)
+{
+    const long now = static_cast<long>(time(nullptr));
+    while (!m_indiGotos.empty() && now - m_indiGotos.front().second > INDI_GOTO_MEMORY_SEC)
+        m_indiGotos.pop_front();
+    m_indiGotos.push_back({ { ra, dec }, now });
+}
+
+bool PiFinderBridgeClient::sawIndiGoto(double ra, double dec, double maxAgeSec)
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    const long now = static_cast<long>(time(nullptr));
+    for (const auto &seen : m_indiGotos)
+    {
+        if (now - seen.second <= maxAgeSec && separationArcmin(ra, dec, seen.first.first, seen.first.second) < OWN_GOTO_ECHO_ARCMIN)
+            return true;
+    }
+    return false;
+}
+
+void PiFinderBridgeClient::noteControllerGoto(double ra, double dec)
+{
+    releaseKeptTarget(false, 0.0, 0.0);
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        m_haveControllerTarget = true;
+        m_controllerTargetRA = ra;
+        m_controllerTargetDec = dec;
+        m_controllerTargetTime = static_cast<long>(time(nullptr));
+    }
+    noteMountEvent(MountEvent::GOTO, ra, dec);
+}
+
+bool PiFinderBridgeClient::getOnStepAddress(std::string &host, int &driverPort) const
+{
+    if (m_mountAddressTP == nullptr || m_mountDriverInfoTP == nullptr || m_mountConnectionModeSP == nullptr)
+        return false;
+    auto exec = m_mountDriverInfoTP->findWidgetByName("DRIVER_EXEC");
+    auto tcp = m_mountConnectionModeSP->findWidgetByName("CONNECTION_TCP");
+    auto address = m_mountAddressTP->findWidgetByName("ADDRESS");
+    auto port = m_mountAddressTP->findWidgetByName("PORT");
+    if (exec == nullptr || std::string(exec->getText()).find("lx200_OnStep") == std::string::npos || tcp == nullptr ||
+        tcp->getState() != ISS_ON || address == nullptr || port == nullptr || address->getText()[0] == '\0')
+        return false;
+    host = address->getText();
+    driverPort = atoi(port->getText());
+    return true;
 }
 
 bool PiFinderBridgeClient::justBound() const
@@ -241,6 +302,7 @@ void PiFinderBridgeClient::noteMountTarget(INDI::Property property)
         return;
     {
         std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        rememberIndiGoto(ra, dec);
         const long now = static_cast<long>(time(nullptr));
         while (!m_ownGotos.empty() && now - m_ownGotos.front().time > OWN_GOTO_ECHO_SEC)
             m_ownGotos.pop_front();
@@ -305,6 +367,7 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
     else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
     {
         m_lastMountTargetTime = static_cast<long>(time(nullptr));
+        releaseKeptTarget(true, property.getNumber()->at(0)->getValue(), property.getNumber()->at(1)->getValue());
         noteMountTarget(property);
     }
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
@@ -336,6 +399,7 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         // actually changed from last time.
         if (static_cast<long>(time(nullptr)) - m_bindTime >= TARGET_EVENT_IGNORE_AFTER_BIND_SEC)
         {
+            releaseKeptTarget(false, 0.0, 0.0);
             std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
             m_piFinderTargetPending = true;
         }
@@ -373,6 +437,12 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountGeoNP = nullptr;
     else if (property.getNumber() == m_mountTargetNP)
         m_mountTargetNP = nullptr;
+    else if (property.getText() == m_mountAddressTP)
+        m_mountAddressTP = nullptr;
+    else if (property.getText() == m_mountDriverInfoTP)
+        m_mountDriverInfoTP = nullptr;
+    else if (property.getSwitch() == m_mountConnectionModeSP)
+        m_mountConnectionModeSP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountParkSP)
@@ -469,52 +539,103 @@ bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::st
     return false;
 }
 
-bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const
+void PiFinderBridgeClient::beginOwnRun()
 {
-    auto read = [](INDI::PropertyViewNumber *np, double &r, double &d) -> bool
-    {
-        if (np == nullptr)
-            return false;
-        r = np->at(0)->getValue();
-        d = np->at(1)->getValue();
-        return std::isfinite(r) && std::isfinite(d) && d >= -90.0 && d <= 90.0 && !(r == 0.0 && d == 0.0);
-    };
+    KeptTarget before;
+    before.have = getLastGotoTarget(before.ra, before.dec, &before.source, &before.time);
+    before.active = true;
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_keptTarget = before; // a second run right after the first keeps the same one: getLastGotoTarget() still answers it
+    m_ownRun = true;
+    m_ownRunCoords.clear();
+}
 
-    double mountRA = 0.0, mountDec = 0.0, piRA = 0.0, piDec = 0.0;
-    const bool haveMount = read(m_mountTargetNP, mountRA, mountDec);
-    const bool havePi = read(m_piFinderTargetNP, piRA, piDec);
-    if (haveMount && havePi)
+void PiFinderBridgeClient::endOwnRun()
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_ownRun = false;
+}
+
+void PiFinderBridgeClient::releaseKeptTarget(bool fromMount, double ra, double dec)
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    if (!m_keptTarget.active)
+        return;
+    if (fromMount)
     {
-        const bool piNewer = m_lastPiFinderTargetTime > m_lastMountTargetTime;
-        ra = piNewer ? piRA : mountRA;
-        dec = piNewer ? piDec : mountDec;
-        if (fromPiFinder != nullptr)
-            *fromPiFinder = piNewer;
-        if (setTime != nullptr)
-            *setTime = piNewer ? m_lastPiFinderTargetTime.load() : m_lastMountTargetTime.load();
-        return true;
+        if (m_ownRun)
+            return;
+        for (const auto &own : m_ownRunCoords)
+        {
+            if (separationArcmin(ra, dec, own.first, own.second) < OWN_GOTO_ECHO_ARCMIN)
+                return;
+        }
     }
-    if (haveMount)
+    m_keptTarget.active = false;
+}
+
+bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec, TargetOrigin *source, long *setTime) const
+{
     {
-        ra = mountRA;
-        dec = mountDec;
-        if (fromPiFinder != nullptr)
-            *fromPiFinder = false;
-        if (setTime != nullptr)
-            *setTime = m_lastMountTargetTime.load();
-        return true;
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        if (m_keptTarget.active)
+        {
+            if (!m_keptTarget.have)
+                return false;
+            ra = m_keptTarget.ra;
+            dec = m_keptTarget.dec;
+            if (source != nullptr)
+                *source = m_keptTarget.source;
+            if (setTime != nullptr)
+                *setTime = m_keptTarget.time;
+            return true;
+        }
     }
-    if (havePi)
+    return getReportedGotoTarget(ra, dec, source, setTime);
+}
+
+bool PiFinderBridgeClient::getReportedGotoTarget(double &ra, double &dec, TargetOrigin *source, long *setTime) const
+{
+    auto valid = [](double r, double d) { return std::isfinite(r) && std::isfinite(d) && d >= -90.0 && d <= 90.0 && !(r == 0.0 && d == 0.0); };
+    bool found = false;
+    long newest = 0;
+    // Later calls win a tie: PiFinder over the mount only when strictly newer, the controller over both.
+    auto take = [&](bool have, double r, double d, long when, TargetOrigin origin, bool winsTie)
     {
-        ra = piRA;
-        dec = piDec;
-        if (fromPiFinder != nullptr)
-            *fromPiFinder = true;
+        if (!have || !valid(r, d) || (found && (when < newest || (when == newest && !winsTie))))
+            return;
+        found = true;
+        newest = when;
+        ra = r;
+        dec = d;
+        if (source != nullptr)
+            *source = origin;
         if (setTime != nullptr)
-            *setTime = m_lastPiFinderTargetTime.load();
-        return true;
+            *setTime = when;
+    };
+    const bool haveMount = m_mountTargetNP != nullptr;
+    const double mountRA = haveMount ? m_mountTargetNP->at(0)->getValue() : 0.0;
+    const double mountDec = haveMount ? m_mountTargetNP->at(1)->getValue() : 0.0;
+    bool haveController;
+    double controllerRA, controllerDec;
+    long controllerTime;
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        haveController = m_haveControllerTarget;
+        controllerRA = m_controllerTargetRA;
+        controllerDec = m_controllerTargetDec;
+        controllerTime = m_controllerTargetTime;
     }
-    return false;
+    take(haveMount, mountRA, mountDec, m_lastMountTargetTime, TargetOrigin::MOUNT, false);
+    take(haveController, controllerRA, controllerDec, controllerTime, TargetOrigin::CONTROLLER, true);
+    if (m_piFinderTargetNP != nullptr)
+    {
+        // The same coordinates on the PiFinder device are the Bridge telling PiFinder about a GoTo made elsewhere.
+        const double piRA = m_piFinderTargetNP->at(0)->getValue(), piDec = m_piFinderTargetNP->at(1)->getValue();
+        const bool echo = found && valid(piRA, piDec) && separationArcmin(piRA, piDec, ra, dec) < OWN_GOTO_ECHO_ARCMIN;
+        take(!echo, piRA, piDec, m_lastPiFinderTargetTime, TargetOrigin::PIFINDER, false);
+    }
+    return found;
 }
 
 bool PiFinderBridgeClient::getPiFinderTargetRADE(double &ra, double &dec) const
@@ -633,10 +754,16 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
 
     // Both noted before anything is sent: the answers arrive on the client's own thread.
     m_lastMountCommandTime = static_cast<long>(time(nullptr));
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        if (m_ownRun)
+            m_ownRunCoords.emplace_back(ra, dec);
+    }
     if (std::string(coordSetName) != "SYNC")
     {
         std::lock_guard<std::mutex> lock(m_mountEventMutex);
         m_ownGotos.push_back({ ra, dec, static_cast<long>(time(nullptr)) });
+        rememberIndiGoto(ra, dec);
     }
 
     m_mountOnCoordSetSP->reset();
