@@ -956,8 +956,22 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // workflow. Times out to an automatic "No" (revert) rather than
         // sitting on a stale position indefinitely if nobody answers.
         bool m_repositionConfirmPending = false;
-        long m_repositionConfirmDeadline = 0;
-        static constexpr int REPOSITION_CONFIRM_TIMEOUT_SEC = 45;
+        // The question stays open until it is answered - there is no time limit and nothing moves meanwhile. It is withdrawn
+        // when it no longer applies: a new target, the mount moving, or mount and PiFinder agreeing again.
+        void withdrawRepositionQuestion(const char *why);
+
+        // BRIDGE_BINDING: whether the Bridge reads its mount and PiFinder at all (Ok), still waits (Busy) or has given up
+        // waiting (Alert, MISSING names the devices). The page shows a blind Bridge in red instead of green.
+        ITextVectorProperty BindingTP;
+        IText BindingT[1];
+        void publishBinding();
+
+        // Where the mount was when a hold began, and whether a GoTo was sent while held: an alignment that moved the mount
+        // without any command (turned by hand controller) is one the Bridge keeps off after, too.
+        double m_holdStartRA = 0.0, m_holdStartDec = 0.0;
+        long m_holdStartTime = 0;
+        bool m_gotoDuringHold = false;
+        static constexpr int REPEAT_WARNING_SEC = 45;
         ISwitchVectorProperty RepositionConfirmSP;
         ISwitch RepositionConfirmS[2];
         enum { REPOSITION_CONFIRM_YES, REPOSITION_CONFIRM_NO };

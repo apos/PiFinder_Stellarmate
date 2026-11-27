@@ -139,6 +139,9 @@ def main(argv):
                 raise SystemExit("refused: the test Bridge would connect to port %s" % used)
             connect(BRIDGE)
             time.sleep(25)                                  # connected without a mount: the first retries pass
+            binding = read(BRIDGE, "BRIDGE_BINDING") or {}
+            results.append(("while the mount is missing the Bridge says so (Alert, names it)",
+                            binding.get("state") == "Alert" and MOUNT in binding.get("elements", {}).get("MISSING", "")))
             command('start indi_simulator_telescope -n "%s"' % MOUNT)
             connect(MOUNT)
             time.sleep(3)
@@ -146,6 +149,8 @@ def main(argv):
             ok = until(follows, 90)
             print("   mount %s | the Bridge's record %s" % ((read(MOUNT, "EQUATORIAL_EOD_COORD") or {}).get("elements"), known_dec()))
             results.append(("a mount that appears 25 s after the Bridge connected is read", ok))
+            binding = read(BRIDGE, "BRIDGE_BINDING") or {}
+            results.append(("then it reports that it reads its devices (Ok)", binding.get("state") == "Ok"))
 
             command('stop indi_simulator_telescope -n "%s"' % MOUNT)
             time.sleep(8)

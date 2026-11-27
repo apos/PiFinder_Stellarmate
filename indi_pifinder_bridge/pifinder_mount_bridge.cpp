@@ -950,6 +950,10 @@ bool PiFinderMountBridge::initProperties()
     IUFillTextVector(&ExternalHoldReasonTP, ExternalHoldReasonT, 1, getDeviceName(), "EXTERNAL_HOLD_REASON",
                      "External hold reason", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillText(&BindingT[0], "MISSING", "Devices not read", "");
+    IUFillTextVector(&BindingTP, BindingT, 1, getDeviceName(), "BRIDGE_BINDING", "Reads its devices", "Main Control", IP_RO, 60,
+                     IPS_IDLE);
+
     IUFillNumber(&ExternalHoldSeenN[0], "MOUNT_SYNCS", "Syncs by other clients during the hold", "%.0f", 0, 100000, 0, 0);
     IUFillNumberVector(&ExternalHoldSeenNP, ExternalHoldSeenN, 1, getDeviceName(), "EXTERNAL_HOLD_SEEN",
                        "During the hold", "Main Control", IP_RO, 60, IPS_IDLE);
@@ -1128,6 +1132,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ExternalHoldSP);
         defineProperty(&ExternalHoldReasonTP);
         defineProperty(&ExternalHoldSeenNP);
+        defineProperty(&BindingTP);
         defineProperty(&TargetSourceSP);
         defineProperty(&TargetSourceAgeNP);
         defineProperty(&CorrectionAgeNP);
@@ -1222,6 +1227,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ExternalHoldSP.name);
         deleteProperty(ExternalHoldReasonTP.name);
         deleteProperty(ExternalHoldSeenNP.name);
+        deleteProperty(BindingTP.name);
         deleteProperty(TargetSourceSP.name);
         deleteProperty(TargetSourceAgeNP.name);
         deleteProperty(CorrectionAgeNP.name);
@@ -1563,7 +1569,12 @@ void PiFinderMountBridge::publishPositioningStatus()
     }
 
     double residual = m_positioningResidual;
-    if (handsOff)
+    if (m_repositionConfirmPending)
+    {
+        phase = "CHECK_SCOPE"; // the open question comes before any older verdict
+        residual = DriftStatusN[0].value;
+    }
+    else if (handsOff)
     {
         m_positioningAttempts = attempt;
         m_positioningResult = PositioningResult::NONE; // a new move began: the old verdict no longer applies
@@ -1593,7 +1604,9 @@ void PiFinderMountBridge::publishPositioningStatus()
     const double solveAge = m_lastKnownPiFinderPositionTime > 0 ? std::max(0.0, now - static_cast<double>(m_lastKnownPiFinderPositionTime)) : -1.0;
 
     IPState state = IPS_IDLE;
-    if (handsOff)
+    if (m_repositionConfirmPending)
+        state = IPS_ALERT;
+    else if (handsOff)
         state = IPS_BUSY;
     else if (m_positioningResult == PositioningResult::GAVE_UP || m_positioningResult == PositioningResult::OFF_TARGET)
         state = IPS_ALERT;
@@ -1608,7 +1621,7 @@ void PiFinderMountBridge::publishPositioningStatus()
         static std::string s_lastPostedPhase;
         static int s_lastPostedAttempt = -1;
         const bool phaseChanged = s_lastPostedPhase != phase || s_lastPostedAttempt != attempt;
-        const bool renew = handsOff && now - s_lastPost >= 3.0;
+        const bool renew = (handsOff || m_repositionConfirmPending) && now - s_lastPost >= 3.0;
         const bool cooledDown = s_lastFailure == 0.0 || now - s_lastFailure >= 30.0;
         const bool somethingToTell = phaseChanged || renew;
         if (somethingToTell && cooledDown && std::strcmp(phase, "IDLE") != 0)
@@ -1687,92 +1700,32 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         return true;
     }
 
-    // --- A Fall-4 confirmation from a previous tick is still open: only check its timeout here. ---
+    // --- A question about the position is open: nothing moves until it is answered or no longer applies. ---
+    // (It used to time out after 45 s and drive the mount back - without the user ever having seen a question.)
     if (m_repositionConfirmPending)
     {
-        if (time(nullptr) < m_repositionConfirmDeadline)
-            return true; // still waiting on a response - don't let the old per-mode logic act meanwhile
-
-        LOG_WARN("Reposition confirmation timed out - treating as unintentional, reverting to the target.");
-        m_repositionConfirmPending = false;
-        IUResetSwitch(&RepositionConfirmSP);
-        RepositionConfirmSP.s = IPS_ALERT;
-        IDSetSwitch(&RepositionConfirmSP, nullptr);
-        if (havePositions)
+        double targetRA = 0.0, targetDec = 0.0;
+        if (m_client->hasPiFinderTargetPending() && m_client->getPiFinderTargetRADE(targetRA, targetDec) &&
+            consumeGenuinePiFinderTargetPending(targetRA, targetDec))
         {
-            // Same Sync+re-Goto pattern HOLDING already uses for ordinary
-            // drift - explicitly authorized past MaxSyncDriftNP this one
-            // time, since a human-reviewable confirmation window just
-            // expired unanswered rather than this being blind automation.
-            //
-            // Found live (2026-08-08): NOT routing this through the normal
-            // SLEWING state caused an infinite loop - the next tick saw the
-            // mount moving without weCommandedIt being true (misclassified
-            // as ANOTHER external reposition), and marking "confirmed good"
-            // immediately (before the Goto had actually converged) meant
-            // any still-remaining residual looked implausible again right
-            // away. Fixed: fire the same commands, but hand control back to
-            // the existing SLEWING/SETTLING machinery to verify real
-            // convergence (same discipline as every other correction path)
-            // instead of declaring success ourselves. m_lastConfirmedGoodTime
-            // is deliberately NOT touched here - it only updates once drift
-            // is actually observed back within Threshold, same as normal.
-            // Found live (2026-09-03): m_lastForwardedRA/Dec default to NaN
-            // (see the header) and are only ever set by a genuine forwarded
-            // Goto or a confirmed external reposition - NOT by the plain
-            // Sync this mode does "on entering Goto-Forward" after every
-            // driver restart. A restart landing shortly before this timeout
-            // fires (e.g. the Control Center's readiness watchdog restarting
-            // an only-momentarily-slow driver) left them still NaN here -
-            // sendMountCoords() forwarded that through INDI to the mount
-            // unchecked, and the mount silently coerced NaN to 0/0, sending
-            // it there for real. There is no genuine "held target" yet to
-            // revert to in that case - fall back to PiFinder's own current
-            // fresh position (piRA/piDec, already verified fresh above) and
-            // adopt it as the new held target, exactly like the Fall-2
-            // "external reposition confirmed" branch above already does.
-            if (std::isnan(m_lastForwardedRA) || std::isnan(m_lastForwardedDec))
-            {
-                LOG_WARN("No target since the last restart - adopting PiFinder's current position instead of reverting to an unset one.");
-                m_lastForwardedRA = piRA;
-                m_lastForwardedDec = piDec;
-                setOriginalTarget(piRA, piDec); // same reasoning as Fall-2 above - best available baseline
-                // Low-value (PiFinder is already at piRA/piDec - this is its
-                // own reported position), kept for consistency with the two
-                // sites below - see docs/concepts/mount_bridge_reposition_notifies_pifinder.md UC3.
-                notifyPiFinderOfReposition(piRA, piDec);
-            }
-            // Diagnostic instrumentation added live (2026-09-03) chasing a
-            // recurrence of the mount landing at/near RA0/Dec0 via exactly
-            // this revert path, with m_lastForwardedRA/Dec NOT NaN this
-            // time (the guard above did not fire) - meaning whatever value
-            // was actually used here was itself already bad, from a source
-            // this comment's own earlier fix didn't anticipate. An external
-            // log watcher missed the moment (disconnected during the same
-            // system slowness this project has already documented), so
-            // this prints directly through INDI's own message channel -
-            // immune to any external tool's own connection gaps - to
-            // finally pin down the exact value on the next occurrence.
-            LOGF_WARN("Reposition revert about to send: piRA=%.6f piDec=%.6f (SYNC), then m_lastForwardedRA=%.6f "
-                      "m_lastForwardedDec=%.6f (TRACK).",
-                      piRA, piDec, m_lastForwardedRA, m_lastForwardedDec);
-            applySlewRateForDrift(drift);
-            if (sendMountCoordsSafe(piRA, piDec, "SYNC") &&
-                sendMountCoordsSafe(m_lastForwardedRA, m_lastForwardedDec, "TRACK"))
-            {
-                if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
-                {
-                    m_settleRetriesRemaining = MAX_SETTLE_RETRIES;
-                    m_forwardState = ForwardState::SLEWING;
-                }
-                else
-                {
-                    m_correctSettleRetriesRemaining = MAX_SETTLE_RETRIES;
-                    m_correctState = CorrectState::SLEWING;
-                }
-            }
+            m_forwardAwaitingSync = true; // handleGotoForward() forwards it
+            withdrawRepositionQuestion("a new push-to on PiFinder");
+            return false;
         }
-        return true;
+        if (!havePositions)
+            return true;
+        if (!std::isnan(m_lastPolledMountRA) &&
+            angularSeparationArcmin(mountRA, mountDec, m_lastPolledMountRA, m_lastPolledMountDec) > DriftThresholdN[0].value)
+            withdrawRepositionQuestion("the mount is being moved"); // falls through: handled as a movement
+        else if (drift <= DriftThresholdN[0].value &&
+                 isPiFinderSolveFresh(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text))
+        {
+            withdrawRepositionQuestion("mount and PiFinder agree again");
+            m_lastConfirmedGoodTime = time(nullptr);
+            return false;
+        }
+        else
+            return true;
     }
 
     if (!havePositions)
@@ -1977,10 +1930,10 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         // unbaselined drift is exactly the case Fall 4/MaxSyncDriftNP exist
         // to NOT act on blindly - see their own comments) - just make the
         // situation legible instead. Rate-limited to once per
-        // REPOSITION_CONFIRM_TIMEOUT_SEC so this doesn't spam every tick
+        // REPEAT_WARNING_SEC so this doesn't spam every tick
         // while the condition persists.
         const long now = time(nullptr);
-        if (now - m_lastUntrustedBaselineWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+        if (now - m_lastUntrustedBaselineWarnTime >= REPEAT_WARNING_SEC)
         {
             m_lastUntrustedBaselineWarnTime = now;
             LOGF_WARN("PiFinder and mount disagree by %.1f arcmin, but no confirmed-good baseline has been "
@@ -2001,13 +1954,12 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
     // Fall 4: exceeds what passive sky motion could produce in the elapsed
     // time - ask rather than guess (see docs/concepts/mount_bridge_reposition_detection.md UC4).
     m_repositionConfirmPending = true;
-    m_repositionConfirmDeadline = time(nullptr) + REPOSITION_CONFIRM_TIMEOUT_SEC;
     RepositionConfirmSP.s = IPS_BUSY;
     IDSetSwitch(&RepositionConfirmSP, nullptr);
-    LOGF_WARN("Drift %.1f arcmin exceeds what passive sky motion could produce in %.0fs (max plausible %.1f') - "
-              "likely a deliberate reposition (e.g. clutch released) or a disturbance. Confirm via "
-              "REPOSITION_CONFIRM within %ds, or it will be treated as unintentional and reverted automatically.",
-              drift, elapsedSec, maxPlausibleDrift, REPOSITION_CONFIRM_TIMEOUT_SEC);
+    LOGF_WARN("Mount and PiFinder suddenly differ by %.1f arcmin (the sky alone could do %.1f' in %.0fs) although the mount "
+              "reported no movement - clutch open, scope bumped? Nothing moves until REPOSITION_CONFIRM is answered (the "
+              "Control Center shows it), a new GoTo is given, or they agree again.",
+              drift, maxPlausibleDrift, elapsedSec);
     return true;
 }
 
@@ -2126,6 +2078,8 @@ void PiFinderMountBridge::TimerHit()
     syncOrientationStatus();
     autoArmShadowSyncIfDevicePresent();
     handleShadowSync();
+
+    publishBinding();
 
     if (!m_client->isReady())
     {
@@ -2298,7 +2252,7 @@ void PiFinderMountBridge::TimerHit()
             if (originalTargetExceeded)
             {
                 const long now = time(nullptr);
-                if (now - m_lastOriginalTargetDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                if (now - m_lastOriginalTargetDriftWarnTime >= REPEAT_WARNING_SEC)
                 {
                     m_lastOriginalTargetDriftWarnTime = now;
                     LOGF_WARN("PiFinder has drifted %.1f arcmin from the original GoTo target (threshold %.1f) - "
@@ -2437,7 +2391,7 @@ void PiFinderMountBridge::TimerHit()
             // this branch re-evaluates every fresh solve and would otherwise
             // spam the log for as long as the condition persists.
             const long now = time(nullptr);
-            if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+            if (now - m_lastMaxSyncDriftWarnTime >= REPEAT_WARNING_SEC)
             {
                 m_lastMaxSyncDriftWarnTime = now;
                 LOGF_WARN("Drift %.1f arcmin exceeds the auto-Sync sanity limit (%.1f) - skipping Sync to "
@@ -2973,6 +2927,29 @@ void PiFinderMountBridge::notifyPiFinderOfReposition(double ra, double dec)
     }
 }
 
+void PiFinderMountBridge::publishBinding()
+{
+    const std::string missing = m_client->missingDevices();
+    const IPState state = missing.empty() ? IPS_OK : (m_client->bindingGaveUp() ? IPS_ALERT : IPS_BUSY);
+    const char *shown = BindingT[0].text != nullptr ? BindingT[0].text : "";
+    if (BindingTP.s == state && missing == shown)
+        return;
+    IUSaveText(&BindingT[0], missing.c_str());
+    BindingTP.s = state;
+    IDSetText(&BindingTP, nullptr);
+}
+
+void PiFinderMountBridge::withdrawRepositionQuestion(const char *why)
+{
+    if (!m_repositionConfirmPending)
+        return;
+    m_repositionConfirmPending = false;
+    IUResetSwitch(&RepositionConfirmSP);
+    RepositionConfirmSP.s = IPS_IDLE;
+    IDSetSwitch(&RepositionConfirmSP, nullptr);
+    LOGF_INFO("Question about the position withdrawn: %s.", why);
+}
+
 void PiFinderMountBridge::publishHoldSeen()
 {
     const double syncs = m_client->foreignMountSyncs() - m_holdSyncsAtStart;
@@ -3032,7 +3009,10 @@ void PiFinderMountBridge::handleMountClientEvents()
     if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON || (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE))
     {
         if (event == PiFinderBridgeClient::MountEvent::GOTO)
+        {
+            m_gotoDuringHold = true;
             LOG_INFO("GoTo sent to the mount not followed: the Mount Bridge is on hold or an alignment run is active.");
+        }
         return;
     }
 
@@ -3636,7 +3616,7 @@ void PiFinderMountBridge::handleGotoForward()
                 // spam the log every ~1-2s for as long as the condition
                 // persists without adding new information.
                 const long now = time(nullptr);
-                if (now - m_lastMaxSyncDriftWarnTime >= REPOSITION_CONFIRM_TIMEOUT_SEC)
+                if (now - m_lastMaxSyncDriftWarnTime >= REPEAT_WARNING_SEC)
                 {
                     m_lastMaxSyncDriftWarnTime = now;
                     LOGF_WARN("Hold position drifted %.1f arcmin (tactical %.1f, from-original %.1f), exceeding the"
@@ -4475,9 +4455,24 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     m_correctState = CorrectState::IDLE;
                     m_lastConfirmedGoodTime = time(nullptr);
                     setTargetSource(TARGET_SOURCE_MOUNT);
+                    m_waitForNextGoto = false;
                     LOGF_INFO("Reposition confirmed - adopted (RA %.4fh, DEC %.4f deg) as the new target.",
                               piRA, piDec);
                     RepositionConfirmSP.s = IPS_OK;
+                    // The mount never noticed this movement: its report is set to where PiFinder sees the scope (nothing
+                    // moves). Without this the next tick found the same difference and asked again (found live 2026-11-27).
+                    // The user has just confirmed the position, so the automatic Sync limit does not apply.
+                    if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
+                    {
+                        m_lastPolledMountRA = piRA;
+                        m_lastPolledMountDec = piDec;
+                        m_lastPolledMountTime = time(nullptr);
+                    }
+                    else
+                    {
+                        LOG_ERROR("Adopted, but the mount refused the Sync - it still reports the old position.");
+                        RepositionConfirmSP.s = IPS_ALERT;
+                    }
                 }
                 else
                 {
@@ -4558,6 +4553,10 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 {
                     m_holdSyncsAtStart = m_client->foreignMountSyncs();
                     m_movedByHandDuringHold = false;
+                    m_gotoDuringHold = false;
+                    m_holdStartTime = static_cast<long>(time(nullptr));
+                    if (!m_client->getMountRADE(m_holdStartRA, m_holdStartDec))
+                        m_holdStartTime = 0;
                     publishHoldSeen();
                 }
             }
@@ -4567,8 +4566,16 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 const std::string reason = ExternalHoldReasonT[0].text != nullptr ? ExternalHoldReasonT[0].text : "";
                 // After an alignment: a solve, a Sync or a turned mount mean the alignment owns where the scope now is. With none
                 // of them (a solve that failed before anything happened) an interrupted GoTo is simply carried on.
+                bool movedWithoutCommand = false; // e.g. polar alignment with the mount turned on its hand controller
+                double mountRA, mountDec;
+                if (wasHeld && m_holdStartTime > 0 && !m_gotoDuringHold && m_client->getMountRADE(mountRA, mountDec))
+                {
+                    const double drifted = (time(nullptr) - m_holdStartTime) * MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC;
+                    movedWithoutCommand = angularSeparationArcmin(mountRA, mountDec, m_holdStartRA, m_holdStartDec) >
+                                          DriftThresholdN[0].value + drifted;
+                }
                 if (wasHeld && reason.rfind("alignment ended", 0) == 0 &&
-                    (reason == "alignment ended: solved" || m_movedByHandDuringHold ||
+                    (reason == "alignment ended: solved" || m_movedByHandDuringHold || movedWithoutCommand ||
                      m_client->foreignMountSyncs() > m_holdSyncsAtStart))
                     keepOffAfterAlignment();
             }

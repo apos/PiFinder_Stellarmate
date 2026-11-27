@@ -1,6 +1,6 @@
 --- python/PiFinder/pfsm_bridge_status.py.orig
 +++ python/PiFinder/pfsm_bridge_status.py
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,156 @@
 +"""PiFinder_Stellarmate: what the Mount Bridge is doing to get the scope onto the target, shown on PiFinder's screen.
 +
 +After a GoTo the Mount Bridge slews, waits for a PiFinder solve, refines and verifies. While it does, the user must keep
@@ -22,7 +22,8 @@
 +SHOW_GAVE_UP_SEC = 20.0
 +WARNING_PREFIX = "MOUNT OFF"      # mount and PiFinder are apart
 +OFF_TARGET_PREFIX = "OFF TARGET"   # they agree, away from the GoTo target
-+PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING")
++CHECK_TEXT = "CHECK MOUNT"         # the Bridge has a question: they suddenly differ although the mount did not move
++PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING", "CHECK_SCOPE")
 +HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING")
 +
 +_cache = {"mtime": None, "data": None}
@@ -103,7 +104,7 @@
 +    if not data or "ts" not in data:
 +        return None
 +    age = now - float(data["ts"])
-+    if data.get("hands_off"):
++    if data.get("hands_off") or data.get("phase") == "CHECK_SCOPE":   # both are renewed while they last
 +        return data if age <= FRESH_SEC else None
 +    if data.get("phase") == "ON_TARGET":
 +        return data if age <= SHOW_DONE_SEC else None
@@ -122,6 +123,8 @@
 +        return None
 +    if data["hands_off"]:
 +        return ("MOUNT MOVING", True)
++    if data["phase"] == "CHECK_SCOPE":
++        return (CHECK_TEXT, False)
 +    if data["phase"] == "ON_TARGET":
 +        return ("ON TARGET", False)
 +    if data["phase"] == "GAVE_UP":
@@ -141,7 +144,7 @@
 +
 +def is_warning(banner):
 +    """True for a title bar text that reports a missed position: drawn bright on black across the whole bar."""
-+    return bool(banner) and banner[0].startswith((WARNING_PREFIX, OFF_TARGET_PREFIX))
++    return bool(banner) and banner[0].startswith((WARNING_PREFIX, OFF_TARGET_PREFIX, CHECK_TEXT))
 +
 +
 +def register(app):

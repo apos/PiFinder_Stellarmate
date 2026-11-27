@@ -699,6 +699,11 @@ def mount_bridge_drift(
         "pifinder_below_horizon": pifinder_below_horizon,
         "sky": sky,
         "positioning": _positioning_status(device_props),
+        # BRIDGE_BINDING: "Alert" = the connected Bridge gets nothing from the named device(s) and does nothing.
+        "binding_state": device_props.get("BRIDGE_BINDING", {}).get("state"),
+        "binding_missing": device_props.get("BRIDGE_BINDING", {}).get("elements", {}).get("MISSING") or None,
+        # an open question after a sudden disagreement without any mount movement (clutch, bump): nothing moves until answered
+        "reposition_question": device_props.get("REPOSITION_CONFIRM", {}).get("state") == "Busy",
     }
 
 
@@ -828,7 +833,8 @@ def _positioning_status(device_props: dict):
     """The Mount Bridge's POSITIONING_STATUS / POSITIONING_PHASE (what it is doing to get the scope onto the target, and whether
     the user should keep their hands off the hand controller): {"phase", "attempt", "attempts_max", "residual_arcmin",
     "elapsed_sec", "to_go_deg", "solve_age_sec" (None when unknown), "hands_off"} or None for an older driver without the
-    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, OFF_TARGET, HOLDING."""
+    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, OFF_TARGET, HOLDING,
+    CHECK_SCOPE (an open question, see "reposition_question")."""
     prop = device_props.get("POSITIONING_STATUS", {})
     phase = device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("PHASE")
     if not prop or not phase:
@@ -1672,6 +1678,11 @@ def trigger_align_held(
     restart would otherwise re-read PiFinder's still-wrong target as its
     recovery baseline and slew the mount right back to it."""
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_ALIGN_HELD", host, port, timeout)
+
+
+def trigger_reposition_adopt(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> None:
+    """Answers the Mount Bridge's open question with "yes, I moved it on purpose": PiFinder's position becomes the target."""
+    set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_YES", host, port, timeout)
 
 
 def trigger_reposition_revert(

@@ -2316,9 +2316,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
         # First observation since this Control Center process started -
         # assume whatever's currently connected is already healthy rather
         # than forcing a reconnect for no reason on every restart of the
-        # Control Center itself.
-        _pifinder_lx200_healed_for_start = current_start
-        return
+        # Control Center itself - unless the driver cannot read PiFinder:
+        # if PiFinder was restarted together with the Control Center (an
+        # update, an install) it still says "connected" over a dead link and
+        # nothing would ever reconnect it (found 2026-11-27: PiFinder got no
+        # targets for 14 minutes).
+        if not (status.get("pifinder_connected") is True and _pifinder_lx200_link_failing()):
+            _pifinder_lx200_healed_for_start = current_start
+            return
+        _pifinder_lx200_healed_for_start = -1
     if current_start == _pifinder_lx200_healed_for_start:
         return
     was_connected = status.get("pifinder_connected") is True
@@ -2353,6 +2359,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
             f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
             "attempting reconnect (#118)"
         )
+
+
+def _pifinder_lx200_link_failing() -> bool:
+    """Whether "PiFinder LX200" currently cannot read PiFinder's position (INDI state Alert)."""
+    try:
+        props = indi_client.get_properties(device="PiFinder LX200", stop_after={"EQUATORIAL_EOD_COORD"})
+    except indi_client.INDIClientError:
+        return False
+    return props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {}).get("state") == "Alert"
 
 
 def _pifinder_lx200_reconnect_watchdog(interval=20):
@@ -7273,6 +7288,32 @@ class Handler(BaseHTTPRequestHandler):
             _mb_log("sending mount to its native Home position...")
             try:
                 indi_client.trigger_goto_home()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_reposition_adopt":
+            _mb_log("adopting the position PiFinder sees (answer to the Mount Bridge's question)...")
+            try:
+                indi_client.trigger_reposition_adopt()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_reconnect":
+            _mb_log("reconnecting the Mount Bridge (it does not read one of its devices)...")
+            try:
+                indi_client.disconnect_device("PiFinder Mount Bridge")
+                time.sleep(2.0)
+                indi_client.connect_device("PiFinder Mount Bridge")
             except indi_client.INDIClientError as e:
                 _mb_log(f"  failed: {e}")
                 self._send_json({"success": False, "error": str(e)}, status=502)
