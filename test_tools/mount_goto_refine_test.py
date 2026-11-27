@@ -17,6 +17,7 @@ held      "Goto to Target" (the Control Center's button) from elsewhere: ends on
 pifinder  GoTo to the PiFinder device (as KStars does on "PiFinder LX200"): unchanged, ends on target.
 
 Exit 0 = every scenario passed.
+(Alignment runs in Ekos are recorded with ekos_align_probe.py.)
 """
 import argparse
 import math
