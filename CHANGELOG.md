@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- README: which GoTo does what (PiFinder, KStars, the StellarMate app's SLEW and GO); concept for aligning PiFinder after an Ekos solve.
 - Control Center: the mount's node in the Mount Bridge diagram shows its state as a symbol (tracking, blinking while slewing, stopped, parked, unknown).
 - Control Center, mode "Real Hardware + GSC Simulation" (#664, #344): a fourth mode tile that replaces the camera frame with a star field from the GSC catalogue, solved by the real Cedar/tetra3 solver; follows the mount over INDI (`test_tools/pifinder_sky_follow.py`: alignment point, simulated misalignment, absorbs Syncs, GoTo landing error that grows with the slew length, hand-controller motion counts as real movement). It is "on" only when it really works, remembers what was last chosen (a watchdog restarts a dead follower and switches PiFinder's Test Mode on again after an update, a crash or a reboot, bounded against restart loops) and waits until INDI and the mount driver answer before restarting. Full Simulation and Fake Mode move into "Other test modes".
 - Mount Bridge: `TARGET_STATUS` (the requested GoTo target and PiFinder's offset from it, #657) and `POSITIONING_STATUS` / `POSITIONING_PHASE` (attempt, residual, elapsed time, hands off, #665) as INDI properties; the Bridge also reports to PiFinder, whose screen shows "HANDS OFF" in the title bar while the Bridge works, then "ON TARGET" / "Hand OK n'" (patch `pfsm_bridge_status.py`, `ui_base_py.diff`).
