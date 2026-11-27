@@ -144,6 +144,30 @@ def _back_up_original_image():
         shutil.copyfile(PF_TEST_IMAGE, ORIGINAL_IMAGE_BACKUP)
 
 
+SIMULATOR_MODEL_SWITCHES = (
+    # (property, element): with the default "Nearest" calculation one Sync far from the current model made later GoTos land 180 degrees
+    # away (reproduced 2026-11-27); "SVD" lands exactly after the same Sync. Old alignment points are cleared.
+    ("ALIGNMENT_SUBSYSTEM_MATH_PLUGINS", "SVD Math Plugin"),
+    ("ALIGNMENT_POINTSET_ACTION", "CLEAR"),
+    ("ALIGNMENT_POINTSET_COMMIT", "ALIGNMENT_POINTSET_COMMIT"),
+    ("ALIGNMENT_SUBSYSTEM_MATH_PLUGIN_INITIALISE", "ALIGNMENT_SUBSYSTEM_MATH_PLUGIN_INITIALISE"),
+)
+
+
+def prepare_simulator_mount(device, indi):
+    """Give the Telescope Simulator a sound mount model. Only for the simulator - a real mount's alignment is never touched.
+    Returns a warning text or None."""
+    set_switch = getattr(indi, "set_switch", None)
+    if device != "Telescope Simulator" or set_switch is None:
+        return None
+    try:
+        for prop, element in SIMULATOR_MODEL_SWITCHES:
+            set_switch(device, prop, element)
+    except Exception as exc:  # an older simulator without the alignment subsystem
+        return "The simulator's alignment model could not be reset: %s" % exc
+    return None
+
+
 def start(landing="typical", device=DEFAULT_MOUNT, indi=None, popen=subprocess.Popen):
     """Start the simulation: the follower, Test Mode, and the old PiFinder Simulator device disconnected.
 
@@ -156,6 +180,9 @@ def start(landing="typical", device=DEFAULT_MOUNT, indi=None, popen=subprocess.P
     if _alive(read_state().get("pid")):
         return dict(status(), ok=True, warnings=["The simulation was already running."])
     warnings = []
+    warning = prepare_simulator_mount(device, indi)
+    if warning:
+        warnings.append(warning)
     _back_up_original_image()
     pf = pifinder_status()
     test_mode_was_on = bool(pf.get("debug_solve")) if pf else False

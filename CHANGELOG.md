@@ -35,6 +35,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Mount Bridge: after a binding retry the Bridge no longer saw PiFinder's target and forwarded no GoTo (libindi's watchProperty() drops every other property of the device for good); it now reconnects instead.
+- Mount Bridge: checks after every slew that the mount arrived where it was sent (wrong alignment model, limit, abort) and does not Sync if not; positions below the horizon are no longer adopted as the target.
+- Sky simulation: starts the Telescope Simulator with a sound alignment model (after one far Sync its GoTos landed 180 degrees off). New live check: test_tools/mount_model_check.py.
 - Mount Bridge: "On target" only if PiFinder is on the GoTo target as well; mount and PiFinder agreeing somewhere else is now reported as "Off target" (card and PiFinder title bar).
 - Control Center: a profile restart from Ekos or the SMOS app no longer puts every driver into indiserver twice (the Control Center started the profile in the gap between stop and start; it now waits 30 s).
 - Sky picture: names near the edge are no longer cut off ("Mount (stopped").
