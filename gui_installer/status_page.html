@@ -2000,6 +2000,12 @@
   .mb-mpa-head:hover { color: #ccc; }
   .mb-mpa-chevron { text-transform: none; letter-spacing: 0; font-size: 0.75rem; color: #888; }
   #mb-multialign-details { margin-top: 0.7rem; }
+  /* Rows with room between them, and the first field / button of both setting rows in one line (direct feedback, 2026-11-27).
+     Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
+  #mb-multialign-details .mb-row { margin-top: 0.65rem; }
+  #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
+  #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
+  #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */
   #mb-threshold-manual-sep { width: 1px; height: 1rem; background: #333; }
   /* Shared collapsible-section header, reused wherever a tile has a
      "matters every time" part and a "one-time setup / rarely touched"
