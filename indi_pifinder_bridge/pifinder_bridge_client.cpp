@@ -12,6 +12,21 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
 {
     m_piFinderName = piFinderName;
     m_mountName = mountName;
+    forgetProperties();
+
+    m_bindingRetryTicksElapsed = 0;
+    m_bindingRetryCooldownTicks = 0;
+    m_bindingRetryAttempts = 0;
+    m_bindingGaveUp = false;
+
+    watchDevice(m_piFinderName.c_str());
+    watchDevice(m_mountName.c_str());
+}
+
+// Every pointer into a device is dropped (it is dead once the connection or the device name changes); a target that is on the PiFinder
+// device when the properties come back is the baseline, not a new push-to.
+void PiFinderBridgeClient::forgetProperties()
+{
     m_piFinderOnline = m_mountOnline = false;
     m_piFinderEqNP = m_mountEqNP = nullptr;
     m_piFinderTargetNP = nullptr;
@@ -29,14 +44,9 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
         m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
     }
     m_bindTime = static_cast<long>(time(nullptr));
-
-    m_bindingRetryTicksElapsed = 0;
-    m_bindingRetryCooldownTicks = 0;
-    m_bindingRetryAttempts = 0;
-    m_bindingGaveUp = false;
-
-    watchDevice(m_piFinderName.c_str());
-    watchDevice(m_mountName.c_str());
+    m_shadowOnline = false;
+    m_shadowEqNP = nullptr;
+    m_shadowOnCoordSetSP = nullptr;
 }
 
 bool PiFinderBridgeClient::isReady() const
@@ -74,20 +84,14 @@ bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
         return false;
     }
 
-    // Re-request only whichever properties never arrived - watchProperty(),
-    // unlike watchDevice(), actually resends <getProperties> on every call,
-    // which is exactly what's needed here (a device/property that showed up
-    // late gets asked again, one that's genuinely never coming doesn't get
-    // silently retried forever without eventually hitting the attempt cap
-    // above).
-    if (!m_piFinderEqNP)
-        watchProperty(m_piFinderName.c_str(), "EQUATORIAL_EOD_COORD");
-    if (!m_mountEqNP)
-        watchProperty(m_mountName.c_str(), "EQUATORIAL_EOD_COORD");
-    if (!m_mountOnCoordSetSP)
-        watchProperty(m_mountName.c_str(), "ON_COORD_SET");
-    if (!m_piFinderOnCoordSetSP)
-        watchProperty(m_piFinderName.c_str(), "ON_COORD_SET");
+    // Ask again by connecting anew: that sends <getProperties> for every watched device once more.
+    // NEVER watchProperty() here: libindi then drops every OTHER property (and every message) of that device for good
+    // (WatchDeviceProperty::processXml, "If we are asked to watch for specific properties only, we ignore everything else"),
+    // and a reconnect keeps that filter. Found 2026-11-27: after one retry the Bridge never saw PiFinder's target again and
+    // forwarded no GoTo; on the mount side abort, park and location would be filtered the same way.
+    disconnectServer();
+    forgetProperties();
+    connectServer();
 
     if (!longPhase)
         ++m_bindingRetryAttempts;
