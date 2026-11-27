@@ -77,6 +77,19 @@ class ReadMountState(unittest.TestCase):
         self.assertEqual(s["coord_state"], "Alert")
         self.assertEqual(s["coords"], ("1", "2"))
 
+    def test_tracking_and_park_are_returned(self):
+        for track, park, want in (("On", "Off", (True, False)), ("Off", "Off", (False, False)), ("Off", "On", (False, True))):
+            indi_client.get_properties = lambda **kw: {"LX200 OnStep": {
+                "TELESCOPE_TRACK_STATE": {"elements": {"TRACK_ON": track}}, "TELESCOPE_PARK": {"elements": {"PARK": park}}}}
+            s = indi_client.read_mount_state("LX200 OnStep")
+            self.assertEqual((s["tracking"], s["parked"]), want)
+
+    def test_a_mount_without_these_controls_reports_unknown(self):
+        indi_client.get_properties = lambda **kw: {"LX200 OnStep": {}}
+        s = indi_client.read_mount_state("LX200 OnStep")
+        self.assertIsNone(s["tracking"])
+        self.assertIsNone(s["parked"])
+
     def test_no_coordinates_means_no_state(self):
         indi_client.get_properties = lambda **kw: {"LX200 OnStep": {}}
         s = indi_client.read_mount_state("LX200 OnStep")

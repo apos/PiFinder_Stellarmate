@@ -1592,8 +1592,8 @@ _mount_silence = _MountSilenceTracker()
 
 def _mount_silence_for(status: dict) -> dict:
     """Silence verdict for the mount named in a mount_bridge_status() result,
-    plus whether it is parked ("parked": True/False/None). A failed or slow read
-    counts as "no information", never as silence."""
+    plus whether it is parked ("parked": True/False/None), tracking ("tracking": True/False/None) and the state INDI gives the
+    coordinates ("coord_state", "Busy" while slewing). A failed or slow read counts as "no information", never as silence."""
     device = status.get("active_mount")
     if not device or status.get("mount_connected") is not True:
         out = _mount_silence.update(device, status.get("mount_connected"), None)
@@ -1605,6 +1605,8 @@ def _mount_silence_for(status: dict) -> dict:
         return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
     out = _mount_silence.update(device, True, state["coords"], coord_state=state.get("coord_state"))
     out["parked"] = state["parked"]
+    out["tracking"] = state.get("tracking")
+    out["coord_state"] = state.get("coord_state")
     return out
 
 

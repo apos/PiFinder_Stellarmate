@@ -1390,6 +1390,18 @@
   #mb-node-mount-type { font-size: 0.68rem; color: #888; }
   #mb-node-mount-type.orientation-ok { color: #4caf50; }
   #mb-node-mount-type.orientation-alert { color: #e53935; }
+  /* Mount state symbol in the top right corner of the mount node. Side padding on both sides keeps the icon row centred and
+     clear of the symbol. */
+  #mb-node-mount { position: relative; padding-left: 1.5rem; padding-right: 1.5rem; }
+  #mb-mount-state { position: absolute; top: 4px; right: 4px; width: 17px; height: 17px; }
+  #mb-mount-state > [class^="ms-"] { display: none; }
+  #mb-mount-state.tracking, #mb-mount-state.slewing { color: #4caf50; }
+  #mb-mount-state.stopped { color: #f5a623; }
+  #mb-mount-state.parked { color: #e53935; }
+  #mb-mount-state.unknown { color: #777; }
+  #mb-mount-state.tracking .ms-tracking, #mb-mount-state.slewing .ms-tracking, #mb-mount-state.stopped .ms-stopped,
+  #mb-mount-state.parked .ms-parked, #mb-mount-state.unknown .ms-unknown { display: inline; }
+  #mb-mount-state.slewing { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
      color itself is set inline (currentColor is already #f5a623 by then),
      this only adds the animation. */
@@ -2763,6 +2775,15 @@
             <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
             <div class="mb-grp">
             <div class="mb-node" id="mb-node-mount" title="Mount">
+              <!-- Mount state, symbol only: green play = tracking (blinks while slewing), amber pause = stopped, red square =
+                   parked, grey ? = the mount does not say. Set by updateMountStateBadge(). -->
+              <svg id="mb-mount-state" viewBox="0 0 20 20" role="img" aria-label="" style="display:none;">
+                <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <path class="ms-tracking" d="M7 5.5L15 10L7 14.5Z" fill="currentColor"/>
+                <g class="ms-stopped" fill="currentColor"><rect x="6.5" y="5.5" width="2.6" height="9"/><rect x="10.9" y="5.5" width="2.6" height="9"/></g>
+                <rect class="ms-parked" x="6" y="6" width="8" height="8" rx="1" fill="currentColor"/>
+                <text class="ms-unknown" x="10" y="14" text-anchor="middle" font-size="12" fill="currentColor">?</text>
+              </svg>
               <div class="orientation-icon-row">
                 <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
                   <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
@@ -8367,7 +8388,33 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   return true;
 }
 
+// The mount's state as one word, from /api/mount_bridge_status: null hides the symbol (no linked, connected mount).
+function mountStateOf(data) {
+  if (!data.active_mount || data.mount_connected !== true) return null;
+  const ms = data.mount_silence;
+  if (!ms || ms.unknown || ms.silent) return 'unknown';
+  if (ms.parked === true) return 'parked';
+  if (ms.coord_state === 'Busy') return 'slewing';
+  if (ms.tracking === true) return 'tracking';
+  if (ms.tracking === false) return 'stopped';
+  return 'unknown';
+}
+const MOUNT_STATE_TITLES = { tracking: 'Mount is tracking', slewing: 'Mount is slewing', stopped: 'Mount is stopped (not tracking)',
+  parked: 'Mount is parked', unknown: 'Mount state unknown' };
+function updateMountStateBadge(data) {
+  const badge = document.getElementById('mb-mount-state');
+  const state = mountStateOf(data);
+  badge.style.display = state ? '' : 'none';
+  if (!state) return;
+  badge.setAttribute('class', state);
+  badge.setAttribute('aria-label', MOUNT_STATE_TITLES[state]);
+  let title = badge.querySelector('title');
+  if (!title) { title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); badge.prepend(title); }
+  title.textContent = MOUNT_STATE_TITLES[state];
+}
+
 function updateMbDiagram(data) {
+  updateMountStateBadge(data);
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
@@ -8954,6 +9001,7 @@ function setMbStatusInapplicable(text) {
   setMbStatusUnconfirmed(false);
   document.getElementById('mount-bridge-dot').className = 'status-dot dot-white';
   document.getElementById('mount-bridge-text').textContent = text;
+  document.getElementById('mb-mount-state').style.display = 'none';
   updateWmCouplingGate();
   refreshWmActiveButton();
   refreshConnectButtons();

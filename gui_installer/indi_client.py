@@ -1471,8 +1471,8 @@ def bridge_binding_state(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, tim
 
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
-    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
-    `parked` is None for a mount that has no TELESCOPE_PARK property at all. "coord_state" is the state INDI gives the coordinates
+    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None, "tracking": True/False/None}.
+    `parked`/`tracking` are None for a mount that has no TELESCOPE_PARK/TELESCOPE_TRACK_STATE property at all. "coord_state" is the state INDI gives the coordinates
     ("Ok", "Busy", "Idle" or "Alert"; the driver sets Alert when it cannot read the mount), None when the mount does not define them."""
     props = get_properties(
         device=device, host=host, port=port, timeout=timeout,
@@ -1485,7 +1485,10 @@ def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_
     coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
     park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
     parked = None if park_el is None else park_el.get("PARK") == "On"
-    return {"coords": coords, "parked": parked, "coord_state": coord_state}
+    # TELESCOPE_TRACK_STATE is defined before TELESCOPE_PARK (INDI::Telescope), so the early stop above already contains it.
+    track_el = dev.get("TELESCOPE_TRACK_STATE", {}).get("elements")
+    tracking = None if track_el is None else track_el.get("TRACK_ON") == "On"
+    return {"coords": coords, "parked": parked, "tracking": tracking, "coord_state": coord_state}
 
 
 def unpark_mount(
