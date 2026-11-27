@@ -401,7 +401,9 @@ def follow(args):
     awake_ok = None
     written = None
     lost = False
-    settle_until = 0.0
+    # Right after the start the mount may still be setting itself up (after a reboot the Telescope Simulator went RA 0/Dec 0 ->
+    # pole -> its position; taken as Syncs that left the sky 45 degrees off, found 2026-11-27): no Syncs for settle_sec.
+    settle_until = started + args.settle_sec
     was_below = False
     try:
         while args.duration is None or time.time() - started < args.duration:
@@ -516,7 +518,7 @@ def main(argv=None):
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between looks at the mount")
     ap.add_argument("--min-move", type=float, default=0.02, help="degrees the mount must move before a new picture")
     ap.add_argument("--reconnect-sec", type=float, default=180.0, help="how long to wait for INDI after it closed the connection")
-    ap.add_argument("--settle-sec", type=float, default=20.0, help="after reconnecting, position jumps are not taken for Syncs this long")
+    ap.add_argument("--settle-sec", type=float, default=20.0, help="after starting or reconnecting, position jumps are not taken for Syncs this long")
     ap.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: until Ctrl-C)")
     ap.add_argument("--misalign-east", type=float, default=0.0, metavar="ARCMIN",
                     help="the real sky is this far EAST of where the mount says it points (simulated polar/cone error)")
