@@ -73,6 +73,20 @@ size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
     return size * nmemb;
 }
 
+// libcurl's verdict on the last request to PiFinder. Port 80 is only tried when nothing at all listens on 8080: on StellarMate port
+// 80 is nginx/EkosLive, so asking it whenever PiFinder had no answer yet (no solve, an unpatched endpoint) only reached the wrong
+// service. A PiFinder on its own operating system has nothing on 8080 - the connection is refused - and is reached on 80.
+static CURLcode g_lastPiFinderResult = CURLE_OK;
+static CURLcode performPiFinderRequest(CURL *curl)
+{
+    g_lastPiFinderResult = curl_easy_perform(curl);
+    return g_lastPiFinderResult;
+}
+static bool nothingOn8080()
+{
+    return g_lastPiFinderResult == CURLE_COULDNT_CONNECT;
+}
+
 // Fetches PiFinder's own /api/current_target. RA/Dec come back J2000 (see
 // that endpoint's own docstring) - precession to JNow happens in
 // pollCurrentTarget() below, not here. Returns false on any request/parse
@@ -90,7 +104,7 @@ bool httpGetCurrentTarget(const std::string &url, double &raJ2000, double &decJ2
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -151,7 +165,7 @@ std::optional<PiFinderHardwareStatus> httpGetPiFinderHardwareStatus(const std::s
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 4000L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const CURLcode res = curl_easy_perform(curl);
+    const CURLcode res = performPiFinderRequest(curl);
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     curl_easy_cleanup(curl);
@@ -474,7 +488,7 @@ void LX200_PIFINDER::pollHardwareStatus()
     const char *host = (tcpConnection != nullptr) ? tcpConnection->host() : "127.0.0.1";
 
     auto status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + ":8080/api/hardware_status");
-    if (!status.has_value())
+    if (!status.has_value() && nothingOn8080())
         status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + "/api/hardware_status");
     if (!status.has_value())
     {
@@ -509,7 +523,7 @@ void LX200_PIFINDER::pollCurrentTarget()
     double raJ2000, decJ2000;
     std::string name;
     const bool ok = httpGetCurrentTarget("http://127.0.0.1:8080/api/current_target", raJ2000, decJ2000, name) ||
-                    httpGetCurrentTarget("http://127.0.0.1/api/current_target", raJ2000, decJ2000, name);
+                    (nothingOn8080() && httpGetCurrentTarget("http://127.0.0.1/api/current_target", raJ2000, decJ2000, name));
     if (!ok)
         return;
 

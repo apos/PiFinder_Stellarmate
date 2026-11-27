@@ -28,6 +28,18 @@ class PortOrderTest(unittest.TestCase):
         self.assertGreater(pairs, 10)
         self.assertEqual(wrong, [])
 
+    def test_port_80_only_when_nothing_listens_on_8080(self):
+        for name, path in (("bridge", "indi_pifinder_bridge/pifinder_mount_bridge.cpp"), ("lx200", "indi_pifinder/lx200_pifinder.cpp"),
+                           ("simulator", "indi_pifinder_simulator/pifinder_simulator.cpp")):
+            text = (REPO / path).read_text()
+            hits = [m for m in URL.finditer(text) if not text[text.rfind("\n", 0, m.start()) + 1:m.start()].lstrip().startswith("//")]
+            self.assertIn("CURLE_COULDNT_CONNECT", text)
+            if name == "simulator":     # one loop over both ports: it leaves the loop unless the connection was refused
+                self.assertIn("if (res != CURLE_OK && res != CURLE_COULDNT_CONNECT)", text)
+                continue
+            guards = len(re.findall(r"&& nothingOn8080\(\)|nothingOn8080\(\) &&", text))
+            self.assertEqual(guards, len(hits) // 2, "%s: every request on port 80 is guarded" % name)
+
 
 if __name__ == "__main__":
     unittest.main()
