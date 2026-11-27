@@ -295,8 +295,9 @@ class LostConnectionTest(unittest.TestCase):
             for ra in positions:
                 c, _ = server.accept()
                 c.recv(4096)
-                c.sendall(self.VECTOR % ra)
-                time.sleep(1.0)
+                for one in (ra if isinstance(ra, tuple) else (ra,)):   # a tuple: the position changes within one connection
+                    c.sendall(self.VECTOR % one)
+                    time.sleep(1.0)
                 c.close()
             server.close()
         threading.Thread(target=serve, daemon=True).start()
@@ -317,6 +318,10 @@ class LostConnectionTest(unittest.TestCase):
         code, rendered = self.run_against([b"5.0", b"9.0"], ["--reconnect-sec", "10", "--duration", "4"])
         self.assertEqual(rendered[0], 75)
         self.assertIn(135, rendered)
+
+    def test_start_up_jumps_after_a_reconnect_are_not_syncs(self):
+        code, rendered = self.run_against([b"5.0", (b"0.0", b"12.0")], ["--reconnect-sec", "10", "--duration", "5"])
+        self.assertEqual(rendered[-1], 180, "the sky follows the restarted mount instead of staying where it was")
 
     def test_the_follower_ends_when_indi_stays_away(self):
         code, _ = self.run_against([b"5.0"], ["--reconnect-sec", "2", "--duration", "15"])
