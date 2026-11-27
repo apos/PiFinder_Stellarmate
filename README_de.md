@@ -378,21 +378,24 @@ Für die vollständige Einrichtungs-Anleitung (StellarMate-Web-Manager-Profil, I
 
 ### GoTo starten: PiFinder, KStars oder StellarMate-App (SLEW und GO)
 
-Entscheidend ist, **welches Gerät** das GoTo bekommt. Nur ein GoTo an PiFinder führt die Mount Bridge selbst aus und prüft es
-(Kopplung "GoTo").
+Mit der Mount Bridge in der Kopplung "GoTo" ist das Ziel überall dasselbe: **Das Teleskop steht am Ende auf dem Objekt.** Nach
+der Fahrt wartet die Bridge auf einen Plate-Solve von PiFinder. Sieht PiFinder das Teleskop weiter als die Schwelle (Standard
+5 Bogenminuten, im Control Center einstellbar) daneben, gleicht sie das Mount ab (Sync) und schickt das GoTo erneut (höchstens
+3-mal). PiFinders Titelzeile zeigt `MOUNT MOVING`, dann `ON TARGET`.
 
-| Du startest mit | Wer bewegt das Mount | Was passiert |
-|---|---|---|
-| PiFinder: Objekt anwählen (Push-to) | Mount Bridge | Fahrt, Plate-Solve, Nachkorrigieren, bis PiFinder das Objekt sieht. PiFinders Titelzeile: `MOUNT MOVING`, dann `ON TARGET`. |
-| KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | Mount Bridge | Wie oben. |
-| StellarMate-App: **SLEW** | der Mount-Treiber | Das Mount fährt. Die Bridge bemerkt eine Fahrt, die sie nicht befohlen hat, und übernimmt die Stelle, die **PiFinder** sieht, als neues Target. Sie korrigiert **nicht** auf das Objekt nach: Das Teleskop kann einige Bogenminuten daneben stehen. Kein `MOUNT MOVING`. |
-| StellarMate-App: **GO** | der Mount-Treiber, danach Ekos | Wie SLEW, anschließend macht Ekos eine Aufnahme durch die **Teleskopkamera** und löst sie (je nach Ekos-Aktion mit Sync und Nachfahren auf das Objekt). Braucht eine Kamera mit Sternen im Bild; bei abgedecktem Teleskop schlägt der Solve fehl. PiFinder wird mit diesem Solve **noch nicht** ausgerichtet. |
-| KStars/Ekos: Goto auf dem Mount, Handsteuerung | der Mount-Treiber | Wie SLEW. |
+| Du startest mit | Bringt die Bridge das Teleskop aufs Objekt? |
+|---|---|
+| PiFinder: Objekt anwählen (Push-to) | ja |
+| KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | ja |
+| KStars / Ekos: Goto auf dem Mount, StellarMate-App **SLEW**, jeder andere INDI-Client | ja |
+| StellarMate-App: **GO** | ja. Zusätzlich macht Ekos eine Aufnahme durch die **Teleskopkamera**, löst sie und korrigiert je nach Ekos-Aktion selbst mit Sync und Fahrt ([geplant](docs/concepts/mount_bridge_ekos_align_pifinder.md): PiFinder mit diesem Solve ausrichten) |
+| OnStep-Handsteuerung oder OnStep-App (Katalog-GoTo) | **noch nicht** ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)): Das Ziel kommt in INDI nicht an. Übernommen wird die Stelle, die PiFinder nach der Fahrt sieht |
 
-Solange GoTos direkt ans Mount noch nicht nachkorrigiert werden
-([Konzept §4.1](docs/concepts/mount_bridge_target_transparency.md)): Soll das Teleskop am Ende auf dem Objekt stehen, über
-PiFinder oder **PiFinder LX200** starten. Geplant: PiFinder nach einem erfolgreichen GO-Solve automatisch ausrichten
-([Konzept](docs/concepts/mount_bridge_ekos_align_pifinder.md)).
+**Von Hand** (Richtungstasten, Pfeile der Handsteuerung, Klemmung): Die neue Position wird übernommen und das Mount auf PiFinder
+abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bewegt (Klemmung offen, Teleskop angestoßen), fragt
+sie vorher.
+
+**Stopp** (Abort in KStars/Ekos, "Stop movement" im Control Center): Die Bridge bewegt das Mount erst wieder beim nächsten GoTo.
 
 ## SMOS-Updates
 

@@ -77,7 +77,9 @@ every GoTo whose coordinates are known, whoever sent it (see §4.1).
 | 5. User triggers Align (PiFinder menu, Control Center, later KStars Sync / hand controller) | M13 | = Target | Sync + PiFinder calibration on the object's coordinates (§6) |
 | 6. Next GoTo (any source) | replaced at once | | as step 1 |
 
-### 4.1 Open decision: the same refine for a GoTo sent straight to the mount
+### 4.1 The same refine for a GoTo sent straight to the mount
+
+> **Implemented for GoTos through INDI (2026-11-27), see §13. Still open: a GoTo started on the controller side (#658).**
 
 Wanted by the project owner: same behaviour whoever initiates the GoTo (hand controller, any INDI client, KStars,
 StellarMate, PiFinder). Today the PiFinder-device path refines to the commanded target and the mount-device path does
@@ -144,7 +146,7 @@ Every combination must behave the same way (project owner, 2026-11-26). Where th
 |---|---|---|---|
 | PiFinder only (no mount, e.g. Dobsonian push-to) | PiFinder menu, INDI client on the PiFinder device | PiFinder's `TARGET_EOD_COORD` | none (no mount); Target and offset are still shown |
 | PiFinder + mount + INDI client on the **PiFinder device** | KStars/Ekos/any client | PiFinder's `TARGET_EOD_COORD` | yes, today (`handleGotoForward`) |
-| PiFinder + mount + INDI client on the **mount device** | KStars/Ekos/any client, StellarMate | mount's `TARGET_EOD_COORD` | **missing today** (§4.1, slice 4) |
+| PiFinder + mount + INDI client on the **mount device** | KStars/Ekos/any client, StellarMate | mount's `TARGET_EOD_COORD` | yes, since 2026-11-27 (§13) |
 | PiFinder + mount + hand controller / OnStep app / SkySafari straight to the controller | the controller's own link, not INDI | **missing today:** driver must poll `:Gr#`/`:Gd#` (§4.1 BUG) | **missing today** (slice 4) |
 | Same, hand-controller arrow keys only | - | no target exists | none; landing position adopted and said so |
 | Any of the above after a hand correction | - | Target unchanged | no fight; offset is only a number; Align is explicit |
@@ -284,3 +286,34 @@ ON_TARGET stays.
   stale; the tests used small times, they now use a real one); a residual of 123' made the text too long for the bar.
 - Seen, not fixed: the Bridge did not follow the PiFinder LX200 target for two GoTos after it was started while PiFinder had just
   been restarted; a second restart of the Bridge fixed it (same family as #662 / #118).
+
+## 13. Refine after a GoTo sent to the mount (2026-11-27, Telescope Simulator, sky simulation)
+
+Requirement (#170, §4): whoever starts the GoTo, the scope ends up on the object. Until now only the PiFinder-device path did
+that; a mount-side GoTo was taken for a movement without a command, the landing position became the target, and the remaining
+difference between mount and PiFinder triggered the 45 s question of reposition detection (seen live: SLEW to Altair ended 7'
+beside it).
+
+How the Bridge tells what happened (its INDI client, `consumeMountEvent()`):
+
+| Seen on the mount device | Meaning | Reaction (GoTo coupling) |
+|---|---|---|
+| `TARGET_EOD_COORD` published, away from the mount's position, not the echo of an own GoTo | GoTo of another client | those coordinates are the target at once (also sent to PiFinder); wait until the mount stands still, then the existing verify / Sync / re-GoTo sequence (`ForwardState`, 3 attempts) |
+| `TARGET_EOD_COORD` equal to the mount's position | a direction button was released (INDI copies the position into the target) | ignored |
+| `TELESCOPE_MOTION_NS` / `WE` switched on | hand movement | ends a running refine; position taken over |
+| `TELESCOPE_ABORT_MOTION` | stop | ends the refine; no movement by the Bridge until the next GoTo, coupling change or manual trigger (no re-GoTo, no 45 s question) |
+| `ON_COORD_SET` = Sync from another client, then a jump | their Sync | unchanged behaviour |
+
+After any movement without target coordinates the mount is synced to PiFinder at once if they differ by more than the threshold
+(no question), from a frame exposed after the mount stood still (#659). The 45 s question remains for a disagreement without any
+mount movement.
+
+Live check: `test_tools/mount_goto_refine_test.py --move` (GoTo, half-degree GoTo, direction button, stop, PiFinder GoTo). All
+five passed on 2026-11-27; against the previous driver the first one failed (45 s question). Once, in the first run shortly after
+a driver restart during which StellarMate's Web Manager restarted the driver in parallel, a mount GoTo was not recognised; it did
+not recur in the following GoTos, including a deliberate repeat. The driver now logs why it does not take a new mount target as a
+GoTo.
+
+Not covered: the real OnStep; a stop on the hand controller itself (not visible in INDI); Ekos correcting during a **GO** at the
+same time as the Bridge; a first landing further off than the auto-Sync limit (120') ends in "gave up"; alignment routines and
+polar alignment, which slew the mount themselves - switch the coupling off for those.

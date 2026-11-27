@@ -365,3 +365,11 @@ Alignment, manual triggers) keeps today's behavior unchanged by default.
   (TE-11 and its 2026-09-20 follow-up). Testing methodology for this kind of live campaign:
   `basic-memory/pifinder-stellarmate/00171_testmethodik-zentral-langtest-atomare-aenderungen-gui-first-2026-09-20.md`
   (maintainer-local, not in this repo).
+
+## 11. Changed (2026-11-27): mount GoTos are targets, no question after a real movement
+
+- Row 2 of §3.2 is split: a GoTo with coordinates (INDI) is refined to those coordinates instead of being adopted
+  ([mount_bridge_target_transparency.md §13](mount_bridge_target_transparency.md)).
+- A movement without coordinates is still adopted, and the mount is now synced to PiFinder in the same step if they differ by
+  more than the threshold. Before, that difference was read on the next tick as row 4 and asked the 45 s question.
+- After a stop (abort) the Bridge starts no movement of its own until the next GoTo, coupling change or manual trigger.

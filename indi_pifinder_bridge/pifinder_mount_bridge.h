@@ -761,6 +761,26 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // doesn't depend on it.
         void notifyPiFinderOfReposition(double ra, double dec);
 
+        // What other clients do to the mount (PiFinderBridgeClient::consumeMountEvent()), once per tick before reposition
+        // detection. A GoTo sent to the mount is treated like a push-to on PiFinder: its coordinates are the target, and after
+        // the slew the same verify / Sync / re-Goto sequence runs (#658, concept mount_bridge_target_transparency.md §4.1).
+        // A stop or a direction button ends that sequence.
+        void handleMountClientEvents();
+        void followMountGoto(double ra, double dec);
+        void endRefining(bool stopped);
+        // A mount GoTo from another client is under way: it may not show as Busy yet (or at all), so SLEWING also waits until
+        // the mount has stood still for FOREIGN_GOTO_STILL_SEC.
+        bool m_foreignGotoSettling = false;
+        double m_foreignGotoSeenEpoch = 0.0;
+        static constexpr double FOREIGN_GOTO_STILL_SEC = 4.0;
+        // Somebody stopped the mount while it was being brought to a target: until the next GoTo (or a coupling change, or a
+        // manual trigger) the Bridge starts no movement on its own. Syncs, which move nothing, still happen.
+        bool m_stoppedByUser = false;
+        double m_lastPiSolveEpoch = 0.0; // exposure end of this tick's PiFinder frame (0: none yet)
+        // The external movement being watched is another client's Sync: no movement, the mount is not synced back at once.
+        bool m_externalMoveWasSync = false;
+        static constexpr double FOREIGN_SYNC_WINDOW_SEC = 8.0;
+
         // MODE_AUTO_CORRECT with CorrectionActionS[ACTION_GOTO]: mirrors
         // handleGotoForward()'s arrival-verify-and-refine pattern (#170 -
         // blindly re-issuing a Goto to wherever PiFinder currently reports,
