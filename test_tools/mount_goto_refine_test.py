@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live test: a GoTo sent to the mount is refined like one sent to PiFinder. MOVES THE MOUNT - Telescope Simulator only.
 
-    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder]
+    ~/PiFinder/python/.venv/bin/python test_tools/mount_goto_refine_test.py --move [--only goto,short,hand,stop,pifinder,bounded,hold]
 
 Needs the running Full Simulation: Mount Bridge on the Telescope Simulator in the GoTo coupling and the simulated sky with a landing
 error larger than the threshold ("typical"). Refuses any other mount.
@@ -10,6 +10,9 @@ goto      GoTo to the mount (Slew, as the StellarMate app's SLEW): PiFinder ends
 short     The same for a GoTo of only half a degree.
 hand      Direction button after arrival: the new position is kept, mount and PiFinder agree soon, no 45 s question.
 stop      Stop during a GoTo to the mount: nothing drives on afterwards.
+bounded   A target that cannot be reached (threshold set to 0.1' for this scenario): the attempts end, nothing moves any more.
+hold      An alignment (the hold the Control Center sets): a Sync during it, then released as solved: the Bridge moves and syncs
+          nothing afterwards; the next GoTo works again.
 pifinder  GoTo to the PiFinder device (as KStars does on "PiFinder LX200"): unchanged, ends on target.
 
 Exit 0 = every scenario passed.
@@ -188,7 +191,56 @@ def scenario_pifinder(threshold):
                  "phase %s, PiFinder %s' from the target, asked %s" % (phase(), "?" if off is None else "%.1f" % off, run.asked))
 
 
-SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder}
+def scenario_bounded(threshold):
+    ra, dec = targets()[2]
+    run = Run()
+    indi_client.set_number(BRIDGE, "DRIFT_THRESHOLD", {"THRESHOLD_ARCMIN": 0.1})
+    try:
+        send_coords(MOUNT, "SLEW", ra, dec)
+        ended = run.watch(180, lambda: phase() in ("GAVE_UP", "OFF_TARGET"))
+        slews = []
+
+        def note_slew():
+            if read(MOUNT, "EQUATORIAL_EOD_COORD").get("state") == "Busy":
+                slews.append(round(time.time() - run.t0))
+            return False
+
+        run.watch(60, note_slew)
+    finally:
+        indi_client.set_number(BRIDGE, "DRIFT_THRESHOLD", {"THRESHOLD_ARCMIN": threshold})
+    return check("bounded", ended and not slews and not run.asked,
+                 "gave up: %s (phase %s), mount slewing in the 60 s after at %s" % (ended, phase(), slews or "never"))
+
+
+def scenario_hold(threshold):
+    ra, dec = mount_position()
+    run = Run()
+    indi_client.set_mount_bridge_external_hold(True, "alignment (live test)")
+    try:
+        time.sleep(4)
+        send_coords(MOUNT, "SYNC", ra, dec - 0.5 if dec > 0 else dec + 0.5)   # what Ekos does after a solve
+        time.sleep(5)
+        seen = indi_client.mount_bridge_hold_syncs()
+        before = mount_position()
+    finally:
+        indi_client.set_mount_bridge_external_hold(False, "alignment ended: solved")
+    slews = []
+
+    def note_slew():
+        if read(MOUNT, "EQUATORIAL_EOD_COORD").get("state") == "Busy":
+            slews.append(round(time.time() - run.t0))
+        return False
+
+    run.watch(60, note_slew)
+    after = mount_position()
+    changed = separation_deg(before[0], before[1], after[0], after[1]) * 60
+    quiet = check("hold", seen >= 1 and not slews and changed < 3 and not run.asked,
+                  "syncs seen during the hold %d, after the release: slewing at %s, mount position changed %.1f', asked %s" %
+                  (seen, slews or "never", changed, run.asked))
+    return scenario_goto(threshold, "hold, next GoTo") and quiet
+
+
+SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold}
 
 
 def main(argv=None):

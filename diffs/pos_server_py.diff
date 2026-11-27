@@ -1,5 +1,5 @@
 diff --git a/python/PiFinder/pos_server.py b/python/PiFinder/pos_server.py
-index 30e09d53..3281e7ef 100644
+index 30e09d53..babb6bf7 100644
 --- a/python/PiFinder/pos_server.py
 +++ b/python/PiFinder/pos_server.py
 @@ -14,6 +14,7 @@ observing list.
@@ -10,7 +10,7 @@ index 30e09d53..3281e7ef 100644
  from multiprocessing import Queue
  from typing import List, Optional, Tuple, Union
  from PiFinder.calc_utils import ra_to_deg, dec_to_deg, dec_to_dms_exact, sf_utils
-@@ -25,22 +26,152 @@ import time
+@@ -25,22 +26,153 @@ import time
  
  logger = logging.getLogger("PosServer")
  
@@ -63,6 +63,7 @@ index 30e09d53..3281e7ef 100644
 +    _session.stellarium_latitude = ""
 +    _session.stellarium_longitude = ""
 +    _session.sr_result = None
++    _session.sd_negative = False
 +
 +
 +STATE_CALL_TIMEOUT_SEC = 2.0
@@ -176,7 +177,7 @@ index 30e09d53..3281e7ef 100644
  
  # shortcut for skyfield timescale
  ts = sf_utils.ts
-@@ -52,10 +183,18 @@ def get_telescope_ra(shared_state, _):
+@@ -52,10 +184,18 @@ def get_telescope_ra(shared_state, _):
      format for LX200 protocol
      RA = HH:MM:SS
      """
@@ -198,7 +199,7 @@ index 30e09d53..3281e7ef 100644
  
      aligned = solution.pointing.aligned.estimate
      # Convert from J2000 to now epoch
-@@ -86,10 +225,11 @@ def get_telescope_dec(shared_state, _):
+@@ -86,10 +226,11 @@ def get_telescope_dec(shared_state, _):
      format for LX200 protocol
      DEC = +/- DD*MM'SS
      """
@@ -213,7 +214,7 @@ index 30e09d53..3281e7ef 100644
  
      aligned = solution.pointing.aligned.estimate
      # Convert from J2000 to now epoch
-@@ -121,7 +261,7 @@ def get_distance_bars(_shared_state, _input_str) -> str:
+@@ -121,7 +262,7 @@ def get_distance_bars(_shared_state, _input_str) -> str:
      # slewing, so report the slew complete.  PiFinder never slews at all, so
      # this is the honest answer either way; SkySafari keeps the single bar it
      # has always been sent.
@@ -222,7 +223,7 @@ index 30e09d53..3281e7ef 100644
          return ""
      return "\x7f"
  
-@@ -171,7 +311,7 @@ def abort_slew(_shared_state, _input_str) -> Optional[str]:
+@@ -171,7 +312,7 @@ def abort_slew(_shared_state, _input_str) -> Optional[str]:
      an unsolicited byte can desync SkySafari's response parser, so answer only
      the client that identified itself with an ACK.
      """
@@ -231,7 +232,7 @@ index 30e09d53..3281e7ef 100644
  
  
  def _match_to_hms(pattern: str, input_str: str) -> Union[Tuple[int, int, int], None]:
-@@ -196,31 +336,38 @@ _SD_PATTERN = r"#?:Sd([-+]?\d{2})[*:](\d{2}):(\d{2})#"
+@@ -196,31 +337,43 @@ _SD_PATTERN = r"#?:Sd([-+]?\d{2})[*:](\d{2}):(\d{2})#"
  
  
  def parse_sr_command(_shared_state, input_str: str) -> str:
@@ -262,6 +263,9 @@ index 30e09d53..3281e7ef 100644
 +    # whether this specific pairing succeeds, so a stale RA can never outlive
 +    # the :Sd that should have consumed it.
 +    ra_result, _session.sr_result = _session.sr_result, None
++    # The degrees are parsed as a number, so "-00*19:05" loses its minus there:
++    # declinations between 0 and -1 degree arrived mirrored. Taken from the text.
++    _session.sd_negative = ":Sd-" in input_str
 +    if match and ra_result:
 +        return handle_goto_command(shared_state, ra_result, match)
      else:
@@ -274,11 +278,13 @@ index 30e09d53..3281e7ef 100644
      ra = ra_to_deg(*ra_parsed)
      dec = dec_to_deg(*dec_parsed)
 -    if is_stellarium:
++    if getattr(_session, "sd_negative", False):
++        dec = -abs(dec)
 +    if _session.is_stellarium:
          comp_ra, comp_dec = ra, dec
      else:
          logger.debug("handle_goto_command: ra,dec in deg, JNOW: %s, %s", ra, dec)
-@@ -228,13 +375,19 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
+@@ -228,13 +381,19 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
          ra_h, dec_d, _ = _p.radec(epoch=ts.J2000)
          comp_ra = float(ra_h._degrees)
          comp_dec = float(dec_d.degrees)
@@ -300,7 +306,7 @@ index 30e09d53..3281e7ef 100644
              "obj_type": "",
              "ra": comp_ra,
              "dec": comp_dec,
-@@ -242,9 +395,9 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
+@@ -242,9 +401,9 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
              "size": SizeObject([]),
              "mag": MagnitudeObject([]),
              "catalog_code": "PUSH",
@@ -312,7 +318,7 @@ index 30e09d53..3281e7ef 100644
          }
      )
      logger.debug("handle_goto_command: Pushing object: %s", obj)
-@@ -325,25 +478,23 @@ _SITE_LON_PATTERN = r"#?:Sg([-+]?)(\d{1,3})\*(\d{2})"
+@@ -325,25 +484,23 @@ _SITE_LON_PATTERN = r"#?:Sg([-+]?)(\d{1,3})\*(\d{2})"
  
  def set_latitude(_shared_state, input_str: str) -> str:
      """:StsDD*MM# -- remember the client's site latitude for :Gt# to echo."""
@@ -340,7 +346,7 @@ index 30e09d53..3281e7ef 100644
      return "1"
  
  
-@@ -374,15 +525,15 @@ def _lon_to_meade_dm(value: float) -> str:
+@@ -374,15 +531,15 @@ def _lon_to_meade_dm(value: float) -> str:
  
  def get_latitude(shared_state, _input_str) -> str:
      """:Gt# -- current site latitude as sDD*MM."""
@@ -360,7 +366,7 @@ index 30e09d53..3281e7ef 100644
      return _lon_to_meade_dm(shared_state.location().lon)
  
  
-@@ -429,7 +580,11 @@ def setup_server_socket():
+@@ -429,7 +586,11 @@ def setup_server_socket():
      server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
      server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
      server_socket.bind(("", 4030))
@@ -373,7 +379,7 @@ index 30e09d53..3281e7ef 100644
      return server_socket
  
  
-@@ -459,8 +614,6 @@ def split_frames(data: str) -> List[str]:
+@@ -459,8 +620,6 @@ def split_frames(data: str) -> List[str]:
  
  def handle_frame(frame: str, shared_state) -> Optional[str]:
      """Dispatch one command frame, returning the reply to send, if any."""
@@ -382,7 +388,7 @@ index 30e09d53..3281e7ef 100644
      command = extract_command(frame)
      if command:
          command_handler = lx_command_dict.get(command, not_implemented)
-@@ -477,7 +630,7 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
+@@ -477,7 +636,7 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
      # Special case for the ACK command in the LX200 protocol sent by Stellarium
      # No leading : for the ACK command but Stellarium leads all commands with #
      if frame.endswith("\x06"):
@@ -391,7 +397,7 @@ index 30e09d53..3281e7ef 100644
          # "P" claims a polar mount.  PiFinder is alt-az and :GW# still says so,
          # but Stellarium will not push a target to a scope that answers "A"
          # here.  Only a client that sent an ACK ever reads this byte, and so
-@@ -487,36 +640,55 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
+@@ -487,36 +646,55 @@ def handle_frame(frame: str, shared_state) -> Optional[str]:
      return None
  
  
@@ -473,7 +479,7 @@ index 30e09d53..3281e7ef 100644
  
  
  def run_server(shared_state, p_ui_queue, log_queue):
-@@ -532,7 +704,24 @@ def run_server(shared_state, p_ui_queue, log_queue):
+@@ -532,7 +710,24 @@ def run_server(shared_state, p_ui_queue, log_queue):
                  while True:
                      client_socket, address = server_socket.accept()
                      logger.debug("New connection from %s", address)

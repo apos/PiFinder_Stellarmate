@@ -379,14 +379,29 @@ set in the Control Center) away from it, syncs the mount and sends the GoTo agai
 | PiFinder: select an object (push-to) | yes |
 | KStars: right-click an object → **PiFinder LX200** → Goto | yes |
 | KStars / Ekos: Goto on the mount, StellarMate app **SLEW**, any other INDI client | yes |
-| StellarMate app: **GO** | yes. Ekos then also takes an image through the **telescope camera** and solves it, syncing and slewing by itself depending on its alignment action ([planned](docs/concepts/mount_bridge_ekos_align_pifinder.md): align PiFinder from that solve) |
+| StellarMate app: **GO** | yes. Ekos then also takes an image through the **telescope camera** and solves it; see "Alignment in Ekos" below |
 | OnStep hand controller or OnStep app (catalogue GoTo) | **not yet** ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)): the target does not reach INDI. The position PiFinder sees after the slew is taken over |
 
-**By hand** (direction buttons, hand controller arrows, clutch): the new position is taken over and the mount is synced to
-PiFinder; the Bridge does not pull back. If the mount did not move itself (clutch open, scope bumped) it asks first.
+**If the object is not reached** after 3 attempts, the Bridge stops, shows `OFF TARGET` and moves nothing until the next GoTo.
+Check the mount's alignment model then.
 
-**Stop** (Abort in KStars/Ekos, "Stop movement" in the Control Center): the Bridge does not move the mount again until the next
-GoTo.
+**By hand** (direction buttons, hand controller arrows): the new position is taken over and the mount is synced to PiFinder;
+the Bridge does not pull back. If the mount did not move itself (clutch open, scope bumped), the Bridge asks - today only in the
+INDI log - and drives back after 45 s without an answer.
+
+**Stop**: after an Abort in KStars/Ekos the Bridge does not move the mount again until the next GoTo. "Stop movement" in the
+Control Center also switches the coupling off.
+
+**Alignment in Ekos** (plate solve, polar alignment, mount model; also GO): the Bridge pauses while Ekos takes images, solves
+or slews. Afterwards it moves nothing until the next GoTo.
+
+| Ekos solver action | PiFinder | Mount Bridge |
+|---|---|---|
+| Sync / Slew to target, solved | aligned to the mount's position | moves nothing until the next GoTo |
+| Nothing, solved | unchanged | moves nothing until the next GoTo |
+| Solve failed, mount neither synced nor turned | unchanged | carries on a GoTo that was under way |
+
+An alignment run from the OnStep hand controller or app is not detected yet.
 
 ## SMOS Updates
 

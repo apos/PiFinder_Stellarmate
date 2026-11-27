@@ -310,7 +310,10 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         auto sync = property.getSwitch()->findWidgetByName("SYNC");
         if (!justBound() && sync != nullptr && sync->getState() == ISS_ON &&
             secondsSinceLastMountCommand() > OWN_COMMAND_SWITCH_SEC)
+        {
             m_lastForeignSyncTime = static_cast<long>(time(nullptr));
+            ++m_foreignSyncCount;
+        }
     }
     else if (fromPiFinder && property.isNameMatch("TARGET_EOD_COORD"))
     {

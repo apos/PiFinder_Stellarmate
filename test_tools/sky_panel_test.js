@@ -198,7 +198,7 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
   const t = T.skyPositioningTrailUpdate(T.skyPositioningTrailUpdate([], pos({ phase: 'SLEWING', hands_off: true })), pos({ phase: 'OFF_TARGET', hands_off: false }));
   ok(t.length === 2 && T.skyPositioningTrailItems(t, false)[1].text === 'Off target' && T.skyPositioningBand(t, pos({ phase: 'OFF_TARGET' }), off).join(' ') === 'done done done warn', 'off target ends a run with a warning');
 }
-ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding the target', 'holding');
+ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
 
 // the Bridge stops answering during a hands-off move: a notice instead of a vanished line
 const lastOff = T.skyPositioningModel(pos({}));
@@ -239,7 +239,7 @@ ok(band([], { phase: 'SLEWING', attempt: 0 }) === 'now later later later', 'band
 ok(band(run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }]), { phase: 'REFINING' }) === 'done done now later', 'band: refining is step three');
 ok(band(run([{ phase: 'SLEWING', attempt: 0 }, { phase: 'VERIFYING', attempt: 0 }, { phase: 'REFINING', attempt: 1 }, { phase: 'VERIFYING', attempt: 1 }]), { phase: 'VERIFYING' }) === 'done done now later',
   'band: it never goes back while the Bridge verifies the refine again');
-ok(band([], { phase: 'ON_TARGET', hands_off: false }) === 'done done done done' && band([], { phase: 'HOLDING', hands_off: false }) === 'done done done done', 'band: on target and holding are all done');
+ok(band([], { phase: 'ON_TARGET', hands_off: false }) === 'done done done done' && band([], { phase: 'HOLDING', hands_off: false }) === 'later later later later', 'band: on target is all done, holding claims no run');
 ok(band([], { phase: 'GAVE_UP', hands_off: false, attempt: 3 }) === 'done done done warn', 'band: a run that gave up ends with a warning segment');
 ok(T.skyPositioningBand([], pos({}), T.skyPositioningInterrupted(model({}), 5)).join(' ') === 'done done warn later', 'band: an interrupted run marks the step it stopped at');
 const nowOf = (o) => T.skyPositioningNow(pos(o), model(o));
@@ -247,7 +247,7 @@ ok(nowOf({ phase: 'REFINING', attempt: 2 }).join('|') === 'Step 3 of 4: refining
 ok(nowOf({ phase: 'SLEWING', attempt: 0, to_go_deg: 28.9 }).join('|') === 'Step 1 of 4: slewing|29\u00b0 to go', 'now: slewing says how far to go');
 ok(nowOf({ phase: 'VERIFYING', attempt: 0 }).join('|') === 'Step 2 of 4: verifying|', 'now: the first verification has no attempt yet');
 ok(nowOf({ phase: 'ON_TARGET', hands_off: false, residual_arcmin: 0.7 }).join('|') === 'On target|0.7\u2032 off', 'now: on target with the residual');
-ok(nowOf({ phase: 'HOLDING', hands_off: false, attempt: 2 }).join('|') === 'On target|done in 2 attempts', 'now: holding says how many attempts it took');
+ok(nowOf({ phase: 'HOLDING', hands_off: false, attempt: 2 }).join('|') === 'Holding target|', 'now: holding does not say "on target"');
 const factsOf = (o) => T.skyPositioningFacts(pos(o), model(o)).join(' \u00b7 ');
 ok(factsOf({ phase: 'REFINING', residual_arcmin: 8.1 }) === '8.1\u2032 off the target \u00b7 correcting', 'facts: refining');
 ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 14 }) === 'no fresh solve for 14 s', 'facts: a stale solve is named');
