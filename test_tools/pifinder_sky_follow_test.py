@@ -354,5 +354,47 @@ class RecentreNudgeTest(unittest.TestCase):
             self.assertEqual(f.take_nudge(path), (5.0, -2.0))
 
 
+class BelowHorizonTest(unittest.TestCase):
+    def test_altitude(self):
+        self.assertAlmostEqual(f.altitude_deg(3.0, 90.0, 49.4, 8.6), 49.4, places=1)     # the pole stands at the latitude
+        self.assertLess(f.altitude_deg(3.0, -60.0, 49.4, 8.6), 0)                        # never rises at 49 degrees north
+
+    def test_no_stars_are_rendered_below_the_horizon(self):
+        import socket as sock
+        import tempfile
+        import threading
+        import time
+        server = sock.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+
+        def serve():
+            c, _ = server.accept()
+            c.recv(4096)
+            c.sendall(b'<setNumberVector device="M" name="GEOGRAPHIC_COORD" state="Ok"><oneNumber name="LAT">49.4</oneNumber>'
+                      b'<oneNumber name="LONG">8.6</oneNumber></setNumberVector>'
+                      b'<setNumberVector device="M" name="EQUATORIAL_EOD_COORD" state="Ok"><oneNumber name="RA">5.0</oneNumber>'
+                      b'<oneNumber name="DEC">-70.0</oneNumber></setNumberVector>')
+            time.sleep(3.0)
+            c.close()
+        threading.Thread(target=serve, daemon=True).start()
+        fields, blanks = [], []
+        saved = f.renderer.render_field, f.renderer.render, f.write_atomically, f.file_signature
+        f.renderer.render_field = lambda *a, **kw: (fields.append(a) or None, 0)
+        f.renderer.render = lambda x, y, mag, **kw: blanks.append(len(x))
+        f.write_atomically = lambda *a: None
+        f.file_signature = lambda path: None
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                f.main(["--device", "M", "--host", "127.0.0.1", "--port", str(port), "--image", d + "/p.png", "--no-keep-awake",
+                        "--interval", "0.2", "--duration", "1.5"])
+        finally:
+            f.renderer.render_field, f.renderer.render, f.write_atomically, f.file_signature = saved
+            server.close()
+        self.assertEqual(fields, [])
+        self.assertEqual(blanks, [0])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Below the horizon PiFinder's position is treated as what it is, never a plate solve: the cards say so, "Sync PiFinder from mount" is confirmed without asking the camera, and mount and PiFinder both below show one calm "end of session or start-up" card.
+- Sky simulation: no stars are rendered while the mount points below the horizon.
 - "Sync PiFinder from mount" reaches its goal instead of refusing when the mount is outside the camera's field of view: the sky simulation is rendered at the mount again; on real hardware the position is set and the confirmation says whether the camera agrees.
 - PiFinder is asked on port 80 only when nothing at all listens on 8080 (a PiFinder on its own operating system).
 - Control Center, both Sync buttons: the line stays on "waiting for the confirmation" (seconds, distance) until PiFinder and mount really agree, then says after how many seconds, or that it was not confirmed after 60 s. Messages are shown in full.
@@ -39,6 +41,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center: the card under the sky picture shows whole sentences (two lines, fixed height) instead of cutting them off.
 - Sky simulation: switching it off and on can no longer leave two programs painting the picture.
 - Sky simulation: after reconnecting (profile restart, update) the start-up jumps of the mount are no longer taken for Syncs (the simulated sky ended up 180 degrees off).
 - Sky simulation: no longer crashes when a mount reports a right ascension outside 0..24 h (the picture stayed frozen).

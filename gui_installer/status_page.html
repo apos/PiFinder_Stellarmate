@@ -608,8 +608,8 @@
      card for every state. One typeface, 11 / 13 / 15 px, fixed rows, ellipsis instead of wrapping, buttons at least 32 px high. */
   #sky-card { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #3a3a3a; border-radius: 12px; background: #222;
     font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
-  #sky-card .sc-head { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 15px; font-weight: 600; }
-  #sky-card .sc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sky-card .sc-head { display: flex; align-items: center; gap: 8px; height: 40px; font-size: 15px; font-weight: 600; line-height: 19px; }
+  #sky-card .sc-title { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #sky-card .sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #4caf50; }
   #sky-card.card-warn .sc-dot { background: #f5a623; }
   #sky-card.card-bad .sc-dot { background: #e53935; }
@@ -623,9 +623,9 @@
   #sky-card .sc-seg.d { background: #4caf50; }
   #sky-card .sc-seg.n { background: #f5a623; }
   #sky-card .sc-seg.w { background: #e57373; }
-  #sky-card .sc-line { height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-card .sc-line { height: 38px; line-height: 19px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #sky-card .sc-line.warn { color: #f5c46b; }
-  #sky-card .sc-why { height: 18px; font-size: 12px; line-height: 18px; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sky-card .sc-why { height: 32px; font-size: 12px; line-height: 16px; color: #9aa0a6; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #sky-card .sc-acts { display: flex; gap: 10px; height: 36px; align-items: center; margin-top: 4px; border-top: 1px solid #3a3a3a; }
   #sky-card .sc-act { background: none; border: 0; color: #9aa0a6; font: inherit; font-size: 12px; padding: 0 6px 0 0; min-height: 32px; cursor: pointer; }
   #sky-card .sc-act:hover, #sky-card .sc-act.open { color: #e6e8ec; }
@@ -4548,7 +4548,17 @@ function collectActiveShowstoppers() {
   // easily be above the horizon even while the mount reports being below
   // it (that's the whole disagreement) - if so, this Sync succeeds and
   // corrects the mount's belief without any physical motion.
-  if (_mountBelowHorizon && _mountAltitudeDeg !== null) {
+  // Both below: the normal end of a session (the telescope has tracked down, PiFinder carries on with its motion sensor), or a
+  // start-up position. Nothing is broken; one calm card instead of two alarms.
+  if (_mountBelowHorizon && _pifinderBelowHorizon && _mountAltitudeDeg !== null && !isPiFinderClientRole()) {
+    items.push({
+      id: 'both-below-horizon',
+      category: 'mount-bridge',
+      title: 'Telescope and PiFinder are below the horizon',
+      text: 'Normal at the end of a session or right after the start: without stars PiFinder carries on with its motion sensor. The next plate solve comes when the telescope points at the sky again.',
+      buttons: [{ label: 'Goto Home Position', onclick: 'triggerGotoHome()', action: 'goto-home' }],
+    });
+  } else if (_mountBelowHorizon && _mountAltitudeDeg !== null) {
     items.push({
       id: 'horizon',
       category: 'mount-bridge',
@@ -4571,7 +4581,7 @@ function collectActiveShowstoppers() {
   // PIFINDER_HORIZON_STATUS can go IPS_ALERT completely independent of
   // whether there's also a mount mismatch - this card no longer depends
   // on that unrelated condition to ever appear.
-  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null && (!_mountBelowHorizon || isPiFinderClientRole())) {
     // A "PiFinder Client" has no mount at all on this device (that's the
     // role's whole point - it exists purely to be coupled BY a remote
     // Control host) - "Sync mount from PiFinder"/"Sync PiFinder from mount" are
@@ -4585,8 +4595,8 @@ function collectActiveShowstoppers() {
       category: 'pifinder',
       title: "PiFinder's own position is below the horizon",
       text: clientRole
-        ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. Wait for a fresh solve once PiFinder is back above the horizon.`
-        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Sync PiFinder from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
+        ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. That cannot be a plate solve; the next solve comes when PiFinder sees the sky again.`
+        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. That cannot be a plate solve: it is a start-up or old position, or the motion sensor carrying on. "Sync PiFinder from mount" sets it to where the mount points.`,
       buttons: clientRole ? [] : [
         { label: 'Sync PiFinder from mount', onclick: 'triggerSyncPiFinderFromMount()', action: 'sync-pifinder-from-mount' },
       ],
@@ -10103,7 +10113,7 @@ function syncApartArcmin(data) {
   if (sky && sky.mount && sky.pifinder && !sky.pifinder.stale && !sky.mount.stale) return skySep(sky.mount, sky.pifinder) * 60;
   return data && data.running && typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null;
 }
-async function confirmSync(lead, failHint) {
+async function confirmSync(lead, failHint, injected) {
   const threshold = parseFloat(readThresholdInputRaw());
   const limit = Math.max(isFinite(threshold) ? threshold : 5, 5);
   const start = Date.now();
@@ -10112,8 +10122,10 @@ async function confirmSync(lead, failHint) {
     const secs = Math.round((Date.now() - start) / 1000);
     try {
       const data = await (await fetch('/api/mount_bridge_drift', { cache: 'no-store' })).json();
-      apart = syncApartArcmin(data);
       if (data.sky) applySkyPanel(data.sky);
+      // A set (not camera-solved) position shows only in what PiFinder reports, not in the Bridge's camera-based picture.
+      apart = injected ? (await (await fetch('/api/pifinder_mount_apart', { cache: 'no-store' })).json()).apart_arcmin
+        : syncApartArcmin(data);
     } catch (e) {
       apart = null;
     }
@@ -10230,6 +10242,7 @@ async function triggerSyncPiFinderFromMount() {
   let ok = false;
   let done = 'PiFinder synced to mount';   // the lead of the confirmation line, see confirmSync()
   let doneHint = null;
+  let doneInjected = false;
   try {
     if (simulation) {
       await reseedFakeSolve();
@@ -10263,7 +10276,9 @@ async function triggerSyncPiFinderFromMount() {
           } else {
             ok = true;
             done = 'PiFinder set to the mount\'s position (injected, not a camera solve)';
-            if (d.reason === 'outside_fov') doneHint = 'The camera sees another part of the sky: check that the scope points where the mount says, or use Sync mount from PiFinder.';
+            doneInjected = true;
+            // below the horizon no camera can disagree
+            if (d.reason === 'outside_fov' && !_pifinderBelowHorizon) doneHint = 'The camera sees another part of the sky: check that the scope points where the mount says, or use Sync mount from PiFinder.';
           }
         } else if (d.reason === 'timeout') {
           setSyncFeedback('warn', 'Not aligned', 'the solver gave no alignment pixel within 2 s. Retry.');
@@ -10285,7 +10300,7 @@ async function triggerSyncPiFinderFromMount() {
     _simStartupMismatch = false;
     _simMismatchAcknowledged = true;
     renderNoSolveBanner();
-    await confirmSync(done, doneHint);
+    await confirmSync(done, doneHint, doneInjected);
   }
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
   updateSeedControlsEnabled();
