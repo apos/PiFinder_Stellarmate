@@ -2885,11 +2885,11 @@
             <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
-            <div class="mb-qa-group-label">Target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the target? The position the Mount Bridge keeps and returns to: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
+            <div class="mb-qa-group-label">Hold Position<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="Hold position (blue cross in the sky picture): where the Mount Bridge keeps the scope, and what these three buttons act on. It is not the same as the Target (ring). Click for the details." onclick="event.stopPropagation()">i</a></div>
             <div class="mb-row" id="mb-big-actions-row">
-          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Target</button>
-          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Target</button>
-          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Target Now</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the Hold position to PiFinder as what it is pushed to. The mount is left alone. Needs an active Coupling mode.">Align PiFinder to Hold Position</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the Hold position - NOT to PiFinder's current position (unlike Sync mount from PiFinder above). Use it after a bump or a slipped clutch, where PiFinder's own solve shows the disturbed position. Needs an active Coupling mode.">Goto Hold Position</button>
+          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="First corrects the mount's own position belief (Sync to PiFinder's current position), then goes to the Hold position. Does not touch PiFinder's own push-to target. Works in every Coupling mode.">Revert to Hold Position</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
             </div>
           </div>
@@ -9360,6 +9360,9 @@ function skyPositioningModel(p) {
       m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
     case 'HOLDING':
       m.head = 'Holding target'; break;
+    case 'WAITING':
+      m.head = 'Waiting for the next GoTo'; m.sub = skyDistance(p.residual_arcmin) + ' from the Hold position';
+      m.why = 'The Bridge moves nothing until the next GoTo, for example after a Multi-Point Alignment.'; break;
     case 'ALIGNING':
       m.step = 0; m.head = 'Aligning'; m.sub = p.point || 'Multi-Point Alignment';
       m.why = 'The Bridge moves the mount from point to point and syncs it at each one.'; break;
@@ -9417,7 +9420,7 @@ function skyPositioningBand(trail, p, m) {
   if (phase === 'CHECK_SCOPE') return ['later', 'later', 'later', 'warn'];
   if (phase === 'GAVE_UP' || phase === 'OFF_TARGET') return ['done', 'done', 'done', 'warn'];
   if (phase === 'ON_TARGET') return ['done', 'done', 'done', 'done'];
-  if (phase === 'HOLDING') return ['later', 'later', 'later', 'later'];   // no run: nothing was driven to a target
+  if (phase === 'HOLDING' || phase === 'WAITING') return ['later', 'later', 'later', 'later'];   // no run: nothing was driven to a target
   let reached = SKY_BAND_STEP[phase] || 0;
   (trail || []).forEach((t) => { reached = Math.max(reached, SKY_BAND_STEP[t.phase] || 0); });
   return [0, 1, 2, 3].map((i) => (i < reached ? 'done' : i === reached ? 'now' : 'later'));
@@ -9436,6 +9439,7 @@ function skyPositioningNow(p, m) {
     case 'ALIGNING': return ['Aligning', m.sub];
     case 'CHECK_SCOPE': return ['Check the mount', ''];
     case 'HOLDING': return ['Holding target', ''];   // no verdict about "on target": e.g. after a movement by hand
+    case 'WAITING': return ['Waiting for the next GoTo', ''];
     default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
   }
 }
@@ -9452,6 +9456,7 @@ function skyPositioningFacts(p, m) {
     case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
     case 'ALIGNING': return ['the Bridge is moving the mount'];
     case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
+    case 'WAITING': return [skyDistance(p.residual_arcmin) + ' from the Hold position', 'the Bridge moves nothing'];
     default: return [];
   }
 }
@@ -9551,7 +9556,7 @@ function skyTargetLine(sky) {
   if (t.fresh === false) s += ' (last value, no fresh solve)';
   if (sky.hold_used !== false && sky.goto && sky.held) {
     const apart = skySep(sky.goto, sky.held);
-    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 holding ' + skyFmtOffset(apart * 60) + ' from the target';
+    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 Hold position ' + skyFmtOffset(apart * 60) + ' from the target';
   }
   return s;
 }
@@ -10213,10 +10218,10 @@ function bridgeProblemCards(blind, question) {
     items.push({
       id: 'reposition-question', category: 'mount-bridge',
       title: `Mount and PiFinder suddenly differ${apart}`,
-      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the target (it slews).',
+      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the Hold position (it slews).',
       buttons: [
         { label: 'Adopt this position', onclick: 'triggerRepositionAdopt()', action: 'reposition-adopt' },
-        { label: 'Back to the target (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
+        { label: 'Revert to Hold Position (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
       ],
     });
   }
@@ -10459,7 +10464,7 @@ async function triggerManualSync() {
 
 async function triggerGotoHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending mount to the target…');
+  setMbActionStatus('⏳ Sending mount to the Hold position…');
   const btn = document.getElementById('mb-goto-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -10493,7 +10498,7 @@ async function triggerRepositionRevert() {
   btn.dataset.busy = '1';
   btn.disabled = true;
   btn.textContent = 'reverting…';
-  setMbActionStatus('⏳ Reverting to the target…');
+  setMbActionStatus('⏳ Reverting to the Hold position…');
   try {
     const resp = await fetch('/api/mount_bridge_reposition_revert', { method: 'POST' });
     const data = await resp.json();
@@ -10511,7 +10516,7 @@ async function triggerRepositionRevert() {
 
 async function triggerAlignHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending the target to PiFinder…');
+  setMbActionStatus('⏳ Sending the Hold position to PiFinder…');
   const btn = document.getElementById('mb-align-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;

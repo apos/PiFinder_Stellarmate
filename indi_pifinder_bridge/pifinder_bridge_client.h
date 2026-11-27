@@ -15,6 +15,8 @@
 #include "basedevice.h"
 
 #include <deque>
+#include <utility>
+#include <vector>
 #include <mutex>
 #include <string>
 #include <atomic>
@@ -75,6 +77,12 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // `fromPiFinder` (optional): true when the PiFinder device's target is the newer one, false for the mount's;
         // `setTime` (optional): epoch seconds at which this Bridge saw that target property update (0 if unknown).
         bool getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder = nullptr, long *setTime = nullptr) const;
+
+        // A run that moves the mount for its own purpose (Multi-Point Alignment) sends GoTos and Syncs nobody asked to look at:
+        // between these two calls getLastGotoTarget() keeps answering what it answered before the run. It stays that way
+        // until the mount or the PiFinder device gets a target that is not one of the run's own.
+        void beginOwnRun();
+        void endOwnRun();
 
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
@@ -227,6 +235,19 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_mountTargetNP = nullptr;
         std::atomic<long> m_lastMountTargetTime { 0 };
         std::atomic<long> m_lastPiFinderTargetTime { 0 };
+
+        // The target getLastGotoTarget() reports during and after an own run (see beginOwnRun()). Guarded by m_mountEventMutex.
+        struct KeptTarget
+        {
+            bool active = false, have = false, fromPiFinder = false;
+            double ra = 0.0, dec = 0.0;
+            long time = 0;
+        };
+        KeptTarget m_keptTarget;
+        bool m_ownRun = false;
+        std::vector<std::pair<double, double>> m_ownRunCoords; // what the run sent: late echoes of it are not a new target
+        void releaseKeptTarget(bool fromMount, double ra, double dec);
+        bool getReportedGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountParkSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
@@ -276,7 +297,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         static constexpr double TARGET_AT_MOUNT_ARCMIN = 0.5;
         // A switch to Sync within this time of our own command is our own.
         static constexpr double OWN_COMMAND_SWITCH_SEC = 5.0;
-        std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
+        mutable std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
         std::deque<OwnGoto> m_ownGotos;
         MountEvent m_mountEvent = MountEvent::NONE;
         double m_mountEventRA = 0.0, m_mountEventDec = 0.0;

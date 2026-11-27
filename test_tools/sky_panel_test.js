@@ -155,7 +155,7 @@ ok(!find(m, 'held'), 'the Hold position is not drawn separately when it is withi
 // farther away: both, and the sentence says by how much
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(58, 200), target: tgt() }));
 ok(find(m, 'held') && find(m, 'held').name === 'Hold position', 'a Hold position well away from the Target is drawn and called Hold position');
-ok(/holding 3\.0\u00b0 from the target/.test(m.targetLine), 'the sentence says how far the Hold position is from the Target');
+ok(/Hold position 3\.0\u00b0 from the target/.test(m.targetLine), 'the sentence says how far the Hold position is from the Target');
 // no Target known, only a held position: it is still drawn, as Hold position
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), held: pt(55, 201) }));
 ok(find(m, 'held') && find(m, 'held').name === 'Hold position' && !find(m, 'goto'), 'only a held position: drawn as Hold position, no Target');
@@ -169,9 +169,9 @@ ok(T.skyTargetLine({ target: tgt({ source: null }) }).startsWith('Target: '), 'u
 ok(T.skyTargetLine({}) === null && T.skyTargetLine(null) === null && T.skyTargetLine({ target: null }) === null, 'no target: no sentence');
 // modes that never use a held target (Verify/Alert, Auto-correct Sync): a leftover Hold position is not shown
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: false }));
-ok(!find(m, 'held') && !/holding /.test(m.targetLine), 'a mode without a held target: no Hold position marker, no "held ... from the target"');
+ok(!find(m, 'held') && !/Hold position /.test(m.targetLine), 'a mode without a held target: no Hold position marker, no "held ... from the target"');
 m = T.skyBuildModel(mk({ pifinder: pt(55, 200), goto: pt(55, 200), held: pt(30, 250), target: tgt(), hold_used: true }));
-ok(find(m, 'held') && /holding /.test(m.targetLine), 'a mode with a held target: it is shown');
+ok(find(m, 'held') && /Hold position /.test(m.targetLine), 'a mode with a held target: it is shown');
 ok(!/warn|alert|wrong|error/i.test(T.skyTargetLine({ target: tgt({ offset_arcmin: 300 }) })), 'a large offset is a number, not a warning');
 
 // ---- Positioning status (section 12 of the concept): what the line under the picture says ----
@@ -200,6 +200,10 @@ ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_
   ok(t.length === 2 && T.skyPositioningTrailItems(t, false)[1].text === 'Off target' && T.skyPositioningBand(t, pos({ phase: 'OFF_TARGET' }), off).join(' ') === 'done done done warn', 'off target ends a run with a warning');
 }
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding target', 'holding');
+{
+  const w = T.skyPositioningModel(pos({ phase: 'WAITING', hands_off: false, residual_arcmin: 3120 }));
+  ok(w.head === 'Waiting for the next GoTo' && w.sub === '52\u00b0 from the Hold position' && !w.handsOff, 'waiting: says so, with the distance, and does not claim to hold');
+}
 {
   const al = pos({ phase: 'ALIGNING', point: 'point 1 of 2 (Capella)' });
   const mm = T.skyPositioningModel(al);
@@ -263,6 +267,8 @@ ok(factsOf({ phase: 'REFINING', residual_arcmin: 8.1 }) === '8.1\u2032 off the t
 ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 14 }) === 'no fresh solve for 14 s', 'facts: a stale solve is named');
 ok(factsOf({ phase: 'VERIFYING', solve_age_sec: 1 }) === 'waiting for a fresh solve', 'facts: waiting for the solve');
 ok(factsOf({ phase: 'HOLDING', hands_off: false }) === '', 'facts: holding has none, the drift is in the status row');
+ok(band([], { phase: 'WAITING', hands_off: false }) === 'later later later later', 'band: waiting claims no run');
+ok(nowOf({ phase: 'WAITING', hands_off: false }).join('|') === 'Waiting for the next GoTo|', 'now: waiting');
 // the run so far, with the time each step took
 const at = (t, o) => Object.assign({}, o, { at: t });
 const timed = [at(0, { phase: 'SLEWING' }), at(8000, { phase: 'VERIFYING' }), at(16000, { phase: 'REFINING', attempt: 1 })];

@@ -880,7 +880,7 @@ bool PiFinderMountBridge::initProperties()
     // held ORIGINAL_TARGET (the same value HOLDING's own automatic
     // correction tracks back to) - "go back to what I actually meant to
     // point at," independent of where the optical tube has since ended up.
-    IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_HELD], "TRIGGER_GOTO_HELD", "Goto Target", ISS_OFF);
+    IUFillSwitch(&ManualTriggerS[TRIGGER_GOTO_HELD], "TRIGGER_GOTO_HELD", "Goto Hold Position", ISS_OFF);
     // Goto Held Target (above) only corrects the mount - PiFinder's own
     // belief about "what am I pushed-to" (TARGET_EOD_COORD) is untouched,
     // so a later Mount Bridge restart can re-read PiFinder's still-wrong
@@ -891,7 +891,7 @@ bool PiFinderMountBridge::initProperties()
     // UI/arrows re-target to it, closing that gap. The mount side is left
     // to the existing automatic correction (HOLDING) rather than duplicated
     // here.
-    IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align to Target", ISS_OFF);
+    IUFillSwitch(&ManualTriggerS[TRIGGER_ALIGN_HELD], "TRIGGER_ALIGN_HELD", "Align PiFinder to Hold Position", ISS_OFF);
     IUFillSwitch(&ManualTriggerS[TRIGGER_SYNC_TO_COORDS], "TRIGGER_SYNC_TO_COORDS", "Sync To Coords", ISS_OFF);
     IUFillSwitchVector(&ManualTriggerSP, ManualTriggerS, 5, getDeviceName(), "MANUAL_TRIGGER",
                        "Manual (one-shot)", "Main Control", IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
@@ -938,7 +938,7 @@ bool PiFinderMountBridge::initProperties()
                        "Alignment progress (names)", "Main Control", IP_RO, 60, IPS_IDLE);
 
     IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_YES], "REPOSITION_CONFIRM_YES", "Adopt new position", ISS_OFF);
-    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to target", ISS_OFF);
+    IUFillSwitch(&RepositionConfirmS[REPOSITION_CONFIRM_NO], "REPOSITION_CONFIRM_NO", "Revert to Hold Position", ISS_OFF);
     IUFillSwitchVector(&RepositionConfirmSP, RepositionConfirmS, 2, getDeviceName(), "REPOSITION_CONFIRM",
                        "Unexplained reposition", "Main Control", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 
@@ -1603,7 +1603,21 @@ void PiFinderMountBridge::publishPositioningStatus()
     else if (m_positioningResult == PositioningResult::OFF_TARGET)
         phase = "OFF_TARGET";
     else if (m_forwardState == ForwardState::HOLDING)
+    {
         phase = "HOLDING";
+        // After an alignment (and the like) the Bridge moves nothing until the next GoTo. If the scope is not at the Hold
+        // position then, "holding" would be untrue.
+        double holdRA, holdDec, mountRA, mountDec;
+        if (m_waitForNextGoto && m_client != nullptr && getOriginalTargetJNow(holdRA, holdDec) && m_client->getMountRADE(mountRA, mountDec))
+        {
+            const double away = angularSeparationArcmin(mountRA, mountDec, holdRA, holdDec);
+            if (away > DriftThresholdN[0].value)
+            {
+                phase = "WAITING";
+                residual = away;
+            }
+        }
+    }
     if (!handsOff)
         attempt = m_positioningAttempts; // after the move: how many refine attempts it needed
 
@@ -1640,8 +1654,10 @@ void PiFinderMountBridge::publishPositioningStatus()
         {
             const std::string host = SettingsT[PIFINDER_HTTP_HOST].text;
             const int attemptsMax = static_cast<int>(PositioningStatusN[POSITIONING_ATTEMPTS_MAX].value);
-            const bool ok = httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg) ||
-                            (nothingOn8080() && httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg));
+            // PiFinder's title bar has nothing to say about WAITING; to it that is the same as holding.
+            const char *told = std::strcmp(phase, "WAITING") == 0 ? "HOLDING" : phase;
+            const bool ok = httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", told, attempt, attemptsMax, residual, toGoDeg) ||
+                            (nothingOn8080() && httpPostPositioning("http://" + host + "/api/bridge_positioning", told, attempt, attemptsMax, residual, toGoDeg));
             s_lastFailure = ok ? 0.0 : now;
             if (ok)
             {
@@ -1848,7 +1864,7 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         {
             // Nothing below the horizon can be what the user wants to look at: a wrong mount model or a bad position (found
             // 2026-11-27: such a position became the Hold position and stayed).
-            LOGF_WARN("Position after the external move is %.1f deg below the horizon (RA %.4fh, DEC %.4f deg) - not adopted as the target.",
+            LOGF_WARN("Position after the external move is %.1f deg below the horizon (RA %.4fh, DEC %.4f deg) - not taken as the Hold position.",
                       -adoptedAltitude, piRA, piDec);
             return true;
         }
@@ -1862,8 +1878,8 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         m_forwardState = ForwardState::HOLDING;
         m_correctState = CorrectState::IDLE;
         setTargetSource(TARGET_SOURCE_MOUNT);
-        LOGF_INFO("External reposition confirmed by a fresh PiFinder solve (RA %.4fh, DEC %.4f deg) - adopted "
-                  "as the new target.",
+        LOGF_INFO("External reposition confirmed by a fresh PiFinder solve (RA %.4fh, DEC %.4f deg) - the new "
+                  "Hold position.",
                   piRA, piDec);
         // Nobody asked for coordinates here (hand move, direction buttons, a stop): what is off is the mount's own report. It
         // is set to where PiFinder sees the scope, at once. Without this the next tick read that very difference as a bumped
@@ -2261,13 +2277,18 @@ void PiFinderMountBridge::TimerHit()
             // self-correct) - rate-limited the same way MaxSyncDriftNP's own
             // warning is, so a sustained wander doesn't spam the log every
             // tick without adding new information.
-            if (originalTargetExceeded)
+            // Not worth saying while the mount is meant to be elsewhere: during a GoTo and its verification, during a
+            // Multi-Point Alignment, and while the Bridge waits for the next GoTo.
+            const bool awayOnPurpose = m_waitForNextGoto || m_client->isMountSlewing() ||
+                                       m_forwardState == ForwardState::SLEWING || m_forwardState == ForwardState::SETTLING ||
+                                       (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE);
+            if (originalTargetExceeded && !awayOnPurpose)
             {
                 const long now = time(nullptr);
                 if (now - m_lastOriginalTargetDriftWarnTime >= REPEAT_WARNING_SEC)
                 {
                     m_lastOriginalTargetDriftWarnTime = now;
-                    LOGF_WARN("PiFinder has drifted %.1f arcmin from the original GoTo target (threshold %.1f) - "
+                    LOGF_WARN("PiFinder has drifted %.1f arcmin from the Hold position (threshold %.1f) - "
                               "mount and PiFinder still agree with each other, but both have wandered from what "
                               "was actually requested. Send a fresh Goto/push-to to re-anchor.",
                               originalTargetDrift, threshold);
@@ -2335,6 +2356,11 @@ void PiFinderMountBridge::TimerHit()
         if (havePositions && exceeded)
             LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f) - not acting (external hold: %s).",
                       drift, DriftThresholdN[0].value, ExternalHoldReasonT[0].text);
+    }
+    else if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+    {
+        // A Multi-Point Alignment owns the mount. Without this the holding check could slew back to the Hold position in the
+        // middle of the run, whenever a star was close enough to it to pass the sanity limit.
     }
     else if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
     {
@@ -2930,12 +2956,12 @@ void PiFinderMountBridge::notifyPiFinderOfReposition(double ra, double dec)
     {
         m_lastNotifiedPiFinderRA = ra;
         m_lastNotifiedPiFinderDec = dec;
-        LOGF_INFO("Target (RA %.4fh, DEC %.4f deg) sent to PiFinder itself.", ra, dec);
+        LOGF_INFO("Hold position (RA %.4fh, DEC %.4f deg) sent to PiFinder.", ra, dec);
     }
     else
     {
         LOG_WARN("Failed to push confirmed external reposition to PiFinder - its own push-to display "
-                 "may now be stale until the next reposition or a manual 'Align to Target'.");
+                 "may now be stale until the next reposition or a manual 'Align PiFinder to Hold Position'.");
     }
 }
 
@@ -3016,9 +3042,13 @@ void PiFinderMountBridge::handleMountClientEvents()
     const bool autoGoto = BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON;
     if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON && event == PiFinderBridgeClient::MountEvent::HAND_MOTION)
         m_movedByHandDuringHold = true;
+    const bool busyElsewhere =
+        ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON || (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE);
+    if (event == PiFinderBridgeClient::MountEvent::GOTO && !busyElsewhere)
+        m_waitForNextGoto = false; // "until the next GoTo" holds for Auto-correct too, which does not follow the GoTo itself
     if (!gotoForward && !autoGoto)
         return;
-    if (ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON || (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE))
+    if (busyElsewhere)
     {
         if (event == PiFinderBridgeClient::MountEvent::GOTO)
         {
@@ -3967,12 +3997,14 @@ void PiFinderMountBridge::startMultiPointAlignment()
     AlignProgressN[ALIGN_POINT_COUNT].value = static_cast<double>(m_alignPoints.size());
     AlignProgressN[ALIGN_POINT_SYNCED].value = 0;
     IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], "");
+    m_client->beginOwnRun(); // its stars are no Target anybody asked for
     if (gotoAlignPoint(m_alignPointIndex))
     {
         MultiPointAlignSP.s = IPS_BUSY;
     }
     else
     {
+        m_client->endOwnRun();
         m_alignState = AlignState::IDLE;
         MultiPointAlignSP.s = IPS_ALERT;
         AlignProgressNP.s = IPS_ALERT;
@@ -3983,7 +4015,7 @@ void PiFinderMountBridge::startMultiPointAlignment()
 
 void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
 {
-    if (m_alignState == AlignState::IDLE)
+    if (m_alignState == AlignState::IDLE || m_alignState == AlignState::DONE)
         return;
 
     LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points (%zu verified/synced).", reason,
@@ -3992,6 +4024,8 @@ void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
     // Reuses the existing panic-button path (#179) rather than a bespoke
     // stop mechanism - matches UC4 in the concept doc exactly.
     m_client->abortMount();
+    m_client->endOwnRun();
+    keepOffAfterAlignment();
     MultiPointAlignSP.s = IPS_ALERT;
     IDSetSwitch(&MultiPointAlignSP, nullptr);
     // Left at its last live values (not reset to 0) - "stopped at 2/4, 1
@@ -4099,12 +4133,16 @@ void PiFinderMountBridge::advanceAlignPoint()
         IDSetNumber(&AlignProgressNP, nullptr);
         AlignProgressTP.s = AlignProgressNP.s;
         IDSetText(&AlignProgressTP, nullptr);
+        m_client->endOwnRun();
+        keepOffAfterAlignment();
         return;
     }
 
     if (!gotoAlignPoint(m_alignPointIndex))
     {
         m_alignState = AlignState::IDLE;
+        m_client->endOwnRun();
+        keepOffAfterAlignment();
         MultiPointAlignSP.s = IPS_ALERT;
         IDSetSwitch(&MultiPointAlignSP, nullptr);
     }
@@ -4235,8 +4273,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             const bool wantGotoHeld = ManualTriggerS[TRIGGER_GOTO_HELD].s == ISS_ON;
             const bool wantAlignHeld = ManualTriggerS[TRIGGER_ALIGN_HELD].s == ISS_ON;
             const bool wantSyncToCoords = ManualTriggerS[TRIGGER_SYNC_TO_COORDS].s == ISS_ON;
-            if (wantSync || wantGoto || wantGotoHeld || wantAlignHeld || wantSyncToCoords)
-                m_waitForNextGoto = false; // the user asks for something again
+            if (wantGoto || wantGotoHeld)
+                m_waitForNextGoto = false; // a GoTo the user asked for; a Sync or "Align PiFinder" starts no movement
 
             if (wantSyncToCoords)
             {
@@ -4267,18 +4305,21 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 double heldRA, heldDec;
                 if (!getOriginalTargetJNow(heldRA, heldDec))
                 {
-                    LOG_ERROR("No target recorded yet - push-to or Goto a target first.");
+                    LOG_ERROR("No Hold position yet - push-to or Goto an object first.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
                 else if (m_client->sendPiFinderCoords(heldRA, heldDec, "TRACK"))
                 {
-                    LOGF_INFO("Target (RA %.4fh, DEC %.4f deg) re-sent to PiFinder itself.",
+                    // Our own echo: PiFinder reporting this target must not count as a push-to that moves the mount.
+                    m_lastNotifiedPiFinderRA = heldRA;
+                    m_lastNotifiedPiFinderDec = heldDec;
+                    LOGF_INFO("Hold position (RA %.4fh, DEC %.4f deg) sent to PiFinder, the mount is left alone.",
                               heldRA, heldDec);
                     ManualTriggerSP.s = IPS_OK;
                 }
                 else
                 {
-                    LOG_ERROR("Failed to send the target to PiFinder.");
+                    LOG_ERROR("Failed to send the Hold position to PiFinder.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
             }
@@ -4296,7 +4337,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 double heldRA, heldDec;
                 if (!getOriginalTargetJNow(heldRA, heldDec))
                 {
-                    LOG_ERROR("No target recorded yet - push-to or Goto a target first.");
+                    LOG_ERROR("No Hold position yet - push-to or Goto an object first.");
                     ManualTriggerSP.s = IPS_ALERT;
                 }
                 else
@@ -4316,14 +4357,14 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
                     if (sendMountCoordsSafe(heldRA, heldDec, "TRACK"))
                     {
-                        LOGF_INFO("Manual Goto to target (RA %.4fh, DEC %.4f deg) sent to mount.",
+                        LOGF_INFO("Goto Hold Position (RA %.4fh, DEC %.4f deg) sent to mount.",
                                   heldRA, heldDec);
                         refineOwnGoto(heldRA, heldDec);
                         ManualTriggerSP.s = IPS_OK;
                     }
                     else
                     {
-                        LOG_ERROR("Failed to send Goto-Target correction to mount.");
+                        LOG_ERROR("Failed to send Goto Hold Position to mount.");
                         ManualTriggerSP.s = IPS_ALERT;
                     }
                 }
@@ -4468,7 +4509,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                     m_lastConfirmedGoodTime = time(nullptr);
                     setTargetSource(TARGET_SOURCE_MOUNT);
                     m_waitForNextGoto = false;
-                    LOGF_INFO("Reposition confirmed - adopted (RA %.4fh, DEC %.4f deg) as the new target.",
+                    LOGF_INFO("Reposition confirmed - (RA %.4fh, DEC %.4f deg) is the new Hold position.",
                               piRA, piDec);
                     RepositionConfirmSP.s = IPS_OK;
                     // The mount never noticed this movement: its report is set to where PiFinder sees the scope (nothing
@@ -4520,7 +4561,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                             m_correctState = CorrectState::SLEWING;
                         }
                     }
-                    LOG_INFO("Reposition declined - reverting to the target.");
+                    LOG_INFO("Reposition declined - reverting to the Hold position.");
                     RepositionConfirmSP.s = IPS_OK;
                 }
                 else

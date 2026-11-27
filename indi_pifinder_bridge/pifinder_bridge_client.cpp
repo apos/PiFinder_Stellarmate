@@ -305,6 +305,7 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
     else if (fromMount && property.isNameMatch("TARGET_EOD_COORD"))
     {
         m_lastMountTargetTime = static_cast<long>(time(nullptr));
+        releaseKeptTarget(true, property.getNumber()->at(0)->getValue(), property.getNumber()->at(1)->getValue());
         noteMountTarget(property);
     }
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
@@ -336,6 +337,7 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         // actually changed from last time.
         if (static_cast<long>(time(nullptr)) - m_bindTime >= TARGET_EVENT_IGNORE_AFTER_BIND_SEC)
         {
+            releaseKeptTarget(false, 0.0, 0.0);
             std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
             m_piFinderTargetPending = true;
         }
@@ -469,7 +471,62 @@ bool PiFinderBridgeClient::getObserverLocation(double &lat, double &lon, std::st
     return false;
 }
 
+void PiFinderBridgeClient::beginOwnRun()
+{
+    KeptTarget before;
+    before.have = getLastGotoTarget(before.ra, before.dec, &before.fromPiFinder, &before.time);
+    before.active = true;
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_keptTarget = before; // a second run right after the first keeps the same one: getLastGotoTarget() still answers it
+    m_ownRun = true;
+    m_ownRunCoords.clear();
+}
+
+void PiFinderBridgeClient::endOwnRun()
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    m_ownRun = false;
+}
+
+void PiFinderBridgeClient::releaseKeptTarget(bool fromMount, double ra, double dec)
+{
+    std::lock_guard<std::mutex> lock(m_mountEventMutex);
+    if (!m_keptTarget.active)
+        return;
+    if (fromMount)
+    {
+        if (m_ownRun)
+            return;
+        for (const auto &own : m_ownRunCoords)
+        {
+            if (separationArcmin(ra, dec, own.first, own.second) < OWN_GOTO_ECHO_ARCMIN)
+                return;
+        }
+    }
+    m_keptTarget.active = false;
+}
+
 bool PiFinderBridgeClient::getLastGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const
+{
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        if (m_keptTarget.active)
+        {
+            if (!m_keptTarget.have)
+                return false;
+            ra = m_keptTarget.ra;
+            dec = m_keptTarget.dec;
+            if (fromPiFinder != nullptr)
+                *fromPiFinder = m_keptTarget.fromPiFinder;
+            if (setTime != nullptr)
+                *setTime = m_keptTarget.time;
+            return true;
+        }
+    }
+    return getReportedGotoTarget(ra, dec, fromPiFinder, setTime);
+}
+
+bool PiFinderBridgeClient::getReportedGotoTarget(double &ra, double &dec, bool *fromPiFinder, long *setTime) const
 {
     auto read = [](INDI::PropertyViewNumber *np, double &r, double &d) -> bool
     {
@@ -633,6 +690,11 @@ bool PiFinderBridgeClient::sendMountCoords(double ra, double dec, const char *co
 
     // Both noted before anything is sent: the answers arrive on the client's own thread.
     m_lastMountCommandTime = static_cast<long>(time(nullptr));
+    {
+        std::lock_guard<std::mutex> lock(m_mountEventMutex);
+        if (m_ownRun)
+            m_ownRunCoords.emplace_back(ra, dec);
+    }
     if (std::string(coordSetName) != "SYNC")
     {
         std::lock_guard<std::mutex> lock(m_mountEventMutex);

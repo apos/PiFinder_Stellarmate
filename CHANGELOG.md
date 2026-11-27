@@ -29,6 +29,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- The three buttons that act on the Hold position are named after it: **Align PiFinder to Hold Position**, **Goto Hold Position**, **Revert to Hold Position** (before: "... Target", although the ring called Target in the sky picture is something else). The help explains Target and Hold position side by side.
+- Multi-Point Alignment: its stars are no Target, the Hold position stays, and afterwards (also after Stop) the Bridge moves nothing until the next GoTo; the screen says "Waiting for the next GoTo" while the mount is away from the Hold position.
 - Mount Bridge: that question no longer times out after 45 s and drives back; nothing moves until it is answered, a new GoTo is given, or mount and PiFinder agree again. After an alignment that moved the mount without any command the Bridge keeps off, too.
 - Alignment pause: ends when nothing alignment-related is observably going on (no fixed 2 minutes); the page shows what keeps it.
 - Control Center: after a movement by hand the card says "Holding target" instead of "On target".
@@ -48,6 +50,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Multi-Point Alignment: the Bridge's holding check could slew back to the Hold position in the middle of a run when a star was close to it.
+- "Align PiFinder to Hold Position" no longer counts as a push-to that moves the mount; a manual Sync no longer ends the waiting for the next GoTo.
+- The warning "PiFinder has drifted ... from the Hold position" is not logged while the mount is meant to be elsewhere (slewing, aligning, waiting).
 - Control Center, Multi-Point Alignment: room between the rows; the first direction button starts under the search radius field.
 - During a Multi-Point Alignment the card says "Aligning" with the point and "Don't touch the mount", PiFinder "ALIGNING" (before: the earlier GoTo's "On target").
 - "PiFinder LX200" is reconnected when PiFinder was restarted together with the Control Center (before, it stayed on a dead link and PiFinder got no targets).
