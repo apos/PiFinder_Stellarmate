@@ -269,11 +269,14 @@ NUDGE_FILE = os.path.expanduser("~/.pfsm/gsc_sim_nudge.json")
 
 def take_nudge(path=NUDGE_FILE):
     """A one-off shift of the real sky against what the mount reports, as if the clutch slipped or the scope was bumped: the file
-    {"east": arcmin, "north": arcmin} is read and removed. Returns (east, north) or None."""
+    {"east": arcmin, "north": arcmin} is read and removed. Returns (east, north), "recentre" for {"recentre": true} (the sky goes
+    back to where the mount says it points - "Sync PiFinder from mount"), or None."""
     try:
         with open(path) as handle:
             data = json.load(handle)
         os.unlink(path)
+        if data.get("recentre") is True:
+            return "recentre"
         return float(data.get("east", 0.0)), float(data.get("north", 0.0))
     except (OSError, ValueError, TypeError, AttributeError):
         try:
@@ -419,7 +422,14 @@ def follow(args):
                 offset, jump = absorb_sync(prev_look, look, offset, watcher.manual_active())
             prev_look = look
             nudge = take_nudge(args.nudge_file)
-            if nudge is not None:
+            if nudge == "recentre":
+                offset = (args.misalign_east, args.misalign_north)
+                if not args.camera_centre and not args.target_pixel:
+                    target_yx = read_target_pixel()   # PiFinder's alignment point may have changed since the start
+                    centre_xy = (target_yx[1] - 0.5, target_yx[0] - 0.5)
+                print(f"{time.strftime('%H:%M:%S')} RECENTRE: the sky is rendered where the mount points again", flush=True)
+                last = None
+            elif nudge is not None:
                 offset = (offset[0] + nudge[0], offset[1] + nudge[1])
                 print(f"{time.strftime('%H:%M:%S')} NUDGE: the real sky moved {nudge[0]:+.1f}' east, {nudge[1]:+.1f}' north against the mount's "
                       f"report (as if the clutch slipped) -> misalignment now {offset[0]:+.1f}' east, {offset[1]:+.1f}' north", flush=True)

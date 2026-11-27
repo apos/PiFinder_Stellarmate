@@ -341,5 +341,18 @@ class RightAscensionRangeTest(unittest.TestCase):
         self.assertEqual([round(v, 1) for v in seen], [92.7, 350.0, 15.0])
 
 
+class RecentreNudgeTest(unittest.TestCase):
+    def test_a_recentre_request_is_read_once(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "n.json")
+            open(path, "w").write('{"recentre": true}')
+            self.assertEqual(f.take_nudge(path), "recentre")
+            self.assertIsNone(f.take_nudge(path))
+            open(path, "w").write('{"east": 5, "north": -2}')
+            self.assertEqual(f.take_nudge(path), (5.0, -2.0))
+
+
 if __name__ == "__main__":
     unittest.main()

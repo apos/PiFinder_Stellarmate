@@ -60,7 +60,8 @@ ok(!/mode-tile-new|>new</.test(html.slice(html.indexOf('id="mode-tile-gsc"'), ht
 // "Sync PiFinder from mount" without a solve falls back to injecting the mount's position instead of refusing
 const syncStart = html.indexOf('async function triggerSyncPiFinderFromMount()');
 const syncBody = html.slice(syncStart, html.indexOf('\n}\n', syncStart));
-const noSolve = syncBody.slice(syncBody.indexOf("d.reason === 'no_solve'"), syncBody.indexOf("d.reason === 'outside_fov'"));
+const noSolve = syncBody.slice(syncBody.indexOf("d.reason === 'no_solve'"), syncBody.indexOf("d.reason === 'timeout'"));
+ok(/d\.reason === 'no_solve' \|\| d\.reason === 'outside_fov'/.test(syncBody), 'outside the field of view: PiFinder is set to the mount all the same, not just refused');
 ok(/await reseedFakeSolve\(\)/.test(noSolve), 'no solve: the mount position is injected (reseedFakeSolve)');
 ok(!/Point it at stars/.test(noSolve), 'no solve: no longer sends the user away to point the camera at stars');
 ok(/not a camera solve/.test(noSolve), 'no solve: says plainly that this is an injected position, not a camera solve');
