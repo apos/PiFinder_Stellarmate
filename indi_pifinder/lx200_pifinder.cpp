@@ -473,9 +473,9 @@ void LX200_PIFINDER::pollHardwareStatus()
 
     const char *host = (tcpConnection != nullptr) ? tcpConnection->host() : "127.0.0.1";
 
-    auto status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + "/api/hardware_status");
+    auto status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + ":8080/api/hardware_status");
     if (!status.has_value())
-        status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + ":8080/api/hardware_status");
+        status = httpGetPiFinderHardwareStatus("http://" + std::string(host) + "/api/hardware_status");
     if (!status.has_value())
     {
         HardwarePresenceTP.s = IPS_ALERT;
@@ -508,8 +508,8 @@ void LX200_PIFINDER::pollCurrentTarget()
 {
     double raJ2000, decJ2000;
     std::string name;
-    const bool ok = httpGetCurrentTarget("http://127.0.0.1/api/current_target", raJ2000, decJ2000, name) ||
-                    httpGetCurrentTarget("http://127.0.0.1:8080/api/current_target", raJ2000, decJ2000, name);
+    const bool ok = httpGetCurrentTarget("http://127.0.0.1:8080/api/current_target", raJ2000, decJ2000, name) ||
+                    httpGetCurrentTarget("http://127.0.0.1/api/current_target", raJ2000, decJ2000, name);
     if (!ok)
         return;
 

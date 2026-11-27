@@ -427,5 +427,25 @@ class StatusShape(Base):
         self.assertIsNone(s["solve_source"])
 
 
+class SimulatorModelTest(unittest.TestCase):
+    class Indi:
+        def __init__(self):
+            self.calls = []
+
+        def set_switch(self, device, prop, element):
+            self.calls.append((device, prop, element))
+
+    def test_the_simulator_gets_a_sound_model(self):
+        indi = self.Indi()
+        self.assertIsNone(g.prepare_simulator_mount("Telescope Simulator", indi))
+        self.assertIn(("Telescope Simulator", "ALIGNMENT_SUBSYSTEM_MATH_PLUGINS", "SVD Math Plugin"), indi.calls)
+        self.assertIn(("Telescope Simulator", "ALIGNMENT_POINTSET_ACTION", "CLEAR"), indi.calls)
+
+    def test_a_real_mount_is_never_touched(self):
+        indi = self.Indi()
+        self.assertIsNone(g.prepare_simulator_mount("LX200 OnStep", indi))
+        self.assertEqual(indi.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

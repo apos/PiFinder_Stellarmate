@@ -188,8 +188,16 @@ ok(q.head === 'Fine-adjusting' && q.sub === 'attempt 1 of 3 \u00b7 7.7\u2032 to 
 q = T.skyPositioningModel(pos({ phase: 'ON_TARGET', hands_off: false, residual_arcmin: 0.7 }));
 ok(q.head === 'On target' && !q.handsOff && q.tone === 'free' && /0\.7\u2032/.test(q.sub) && q.running === null, 'on target: hands free, residual, no running time');
 q = T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 3, residual_arcmin: 2.4 }));
-ok(q.head === 'Still 2.4\u2032 off after 3 attempts' && q.tone === 'warn' && /not the Bridge/.test(q.why), 'gave up: says what is left and that it is not the Bridge');
-ok(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 1 })).head.endsWith('1 attempt'), 'singular for one attempt');
+ok(q.head === 'Mount and PiFinder differ by 2.4\u2032' && q.tone === 'warn' && /after 3 attempts/.test(q.why), 'gave up: who differs and by how much, the attempts in the explanation');
+ok(/after 1 attempt\./.test(T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 1 })).why), 'singular for one attempt');
+{
+  const far = T.skyPositioningModel(pos({ phase: 'GAVE_UP', hands_off: false, attempt: 0, residual_arcmin: 6157.4 }));
+  ok(far.head === 'Mount and PiFinder differ by 103\u00b0' && far.sub === 'you can steer by hand' && !/0 attempt/.test(far.head + far.why), 'gave up far apart: who differs, in degrees, no "after 0 attempts"');
+  const off = T.skyPositioningModel(pos({ phase: 'OFF_TARGET', hands_off: false, residual_arcmin: 6157.4 }));
+  ok(off.head === 'Not on the target: 103\u00b0 away' && off.tone === 'warn' && /agree/.test(off.why), 'agreeing but away from the GoTo target is not "On target"');
+  const t = T.skyPositioningTrailUpdate(T.skyPositioningTrailUpdate([], pos({ phase: 'SLEWING', hands_off: true })), pos({ phase: 'OFF_TARGET', hands_off: false }));
+  ok(t.length === 2 && T.skyPositioningTrailItems(t, false)[1].text === 'Off target' && T.skyPositioningBand(t, pos({ phase: 'OFF_TARGET' }), off).join(' ') === 'done done done warn', 'off target ends a run with a warning');
+}
 ok(T.skyPositioningModel(pos({ phase: 'HOLDING', hands_off: false })).head === 'Holding the target', 'holding');
 
 // the Bridge stops answering during a hands-off move: a notice instead of a vanished line

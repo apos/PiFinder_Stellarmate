@@ -25,23 +25,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         void setDevices(const std::string &piFinderName, const std::string &mountName);
 
-        // Cold-start property-binding race (#159): watchDevice() in
-        // setDevices() only ever sends the initial <getProperties> request
-        // once - if indiserver or the watched driver itself hasn't finished
-        // registering yet at that exact moment (common right after a full
-        // Pi reboot, when every driver is starting up together), the
-        // properties isReady() depends on may simply never arrive, with
-        // nothing to notice or retry. Live-verified: a plain
-        // Disconnect()/Connect() cycle does NOT recover this (it repeats
-        // the same one-shot request), only a full process restart did.
-        // Call once per TimerHit() tick while !isReady() - internally
-        // no-ops until a short grace period has passed (give the original
-        // subscription a first real chance), then re-requests whichever of
-        // the three properties are still missing via watchProperty()
-        // (which - unlike watchDevice() - actually resends
-        // <getProperties> on every call), on a bounded backoff. Returns
-        // true on ticks where a retry was actually (re-)issued, so the
-        // driver can log it. See bindingGaveUp() for the final-failure case.
+        // Cold-start property-binding race (#159): setDevices() + connectServer()
+        // ask for the properties once; if indiserver or a watched driver had not
+        // registered yet, the ones isReady() depends on may never arrive. Call
+        // once per TimerHit() tick while !isReady(): no-ops during a short grace
+        // period, then reconnects to indiserver (which asks again for everything)
+        // on a bounded backoff, slowly afterwards. Returns true on ticks where a
+        // logged retry was made. See bindingGaveUp() for the final-failure case.
+        // Never use watchProperty() for this: see the comment in the function.
         bool retryMissingPropertiesIfNeeded();
 
         // True once BINDING_RETRY_MAX_ATTEMPTS has been exhausted without
@@ -190,6 +181,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
         void newMessage(INDI::BaseDevice baseDevice, int messageID) override;
 
     private:
+        void forgetProperties();
         std::string m_piFinderName;
         std::string m_mountName;
         bool m_piFinderOnline = false;

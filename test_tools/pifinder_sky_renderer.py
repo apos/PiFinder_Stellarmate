@@ -33,6 +33,7 @@ def query_gsc(ra_deg, dec_deg, radius_arcmin, faint_mag, limit=6000, runner=None
     """
     env = dict(os.environ)
     env.setdefault("GSCDAT", GSC_DEFAULT_DIR)
+    ra_deg %= 360.0  # a mount may report an RA outside 0..24 h (seen: 30.18 h from the Telescope Simulator); gsc rejects it
     cmd = ["gsc", "-c", "%8.6f" % ra_deg, "%+8.6f" % dec_deg, "-r", "%4.1f" % radius_arcmin,
            "-m", "0", "%4.2f" % faint_mag, "-n", str(limit)]
     if runner is None:

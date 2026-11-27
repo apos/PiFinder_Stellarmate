@@ -546,7 +546,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // the scope onto the target right now, so the user knows whether to keep their hands off the hand controller. Read-only,
         // derived from the existing forward/correct state machines (it changes none of them). HANDS_OFF is 1 while the Bridge
         // moves the mount or verifies the arrival (SLEWING, REFINING, VERIFYING). Phases (POSITIONING_PHASE.PHASE): IDLE, SLEWING
-        // (first slew), VERIFYING (waiting for a PiFinder solve), REFINING (a corrective slew after a Sync), ON_TARGET, GAVE_UP
+        // (first slew), VERIFYING (waiting for a PiFinder solve), REFINING (a corrective slew after a Sync), ON_TARGET, GAVE_UP, OFF_TARGET (mount and PiFinder agree, away from the GoTo target)
         // (retry budget used up or residual beyond the sync sanity limit), HOLDING. State: Busy = hands off, Ok = on target or
         // holding, Alert = gave up, Idle = nothing going on.
         enum { POSITIONING_ATTEMPT, POSITIONING_ATTEMPTS_MAX, POSITIONING_RESIDUAL, POSITIONING_ELAPSED, POSITIONING_TO_GO,
@@ -555,7 +555,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber PositioningStatusN[7];
         ITextVectorProperty PositioningPhaseTP;
         IText PositioningPhaseT[1];
-        enum class PositioningResult { NONE, ON_TARGET, GAVE_UP };
+        enum class PositioningResult { NONE, ON_TARGET, GAVE_UP, OFF_TARGET };
         PositioningResult m_positioningResult = PositioningResult::NONE;
         double m_positioningResidual = 0.0;      // arcmin left at the last verification
         int m_positioningAttempts = 0;           // refine attempts used in the last or current move
@@ -563,6 +563,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_positioningElapsedFinal = 0.0;  // length of the last finished stretch
         bool m_positioningHandsOff = false;
         void setPositioningResult(PositioningResult result, double residualArcmin);
+        // After a slew the mount must report the position it was sent to. If it does not (wrong alignment model, a limit, an aborted
+        // slew), say so and do not Sync: a Sync on top of a wrong model only adds to it. Returns true if the mount arrived.
+        bool mountArrivedWhereSent(double sentRA, double sentDec, double mountRA, double mountDec);
+        static constexpr double MOUNT_ARRIVAL_LIMIT_ARCMIN = 60.0;
         void publishPositioningStatus();
         INumberVectorProperty TargetStatusNP;
         INumber TargetStatusN[4];

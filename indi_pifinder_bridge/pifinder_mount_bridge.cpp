@@ -452,8 +452,8 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
 }
 
 // Cooldown wrapper around httpGetPiFinderFreshCamPosition() (2026-09-11,
-// issue #238): every caller tries the nginx-fronted URL (:80) then falls
-// back to PiFinder's own port (:8080), and TimerHit() reaches this - via the
+// issue #238): every caller tries PiFinder's port on StellarMate (:8080,
+// port 80 there is nginx/EkosLive) and then :80 (PiFinder's own OS), and TimerHit() reaches this - via the
 // drift computation, handleShadowSync(), and syncMountToPiFinderPosition() -
 // unconditionally on every tick. Found live: when PiFinder's HTTP API is
 // slow (same underlying condition as PiFinder LX200's pos_server.py reads
@@ -509,9 +509,9 @@ bool fetchFreshPiFinderPosition(double maxAgeSeconds, const std::string &piFinde
     bool primaryHttpFailed = false;
     bool fallbackHttpFailed = false;
     const bool ok =
-        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
-                                         &primaryHttpFailed, solveEpochOut) ||
         httpGetPiFinderFreshCamPosition("http://" + piFinderHost + ":8080/api/status", maxAgeSeconds, ra, dec,
+                                         &primaryHttpFailed, solveEpochOut) ||
+        httpGetPiFinderFreshCamPosition("http://" + piFinderHost + "/api/status", maxAgeSeconds, ra, dec,
                                          &fallbackHttpFailed, solveEpochOut);
 
     s_lastFailureTime = (!ok && primaryHttpFailed && fallbackHttpFailed) ? now : 0;
@@ -722,8 +722,8 @@ bool isPiFinderSolveFresh(double maxAgeSeconds, const std::string &piFinderHost)
 {
     std::string solveSource;
     double lastSolveSuccess = 0.0;
-    const bool ok = httpGetPiFinderSolveStatus("http://" + piFinderHost + "/api/status", solveSource, lastSolveSuccess) ||
-                    httpGetPiFinderSolveStatus("http://" + piFinderHost + ":8080/api/status", solveSource, lastSolveSuccess);
+    const bool ok = httpGetPiFinderSolveStatus("http://" + piFinderHost + ":8080/api/status", solveSource, lastSolveSuccess) ||
+                    httpGetPiFinderSolveStatus("http://" + piFinderHost + "/api/status", solveSource, lastSolveSuccess);
     if (!ok || solveSource != "CAM" || lastSolveSuccess <= 0.0)
         return false;
 
@@ -1272,8 +1272,8 @@ void PiFinderMountBridge::syncMountTypeToPiFinder()
     // (e.g. StellarMate's own nginx/dashboard) - same probe order the
     // gui_installer status page already uses for its OLED mirror.
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
-    if (httpPostMountType("http://" + piFinderHost + "/api/set_mount_type", mountType) ||
-        httpPostMountType("http://" + piFinderHost + ":8080/api/set_mount_type", mountType))
+    if (httpPostMountType("http://" + piFinderHost + ":8080/api/set_mount_type", mountType) ||
+        httpPostMountType("http://" + piFinderHost + "/api/set_mount_type", mountType))
     {
         LOGF_INFO("Mount type '%s' pushed to PiFinder.", mountType.c_str());
         m_lastSyncedMountType = mountType;
@@ -1288,8 +1288,8 @@ void PiFinderMountBridge::keepPiFinderAwake()
     // attempt waits for its own next fresh solve, same as before this
     // mechanism existed.
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
-    httpPostKeepAwake("http://" + piFinderHost + "/api/keep_awake") ||
-        httpPostKeepAwake("http://" + piFinderHost + ":8080/api/keep_awake");
+    httpPostKeepAwake("http://" + piFinderHost + ":8080/api/keep_awake") ||
+        httpPostKeepAwake("http://" + piFinderHost + "/api/keep_awake");
 }
 
 void PiFinderMountBridge::syncOrientationStatus()
@@ -1315,8 +1315,8 @@ void PiFinderMountBridge::syncOrientationStatus()
     std::string piFinderMountType, screenDirection;
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool gotOrientation =
-        httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection) ||
-        httpGetPiFinderOrientation("http://" + piFinderHost + ":8080/api/orientation_status", piFinderMountType, screenDirection);
+        httpGetPiFinderOrientation("http://" + piFinderHost + ":8080/api/orientation_status", piFinderMountType, screenDirection) ||
+        httpGetPiFinderOrientation("http://" + piFinderHost + "/api/orientation_status", piFinderMountType, screenDirection);
     s_lastOrientationFailureTime = gotOrientation ? 0 : nowOrientation;
     if (!gotOrientation)
         return; // PiFinder unreachable this tick - leave the last-known values/state showing rather than blank them
@@ -1498,6 +1498,23 @@ void PiFinderMountBridge::setPositioningResult(PositioningResult result, double 
     m_positioningResidual = residualArcmin;
 }
 
+bool PiFinderMountBridge::mountArrivedWhereSent(double sentRA, double sentDec, double mountRA, double mountDec)
+{
+    if (std::isnan(sentRA) || std::isnan(sentDec))
+        return true;
+    const double missed = angularSeparationArcmin(mountRA, mountDec, sentRA, sentDec);
+    if (missed <= MOUNT_ARRIVAL_LIMIT_ARCMIN)
+        return true;
+    char message[240];
+    snprintf(message, sizeof(message),
+             "The mount stopped %.1f deg from where it was sent (aborted slew, a limit, or a wrong alignment model - check or clear its alignment points)",
+             missed / 60.0);
+    LOGF_ERROR("%s. Not syncing.", message);
+    setMountRejectWarning(true, message);
+    setPositioningResult(PositioningResult::OFF_TARGET, missed);
+    return false;
+}
+
 // Positioning status (#665): derived from the forward/correct state machines, changes none of them.
 void PiFinderMountBridge::publishPositioningStatus()
 {
@@ -1540,6 +1557,8 @@ void PiFinderMountBridge::publishPositioningStatus()
         phase = "ON_TARGET";
     else if (m_positioningResult == PositioningResult::GAVE_UP)
         phase = "GAVE_UP";
+    else if (m_positioningResult == PositioningResult::OFF_TARGET)
+        phase = "OFF_TARGET";
     else if (m_forwardState == ForwardState::HOLDING)
         phase = "HOLDING";
     if (!handsOff)
@@ -1556,7 +1575,7 @@ void PiFinderMountBridge::publishPositioningStatus()
     IPState state = IPS_IDLE;
     if (handsOff)
         state = IPS_BUSY;
-    else if (m_positioningResult == PositioningResult::GAVE_UP)
+    else if (m_positioningResult == PositioningResult::GAVE_UP || m_positioningResult == PositioningResult::OFF_TARGET)
         state = IPS_ALERT;
     else if (std::strcmp(phase, "IDLE") != 0)
         state = IPS_OK;
@@ -1576,8 +1595,8 @@ void PiFinderMountBridge::publishPositioningStatus()
         {
             const std::string host = SettingsT[PIFINDER_HTTP_HOST].text;
             const int attemptsMax = static_cast<int>(PositioningStatusN[POSITIONING_ATTEMPTS_MAX].value);
-            const bool ok = httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg) ||
-                            httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg);
+            const bool ok = httpPostPositioning("http://" + host + ":8080/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg) ||
+                            httpPostPositioning("http://" + host + "/api/bridge_positioning", phase, attempt, attemptsMax, residual, toGoDeg);
             s_lastFailure = ok ? 0.0 : now;
             if (ok)
             {
@@ -1834,6 +1853,15 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
             return true; // finished moving, but waiting for a fresh solve to confirm before trusting it (#79)
 
         m_externalSlewInProgress = false;
+        double adoptedAltitude = 90.0;
+        if (!isAboveHorizon(piRA, piDec, adoptedAltitude))
+        {
+            // Nothing below the horizon can be what the user wants to look at: a wrong mount model or a bad position (found
+            // 2026-11-27: such a position became the Hold position and stayed).
+            LOGF_WARN("Position after the external move is %.1f deg below the horizon (RA %.4fh, DEC %.4f deg) - not adopted as the target.",
+                      -adoptedAltitude, piRA, piDec);
+            return true;
+        }
         m_lastForwardedRA = piRA;
         m_lastForwardedDec = piDec;
         m_correctTargetRA = piRA;
@@ -1964,8 +1992,8 @@ void PiFinderMountBridge::handlePiFinderAlignSync()
     double alignTime = 0.0, alignRA = 0.0, alignDec = 0.0;
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool haveAlign =
-        httpGetPiFinderAlignEvent("http://" + piFinderHost + "/api/status", alignTime, alignRA, alignDec) ||
-        httpGetPiFinderAlignEvent("http://" + piFinderHost + ":8080/api/status", alignTime, alignRA, alignDec);
+        httpGetPiFinderAlignEvent("http://" + piFinderHost + ":8080/api/status", alignTime, alignRA, alignDec) ||
+        httpGetPiFinderAlignEvent("http://" + piFinderHost + "/api/status", alignTime, alignRA, alignDec);
     if (!haveAlign)
         return;
 
@@ -2594,8 +2622,8 @@ bool PiFinderMountBridge::resolveObserverLocation(double &lat, double &lon)
     if (!known)
     {
         const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
-        known = httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", la, lo) ||
-                httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", la, lo);
+        known = httpGetPiFinderLocation("http://" + piFinderHost + ":8080/api/status", la, lo) ||
+                httpGetPiFinderLocation("http://" + piFinderHost + "/api/status", la, lo);
         if (known)
             source = "PiFinder GPS";
     }
@@ -3095,7 +3123,11 @@ void PiFinderMountBridge::handleGotoForward()
             DriftStatusNP.s = (drift > threshold) ? IPS_ALERT : IPS_OK;
             IDSetNumber(&DriftStatusNP, nullptr);
 
-            if (drift > MaxSyncDriftN[0].value)
+            if (!mountArrivedWhereSent(m_lastForwardedRA, m_lastForwardedDec, mountRA, mountDec))
+            {
+                m_forwardState = ForwardState::HOLDING;
+            }
+            else if (drift > MaxSyncDriftN[0].value)
             {
                 // See MaxSyncDriftNP's header comment - a residual this
                 // large is almost certainly a bad/outlier solve, not a
@@ -3139,16 +3171,32 @@ void PiFinderMountBridge::handleGotoForward()
             }
             else
             {
+                // Mount and PiFinder agreeing is not enough: both may be somewhere else than the GoTo asked for (seen
+                // 2026-11-27: "on target" with both 103 degrees away). "On target" needs PiFinder on that target too.
+                const double offTarget = (std::isnan(m_lastForwardedRA) || std::isnan(m_lastForwardedDec))
+                                             ? 0.0
+                                             : angularSeparationArcmin(piRA, piDec, m_lastForwardedRA, m_lastForwardedDec);
+                PositioningResult result = PositioningResult::ON_TARGET;
                 if (drift > threshold)
+                {
+                    result = PositioningResult::GAVE_UP;
                     LOGF_WARN("Gave up refining after %d attempt(s): residual %.1f arcmin still exceeds threshold %.1f - now holding, will retry on the next drift check.",
                               MAX_SETTLE_RETRIES, drift, threshold);
+                }
                 else
                 {
-                    LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f - now holding.",
-                              drift, threshold);
+                    if (offTarget > threshold)
+                    {
+                        result = PositioningResult::OFF_TARGET;
+                        LOGF_WARN("Not on target: mount and PiFinder agree (%.1f arcmin), but PiFinder is %.1f arcmin from the GoTo target (threshold %.1f) - now holding.",
+                                  drift, offTarget, threshold);
+                    }
+                    else
+                        LOGF_INFO("Arrival verified by PiFinder solve: residual %.1f arcmin, within threshold %.1f - now holding.",
+                                  drift, threshold);
                     setMountRejectWarning(false, "");
                 }
-                setPositioningResult(drift > threshold ? PositioningResult::GAVE_UP : PositioningResult::ON_TARGET, drift);
+                setPositioningResult(result, result == PositioningResult::OFF_TARGET ? offTarget : drift);
                 m_forwardState = ForwardState::HOLDING;
             }
             break;
@@ -3510,7 +3558,13 @@ void PiFinderMountBridge::handleAutoCorrectGoto(bool exceeded, double piRA, doub
             // drift/threshold reflect this tick's freshly-computed
             // separation (passed in from TimerHit), i.e. the actual residual
             // now that the mount has stopped and PiFinder has a fresh solve.
-            if (drift > MaxSyncDriftN[0].value)
+            double arrivedRA, arrivedDec;
+            if (m_client->getMountRADE(arrivedRA, arrivedDec) &&
+                !mountArrivedWhereSent(m_correctTargetRA, m_correctTargetDec, arrivedRA, arrivedDec))
+            {
+                m_correctState = CorrectState::IDLE;
+            }
+            else if (drift > MaxSyncDriftN[0].value)
             {
                 // See MaxSyncDriftNP's header comment - don't Sync off a
                 // likely-bad solve; fall back to normal monitoring instead.
@@ -3615,9 +3669,9 @@ bool PiFinderMountBridge::fetchAlignmentCandidates()
     std::string error;
     const std::string piFinderHost = SettingsT[PIFINDER_HTTP_HOST].text;
     const bool ok =
-        httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
-                                  direction, m_alignPoints, m_alignPointNames, error) ||
         httpGetNearbyBrightStars("http://" + piFinderHost + ":8080/api/nearby_bright_stars", radius, count, minAltitude,
+                                  direction, m_alignPoints, m_alignPointNames, error) ||
+        httpGetNearbyBrightStars("http://" + piFinderHost + "/api/nearby_bright_stars", radius, count, minAltitude,
                                   direction, m_alignPoints, m_alignPointNames, error);
     if (!ok)
     {
@@ -3861,8 +3915,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
                 // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.
                 double piRA, piDec;
-                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
                         LOGF_INFO("Synced mount to PiFinder's current position (RA %.4fh, DEC %.4f deg) on entering Goto-Forward.",
@@ -4032,8 +4086,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 double piRA, piDec;
                 const bool haveFreshCamPosition =
                     m_client->isReady() &&
-                    (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                     httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec));
+                    (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                     httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec));
                 if (!haveFreshCamPosition)
                 {
                     LOG_ERROR("Not ready, or no fresh PiFinder camera solve available - not sending a manual correction off a guess.");
@@ -4136,8 +4190,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // as trustworthy as every other adoption path in this file, not read from the
                 // separate, laggier INDI mirror.
                 double piRA, piDec;
-                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     m_lastForwardedRA = piRA;
                     m_lastForwardedDec = piDec;
@@ -4165,8 +4219,8 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
                 // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: same atomic
                 // HTTP-backed read as the Yes branch above.
                 double piRA, piDec;
-                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
-                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
+                if (httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + ":8080/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec) ||
+                    httpGetPiFinderFreshCamPosition("http://" + std::string(SettingsT[PIFINDER_HTTP_HOST].text) + "/api/status", SolveFreshnessMaxAgeN[0].value, piRA, piDec))
                 {
                     // Same fix as the timeout path above (see its comment) -
                     // route through the normal SLEWING state so the existing

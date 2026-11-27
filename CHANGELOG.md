@@ -26,6 +26,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- The drivers ask PiFinder on port 8080 first, then 80 (on StellarMate port 80 is nginx in front of EkosLive).
+- Plain wording: "Mount and PiFinder differ by 103°" (was "Still 6157′ off after 0 attempts"), "you can steer by hand", "No manual sync yet" with a grey dot.
 - "Held target" is now just "Target": the buttons Align to / Goto / Revert to Target, the help page, and the Bridge driver's labels and log texts (property names unchanged).
 - Wording of the positioning status, which was not understood: PiFinder's title bar says "MOUNT MOVING" (was "HANDS OFF") and "MOUNT OFF 103°" (was "Hand OK 6157'"; distance between mount and PiFinder, bright on black); the Control Center card shows "Don't touch the mount" only while the mount is moved (no "Hands free" badge).
 - Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
@@ -33,6 +35,11 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Sky simulation: no longer crashes when a mount reports a right ascension outside 0..24 h (the picture stayed frozen).
+- Mount Bridge: after a binding retry the Bridge no longer saw PiFinder's target and forwarded no GoTo (libindi's watchProperty() drops every other property of the device for good); it now reconnects instead.
+- Mount Bridge: checks after every slew that the mount arrived where it was sent (wrong alignment model, limit, abort) and does not Sync if not; positions below the horizon are no longer adopted as the target.
+- Sky simulation: starts the Telescope Simulator with a sound alignment model (after one far Sync its GoTos landed 180 degrees off). New live check: test_tools/mount_model_check.py.
+- Mount Bridge: "On target" only if PiFinder is on the GoTo target as well; mount and PiFinder agreeing somewhere else is now reported as "Off target" (card and PiFinder title bar).
 - Control Center: a profile restart from Ekos or the SMOS app no longer puts every driver into indiserver twice (the Control Center started the profile in the gap between stop and start; it now waits 30 s).
 - Sky picture: names near the edge are no longer cut off ("Mount (stopped").
 - Mount Bridge went silent for about 51 s at a time and the Control Center reacted late (#385): three requests to PiFinder printed the response (an HTML error page from port 80) into the driver's INDI stream. The response is now discarded.

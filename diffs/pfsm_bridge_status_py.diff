@@ -1,6 +1,6 @@
 --- python/PiFinder/pfsm_bridge_status.py.orig
 +++ python/PiFinder/pfsm_bridge_status.py
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,153 @@
 +"""PiFinder_Stellarmate: what the Mount Bridge is doing to get the scope onto the target, shown on PiFinder's screen.
 +
 +After a GoTo the Mount Bridge slews, waits for a PiFinder solve, refines and verifies. While it does, the user must keep
@@ -20,8 +20,9 @@
 +FRESH_SEC = 8.0        # a hands-off status older than this is not trusted
 +SHOW_DONE_SEC = 12.0   # how long "on target" stays in the title bar
 +SHOW_GAVE_UP_SEC = 20.0
-+WARNING_PREFIX = "MOUNT OFF"
-+PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "HOLDING")
++WARNING_PREFIX = "MOUNT OFF"      # mount and PiFinder are apart
++OFF_TARGET_PREFIX = "OFF TARGET"   # they agree, away from the GoTo target
++PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING")
 +HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING")
 +
 +_cache = {"mtime": None, "data": None}
@@ -106,7 +107,7 @@
 +        return data if age <= FRESH_SEC else None
 +    if data.get("phase") == "ON_TARGET":
 +        return data if age <= SHOW_DONE_SEC else None
-+    if data.get("phase") == "GAVE_UP":
++    if data.get("phase") in ("GAVE_UP", "OFF_TARGET"):
 +        return data if age <= SHOW_GAVE_UP_SEC else None
 +    return None
 +
@@ -125,16 +126,22 @@
 +        return ("ON TARGET", False)
 +    if data["phase"] == "GAVE_UP":
 +        # The number is how far the mount and PiFinder are apart - PiFinder's own push-to numbers may well read zero.
-+        residual = data["residual_arcmin"]
-+        if residual >= 60:
-+            return (WARNING_PREFIX + " %.0f°" % (residual / 60.0), False)
-+        return (WARNING_PREFIX + " %s'" % (("%.1f" if residual < 10 else "%.0f") % residual), False)
++        return (WARNING_PREFIX + " " + _distance(data["residual_arcmin"]), False)
++    if data["phase"] == "OFF_TARGET":
++        return (OFF_TARGET_PREFIX + " " + _distance(data["residual_arcmin"]), False)
 +    return None
 +
 +
++def _distance(arcmin):
++    """A distance for the title bar: degrees from 60' on, arcminutes below."""
++    if arcmin >= 60:
++        return "%.0f°" % (arcmin / 60.0)
++    return ("%.1f'" if arcmin < 10 else "%.0f'") % arcmin
++
++
 +def is_warning(banner):
-+    """True for the title bar text that reports mount and PiFinder apart: drawn bright on black across the whole bar."""
-+    return bool(banner) and banner[0].startswith(WARNING_PREFIX)
++    """True for a title bar text that reports a missed position: drawn bright on black across the whole bar."""
++    return bool(banner) and banner[0].startswith((WARNING_PREFIX, OFF_TARGET_PREFIX))
 +
 +
 +def register(app):
