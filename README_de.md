@@ -376,6 +376,24 @@ bash bin/build_indi_bridge.sh     # PiFinder Mount Bridge (optional, nur bei ech
 
 Für die vollständige Einrichtungs-Anleitung (StellarMate-Web-Manager-Profil, INDI Control Panel, KStars/Ekos-Remote-Modus, SkySafari), die komplette LX200-Kommando-/Property-Referenz und eine Erklärung der Code- und Deployment-Strategie siehe **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)**.
 
+### GoTo starten: PiFinder, KStars oder StellarMate-App (SLEW und GO)
+
+Entscheidend ist, **welches Gerät** das GoTo bekommt. Nur ein GoTo an PiFinder führt die Mount Bridge selbst aus und prüft es
+(Kopplung "GoTo").
+
+| Du startest mit | Wer bewegt das Mount | Was passiert |
+|---|---|---|
+| PiFinder: Objekt anwählen (Push-to) | Mount Bridge | Fahrt, Plate-Solve, Nachkorrigieren, bis PiFinder das Objekt sieht. PiFinders Titelzeile: `MOUNT MOVING`, dann `ON TARGET`. |
+| KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | Mount Bridge | Wie oben. |
+| StellarMate-App: **SLEW** | der Mount-Treiber | Das Mount fährt. Die Bridge bemerkt eine Fahrt, die sie nicht befohlen hat, und übernimmt die Stelle, die **PiFinder** sieht, als neues Target. Sie korrigiert **nicht** auf das Objekt nach: Das Teleskop kann einige Bogenminuten daneben stehen. Kein `MOUNT MOVING`. |
+| StellarMate-App: **GO** | der Mount-Treiber, danach Ekos | Wie SLEW, anschließend macht Ekos eine Aufnahme durch die **Teleskopkamera** und löst sie (je nach Ekos-Aktion mit Sync und Nachfahren auf das Objekt). Braucht eine Kamera mit Sternen im Bild; bei abgedecktem Teleskop schlägt der Solve fehl. PiFinder wird mit diesem Solve **noch nicht** ausgerichtet. |
+| KStars/Ekos: Goto auf dem Mount, Handsteuerung | der Mount-Treiber | Wie SLEW. |
+
+Solange GoTos direkt ans Mount noch nicht nachkorrigiert werden
+([Konzept §4.1](docs/concepts/mount_bridge_target_transparency.md)): Soll das Teleskop am Ende auf dem Objekt stehen, über
+PiFinder oder **PiFinder LX200** starten. Geplant: PiFinder nach einem erfolgreichen GO-Solve automatisch ausrichten
+([Konzept](docs/concepts/mount_bridge_ekos_align_pifinder.md)).
+
 ## SMOS-Updates
 
 Stellarmate OS nutzt BTRFS-Snapshot-Resets zur Anwendung von Updates. Das setzt die Root-Partition zurück, wodurch alle manuell installierten Pakete und Konfigurationen (Pacman-Repos, systemd-Dienste, Swap usw.) entfernt werden. Die `/home`-Partition bleibt dabei unversehrt.

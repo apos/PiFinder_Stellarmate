@@ -367,6 +367,24 @@ For the full setup walkthrough (StellarMate Web Manager profile, INDI Control Pa
 Remote mode, SkySafari), the complete LX200 command/property reference, and an explanation of the
 code and deployment strategy, see **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)**.
 
+### Starting a GoTo: PiFinder, KStars or the StellarMate app (SLEW and GO)
+
+It matters **which device** receives the GoTo. Only a GoTo sent to PiFinder is carried out and checked by the Mount Bridge
+(coupling "GoTo").
+
+| You start it with | Who moves the mount | What happens |
+|---|---|---|
+| PiFinder: select an object (push-to) | Mount Bridge | Slew, plate solve, refine until PiFinder sees the object. PiFinder's title bar: `MOUNT MOVING`, then `ON TARGET`. |
+| KStars: right-click an object → **PiFinder LX200** → Goto | Mount Bridge | Same as above. |
+| StellarMate app: **SLEW** | the mount driver | The mount slews. The Bridge notices a move it did not command and adopts the position **PiFinder** sees as the new target. It does **not** refine to the object: the scope can stay several arcminutes beside it. No `MOUNT MOVING`. |
+| StellarMate app: **GO** | the mount driver, then Ekos | Like SLEW, followed by Ekos taking an image through the **telescope camera** and plate solving it (and, depending on Ekos' alignment action, syncing and slewing to the object). Needs a camera that sees stars; with a covered or closed telescope the solve fails. PiFinder is **not** aligned from this solve yet. |
+| KStars/Ekos: Goto on the mount, hand controller | the mount driver | Like SLEW. |
+
+Until mount-side GoTos are refined as well
+([concept §4.1](docs/concepts/mount_bridge_target_transparency.md)), use PiFinder or **PiFinder LX200** if the scope should end
+up on the object. Planned: aligning PiFinder automatically after a successful GO solve
+([concept](docs/concepts/mount_bridge_ekos_align_pifinder.md)).
+
 ## SMOS Updates
 
 Stellarmate OS uses BTRFS snapshot resets to apply updates. This wipes the root partition, which removes all manually installed packages and configuration (pacman repos, systemd services, swap, etc.). The `/home` partition survives intact.
