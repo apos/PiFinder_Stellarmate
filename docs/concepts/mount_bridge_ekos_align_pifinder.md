@@ -41,10 +41,12 @@ cannot see what the telescope sees (outside the camera's field of view PiFinder 
 Owner's rule for the Ekos solver action: Sync -> do the same for PiFinder; Slew to target -> the scope ends on the object;
 Nothing -> PFSM does nothing either.
 
-- **Control Center** (same watchdog as guiding): reads `org.kde.kstars.Ekos.Align.status` every 3 s. KStars 3.8.5 values: 0 idle,
-  1 complete, 2 failed, 3 aborted, 4 in progress, 5 successful, 6 syncing, 7 slewing, 8 rotating, 9 suspended. 4, 6-9 set
-  `EXTERNAL_HOLD`; released after 15 s without them, after 120 s if the last value is 5 (not a resting state, and polar alignment
-  turns the mount after it; no separate polar alignment state exists on D-Bus).
+- **Control Center** (same watchdog as guiding), every 3 s. KStars 3.8.5 `Align.status`: 0 idle, 1 complete, 2 failed,
+  3 aborted, 4 in progress, 5 successful, 6 syncing, 7 slewing, 8 rotating, 9 suspended. 4 and 6-9 start the hold. It is kept
+  while anything observable goes on: that status, a new line in `Align.logText`, or direction motion of the mount (how polar
+  alignment turns it between two images). It ends 15 s after the last of these - no longer waiting time stands in for a check
+  (owner, 2026-11-27). Camera exposures are not a signal of their own: measured with the CCD simulators, they happen only while
+  Ekos is "in progress", and the alignment camera may be the imaging or guide camera. The page shows what keeps the pause.
 - If the end state is solved (1 or 5) **and** another client synced the mount during the hold (`EXTERNAL_HOLD_SEEN.MOUNT_SYNCS`)
   and the coupling is on: PiFinder's Align on the mount's position, while still held. A refusal is logged, never forced.
 - Release reason `alignment ended: solved` / `alignment ended: not solved`. **Driver:** after a solved end, or if the mount was

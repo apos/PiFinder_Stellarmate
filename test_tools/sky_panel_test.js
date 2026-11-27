@@ -52,6 +52,7 @@ ok(m.unknown === true && m.markers.length === 0, 'location unknown never plots a
 // today's case: mount not tracking, PiFinder 14 deg below the horizon
 m = T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'not tracking', pifinder: pt(-14.4, 327.9) }));
 ok(find(m, 'mount').name === 'Mount (stopped)' && find(m, 'mount').color === '#f5a623', 'not tracking: yellow "Mount (stopped)"');
+ok(find(T.skyBuildModel(mk({ mount: pt(50, 97), mount_state: 'slewing', pifinder: pt(48, 99) })), 'mount').name === 'Mount (slewing)', 'a slewing mount is not "stopped"');
 ok(find(m, 'pifinder').name === 'PiFinder −14°', 'below horizon: name carries the altitude');
 ok(m.line.color === '#e53935', 'below horizon: red line');
 ok(m.line.arrow && m.line.arrow.from === find(m, 'pifinder').p && m.line.arrow.to === find(m, 'mount').p, 'arrow starts at the one below the horizon (PiFinder) and points to the mount: Sync PiFinder from mount');

@@ -20,8 +20,19 @@ void PiFinderBridgeClient::setDevices(const std::string &piFinderName, const std
     m_bindingRetryAttempts = 0;
     m_bindingGaveUp = false;
 
-    watchDevice(m_piFinderName.c_str());
-    watchDevice(m_mountName.c_str());
+    watchAllDevices();
+}
+
+// Registered WITH a callback on purpose: on a reconnect libindi asks only for the devices it has an entry for, and an entry is
+// made either by this form or by a definition received before. With the plain watchDevice(name), a mount that was not there at
+// the first connection was never asked for again - the Bridge stayed blind until its process was restarted (found 2026-11-27,
+// profile switch; the same for a mount selected later, #662). A removed device loses its entry, so this is repeated before
+// every connect.
+void PiFinderBridgeClient::watchAllDevices()
+{
+    for (const std::string *name : { &m_piFinderName, &m_mountName, &m_shadowName })
+        if (!name->empty())
+            watchDevice(name->c_str(), [](INDI::BaseDevice) {});
 }
 
 // Every pointer into a device is dropped (it is dead once the connection or the device name changes); a target that is on the PiFinder
@@ -97,6 +108,7 @@ bool PiFinderBridgeClient::retryMissingPropertiesIfNeeded()
     // forwarded no GoTo; on the mount side abort, park and location would be filtered the same way.
     disconnectServer();
     forgetProperties();
+    watchAllDevices();
     connectServer();
 
     if (!longPhase)
@@ -116,7 +128,7 @@ void PiFinderBridgeClient::setShadowDevice(const std::string &shadowName)
     m_shadowOnCoordSetSP = nullptr;
 
     if (!m_shadowName.empty())
-        watchDevice(m_shadowName.c_str());
+        watchAllDevices(); // takes effect for the property requests of the next connect
 }
 
 bool PiFinderBridgeClient::isShadowReady() const

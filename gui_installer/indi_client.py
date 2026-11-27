@@ -26,6 +26,7 @@ with a strict incremental XML parser; verified live against a real
 `indiserver` (Simulators profile, `Telescope Simulator`'s `CONNECTION`
 property and 25 others) before being written here as this module.
 """
+import os
 import socket
 import subprocess
 import time
@@ -783,12 +784,15 @@ def sky_panel_without_bridge(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
 
 def mount_motion_state(props: dict):
     """The mount's state from its own standard INDI properties: "parked" (a
-    parked mount wins over its tracking state), "tracking", "not tracking", or
+    parked mount wins over its tracking state), "slewing" (its coordinates are
+    Busy - whatever the tracking switch says meanwhile), "tracking", "not tracking", or
     None when the mount reports neither TELESCOPE_PARK nor TELESCOPE_TRACK_STATE.
     `props` is one device's property dict as returned by get_properties()."""
     park = props.get("TELESCOPE_PARK", {}).get("elements")
     if park is not None and park.get("PARK") == "On":
         return "parked"
+    if props.get("EQUATORIAL_EOD_COORD", {}).get("state") == "Busy":
+        return "slewing"
     track = props.get("TELESCOPE_TRACK_STATE", {}).get("elements")
     if track is not None:
         if track.get("TRACK_ON") == "On":
@@ -799,7 +803,7 @@ def mount_motion_state(props: dict):
 
 
 _MOUNT_MOTION_CACHE: dict = {}
-_MOUNT_MOTION_CACHE_S = 4.0
+_MOUNT_MOTION_CACHE_S = 1.5
 
 
 def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float, _now=time.monotonic):
@@ -811,7 +815,7 @@ def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float
     try:
         props = get_properties(
             device=device, host=host, port=port, timeout=timeout,
-            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE"},
+            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE", "EQUATORIAL_EOD_COORD"},
         )
         state = mount_motion_state(props.get(device, {}))
     except INDIClientError:
@@ -1186,6 +1190,20 @@ def set_coupling_mode(
         set_switch("PiFinder Mount Bridge", "CORRECTION_ACTION", element, host, port, timeout)
 
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
+
+
+def mount_direction_motion(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL) -> bool:
+    """Whether the Mount Bridge's mount is being moved by direction motion (TELESCOPE_MOTION_NS / WE) right now."""
+    try:
+        mount = bridge_active_mount(host, port, timeout)
+        if not mount:
+            return False
+        props = get_properties(device=mount, host=host, port=port, timeout=timeout,
+                               stop_after={"TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE"}).get(mount, {})
+    except INDIClientError:
+        return False
+    return any(value == "On" for name in ("TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE")
+               for value in props.get(name, {}).get("elements", {}).values())
 
 
 def mount_bridge_hold_syncs(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> int:
@@ -1822,7 +1840,25 @@ def _mount_bridge_pids() -> list:
     return [line for line in out.stdout.split() if line]
 
 
-def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_sec: float = 2.0) -> None:
+def mount_bridge_fifo_path(pids=None, proc: str = "/proc") -> str:
+    """The control FIFO of the indiserver the running Mount Bridge belongs to. A profile that mixes driver sources runs several
+    indiservers (found 2026-11-27: simulators from Flatpak on port 7624, the PiFinder drivers on a second, chained "system"
+    server with /tmp/indiFIFO_system) - restarting through the default FIFO would start a second Bridge on the other one.
+    Falls back to the default when the Bridge is not running or its server cannot be read."""
+    for pid in (_mount_bridge_pids() if pids is None else pids):
+        try:
+            with open(os.path.join(proc, str(pid), "status")) as f:
+                parent = next(line.split()[1] for line in f if line.startswith("PPid:"))
+            with open(os.path.join(proc, parent, "cmdline"), "rb") as f:
+                args = f.read().decode(errors="replace").split("\0")
+        except (OSError, StopIteration, IndexError):
+            continue
+        if args and os.path.basename(args[0]) == "indiserver" and "-f" in args[:-1]:
+            return args[args.index("-f") + 1]
+    return MOUNT_BRIDGE_FIFO_PATH
+
+
+def restart_mount_bridge_driver(fifo_path: Optional[str] = None, settle_sec: float = 2.0) -> None:
     """Stop/start "PiFinder Mount Bridge" via the indiFIFO control channel.
     Purely a driver-process bounce - callers are responsible for reconnecting
     and re-linking afterwards (see server.py's readiness watchdog, which does
@@ -1841,6 +1877,7 @@ def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_
     force-kills any that linger past the wait) before ever sending "start",
     so this function always leaves exactly one instance running - a real
     singleton guarantee, not a hopeful delay."""
+    fifo_path = fifo_path or mount_bridge_fifo_path()   # before stopping: afterwards there is no process left to ask
     with open(fifo_path, "w") as f:
         f.write('stop indi_pifinder_mount_bridge "PiFinder Mount Bridge"\n')
 

@@ -204,6 +204,7 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
     private:
         void forgetProperties();
+        void watchAllDevices();
         void noteMountTarget(INDI::Property property);
         void noteMountEvent(MountEvent event, double ra = 0.0, double dec = 0.0);
         void noteIgnoredTarget(const char *why, double ra, double dec);

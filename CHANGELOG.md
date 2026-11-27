@@ -28,6 +28,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Alignment pause: ends when nothing alignment-related is observably going on (no fixed 2 minutes); the page shows what keeps it.
 - Control Center: after a movement by hand the card says "Holding target" instead of "On target".
 - Mount Bridge, GoTo coupling: after a movement by hand the mount is synced to PiFinder at once instead of asking the 45 s question; after a stop (abort) the Bridge does not move the mount until the next GoTo.
 - Below the horizon PiFinder's position is treated as what it is, never a plate solve: the cards say so, "Sync PiFinder from mount" is confirmed without asking the camera, and mount and PiFinder both below show one calm "end of session or start-up" card.
@@ -45,6 +46,10 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center: restarting the Mount Bridge uses the FIFO of the INDI server it runs on (profiles that mix driver sources run two).
+- Mount Bridge: a mount that started after the Bridge connected, or was selected later, is read again without restarting the driver (#662).
+- Mount Bridge: "Goto to Target" is verified and refined; before, the Bridge took its own slew for somebody else's and kept the landing position.
+- Sky picture: a slewing mount is labelled "slewing", not "stopped".
 - Sky simulation: after a reboot the simulated sky could start tens of degrees off, because the start-up position changes of the mount were taken for Syncs.
 - Mount Bridge: an unreachable target no longer leads to endless re-slewing; after 3 attempts nothing moves until the next GoTo.
 - PiFinder received declinations between 0 and -1 degree with the wrong sign (patch to PiFinder's pos_server.py).
