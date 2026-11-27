@@ -26,6 +26,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Changed
 
+- Control Center: in a profile without a Mount Bridge (PiFinder alone, e.g. on a Dobsonian) the card under the sky picture is hidden.
 - The drivers ask PiFinder on port 8080 first, then 80 (on StellarMate port 80 is nginx in front of EkosLive).
 - Plain wording: "Mount and PiFinder differ by 103°" (was "Still 6157′ off after 0 attempts"), "you can steer by hand", "No manual sync yet" with a grey dot.
 - "Held target" is now just "Target": the buttons Align to / Goto / Revert to Target, the help page, and the Bridge driver's labels and log texts (property names unchanged).
@@ -35,6 +36,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Sky simulation: after reconnecting (profile restart, update) the start-up jumps of the mount are no longer taken for Syncs (the simulated sky ended up 180 degrees off).
 - Sky simulation: no longer crashes when a mount reports a right ascension outside 0..24 h (the picture stayed frozen).
 - Mount Bridge: after a binding retry the Bridge no longer saw PiFinder's target and forwarded no GoTo (libindi's watchProperty() drops every other property of the device for good); it now reconnects instead.
 - Mount Bridge: checks after every slew that the mount arrived where it was sent (wrong alignment model, limit, abort) and does not Sync if not; positions below the horizon are no longer adopted as the target.

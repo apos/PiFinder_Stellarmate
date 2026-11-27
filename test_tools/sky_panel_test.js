@@ -17,7 +17,7 @@ function mkEl(name) {
     set textContent(t) { this._text = t; if (t === '') this.children = []; }, get textContent() { return this._text; } };
 }
 const document = { createElementNS: (ns, n) => mkEl(n), getElementById: () => null };
-const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, skyCouplingFacts, skyCardModel, SKY_CX, SKY_CY, SKY_R };');
+const sandbox = new Function('document', code + '\nreturn { skyPlace, skySep, skyBuildModel, drawSkyPanel, skyTargetLine, skyPositioningModel, skyPositioningInterrupted, skyPositioningTrailUpdate, skyPositioningTrailItems, skyPositioningBand, skyPositioningNow, skyPositioningFacts, skyPositioningHistory, skyCouplingFacts, skyCardModel, skyCardWanted, SKY_CX, SKY_CY, SKY_R };');
 const T = sandbox(document);
 
 let failed = 0;
@@ -297,6 +297,7 @@ ok(/else if \(_mbDriftSeenRunning && \+\+_mbDriftMisses < MB_DRIFT_MISSES_BEFORE
   ok(card({ phase: 'SLEWING', hands_off: true }).badge === 'Don\u2019t touch the mount', 'badge while the Bridge moves the mount');
   ok(card({ phase: 'ON_TARGET', hands_off: false }).badge === '' && card({ phase: 'GAVE_UP', hands_off: false }).badge === '' && card({ phase: 'HOLDING', hands_off: false }).badge === '', 'no badge when the user need not leave the mount alone');
 }
+ok(!T.skyCardWanted('host') && T.skyCardWanted('aio') && T.skyCardWanted('ctrl') && T.skyCardWanted('ctrl-incomplete') && T.skyCardWanted('bridge-only') && T.skyCardWanted(null), 'no card without a Mount Bridge in the profile (Dobsonian), the card in every other case');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all sky panel tests passed');

@@ -9442,6 +9442,8 @@ function skyCouplingFacts(ctx, holding) {
 // the Bridge has no run to report), the raw status p, the run's trail, ctx {running, mode, action, drift, threshold} and fb, the texts the
 // older status lines wrote: {caption, captionDot, status, details}. Returns {tone: free|warn|bad|idle, head, badge, band[4], line,
 // lineWarn, why}; the long explanation (fb.details) is not in it, it sits behind the "Why?" button.
+// The card belongs to the Mount Bridge: a profile with a local PiFinder and no Bridge ('host': PiFinder host or Client) has none.
+function skyCardWanted(role) { return role !== 'host'; }
 function skyCardModel(m, p, trail, ctx, fb) {
   const c = ctx || {}, f = fb || {}, pp = p || {};
   const caption = (f.caption || '').trim();
@@ -9698,6 +9700,14 @@ function skyCardFallbackTexts() {
 function renderSkyCard() {
   const box = document.getElementById('sky-card');
   if (!box) return;
+  // Without a Mount Bridge in the profile (PiFinder alone, e.g. on a Dobsonian) the card would only talk about a missing Bridge: the
+  // sky picture stays, the card goes.
+  box.style.display = skyCardWanted(deriveProfileRole()) ? '' : 'none';
+  if (!skyCardWanted(deriveProfileRole())) {
+    const col0 = document.getElementById('mb-sky-col');
+    if (col0) col0.classList.add('sky-card-on');
+    return;
+  }
   const fb = skyCardFallbackTexts();
   const m = skyCardModel(_skyCard.m, _skyCard.p, _posTrail, _skyCard.ctx, fb);
   const col = document.getElementById('mb-sky-col');
