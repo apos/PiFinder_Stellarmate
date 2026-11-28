@@ -5,8 +5,17 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Added
+
+- Control Center, time and location check: KStars (reference), mount, PiFinder and Pi side by side (time, UTC offset, location); an
+  OnStep on the network is asked for its own clock and site. **Set mount from KStars** with a result for every step, **Recheck**,
+  and a notice that stays until **Dismiss**.
+
 ### Fixed
 
+- Control Center: the "mount's clock is hours behind" notice was a false alarm (INDI keeps the time last set on the mount, it does
+  not run on). The automatic "correction" built on it is removed: it switched KStars' real-time clock off and on again every few
+  seconds.
 - Mount Bridge, OnStep over USB/serial: an alignment running on the controller is detected through the INDI driver, so the Bridge
   no longer syncs during it (OnStep counted that Sync as a centred star). It also no longer syncs when the coupling is switched on
   during an alignment, and Multi-Point Alignment is refused meanwhile. New `test_tools/onstep_usb_alignment_test.py`.
