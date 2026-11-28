@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in PiFinder_Stellarmate does not do what it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [how to report an issue](https://github.com/apos/PiFinder_Stellarmate/blob/main/CONTRIBUTING.md#reporting-an-issue)
+        first. Issues without this information are closed with a request to file them again. Questions about StellarMate or PiFinder
+        itself belong to their Discord channels (links there). Remove passwords, tokens, addresses and coordinates: issues are public.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What did you want to do? Indoors or under the sky? Role of the device (all-in-one, PiFinder client, Control host).
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and hardware
+      description: PFSM, PiFinder, StellarMate OS, INDI, Raspberry Pi model, mount and how it is connected (USB or network).
+      placeholder: |
+        PFSM (git -C ~/PiFinder_Stellarmate describe --tags):
+        PiFinder (cat ~/PiFinder/version.txt):
+        StellarMate OS:
+        INDI (pacman -Q libindi):
+        Computer and mount:
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered, one action per step. How often does it happen?
+      placeholder: |
+        1. ...
+        2. ...
+        Happens: always / sometimes / once
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, commands, configuration
+      description: As text, with the time it happened.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag pictures into this field.
+    validations:
+      required: false

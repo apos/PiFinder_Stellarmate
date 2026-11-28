@@ -42,7 +42,7 @@ the primary operational surface for a StellarMate-managed install. Companion to 
 
 The Control Center exists because a StellarMate-managed PiFinder install has operational needs a
 plain terminal session doesn't serve well: watching a long install run from a phone while standing
-at the telescope, switching between a hardware-free "Fake Mode" and the real service for
+at the telescope, testing the whole chain without a night sky (a simulated sky for the real solver) beside the real hardware for
 development, checking whether the camera/IMU/GPS are actually detected independent of what
 PiFinder's own software believes, and rebooting/shutting down the Pi without SSH.
 
@@ -623,10 +623,23 @@ and whether a Mount Bridge is present change ([Readme_PiFinder_LX200.md](Readme_
 <tr>
 <td align="center">
 <a href="docs/images/readme/cc_settings_expanded.png"><img src="docs/images/readme/cc_settings_expanded.png" width="440"></a><br>
-<sub>The whole <em>Settings</em> block expanded, for context: Role cards, Hardware mode (Real Hardware / Full Simulation / Fake Mode), the numbered setup checklist, and Multi-Point Alignment.</sub>
+<sub>The whole <em>Settings</em> block expanded, for context: Role cards, the mode tiles (the screenshot shows the earlier set of three; today's are described under <em>Hardware mode</em>), the numbered setup checklist, and Multi-Point Alignment.</sub>
 </td>
 </tr>
 </table>
+
+### Hardware mode
+
+The mode tiles say where PiFinder's position comes from. They are pre-selected from what is actually running.
+
+| Tile | What is real | What is simulated | Use it for |
+|---|---|---|---|
+| **Real Hardware** | everything | nothing | observing |
+| **Real Hardware + GSC Simulation** | PiFinder, its real solver (Cedar / tetra3), any INDI mount | the camera picture: a star field from the GSC catalogue where the mount points, with a GoTo landing error of your choice | testing and developing without a night sky; the recommended test mode |
+| *Other test modes:* **Full Simulation (INDI/Mount Bridge)** | Mount Bridge, INDI | PiFinder's position is fed from the Telescope Simulator ([Synthetic Solve](#synthetic-solve-vs-a-manual-one-shot-seed)); the solver is skipped | testing the coupling alone |
+| *Other test modes:* **PiFinder-only Fake Mode (legacy)** | the web page and menus | a separate headless PiFinder with everything simulated | PiFinder's own interface without any hardware |
+
+Known limits of the simulated sky are listed in the project README under *Status*.
 
 ### Synthetic Solve vs. a manual one-shot seed
 
@@ -691,6 +704,8 @@ All routes served by `gui_installer/server.py`. `Auth` = requires HTTP Basic Aut
 | POST | `/api/pifinder_mode?action=enable_fake\|disable_fake` | ✅ | Trigger a mode switch |
 | GET | `/api/pifinder_mode_log?position=N` | ✅ | Incremental mode-switch script output |
 | GET | `/api/hardware_status` | ✅ | Camera/IMU/GPS presence (raw hardware checks) |
+| GET | `/api/clock_status?recheck=1` | ✅ | Time and location check: KStars, mount, PiFinder, this Pi, and the computer of a remote PiFinder |
+| POST | `/api/clock_fix` | ✅ | Write KStars' location and the time to the mount, with a result per step |
 | GET | `/api/debug_solve?port=N` | ✅ | Proxy: PiFinder's own Solve Simulation state |
 | POST | `/api/debug_solve?port=N` | ✅ | Proxy: toggle PiFinder's own Solve Simulation |
 | GET | `/api/display_bridge` | ✅ | Whether the LCD overlay is currently active |
