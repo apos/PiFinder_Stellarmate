@@ -1,6 +1,9 @@
 [Unit]
 Description=PiFinder
-After=basic.target pifinder-setup.service
+# After nginx: on StellarMate port 80 belongs to its web server, and PiFinder takes 80 whenever it is free (else 8080). Started
+# side by side at boot, PiFinder sometimes won: StellarMate's web page stayed away and everything expecting PiFinder on 8080
+# (the simulated sky among it) did not work. Ordering only - a device without nginx starts PiFinder as before.
+After=basic.target pifinder-setup.service nginx.service
 Requires=pifinder-setup.service
 # The Waveshare LCD dev overlay (waveshare35b-v2, toggled via the Control
 # Center's "Turn LCD On/Off" button) claims GPIO lines the real HAT's OLED

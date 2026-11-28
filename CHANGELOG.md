@@ -27,6 +27,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- After a reboot PiFinder could take port 80 before StellarMate's web server had started: that web page (nginx) stayed away and
+  the simulated sky solved nothing, because PiFinder is expected on port 8080. `pifinder.service` now starts after
+  `nginx.service`.
 - OnStep mount type fix (#227, `bin/build_indi_onstep_fix.sh`, optional): follows the installed INDI version instead of the pinned
   2.2.2 and reads the source list from that version; `--build-only`. Checked with 2.2.5: still needed for fork and alt-az
   controllers. New `test_tools/onstep_mount_type_check.py`.
