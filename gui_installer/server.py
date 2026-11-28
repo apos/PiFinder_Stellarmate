@@ -3632,6 +3632,17 @@ def _clock_check(recheck: bool) -> dict:
     return result
 
 
+def _clock_pointing(props: dict):
+    """(RA hours, Dec degrees) the mount reports, None when that is no position."""
+    elements = props.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    ra, dec = clock_status.number(elements.get("RA")), clock_status.number(elements.get("DEC"))
+    return None if ra is None or dec is None else (ra, dec)
+
+
+def _separation_arcmin(a, b) -> float:
+    return clock_status.distance_km((a[1], a[0] * 15.0), (b[1], b[0] * 15.0)) / 12742.0 * 2 * 3437.75
+
+
 def _clock_fix_mount() -> dict:
     """KStars' location and time to the mount, step by step, each step verified. Nothing is sent when a precondition fails."""
     steps = []
@@ -3664,6 +3675,7 @@ def _clock_fix_mount() -> dict:
     elevation = kstars.get("elevation") or clock_status.number(
         props.get("GEOGRAPHIC_COORD", {}).get("elements", {}).get("ELEV")) or 0.0
     offset = kstars["offset"] if kstars.get("offset") is not None else clock_status.pi_offset_hours()
+    pointed = _clock_pointing(props)
     sent = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     try:
         indi_client.set_number(name, "GEOGRAPHIC_COORD", {"LAT": latitude, "LONG": longitude % 360.0, "ELEV": elevation})
@@ -3685,6 +3697,14 @@ def _clock_fix_mount() -> dict:
     step(taken, "the mount driver took the time" if taken else "the mount driver did not take the time")
     if taken:
         clock_status.observations.set_now(name, value, datetime.datetime.now(datetime.timezone.utc), time.monotonic())
+    # A mount's pointing model rests on its time and place: say what the change did to the position it reports.
+    now_pointed = _clock_pointing(props)
+    if not now_pointed:
+        step(False, "the mount no longer reports a position - clear its alignment points or restart its driver")
+    elif pointed:
+        moved = _separation_arcmin(pointed, now_pointed)
+        step(True, "the mount still reports a position%s" % (
+            ", %.0f' from before - sync or align it again" % moved if moved > 5 else ""))
     address = _clock_onstep_address(props)
     if address:
         real = _clock_onstep_read(address, True)
