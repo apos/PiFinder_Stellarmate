@@ -20,8 +20,9 @@ M = "Telescope Simulator"
 class Mount:
     """Just the INDI calls the check uses."""
 
-    def __init__(self, slewing=False, ignore=False, align=None):
-        self.props = {"EQUATORIAL_EOD_COORD": {"state": "Busy" if slewing else "Ok", "elements": {}},
+    def __init__(self, slewing=False, ignore=False, align=None, after=None):
+        self.after = after   # the position it reports once something was written
+        self.props = {"EQUATORIAL_EOD_COORD": {"state": "Busy" if slewing else "Ok", "elements": {"RA": "5.0", "DEC": "40.0"}},
                       "GEOGRAPHIC_COORD": {"state": "Ok", "elements": {"LAT": "40.0", "LONG": "8.0", "ELEV": "100"}},
                       "TIME_UTC": {"state": "Ok", "elements": {"UTC": "2026-01-01T00:00:00", "OFFSET": "1.00"}}}
         if align:
@@ -33,6 +34,8 @@ class Mount:
 
     def set_number(self, device, name, values, **kwargs):
         self.sent.append(name)
+        if self.after:
+            self.props["EQUATORIAL_EOD_COORD"]["elements"] = dict(self.after)
         if not self.ignore:
             self.props[name]["elements"] = {k: str(v) for k, v in values.items()}
 
@@ -75,11 +78,21 @@ class Server(unittest.TestCase):
         self.assertAlmostEqual(float(self.mount.props["GEOGRAPHIC_COORD"]["elements"]["LAT"]), HOME[0])
         self.assertEqual(server._clock_check(True)["current"], [])
 
+    def test_what_the_change_did_to_the_position_is_said(self):
+        self.use(Mount(after={"RA": "5.0127", "DEC": "40.0"}))      # 9' further, as the simulator with sync points
+        result = server._clock_fix_mount()
+        self.assertTrue(result["success"], result["steps"])
+        self.assertIn("9' from before - sync or align", result["steps"][-1]["text"])
+        self.use(Mount(after={"RA": "21", "DEC": "nan"}))
+        result = server._clock_fix_mount()
+        self.assertFalse(result["success"])
+        self.assertIn("no longer reports a position", result["steps"][-1]["text"])
+
     def test_a_mount_that_does_not_take_it_is_reported(self):
         self.use(Mount(ignore=True))
         result = server._clock_fix_mount()
         self.assertFalse(result["success"])
-        self.assertEqual([s["ok"] for s in result["steps"]][-2:], [False, False])
+        self.assertEqual([s["ok"] for s in result["steps"]][-3:-1], [False, False])
 
     def test_nothing_is_sent_when_it_must_not(self):
         for mount, kstars in ((Mount(slewing=True), self.kstars), (Mount(align=("1", "3")), self.kstars),

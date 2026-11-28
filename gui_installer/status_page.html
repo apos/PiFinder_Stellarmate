@@ -6904,7 +6904,7 @@ async function setMountFromKStars() {
   try {
     const data = await (await fetch('/api/clock_fix', { method: 'POST' })).json();
     lines = (data.steps || []).map(s => ({ text: (s.ok ? '\u2713 ' : '\u2717 ') + s.text, failed: !s.ok }));
-    lines.push(data.success ? { text: 'Done: the mount confirms location and time.' }
+    lines.push(data.success ? { text: 'Done: the mount confirms location and time. Sync or align it again if its position moved.' }
       : { text: 'Not finished: the mount was not set completely, see above.', failed: true });
   } catch (e) {
     lines = [{ text: 'Not finished: no answer from the Control Center.', failed: true }];
