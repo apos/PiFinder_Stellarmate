@@ -580,7 +580,7 @@ heraus ausgeführt werden kann, das er gerade deinstalliert.
 *   **[Readme_design_decisions_de.md](Readme_design_decisions_de.md)** — Zusammenfassung der wichtigsten Design-Entscheidungen. ([English version](Readme_design_decisions.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — Versionshistorie · **[GitHub-Projekt](https://github.com/users/apos/projects/15)** — getrackte Roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — kurze Build-Referenz für den PiFinder-LX200-Treiber.
-*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — Submodul-Einrichtung nach dem Klonen, Ausführen der Shell-Skript-Testsuite (Englisch).
+*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — wohin mit Fragen (Discord), wie man ein Issue meldet (Konventionen), Entwickeln und Testen (Englisch).
 
 ---
 

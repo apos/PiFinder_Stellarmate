@@ -566,7 +566,7 @@ repo it's uninstalling.
 *   **[Readme_design_decisions.md](Readme_design_decisions.md)** — condensed summary of the key design decisions. ([Deutsche Version](Readme_design_decisions_de.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — release history · **[GitHub Project](https://github.com/users/apos/projects/15)** — tracked roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — quick build reference for the PiFinder LX200 driver.
-*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — submodule setup after cloning, running the shell-script test suite.
+*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — where to ask (Discord), how to report an issue (conventions), and how to develop and test.
 ---
 
 <p align="center">

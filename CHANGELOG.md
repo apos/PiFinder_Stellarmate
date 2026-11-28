@@ -7,6 +7,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- CONTRIBUTING.md: where to ask (StellarMate and PiFinder Discord), how to report an issue and which conventions an issue must
+  follow, with a bug report form. The Control Center documentation names today's mode tiles.
 - Control Center, "Install or Update": the terminal stands right of the checklist and takes no room until there is output or a
   message.
 - Control Center, time and location check: KStars (reference), mount, PiFinder and Pi side by side (time, UTC offset, location); an
