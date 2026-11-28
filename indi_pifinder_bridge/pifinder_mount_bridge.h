@@ -367,6 +367,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         double m_alignSyncRA = 0.0, m_alignSyncDec = 0.0, m_alignSyncSent = 0.0;
         static constexpr double SYNC_TAKEN_ARCMIN = 3.0; // a tracking mount drifts well under this while it is checked
         static constexpr double SYNC_TAKEN_WINDOW_SEC = 6.0;
+        // The mount's count of alignment points before this point's Sync (-1: it publishes none), and how far a mount with a
+        // model may report from the synced position and still count - far beyond that the model is broken.
+        int m_alignModelPointsBefore = -1;
+        static constexpr double MODEL_FIT_MAX_ARCMIN = 60.0;
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - populated fresh by
         // fetchAlignmentCandidates() every time Start is clicked, not
@@ -1021,6 +1025,10 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // A mount with an alignment of its own that the Bridge cannot see running (owner, 2026-11-28): set per mount, the Bridge
         // never syncs it on its own - GoTos somebody asks for are verified and refined as usual. A difference left standing is
         // offered as a Sync (MOUNT_SYNC_OFFER; "Sync mount from PiFinder").
+        // How certain a plate solve has to be to be used at all (solveTooWeak() in the .cpp).
+        INumberVectorProperty SolveCertaintyNP;
+        INumber SolveCertaintyN[1];
+
         ISwitchVectorProperty OwnAlignmentSP;
         ISwitch OwnAlignmentS[2];
         enum { OWN_ALIGNMENT_ON, OWN_ALIGNMENT_OFF };

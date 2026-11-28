@@ -54,6 +54,7 @@ void PiFinderBridgeClient::forgetProperties()
     m_piFinderGeoNP = nullptr;
     m_mountAddressTP = nullptr;
     m_mountDriverInfoTP = nullptr;
+    m_mountAlignPoints = -1;
     m_mountConnectionModeSP = nullptr;
     m_mountAlignStarsSP = m_mountAlignSP = m_mountAlignWriteSP = nullptr;
     {
@@ -216,6 +217,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountAddressTP = property.getText();
     else if (fromMount && property.isNameMatch("Align Process"))
         noteOnStepAlignStatus(property);
+    else if (fromMount && property.isNameMatch("ALIGNMENT_POINTSET_SIZE"))
+        noteAlignmentPoints(property);
     else if (fromMount && (property.isNameMatch("OnStep Status") || property.isNameMatch("TELESCOPE_HOME")))
         noteMountRest(property);
     else if (fromMount && property.isNameMatch("DRIVER_INFO"))
@@ -426,6 +429,18 @@ bool PiFinderBridgeClient::takeFinishedSlew(double quietSec, bool &commanded)
     return true;
 }
 
+void PiFinderBridgeClient::noteAlignmentPoints(INDI::Property property)
+{
+    auto number = property.getNumber();
+    if (number != nullptr && number->count() > 0)
+        m_mountAlignPoints = static_cast<int>(number->at(0)->getValue());
+}
+
+int PiFinderBridgeClient::getMountAlignmentPoints() const
+{
+    return m_mountAlignPoints;
+}
+
 bool PiFinderBridgeClient::hasOnStepAlignment() const
 {
     return m_mountAlignStarsSP != nullptr && m_mountAlignSP != nullptr && m_mountAlignWriteSP != nullptr;
@@ -573,6 +588,10 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         m_lastMountTargetTime = static_cast<long>(time(nullptr));
         releaseKeptTarget(true, property.getNumber()->at(0)->getValue(), property.getNumber()->at(1)->getValue());
         noteMountTarget(property);
+    }
+    else if (fromMount && property.isNameMatch("ALIGNMENT_POINTSET_SIZE"))
+    {
+        noteAlignmentPoints(property);
     }
     else if (fromMount && property.isNameMatch("Align Process"))
     {

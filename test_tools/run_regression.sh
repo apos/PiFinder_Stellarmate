@@ -69,7 +69,7 @@ driver() {
     local build="indi_pifinder_bridge/build"
     run driver_build 900 bash -c "cmake -S indi_pifinder_bridge -B $build -DCMAKE_BUILD_TYPE=Release && cmake --build $build -j3"
     local port
-    for port in 7690 7691 7693 7694 7695 7696 7697 7698 7699 9998 9999; do
+    for port in 7689 7690 7691 7692 7693 7694 7695 7696 7697 7698 7699 9998 9999; do
         if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$port\$"; then
             echo "skip  driver tests: port $port is in use"
             FAILED=$((FAILED + 1))
@@ -77,7 +77,7 @@ driver() {
         fi
     done
     local t
-    for t in bridge_late_mount bridge_switch_mount bridge_off_stops_slew onstep_controller onstep_usb_alignment park_home_controller_goto mpa_onstep; do
+    for t in bridge_late_mount bridge_switch_mount bridge_off_stops_slew onstep_controller onstep_usb_alignment park_home_controller_goto mpa_onstep solve_trust_model_alignment; do
         run "${t}_test" 600 "$PY" "test_tools/${t}_test.py"
     done
 }

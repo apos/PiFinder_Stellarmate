@@ -179,6 +179,34 @@ double nowEpochSeconds()
     return duration<double>(system_clock::now().time_since_epoch()).count();
 }
 
+// A plate solve PiFinder accepted is not necessarily right: tetra3 accepts a pattern match up to a false-positive probability of
+// 1e-4 and more or less. Found 2026-11-28 on the simulated sky (#697): one field gave 362 of 362 solves 150 degrees off with 26
+// stars at a probability of 7e-06, while a right solve next to it had 108 stars at 2e-148. The Bridge therefore takes a solve only
+// with a probability of 1e-g or less (g = SOLVE_CERTAINTY, 0 = take everything). A reply without "Prob" (injected positions, older
+// PiFinder) is taken as before. Set by the one driver instance, read by the free functions below.
+double g_minSolveCertaintyDigits = 8.0;
+
+bool solveTooWeak(const nlohmann::json &solution)
+{
+    const auto prob = solution.find("Prob");
+    if (g_minSolveCertaintyDigits <= 0.0 || prob == solution.end() || !prob->is_number() ||
+        prob->get<double>() <= std::pow(10.0, -g_minSolveCertaintyDigits))
+        return false;
+    static double s_lastWarning = 0.0;
+    const double now = nowEpochSeconds();
+    if (now - s_lastWarning >= 45.0)
+    {
+        s_lastWarning = now;
+        const auto matches = solution.find("Matches");
+        DEBUGFDEVICE("PiFinder Mount Bridge", INDI::Logger::DBG_WARNING,
+                     "PiFinder's plate solve is not used: too uncertain (%d stars matched, false-positive probability %.0e, "
+                     "limit 1e-%.0f - setting \"Solve certainty\").",
+                     matches != solution.end() && matches->is_number() ? matches->get<int>() : 0, prob->get<double>(),
+                     g_minSolveCertaintyDigits);
+    }
+    return true;
+}
+
 // Fetches PiFinder's own /api/status and extracts solve_source +
 // last_solve_success - the position/status distinction from #107's
 // root-cause writeup applies here too: LX200 (:GR#/:GD# - what
@@ -215,6 +243,8 @@ bool httpGetPiFinderSolveStatus(const std::string &url, std::string &solveSource
         solveSource = solution.value("solve_source", std::string());
         const auto &lastSolveField = solution.at("last_solve_success");
         lastSolveSuccess = lastSolveField.is_null() ? 0.0 : lastSolveField.get<double>();
+        if (solveSource == "CAM" && solveTooWeak(solution))
+            solveSource = "CAM_WEAK";
         return true;
     }
     catch (const nlohmann::json::exception &)
@@ -367,6 +397,8 @@ bool httpGetPiFinderFreshCamPosition(const std::string &url, double maxAgeSecond
                          url.c_str(), solveSource.c_str(), lastSolveSuccess);
             return false;
         }
+        if (solveTooWeak(solution))
+            return false;
         const double ageSeconds = nowEpochSeconds() - lastSolveSuccess;
         if (!(ageSeconds >= 0.0 && ageSeconds <= maxAgeSeconds))
         {
@@ -1007,6 +1039,11 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&MaxSyncDriftNP, MaxSyncDriftN, 1, getDeviceName(), "MAX_SYNC_DRIFT",
                        "Auto-Sync sanity limit", "Main Control", IP_RW, 60, IPS_IDLE);
 
+    IUFillNumber(&SolveCertaintyN[0], "MIN_DIGITS", "False-positive probability at most 1e-N (0 = take all)", "%.0f", 0, 100, 1,
+                 g_minSolveCertaintyDigits);
+    IUFillNumberVector(&SolveCertaintyNP, SolveCertaintyN, 1, getDeviceName(), "SOLVE_CERTAINTY", "Solve certainty",
+                       "Main Control", IP_RW, 60, IPS_IDLE);
+
     IUFillNumber(&SolveFreshnessMaxAgeN[0], "MAX_AGE_SEC", "Max solve age (s)", "%.1f", 0.5, 60, 0.5, 5);
     IUFillNumberVector(&SolveFreshnessMaxAgeNP, SolveFreshnessMaxAgeN, 1, getDeviceName(), "SOLVE_FRESHNESS",
                        "Auto-correct solve freshness", "Main Control", IP_RW, 60, IPS_IDLE);
@@ -1161,6 +1198,7 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&BindingTP);
         defineProperty(&OnStepWatchTP);
         defineProperty(&OwnAlignmentSP);
+        defineProperty(&SolveCertaintyNP);
         defineProperty(&OwnAlignmentMountsTP);
         defineProperty(&SyncOfferNP);
         defineProperty(&AlignSaveSP);
@@ -1262,6 +1300,7 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(BindingTP.name);
         deleteProperty(OnStepWatchTP.name);
         deleteProperty(OwnAlignmentSP.name);
+        deleteProperty(SolveCertaintyNP.name);
         deleteProperty(OwnAlignmentMountsTP.name);
         deleteProperty(SyncOfferNP.name);
         deleteProperty(AlignSaveSP.name);
@@ -4522,6 +4561,7 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 m_alignStarBefore = star;
                 m_alignReadingAtSync = reading;
             }
+            m_alignModelPointsBefore = m_client->getMountAlignmentPoints();
             if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
             {
                 m_alignSyncRA = piRA;
@@ -4576,6 +4616,17 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
                           "DEC %.4f deg (fresh PiFinder solve), the mount reports it.",
                           m_alignPointIndex + 1, m_alignPoints.size(), m_alignSyncRA, m_alignSyncDec);
+                countAlignPoint();
+                advanceAlignPoint();
+            }
+            else if (waited >= SYNC_TAKEN_WINDOW_SEC && readable && off <= MODEL_FIT_MAX_ARCMIN && m_alignModelPointsBefore >= 0 &&
+                     m_client->getMountAlignmentPoints() > m_alignModelPointsBefore)
+            {
+                // A mount that fits a model through all its points does not report the synced position (#702): the Sync was
+                // taken when its set of alignment points grew.
+                LOGF_INFO("Multi-Point Alignment: point %zu/%zu taken into the mount's alignment model (%d points); it reports a "
+                          "position %s from the synced one.", m_alignPointIndex + 1, m_alignPoints.size(),
+                          m_client->getMountAlignmentPoints(), distanceText(off).c_str());
                 countAlignPoint();
                 advanceAlignPoint();
             }
@@ -5336,6 +5387,16 @@ bool PiFinderMountBridge::ISNewNumber(const char *dev, const char *name, double 
 {
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
+        if (strcmp(name, SolveCertaintyNP.name) == 0)
+        {
+            IUUpdateNumber(&SolveCertaintyNP, values, names, n);
+            g_minSolveCertaintyDigits = SolveCertaintyN[0].value;
+            SolveCertaintyNP.s = IPS_OK;
+            IDSetNumber(&SolveCertaintyNP, nullptr);
+            saveConfig(true, SolveCertaintyNP.name);
+            return true;
+        }
+
         if (strcmp(name, DriftThresholdNP.name) == 0)
         {
             IUUpdateNumber(&DriftThresholdNP, values, names, n);
@@ -5423,6 +5484,7 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     // durable across a Bridge process restart, unlike m_didInitialSync.
     IUSaveConfigNumber(fp, &LastKnownMountPosNP);
     IUSaveConfigText(fp, &OwnAlignmentMountsTP);
+    IUSaveConfigNumber(fp, &SolveCertaintyNP);
     return true;
 }
 

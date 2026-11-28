@@ -100,6 +100,9 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool takeFinishedSlew(double quietSec, bool &commanded);
         bool isOnStepStatusKnown() const;
 
+        // The number of points in the mount's alignment model (INDI alignment subsystem); -1: the driver publishes none.
+        int getMountAlignmentPoints() const;
+
         // The mount's network address, when it is an OnStep connected over TCP (the driver's own connection settings).
         bool getOnStepAddress(std::string &host, int &driverPort) const;
         // True when this GoTo (JNow) was seen through INDI within `maxAgeSec`: sent by this Bridge or by another client.
@@ -305,6 +308,8 @@ class PiFinderBridgeClient : public INDI::BaseClient
         bool m_slewing = false;
         static constexpr long SLEW_COMMAND_MARGIN_SEC = 4; // a command and the Busy state it causes arrive this close together
 
+        std::atomic<int> m_mountAlignPoints { -1 };
+        void noteAlignmentPoints(INDI::Property property);
         INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
         INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;
         // Guarded by m_mountEventMutex: every GoTo seen through INDI lately, and the newest one read from the controller.
