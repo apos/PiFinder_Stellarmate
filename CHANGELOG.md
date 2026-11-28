@@ -5,6 +5,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-28
+**Not stable yet** - read [Status of 3.2.0](https://github.com/apos/PiFinder_Stellarmate/blob/v3.2.0/README.md#status-of-320-not-stable-yet) before installing.
+
 ### Changed
 
 - Mount Bridge: an uncertain plate solve is not used - it moves and syncs nothing, and the log says why. Limit: a false-positive

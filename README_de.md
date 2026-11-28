@@ -4,20 +4,19 @@
 
 ![PiFinder am Teleskop unter Sternenhimmel](docs/images/readme/PiFinder.jpg)
 
-> ### 🚀 **Release-Hinweis — v3.1.0**
+> ### 🚀 **Release-Hinweis — v3.2.0**
 >
-> Die Mount Bridge lässt die Finger davon, wo sie das soll. **Noch nicht stabil** und nicht unter echtem Himmel getestet -
-> bitte zuerst [Stand von 3.1.0](#stand-von-310-noch-nicht-stabil) lesen.
+> Weniger falsche Bewegungen aus falschen Daten. **Noch nicht stabil** und nicht unter echtem Himmel getestet - bitte zuerst
+> [Stand von 3.2.0](#stand-von-320-noch-nicht-stabil) lesen.
 >
-> * **Park ist Park**: Ein Mount, das parkt oder in die Home-Position fährt, bleibt unangetastet - kein Sync, nichts wird
->   übernommen, keine Bewegung bis zum nächsten GoTo.
-> * **OnStep über USB**: Ein GoTo von der Handsteuerung wird verfolgt; während eines Alignments wird nichts gesynct.
-> * Neue Einstellung **"Mount has its own alignment"**: Die Bridge synct dieses Mount dann nie von sich aus.
-> * **Kopplung aus** bleibt aus und stoppt eine Fahrt, die die Bridge selbst gestartet hat.
-> * **Zeit- und Standortprüfung**: KStars, Mount, PiFinder und Pi nebeneinander, mit einem Knopf "Mount aus KStars setzen".
+> * **Unsichere Plate-Solves werden nicht benutzt**: Die Mount Bridge bewegt und synct darauf nichts (einstellbar, "Solve
+>   certainty").
+> * **Multi-Point-Alignment** zählt auch einen Punkt, den eine Montierung mit eigenem Modell übernommen hat.
+> * Aufgeräumt: Eine ungenutzte Datei, die alle Sicherheitsmeldungen auslöste, ist weg; Discord-Links aktualisiert.
 >
-> Neu in 3.0.0: GoTo von überall endet auf dem Objekt, OnStep-Multi-Point-Alignment, der simulierte Himmel. Control-Center-Port
-> **8777** (siehe [Ports](#ports)). Alle Änderungen: [CHANGELOG.md](CHANGELOG.md). Mitmachen und Fehler melden:
+> Neu in 3.1.0: Park ist Park, OnStep über USB, Montierungen mit eigenem Alignment, Zeit- und Standortprüfung. Neu in 3.0.0:
+> GoTo von überall endet auf dem Objekt, OnStep-Multi-Point-Alignment, der simulierte Himmel. Control-Center-Port **8777**
+> (siehe [Ports](#ports)). Alle Änderungen: [CHANGELOG.md](CHANGELOG.md). Mitmachen und Fehler melden:
 > [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Zusammenfassung
@@ -65,7 +64,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 >
 > * Gepinnt auf **PiFinder 2.6.4** auf **StellarMate OS 2.4.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
->   `release`-Branches. Mit PFSM 3.1.0 bisher auf einem Pi 5 getestet; Pi 4 und x86 stehen aus —
+>   `release`-Branches. Mit PFSM 3.2.0 bisher auf einem Pi 5 getestet; Pi 4 und x86 stehen aus —
 >   [Versionskompatibilität](#versionskompatibilität) hat die Details.
 > * **Pi 5 Tastatur ⚠️** — ein Geekworm-X1203-UPS-Shield belegt GPIO 16 gemeinsam mit Tastatur-
 >   Spalte 0 (Tasten 7/4/1/LEFT), die Spalte fällt aus. Hardware-Konflikt zwischen den zwei
@@ -81,9 +80,9 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 
 ---
 
-## Stand von 3.1.0: noch nicht stabil
+## Stand von 3.2.0: noch nicht stabil
 
-3.1.0 ist ein Release für alle, die beim Testen helfen möchten. Es wurde **noch nicht unter echtem Himmel getestet**.
+3.2.0 ist ein Release für alle, die beim Testen helfen möchten. Es wurde **noch nicht unter echtem Himmel getestet**.
 
 | Bereich | Stand |
 |---|---|
@@ -94,8 +93,8 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 | Echtes Mount | GoTo-Verfolgung, Nachjustieren und OnStep-Alignment nur mit simuliertem Himmel gesehen; eine physische Handsteuerung nicht gesondert probiert (sie sendet dieselben Netzwerk-Befehle) |
 | OnStep über **USB/seriell** | ein GoTo vom Controller wird bis zum Endpunkt der Fahrt verfolgt (mit einem Ersatztreiber gesehen; die zugrunde liegenden Signale sind an einem echten OnStep gemessen). Das Multi-Point Alignment sendet nur Syncs |
 | Kamera und Himmel | kein Kamera- oder Himmelstest mit dem gepinnten PiFinder 2.6.4 |
-| Simulierter Himmel | einzelne Sternfelder werden nicht oder falsch gelöst ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); die Mount Bridge gibt dann auf oder fragt nach und bewegt nichts (am Telescope Simulator gesehen) |
-| Multi-Point Alignment ohne OnStep | ein Punkt zählt nur, wenn die Montierung die synchronisierte Position meldet; der Telescope Simulator im simulierten Himmel rechnet ein Modell und zeigt Punkte oft als nicht gezählt ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
+| Simulierter Himmel | einzelne Sternfelder werden nicht oder falsch gelöst ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); eine unsichere Lösung benutzt die Mount Bridge nicht und bewegt nichts |
+| Unsichere Plate-Solves | die Grenze der Mount Bridge (Irrtumswahrscheinlichkeit 1e-8) stammt aus Simulationsdaten. Unter echtem Himmel mit wenigen Sternen kann sie eine richtige Lösung ablehnen: dann "Solve certainty" im INDI-Panel senken (0 nimmt jede Lösung) |
 | **SMOS-Updates** | ein Update kann alles außerhalb von `/home` entfernen: danach den Post-Update-Schritt ausführen (Karte im Control Center oder `bin/restore_after_smos_update.sh`). Auf Geräten, die von NVMe/USB mit umbenannten Partitionen booten (damit eine SD-Notfallkarte parallel möglich ist), kann ein Update das Gerät unbootbar machen, wenn der Boot-Fix nicht vor dem Neustart läuft ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), der automatische Fix wurde auf echter Hardware noch nicht gesehen); Details unter [SMOS-Updates](#smos-updates) |
 | Pi-5-Tastatur | eine Spalte fällt mit einem Geekworm-X1203-UPS aus (siehe oben) |
 | Neuere PiFinder-Versionen | PiFinder 3.x (Beta) wird nicht unterstützt; PFSM installiert die gepinnte Version |
@@ -108,7 +107,7 @@ Alles weitere Offene: [Issues](https://github.com/apos/PiFinder_Stellarmate/issu
 
 ## Inhaltsverzeichnis
 
-1. [Stand von 3.1.0](#stand-von-310-noch-nicht-stabil)
+1. [Stand von 3.2.0](#stand-von-320-noch-nicht-stabil)
 2. [Schnellstart](#schnellstart)
 3. [Hauptfunktionen & Änderungen](#hauptfunktionen--änderungen)
 4. [Hardware-Anforderungen](#hardware-anforderungen)
@@ -513,7 +512,7 @@ das zu wiederholen.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (Dev / Simulator) |
 |---|---|---|---|---|
-| 2.6.4 | 2.4.0 | — (3.x noch nicht getestet) | ✅ PFSM 3.1.0 mit simuliertem Himmel und den INDI-Simulatoren, automatischer Regressionslauf, ein echter OnStep drinnen; kein Kamera- oder Himmelstest; Tastaturspalte mit UPS-Shield ausgefallen (siehe oben) | — (3.0.0 noch nicht getestet) |
+| 2.6.4 | 2.4.0 | — (3.x noch nicht getestet) | ✅ PFSM 3.2.0 mit simuliertem Himmel und den INDI-Simulatoren, automatischer Regressionslauf, ein echter OnStep drinnen; kein Kamera- oder Himmelstest; Tastaturspalte mit UPS-Shield ausgefallen (siehe oben) | — (3.0.0 noch nicht getestet) |
 | 2.6.3 | 2.4.0 | ✅ getestet — echtes Update 2.3.0 → 2.4.0, Restore, Reboot von NVMe (siehe NVMe-Hinweis unter "SMOS-Updates"); Kamera-Hardwaretest steht aus | ⚠️ unter 2.4.0 nicht verifiziert (seit dem Update nicht erreichbar) | ✅ getestet — echtes Update 2.3.0 → 2.4.0 und Restore, Control Center, Mount Bridge gegen den PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ vollständig getestet | ✅ vollständig getestet | ✅ getestet — Installation, Control Center, Mount Bridge gegen den PiFinder Simulator (kein echtes Plate-Solving; siehe [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)) |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend | — |
