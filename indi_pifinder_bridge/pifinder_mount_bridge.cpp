@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <sstream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -963,6 +964,17 @@ bool PiFinderMountBridge::initProperties()
     IUFillTextVector(&BindingTP, BindingT, 1, getDeviceName(), "BRIDGE_BINDING", "Reads its devices", "Main Control", IP_RO, 60,
                      IPS_IDLE);
 
+    IUFillSwitch(&OwnAlignmentS[OWN_ALIGNMENT_ON], "OWN_ALIGNMENT_ON", "Own alignment: never sync on its own", ISS_OFF);
+    IUFillSwitch(&OwnAlignmentS[OWN_ALIGNMENT_OFF], "OWN_ALIGNMENT_OFF", "Bridge keeps it synced", ISS_ON);
+    IUFillSwitchVector(&OwnAlignmentSP, OwnAlignmentS, 2, getDeviceName(), "MOUNT_OWN_ALIGNMENT", "This mount's alignment",
+                       "Main Control", IP_RW, ISR_1OFMANY, 60, IPS_IDLE);
+    IUFillText(&OwnAlignmentMountsT[0], "MOUNTS", "Mounts with their own alignment", "");
+    IUFillTextVector(&OwnAlignmentMountsTP, OwnAlignmentMountsT, 1, getDeviceName(), "OWN_ALIGNMENT_MOUNTS",
+                     "Own alignment (saved)", "Options", IP_RW, 60, IPS_IDLE);
+    IUFillNumber(&SyncOfferN[0], "DRIFT_ARCMIN", "Difference not synced (arcmin)", "%.1f", 0, 100000, 0, 0);
+    IUFillNumberVector(&SyncOfferNP, SyncOfferN, 1, getDeviceName(), "MOUNT_SYNC_OFFER", "Sync on request", "Main Control",
+                       IP_RO, 60, IPS_IDLE);
+
     IUFillText(&OnStepWatchT[0], "STATUS", "OnStep controller", "");
     IUFillTextVector(&OnStepWatchTP, OnStepWatchT, 1, getDeviceName(), "ONSTEP_WATCH", "Hand controller GoTos", "Main Control",
                      IP_RO, 60, IPS_IDLE);
@@ -1148,6 +1160,9 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ExternalHoldSeenNP);
         defineProperty(&BindingTP);
         defineProperty(&OnStepWatchTP);
+        defineProperty(&OwnAlignmentSP);
+        defineProperty(&OwnAlignmentMountsTP);
+        defineProperty(&SyncOfferNP);
         defineProperty(&AlignSaveSP);
         defineProperty(&OnStepAlignNP);
         defineProperty(&TargetSourceSP);
@@ -1246,6 +1261,9 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ExternalHoldSeenNP.name);
         deleteProperty(BindingTP.name);
         deleteProperty(OnStepWatchTP.name);
+        deleteProperty(OwnAlignmentSP.name);
+        deleteProperty(OwnAlignmentMountsTP.name);
+        deleteProperty(SyncOfferNP.name);
         deleteProperty(AlignSaveSP.name);
         deleteProperty(OnStepAlignNP.name);
         deleteProperty(TargetSourceSP.name);
@@ -1927,7 +1945,13 @@ bool PiFinderMountBridge::handleRepositionDetection(bool havePositions, double p
         // Nobody asked for coordinates here (hand move, direction buttons, a stop): what is off is the mount's own report. It
         // is set to where PiFinder sees the scope, at once. Without this the next tick read that very difference as a bumped
         // scope and asked the 45 s question (found live 2026-11-27). Another client's Sync is no movement and not undone here.
-        if (!m_externalMoveWasSync && drift > DriftThresholdN[0].value)
+        if (!m_externalMoveWasSync && drift > DriftThresholdN[0].value && ownAlignment())
+        {
+            m_repositionBaselineTrusted = false;
+            LOGF_INFO("Mount and PiFinder differ by %.1f arcmin after the movement - not synced: the mount has its own alignment "
+                      "(\"Sync mount from PiFinder\" does it on request).", drift);
+        }
+        else if (!m_externalMoveWasSync && drift > DriftThresholdN[0].value)
         {
             if (drift <= MaxSyncDriftN[0].value && sendMountCoordsSafe(piRA, piDec, "SYNC"))
             {
@@ -2080,6 +2104,16 @@ void PiFinderMountBridge::handlePiFinderAlignSync()
         return;
     }
 
+    if (mountResting() || ownAlignment())
+    {
+        LOG_INFO(mountResting() ? "PiFinder Align seen - the parked mount is not synced."
+                                : "PiFinder Align seen - not synced: the mount has its own alignment (\"Sync mount from PiFinder\" "
+                                  "does it on request).");
+        m_lastAlignSyncTime = alignTime;
+        m_alignSyncPendingSince = 0;
+        return;
+    }
+
     // From here a genuinely new Align is pending. Track when we first saw it
     // so a persistently un-actionable one (mount stuck slewing, Sync keeps
     // failing) doesn't retry forever - give up with a warning after a bound.
@@ -2173,7 +2207,9 @@ void PiFinderMountBridge::TimerHit()
     }
     m_bindingGiveUpLogged = false;
 
+    publishOwnAlignment();
     handleOnStepController();
+    handleParkAndHome();
 
     // #227 follow-up (2026-08-19): before trusting/using the mount's
     // position for anything, unconditionally Sync it once from PiFinder's
@@ -2199,9 +2235,18 @@ void PiFinderMountBridge::TimerHit()
         (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON || BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON))
     {
         double mountRA, mountDec;
+        if (mountResting() || ownAlignment())
+        {
+            LOG_INFO(mountResting() ? "The mount is parked or at home - not synced to PiFinder on start."
+                                    : "The mount has its own alignment - not synced to PiFinder on start.");
+            m_didInitialSync = true;
+        }
         const bool haveSavedBaseline = LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value != 0.0 ||
                                         LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value != 0.0;
-        if (haveSavedBaseline && m_client->getMountRADE(mountRA, mountDec) &&
+        if (m_didInitialSync)
+        {
+        }
+        else if (haveSavedBaseline && m_client->getMountRADE(mountRA, mountDec) &&
             angularSeparationArcmin(mountRA, mountDec, LastKnownMountPosN[LAST_KNOWN_MOUNT_RA].value,
                                      LastKnownMountPosN[LAST_KNOWN_MOUNT_DE].value) < MOUNT_UNCHANGED_THRESHOLD_ARCMIN)
         {
@@ -2376,7 +2421,7 @@ void PiFinderMountBridge::TimerHit()
     handleMountClientEvents();
 
     const bool repositionDetectionApplies =
-        ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON && !m_onstepAligning &&
+        ExternalHoldS[EXTERNAL_HOLD_ON].s != ISS_ON && !m_onstepAligning && !mountResting() &&
         (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON ||
          (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && CorrectionActionS[ACTION_GOTO].s == ISS_ON));
     const bool repositionHandledThisTick =
@@ -2427,6 +2472,14 @@ void PiFinderMountBridge::TimerHit()
     {
         if (exceeded)
             LOGF_WARN("PiFinder and mount disagree by %.1f arcmin (threshold %.1f).", drift, DriftThresholdN[0].value);
+    }
+    else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON && m_correctState == CorrectState::IDLE &&
+             (mountResting() || ownAlignment()))
+    {
+        m_holdReason = mountResting() ? "The mount is parked or at home: the Bridge leaves it alone"
+                                      : "The mount has its own alignment: not corrected on its own";
+        if (exceeded)
+            DriftStatusNP.s = IPS_ALERT;
     }
     else if (BridgeModeS[MODE_AUTO_CORRECT].s == ISS_ON)
     {
@@ -2500,6 +2553,8 @@ void PiFinderMountBridge::TimerHit()
         // else: not exceeded - DriftStatusNP.s already set to IPS_OK by the
         // baseline computation above.
     }
+
+    publishSyncOffer(havePositions, drift);
 
     if (havePositions)
     {
@@ -3115,12 +3170,121 @@ void PiFinderMountBridge::handleOnStepController()
 
     double ra = 0.0, dec = 0.0;
     // The GoTos of an alignment are its own: no Target, nothing to follow (taken all the same, so they are not told later).
+    const auto rest = m_client->mountRest();
     if (m_onstep.takeGoto(CONTROLLER_GOTO_DELAY_SEC, ra, dec) && !m_onstepAligning &&
+        rest != PiFinderBridgeClient::Rest::PARKING && rest != PiFinderBridgeClient::Rest::HOMING &&
         !m_client->sawIndiGoto(ra, dec, CONTROLLER_GOTO_KNOWN_SEC))
     {
         LOGF_INFO("GoTo started on the OnStep controller (RA %.4fh, DEC %.4f deg).", ra, dec);
         m_client->noteControllerGoto(ra, dec);
     }
+    followUnreadControllerSlew();
+}
+
+void PiFinderMountBridge::followUnreadControllerSlew()
+{
+    bool commanded = true;
+    if (!m_client->takeFinishedSlew(CONTROLLER_SLEW_QUIET_SEC, commanded) || commanded)
+        return;
+    // Only where nothing else tells: an OnStep whose own ports are not read. Its direction buttons do not report a slew.
+    if (m_onstep.port() != 0 || !m_client->isOnStepStatusKnown() || m_onstepAligning || mountResting() ||
+        (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE))
+        return;
+    double ra = 0.0, dec = 0.0;
+    if (!m_client->getMountRADE(ra, dec) || m_client->sawIndiGoto(ra, dec, CONTROLLER_GOTO_KNOWN_SEC))
+        return;
+    LOGF_INFO("The mount slewed without a command through INDI and stopped at RA %.4fh, DEC %.4f deg - taken as a GoTo of "
+              "the hand controller to there.", ra, dec);
+    m_client->noteControllerGoto(ra, dec);
+}
+
+bool PiFinderMountBridge::mountResting() const
+{
+    return m_client != nullptr && m_client->mountRest() != PiFinderBridgeClient::Rest::NONE;
+}
+
+void PiFinderMountBridge::handleParkAndHome()
+{
+    const unsigned starts = m_client->parkOrHomeStarts();
+    const bool started = starts != m_parkOrHomeStartsSeen;
+    m_parkOrHomeStartsSeen = starts;
+    if (started)
+    {
+        if (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE)
+        {
+            LOG_WARN("Multi-Point Alignment ended: the mount is parking or going home.");
+            endAlignmentRun(false);
+        }
+        m_waitForNextGoto = true;
+        m_forwardAwaitingSync = false;
+        m_foreignGotoSettling = false;
+        if (m_forwardState != ForwardState::IDLE)
+            m_forwardState = ForwardState::HOLDING;
+        m_correctState = CorrectState::IDLE;
+        m_ownGotoEpoch = 0.0;
+        setPositioningResult(PositioningResult::NONE, 0.0);
+        LOG_INFO("The mount parks or goes home - the Mount Bridge leaves it alone: no Sync, no new Push-To, no movement until "
+                 "the next GoTo.");
+    }
+    if (started || mountResting())
+    {
+        withdrawRepositionQuestion("the mount is parked or going home");
+        m_externalSlewInProgress = false;
+        m_repositionBaselineTrusted = false;
+        m_lastPolledMountRA = std::nan(""); // where it ends up is no movement to take over
+        m_lastPolledMountDec = std::nan("");
+        // Also after a coupling change while parked: nothing moves until the next GoTo. Not while one is already under way - a
+        // mount shows "at home" until it has started.
+        if (m_forwardState != ForwardState::SLEWING && m_forwardState != ForwardState::SETTLING &&
+            m_correctState == CorrectState::IDLE)
+            m_waitForNextGoto = true;
+    }
+}
+
+std::vector<std::string> PiFinderMountBridge::ownAlignmentMounts() const
+{
+    std::vector<std::string> mounts;
+    std::istringstream list(OwnAlignmentMountsT[0].text != nullptr ? OwnAlignmentMountsT[0].text : "");
+    std::string name;
+    while (std::getline(list, name, ','))
+        if (!name.empty())
+            mounts.push_back(name);
+    return mounts;
+}
+
+bool PiFinderMountBridge::ownAlignment() const
+{
+    const std::string mount = ActiveDeviceT[ACTIVE_MOUNT].text != nullptr ? ActiveDeviceT[ACTIVE_MOUNT].text : "";
+    const auto mounts = ownAlignmentMounts();
+    return std::find(mounts.begin(), mounts.end(), mount) != mounts.end();
+}
+
+void PiFinderMountBridge::publishOwnAlignment()
+{
+    const bool on = ownAlignment();
+    if ((OwnAlignmentS[OWN_ALIGNMENT_ON].s == ISS_ON) == on && OwnAlignmentSP.s == IPS_OK)
+        return;
+    OwnAlignmentS[OWN_ALIGNMENT_ON].s = on ? ISS_ON : ISS_OFF;
+    OwnAlignmentS[OWN_ALIGNMENT_OFF].s = on ? ISS_OFF : ISS_ON;
+    OwnAlignmentSP.s = IPS_OK;
+    IDSetSwitch(&OwnAlignmentSP, nullptr);
+}
+
+void PiFinderMountBridge::publishSyncOffer(bool havePositions, double drift)
+{
+    const bool still = !m_client->isMountSlewing() && nowEpochSeconds() - m_lastMountMotionEpoch >= FOREIGN_GOTO_STILL_SEC;
+    const bool busy = m_forwardState == ForwardState::SLEWING || m_forwardState == ForwardState::SETTLING ||
+                      m_correctState != CorrectState::IDLE || m_onstepAligning ||
+                      (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE);
+    const bool offer = ownAlignment() && BridgeModeS[MODE_OFF].s != ISS_ON && havePositions &&
+                       drift > DriftThresholdN[0].value && still && !busy && !mountResting();
+    const IPState state = offer ? IPS_ALERT : IPS_IDLE;
+    const double value = offer ? drift : 0.0;
+    if (SyncOfferNP.s == state && std::fabs(SyncOfferN[0].value - value) < 0.1)
+        return;
+    SyncOfferNP.s = state;
+    SyncOfferN[0].value = value;
+    IDSetNumber(&SyncOfferNP, nullptr);
 }
 
 void PiFinderMountBridge::publishBinding()
@@ -3219,7 +3383,8 @@ void PiFinderMountBridge::handleMountClientEvents()
 
     if (event == PiFinderBridgeClient::MountEvent::GOTO)
     {
-        if (gotoForward)
+        const auto rest = m_client->mountRest();
+        if (gotoForward && rest != PiFinderBridgeClient::Rest::PARKING && rest != PiFinderBridgeClient::Rest::HOMING)
             followMountGoto(ra, dec);
         return;
     }
@@ -3792,6 +3957,16 @@ void PiFinderMountBridge::handleGotoForward()
             if (drift <= threshold && originalTargetDrift <= threshold)
             {
                 setMountRejectWarning(false, "");
+                break;
+            }
+            if (mountResting())
+            {
+                m_holdReason = "The mount is parked or at home: the Bridge leaves it alone";
+                break;
+            }
+            if (ownAlignment())
+            {
+                m_holdReason = "The mount has its own alignment: not corrected on its own";
                 break;
             }
             if (m_waitForNextGoto)
@@ -4540,7 +4715,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // would have synced the mount to a meaningless reference -
             // skipping when not fresh is deliberate, not a gap to "fix" by
             // relaxing this check.
-            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON && !m_onstepAligning)
+            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON && !m_onstepAligning && !mountResting() && !ownAlignment())
             {
                 // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
                 // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.
@@ -4941,6 +5116,31 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
         // the Control Center's guiding watchdog. Stays selected once set
         // (BridgeModeSP-style radio pair), not a momentary action switch
         // like RepositionConfirmSP above.
+        if (strcmp(name, OwnAlignmentSP.name) == 0)
+        {
+            IUUpdateSwitch(&OwnAlignmentSP, states, names, n);
+            const bool on = OwnAlignmentS[OWN_ALIGNMENT_ON].s == ISS_ON;
+            const std::string mount = ActiveDeviceT[ACTIVE_MOUNT].text;
+            std::string list;
+            for (const std::string &other : ownAlignmentMounts())
+                if (other != mount)
+                    list += (list.empty() ? "" : ",") + other;
+            if (on)
+                list += (list.empty() ? "" : ",") + mount;
+            IUSaveText(&OwnAlignmentMountsT[0], list.c_str());
+            OwnAlignmentMountsTP.s = IPS_OK;
+            IDSetText(&OwnAlignmentMountsTP, nullptr);
+            OwnAlignmentSP.s = IPS_OK;
+            IDSetSwitch(&OwnAlignmentSP, nullptr);
+            saveConfig(true, OwnAlignmentMountsTP.name);
+            if (on)
+                LOGF_INFO("%s has its own alignment: the Mount Bridge will not sync it on its own. GoTos you ask for are verified "
+                          "and refined as before.", mount.c_str());
+            else
+                LOGF_INFO("%s: the Mount Bridge keeps it synced to PiFinder again.", mount.c_str());
+            return true;
+        }
+
         if (strcmp(name, ExternalHoldSP.name) == 0)
         {
             const bool wasHeld = ExternalHoldS[EXTERNAL_HOLD_ON].s == ISS_ON;
@@ -5019,6 +5219,16 @@ bool PiFinderMountBridge::ISNewText(const char *dev, const char *name, char *tex
             IUUpdateText(&ExternalHoldReasonTP, texts, names, n);
             ExternalHoldReasonTP.s = IPS_OK;
             IDSetText(&ExternalHoldReasonTP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, OwnAlignmentMountsTP.name) == 0)
+        {
+            IUUpdateText(&OwnAlignmentMountsTP, texts, names, n);
+            OwnAlignmentMountsTP.s = IPS_OK;
+            IDSetText(&OwnAlignmentMountsTP, nullptr);
+            publishOwnAlignment();
+            saveConfig(true, OwnAlignmentMountsTP.name);
             return true;
         }
 
@@ -5212,6 +5422,7 @@ bool PiFinderMountBridge::saveConfigItems(FILE *fp)
     // See LastKnownMountPosNP's own header comment - this is what makes it
     // durable across a Bridge process restart, unlike m_didInitialSync.
     IUSaveConfigNumber(fp, &LastKnownMountPosNP);
+    IUSaveConfigText(fp, &OwnAlignmentMountsTP);
     return true;
 }
 

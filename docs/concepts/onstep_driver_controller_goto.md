@@ -1,7 +1,7 @@
 # Concept: GoTos from the OnStep hand controller over USB
 
-Status: concept, not implemented. 2026-11-28. Related: #658 (network, shipped in 3.0.0), #696 (USB), PR #707 (alignment over
-USB, shipped to `dev`).
+Status: way A implemented in the Mount Bridge (2026-11-28, 3.1.0); way B (driver change) not implemented. Related: #658
+(network, shipped in 3.0.0), #696 (USB), PR #707 (alignment over USB), #711 (driver change).
 
 ## 1. Overview
 
@@ -36,8 +36,15 @@ plate solve and refines, exactly as for any other GoTo.
 |---|---|
 | Gains | works over USB and network, for every mount driver that reports Busy for a GoTo from its handset |
 | Misses | the target is known only at the end; a GoTo stopped half way looks like a GoTo to the stopping point (refining then corrects only the pointing error there) |
-| Open | a "go home" from the handset must not be refined (is it reported as parking? to be measured); which other drivers report Busy for handset GoTos (not tested) |
+| Open | which other drivers report Busy for handset GoTos (not tested). Park and home are excluded by their own status (3.1) |
 | Effort | small: Bridge only; testable with the stand-in driver and on the real OnStep |
+
+### 3.1 As implemented
+
+A slew counts as a controller GoTo when the mount reported Busy, nothing moving or stopping it came through INDI, it was no way
+to park or home, no alignment runs and the Bridge is not reading the controller itself. Measured on the real OnStep for the
+home case (2026-11-28): `:GU#` carries `h` while homing (`npha/EW060`, INDI Busy) and `H` at home (`nNpHa/Eo060`). Test:
+`test_tools/park_home_controller_goto_test.py` (stand-in driver). Not tried with a real hand controller on a real serial line.
 
 ## 4. Way B: change the INDI OnStep driver
 
@@ -91,6 +98,6 @@ INDI 2.2.5 unchanged and is still needed: the stock driver reports fork (`:GXEM#
 
 ## 7. Open decisions (owner)
 
-- Way A now?
+- Way A: done (owner, 2026-11-28).
 - Should the setup build and install the mount type fix on devices with a fork or alt-az OnStep (today: manual script)?
 - Offer the driver changes upstream?

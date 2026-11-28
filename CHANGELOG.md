@@ -7,6 +7,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Mount Bridge, **park is park**: a mount that parks or goes home (any client or the hand controller) is not synced, its
+  position is not taken over, and nothing is moved until the next GoTo; no automatic Sync while it is parked or at home.
+- Mount Bridge, OnStep over USB/serial: a GoTo started on the hand controller is followed. The INDI driver does not pass on its
+  target, so the place where the slew ends is verified and refined.
+- Mount Bridge and Control Center: setting **"Mount has its own alignment"**, saved per mount. The Bridge then never syncs that
+  mount by itself; GoTos you ask for are refined as before, a difference is offered as a Sync (`MOUNT_OWN_ALIGNMENT`,
+  `MOUNT_SYNC_OFFER`). New `test_tools/park_home_controller_goto_test.py`.
 - CONTRIBUTING.md: where to ask (StellarMate and PiFinder Discord), how to report an issue and which conventions an issue must
   follow, with a bug report form. The Control Center documentation names today's mode tiles.
 - Control Center, "Install or Update": the terminal stands right of the checklist and takes no room until there is output or a

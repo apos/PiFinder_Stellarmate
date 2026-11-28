@@ -9,7 +9,7 @@ bash test_tools/run_regression.sh
 | Call | Covers | Needs | Touches |
 |---|---|---|---|
 | `run_regression.sh` (offline) | page logic (JS), Python logic, the shell tests (bats) | node; PiFinder's venv for the sky renderer | nothing |
-| `run_regression.sh driver` | + the Mount Bridge against stand-ins on its own INDI servers: late and switched mounts, coupling off during a slew, OnStep hand controller and alignment (network and USB) | libindi development files; free ports 7690, 7693-7695, 7697-7699, 9998, 9999 | nothing running |
+| `run_regression.sh driver` | + the Mount Bridge against stand-ins on its own INDI servers: late and switched mounts, coupling off during a slew, OnStep hand controller and alignment (network and USB), park / home and a mount with its own alignment | libindi development files; free ports 7690, 7691, 7693-7699, 9998, 9999 | nothing running |
 | `run_regression.sh live --move` | + the running Full Simulation: GoTo following and refining, Multi-Point Alignment | the simulator profile with the Mount Bridge, the GSC sky simulation available | **moves the Telescope Simulator**, restarts the sky simulation, leaves it in the GoTo coupling |
 | `run_regression.sh all --move` | everything (about 40 minutes on a Pi 5) | all of the above | as above |
 
