@@ -7,6 +7,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Control Center: a coupling switched off anywhere (for example in KStars' INDI panel) stays off; before, the self-healing switched it
+  on again after some seconds.
 - Mount Bridge: switching the coupling to Off stops a slew the Bridge started itself (GoTo from PiFinder, refining, Goto Push-To);
   before, the mount drove on (#231). A GoTo from another source and a Multi-Point Alignment are not touched. New
   `test_tools/bridge_off_stops_slew_test.py`.

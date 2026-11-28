@@ -3133,6 +3133,36 @@ class _BridgeBindingTracker:
 _bridge_binding = _BridgeBindingTracker()
 
 
+_MB_TICKS_BEFORE_ADOPT = 2
+_mb_adopt_seen = (None, 0)  # (mode, ticks in a row)
+
+
+def _adopt_external_off(status: dict) -> bool:
+    """An Off is an Off, whoever chose it - this page, KStars' INDI panel or any other client (owner, 2026-11-28; before, the
+    self-healing switched the coupling on again some seconds later). An Off, and whatever is chosen after an Off, becomes the
+    remembered choice once it has been seen on two ticks (a single reading may predate a choice just made on this page); the
+    self-healing overrides neither. Returns True when a choice was taken over now."""
+    global _mb_desired_coupling_mode, _mb_adopt_seen
+    mode = status.get("coupling_mode")
+    off_chosen = mode == "MODE_OFF" and _mb_desired_coupling_mode != "MODE_OFF"
+    on_after_off = mode not in (None, "MODE_OFF") and _mb_desired_coupling_mode == "MODE_OFF"
+    if not off_chosen and not on_after_off:
+        _mb_adopt_seen = (None, 0)
+        return False
+    ticks = _mb_adopt_seen[1] + 1 if _mb_adopt_seen[0] == mode else 1
+    _mb_adopt_seen = (mode, ticks)
+    if ticks < _MB_TICKS_BEFORE_ADOPT:
+        return False
+    _mb_adopt_seen = (None, 0)
+    _mb_desired_coupling_mode = mode
+    _save_mount_bridge_desired_state()
+    if off_chosen:
+        _mb_log("Coupling is off (switched off here or by another client such as KStars) - the Control Center keeps it off.")
+    else:
+        _mb_log(f"Coupling {mode} chosen by another client after it had been off - kept.")
+    return True
+
+
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
     """One evaluation pass, called every _mount_bridge_readiness_watchdog()
     tick. Checks are ordered per the concept doc's table and this only ever
@@ -3154,6 +3184,8 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
     # running at all, with no maintenance-mode awareness.
     if _maintenance_mode_since is not None:
         return
+
+    _adopt_external_off(status)
 
     # --- Check 0: a mount is live-connected but never told to Mount Bridge -
     # Direct feedback (2026-09-19), decision matrix: "wenn ein Mount
@@ -3457,8 +3489,11 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
             return
 
     # --- Check 4: coupling mode matches what was last actually chosen ----
-    if _mb_desired_coupling_mode:
-        if status.get("coupling_mode") != _mb_desired_coupling_mode:
+    # Never over an Off, nor over what somebody chose after one: see _adopt_external_off().
+    if _mb_desired_coupling_mode == "MODE_OFF":
+        pass
+    elif _mb_desired_coupling_mode:
+        if status.get("coupling_mode") not in (_mb_desired_coupling_mode, "MODE_OFF"):
             def _do_coupling():
                 try:
                     indi_client.set_coupling_mode(
@@ -3472,24 +3507,9 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
 
             _mb_readiness_retrier.trigger(_do_coupling)
             return
-    elif status.get("coupling_mode") in ("MODE_OFF", None):
-        # Found live (2026-09-13), reported repeatedly: "was ist an
-        # 'Verify/Alert only' ist default so schwer zu verstehen" - the
-        # driver's own connect-time invariant check (pifinder_mount_bridge.cpp)
-        # only catches "literally no switch is on at all" - MODE_OFF being
-        # on is a perfectly valid switch state from ITS perspective, so it
-        # never intervenes there. And this check right here only ever
-        # re-applies a mode once _mb_desired_coupling_mode is already set -
-        # which nothing ever initializes to Verify/Alert on its own, so a
-        # device where the user never happened to click a Coupling preset
-        # via this GUI (a fresh install, a Control host/Client being
-        # tested before any manual coupling click) had NO enforcement path
-        # at all, on either side. Mount Bridge is confirmed connected at
-        # this point (checks 1/2 above already passed) - "no default"
-        # only means "nobody has recorded an opinion yet", not "the user
-        # deliberately wants Off with no memory of choosing it". Applying
-        # Verify/Alert here and recording it closes that gap for good -
-        # every later reconnect then hits the branch above instead.
+    elif status.get("coupling_mode") is None:
+        # Nothing was ever chosen and the driver reports no mode: Verify/Alert only (2026-09-13: a device on which nobody had
+        # clicked a preset had no default on either side). A reported Off is somebody's choice and is left alone.
         def _do_default_coupling():
             global _mb_desired_coupling_mode, _mb_desired_coupling_threshold
             try:
@@ -3499,7 +3519,7 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
                 _save_mount_bridge_desired_state()
                 _mb_log(
                     "Mount Bridge self-heal: no Coupling mode had ever been chosen via this GUI and "
-                    "the driver was at Off - defaulted to Verify/Alert only."
+                    "the driver reported none - defaulted to Verify/Alert only."
                 )
             except indi_client.INDIClientError as e:
                 _mb_log(f"Mount Bridge self-heal: default-coupling attempt failed: {e}")
