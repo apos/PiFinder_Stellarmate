@@ -8,6 +8,9 @@ KStars is the reference (the StellarMate app sets it, and it is meant to set the
     compared it with "now" and reported a 5 hour error that did not exist, 2026-11-28).
   * An OnStep on the network answers with its own clock and site (read-only commands).
   * PiFinder's location and time (/api/status), this Pi's clock, time zone and NTP state.
+  * Control host and PiFinder client: when PiFinder runs on another computer, that computer's Control Center is asked for its
+    clock, time zone, NTP state and the location of ITS KStars (where that PiFinder takes its location from). The client itself
+    does not know its control host, so the pair is checked on the control host.
   * The simulation clock of a KStars on ANOTHER computer cannot be read; the Sky shows the time it is computed for.
 
 evaluate() is a pure function, so thresholds and debounce can be tested without a Pi.
@@ -236,7 +239,8 @@ def compare(inputs):
     """(rows for the table, problems [(kind, text)], mount skew in seconds or None).
 
     inputs: now (aware datetime), pi_offset (h), ntp (bool|None), kstars (read_kstars() or None), mount (None or {device,
-    time_utc, offset, location, seen_utc, real}), pifinder (None or {location, utc})."""
+    time_utc, offset, location, seen_utc, real}), pifinder (None or {location, utc, host: None when it runs here}),
+    peer (None, or the other computer PiFinder runs on: {host, reachable, time_utc, offset, location, ntp})."""
     now, pi_offset = inputs["now"], inputs["pi_offset"]
     kstars, mount, pifinder = inputs.get("kstars"), inputs.get("mount"), inputs.get("pifinder")
     rows, problems, skew = [], [], None
@@ -295,16 +299,53 @@ def compare(inputs):
             place(entry, "mount_site", "The site stored in the mount", real["location"], ONSTEP_LOCATION_THRESHOLD_KM)
 
     if pifinder:
-        entry = row("PiFinder", time_utc=pifinder.get("utc"), location=pifinder.get("location"))
+        host = pifinder.get("host")
+        entry = row("PiFinder (%s)" % host if host else "PiFinder", time_utc=pifinder.get("utc"), location=pifinder.get("location"),
+                    note="" if pifinder.get("utc") or pifinder.get("location") else "reports no time and no location")
         place(entry, "pifinder_location", "PiFinder's location", pifinder.get("location"))
         if pifinder.get("utc") and abs((now - pifinder["utc"]).total_seconds()) > REAL_CLOCK_THRESHOLD_SEC:
             difference = (now - pifinder["utc"]).total_seconds()
             problem(entry, "time", "pifinder_time", "PiFinder's clock is %s %s." %
                     (_span(difference), "behind" if difference > 0 else "ahead"))
 
+    peer = inputs.get("peer")
+    if peer:
+        where = peer["host"]
+        entry = row("PiFinder's computer (%s)" % where, time_utc=peer.get("time_utc"), offset=peer.get("offset"),
+                    location=peer.get("location"), note="" if peer.get("reachable") else
+                    "its Control Center did not answer: its clock and KStars are not checked")
+        if peer.get("reachable"):
+            if peer.get("ntp") is False:
+                entry["note"] = "not NTP-synced"
+            if peer.get("time_utc") and abs((now - peer["time_utc"]).total_seconds()) > REAL_CLOCK_THRESHOLD_SEC:
+                difference = (now - peer["time_utc"]).total_seconds()
+                problem(entry, "time", "peer_time", "The clock of %s is %s %s." %
+                        (where, _span(difference), "behind" if difference > 0 else "ahead"))
+            if peer.get("offset") is not None and abs(peer["offset"] - pi_offset) > OFFSET_THRESHOLD_H:
+                problem(entry, "offset", "peer_offset", "%s has %s, this computer's time zone is %s now." %
+                        (where, _offset(peer["offset"]), _offset(pi_offset)))
+            place(entry, "peer_location", "The KStars location on %s (PiFinder takes its location from there)" % where,
+                  peer.get("location"))
+
     row("This Pi", time_utc=now, offset=pi_offset,
         note="not NTP-synced" if inputs.get("ntp") is False else "NTP-synced" if inputs.get("ntp") else "")
     return rows, problems, skew
+
+
+def parse_peer(host, data):
+    """What another Control Center's /api/clock_status says about its own computer (older versions: only its time)."""
+    if not data:
+        return {"host": host, "reachable": False}
+    rows = data.get("rows") or []
+
+    def entry(prefix):
+        return next((r for r in rows if str(r.get("source", "")).startswith(prefix)), {})
+
+    own, stars = entry("This Pi"), entry("KStars")
+    place = stars.get("location")
+    return {"host": host, "reachable": True, "time_utc": parse_utc(own.get("time_utc") or data.get("pi_time_utc")),
+            "offset": number(own.get("offset")), "ntp": data.get("ntp_synced"),
+            "location": tuple(place) if place else None}
 
 
 def evaluate(inputs, now_mono, first_seen=None, immediately=False):

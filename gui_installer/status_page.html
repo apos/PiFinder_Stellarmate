@@ -255,6 +255,9 @@
     font-size: 0.85rem;
     margin-top: 0.4rem;
   }
+  #install-run-area { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 1.5rem; }
+  #install-run-area > #phase-checklist { flex: 0 0 auto; min-width: 15rem; }
+  #install-terminal { flex: 1 1 24rem; min-width: 0; margin-bottom: 1.2rem; }  /* wraps below the list when there is no room */
   #phase-checklist {
     list-style: none;
     margin: 0 0 1.2rem;
@@ -3394,7 +3397,20 @@ sudo systemctl start pifinder</pre>
       <div id="progress-label"></div>
     </div>
 
-    <ul id="phase-checklist" style="display:none;"></ul>
+    <!-- Checklist left, the run's terminal right of it. The terminal takes no room until there is something to show. -->
+    <div id="install-run-area">
+      <ul id="phase-checklist" style="display:none;"></ul>
+      <div id="install-terminal" style="display:none;">
+        <div class="collapsible-toggle" onclick="toggleCollapsibleSection('log-wrap', 'log-chevron')">
+          <span>Terminal</span>
+          <span id="log-chevron">&#9650; hide</span>
+        </div>
+        <div id="log-wrap">
+          <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
+          <div class="term-bar"><button id="log-expand-btn" class="ql-small-btn" style="display:none;" onclick="toggleLogExpanded()"></button><button type="button" class="copy-log-btn" onclick="copyTerminal('log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
+        </div>
+      </div>
+    </div>
 
     <div id="install-groups">
       <div class="group-label">Branch<a class="help-link" href="/help.html#install-branch" target="_blank" rel="noopener" title="Which branch of this project's own scripts and patches (not PiFinder itself) is used the moment you click the action below: main (stable), dev (beta) or any other. Click for the details.">i</a></div>
@@ -3445,14 +3461,6 @@ sudo systemctl start pifinder</pre>
       <div id="reset-wrap">
         <button id="reset-button" onclick="resetToChoices()">Run Again</button>
       </div>
-    </div>
-    <div class="collapsible-toggle" onclick="toggleCollapsibleSection('log-wrap', 'log-chevron')">
-      <span>Terminal</span>
-      <span id="log-chevron">&#9650; hide</span>
-    </div>
-    <div id="log-wrap">
-      <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
-      <div class="term-bar"><button id="log-expand-btn" class="ql-small-btn" style="display:none;" onclick="toggleLogExpanded()"></button><button type="button" class="copy-log-btn" onclick="copyTerminal('log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
     </div>
     </div>
     </div>
@@ -6810,7 +6818,9 @@ function clockNoticeModel(st, ui) {
   const out = { show: !!ui.open, head: '', problems: [], rows: [], canFix: false };
   if (!out.show || !st) return out;
   out.problems = st.current || [];
-  out.head = out.problems.length ? 'Time or location do not match. The mount may point wrongly.' : 'Time and location agree now.';
+  const mountWrong = (st.rows || []).some(r => String(r.source).startsWith('Mount') && (r.wrong || []).length);
+  out.head = out.problems.length ? 'Time or location do not match.' + (mountWrong ? ' The mount may point wrongly.' : '')
+    : 'Time and location agree now.';
   out.canFix = !!st.can_set_mount;
   out.rows = (st.rows || []).map(r => ({
     source: r.source, note: r.note || '', wrong: r.wrong || [],
@@ -6864,7 +6874,8 @@ function renderClockNotice() {
   };
   line(['Source', 'Time', 'UTC offset', 'Location'].map(text => ({ text })), 'th');
   m.rows.forEach(r => line([
-    { text: r.source }, { text: r.time, wrong: r.wrong.includes('time'), note: r.note, label: 'Time' },
+    { text: r.source, wrong: r.wrong.length > 0 },   // read from the left: the source says at once which line differs
+    { text: r.time, wrong: r.wrong.includes('time'), note: r.note, label: 'Time' },
     { text: r.offset, wrong: r.wrong.includes('offset'), label: 'UTC offset' },
     { text: r.place, wrong: r.wrong.includes('location'), label: 'Location' },
   ], 'td'));
@@ -8046,6 +8057,22 @@ try {
 // instead of touching every one of the ~13 places that append to #log.
 const LOG_COLLAPSED_LINE_COUNT = 15;
 
+// ---- install terminal (begin) ----
+// The terminal of "Install or Update" is shown only when it holds something: a run's output or a message.
+function installTerminalWanted(el) {
+  return !!el && !el.classList.contains('log-placeholder') && String(el.textContent || '').trim() !== '';
+}
+// ---- install terminal (end) ----
+
+function showInstallTerminal() {
+  const box = document.getElementById('install-terminal');
+  const log = document.getElementById('log');
+  const wanted = installTerminalWanted(log);
+  const appearing = wanted && box.style.display === 'none';
+  box.style.display = wanted ? '' : 'none';
+  if (appearing) log.scrollTop = log.scrollHeight;
+}
+
 function updateLogExpandButton() {
   const logEl = document.getElementById('log');
   const btn = document.getElementById('log-expand-btn');
@@ -8105,9 +8132,10 @@ function toggleLogExpanded() {
   updateLogExpandButton();
 }
 
-new MutationObserver(updateLogExpandButton).observe(
-  document.getElementById('log'), { childList: true, characterData: true, subtree: true }
+new MutationObserver(() => { showInstallTerminal(); updateLogExpandButton(); }).observe(
+  document.getElementById('log'), { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] }
 );
+showInstallTerminal();
 
 // Whole-tile collapse for Mount Bridge / PiFinder Mode, Test and Power /
 // Install or Update (not the PiFinder tile - that one stays always-visible).
