@@ -56,6 +56,10 @@ let n = T.clockNoticeModel(differ, ui);
 ok(n.show && n.problems.length === 1 && n.canFix && /do not match/.test(n.head), 'the notice opens with the problem and the fix');
 eq(n.rows[0].time, '25 Nov, 21:58:27 CET', 'row time in the Pi timezone');
 eq(n.rows[1].time, '-', 'a row without time');
+ok(/mount may point wrongly/.test(T.clockNoticeModel(Object.assign({}, differ, { rows: [{ source: 'Mount (M)', wrong: ['location'] }] }), ui).head),
+  'a wrong mount line: the head says the mount may point wrongly');
+ok(!/mount may point/.test(T.clockNoticeModel(Object.assign({}, differ, { rows: [{ source: "PiFinder's computer (x)", wrong: ['time'] }] }), ui).head),
+  'only the other computer differs: nothing is claimed about the mount');
 T.clockNoticeUpdate(ui, agree);
 n = T.clockNoticeModel(agree, ui);
 ok(n.show && /agree now/.test(n.head) && n.problems.length === 0, 'it stays open when everything agrees, and says so');

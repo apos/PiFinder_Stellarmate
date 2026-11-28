@@ -3604,27 +3604,51 @@ def _clock_mount_inputs(fresh: bool):
             "real": _clock_onstep_read(address, fresh) if address else None}
 
 
-def _clock_pifinder_inputs():
+def _clock_is_local(host: str) -> bool:
+    """Whether `host` is this computer (only a local address can be bound to)."""
+    if host in ("", "localhost"):
+        return True
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.bind((socket.gethostbyname(host), 0))
+        return True
+    except OSError:
+        return False
+
+
+def _clock_pifinder_host() -> str:
+    """The computer PiFinder runs on, as the Mount Bridge is told (a Control host: the PiFinder client's address)."""
     try:
         settings = indi_client.get_properties(device="PiFinder Mount Bridge", timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
                                               stop_after={"BRIDGE_SETTINGS"})
         host = settings.get("PiFinder Mount Bridge", {}).get("BRIDGE_SETTINGS", {}).get("elements", {}).get(
-            "PIFINDER_HTTP_HOST") or "127.0.0.1"
+            "PIFINDER_HTTP_HOST")
     except indi_client.INDIClientError:
-        host = "127.0.0.1"
-    if host == "localhost":
-        host = "127.0.0.1"
+        host = None
+    if not host and _last_known_lx200_remote:   # no Mount Bridge: where "PiFinder LX200" last pointed
+        host = _last_known_lx200_remote.rsplit(":", 1)[0]
+    return host if host and _valid_pifinder_host(host) else "127.0.0.1"
+
+
+def _clock_pifinder_inputs(host: str):
+    remote = not _clock_is_local(host)
     status = _pifinder_status_snapshot(ports=("8080", "80"), host=host)
     if not status:
-        return None
+        return {"location": None, "utc": None, "host": host} if remote else None
     place = status.get("location") or {}
     return {"location": clock_status.location(place.get("lat"), place.get("lon")) if place.get("lock") else None,
-            "utc": clock_status.parse_utc((status.get("datetime") or {}).get("utc"))}
+            "utc": clock_status.parse_utc((status.get("datetime") or {}).get("utc")), "host": host if remote else None}
 
 
-def _clock_check(recheck: bool) -> dict:
-    inputs = {"mount": _clock_mount_inputs(recheck), "pifinder": _clock_pifinder_inputs(), "kstars": clock_status.read_kstars(),
-              "ntp": clock_status.ntp_synchronized(), "pi_offset": clock_status.pi_offset_hours()}
+def _clock_check(recheck: bool, auth_header: str | None = None, local_only: bool = False) -> dict:
+    """local_only: asked by another Control Center about this computer - no further computer is asked (no circles)."""
+    host = "127.0.0.1" if local_only else _clock_pifinder_host()
+    peer = None
+    if not local_only and not _clock_is_local(host):
+        peer = clock_status.parse_peer(host, _cc_proxy_get(host, "/api/clock_status?local=1", auth_header, timeout=8))
+    inputs = {"mount": _clock_mount_inputs(recheck), "pifinder": _clock_pifinder_inputs(host),
+              "kstars": clock_status.read_kstars(), "ntp": clock_status.ntp_synchronized(),
+              "pi_offset": clock_status.pi_offset_hours(), "peer": peer}
     inputs["now"] = datetime.datetime.now(datetime.timezone.utc)
     with _clock_lock:  # the HTTP server is threaded; the debounce state is shared
         result = clock_status.evaluate(inputs, time.monotonic(), immediately=recheck)
@@ -5538,8 +5562,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/clock_status":
             # Polled every 30 s by the page: the time stamp under the Sky and the time-and-location notice. See
             # clock_status.py for what can and cannot be seen. ?recheck=1: the user asked - read everything anew, no debounce.
-            recheck = parse_qs(parsed.query).get("recheck", ["0"])[0] == "1"
-            self._send_json(_clock_check(recheck))
+            query = parse_qs(parsed.query)
+            self._send_json(_clock_check(query.get("recheck", ["0"])[0] == "1", self.headers.get("Authorization"),
+                                         local_only=query.get("local", ["0"])[0] == "1"))
             return
 
         if parsed.path == "/api/gsc_sim_status":

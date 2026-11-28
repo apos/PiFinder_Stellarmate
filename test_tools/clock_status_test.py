@@ -98,6 +98,44 @@ class Compare(unittest.TestCase):
         self.assertEqual(r["current"], [])
 
 
+class HostAndClient(unittest.TestCase):
+    """A Control host with the PiFinder on another computer."""
+
+    def data(self, **peer):
+        values = {"host": "pifinder.local", "reachable": True, "time_utc": NOW, "offset": 1.0, "location": HOME, "ntp": True}
+        values.update(peer)
+        data = inputs(pifinder={"location": HOME, "utc": NOW, "host": "pifinder.local"})
+        data["peer"] = values
+        return data
+
+    def test_both_agree(self):
+        r = check(self.data())
+        self.assertEqual(r["current"], [])
+        self.assertEqual([row["source"] for row in r["rows"]][-3:],
+                         ["PiFinder (pifinder.local)", "PiFinder's computer (pifinder.local)", "This Pi"])
+
+    def test_the_other_computers_clock_offset_and_place(self):
+        r = check(self.data(time_utc=ago(900), offset=2.0, location=(47.0, 8.45)))
+        self.assertEqual(len(r["current"]), 3)
+        self.assertIn("The clock of pifinder.local is 15 min behind.", r["current"])
+        self.assertIn("PiFinder takes its location from there", r["current"][2])
+        self.assertEqual(sorted(r["rows"][-2]["wrong"]), ["location", "offset", "time"])
+        self.assertFalse(r["mount_warn"])
+
+    def test_a_computer_that_does_not_answer_is_said_not_judged(self):
+        r = check(self.data(reachable=False, time_utc=None, offset=None, location=None))
+        self.assertEqual(r["current"], [])
+        self.assertIn("did not answer", r["rows"][-2]["note"])
+
+    def test_reading_another_control_center(self):
+        own = cs.evaluate(inputs(mount=False), 0.0, {}, immediately=True)
+        peer = cs.parse_peer("other", own)
+        self.assertEqual((peer["reachable"], peer["time_utc"], peer["offset"], peer["location"]), (True, NOW, 1.0, HOME))
+        old = cs.parse_peer("other", {"pi_time_utc": NOW.isoformat(), "ntp_synced": True})   # a 3.0.0 Control Center
+        self.assertEqual((old["time_utc"], old["offset"], old["location"]), (NOW, None, None))
+        self.assertFalse(cs.parse_peer("other", None)["reachable"])
+
+
 class Debounce(unittest.TestCase):
     def test_a_difference_must_last(self):
         seen, wrong = {}, inputs(location=(40.0, 8.0))

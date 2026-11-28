@@ -7,8 +7,11 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center, "Install or Update": the terminal stands right of the checklist and takes no room until there is output or a
+  message.
 - Control Center, time and location check: KStars (reference), mount, PiFinder and Pi side by side (time, UTC offset, location); an
-  OnStep on the network is asked for its own clock and site. **Set mount from KStars** with a result for every step, **Recheck**,
+  OnStep on the network is asked for its own clock and site; on a Control host the PiFinder client's computer (clock, time zone,
+  location of its KStars) is checked as well. The name of a differing source is marked at the start of its line. **Set mount from KStars** with a result for every step, **Recheck**,
   and a notice that stays until **Dismiss**.
 
 ### Fixed

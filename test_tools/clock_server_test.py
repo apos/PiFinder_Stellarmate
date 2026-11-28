@@ -4,9 +4,12 @@
     python3 test_tools/clock_server_test.py
 """
 import datetime
+import json
 import os
 import sys
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gui_installer"))
 import clock_status  # noqa: E402
@@ -70,6 +73,48 @@ class Server(unittest.TestCase):
         self.assertEqual(len(result["current"]), 1)
         self.assertIn("location", result["current"][0])
         self.assertIn("timezone", result)
+
+    def test_a_pifinder_on_another_computer_is_checked_there_too(self):
+        """Real HTTP: a stand-in for the other computer's Control Center (and its PiFinder)."""
+        asked = []
+        now = datetime.datetime.now(datetime.timezone.utc)
+        other = {"pi_time_utc": now.isoformat(), "ntp_synced": True, "rows": [
+            {"source": "KStars (reference)", "location": [47.0, 8.45], "offset": 1.0},
+            {"source": "This Pi", "time_utc": (now - datetime.timedelta(hours=1)).isoformat(), "offset": 1.0}]}
+
+        class Other(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                asked.append((self.path, self.headers.get("Authorization")))
+                data = json.dumps(other).encode()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(data)
+
+        web = ThreadingHTTPServer(("127.0.0.1", 0), Other)
+        threading.Thread(target=web.serve_forever, daemon=True).start()
+        saved = server.PORT, server._clock_is_local, server._clock_pifinder_host
+        server.PORT = web.server_address[1]
+        server._clock_pifinder_host = lambda: "127.0.0.1"
+        server._clock_is_local = lambda host: False
+        try:
+            result = server._clock_check(True, "Basic dGVzdDp0ZXN0")
+            local = server._clock_check(True, "Basic dGVzdDp0ZXN0", local_only=True)
+        finally:
+            server.PORT, server._clock_is_local, server._clock_pifinder_host = saved
+            web.shutdown()
+        self.assertEqual(asked[0], ("/api/clock_status?local=1", "Basic dGVzdDp0ZXN0"))
+        self.assertTrue(any("clock of 127.0.0.1 is 1 h behind" in text for text in result["current"]), result["current"])
+        self.assertTrue(any("takes its location from there" in text for text in result["current"]))
+        self.assertEqual(len(asked), 1, "asked about itself it asks nobody else")
+        self.assertFalse(any(row["source"].startswith("PiFinder's computer") for row in local["rows"]))
+
+    def test_this_computer_is_recognised(self):
+        self.assertTrue(server._clock_is_local("127.0.0.1"))
+        self.assertTrue(server._clock_is_local("localhost"))
+        self.assertFalse(server._clock_is_local("192.0.2.1"))
 
     def test_fix_sends_and_verifies(self):
         result = server._clock_fix_mount()
