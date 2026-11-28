@@ -53,9 +53,9 @@ offline() {
     fi
     # Only tests that need no hardware, no pifinder.service and no running INDI server. Never run test_tools/*_test.py as a whole:
     # some of the others press GPIO keys, restart PiFinder or move a mount.
-    for f in alignment_hold bridge_binding bridge_restart_fifo clock_status cold_profile_autostart compat_check driver_port_order \
-        driver_stdout driver_watch field_problem gsc_sim lx200_reconnect mount_silence patch_drift_check pfsm_bridge_status pifinder_sky_follow \
-        pifinder_sky_renderer sky_math solver_arch_patch target_status; do
+    for f in alignment_hold bridge_binding bridge_restart_fifo clock_status cold_profile_autostart compat_check coupling_off_respected \
+        driver_port_order driver_stdout driver_watch field_problem gsc_sim lx200_reconnect mount_silence patch_drift_check \
+        pfsm_bridge_status pifinder_sky_follow pifinder_sky_renderer sky_math solver_arch_patch target_status; do
         run "${f}_test" 300 "$PY" "test_tools/${f}_test.py"
     done
     if [ -x bin/tests/vendor/bats-core/bin/bats ]; then
