@@ -5,6 +5,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-28
+**Not stable yet** - read [Status of 3.1.0](https://github.com/apos/PiFinder_Stellarmate/blob/v3.1.0/README.md#status-of-310-not-stable-yet) before installing.
+
 ### Added
 
 - Control Center: the "Update is running" strip at the top has a button **Show Install or Update** that scrolls there and opens
