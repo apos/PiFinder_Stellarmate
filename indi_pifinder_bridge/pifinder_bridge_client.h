@@ -14,6 +14,9 @@
 #include "baseclient.h"
 #include "basedevice.h"
 
+#include <deque>
+#include <utility>
+#include <vector>
 #include <mutex>
 #include <string>
 #include <atomic>
@@ -25,23 +28,14 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         void setDevices(const std::string &piFinderName, const std::string &mountName);
 
-        // Cold-start property-binding race (#159): watchDevice() in
-        // setDevices() only ever sends the initial <getProperties> request
-        // once - if indiserver or the watched driver itself hasn't finished
-        // registering yet at that exact moment (common right after a full
-        // Pi reboot, when every driver is starting up together), the
-        // properties isReady() depends on may simply never arrive, with
-        // nothing to notice or retry. Live-verified: a plain
-        // Disconnect()/Connect() cycle does NOT recover this (it repeats
-        // the same one-shot request), only a full process restart did.
-        // Call once per TimerHit() tick while !isReady() - internally
-        // no-ops until a short grace period has passed (give the original
-        // subscription a first real chance), then re-requests whichever of
-        // the three properties are still missing via watchProperty()
-        // (which - unlike watchDevice() - actually resends
-        // <getProperties> on every call), on a bounded backoff. Returns
-        // true on ticks where a retry was actually (re-)issued, so the
-        // driver can log it. See bindingGaveUp() for the final-failure case.
+        // Cold-start property-binding race (#159): setDevices() + connectServer()
+        // ask for the properties once; if indiserver or a watched driver had not
+        // registered yet, the ones isReady() depends on may never arrive. Call
+        // once per TimerHit() tick while !isReady(): no-ops during a short grace
+        // period, then reconnects to indiserver (which asks again for everything)
+        // on a bounded backoff, slowly afterwards. Returns true on ticks where a
+        // logged retry was made. See bindingGaveUp() for the final-failure case.
+        // Never use watchProperty() for this: see the comment in the function.
         bool retryMissingPropertiesIfNeeded();
 
         // True once BINDING_RETRY_MAX_ATTEMPTS has been exhausted without
@@ -77,10 +71,33 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         // The last Goto target the user sent (JNow, hours/degrees): either to the
         // mount (KStars slews the mount directly) or to the PiFinder device
-        // (push-to, Goto Forward, a Dobsonian without mount) - whichever property
-        // was updated more recently. RA 0 / Dec 0 is INDI's "never set" default
-        // and counts as none. False: no target on either device.
-        bool getLastGotoTarget(double &ra, double &dec) const;
+        // (push-to, Goto Forward, a Dobsonian without mount), or one started on
+        // the mount's own controller (noteControllerGoto()) - whichever is the
+        // most recent. RA 0 / Dec 0 is INDI's "never set" default and counts as
+        // none. False: no target anywhere.
+        // `source` (optional): where it was set; `setTime` (optional): epoch seconds at which this Bridge saw it (0 if unknown).
+        enum class TargetOrigin { MOUNT, PIFINDER, CONTROLLER };
+        bool getLastGotoTarget(double &ra, double &dec, TargetOrigin *source = nullptr, long *setTime = nullptr) const;
+
+        // The INDI OnStep driver's own alignment switches ("AlignStars", "NewAlignStar", "NewAlignStar2"). False: the mount's
+        // driver has none.
+        bool hasOnStepAlignment() const;
+        bool startOnStepAlignment(int stars);
+        bool saveOnStepAlignment();
+
+        // The mount's network address, when it is an OnStep connected over TCP (the driver's own connection settings).
+        bool getOnStepAddress(std::string &host, int &driverPort) const;
+        // True when this GoTo (JNow) was seen through INDI within `maxAgeSec`: sent by this Bridge or by another client.
+        bool sawIndiGoto(double ra, double dec, double maxAgeSec);
+        // A GoTo read from the mount's controller (it did not come through INDI): it is the newest target, and a
+        // MountEvent::GOTO like any other client's.
+        void noteControllerGoto(double ra, double dec);
+
+        // A run that moves the mount for its own purpose (Multi-Point Alignment) sends GoTos and Syncs nobody asked to look at:
+        // between these two calls getLastGotoTarget() keeps answering what it answered before the run. It stays that way
+        // until the mount or the PiFinder device gets a target that is not one of the run's own.
+        void beginOwnRun();
+        void endOwnRun();
 
         // The last push-to target requested via a Goto() on the PiFinder
         // device - distinct from getPiFinderRADE(), which is PiFinder's live
@@ -107,6 +124,32 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // from before never does. consumePiFinderTargetPending() reads and
         // clears it atomically so each real event is only ever acted on once.
         bool consumePiFinderTargetPending();
+        bool hasPiFinderTargetPending() const;
+
+        // The watched devices whose properties have not arrived ("A, B"); empty when bound. A connected Bridge that misses one
+        // checks and moves nothing, however green its connection looks.
+        std::string missingDevices() const;
+
+        // What somebody else did to the mount since the last call; the newest event wins.
+        //   GOTO         - a GoTo this Bridge did not send (KStars, the StellarMate app, any INDI client): the mount driver
+        //                  published new target coordinates (TARGET_EOD_COORD) away from where the mount is. A Sync does not
+        //                  change that property; releasing a direction button does, but copies the current position into it.
+        //   ABORT        - TELESCOPE_ABORT_MOTION was sent to the mount (by anybody, this Bridge included).
+        //   HAND_MOTION  - a direction button (TELESCOPE_MOTION_NS / WE) was pressed.
+        enum class MountEvent { NONE, GOTO, ABORT, HAND_MOTION };
+        // `ra`/`dec` (JNow, hours/degrees) are set for GOTO only. Consumed on read.
+        MountEvent consumeMountEvent(double &ra, double &dec);
+
+        // Why the last new mount target was not taken as a GoTo (empty: nothing to tell; the echo of an own GoTo is not told).
+        // Consumed on read - the driver logs it, so a GoTo that went unnoticed can be explained afterwards.
+        std::string consumeIgnoredTargetNote();
+
+        // Seconds since another client switched the mount to Sync (ON_COORD_SET), i.e. a jump of the mount's position that
+        // follows is that client's Sync and no movement. A very large value if never seen.
+        double secondsSinceForeignMountSync() const;
+
+        // How many times another client has switched the mount to Sync since this process started.
+        int foreignMountSyncs() const { return m_foreignSyncCount; }
 
         // True while the mount is actively slewing (EQUATORIAL_EOD_COORD busy).
         bool isMountSlewing() const;
@@ -188,6 +231,12 @@ class PiFinderBridgeClient : public INDI::BaseClient
         void newMessage(INDI::BaseDevice baseDevice, int messageID) override;
 
     private:
+        void forgetProperties();
+        void watchAllDevices();
+        void noteMountTarget(INDI::Property property);
+        void noteMountEvent(MountEvent event, double ra = 0.0, double dec = 0.0);
+        void noteIgnoredTarget(const char *why, double ra, double dec);
+        bool justBound() const;
         std::string m_piFinderName;
         std::string m_mountName;
         bool m_piFinderOnline = false;
@@ -201,6 +250,35 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewNumber *m_mountTargetNP = nullptr;
         std::atomic<long> m_lastMountTargetTime { 0 };
         std::atomic<long> m_lastPiFinderTargetTime { 0 };
+
+        // The target getLastGotoTarget() reports during and after an own run (see beginOwnRun()). Guarded by m_mountEventMutex.
+        struct KeptTarget
+        {
+            bool active = false, have = false;
+            TargetOrigin source = TargetOrigin::MOUNT;
+            double ra = 0.0, dec = 0.0;
+            long time = 0;
+        };
+        KeptTarget m_keptTarget;
+        bool m_ownRun = false;
+        std::vector<std::pair<double, double>> m_ownRunCoords; // what the run sent: late echoes of it are not a new target
+        void releaseKeptTarget(bool fromMount, double ra, double dec);
+        bool getReportedGotoTarget(double &ra, double &dec, TargetOrigin *source, long *setTime) const;
+
+        INDI::PropertyViewSwitch *m_mountAlignStarsSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountAlignSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountAlignWriteSP = nullptr;
+        bool pressSwitch(INDI::PropertyViewSwitch *property, const char *element);
+        INDI::PropertyViewText *m_mountAddressTP = nullptr;
+        INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
+        INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;
+        // Guarded by m_mountEventMutex: every GoTo seen through INDI lately, and the newest one read from the controller.
+        std::deque<std::pair<std::pair<double, double>, long>> m_indiGotos;
+        static constexpr long INDI_GOTO_MEMORY_SEC = 120;
+        void rememberIndiGoto(double ra, double dec); // m_mountEventMutex held
+        bool m_haveControllerTarget = false;
+        double m_controllerTargetRA = 0.0, m_controllerTargetDec = 0.0;
+        long m_controllerTargetTime = 0;
         INDI::PropertyViewSwitch *m_mountOnCoordSetSP = nullptr;
         INDI::PropertyViewSwitch *m_mountParkSP = nullptr;
         INDI::PropertyViewSwitch *m_piFinderOnCoordSetSP = nullptr;
@@ -214,6 +292,12 @@ class PiFinderBridgeClient : public INDI::BaseClient
         static constexpr int BINDING_RETRY_GRACE_TICKS = 2;    // ~4s: let the original subscription resolve on its own first
         static constexpr int BINDING_RETRY_INTERVAL_TICKS = 2; // ~4s between retry attempts
         static constexpr int BINDING_RETRY_MAX_ATTEMPTS = 3;   // "a handful", ~16s total budget incl. grace
+        // After those, the subscription is asked for again every ~30 s for as long as the Bridge is not ready, instead of never again:
+        // a mount whose driver connects late (OnStep after a profile switch) must still be bound without anybody restarting the Bridge.
+        static constexpr int BINDING_RETRY_LONG_INTERVAL_TICKS = 15;
+        // A PiFinder target update in the first seconds after (re)binding is the property being re-sent to us, not a push-to from a human.
+        static constexpr long TARGET_EVENT_IGNORE_AFTER_BIND_SEC = 10;
+        long m_bindTime = 0;
         int m_bindingRetryTicksElapsed = 0;
         int m_bindingRetryCooldownTicks = 0;
         int m_bindingRetryAttempts = 0;
@@ -229,7 +313,28 @@ class PiFinderBridgeClient : public INDI::BaseClient
 
         // 0 = never sent this run - secondsSinceLastMountCommand() reports a
         // large sentinel in that case, see its own comment.
-        long m_lastMountCommandTime = 0;
+        std::atomic<long> m_lastMountCommandTime { 0 };
+
+        // The GoTos this Bridge sent itself: the mount driver publishes their coordinates as its target too, and that echo
+        // must not count as somebody else's GoTo. An entry is used up by its echo or expires.
+        struct OwnGoto
+        {
+            double ra, dec;
+            long time;
+        };
+        static constexpr long OWN_GOTO_ECHO_SEC = 60;
+        static constexpr double OWN_GOTO_ECHO_ARCMIN = 1.0;
+        // A new target this close to the mount's position is not a GoTo (a direction button was released).
+        static constexpr double TARGET_AT_MOUNT_ARCMIN = 0.5;
+        // A switch to Sync within this time of our own command is our own.
+        static constexpr double OWN_COMMAND_SWITCH_SEC = 5.0;
+        mutable std::mutex m_mountEventMutex;   // events are written by the client's I/O thread and read by TimerHit()
+        std::deque<OwnGoto> m_ownGotos;
+        MountEvent m_mountEvent = MountEvent::NONE;
+        double m_mountEventRA = 0.0, m_mountEventDec = 0.0;
+        std::string m_ignoredTargetNote;
+        std::atomic<long> m_lastForeignSyncTime { 0 };
+        std::atomic<int> m_foreignSyncCount { 0 };
 
         // Guards m_piFinderTargetPending - same cross-thread reasoning as
         // m_mountRejectMutex above (written from updateProperty()'s I/O

@@ -15,8 +15,10 @@
 #pragma once
 
 #include "defaultdevice.h"
+#include "onstep_watcher.h"
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -343,7 +345,28 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         IText AlignProgressT[2];
         enum { ALIGN_CURRENT_NAME, ALIGN_SYNCED_NAMES };
 
-        enum class AlignState { IDLE, SLEWING, SETTLING, DONE };
+        enum class AlignState { IDLE, STARTING, SLEWING, SETTLING, CONFIRMING, DONE };
+        // With an OnStep whose controller the Bridge can read, a run is a real OnStep alignment: STARTING until the
+        // controller waits for the first star, every Sync is then one of its stars, counted only when the controller counts
+        // it, and a star that fails is replaced by a further candidate.
+        bool m_alignOnStep = false;
+        int m_alignStarsWanted = 0, m_alignStarBefore = 0;
+        unsigned m_alignReadingAtSync = 0;
+        double m_alignStartSent = 0.0;
+        static constexpr double ONSTEP_START_WINDOW_SEC = 20.0;
+        static constexpr double ONSTEP_STAR_WINDOW_SEC = 10.0;
+        static constexpr int ONSTEP_SPARE_CANDIDATES = 4;
+        void countAlignPoint();
+        void endAlignmentRun(bool complete);
+        // ALIGN_SAVE: keep the controller's model beyond a power-off. ONSTEP_ALIGNMENT: what the controller reports.
+        ISwitchVectorProperty AlignSaveSP;
+        ISwitch AlignSaveS[1];
+        INumberVectorProperty OnStepAlignNP;
+        INumber OnStepAlignN[3];
+        // CONFIRMING: the Sync of this point was sent, the mount has to report it before the point counts.
+        double m_alignSyncRA = 0.0, m_alignSyncDec = 0.0, m_alignSyncSent = 0.0;
+        static constexpr double SYNC_TAKEN_ARCMIN = 3.0; // a tracking mount drifts well under this while it is checked
+        static constexpr double SYNC_TAKEN_WINDOW_SEC = 6.0;
         AlignState m_alignState = AlignState::IDLE;
         // RA (hours) / Dec (degrees) - populated fresh by
         // fetchAlignmentCandidates() every time Start is clicked, not
@@ -378,7 +401,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // failure or a zero-candidate response - callers must not start a
         // sequence with stale/empty m_alignPoints left over from a
         // previous attempt.
-        bool fetchAlignmentCandidates();
+        bool fetchAlignmentCandidates(int count);
 
         void handleMultiPointAlignment();
         // #313: Sync the mount to a confirmed PiFinder Align, independent of
@@ -532,6 +555,48 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumberVectorProperty HeldTargetHorizonStatusNP;
         INumber HeldTargetHorizonStatusN[2];
 
+        // Target transparency (docs/concepts/mount_bridge_target_transparency.md, slice 2, #657): the Target as it was
+        // REQUESTED - the last GoTo target any client sent to the mount or to the PiFinder device (JNow) - and how far
+        // PiFinder's solved position is from it. Read-only, display only: nothing in this driver reads it back, and hand
+        // moves, Syncs and reposition adoption do not change it (it only follows the clients' own target properties).
+        // State: IPS_IDLE = no target yet; IPS_OK = OFFSET_ARCMIN is current (fresh PiFinder solve this tick);
+        // IPS_BUSY = target known, but PiFinder has no fresh solve now, so OFFSET_ARCMIN is the last value (or 0).
+        // AGE_SEC: seconds since this Bridge saw the target change (0 = unknown). SOURCE: "Mount" or "PiFinder".
+        enum { TARGET_STATUS_RA, TARGET_STATUS_DEC, TARGET_STATUS_OFFSET, TARGET_STATUS_AGE };
+
+        // Positioning status (docs/concepts/mount_bridge_target_transparency.md §12, #665): what the Bridge is doing about getting
+        // the scope onto the target right now, so the user knows whether to keep their hands off the hand controller. Read-only,
+        // derived from the existing forward/correct state machines (it changes none of them). HANDS_OFF is 1 while the Bridge
+        // moves the mount or verifies the arrival (SLEWING, REFINING, VERIFYING). Phases (POSITIONING_PHASE.PHASE): IDLE, SLEWING
+        // (first slew), VERIFYING (waiting for a PiFinder solve), REFINING (a corrective slew after a Sync), ON_TARGET, GAVE_UP, OFF_TARGET (mount and PiFinder agree, away from the GoTo target)
+        // (retry budget used up or residual beyond the sync sanity limit), HOLDING. State: Busy = hands off, Ok = on target or
+        // holding, Alert = gave up, Idle = nothing going on.
+        enum { POSITIONING_ATTEMPT, POSITIONING_ATTEMPTS_MAX, POSITIONING_RESIDUAL, POSITIONING_ELAPSED, POSITIONING_TO_GO,
+               POSITIONING_SOLVE_AGE, POSITIONING_HANDS_OFF };
+        INumberVectorProperty PositioningStatusNP;
+        INumber PositioningStatusN[7];
+        ITextVectorProperty PositioningPhaseTP;
+        IText PositioningPhaseT[2]; // PHASE, and REASON: why nothing is corrected while HOLDING (empty: nothing to explain)
+        std::string m_holdReason;
+        static std::string distanceText(double arcmin);
+        enum class PositioningResult { NONE, ON_TARGET, GAVE_UP, OFF_TARGET };
+        PositioningResult m_positioningResult = PositioningResult::NONE;
+        double m_positioningResidual = 0.0;      // arcmin left at the last verification
+        int m_positioningAttempts = 0;           // refine attempts used in the last or current move
+        double m_positioningStart = 0.0;         // epoch seconds at which the current hands-off stretch began
+        double m_positioningElapsedFinal = 0.0;  // length of the last finished stretch
+        bool m_positioningHandsOff = false;
+        void setPositioningResult(PositioningResult result, double residualArcmin);
+        // After a slew the mount must report the position it was sent to. If it does not (wrong alignment model, a limit, an aborted
+        // slew), say so and do not Sync: a Sync on top of a wrong model only adds to it. Returns true if the mount arrived.
+        bool mountArrivedWhereSent(double sentRA, double sentDec, double mountRA, double mountDec);
+        static constexpr double MOUNT_ARRIVAL_LIMIT_ARCMIN = 60.0;
+        void publishPositioningStatus();
+        INumberVectorProperty TargetStatusNP;
+        INumber TargetStatusN[4];
+        ITextVectorProperty TargetStatusSourceTP;
+        IText TargetStatusSourceT[1];
+
         // The observer location every altitude/azimuth above was computed
         // with (LAT north, LONG east, degrees). IPS_IDLE = unknown: then the
         // altitude values above are the fail-open placeholder (90) and must
@@ -540,7 +605,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         INumber ObserverLocationN[2];
         bool resolveObserverLocation(double &lat, double &lon);
         bool horizontalPosition(double ra, double dec, double &outAltitude, double &outAzimuth);
-        void publishSkyPanelExtras();
+        void publishSkyPanelExtras(bool havePiFinderPosition, double piRA, double piDec);
 
         // Result of a manual Sync in the INDI log (issue #609): after a Sync is sent to the
         // mount, its reported position is checked for a few seconds and the outcome logged
@@ -720,6 +785,29 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // doesn't depend on it.
         void notifyPiFinderOfReposition(double ra, double dec);
 
+        // What other clients do to the mount (PiFinderBridgeClient::consumeMountEvent()), once per tick before reposition
+        // detection. A GoTo sent to the mount is treated like a push-to on PiFinder: its coordinates are the target, and after
+        // the slew the same verify / Sync / re-Goto sequence runs (#658, concept mount_bridge_target_transparency.md §4.1).
+        // A stop or a direction button ends that sequence.
+        void handleMountClientEvents();
+        void followMountGoto(double ra, double dec);
+        void refineOwnGoto(double ra, double dec);
+        void endRefining(bool stopped);
+        // A mount GoTo from another client is under way: it may not show as Busy yet (or at all), so SLEWING also waits until
+        // the mount has stood still for FOREIGN_GOTO_STILL_SEC.
+        bool m_foreignGotoSettling = false;
+        double m_foreignGotoSeenEpoch = 0.0;
+        static constexpr double FOREIGN_GOTO_STILL_SEC = 4.0;
+        // Until the next GoTo (or a coupling change, or a manual trigger) the Bridge starts no movement on its own. Set when
+        // somebody stopped the mount, when an alignment ended, and when a target was not reached after all attempts - without
+        // that last one the holding logic restarted the same Goto with fresh attempts every 12 s, for ever (found live
+        // 2026-11-27: a mount whose alignment model lands 23' off every time).
+        bool m_waitForNextGoto = false;
+        double m_lastPiSolveEpoch = 0.0; // exposure end of this tick's PiFinder frame (0: none yet)
+        // The external movement being watched is another client's Sync: no movement, the mount is not synced back at once.
+        bool m_externalMoveWasSync = false;
+        static constexpr double FOREIGN_SYNC_WINDOW_SEC = 8.0;
+
         // MODE_AUTO_CORRECT with CorrectionActionS[ACTION_GOTO]: mirrors
         // handleGotoForward()'s arrival-verify-and-refine pattern (#170 -
         // blindly re-issuing a Goto to wherever PiFinder currently reports,
@@ -840,6 +928,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         long m_lastConfirmedGoodTime = 0;
         static constexpr double MAX_SIDEREAL_DRIFT_ARCMIN_PER_SEC = 0.35; // measured live 2026-08-08 (~0.25-0.3'/s), generous margin
 
+        // #659: when the mount last moved (epoch seconds, same clock as PiFinder's last_solve_success), tracked every
+        // tick by updateMountMotionTracker(). Auto-correct (Sync) only syncs to a frame whose exposure ended at least
+        // MOUNT_STOP_SOLVE_MARGIN_SEC after that.
+        void updateMountMotionTracker();
+        double m_lastMountMotionEpoch = 0.0;
+        double m_motionPrevRA = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevDec = std::numeric_limits<double>::quiet_NaN();
+        double m_motionPrevEpoch = 0.0;
+        static constexpr double MOUNT_STOP_SOLVE_MARGIN_SEC = 1.0;      // covers the exposure itself and readout latency
+        static constexpr double MOUNT_MOTION_TOLERANCE_ARCMIN = 0.5;   // readout jitter / guide pulses are not "moving"
+
         // Found live (2026-08-08): right after a restart/mode-switch,
         // m_lastConfirmedGoodTime gets baselined on the very first tick
         // regardless of how much drift already exists (e.g. accumulated
@@ -881,8 +980,33 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // workflow. Times out to an automatic "No" (revert) rather than
         // sitting on a stale position indefinitely if nobody answers.
         bool m_repositionConfirmPending = false;
-        long m_repositionConfirmDeadline = 0;
-        static constexpr int REPOSITION_CONFIRM_TIMEOUT_SEC = 45;
+        // The question stays open until it is answered - there is no time limit and nothing moves meanwhile. It is withdrawn
+        // when it no longer applies: a new target, the mount moving, or mount and PiFinder agreeing again.
+        void withdrawRepositionQuestion(const char *why);
+
+        // BRIDGE_BINDING: whether the Bridge reads its mount and PiFinder at all (Ok), still waits (Busy) or has given up
+        // waiting (Alert, MISSING names the devices). The page shows a blind Bridge in red instead of green.
+        ITextVectorProperty BindingTP;
+        IText BindingT[1];
+        void publishBinding();
+
+        // A GoTo started on an OnStep hand controller or app never appears in INDI (#658): it is read from the controller
+        // (onstep_watcher.h), as is an alignment running there - during that the Bridge neither moves nor syncs the mount,
+        // because OnStep counts a Sync as an alignment star.
+        OnStepWatcher m_onstep;
+        bool m_onstepAligning = false;
+        static constexpr double CONTROLLER_GOTO_DELAY_SEC = 1.5;  // time for INDI to report the same GoTo
+        static constexpr double CONTROLLER_GOTO_KNOWN_SEC = 30.0;
+        ITextVectorProperty OnStepWatchTP;
+        IText OnStepWatchT[1];
+        void handleOnStepController();
+
+        // Where the mount was when a hold began, and whether a GoTo was sent while held: an alignment that moved the mount
+        // without any command (turned by hand controller) is one the Bridge keeps off after, too.
+        double m_holdStartRA = 0.0, m_holdStartDec = 0.0;
+        long m_holdStartTime = 0;
+        bool m_gotoDuringHold = false;
+        static constexpr int REPEAT_WARNING_SEC = 45;
         ISwitchVectorProperty RepositionConfirmSP;
         ISwitch RepositionConfirmS[2];
         enum { REPOSITION_CONFIRM_YES, REPOSITION_CONFIRM_NO };
@@ -914,6 +1038,17 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // actually needs to set it. Cleared to "" on release.
         ITextVectorProperty ExternalHoldReasonTP;
         IText ExternalHoldReasonT[1];
+
+        // What happened to the mount while it was held: Syncs sent by another client (Ekos after a plate solve). The Control
+        // Center reads this to decide whether PiFinder is aligned afterwards.
+        INumberVectorProperty ExternalHoldSeenNP;
+        INumber ExternalHoldSeenN[1];
+        int m_holdSyncsAtStart = 0;
+        bool m_movedByHandDuringHold = false; // direction buttons while held (polar alignment turns the mount that way)
+        void publishHoldSeen();
+        // A hold that ended an alignment: the mount is where the alignment left it, the Bridge stays off it until the next
+        // GoTo. Release reason sent by the Control Center: "alignment ended: solved" or "alignment ended: not solved".
+        void keepOffAfterAlignment();
 
         // Read-only "who does the currently held target come from" badge
         // (#178 GUI unification, 2026-08-08): with Reposition Detection

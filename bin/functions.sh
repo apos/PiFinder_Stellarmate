@@ -38,6 +38,8 @@ main_py="${pifinder_dir}/python/PiFinder/main.py"
 state_py="${pifinder_dir}/python/PiFinder/state.py"
 camera_interface_py="${pifinder_dir}/python/PiFinder/camera_interface.py"
 api_extensions_py="${pifinder_dir}/python/PiFinder/api_extensions.py"
+pfsm_bridge_status_py="${pifinder_dir}/python/PiFinder/pfsm_bridge_status.py"
+ui_base_py="${pifinder_dir}/python/PiFinder/ui/base.py"
 integrator_py="${pifinder_dir}/python/PiFinder/integrator.py"
 imu_pi_py="${pifinder_dir}/python/PiFinder/imu_pi.py"
 imu_fake_py="${pifinder_dir}/python/PiFinder/imu_fake.py"
@@ -60,6 +62,7 @@ align_py="${pifinder_dir}/python/PiFinder/ui/align.py"
 object_details_py="${pifinder_dir}/python/PiFinder/ui/object_details.py"
 sys_utils_py="${pifinder_dir}/python/PiFinder/sys_utils.py"
 sys_utils_fake_py="${pifinder_dir}/python/PiFinder/sys_utils_fake.py"
+software_py="${pifinder_dir}/python/PiFinder/ui/software.py"
 index_tpl="${pifinder_dir}/python/views/index.tpl"
 header_tpl="${pifinder_dir}/python/views/header.tpl"
 config_default_json="${pifinder_dir}/default_config.json"
@@ -410,10 +413,90 @@ stop_indi_driver_and_wait() {
   fi
 }
 
+# PiFinder 2.6.4 and later leave python/tetra3 untracked (upstream ADR 0035): it
+# must be a symlink to the tetra3 package inside the cedar-solve submodule, because
+# `import tetra3` resolves through it. In 2.6.3 and earlier the symlink was tracked,
+# so a checkout of the newer tag removes it, and a fresh clone of it never has it.
+# Anything else at that path is moved aside (kept, not deleted). Idempotent.
+ensure_tetra3_symlink() {
+  local link="${pifinder_dir}/python/tetra3"
+  local target="PiFinder/tetra3/tetra3"
+  if [ -e "$link" ] || [ -L "$link" ]; then
+    if [ "$(readlink "$link")" != "$target" ]; then
+      mv "$link" "${pifinder_home}/tetra3_old_$(date +%Y%m%d-%H%M%S)"
+    fi
+  fi
+  if ! [ -L "$link" ]; then
+    ln -s "$target" "$link"
+    echo "🔗 Created python/tetra3 -> $target (PiFinder 2.6.4+ does not track it)"
+  fi
+}
+
+# PiFinder's own data migrations. Upstream runs them from its pifinder_post_update.sh, which PFSM does not use
+# (see docs/concepts/lifecycle_install_update_upgrade.md section 4), so the ones that change user data are run here.
+# Today that is v2.6.0: clear a stale flop_image=true on the shipped "Generic Dobsonian" in config.json (a Dobsonian
+# needs neither flip nor flop; with the flag the object image comes out mirrored). Idempotent: PiFinder's script
+# changes the file only when it finds exactly that old record. config.json is backed up first; the backup is kept only
+# when the file really changed. Skipped while pifinder.service runs (PiFinder writes config.json itself, and the
+# script does not write atomically); it then runs at the next update. A failure never stops the install or update.
+run_pifinder_data_migrations() {
+  local migration="${pifinder_dir}/python/PiFinder/migrations/v2_6_0_dob_flop.py"
+  local config="${pifinder_data_dir}/config.json"
+  [ -f "$migration" ] || return 0   # PiFinder older than 2.6.0 has no such migration
+  [ -f "$config" ] || return 0      # nothing saved yet
+  if systemctl is-active --quiet pifinder.service 2>/dev/null; then
+    echo "ℹ️  PiFinder is running: the data migration check is skipped now and runs at the next update."
+    return 0
+  fi
+  # a unique name: two runs in the same second must never share (and delete) one backup
+  local backup
+  backup="$(mktemp "${config}.pfsm-before-migration-$(date +%Y%m%d-%H%M%S)-XXXXXX" 2>/dev/null)" || backup=""
+  if [ -z "$backup" ] || ! cp -p "$config" "$backup"; then
+    [ -n "$backup" ] && rm -f "$backup"
+    echo "⚠️  Could not back up ${config}: the data migration check is skipped."
+    return 0
+  fi
+  local out
+  if out="$(python3 "$migration" "$config" 2>&1)"; then
+    if cmp -s "$config" "$backup"; then
+      rm -f "$backup"
+      echo "✅ PiFinder data migration (v2.6.0 flop_image): nothing to change."
+    else
+      echo "✅ PiFinder data migration (v2.6.0 flop_image): ${out}"
+      echo "   config.json changed; the copy from before is kept at ${backup}"
+    fi
+  else
+    cp -p "$backup" "$config"
+    echo "⚠️  PiFinder data migration (v2.6.0 flop_image) failed, config.json restored from its backup (${backup}): ${out}"
+  fi
+  return 0
+}
+
+# Remember which libindi the PFSM drivers were just built against, so bin/compat_check.py can tell later (after a
+# system update) that the library moved under them. Best effort: a failure here never stops a build.
+record_driver_build_stamp() {
+  local libindi_version=""
+  if command -v pacman >/dev/null 2>&1; then
+    libindi_version="$(pacman -Q libindi 2>/dev/null | awk '{print $2}' | cut -d- -f1)"
+  fi
+  if [ -z "$libindi_version" ] && command -v pkg-config >/dev/null 2>&1; then
+    libindi_version="$(pkg-config --modversion libindi 2>/dev/null)"
+  fi
+  [ -n "$libindi_version" ] || return 0
+  mkdir -p "${pifinder_home}/.pfsm" 2>/dev/null || return 0
+  printf '{"libindi": "%s", "built_at": "%s"}\n' "$libindi_version" "$(date +%Y-%m-%dT%H:%M:%S%z)" \
+    > "${pifinder_home}/.pfsm/driver_build.json" 2>/dev/null || true
+}
+
 apply_patch_or_warn() {
   local target_file="$1"
   local diff_file="$2"
   rm -f "${target_file}.rej"
+  # A diff that creates a file ("@@ -0,0 ...") must start without that file: patch cannot tell it was applied before and adds the
+  # content again at the top. After N updates the file held N copies and the OLDEST one, at the bottom, won (found 2026-11-27).
+  if grep -q '^@@ -0,0 ' "$diff_file"; then
+    rm -f "$target_file"
+  fi
   patch -N "$target_file" < "$diff_file"
   if [ -f "${target_file}.rej" ]; then
     add_warning "Patch didn't fully apply: $(basename "$diff_file") -> $target_file (see ${target_file}.rej) - upstream PiFinder likely changed nearby lines; the diff needs regenerating."

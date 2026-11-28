@@ -77,7 +77,8 @@ run.
 Each diff is applied only if three conditions match: the PiFinder version, the Pi model (`P4`, `P5`) and the OS
 (`should_apply_patch`; `general` means "any"). A new PiFinder release therefore needs, in this order: the pin bumped,
 the diffs checked against the new files (a failing hunk is reported, not hidden), the matrix updated after a real test
-on the devices. The procedure **is** written down: `CONTRIBUTING.md` ("Branch model") defines an `alpha` integration branch for exactly this, with the
+on the devices. The procedure **is** written down in `CONTRIBUTING.md` ("Branch model": a short-lived branch from `dev`; the earlier `alpha`
+branch was removed with 3.0.0), with the
 acceptance test (patches apply, both INDI drivers build, a full `bin/simulate_fresh_install.sh --mode=fresh` plus the setup plus a
 cold-boot reboot pass cleanly, see `Readme_UTM_dev_X86.md`). What is *not* written down is the last step of the order above: updating the
 README matrix after the device tests, and the clean-up of stale pins.
@@ -105,6 +106,54 @@ The invariant is: **a clean run means every patch applied or was already applied
 stops the SMOS version from being recorded. The weak point is drift against upstream: patches are tied to a PiFinder
 version and, for the venv, to a package version (hence the `picamera2==0.3.37` pin below).
 
+### 4.1 PiFinder's own update scripts are not used (decision 2026-11-25)
+
+PiFinder's menu update (`sys_utils.update_software()` -> `pifinder_update.sh` -> `pifinder_post_update.sh`) does a
+`git checkout release && git pull` and then runs upstream's migrations (`migration_source/v*.sh`: `sudo`, `/boot/config.txt`,
+systemd units, a Debian `apt`) that are written for a stock PiFinder image. It would bypass the version PFSM pins and tests, and it
+points at `/home/pifinder`, which does not exist on SMOS (user `stellarmate`, Arch Linux). PFSM updates PiFinder itself: the setup script does
+`git fetch` and `git checkout v<pin>`, then the patch script. The migrations are **never run** here (there is no `~/PiFinder_data/migrations`).
+
+- The two scripts that the patch script copies into `~/PiFinder` are stubs that refuse and name the Control Center (`bin/tests/test_inapp_update_stub.bats`);
+  the old copies that stopped at the PiFinder 2.1 migrations are gone.
+- `diffs/software_py.diff` makes the menu's "update" say *Update via Control Center* instead of starting anything.
+- PFSM does not support a rollback to an older release (owner, 2026-11-25).
+
+### 4.2 PiFinder's data across versions (not the code path)
+
+The code path is PFSM's own (section 4.1). This section is only about the **data PiFinder keeps** and how a new version adapts it.
+
+| Data | Where | How a new PiFinder adapts it |
+|---|---|---|
+| Settings, equipment (telescopes, eyepieces), camera, alignment point | `~/PiFinder_data/config.json` | in code at start (defaults for missing keys are read from `default_config.json`; PiFinder 2.6.4 sanitises unusable alignment points and keeps unknown keys when it saves), plus script migrations with a ledger (below) |
+| Observation log | `~/PiFinder_data/observations.db` (`obs_sessions`, `obs_objects`, no schema version) | tables created on demand; no schema change since 2.0 |
+| Catalog | `astro_data/pifinder_objects.db` (tracked in git) | arrives with the tag (2.6.4: 33 files changed in `astro_data`, cited corrections) |
+| Lists, images, logs | `obslists/`, `screenshots/`, `captures/`, `pifinder.log*` | user content, no adaptation |
+
+PiFinder's script migrations are listed in `migration_source/` and recorded in a ledger `~/PiFinder_data/migrations/`; PFSM never creates it. Of them, **one** changes user data since 2.0:
+v2.6.0 clears a stale `flop_image=true` on the shipped "Generic Dobsonian" in `config.json` (otherwise the object image comes out mirrored).
+PFSM runs it itself: `run_pifinder_data_migrations()` (`bin/functions.sh`, called by the patch script after every install and update). It runs PiFinder's own script
+(idempotent, changes the file only on exactly that old record), backs up `config.json` first, keeps the backup only when the file changed, skips while `pifinder.service` runs, and never stops the update
+(`bin/tests/test_data_migration.bats`). v1.x.x (moves a pre-2.0 `observations.db`) does not apply to any PFSM install.
+
+PFSM's own data in PiFinder's data: only through PiFinder's API (`set_option("mount_type")`); the last-Align stamp lives in memory (`shared_state`), PFSM adds no key to `config.json`.
+
+**Checklist for every change of the PiFinder pin**
+
+1. **Patches:** `python3 test_tools/patch_drift_check.py [--fetch] [TAG ...]` dry-runs every diff against the pristine files of the pinned tag, the newest upstream release and the newest beta (or the tags you name),
+   using the same diff-to-file mapping as the patch script. Regenerate every diff that fails; a `MISSING` file means upstream renamed or removed it. Exit status 1 when the **pinned** tag fails (`--strict`: any tag).
+   Run it before every pin change, and now and then against the newest upstream version as an early warning (2026-11-25: 3.1.3-beta fails `main_py` and `align_py`, which are shaped for 2.6.4).
+   Known: the version whitelists in the patch script still name 2.3.0 to 2.6.3, but `main_py.diff` and `align_py.diff` were regenerated for 2.6.4 and no longer apply to 2.6.3 and older.
+   PFSM installs only the pinned tag, so those entries are stale; pruning them is an open decision.
+2. **Data:** `git diff vOLD vNEW -- python/PiFinder/config.py python/PiFinder/equipment.py default_config.json python/PiFinder/db python/PiFinder/migrations migration_source docs/adr`.
+   For each change in how config, database or ledger data is adapted decide: *PiFinder does it itself at start* / *a script migration that PFSM must run* (add it to `run_pifinder_data_migrations()` with a test) / *not applicable*.
+   Write the decision into the pin-bump note in basic-memory.
+3. **System settings, separate from data:** the parts of `migration_source/*.sh`, `pifinder_setup.sh` and `pi_config_files/` that touch `/boot/config.txt`, systemd, packages. Decide per item (covered by PFSM / not needed on SMOS, say why / must be added). State on the test Pi 5 (2026-11-25): libinput and group `input` covered;
+   USB-C host `dwc2` (v2.2.2) not applied, not needed on a Pi 5; Cedar as a system service (v2.4.0) not applied, PiFinder starts Cedar itself; `RemoveIPC=no` (v2.6.1) not applied and moot while the user has lingering (`stellarmate` has `Linger=yes`).
+4. **Tests that need no hardware:** our own tests, `node test_tools/*_test.js`, `python3 test_tools/*_test.py`, `bin/tests/run_all.sh`.
+5. **A real update on the Pi 5** (`--action=update` from the branch under test), then: version, no `*.rej`, service, API, LX200 and Mount Bridge connected.
+6. **Say what was not tested** (camera, solve, Align with a star, keyboard, Pi 4, UTM) in the changelog and the release notes.
+
 ## 5. Python and package requirements
 
 | What | How it is pinned or handled | Why |
@@ -118,6 +167,22 @@ version and, for the venv, to a package version (hence the `picamera2==0.3.37` p
 | Pi 5 GPIO | `lgpio` and `rpi-lgpio` from `packages/`, real `RPi.GPIO` removed first | whichever installs last wins on disk; the order made the OLED dark once |
 | venv | deleted and rebuilt if the venv Python differs from the system Python | typical after a SMOS update |
 | Hipparcos catalog | three download URLs, then a bundled `src_pifinder/astro_data/hip_main.dat.gz` | the download source is not reliable |
+
+### 5.1 Compatibility check (2026-11-26)
+
+`bin/compat_check.py` (read-only, standard library only) asks whether what PFSM built still fits the system it runs on, and says what to do when it does not.
+It runs at the end of the setup, at the end of `restore_after_smos_update.sh`, and is served as `GET /api/compat_check` (cached for a minute) for a Control Center card, which is not built yet.
+
+| Check | Looks at | FAIL | WARN |
+|---|---|---|---|
+| PiFinder's Python environment | the venv's interpreter against the system's | the venv's Python does not start | system Python moved to another minor version (works while the old interpreter stays) |
+| PFSM INDI drivers | `ldd` of the four drivers; libindi version against `~/.pfsm/driver_build.json`, written when the drivers are built | a library is missing | libindi changed since the build |
+| Camera libraries | libcamera and python-libcamera against 0.7.x | | another major/minor version |
+| KStars clock action | the D-Bus action the mount-clock correction uses | | KStars runs but the action does not answer |
+| Installed PiFinder | `git describe` against `version.txt`, `*.rej` files | a patch left a `.rej` | installed tag differs from the pin |
+
+Exit status 1 only for FAIL (`--strict`: also WARN). Tests: `python3 test_tools/compat_check_test.py`, `bin/tests/test_driver_build_stamp.bats`.
+Not covered: an automatic rebuild of the venv (planned), and what a SMOS delta update does (open, see 7.1.3).
 
 ## 6. What is missing (verified gaps)
 

@@ -42,7 +42,7 @@ size_t appendToString(char *ptr, size_t size, size_t nmemb, void *userdata)
 bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, std::string &outName,
                               double centerRA = NAN, double centerDec = NAN, double radiusDeg = 180.0)
 {
-    for (const char *url : {"http://127.0.0.1/api/nearby_bright_stars", "http://127.0.0.1:8080/api/nearby_bright_stars"})
+    for (const char *url : {"http://127.0.0.1:8080/api/nearby_bright_stars", "http://127.0.0.1/api/nearby_bright_stars"})
     {
         CURL *curl = curl_easy_init();
         if (curl == nullptr)
@@ -72,7 +72,13 @@ bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, 
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
         curl_easy_cleanup(curl);
 
-        if (res != CURLE_OK || httpCode != 200)
+        // Port 80 is only tried when nothing at all listens on 8080 (on StellarMate port 80 is nginx/EkosLive, not PiFinder); a
+        // PiFinder on its own operating system has nothing on 8080 - the connection is refused.
+        if (res != CURLE_OK && res != CURLE_COULDNT_CONNECT)
+            return false;
+        if (res == CURLE_OK && httpCode != 200)
+            return false;
+        if (res != CURLE_OK)
             continue;
 
         try
@@ -80,7 +86,7 @@ bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, 
             const auto parsed = nlohmann::json::parse(body);
             const auto &candidates = parsed.at("candidates");
             if (candidates.empty())
-                continue;
+                return false;
             const auto &c = candidates.front();
             outRA = c.at("ra").get<double>() / 15.0;
             outDec = c.at("dec").get<double>();
@@ -89,7 +95,7 @@ bool pickSafeDefaultPosition(double minAltitude, double &outRA, double &outDec, 
         }
         catch (const nlohmann::json::exception &)
         {
-            continue;
+            return false;
         }
     }
     return false;

@@ -26,6 +26,7 @@ with a strict incremental XML parser; verified live against a real
 `indiserver` (Simulators profile, `Telescope Simulator`'s `CONNECTION`
 property and 25 others) before being written here as this module.
 """
+import os
 import socket
 import subprocess
 import time
@@ -607,6 +608,10 @@ def mount_bridge_drift(
     correction_action_elements = device_props.get("CORRECTION_ACTION", {}).get("elements", {})
     correction_action_raw = next((name for name, val in correction_action_elements.items() if val == "On"), None)
     correction_action = {"ACTION_SYNC": "sync", "ACTION_GOTO": "goto"}.get(correction_action_raw)
+    # The Hold position (the driver's held target) only means something in the modes that keep the scope on a target:
+    # Goto-Forward, and Auto-correct with the Goto action. Verify/Alert and Auto-correct (Sync) never use it, so what
+    # the property still holds from an earlier mode is not shown as "where the scope is held".
+    sky["hold_used"] = coupling_mode == "MODE_GOTO_FORWARD" or (coupling_mode == "MODE_AUTO_CORRECT" and correction_action == "goto")
     drift_raw = drift_status.get("DRIFT_ARCMIN")
     mount_reject_prop = device_props.get("MOUNT_REJECT", {})
     mount_reject_active = mount_reject_prop.get("state") == "Alert"
@@ -682,6 +687,8 @@ def mount_bridge_drift(
         "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
         "align_current_name": align_progress_names.get("CURRENT_NAME") or None,
         "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
+        # what an OnStep controller the Bridge reads says about its alignment (None: no such controller)
+        "onstep_align": _onstep_align(device_props),
         "external_hold": external_hold,
         "external_hold_reason": external_hold_reason,
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
@@ -693,6 +700,12 @@ def mount_bridge_drift(
         "pifinder_altitude_deg": pifinder_altitude_deg,
         "pifinder_below_horizon": pifinder_below_horizon,
         "sky": sky,
+        "positioning": _positioning_status(device_props),
+        # BRIDGE_BINDING: "Alert" = the connected Bridge gets nothing from the named device(s) and does nothing.
+        "binding_state": device_props.get("BRIDGE_BINDING", {}).get("state"),
+        "binding_missing": device_props.get("BRIDGE_BINDING", {}).get("elements", {}).get("MISSING") or None,
+        # an open question after a sudden disagreement without any mount movement (clutch, bump): nothing moves until answered
+        "reposition_question": device_props.get("REPOSITION_CONFIRM", {}).get("state") == "Busy",
     }
 
 
@@ -778,12 +791,15 @@ def sky_panel_without_bridge(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
 
 def mount_motion_state(props: dict):
     """The mount's state from its own standard INDI properties: "parked" (a
-    parked mount wins over its tracking state), "tracking", "not tracking", or
+    parked mount wins over its tracking state), "slewing" (its coordinates are
+    Busy - whatever the tracking switch says meanwhile), "tracking", "not tracking", or
     None when the mount reports neither TELESCOPE_PARK nor TELESCOPE_TRACK_STATE.
     `props` is one device's property dict as returned by get_properties()."""
     park = props.get("TELESCOPE_PARK", {}).get("elements")
     if park is not None and park.get("PARK") == "On":
         return "parked"
+    if props.get("EQUATORIAL_EOD_COORD", {}).get("state") == "Busy":
+        return "slewing"
     track = props.get("TELESCOPE_TRACK_STATE", {}).get("elements")
     if track is not None:
         if track.get("TRACK_ON") == "On":
@@ -794,7 +810,7 @@ def mount_motion_state(props: dict):
 
 
 _MOUNT_MOTION_CACHE: dict = {}
-_MOUNT_MOTION_CACHE_S = 4.0
+_MOUNT_MOTION_CACHE_S = 1.5
 
 
 def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float, _now=time.monotonic):
@@ -806,13 +822,75 @@ def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float
     try:
         props = get_properties(
             device=device, host=host, port=port, timeout=timeout,
-            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE"},
+            stop_after={"TELESCOPE_PARK", "TELESCOPE_TRACK_STATE", "EQUATORIAL_EOD_COORD"},
         )
         state = mount_motion_state(props.get(device, {}))
     except INDIClientError:
         state = None
     _MOUNT_MOTION_CACHE[device] = (_now(), state)
     return state
+
+
+def _onstep_align(device_props: dict):
+    """The alignment of an OnStep controller the Mount Bridge reads (ONSTEP_ALIGNMENT): {"max_stars", "star", "stars",
+    "aligning" (it waits for a star)}; None while there is no such controller (another mount, USB, not answering)."""
+    prop = device_props.get("ONSTEP_ALIGNMENT", {})
+    if prop.get("state") not in ("Ok", "Busy"):
+        return None
+    el = prop.get("elements", {})
+    try:
+        max_stars, star, stars = (int(float(el[k])) for k in ("MAX_STARS", "STAR", "STARS"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {"max_stars": max_stars, "star": star, "stars": stars, "aligning": 0 < star <= stars}
+
+
+def _positioning_status(device_props: dict):
+    """The Mount Bridge's POSITIONING_STATUS / POSITIONING_PHASE (what it is doing to get the scope onto the target, and whether
+    the user should keep their hands off the hand controller): {"phase", "attempt", "attempts_max", "residual_arcmin",
+    "elapsed_sec", "to_go_deg", "solve_age_sec" (None when unknown), "hands_off"} or None for an older driver without the
+    property or an unreadable value. Phase is one of IDLE, SLEWING, VERIFYING, REFINING, ON_TARGET, GAVE_UP, OFF_TARGET, HOLDING,
+    CHECK_SCOPE (an open question, see "reposition_question"), ALIGNING (a Multi-Point Alignment run), WAITING (nothing moves until the next GoTo and the mount is away from the Push-To; residual = that distance). "reason": why the Bridge corrects nothing while HOLDING (empty: nothing to explain)."""
+    prop = device_props.get("POSITIONING_STATUS", {})
+    phase = device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("PHASE")
+    if not prop or not phase:
+        return None
+    el = prop.get("elements", {})
+    try:
+        solve_age = float(el["SOLVE_AGE_SEC"])
+        return {
+            "phase": phase,
+            "attempt": int(float(el["ATTEMPT"])),
+            "attempts_max": int(float(el["ATTEMPTS_MAX"])),
+            "residual_arcmin": float(el["RESIDUAL_ARCMIN"]),
+            "elapsed_sec": float(el["ELAPSED_SEC"]),
+            "to_go_deg": float(el["TO_GO_DEG"]),
+            "solve_age_sec": solve_age if solve_age >= 0 else None,
+            "hands_off": float(el["HANDS_OFF"]) >= 0.5,
+            "reason": device_props.get("POSITIONING_PHASE", {}).get("elements", {}).get("REASON") or "",
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _target_status(device_props: dict):
+    """The Mount Bridge's TARGET_STATUS (the target as REQUESTED, and PiFinder's offset from it), for the Sky Position
+    Panel: {"ra", "dec" (JNow hours/degrees), "offset_arcmin", "age_sec", "source" ("Mount"/"PiFinder"/None),
+    "fresh" (offset is current: the property is Ok, not Busy)} or None when there is no target (Idle, missing, a driver
+    without the property, or an unreadable value)."""
+    prop = device_props.get("TARGET_STATUS", {})
+    if prop.get("state") not in ("Ok", "Busy"):
+        return None
+    el = prop.get("elements", {})
+    try:
+        ra, dec = float(el["RA"]), float(el["DEC"])
+        offset, age = float(el["OFFSET_ARCMIN"]), float(el["AGE_SEC"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ra == 0.0 and dec == 0.0:
+        return None
+    source = device_props.get("TARGET_STATUS_SOURCE", {}).get("elements", {}).get("SOURCE") or None
+    return {"ra": ra, "dec": dec, "offset_arcmin": offset, "age_sec": age, "source": source, "fresh": prop.get("state") == "Ok"}
 
 
 def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
@@ -845,6 +923,7 @@ def _sky_panel_data(device_props: dict, mount_name=None, mount_state=None):
         "pifinder": _sky_point(device_props.get("PIFINDER_HORIZON_STATUS", {})),
         "goto": _sky_point(device_props.get("GOTO_TARGET_HORIZON_STATUS", {})),
         "held": _sky_point(device_props.get("HELD_TARGET_HORIZON_STATUS", {})),
+        "target": _target_status(device_props),
     }
 
 
@@ -1136,6 +1215,31 @@ def set_coupling_mode(
     set_switch("PiFinder Mount Bridge", "BRIDGE_MODE", mode, host, port, timeout)
 
 
+def mount_direction_motion(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL) -> bool:
+    """Whether the Mount Bridge's mount is being moved by direction motion (TELESCOPE_MOTION_NS / WE) right now."""
+    try:
+        mount = bridge_active_mount(host, port, timeout)
+        if not mount:
+            return False
+        props = get_properties(device=mount, host=host, port=port, timeout=timeout,
+                               stop_after={"TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE"}).get(mount, {})
+    except INDIClientError:
+        return False
+    return any(value == "On" for name in ("TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE")
+               for value in props.get(name, {}).get("elements", {}).values())
+
+
+def mount_bridge_hold_syncs(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> int:
+    """How many Syncs another client sent to the mount during the current external hold (Ekos after a plate solve); 0 if the
+    driver does not say."""
+    try:
+        props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout,
+                               stop_after={"EXTERNAL_HOLD_SEEN"})
+        return int(float(props["PiFinder Mount Bridge"]["EXTERNAL_HOLD_SEEN"]["elements"]["MOUNT_SYNCS"]))
+    except (INDIClientError, KeyError, TypeError, ValueError):
+        return 0
+
+
 def set_mount_bridge_external_hold(
     on: bool,
     reason: str = "",
@@ -1403,21 +1507,56 @@ def read_mount_position(device: str, host: str = DEFAULT_HOST, port: int = DEFAU
     return ra, dec
 
 
+def bridge_active_mount(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """The mount the Mount Bridge is linked to (its ACTIVE_DEVICES.ACTIVE_MOUNT), or None. One light read, one connection."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"ACTIVE_DEVICES"})
+    el = props.get("PiFinder Mount Bridge", {}).get("ACTIVE_DEVICES", {}).get("elements", {})
+    return (el.get("ACTIVE_MOUNT") or "").strip() or None
+
+
+def bridge_binding_state(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """The state INDI gives the Mount Bridge's MOUNT_HORIZON_STATUS: the Bridge publishes it every tick once it is bound to its mount and
+    PiFinder, so "Idle" means it has never read the mount ("Ok" or "Alert" mean it did). None when the property is not there."""
+    props = get_properties(device="PiFinder Mount Bridge", host=host, port=port, timeout=timeout, stop_after={"MOUNT_HORIZON_STATUS"})
+    return props.get("PiFinder Mount Bridge", {}).get("MOUNT_HORIZON_STATUS", {}).get("state") or None
+
+
+def pifinder_mount_apart_arcmin(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = TIMEOUT_BACKGROUND_POLL):
+    """Distance in arcminutes between the position "PiFinder LX200" reports and the Bridge's active mount (both JNow), or None."""
+    mount = bridge_active_mount(host=host, port=port, timeout=timeout)
+    if not mount:
+        return None
+    positions = []
+    for device in ("PiFinder LX200", mount):
+        props = get_properties(device=device, host=host, port=port, timeout=timeout, stop_after={"EQUATORIAL_EOD_COORD"})
+        el = props.get(device, {}).get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+        try:
+            positions.append((float(el["RA"]), float(el["DEC"])))
+        except (KeyError, TypeError, ValueError):
+            return None
+    return _separation_arcmin(positions[0][0], positions[0][1], positions[1][0], positions[1][1])
+
+
 def read_mount_state(device: str, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """One light read of what the page needs to know about a mount:
-    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None}.
-    `parked` is None for a mount that has no TELESCOPE_PARK property at all."""
+    {"coords": (ra, dec) raw INDI strings or None, "parked": True/False/None, "tracking": True/False/None}.
+    `parked`/`tracking` are None for a mount that has no TELESCOPE_PARK/TELESCOPE_TRACK_STATE property at all. "coord_state" is the state INDI gives the coordinates
+    ("Ok", "Busy", "Idle" or "Alert"; the driver sets Alert when it cannot read the mount), None when the mount does not define them."""
     props = get_properties(
         device=device, host=host, port=port, timeout=timeout,
         stop_after={"EQUATORIAL_EOD_COORD", "TELESCOPE_PARK"},
     )
     dev = props.get(device, {})
     el = dev.get("EQUATORIAL_EOD_COORD", {}).get("elements", {})
+    coord_state = dev.get("EQUATORIAL_EOD_COORD", {}).get("state") or None
     ra, dec = el.get("RA"), el.get("DEC")
     coords = None if ra in (None, "") or dec in (None, "") else (ra, dec)
     park_el = dev.get("TELESCOPE_PARK", {}).get("elements")
     parked = None if park_el is None else park_el.get("PARK") == "On"
-    return {"coords": coords, "parked": parked}
+    # TELESCOPE_TRACK_STATE is defined before TELESCOPE_PARK (INDI::Telescope), so the early stop above already contains it.
+    track_el = dev.get("TELESCOPE_TRACK_STATE", {}).get("elements")
+    tracking = None if track_el is None else track_el.get("TRACK_ON") == "On"
+    return {"coords": coords, "parked": parked, "tracking": tracking, "coord_state": coord_state}
 
 
 def unpark_mount(
@@ -1556,6 +1695,11 @@ def trigger_align_held(
     restart would otherwise re-read PiFinder's still-wrong target as its
     recovery baseline and slew the mount right back to it."""
     set_switch("PiFinder Mount Bridge", "MANUAL_TRIGGER", "TRIGGER_ALIGN_HELD", host, port, timeout)
+
+
+def trigger_reposition_adopt(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> None:
+    """Answers the Mount Bridge's open question with "yes, I moved it on purpose": PiFinder's position becomes the target."""
+    set_switch("PiFinder Mount Bridge", "REPOSITION_CONFIRM", "REPOSITION_CONFIRM_YES", host, port, timeout)
 
 
 def trigger_reposition_revert(
@@ -1724,7 +1868,25 @@ def _mount_bridge_pids() -> list:
     return [line for line in out.stdout.split() if line]
 
 
-def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_sec: float = 2.0) -> None:
+def mount_bridge_fifo_path(pids=None, proc: str = "/proc") -> str:
+    """The control FIFO of the indiserver the running Mount Bridge belongs to. A profile that mixes driver sources runs several
+    indiservers (found 2026-11-27: simulators from Flatpak on port 7624, the PiFinder drivers on a second, chained "system"
+    server with /tmp/indiFIFO_system) - restarting through the default FIFO would start a second Bridge on the other one.
+    Falls back to the default when the Bridge is not running or its server cannot be read."""
+    for pid in (_mount_bridge_pids() if pids is None else pids):
+        try:
+            with open(os.path.join(proc, str(pid), "status")) as f:
+                parent = next(line.split()[1] for line in f if line.startswith("PPid:"))
+            with open(os.path.join(proc, parent, "cmdline"), "rb") as f:
+                args = f.read().decode(errors="replace").split("\0")
+        except (OSError, StopIteration, IndexError):
+            continue
+        if args and os.path.basename(args[0]) == "indiserver" and "-f" in args[:-1]:
+            return args[args.index("-f") + 1]
+    return MOUNT_BRIDGE_FIFO_PATH
+
+
+def restart_mount_bridge_driver(fifo_path: Optional[str] = None, settle_sec: float = 2.0) -> None:
     """Stop/start "PiFinder Mount Bridge" via the indiFIFO control channel.
     Purely a driver-process bounce - callers are responsible for reconnecting
     and re-linking afterwards (see server.py's readiness watchdog, which does
@@ -1743,6 +1905,7 @@ def restart_mount_bridge_driver(fifo_path: str = MOUNT_BRIDGE_FIFO_PATH, settle_
     force-kills any that linger past the wait) before ever sending "start",
     so this function always leaves exactly one instance running - a real
     singleton guarantee, not a hopeful delay."""
+    fifo_path = fifo_path or mount_bridge_fifo_path()   # before stopping: afterwards there is no process left to ask
     with open(fifo_path, "w") as f:
         f.write('stop indi_pifinder_mount_bridge "PiFinder Mount Bridge"\n')
 
@@ -1887,6 +2050,16 @@ def trigger_multipoint_align_start(
     wait for arrival, wait for a fresh PiFinder solve, Sync). Independent of
     Coupling mode - works whether Coupling is Off or any other preset."""
     set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_START", host, port, timeout)
+
+
+def trigger_onstep_align_save(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Keeps the OnStep controller's alignment model beyond a power-off (the Mount Bridge's ALIGN_SAVE, which presses the INDI
+    OnStep driver's "Write Align to NVRAM/Flash")."""
+    set_switch("PiFinder Mount Bridge", "ALIGN_SAVE", "SAVE", host, port, timeout)
 
 
 def trigger_multipoint_align_stop(

@@ -5,6 +5,188 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-28
+
+> A large step in how PiFinder and the mount work together: GoTo from anywhere ends on the object, one name for the target
+> (Push-To), the Bridge pauses during guiding and alignments, OnStep hand controller and alignment support, a simulated sky, and the
+> fix for the Mount Bridge's long-standing drop-outs (#385). **Not stable yet**, not tested under the real sky - see "Status of
+> 3.0.0" in the README. Version 3 because of the size of the change; nothing an existing installation relies on was removed apart
+> from the three-branch model (`alpha`).
+>
+> **Checked** on a Raspberry Pi 5: `test_tools/run_regression.sh all --move` (page, Python and shell tests; the Mount Bridge
+> against stand-ins; GoTo and alignment runs on the Telescope Simulator with the simulated sky); a real OnStep 10.14a indoors
+> (controller GoTos, a three-star OnStep alignment, refining, with a stand-in PiFinder sky).
+>
+> **Not checked:** the real sky and camera, Raspberry Pi 4 and x86 installation, a standard PiFinder as client, the Control
+> Host / Client combination.
+
+### Added
+
+- Regression run `test_tools/run_regression.sh` (offline, driver and live-simulation groups, raw logs kept) and `test_tools/README.md`.
+- README: the ports on a StellarMate device, and what is not stable yet.
+- x86: PiFinder's solver uses its own star finder instead of stopping on the bundled ARM `cedar-detect-server` (#234; untested on x86).
+- Multi-Point Alignment with an OnStep connected over the network runs a real OnStep alignment (home question, stars counted by the controller, replacement stars, Continue after Stop, **Save to OnStep**). Before, it only sent Syncs, from which OnStep builds no model.
+- Mount Bridge, OnStep over the network (#658): GoTos started on the hand controller, the OnStep app or SkySafari are followed (the controller's target is read on a second network port, read only), and an alignment running on the controller pauses the Bridge.
+- A short FAQ (`docs/FAQ.md`, German `FAQ_de.md`), starting with: PFSM keeps running while the phone's screen is locked.
+- Control Center: a yellow card for the Mount Bridge's question after a sudden disagreement without mount movement (what happened, what to do, two buttons; PiFinder shows CHECK MOUNT), and a red card and red status when the Bridge does not read its mount or PiFinder (`BRIDGE_BINDING`).
+- Mount Bridge pauses during Ekos alignments (plate solve, polar alignment, mount model); after a solve with a Sync, PiFinder is aligned to the mount's position.
+- README: which GoTo does what (PiFinder, KStars, the StellarMate app's SLEW and GO); concept for aligning PiFinder after an Ekos solve.
+- Control Center: the mount's node in the Mount Bridge diagram shows its state as a symbol (tracking, blinking while slewing, stopped, parked, unknown).
+- Control Center, mode "Real Hardware + GSC Simulation" (#664, #344): a fourth mode tile that replaces the camera frame with a star field from the GSC catalogue, solved by the real Cedar/tetra3 solver; follows the mount over INDI (`test_tools/pifinder_sky_follow.py`: alignment point, simulated misalignment, absorbs Syncs, GoTo landing error that grows with the slew length, hand-controller motion counts as real movement). It is "on" only when it really works, remembers what was last chosen (a watchdog restarts a dead follower and switches PiFinder's Test Mode on again after an update, a crash or a reboot, bounded against restart loops) and waits until INDI and the mount driver answer before restarting. Full Simulation and Fake Mode move into "Other test modes".
+- Mount Bridge: `TARGET_STATUS` (the requested GoTo target and PiFinder's offset from it, #657) and `POSITIONING_STATUS` / `POSITIONING_PHASE` (attempt, residual, elapsed time, hands off, #665) as INDI properties; the Bridge also reports to PiFinder, whose screen shows "HANDS OFF" in the title bar while the Bridge works, then "ON TARGET" / "Hand OK n'" (patch `pfsm_bridge_status.py`, `ui_base_py.diff`).
+- Control Center, sky area: one card under the sky picture for every state (headline with "Hands off / Hands free", a four-step band, one line, one reason, Why? / Run so far / Details), the targets as markers in the picture, time left and date right in the picture's top corners, the (i) in its bottom left corner, a fixed column width, and no second text block under the card.
+- Control Center: "Sync PiFinder from mount" without a plate solve injects the mount's position instead of refusing; "Copy to clipboard" below every terminal window; Multi-Point Alignment as a tile in Quick Actions; Settings and "Setup checklist & diagnostics" as tiles of their own; a Branch selector above "What is this device?".
+- `test_tools/`: `bridge_props.py`, `onstep_watch.py`, `bridge_messages.py`, `bridge_stall_catcher.py` (catches a silent Bridge and what the other devices do at the same moment, #385); docs `docs/concepts/mount_bridge_target_transparency.md` and `pifinder_realmode_sky_simulation.md`.
+
+### Changed
+
+- One name for what PiFinder points to and the Bridge keeps: **Push-To** (blue cross; buttons **Goto Push-To**, **Send Push-To to PiFinder**, **Revert to Push-To**; before: "... Target"). The ring is the **Last GoTo** and appears only when it is somewhere else.
+- Multi-Point Alignment: its stars are neither Push-To nor last GoTo, and afterwards (also after Stop) the Bridge moves nothing until the next GoTo; the screen says "Waiting for the next GoTo" while the mount is away from the Push-To.
+- Mount Bridge: that question no longer times out after 45 s and drives back; nothing moves until it is answered, a new GoTo is given, or mount and PiFinder agree again. After an alignment that moved the mount without any command the Bridge keeps off, too.
+- Alignment pause: ends when nothing alignment-related is observably going on (no fixed 2 minutes); the page shows what keeps it.
+- Control Center: after a movement by hand the card says "Holding Push-To" instead of "On target".
+- Mount Bridge, GoTo coupling: after a movement by hand the mount is synced to PiFinder at once instead of asking the 45 s question; after a stop (abort) the Bridge does not move the mount until the next GoTo.
+- Below the horizon PiFinder's position is treated as what it is, never a plate solve: the cards say so, "Sync PiFinder from mount" is confirmed without asking the camera, and mount and PiFinder both below show one calm "end of session or start-up" card.
+- Sky simulation: no stars are rendered while the mount points below the horizon.
+- "Sync PiFinder from mount" reaches its goal instead of refusing when the mount is outside the camera's field of view: the sky simulation is rendered at the mount again; on real hardware the position is set and the confirmation says whether the camera agrees.
+- PiFinder is asked on port 80 only when nothing at all listens on 8080 (a PiFinder on its own operating system).
+- Control Center, both Sync buttons: the line stays on "waiting for the confirmation" (seconds, distance) until PiFinder and mount really agree, then says after how many seconds, or that it was not confirmed after 60 s. Messages are shown in full.
+- Control Center: in a profile without a Mount Bridge (PiFinder alone, e.g. on a Dobsonian) the card under the sky picture is hidden.
+- The drivers ask PiFinder on port 8080 first, then 80 (on StellarMate port 80 is nginx in front of EkosLive).
+- Plain wording: "Mount and PiFinder differ by 103°" (was "Still 6157′ off after 0 attempts"), "you can steer by hand", "No manual sync yet" with a grey dot.
+- Wording of the positioning status, which was not understood: PiFinder's title bar says "MOUNT MOVING" (was "HANDS OFF") and "MOUNT OFF 103°" (was "Hand OK 6157'"; distance between mount and PiFinder, bright on black); the Control Center card shows "Don't touch the mount" only while the mount is moved (no "Hands free" badge).
+- Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
+- Drift and altitude badges have one fixed width, so the diagram does not move when the number or the label changes.
+
+### Removed
+
+- The `alpha` branch of the branch model: development happens on `dev` (and short-lived branches from it), releases on `main`.
+
+### Fixed
+
+- Multi-Point Alignment: the Bridge's holding check could slew back to the Push-To in the middle of a run when a star was close to it.
+- "Send Push-To to PiFinder" no longer counts as a push-to that moves the mount; a manual Sync no longer ends the waiting for the next GoTo.
+- Control Center: the result of the last manual Sync stands in the heading of "Sync positions (once)" instead of in a box of its own.
+- Card under the sky picture: with a high drift it names the Bridge's own reason for not correcting (before: always "Waiting for a fresh solve"), and "On target" shows PiFinder's distance from the target (before: the distance between mount and PiFinder).
+- Multi-Point Alignment: a point counts only when the mount reports the synced position; an ignored Sync is logged and not counted.
+- Multi-Point Alignment keeps PiFinder awake in every coupling mode; more room between Start and Stop alignment.
+- The warning "PiFinder has drifted ... from the Push-To" is not logged while the mount is meant to be elsewhere (slewing, aligning, waiting).
+- Control Center, Multi-Point Alignment: room between the rows; the first direction button starts under the search radius field.
+- During a Multi-Point Alignment the card says "Aligning" with the point and "Don't touch the mount", PiFinder "ALIGNING" (before: the earlier GoTo's "On target").
+- "PiFinder LX200" is reconnected when PiFinder was restarted together with the Control Center (before, it stayed on a dead link and PiFinder got no targets).
+- Mount Bridge: "Adopt this position" syncs the mount to it; before, the same question came back at once.
+- Control Center: restarting the Mount Bridge uses the FIFO of the INDI server it runs on (profiles that mix driver sources run two).
+- Mount Bridge: a mount that started after the Bridge connected, or was selected later, is read again without restarting the driver (#662).
+- Mount Bridge: "Goto Push-To" is verified and refined; before, the Bridge took its own slew for somebody else's and kept the landing position.
+- Sky picture: a slewing mount is labelled "slewing", not "stopped".
+- Sky simulation: after a reboot the simulated sky could start tens of degrees off, because the start-up position changes of the mount were taken for Syncs.
+- Mount Bridge: an unreachable target no longer leads to endless re-slewing; after 3 attempts nothing moves until the next GoTo.
+- PiFinder received declinations between 0 and -1 degree with the wrong sign (patch to PiFinder's pos_server.py).
+- Mount Bridge: a GoTo sent to the mount (KStars, Ekos, StellarMate app SLEW/GO, any INDI client) is brought onto the requested object like a GoTo sent to PiFinder, instead of keeping the position the scope happened to land on (#170).
+- Control Center: the card under the sky picture shows whole sentences (two lines, fixed height) instead of cutting them off.
+- Sky simulation: switching it off and on can no longer leave two programs painting the picture.
+- Sky simulation: after reconnecting (profile restart, update) the start-up jumps of the mount are no longer taken for Syncs (the simulated sky ended up 180 degrees off).
+- Sky simulation: no longer crashes when a mount reports a right ascension outside 0..24 h (the picture stayed frozen).
+- Mount Bridge: after a binding retry the Bridge no longer saw PiFinder's target and forwarded no GoTo (libindi's watchProperty() drops every other property of the device for good); it now reconnects instead.
+- Mount Bridge: checks after every slew that the mount arrived where it was sent (wrong alignment model, limit, abort) and does not Sync if not; positions below the horizon are no longer adopted as the target.
+- Sky simulation: starts the Telescope Simulator with a sound alignment model (after one far Sync its GoTos landed 180 degrees off). New live check: test_tools/mount_model_check.py.
+- Mount Bridge: "On target" only if PiFinder is on the GoTo target as well; mount and PiFinder agreeing somewhere else is now reported as "Off target" (card and PiFinder title bar).
+- Control Center: a profile restart from Ekos or the SMOS app no longer puts every driver into indiserver twice (the Control Center started the profile in the gap between stop and start; it now waits 30 s).
+- Sky picture: names near the edge are no longer cut off ("Mount (stopped").
+- Mount Bridge went silent for about 51 s at a time and the Control Center reacted late (#385): three requests to PiFinder printed the response (an HTML error page from port 80) into the driver's INDI stream. The response is now discarded.
+- Sky simulation: the sky follower connects again when INDI closes its connection (profile restart); before, PiFinder's picture stayed frozen.
+- Installer: patches that create a file no longer append the content again on every update (the oldest copy won, so changes never arrived).
+- Mount Bridge: Auto-correct (Sync) only syncs to a frame exposed after the mount stopped (#659); the reposition detection no longer preempts the arrival verification (SETTLING, #663); nothing impossible reaches the mount, a (re)link never starts a Goto, a late mount driver is bound again; PiFinder LX200 does not republish a target within 1 arcminute of the published one (it started a second slew 30 s after a GoTo).
+- Sky follower: writes the sky again when something replaces PiFinder's test picture (an update put the original back and the simulation never solved).
+- Control Center: a mount that tracks and stands still no longer raises "Mount not responding". The check took "same RA/Dec for 60 s" as silence, but a tracking mount reports the same position for minutes (OnStep to one second). Unchanged coordinates now only count as silence when the driver marks them Alert too (it does when it cannot read the mount); a driver without a state keeps the old rule. New `test_tools/mount_silence_test.py`.
+- GSC simulation: the follower moves to the Bridge's active mount when the profile switches the mount (for example from a real mount to the Telescope Simulator). Before, it kept following a device that no longer existed, the picture never moved, and the tile still said "on". The watchdog restarts it on the new mount (bounded like a dead follower).
+- Control Center: one slow answer of the Bridge no longer turns the page to "Not coupled"; three missed polls in a row (about 6 s) do. The Bridge answers a `getProperties` in 0.1 ms and sends every 2 s; what is sometimes late is indiserver in between (measured 2026-11-26).
+- Control Center: the "Sky for" line in the card's details keeps a separator between time and date.
+- Mount Bridge readiness watchdog, new check 3.5: a Bridge that is connected and answers everything but was never bound to its mount and PiFinder (it published nothing for 15 minutes after a profile switch to the Telescope Simulator) is found by its `MOUNT_HORIZON_STATUS` staying `Idle` for 45 s, and its connection is cycled (at most 3 times per 10 minutes, not while guiding is held). New `test_tools/bridge_binding_test.py`. The cause of the missed binding itself is not yet found (see the issue).
+
+## [2.6.1] - 2026-11-26
+
+> Update safety release: PiFinder's own update path is closed, PiFinder's v2.6.0 data migration is run by PFSM, two early-warning tools (patch drift against upstream tags, compatibility with the system)
+> are added, and the clock warning no longer cries wolf on a Pi without NTP. No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `bin/tests/run_all.sh` (all bats tests, including the new ones for the stubs, the data migration and the driver build stamp), `python3 test_tools/compat_check_test.py` (14),
+> `python3 test_tools/patch_drift_check_test.py` (4), `node test_tools/clock_warning_test.js`; `software_py.diff` dry-run against PiFinder 2.3.0, 2.5.1, 2.6.0, 2.6.1, 2.6.3 and 2.6.4;
+> PiFinder's own v2.6.0 script on synthetic configs and on a copy of the real one; `bin/compat_check.py` on the Pi 5 (all five checks ok); `patch_drift_check.py` against 2.6.4 (pinned: no failure) and 3.1.3-beta.
+>
+> **Not yet seen live:** the three setup changes in a real update (the menu patch `software_py.diff`, the data migration, and the compatibility check at the end of the setup; the build stamp is written at the next driver build),
+> the grey "Pi clock not NTP-synced" line in the real page, and the Control Center card for the compatibility check (not built, only `GET /api/compat_check`).
+> Open: the version whitelists in the patch script still name 2.3.0 to 2.6.3, where `main_py` and `align_py` (shaped for 2.6.4) no longer apply.
+
+### Added
+
+- `bin/compat_check.py`: a read-only compatibility check that asks whether what PFSM built still fits the system (a SMOS or package update can move these without PFSM noticing): the venv's Python against the system's, the PFSM INDI drivers (`ldd`, and the libindi version they were built against, now recorded in `~/.pfsm/driver_build.json` when the drivers are built), libcamera, KStars' D-Bus clock action, and the installed PiFinder against the pin. Each result says what is wrong and what to do. It runs at the end of the setup and of the SMOS restore script and is served as `GET /api/compat_check`; a Control Center card is not built yet. Tests: `test_tools/compat_check_test.py`, `bin/tests/test_driver_build_stamp.bats`.
+- `test_tools/patch_drift_check.py`: dry-runs every PFSM patch against the pristine files of PiFinder tags (default: the pinned tag, the newest release, the newest beta) with the diff-to-file mapping read from the patch script, so a new PiFinder version that moves our anchor lines is found before a pin change, not during the setup. Reports clean / offset / fuzz / new file / legacy / upstreamed / FAIL / MISSING; exit status 1 when the pinned tag fails. Tests: `test_tools/patch_drift_check_test.py`.
+- PiFinder data migration: PFSM now runs PiFinder's v2.6.0 migration itself (clears a stale `flop_image=true` on the shipped "Generic Dobsonian" in `~/PiFinder_data/config.json`, which would mirror the object image). Upstream runs it from its own post-update script, which PFSM does not use, so configs that jump from PiFinder 2.5.x to 2.6.x kept the bad value. It is idempotent, backs up `config.json` first (the copy is kept only if the file changed), is skipped while PiFinder runs, and never stops an update (`run_pifinder_data_migrations()` in `bin/functions.sh`, called by the patch script). The documentation now keeps PiFinder's **data** (what a new version adapts) apart from the code path and the system settings.
+
+### Fixed
+
+- PiFinder's own update path is closed. The menu's "update" and the two scripts copied into `~/PiFinder` (`pifinder_update.sh`, `pifinder_post_update.sh`) would have done a `git pull` of the newest PiFinder release (bypassing the pinned and tested version and the patches) and run upstream's migrations; on SMOS they failed anyway because they point at `/home/pifinder`. The scripts now refuse and name the Control Center, and the menu says *Update via Control Center* (new `diffs/software_py.diff`, applies to every supported PiFinder version). The old post-update copy had stopped at the PiFinder 2.1 migrations; none of the migrations was ever run by PFSM (no `~/PiFinder_data/migrations` folder).
+
+### Changed
+
+- Documentation: a checklist for every change of the PiFinder pin (docs/concepts/lifecycle_install_update_upgrade.md section 4.2: compare upstream's setup/update scripts and migrations, test patches against every supported version) and the state of the upstream migrations against PFSM. Upstream's `RemoveIPC=no` (PiFinder 2.6.1) is not applied and not needed on SMOS as long as the user has lingering enabled (it has).
+- Control Center clock warnings: the yellow strip "The Pi's clock is not synchronised" is gone. In the field (no internet, time from the phone or GPS) a Pi without NTP is normal, so the strip would have been a false alarm that gave wrong advice. A Pi that is not NTP-synchronised is now only noted in grey on the time line under the Sky (`Pi clock not NTP-synced`); the yellow strip stays for the mount's clock differing from the Pi's.
+
+## [2.6.0] - 2026-11-25
+
+> OLED mirror release: the PiFinder tile's OLED mirror follows the picture PiFinder delivers, so the Rev 4 display (1.91" OLED, 176 x 176) is shown at 244 px.
+> No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `node test_tools/oled_mirror_size_test.js` (5 checks); the sizing logic rendered in headless Firefox (128 -> 192 px hard pixels, 176 -> 244 px smoothed);
+> PiFinder 2.6.4 started with `--display headless_320` on the Pi 5 serves clean 320 x 240 pictures (menus and settings), which the tile now shows at 244 x 183.
+>
+> **Not yet seen live:** the tile with a real Rev 4 (no Rev 4 hardware was available; the 176 picture in the mockup was an illustration), and the tile layout with the 244 px picture in the real page.
+> `bin/display_off.py` still drives the display as a 128 x 128 SSD1351 and is unverified for Rev 4 (#646).
+
+### Added
+
+- Control Center, PiFinder tile: the OLED mirror follows the picture PiFinder delivers. Rev 4 has a 1.91" OLED with 176 x 176 pixels (about 62 % more viewing area; PiFinder 2.6.4 detects it by itself and already serves the picture in that resolution): it is now shown at 244 px (the 27 % longer sides of the bigger display), smoothed, instead of being squeezed into the old 192 px box. The 128 x 128 picture of Rev 3 stays as before (192 px, hard pixels). A picture that is not square (for example a 320 x 240 LCD) keeps its aspect ratio instead of being squashed. Not yet seen with real Rev 4 hardware (the 176 picture in the mockup is an illustration).
+
+## [2.5.0] - 2026-11-25
+
+> Clock warnings release: the Sky shows the moment it is computed for, and yellow strips warn when the mount's clock or the Pi's clock is wrong.
+> No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0.
+>
+> **Checked:** `node test_tools/clock_warning_test.js` (21 checks), `python3 test_tools/clock_status_test.py`, `node test_tools/sky_panel_test.js`; on the Pi 5 the
+> time line under the Sky matches the clock of a KStars on another computer, no strip shows while the clocks agree, both strips and the yellow time line were
+> seen in the real page (values injected from the browser console), and a mount clock set 20 minutes wrong was corrected by the Control Center within about 10 s.
+>
+> **Not yet seen live:** a strip appearing by itself (the automatic correction is normally faster than the 60 s debounce, so it only stays when that correction fails),
+> and the *Set mount time now* button pressed in the page (it runs the same KStars pulse the automatic correction uses).
+
+### Added
+
+- Control Center: **clock warnings**. Found live: a KStars on the desktop showed the mount below the horizon while the Sky said 72° (that KStars was set to 11:30 instead of 21:55); nothing on the page could have told the user. The Sky now shows the moment it is computed for (`Sky for 21:58 CET · 25 Nov`, the Pi's clock, in the Pi's timezone) so it can be compared with the KStars clock; a KStars on another computer keeps its own clock that INDI does not expose, so no warning is possible for that one. New yellow strips at the top of the page (same look as the other notices) appear after a minute when the mount's clock differs from the Pi's by more than 10 minutes (button *Set mount time now*, the existing KStars pulse) or when the Pi's clock is not NTP-synchronised; the line under the Sky turns yellow with them. New `GET /api/clock_status` and `POST /api/mount_time_refresh`; help section *Clock warnings* and, under the Sky's (i), *KStars on another computer shows the mount somewhere else* (symptom, cause, why no warning is possible, how to check and fix it).
+
+## [2.4.0] - 2026-11-25
+
+> PiFinder 2.6.4 release: the pin moves from PiFinder v2.6.3 to **v2.6.4** (upstream release of 2026-11-22). Two patches were
+> regenerated, a new safeguard keeps PiFinder's `python/tetra3` link alive, and the setup script now restarts itself after a
+> branch switch. No breaking changes. **Released from `dev` only**; `main` stays at v2.3.0 (pin 2.6.3) for now.
+>
+> **Checked:** all 29 patch calls against a fresh 2.6.4 without rejects; our own tests (18) and the new bats test; a real update on
+> the Pi 5 (SMOS 2.4.0, OnStep): PiFinder at v2.6.4, `pifinder` service active, PiFinder web API answers (`/api/align` refuses
+> correctly without a solve), PiFinder LX200 and Mount Bridge connected.
+>
+> **Not yet seen live:** camera and a real sky solve, "Sync PiFinder from mount" with a star in the field, Full Simulation with a
+> fake solve, Pi 4, UTM, and the restart-after-branch-switch fix on a real run (only simulated). The keyboard process dying with
+> `lgpio.error` on the Pi 5 is the known UPS-shield GPIO clash and predates 2.6.4.
+
+### Changed
+
+- **PiFinder pin moves from v2.6.3 to v2.6.4** (upstream release of 2026-11-22; `version.txt`, `pifinder_stellarmate_setup.sh`, the version whitelist of `patch_PiFinder_installation_files.sh`). Two patches had to be regenerated for it: `main_py.diff` (the sleep state machine now sits on top of 2.6.4's new `update(keep_awake)`) and `align_py.diff` (the Align stamp now follows 2.6.4's `config_object.save_target_pixel()`). The other patches apply unchanged (line offsets only). The two Align test files' fake configs gained `save_target_pixel`.
+- `pifinder_update.sh` stops with a clear message when `git pull` fails (as upstream's own does since 2.6.4).
+
+### Fixed
+
+- PiFinder 2.6.4 stopped tracking `python/tetra3` (upstream ADR 0035): in 2.6.3 it was a tracked symlink that a checkout of the newer tag removes, and a fresh clone never has it, so `import tetra3` would fail. New `ensure_tetra3_symlink()` (bin/functions.sh) recreates the link on every install/update (patch script and `pifinder_post_update.sh`); unit-tested in `bin/tests/test_tetra3_symlink.bats`.
+- The setup script now restarts itself once after it switched the branch (`--branch=...`): before, the run kept the pinned versions of the OLD branch's script while the patches already came from the NEW one (found live: switching to the branch with the 2.6.4 pin updated PiFinder to 2.6.3 and then applied the 2.6.4 patches, two hunks failed; a second run fixed it).
+
 ## [2.3.0] - 2026-11-25
 
 > Control Center layout release: the **Mount Bridge** block groups its badges (PiFinder | Drift, Bridge, Alt | Mount) and

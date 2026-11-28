@@ -1,0 +1,14 @@
+--- python/PiFinder/api_extensions.py.orig
++++ python/PiFinder/api_extensions.py
+@@ -1416,6 +1416,11 @@
+             {"success": True, "note": "Shutting down PiFinder", "delay": delay}
+         )
+ 
++    # PiFinder_Stellarmate: the Mount Bridge reports what it is doing about getting the scope onto the target
++    from PiFinder import pfsm_bridge_status
++
++    pfsm_bridge_status.register(app)
++
+     logger.info(
+         "PiFinder API extensions registered (%s auth)",
+         "with" if require_auth else "without",

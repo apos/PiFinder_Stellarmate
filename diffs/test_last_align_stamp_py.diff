@@ -1,6 +1,6 @@
 --- python/tests/test_last_align_stamp.py.orig
 +++ python/tests/test_last_align_stamp.py
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,104 @@
 +"""Regression guard for PiFinder_Stellarmate #313: a confirmed solve-based
 +Align (ui/align.py::align_on_radec) records RA/Dec + a timestamp into
 +shared_state via set_last_align(), and nothing else does.
@@ -24,6 +24,11 @@
 +
 +    def set_option(self, k, v):
 +        self.options[k] = v
++
++    def save_target_pixel(self, target_pixel):
++        # PiFinder 2.6.4 stores the alignment through this (per telescope);
++        # the fake keeps it in the option the assertions look at.
++        self.options["target_pixel"] = list(target_pixel)
 +
 +    def get_option(self, k, default=None):
 +        return self.options.get(k, default)

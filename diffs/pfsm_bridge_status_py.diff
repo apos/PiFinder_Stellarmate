@@ -1,0 +1,159 @@
+--- python/PiFinder/pfsm_bridge_status.py.orig
++++ python/PiFinder/pfsm_bridge_status.py
+@@ -0,0 +1,156 @@
++"""PiFinder_Stellarmate: what the Mount Bridge is doing to get the scope onto the target, shown on PiFinder's screen.
++
++After a GoTo the Mount Bridge slews, waits for a PiFinder solve, refines and verifies. While it does, the user must keep
++their hands off the hand controller. The Bridge (an INDI driver) posts its status to POST /api/bridge_positioning; the web
++server writes it to a small file and the UI process reads it for the title bar. A file, because the web server and the UI are
++separate processes.
++
++Fail safe: a "hands off" status that is not renewed within FRESH_SEC (the Bridge keeps posting every few seconds while it works)
++is ignored, so a stopped or lost Bridge can never leave "MOUNT MOVING" stuck on the screen.
++"""
++import json
++import os
++import tempfile
++import time
++
++PATH = os.environ.get("PFSM_BRIDGE_STATUS_PATH", "/tmp/pfsm_bridge_positioning.json")
++FRESH_SEC = 8.0        # a hands-off status older than this is not trusted
++SHOW_DONE_SEC = 12.0   # how long "on target" stays in the title bar
++SHOW_GAVE_UP_SEC = 20.0
++WARNING_PREFIX = "MOUNT OFF"      # mount and PiFinder are apart
++OFF_TARGET_PREFIX = "OFF TARGET"   # they agree, away from the GoTo target
++CHECK_TEXT = "CHECK MOUNT"         # the Bridge has a question: they suddenly differ although the mount did not move
++PHASES = ("IDLE", "SLEWING", "VERIFYING", "REFINING", "ON_TARGET", "GAVE_UP", "OFF_TARGET", "HOLDING", "CHECK_SCOPE", "ALIGNING")
++HANDS_OFF_PHASES = ("SLEWING", "VERIFYING", "REFINING", "ALIGNING")
++
++_cache = {"mtime": None, "data": None}
++
++
++def _number(value, default=0.0):
++    try:
++        number = float(value)
++    except (TypeError, ValueError):
++        return default
++    return number if number == number and abs(number) < 1e9 else default
++
++
++def _timestamp(value):
++    """A Unix timestamp (about 1.8e9 today: not for _number's limit), or 0.0 when it is not one."""
++    try:
++        stamp = float(value)
++    except (TypeError, ValueError):
++        return 0.0
++    return stamp if stamp == stamp and 0.0 <= stamp < 1e11 else 0.0
++
++
++def clean(payload):
++    """The posted status reduced to what is used, or None when it is not a status."""
++    if not isinstance(payload, dict):
++        return None
++    phase = str(payload.get("phase", "")).upper()
++    if phase not in PHASES:
++        return None
++    return {
++        "phase": phase,
++        "hands_off": phase in HANDS_OFF_PHASES,
++        "attempt": int(_number(payload.get("attempt"))),
++        "attempts_max": int(_number(payload.get("attempts_max"), 3)),
++        "residual_arcmin": _number(payload.get("residual_arcmin")),
++        "to_go_deg": _number(payload.get("to_go_deg")),
++    }
++
++
++def write(payload, path=PATH, now=None):
++    """Store a posted status (atomically; the UI process may read at any moment). Returns the stored dict or None."""
++    data = clean(payload)
++    if data is None:
++        return None
++    data["ts"] = time.time() if now is None else now
++    directory = os.path.dirname(path) or "."
++    fd, tmp = tempfile.mkstemp(prefix=".pfsm_bridge_", dir=directory)
++    try:
++        with os.fdopen(fd, "w") as handle:
++            json.dump(data, handle)
++        os.replace(tmp, path)
++    finally:
++        if os.path.exists(tmp):
++            os.unlink(tmp)
++    return data
++
++
++def read(path=PATH, now=None):
++    """The last stored status, or None when there is none or it is too old to trust."""
++    now = time.time() if now is None else now
++    try:
++        mtime = os.stat(path).st_mtime
++    except OSError:
++        return None
++    if _cache["mtime"] != mtime:
++        data = None
++        try:
++            with open(path) as handle:
++                raw = json.load(handle)
++            data = clean(raw)
++            if data is not None:
++                data["ts"] = _timestamp(raw.get("ts"))
++        except (OSError, ValueError, AttributeError):
++            data = None
++        _cache["data"] = data
++        _cache["mtime"] = mtime
++    data = _cache["data"]
++    if not data or "ts" not in data:
++        return None
++    age = now - float(data["ts"])
++    if data.get("hands_off") or data.get("phase") == "CHECK_SCOPE":   # both are renewed while they last
++        return data if age <= FRESH_SEC else None
++    if data.get("phase") == "ON_TARGET":
++        return data if age <= SHOW_DONE_SEC else None
++    if data.get("phase") in ("GAVE_UP", "OFF_TARGET"):
++        return data if age <= SHOW_GAVE_UP_SEC else None
++    return None
++
++
++def titlebar(path=PATH, now=None):
++    """(text, inverted) for the title bar, or None for the normal title. Inverted = bright bar: the Bridge is moving the mount.
++
++    The title bar holds about 13 characters on a 128 px display (screen_update truncates longer text with an ellipsis).
++    """
++    data = read(path, now)
++    if not data:
++        return None
++    if data["hands_off"]:
++        return ("ALIGNING" if data["phase"] == "ALIGNING" else "MOUNT MOVING", True)
++    if data["phase"] == "CHECK_SCOPE":
++        return (CHECK_TEXT, False)
++    if data["phase"] == "ON_TARGET":
++        return ("ON TARGET", False)
++    if data["phase"] == "GAVE_UP":
++        # The number is how far the mount and PiFinder are apart - PiFinder's own push-to numbers may well read zero.
++        return (WARNING_PREFIX + " " + _distance(data["residual_arcmin"]), False)
++    if data["phase"] == "OFF_TARGET":
++        return (OFF_TARGET_PREFIX + " " + _distance(data["residual_arcmin"]), False)
++    return None
++
++
++def _distance(arcmin):
++    """A distance for the title bar: degrees from 60' on, arcminutes below."""
++    if arcmin >= 60:
++        return "%.0f°" % (arcmin / 60.0)
++    return ("%.1f'" if arcmin < 10 else "%.0f'") % arcmin
++
++
++def is_warning(banner):
++    """True for a title bar text that reports a missed position: drawn bright on black across the whole bar."""
++    return bool(banner) and banner[0].startswith((WARNING_PREFIX, OFF_TARGET_PREFIX, CHECK_TEXT))
++
++
++def register(app):
++    """POST /api/bridge_positioning: the Mount Bridge reports its positioning status."""
++    from flask import jsonify, request
++
++    @app.route("/api/bridge_positioning", methods=["POST"])
++    def api_bridge_positioning():
++        stored = write(request.get_json(silent=True))
++        if stored is None:
++            return jsonify({"success": False, "error": "not a positioning status"}), 400
++        return jsonify({"success": True})

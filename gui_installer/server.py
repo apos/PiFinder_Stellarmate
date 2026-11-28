@@ -31,6 +31,8 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode
 
 import pam_auth
+import clock_status
+import gsc_sim
 import indi_client
 import webmanager_client
 
@@ -51,6 +53,7 @@ GUI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = GUI_DIR.parent
 SETUP_SCRIPT = REPO_ROOT / "pifinder_stellarmate_setup.sh"
 RESTORE_SCRIPT = REPO_ROOT / "bin" / "restore_after_smos_update.sh"
+_compat_cache = None  # (time, report) of /api/compat_check
 # SMOS version at the last completed setup/restore (written by
 # bin/functions.sh's record_smos_version()); lives in /home, so it survives a
 # SMOS root reset. A different /etc/stellarmate/version means the update
@@ -800,7 +803,7 @@ def _gps_hardware_present():
         return None
 
 
-def _pifinder_status_snapshot(ports=("80", "8080", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
+def _pifinder_status_snapshot(ports=("8080", "80", str(FAKE_MODE_PORT)), host: str = "127.0.0.1"):
     """GETs PiFinder's own /api/status from whichever of `ports` answers
     first (real service on 80/8080, or the fake-hardware instance). Returns
     the parsed dict, or None if none of them are reachable. Shared by the
@@ -1346,6 +1349,84 @@ def _ekos_guide_status():
         return None
 
 
+def _ekos_align_status():
+    """Ekos::AlignState as an int, or None if the Align module isn't reachable. KStars 3.8.5 (kstars/ekos/ekos.h): 0 idle,
+    1 complete, 2 failed, 3 aborted, 4 in progress, 5 successful, 6 syncing, 7 slewing, 8 rotating, 9 suspended. The numbers
+    come from the position in that enum - re-check after a KStars upgrade. Polar alignment and the mount model tool work through
+    the same module: their captures, solves and slews show here (Ekos exposes no separate state for them on D-Bus)."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Align", "org.kde.kstars.Ekos.Align.status"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+_ALIGN_BUSY_STATES = {4, 6, 7, 8, 9}
+_ALIGN_SOLVED_STATES = {1, 5}
+
+
+def _ekos_align_log_head():
+    """The newest line of Ekos' alignment log (it is delivered newest first), or None. A new line means Ekos is at work."""
+    env = dict(os.environ)
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
+    try:
+        r = subprocess.run(
+            ["qdbus6", "org.kde.kstars", "/KStars/Ekos/Align", "org.kde.kstars.Ekos.Align.logText"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.split("\n", 1)[0].strip() or None
+
+
+def _alignment_activity(als):
+    """What is observably going on that belongs to an alignment right now, in words, or None. Used to keep a running alignment
+    hold: Ekos' own status, a new line in its alignment log, and the mount being turned by direction motion (how polar alignment
+    moves it, between two images). No fixed waiting time stands in for any of these. (Camera exposures add nothing: measured
+    2026-11-27, they happen only while Ekos is "in progress", and the alignment camera may be the imaging or guide camera.)"""
+    global _align_log_head
+    head = _ekos_align_log_head()
+    new_line = head is not None and _align_log_head is not None and head != _align_log_head
+    if head is not None:
+        _align_log_head = head
+    if als in _ALIGN_BUSY_STATES:
+        return {4: "Ekos is taking or solving an image", 6: "Ekos is syncing the mount", 7: "Ekos is slewing the mount",
+                8: "Ekos is turning the rotator", 9: "Ekos has suspended the alignment"}[als]
+    if indi_client.mount_direction_motion():
+        return "the mount is being turned"
+    if new_line:
+        return "Ekos is working (new alignment log entry)"
+    return None
+
+
+def _align_pifinder_after_solve():
+    """Ekos solved and synced the mount: PiFinder gets the same truth (its own Align on the mount's position). Does nothing with
+    the coupling off. A refusal (PiFinder cannot see that position, no solve) is logged and never forced."""
+    try:
+        if indi_client.mount_bridge_drift().get("coupling_mode") in (None, "MODE_OFF"):
+            return
+    except indi_client.INDIClientError:
+        return
+    result = _pifinder_align_from_mount("8080")
+    if result.get("success"):
+        _mb_log("Alignment solved and synced the mount: PiFinder aligned to the mount's position.")
+    else:
+        _mb_log("Alignment solved and synced the mount, but PiFinder was NOT aligned: "
+                f"{result.get('message') or result.get('error') or result.get('reason')}")
+
+
 # Fail-safe by design (2026-09-27, re-reviewed against the original
 # EXTERNAL_HOLD concept - docs/concepts/mount_bridge_external_hold.md -
 # before reviving this branch): an allow-list of "held" states (the
@@ -1415,7 +1496,7 @@ def _guiding_hold_watchdog(interval=3):
 
 def _guiding_hold_watchdog_tick():
     global _guiding_hold_active, _guiding_hold_idle_since, _guiding_hold_supported
-    global _guiding_hold_adopted_initial_state
+    global _guiding_hold_adopted_initial_state, _guiding_hold_seen, _align_hold_seen, _guiding_hold_reason
     if _guiding_hold_supported is False:
         return  # confirmed missing on this build - already logged once, stay quiet
 
@@ -1434,20 +1515,40 @@ def _guiding_hold_watchdog_tick():
         _guiding_hold_supported = True
         _guiding_hold_active = live
         if live:
+            try:
+                _align_hold_seen = str(indi_client.mount_bridge_drift().get("external_hold_reason") or "").startswith("alignment")
+            except indi_client.INDIClientError:
+                pass
             _mb_log("Guiding watchdog: adopted an external hold already engaged on the driver from before this restart.")
 
     gs = _ekos_guide_status()
-    if gs is None:
+    als = _ekos_align_status()
+    if gs is None and (als is None or _guiding_hold_seen):
         return
-    guiding_now = gs not in _GUIDE_SAFE_STATES
+    guiding_now = gs is not None and gs not in _GUIDE_SAFE_STATES
+    # Only Ekos' own status starts an alignment hold; once started, any alignment activity keeps it.
+    activity = _alignment_activity(als) if als is not None else None
+    aligning_now = als in _ALIGN_BUSY_STATES or (_align_hold_seen and activity is not None)
     if guiding_now:
+        _guiding_hold_seen = True
+    if aligning_now:
+        _align_hold_seen = True
+    if guiding_now or aligning_now:
         _guiding_hold_idle_since = None
         want_hold = True
     elif _guiding_hold_active:
         _guiding_hold_idle_since = _guiding_hold_idle_since or time.monotonic()
+        # bridges the gap between two steps (measured: below 1 s between the steps of one solve)
         want_hold = (time.monotonic() - _guiding_hold_idle_since) < _GUIDING_RELEASE_DEBOUNCE_S
     else:
         want_hold = False
+    reason = f"alignment: {activity}" if aligning_now else f"guiding (Ekos GuideState {gs})"
+    if want_hold and _guiding_hold_active and aligning_now and reason != _guiding_hold_reason:
+        try:
+            indi_client.set_text("PiFinder Mount Bridge", "EXTERNAL_HOLD_REASON", {"REASON": reason})   # shown on the page
+            _guiding_hold_reason = reason
+        except indi_client.INDIClientError:
+            pass
 
     if want_hold and not _guiding_hold_active:
         # §3.3: don't start a hold mid-Multi-Point-Alignment run - the
@@ -1461,20 +1562,29 @@ def _guiding_hold_watchdog_tick():
         except indi_client.INDIClientError:
             pass  # can't tell either way - proceed rather than block forever
         try:
-            indi_client.set_mount_bridge_external_hold(True, f"guiding (Ekos GuideState {gs})")
+            indi_client.set_mount_bridge_external_hold(True, reason)
             _guiding_hold_supported = True
             _guiding_hold_active = True
-            _mb_log(f"Guiding watchdog: guiding active (Ekos GuideState {gs}) - Mount Bridge external hold engaged.")
+            _guiding_hold_reason = reason
+            _mb_log(f"Hold: {reason} - the Mount Bridge keeps off the mount.")
         except indi_client.INDIClientError as e:
             if _guiding_hold_supported is None:
                 _guiding_hold_supported = False
                 _mb_log(f"Guiding watchdog: EXTERNAL_HOLD not available on this Mount Bridge build - "
                         f"guiding protection disabled until it's rebuilt/updated ({e}).")
     elif not want_hold and _guiding_hold_active:
+        release_reason = ""
+        if _align_hold_seen:
+            solved = als in _ALIGN_SOLVED_STATES
+            release_reason = "alignment ended: solved" if solved else "alignment ended: not solved"
+            # While still held, so the Bridge does not turn PiFinder's Align into a Sync of its own.
+            if solved and indi_client.mount_bridge_hold_syncs() > 0:
+                _align_pifinder_after_solve()
         try:
-            indi_client.set_mount_bridge_external_hold(False)
+            indi_client.set_mount_bridge_external_hold(False, release_reason)
             _guiding_hold_active = False
-            _mb_log("Guiding watchdog: guiding stopped - Mount Bridge external hold released.")
+            _guiding_hold_seen = _align_hold_seen = False
+            _mb_log(f"Hold released{' - ' + release_reason if release_reason else ' - guiding stopped'}.")
         except indi_client.INDIClientError as e:
             # Deliberately keep _guiding_hold_active True on failure - a
             # transient INDI error here must not silently let something
@@ -1557,6 +1667,10 @@ _mb_lines = []  # Mount Bridge action log, shown in #mount-bridge-tile's own log
 # by itself never raises it; the flag clears the moment the position moves.
 # Simulators legitimately sit still and are exempt. Nothing is ever restarted
 # automatically - the page only warns and offers "Reconnect mount".
+# Correction (2026-11-26, found live): the first sentence is wrong for a mount that TRACKS. A tracking mount that stands still reports
+# the same RA/Dec for minutes (OnStep gives them to a second), so "position unchanged" alone raised the warning on a healthy, connected
+# mount. A mount that cannot be read, on the other hand, is marked by its driver: the coordinates get the state Alert. So unchanged
+# coordinates only count as silence when the driver says so too (state Alert); a driver that gives no state at all keeps the old rule.
 class _MountSilenceTracker:
     SILENT_AFTER_S = 60.0
 
@@ -1568,7 +1682,7 @@ class _MountSilenceTracker:
         self.coords = None
         self.since = None
 
-    def update(self, device, connected, coords, now=None) -> dict:
+    def update(self, device, connected, coords, now=None, coord_state=None) -> dict:
         now = time.monotonic() if now is None else now
         if not device or connected is not True or coords is None or "simulator" in device.lower():
             self.reset()
@@ -1576,7 +1690,8 @@ class _MountSilenceTracker:
         if device != self.device or coords != self.coords:
             self.device, self.coords, self.since = device, coords, now
         quiet = now - self.since
-        return {"silent": quiet >= self.SILENT_AFTER_S, "silent_for_s": int(quiet), "device": device}
+        driver_agrees = coord_state is None or str(coord_state).lower() == "alert"
+        return {"silent": quiet >= self.SILENT_AFTER_S and driver_agrees, "silent_for_s": int(quiet), "device": device}
 
 
 _mount_silence = _MountSilenceTracker()
@@ -1584,8 +1699,8 @@ _mount_silence = _MountSilenceTracker()
 
 def _mount_silence_for(status: dict) -> dict:
     """Silence verdict for the mount named in a mount_bridge_status() result,
-    plus whether it is parked ("parked": True/False/None). A failed or slow read
-    counts as "no information", never as silence."""
+    plus whether it is parked ("parked": True/False/None), tracking ("tracking": True/False/None) and the state INDI gives the
+    coordinates ("coord_state", "Busy" while slewing). A failed or slow read counts as "no information", never as silence."""
     device = status.get("active_mount")
     if not device or status.get("mount_connected") is not True:
         out = _mount_silence.update(device, status.get("mount_connected"), None)
@@ -1595,8 +1710,10 @@ def _mount_silence_for(status: dict) -> dict:
         state = indi_client.read_mount_state(device, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
     except indi_client.INDIClientError:
         return {"silent": False, "silent_for_s": 0, "device": device, "unknown": True, "parked": None}
-    out = _mount_silence.update(device, True, state["coords"])
+    out = _mount_silence.update(device, True, state["coords"], coord_state=state.get("coord_state"))
     out["parked"] = state["parked"]
+    out["tracking"] = state.get("tracking")
+    out["coord_state"] = state.get("coord_state")
     return out
 
 
@@ -2199,9 +2316,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
         # First observation since this Control Center process started -
         # assume whatever's currently connected is already healthy rather
         # than forcing a reconnect for no reason on every restart of the
-        # Control Center itself.
-        _pifinder_lx200_healed_for_start = current_start
-        return
+        # Control Center itself - unless the driver cannot read PiFinder:
+        # if PiFinder was restarted together with the Control Center (an
+        # update, an install) it still says "connected" over a dead link and
+        # nothing would ever reconnect it (found 2026-11-27: PiFinder got no
+        # targets for 14 minutes).
+        if not (status.get("pifinder_connected") is True and _pifinder_lx200_link_failing()):
+            _pifinder_lx200_healed_for_start = current_start
+            return
+        _pifinder_lx200_healed_for_start = -1
     if current_start == _pifinder_lx200_healed_for_start:
         return
     was_connected = status.get("pifinder_connected") is True
@@ -2236,6 +2359,15 @@ def _pifinder_lx200_auto_reconnect(status: dict) -> None:
             f"{current_start}) - PiFinder LX200 {'still showed connected' if was_connected else 'not connected yet'}, "
             "attempting reconnect (#118)"
         )
+
+
+def _pifinder_lx200_link_failing() -> bool:
+    """Whether "PiFinder LX200" currently cannot read PiFinder's position (INDI state Alert)."""
+    try:
+        props = indi_client.get_properties(device="PiFinder LX200", stop_after={"EQUATORIAL_EOD_COORD"})
+    except indi_client.INDIClientError:
+        return False
+    return props.get("PiFinder LX200", {}).get("EQUATORIAL_EOD_COORD", {}).get("state") == "Alert"
 
 
 def _pifinder_lx200_reconnect_watchdog(interval=20):
@@ -2293,6 +2425,10 @@ _mb_readiness_retrier = _BackgroundRetrier()
 # default is only trusted once that adoption step has actually run.
 _guiding_hold_active = False
 _guiding_hold_idle_since = None
+_guiding_hold_seen = False   # what caused the current hold: guiding, an Ekos alignment, or both
+_align_hold_seen = False
+_align_log_head = None       # newest line of Ekos' alignment log at the last look
+_guiding_hold_reason = None
 # None = not yet determined, True = confirmed present, False = confirmed
 # missing (older Mount Bridge build without #372) - set on the first
 # successful/failed hold attempt, see _guiding_hold_watchdog_tick().
@@ -2573,6 +2709,10 @@ _cold_profile_start_cooldown_until = 0.0  # time.monotonic() deadline, not a wal
 _cold_profile_start_gave_up = False
 _COLD_PROFILE_START_MAX_ATTEMPTS = 3
 _COLD_PROFILE_START_COOLDOWN_SEC = 30.0
+# A profile restart from Ekos or the SMOS app is a stop followed by a start. Starting the profile in that gap put every driver into
+# indiserver twice (found 2026-11-27), so it must have been without a running profile this long before it counts as cold.
+_COLD_PROFILE_MIN_IDLE_SEC = 30.0
+_cold_profile_idle_since = None  # time.monotonic() when the Web Manager was first seen with no profile running
 
 
 def _autostart_cold_profile():
@@ -2595,7 +2735,7 @@ def _autostart_cold_profile():
     attempt budget - only a run of CONSECUTIVE failures right now exhausts
     it."""
     global _cold_profile_start_attempts, _cold_profile_start_cooldown_until
-    global _cold_profile_start_gave_up
+    global _cold_profile_start_gave_up, _cold_profile_idle_since
     if _maintenance_mode_since is not None:
         return  # deliberately stopped - see /api/maintenance_mode_toggle. Found live 2026-09-19:
         # this self-heal has no maintenance-mode gate of its own, so it was starting the profile
@@ -2619,6 +2759,11 @@ def _autostart_cold_profile():
         _note_active_profile(wm_status["active_profile"])
         _cold_profile_start_attempts = 0
         _cold_profile_start_gave_up = False
+        _cold_profile_idle_since = None
+        return
+    if _cold_profile_idle_since is None:
+        _cold_profile_idle_since = time.monotonic()
+    if time.monotonic() - _cold_profile_idle_since < _COLD_PROFILE_MIN_IDLE_SEC:
         return
     if _cold_profile_start_gave_up or time.monotonic() < _cold_profile_start_cooldown_until:
         return
@@ -2869,7 +3014,11 @@ _mb_readiness_gave_up = False
 # strong contributing factor to the RA0/Dec0 jumps. Now requires this many
 # CONSECUTIVE not-running ticks (5s apart) before concluding the driver is
 # actually stuck rather than just momentarily slow to answer.
-_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 3
+# 2026-11-26 (#385, caught live with test_tools/mount_bridge_hang_catcher.py): the Bridge goes silent for 15-60 s about every 5 minutes
+# while only IT is silent (PiFinder LX200 and the mount answer at the same moment), both of its threads idle in select(), memory and CPU
+# fine - and it recovers by itself. A restart after 3 ticks (15 s) therefore only did harm (state lost, GoTos in flight lost, the
+# readiness panel flapping). 12 ticks = 60 s: a really dead driver is still restarted, a stall that passes is left alone.
+_MB_READINESS_CONSECUTIVE_FAILS_BEFORE_RESTART = 12
 _mb_readiness_consecutive_fails = 0
 
 # Debounce for check 6 - found live 2026-09-05: an "PiFinder Simulator" INDI
@@ -2936,6 +3085,52 @@ _mb_readiness_profile_desync_consecutive = 0
 # permanently silent about a second, genuinely new occurrence after the
 # first one happened to involve the same profile.
 _mb_desired_mount_missing_from_profile_warned = None
+
+
+# Check 3.5 (found live 2026-11-27): after a profile switch to the Telescope Simulator the Bridge was connected, answered every request
+# and its devices were connected, but it had never bound to them (its INDI client was connected to indiserver, yet the mount and PiFinder
+# properties never arrived): no drift, no status, no Goto forwarding, for 15 minutes, until somebody cycled its CONNECTION. Nothing showed
+# it, because every other check looks at answers, not at whether the Bridge works. The signal: the Bridge publishes MOUNT_HORIZON_STATUS
+# every tick once bound, so that property staying Idle with both devices connected is "not bound". Heal: cycle the Bridge's CONNECTION
+# (what fixed it by hand), bounded, never while guiding is held.
+class _BridgeBindingTracker:
+    UNBOUND_AFTER_S = 45.0
+    MAX_PER_WINDOW = 3
+    WINDOW_S = 600.0
+    MIN_GAP_S = 60.0
+
+    def __init__(self):
+        self.idle_since = None
+        self.heals = []
+
+    def reset(self):
+        self.idle_since = None
+
+    def unbound_for(self, state, now):
+        """Seconds the Bridge has been unbound ("Idle" in a row), 0.0 when it is bound or we do not know."""
+        if state != "Idle":
+            self.idle_since = None
+            return 0.0
+        if self.idle_since is None:
+            self.idle_since = now
+        return now - self.idle_since
+
+    def may_heal(self, state, now):
+        if self.unbound_for(state, now) < self.UNBOUND_AFTER_S:
+            return False
+        self.heals = [x for x in self.heals if now - x < self.WINDOW_S]
+        if len(self.heals) >= self.MAX_PER_WINDOW:
+            return False
+        if self.heals and now - self.heals[-1] < self.MIN_GAP_S:
+            return False
+        return True
+
+    def healed(self, now):
+        self.heals.append(now)
+        self.idle_since = None
+
+
+_bridge_binding = _BridgeBindingTracker()
 
 
 def _mount_bridge_readiness_self_heal(status: dict) -> None:
@@ -3236,6 +3431,31 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
             _mb_readiness_retrier.trigger(_do_connect_mount)
             return
 
+    # --- Check 3.5: the Bridge is bound to its devices and actually working ---
+    if _mb_desired_mount and _mb_desired_coupling_mode not in (None, "MODE_OFF"):
+        try:
+            binding = indi_client.bridge_binding_state()
+        except indi_client.INDIClientError:
+            binding = None
+        if binding is None:
+            _bridge_binding.reset()
+        elif _bridge_binding.may_heal(binding, time.monotonic()):
+            if _guiding_hold_active:
+                return
+            def _do_rebind():
+                try:
+                    indi_client.disconnect_device("PiFinder Mount Bridge")
+                    time.sleep(2.0)
+                    indi_client.connect_device("PiFinder Mount Bridge")
+                    _mb_log("Mount Bridge self-heal: the Bridge was connected but never bound to its mount and PiFinder "
+                            "(it published nothing) - cycled its connection.")
+                except indi_client.INDIClientError as e:
+                    _mb_log(f"Mount Bridge self-heal: cycling the Bridge's connection failed: {e}")
+
+            if _mb_readiness_retrier.trigger(_do_rebind):
+                _bridge_binding.healed(time.monotonic())
+            return
+
     # --- Check 4: coupling mode matches what was last actually chosen ----
     if _mb_desired_coupling_mode:
         if status.get("coupling_mode") != _mb_desired_coupling_mode:
@@ -3390,6 +3610,21 @@ def _refresh_stale_mount_time_if_needed(status: dict) -> None:
         )
     else:
         _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
+
+
+def _gsc_sim_restore_watchdog(interval=15):
+    """The GSC simulation stays the way it was last chosen: after an update (PiFinder restarted, Test Mode off, test picture put back),
+    a crash or a reboot it is brought back without anybody opening the page. See gsc_sim.restore()."""
+    last = None
+    while True:
+        time.sleep(interval)
+        try:
+            what = gsc_sim.restore(indi=indi_client, active_mount=indi_client.bridge_active_mount)
+        except Exception as e:  # never let this thread die
+            what = "error: %s" % e
+        if what != last and what not in ("none", "healthy"):
+            _mb_log("GSC simulation self-heal: %s" % what)
+        last = what
 
 
 def _mount_bridge_readiness_watchdog(interval=5):
@@ -3916,6 +4151,12 @@ def _pifinder_align_from_mount(port: str, host: str = "127.0.0.1") -> dict:
         return {"success": False, "reason": "unreachable", "error": f"could not reach PiFinder: {e}"}
     data["mount_ra_deg"] = ra_deg
     data["mount_dec_deg"] = dec_deg
+    # PiFinder can only align on something its camera sees. In the sky simulation the "camera" is our rendered picture: if it shows
+    # another part of the sky, the picture is wrong, and what the user asked for - PiFinder where the mount points - is reached by
+    # rendering the sky there again (direct feedback, 2026-11-27: a sensible action must not just be refused).
+    if data.get("reason") == "outside_fov" and host in ("127.0.0.1", "localhost") and gsc_sim.recentre():
+        _mb_log("Sync PiFinder from mount: the simulated sky was elsewhere - rendering it at the mount's position again.")
+        return {"success": True, "method": "simulation_recentred", "mount_ra_deg": ra_deg, "mount_dec_deg": dec_deg}
     return data
 
 
@@ -4869,6 +5110,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(PIFINDER_WELCOME_IMAGE_RED, "image/png", no_cache=True)
             return
 
+        if parsed.path == "/api/compat_check":
+            # bin/compat_check.py (read-only): does what PFSM built still fit the system? Cached for a minute,
+            # the checks start a few processes (ldd, pacman, qdbus6).
+            global _compat_cache
+            now = time.time()
+            if _compat_cache is None or now - _compat_cache[0] > 60:
+                try:
+                    proc = subprocess.run(
+                        ["python3", str(REPO_ROOT / "bin" / "compat_check.py"), "--json"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    _compat_cache = (now, json.loads(proc.stdout))
+                except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+                    _compat_cache = (now, {"status": "unknown", "checks": [], "error": str(e)})
+            self._send_json(_compat_cache[1])
+            return
+
         if parsed.path == "/api/smos_update_status":
             self._send_json(_smos_update_info())
             return
@@ -5153,6 +5411,39 @@ class Handler(BaseHTTPRequestHandler):
             except indi_client.INDIClientError as e:
                 drift = {"running": False, "error": str(e)}
             self._send_json(drift)
+            return
+
+        if parsed.path == "/api/pifinder_mount_apart":
+            # For the sync confirmation: how far PiFinder's reported position (camera, motion sensor or set) is from the mount's.
+            try:
+                apart = indi_client.pifinder_mount_apart_arcmin()
+            except indi_client.INDIClientError:
+                apart = None
+            self._send_json({"apart_arcmin": apart})
+            return
+
+        if parsed.path == "/api/clock_status":
+            # Polled every 30 s by the page: the time stamp under the Sky and the yellow clock
+            # strip. See clock_status.py for what can and cannot be seen (a KStars on another
+            # computer keeps its own clock that no INDI property exposes).
+            mount_name = None
+            mount_time = None
+            try:
+                mount_name = indi_client.active_mount_name()
+                if mount_name:
+                    props = indi_client.get_properties(device=mount_name, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
+                    mount_time = props.get(mount_name, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
+            except indi_client.INDIClientError:
+                pass  # no INDI answer: no mount reading, the Pi's own clock is still checked
+            result = clock_status.status(mount_time)
+            result["mount_device"] = mount_name
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/gsc_sim_status":
+            # The "Real hardware + GSC simulation" mode (gsc_sim.py): whether the sky follower runs, whether PiFinder is in Test
+            # Mode and solving, and what this device can do at all. Polled by the mode tile.
+            self._send_json(gsc_sim.status(heal=True))
             return
 
         if parsed.path == "/api/truth_injector_status":
@@ -7005,6 +7296,32 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_reposition_adopt":
+            _mb_log("adopting the position PiFinder sees (answer to the Mount Bridge's question)...")
+            try:
+                indi_client.trigger_reposition_adopt()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/mount_bridge_reconnect":
+            _mb_log("reconnecting the Mount Bridge (it does not read one of its devices)...")
+            try:
+                indi_client.disconnect_device("PiFinder Mount Bridge")
+                time.sleep(2.0)
+                indi_client.connect_device("PiFinder Mount Bridge")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_reposition_revert":
             # 2026-09-11, direct feedback: exposes REPOSITION_CONFIRM_NO
             # ("Revert to held target") - already-existing, already-safe
@@ -7013,7 +7330,7 @@ class Handler(BaseHTTPRequestHandler):
             # trigger_reposition_revert()'s own docstring for why this is
             # PushTo-safe (verified live, doesn't touch PiFinder's own
             # push-to counter/target).
-            _mb_log("reverting to the held target now...")
+            _mb_log("reverting to the target now...")
             try:
                 indi_client.trigger_reposition_revert()
             except indi_client.INDIClientError as e:
@@ -7068,6 +7385,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 _mb_log("  done." if check.get("verified") else "  done (not verified).")
             self._send_json({"success": True, **check})
+            return
+
+        if parsed.path == "/api/mount_time_refresh":
+            # The "Set mount time now" button of the clock strip: the same KStars pulse the
+            # watchdog uses, so the mount driver gets the Pi's (NTP-synced) time pushed again.
+            ok, err = _kstars_refresh_mount_time_via_dbus()
+            _mb_log("Mount time refresh (user request): pushed." if ok else f"Mount time refresh (user request) failed: {err}")
+            self._send_json({"success": ok, "error": err}, status=200 if ok else 502)
             return
 
         if parsed.path == "/api/mount_unpark":
@@ -7142,7 +7467,7 @@ class Handler(BaseHTTPRequestHandler):
             # when the mount was physically disturbed (bumped, a
             # friction-clutch slip, overbalance) and PiFinder's own live
             # solve reflects that same disturbance, not the original intent.
-            _mb_log("sending mount back to the held target...")
+            _mb_log("sending mount back to the target...")
             try:
                 indi_client.trigger_goto_held()
             except indi_client.INDIClientError as e:
@@ -7160,7 +7485,7 @@ class Handler(BaseHTTPRequestHandler):
             # about "what am I pushed-to" rather than the mount, so a later
             # Mount Bridge restart doesn't re-read PiFinder's still-wrong
             # target as its recovery baseline and slew the mount right back.
-            _mb_log("sending held target to PiFinder...")
+            _mb_log("sending the target to PiFinder...")
             try:
                 indi_client.trigger_align_held()
             except indi_client.INDIClientError as e:
@@ -7217,6 +7542,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_save":
+            _mb_log("saving the alignment model on OnStep...")
+            try:
+                indi_client.trigger_onstep_align_save()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  sent - see the Mount Bridge's log (OnStep does not confirm it).")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_multialign_stop":
             # #217: verified live against Telescope Simulator that this
             # correctly aborts an in-progress sequence at the INDI level
@@ -7232,6 +7569,31 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _mb_log("  done.")
             self._send_json({"success": True})
+            return
+
+        if parsed.path == "/api/gsc_sim_start":
+            # Start the GSC sky simulation (gsc_sim.py). landing: off | typical | large; the mount followed is the Bridge's active
+            # mount (the Telescope Simulator by default). The old PiFinder Simulator device is disconnected while it runs.
+            qs = parse_qs(parsed.query)
+            landing = qs.get("landing", ["typical"])[0]
+            if landing not in gsc_sim.LANDING:
+                self._send_json({"ok": False, "error": f"invalid landing '{landing}'"}, status=400)
+                return
+            try:
+                mount = indi_client.mount_bridge_status().get("active_mount") or gsc_sim.DEFAULT_MOUNT
+            except indi_client.INDIClientError:
+                mount = gsc_sim.DEFAULT_MOUNT
+            _mb_log(f"GSC simulation: starting (landing '{landing}', following '{mount}')...")
+            result = gsc_sim.start(landing=landing, device=mount, indi=indi_client)
+            _mb_log("GSC simulation: " + ("started." if result.get("ok") else f"not started - {result.get('error')}"))
+            self._send_json(result, status=200 if result.get("ok") else 409)
+            return
+
+        if parsed.path == "/api/gsc_sim_stop":
+            _mb_log("GSC simulation: stopping...")
+            result = gsc_sim.stop(indi=indi_client)
+            _mb_log("GSC simulation: stopped.")
+            self._send_json(result)
             return
 
         if parsed.path == "/api/truth_injector_toggle":
@@ -7402,6 +7764,7 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    threading.Thread(target=_gsc_sim_restore_watchdog, daemon=True).start()
     # #372 (simplified) - independent of the readiness watchdog above; see
     # _guiding_hold_watchdog()'s own docstring.
     threading.Thread(target=_guiding_hold_watchdog, daemon=True).start()

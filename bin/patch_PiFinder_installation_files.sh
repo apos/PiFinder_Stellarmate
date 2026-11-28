@@ -80,6 +80,12 @@ show_diff_if_changed() {
 # MAIN
 ############################################################
 
+# PiFinder 2.6.4+: python/tetra3 is no longer tracked, recreate the symlink after every checkout/clone
+ensure_tetra3_symlink
+
+# PiFinder data migrations that upstream runs from its own post-update script (not used by PFSM)
+run_pifinder_data_migrations
+
 # Copy a new pifinder_setup.sh 
 mv "${pifinder_dir}/pifinder_setup.sh" "${pifinder_dir}/pifinder_setup.sh.before.stellarmate"
 cp "${pifinder_stellarmate_dir}/pifinder_stellarmate_setup.sh" "${pifinder_dir}/pifinder_setup.sh"
@@ -107,7 +113,7 @@ echo "------------------------------------"
 # Control-host development machine (current_pi="unknown" there - see
 # get_hw_model() in functions.sh). Restricting this to P4|P5 previously made
 # the whole block silently skip on x86, leaving skyfield/pandas uninstalled.
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     echo "🔧 Patching Python requirements in $python_requirements ..."
     cp "$python_requirements" "$python_requirements.bak"
 
@@ -208,7 +214,7 @@ for service_file in "${service_files[@]}"; do
 echo "🔧 Updating gps_type in config files ..."
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     for cfg in "$config_default_json" "$config_json"; do
         echo "🔍 Patching $cfg ..."
         cp "$cfg" "$cfg.bak"
@@ -313,7 +319,7 @@ echo "🔧 Updating solver.py ..."
 cp "$solver_py" "$solver_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     if grep -q 'sys.path.append(str(utils.tetra3_dir))' "$solver_py"; then
         sed -i 's|sys.path.append(str(utils.tetra3_dir))|sys.path.append(str(utils.tetra3_dir.parent))|' "$solver_py"
     fi
@@ -326,6 +332,12 @@ if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
 
     if ! grep -q "from tetra3 import cedar_detect_client" "$solver_py"; then
         sed -i '/from tetra3 import main/a from tetra3 import cedar_detect_client' "$solver_py"
+    fi
+
+    # x86 (#234): only ARM builds of cedar-detect-server are bundled. Starting one there raises "Exec format error" and stops the
+    # solver; without a matching program PiFinder uses tetra3's own star finder instead. Nothing changes on ARM.
+    if grep -q 'for candidate in candidates:  # any executable cedar binary' "$solver_py"; then
+        sed -i '/for candidate in candidates:  # any executable cedar binary/{n;s|if os.access(candidate, os.X_OK):|if os.access(candidate, os.X_OK) and (machine in ("aarch64", "arm64") or not candidate.name.endswith(("aarch64", "arm64"))):|}' "$solver_py"
     fi
 
 
@@ -345,7 +357,7 @@ echo "🔧 Updating __init__.py ..."
 cp "$init_py" "$init_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     if grep -q 'from .tetra3 import Tetra3' "$init_py"; then
         sed -i 's|from .tetra3 import Tetra3|from .main import Tetra3|' "$init_py"
     fi
@@ -361,7 +373,7 @@ echo "🔧 Updating cedar_detect_client.py ..."
 cp "$client_py" "$client_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     if grep -q 'from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc' "$client_py"; then
         sed -i 's|from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc|from . import cedar_detect_pb2, cedar_detect_pb2_grpc|' "$client_py"
     fi
@@ -377,7 +389,7 @@ echo "🔧 Updating cedar_detect_pb2_grpc.py ..."
 cp "$grpc_py" "$grpc_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     if grep -q '^import cedar_detect_pb2 as cedar__detect__pb2$' "$grpc_py"; then
         sed -i 's|^import cedar_detect_pb2 as cedar__detect__pb2$|from . import cedar_detect_pb2 as cedar__detect__pb2|' "$grpc_py"
     fi
@@ -412,7 +424,7 @@ echo "🔧 Updating ui/marking_menus.py ..."
 cp "$ui_file" "$ui_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     if grep -q '^from dataclasses import dataclass$' "$ui_file"; then
         sed -i 's|^from dataclasses import dataclass$|from dataclasses import dataclass, field|' "$ui_file"
     fi
@@ -436,7 +448,7 @@ echo "🔧 Updating camera_pi.py ..."
 cp "$camera_file" "$camera_file.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     camera_insert="from picamera2 import Picamera"
     if ! grep -q "$camera_insert" "$camera_file"; then
         awk -v insert="$camera_insert" '
@@ -494,7 +506,7 @@ echo "🔧 Updating imu_pi.py ..."
 cp "$imu_pi_py" "$imu_pi_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$imu_pi_py" "${pifinder_stellarmate_dir}/diffs/imu_pi_py.diff"
 else
     echo "⏩ Skipping patch for imu_pi.py: ❌ incompatible version/pi/os"
@@ -507,7 +519,7 @@ echo "🔧 Updating imu_fake.py ..."
 cp "$imu_fake_py" "$imu_fake_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$imu_fake_py" "${pifinder_stellarmate_dir}/diffs/imu_fake_py.diff"
 else
     echo "⏩ Skipping patch for imu_fake.py: ❌ incompatible version/pi/os"
@@ -528,7 +540,7 @@ echo "🔧 Updating displays.py (headless fallback) ..."
 cp "$display_py" "$display_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$display_py" "${pifinder_stellarmate_dir}/diffs/displays_py.diff"
 else
     echo "⏩ Skipping displays.py headless-fallback patch: ❌ incompatible version/pi/os"
@@ -614,6 +626,27 @@ python3 -m py_compile "${pifinder_dir}/python/tests/test_api_align.py" \
 echo "------------------------------------"
 
 ##################################################
+# PiFinder: the Mount Bridge's positioning status on PiFinder's screen (#665). "MOUNT MOVING" in the title bar while the Bridge
+# moves the mount or verifies the arrival, briefly "On target" afterwards. Three pieces: a new module (create-diff, -N makes
+# re-runs a no-op) that holds the status and the POST /api/bridge_positioning route, a hook that registers the route in
+# api_extensions.py, and the title bar in ui/base.py. A "hands off" status that is not renewed is ignored (fail safe).
+
+echo "🔧 Adding pfsm_bridge_status.py ..."
+apply_patch_or_warn "${pfsm_bridge_status_py}" "${pifinder_stellarmate_dir}/diffs/pfsm_bridge_status_py.diff"
+python3 -m py_compile "${pfsm_bridge_status_py}" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+echo "🔧 Registering POST /api/bridge_positioning in api_extensions.py ..."
+apply_patch_or_warn "$api_extensions_py" "${pifinder_stellarmate_dir}/diffs/api_extensions_bridge_status_py.diff"
+python3 -m py_compile "$api_extensions_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+
+echo "🔧 Updating ui/base.py (title bar) ..."
+cp "$ui_base_py" "$ui_base_py.bak"
+apply_patch_or_warn "$ui_base_py" "${pifinder_stellarmate_dir}/diffs/ui_base_py.diff"
+show_diff_if_changed "$ui_base_py"
+python3 -m py_compile "$ui_base_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/object_details.py - surfaces the on-device push-to target
 # (UIState's own target()/set_target(), previously never called) so GET
 # /api/current_target (see api_extensions.py above) can report it - see
@@ -675,7 +708,7 @@ echo "🔧 Updating server.py ..."
 cp "$server_py" "$server_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     # Login/password-change username, mount-type sync, First Steps route,
     # Setup Wizard control, port tracking, etc. are all in server_py.diff now.
     # (Used to also run two sed replacements here for the login/password-
@@ -702,7 +735,7 @@ cp "$sys_utils_py" "$sys_utils_py.bak"
 cp "$sys_utils_fake_py" "$sys_utils_fake_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$sys_utils_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_py.diff"
     apply_patch_or_warn "$sys_utils_fake_py" "${pifinder_stellarmate_dir}/diffs/sys_utils_fake_py.diff"
 else
@@ -715,12 +748,30 @@ python3 -m py_compile "$sys_utils_py" "$sys_utils_fake_py" && echo "✅ Syntax O
 echo "------------------------------------"
 
 ##################################################
+# PiFinder ui/software.py: the menu's own "update" is not started. PiFinder's updater (pifinder_update.sh)
+# would pull the newest release and bypass the version StellarMate pins and the patches; on SMOS it also
+# points at /home/pifinder, which does not exist. The menu now says to update through the Control Center.
+echo "🔧 Updating ui/software.py (in-app update points to the Control Center) ..."
+cp "$software_py" "$software_py.bak"
+echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
+
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
+    apply_patch_or_warn "$software_py" "${pifinder_stellarmate_dir}/diffs/software_py.diff"
+else
+    echo "⏩ Skipping patch for ui/software.py: ❌ incompatible version/pi/os"
+fi
+
+show_diff_if_changed "$software_py"
+python3 -m py_compile "$software_py" && echo "✅ Syntax OK" || echo "❌ Syntax ERROR due to patch"
+echo "------------------------------------"
+
+##################################################
 # PiFinder ui/status.py: show every non-loopback IP on the OLED status screen
 echo "🔧 Updating ui/status.py (all_ips) ..."
 cp "$status_py" "$status_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
 
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$status_py" "${pifinder_stellarmate_dir}/diffs/status_py.diff"
 else
     echo "⏩ Skipping patch for status.py: ❌ incompatible version/pi/os"
@@ -765,7 +816,7 @@ echo "------------------------------------"
 echo "🔧 Updating menu_structure.py ..."
 cp "$menu_py" "$menu_py.bak"
 echo "➡️ Detected Version Combo: $current_pifinder / $current_pi / $current_os"
-if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3" "general" "general"; then
+if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general"; then
     apply_patch_or_warn "$menu_py" "${pifinder_stellarmate_dir}/diffs/menu_structure_py.diff"
 fi
 show_diff_if_changed "$menu_py"

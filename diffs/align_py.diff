@@ -28,7 +28,7 @@
 @@ -65,6 +75,13 @@
      command_queues["console"].put(_("Alignment Set"))
      shared_state.set_target_pixel(target_pixel)
-     config_object.set_option("target_pixel", target_pixel)
+     config_object.save_target_pixel(target_pixel)
 +    # Record the confirmed align for external consumers (PiFinder_Stellarmate's
 +    # Mount Bridge syncs the mount to this on a change - the scope hasn't
 +    # moved, only our calibration). ra/dec are the J2000 catalog coords the

@@ -180,6 +180,26 @@ Two things flagged as genuinely unresolved, not just left as vague future work:
   resolved by this document — flagged here so it isn't quietly implemented without that research
   first.
 
+> **Correction (2026-11-27, firmware source, not tested on a mount):** OnStepX (`Goto.command.cpp`, `Goto.cpp`, branch `main`;
+> the connected controller reports `On-Step 10.14a` and `:A?#` = `900`, no alignment running) handles `:CM#` in two ways. While an
+> alignment started with `:An#` is running, the Sync accepts an alignment star and adds it to the model. Otherwise it only moves the
+> mount's position to the target and does not touch the model. The statement above that repeated Syncs alone build a multi-point
+> model therefore does not hold for this firmware unless an OnStep alignment is running. Whether Multi-Point Alignment should start
+> one (`:An#`) is an open decision.
+>
+> **How an OnStep model is built (source `main`, 2026-11-28, not tried):** `:A<n>#` starts an alignment of n stars (at most 9); it
+> takes the mount's present position as home (without home sensors: no motion) and switches tracking on. Each `:CM#` then
+> accepts one star at the synced coordinates; after the n-th the model is computed; `:AW#` stores it. Starting discards the old
+> model at the first star, a refused star aborts the whole alignment, `:A?#` reports progress. The INDI driver offers this as
+> `AlignStars`, `NewAlignStar` (start / issue) and `NewAlignStar2` (write); its Sync sends `:CM#`.
+> **Check after each Sync (2026-11-28):** a point counts only when the mount reports the synced position.
+>
+> **Built (2026-11-28, owner's decision): with an OnStep the Bridge can read, a run is a real OnStep alignment.** Start through
+> the INDI driver (`AlignStars`, `NewAlignStar`), one `:CM#` per solved star through the driver's Sync, counted by `:A?#`
+> (from the second star on the reported position does not change, so the position check cannot be used), up to four spare
+> candidates, Continue when the controller already waits, `ALIGN_SAVE` presses the driver's write switch. USB/serial: plain
+> Syncs with a warning. Tests: `test_tools/mpa_onstep_test.py` (stand-ins), `test_tools/onstep_align_ui_test.js`.
+
 ## 5. ADR: Sync-only for a first OnStep-scoped implementation, revisit Align primitive if generalized
 
 **Context**: §4.5 identified that whether repeated Syncs actually build a multi-point model is

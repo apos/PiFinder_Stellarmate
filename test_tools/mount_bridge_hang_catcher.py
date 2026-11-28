@@ -42,10 +42,10 @@ def get_pid() -> int | None:
         return None
 
 
-def check_responsive() -> bool:
+def check_device(device: str) -> bool:
     try:
         sock = socket.create_connection((HOST, PORT), timeout=CHECK_TIMEOUT)
-        sock.sendall(f'<getProperties version="1.7" device="{DEVICE}"/>\n'.encode())
+        sock.sendall(f'<getProperties version="1.7" device="{device}"/>\n'.encode())
         sock.settimeout(CHECK_TIMEOUT)
         chunk = sock.recv(4096)
         sock.close()
@@ -54,7 +54,38 @@ def check_responsive() -> bool:
         return False
 
 
-INDISERVER_PID = 1425  # found live 2026-09-03 - Mount Bridge's own two threads were
+# Other devices on the same indiserver: when they stop answering together with the Bridge, the stall is in indiserver (or the whole
+# machine, e.g. swapping), not in the Bridge driver.
+OTHER_DEVICES = ("PiFinder LX200", "Telescope Simulator")
+
+
+def check_responsive() -> bool:
+    ok = check_device(DEVICE)
+    if not ok:
+        others = {d: check_device(d) for d in OTHER_DEVICES}
+        print(f"[{time.strftime('%H:%M:%S')}] Bridge silent; the others: " + ", ".join(f"{d}={'answers' if v else 'SILENT'}" for d, v in others.items()))
+        try:
+            meminfo = {l.split(":")[0]: int(l.split()[1]) for l in Path("/proc/meminfo").read_text().splitlines() if l.split()[1:2]}
+            print(f"[{time.strftime('%H:%M:%S')}] memory: free {meminfo['MemFree'] // 1024} MB, available {meminfo['MemAvailable'] // 1024} MB, "
+                  f"swap used {(meminfo['SwapTotal'] - meminfo['SwapFree']) // 1024} MB")
+        except (OSError, KeyError, ValueError):
+            pass
+    return ok
+
+
+def get_indiserver_pid() -> int:
+    """The indiserver that serves HOST:PORT (there can be a second one, e.g. KStars' flatpak, on another port)."""
+    try:
+        out = subprocess.run(["pgrep", "-f", "-o", f"^indiserver .*-p {PORT} "], capture_output=True, text=True, timeout=3)
+        line = out.stdout.strip().splitlines()
+        if line:
+            return int(line[0])
+    except Exception:
+        pass
+    return 1425  # the pid it was first used with (2026-09-03)
+
+
+INDISERVER_PID = get_indiserver_pid()  # was fixed to 1425 (2026-09-03) - Mount Bridge's own two threads were
 # both cleanly parked in select() at the moment a responsiveness check failed
 # (looks like healthy idle, not a deadlock) - capturing indiserver itself
 # alongside it now, to see whether IT is what's actually slow to relay under

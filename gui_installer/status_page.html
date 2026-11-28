@@ -197,6 +197,8 @@
   }
   #bottom-logos:hover { opacity: 1; }
   #bottom-logos img { height: 78px; width: auto; display: block; }
+  /* 192 px is the start size (the 128 x 128 picture at 1.5x); pifinderScreenFit() sets the real size from the picture
+     PiFinder delivers (Rev 4: 176 x 176 at 244 px). */
   #pifinder-screen {
     display: block;
     width: 192px;
@@ -595,10 +597,52 @@
   /* Sky Position Panel: small, display only; hidden until the Mount Bridge reports data. */
   /* Same arrangement as the PiFinder screen: the picture, its (i) to the right at the top. Fixed
      size: it never shrinks. */
-  #sky-panel { display: flex; align-items: flex-start; gap: 0.3rem; }
-  #sky-panel-inner { flex: 0 0 230px; width: 230px; }
-  #sky-panel .help-link { margin: 4px 0 0 0; flex-shrink: 0; }
-  #sky-panel-svg { display: block; width: 230px; height: auto; font-family: inherit; }
+  /* The picture sits in the middle over the card below it. Time and date share the row of the N (the corners of a round picture are empty), the (i) sits in the empty bottom left corner. */
+  #sky-panel { display: flex; justify-content: center; width: 100%; }
+  #sky-pic { position: relative; flex: none; width: 230px; max-width: 100%; }
+  #sky-panel .help-link { position: absolute; left: 0; bottom: 0; margin: 0; }
+  #sky-panel-svg { display: block; width: 100%; height: auto; font-family: inherit; }
+  /* The moment the picture is computed for (the Pi's clock), to compare with the clock of a KStars elsewhere. */
+  .mb-drift-banner-btn-secondary { background: transparent; border: 1px solid #555; color: #9aa0a6; font-weight: 400; }
+  /* Sky area and the card under it (mockup "one block, three states"): the picture with the names inside it, the time left and the date right above it, one
+     card for every state. One typeface, 11 / 13 / 15 px, fixed rows, ellipsis instead of wrapping, buttons at least 32 px high. */
+  #sky-card { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 12px 6px; border: 1px solid #3a3a3a; border-radius: 12px; background: #222;
+    font-size: 13px; line-height: 20px; color: #e6e8ec; font-variant-numeric: tabular-nums; }
+  #sky-card .sc-head { display: flex; align-items: center; gap: 8px; height: 40px; font-size: 15px; font-weight: 600; line-height: 19px; }
+  #sky-card .sc-title { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  #sky-card .sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #4caf50; }
+  #sky-card.card-warn .sc-dot { background: #f5a623; }
+  #sky-card.card-bad .sc-dot { background: #e53935; }
+  #sky-card.card-idle .sc-dot { background: #777; }
+  #sky-card .sc-badge { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #1f3a24; color: #8fd19a; white-space: nowrap; }
+  #sky-card.card-warn .sc-badge { background: #3a2c10; color: #f5c46b; }
+  #sky-card.card-bad .sc-badge { background: #3a1a1a; color: #ff8a80; }
+  #sky-card.card-idle .sc-badge { background: #2a2a2a; color: #aaa; }
+  #sky-card .sc-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 4px 0 6px; }
+  #sky-card .sc-seg { height: 4px; border-radius: 2px; background: #3a3a3a; }
+  #sky-card .sc-seg.d { background: #4caf50; }
+  #sky-card .sc-seg.n { background: #f5a623; }
+  #sky-card .sc-seg.w { background: #e57373; }
+  #sky-card .sc-line { height: 38px; line-height: 19px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  #sky-card .sc-line.warn { color: #f5c46b; }
+  #sky-card .sc-why { height: 32px; font-size: 12px; line-height: 16px; color: #9aa0a6; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  #sky-card .sc-acts { display: flex; gap: 10px; height: 36px; align-items: center; margin-top: 4px; border-top: 1px solid #3a3a3a; }
+  #sky-card .sc-act { background: none; border: 0; color: #9aa0a6; font: inherit; font-size: 12px; padding: 0 6px 0 0; min-height: 32px; cursor: pointer; }
+  #sky-card .sc-act:hover, #sky-card .sc-act.open { color: #e6e8ec; }
+  #sky-card .sc-panel { border-top: 1px solid #3a3a3a; padding: 6px 0 4px; font-size: 12px; color: #9aa0a6; max-height: 150px; overflow-y: auto; }
+  #sky-card .sc-panel ol { margin: 0; padding: 0; list-style: none; }
+  #sky-card .sc-panel li { display: flex; justify-content: space-between; height: 22px; align-items: center; }
+  #sky-card .sc-text { margin: 0 0 6px; line-height: 1.4; }
+  #sky-card .sc-kv { display: grid; grid-template-columns: 74px 1fr; min-height: 22px; align-items: center; }
+  #sky-card .sc-kv span:first-child { color: #777; }
+  /* Above the picture, on its own row: the time left, the date right (nothing covers the N). */
+  #sky-time { position: absolute; left: 0; right: 0; top: 0; z-index: 1; pointer-events: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; color: #8b93a1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #sky-time b { color: #c3c7cc; font-weight: 500; }
+  #sky-time > span:not(.sky-time-prefix):not(.sky-time-dot) { max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+  #sky-time .sky-time-prefix { display: none; }
+  #sky-time.sky-time-warn, #sky-time.sky-time-warn b { color: #f5a623; }
+  #sky-time .sky-time-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5a623; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  #sky-target-line { display: none; }
   #pifinder-glance-status-stack {
     display: flex;
     flex-direction: column;
@@ -755,6 +799,7 @@
     border: 1px solid #555;
   }
   .status-dot.dot-white { background: #e8e8e8; }
+  .status-dot.dot-idle { background: #777; border-color: #777; }
   .status-dot.dot-yellow { background: #f5a623; border-color: #f5a623; }
   .status-dot.dot-green { background: #4caf50; border-color: #4caf50; }
   .status-dot.dot-red { background: #e53935; border-color: #e53935; }
@@ -968,20 +1013,19 @@
   .mb-sync-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; }
   .mb-sync-dir { font-size: 0.72rem; font-weight: 600; color: #6cc46f; letter-spacing: 0.02em; }
   .mb-sync-btn:disabled .mb-sync-dir { color: #666; }
+  /* The result of the last Sync stands in the group's heading line, to the right of the title (direct feedback, 2026-11-28:
+     as a box of its own under the buttons it hung in the air). Its height is fixed (two lines), so a result moves nothing. */
+  .mb-sync-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.1rem 0.8rem; }
   #mb-sync-feedback {
-    height: 2.1rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.6rem;
-    border: 1px solid #2a2a2a; border-radius: 6px; background: #161616; color: #999;
-    font-size: 0.8rem; overflow: hidden; white-space: nowrap;
+    flex: 1 1 8rem; min-width: 0; height: 2.1rem; display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem;
+    color: #999; font-size: 0.76rem; line-height: 1.3; overflow: hidden;
   }
-  #mb-sync-feedback .mb-sync-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mb-sync-feedback .mb-sync-msg { flex: 0 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #mb-sync-feedback .mb-sync-when { flex: none; color: #888; font-variant-numeric: tabular-nums; }
-  #mb-sync-feedback.mb-sync-ok { border-color: #3c7a3f; color: #ddd; }
-  #mb-sync-feedback.mb-sync-warn { border-color: #a8832e; color: #ddd; }
-  #mb-sync-feedback.mb-sync-work { border-color: #3d6fb5; color: #ddd; }
+  #mb-sync-feedback.mb-sync-ok { color: #ddd; }
+  #mb-sync-feedback.mb-sync-warn { color: #f0c060; }
+  #mb-sync-feedback.mb-sync-work { color: #9cc3f5; }
   #mb-sync-feedback b { font-weight: 600; }
-  /* feedback line row */
-  #mb-sync-feedback-row { display: flex; align-items: center; gap: 0.5rem; }
-  #mb-sync-feedback-row #mb-sync-feedback { flex: 1 1 auto; min-width: 0; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -1225,6 +1269,23 @@
      highlight) while the click handler itself (see toggleTruthInjector()'s
      own guard) refuses to act as the actual enforcement, not just the look. */
   .mode-tile.mode-tile-locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+  .mode-tile.tile-pending { background: #2a2214; border-color: #f5a623; color: #eee; }
+  .mode-tile.tile-pending .mode-tile-name { color: #f5c46b; }
+  .gsc-sim-pending-text { color: #f5c46b; }
+  /* The GSC simulation is the first choice for testing without a sky; the two older simulations step into the background. */
+  .mode-tiles-minor-label { color: #777; font-size: 0.68rem; margin: 0.7rem 0 0.3rem 0; }
+  .mode-tiles-minor { margin-bottom: 0.4rem; }
+  .mode-tile.mode-tile-minor { padding: 0.35rem 0.6rem; }
+  .mode-tile.mode-tile-minor .mode-tile-name { font-weight: 400; font-size: 0.78rem; }
+  .mode-tile.mode-tile-minor .mode-tile-sub { font-size: 0.64rem; }
+  /* Information only, no frame and no pills: nothing in here can be clicked. Same look as the setup readiness line. */
+  .gsc-sim-info { margin: 0.4rem 0; }
+  .gsc-sim-line { font-size: 0.74rem; line-height: 1.6; }
+  .gsc-sim-check { color: #4caf50; margin-right: 0.9rem; white-space: nowrap; }
+  .gsc-sim-check.gsc-wait { color: #f5a623; }
+  .gsc-sim-note { color: #777; font-size: 0.7rem; margin-top: 0.2rem; }
+  .gsc-sim-idle { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; color: #777; font-size: 0.72rem; margin: 0.4rem 0; }
+  .gsc-sim-landing select { margin-left: 0.3rem; }
   .mode-tile-name { font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; }
   .mode-tile.tile-on .mode-tile-name { color: #7fe0a0; }
   .mode-tile:not(.tile-on) .mode-tile-name { color: #999; }
@@ -1329,6 +1390,18 @@
   #mb-node-mount-type { font-size: 0.68rem; color: #888; }
   #mb-node-mount-type.orientation-ok { color: #4caf50; }
   #mb-node-mount-type.orientation-alert { color: #e53935; }
+  /* Mount state symbol in the top right corner of the mount node. Side padding on both sides keeps the icon row centred and
+     clear of the symbol. */
+  #mb-node-mount { position: relative; padding-left: 1.5rem; padding-right: 1.5rem; }
+  #mb-mount-state { position: absolute; top: 4px; right: 4px; width: 17px; height: 17px; }
+  #mb-mount-state > [class^="ms-"] { display: none; }
+  #mb-mount-state.tracking, #mb-mount-state.slewing { color: #4caf50; }
+  #mb-mount-state.stopped { color: #f5a623; }
+  #mb-mount-state.parked { color: #e53935; }
+  #mb-mount-state.unknown { color: #777; }
+  #mb-mount-state.tracking .ms-tracking, #mb-mount-state.slewing .ms-tracking, #mb-mount-state.stopped .ms-stopped,
+  #mb-mount-state.parked .ms-parked, #mb-mount-state.unknown .ms-unknown { display: inline; }
+  #mb-mount-state.slewing { animation: mb-status-pulse 1.1s ease-in-out infinite; }
   /* Mirrors .dot-unconfirmed's pulse on the ampel badge (see setHwDot()) -
      color itself is set inline (currentColor is already #f5a623 by then),
      this only adds the animation. */
@@ -1563,7 +1636,9 @@
      a glance, so it belongs next to the piece that produces it, at full
      size (not shrunk into a small badge). */
   #mb-sky-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem 1.1rem; margin: 0.6rem 0 0.3rem 0; }
-  #mb-diagram { flex: 1 1 330px; min-width: 0; container-type: inline-size; }
+  /* max-width: the diagram and the sky sit next to each other from the left edge instead of the sky being pushed to the far
+     right (its content, three badges in a row, is about 21rem wide); below 600 px the diagram is stacked anyway. */
+  #mb-diagram { flex: 1 1 330px; min-width: 0; max-width: 22rem; container-type: inline-size; }
   #mb-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
   .mb-grp { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
   /* Middle group: Drift | Bridge (with Ekos, WM) | Alt on equal side columns, so the Bridge badge is always
@@ -1574,13 +1649,27 @@
   .mb-grp-mid > #mb-horizon-badge { grid-column: 3; grid-row: 1; justify-self: start; }
   /* Not enough room for one row: stack the groups centred, the blue arrows turn vertical between them. */
   @container (max-width: 600px) {
-    #mb-groups { flex-direction: column; align-items: center; gap: 0; }
+    /* fit-content: the stacked diagram as a whole sits at the left edge; its elements stay centred on one axis inside it. */
+    #mb-groups { flex-direction: column; align-items: center; gap: 0; width: fit-content; }
     #mb-groups > .mb-arrow { transform: rotate(90deg); min-width: 0; width: 2.2rem; height: 2.2rem; display: flex;
       align-items: center; justify-content: center; margin: -0.15rem 0; }
   }
-  #mb-sky-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: auto; }
+  /* A fixed width (not what the content wants): the card and the picture never change size when a text changes. */
+  #mb-sky-col { flex: 0 0 auto; width: 22rem; max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-inline: 0; }
   #mb-caption-status-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
-  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+  #mb-sky-col #mb-caption-status-row { flex-direction: column; align-items: flex-start; gap: 0.2rem; width: min(100%, 24rem); }
+  /* the two status lines under the card use the card's rhythm: 13 px, one line each, the same width as the card, ellipsis not wrapping */
+  #mb-sky-col #mb-mode-caption-row, #mb-sky-col #mb-status-row { width: 100%; margin-bottom: 0; }
+  /* While the positioning card is shown it says what the caption line would say: the label goes, the Details toggle stays (alone in its row; no row without one) */
+  /* The card says all of it (it reads these texts as data sinks): while it is shown the older caption and status lines are not. */
+  #mb-sky-col.sky-card-on #mb-caption-status-row { display: none; }
+  /* The long explanation and the refusal text sit outside the column (below it); the card shows them behind Why?, so they are not shown twice. */
+  body:has(#mb-sky-col.sky-card-on) #mb-mode-details, body:has(#mb-sky-col.sky-card-on) #mb-reject-warning-details { display: none !important; }
+  /* Drift and altitude badges: one fixed width, so the diagram does not breathe when the number or the label changes. */
+  #mb-diagram #mb-drift-badge, #mb-diagram #mb-horizon-badge { box-sizing: border-box; width: 5.6rem; padding-inline: 0.3rem; white-space: nowrap; }
+  #mb-drift-value, #mb-horizon-value { font-variant-numeric: tabular-nums; }
+  #mb-diagram #mb-drift-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  #mb-sky-col #mb-mode-caption, #mb-sky-col #mb-status-line { font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Dims the diagram (still fully showing the last CONFIRMED state, see
      setMbStatusUnconfirmed()) rather than blanking it - signals "can't
      verify this is still current" without claiming it's now wrong. */
@@ -1654,6 +1743,8 @@
     margin-bottom: 0.7rem;
   }
   .showstopper-card svg { flex-shrink: 0; width: 20px; height: 20px; color: #e0a030; margin-top: 0.1rem; }
+  .showstopper-card.showstopper-bad { background: #2a1414; border-color: #e53935; }
+  .showstopper-card.showstopper-bad svg { color: #e53935; }
   .showstopper-card .mb-drift-banner-body { flex: 1; min-width: 0; }
   .showstopper-card .mb-drift-banner-title { color: #f5c877; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
   .showstopper-card .mb-drift-banner-text { color: #ddd0b0; font-size: 0.76rem; line-height: 1.45; margin-bottom: 0.55rem; }
@@ -1900,6 +1991,23 @@
      next to Threshold/Decouple, since it's driven by the same Coupling
      row above (clicking a preset or Setup INDI can both trigger it). */
   #mb-autoconnect-status { flex: 1 1 auto; min-width: 12rem; }
+  /* Multi-Point Alignment sits in the Quick Actions tile: its title on the right of the Threshold row, the settings open below it */
+  .mb-mpa-tile { flex: 0 0 auto; margin-left: auto; }
+  /* opened, the tile takes the whole row (its settings are wide); closed it is a small tile at the right of Threshold / Decouple */
+  .mb-mpa-tile:has(#mb-multialign-details[style*="block"]) { flex: 1 1 100%; margin-left: 0; }
+  .mb-mpa-head { display: flex; align-items: center; justify-content: space-between; gap: 1.2rem; cursor: pointer; margin-bottom: 0; user-select: none; }
+  .mb-mpa-head:hover { color: #ccc; }
+  .mb-mpa-chevron { text-transform: none; letter-spacing: 0; font-size: 0.75rem; color: #888; }
+  #mb-multialign-details { margin-top: 0.7rem; }
+  /* Rows with room between them, and the first field / button of both setting rows in one line (direct feedback, 2026-11-27).
+     Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
+  #mb-multialign-details .mb-row { margin-top: 0.65rem; }
+  /* Start and Stop apart (no slip of the finger from one to the other); a button that wraps starts at the left edge. */
+  #mb-multialign-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; }
+  #mb-multialign-row .mb-big-action-btn { flex: 0 0 auto; }
+  #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
+  #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
+  #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */
   #mb-threshold-manual-sep { width: 1px; height: 1rem; background: #333; }
   /* Shared collapsible-section header, reused wherever a tile has a
      "matters every time" part and a "one-time setup / rarely touched"
@@ -1918,6 +2026,9 @@
     margin: 0.3rem 0 0.6rem 0;
   }
   .collapsible-toggle:hover { color: #ccc; }
+  /* Setup checklist & diagnostics is the last part of the Settings tile: no rule above its header, a small gap to the rows above */
+  .collapsible-toggle-plain { border-top: none; padding-top: 0; margin: 0.9rem 0 0; }
+  #mb-settings-box #mb-details { margin-top: 0.7rem; }
   .mb-hint {
     color: #e0a030;
     font-size: 0.74rem;
@@ -1963,6 +2074,16 @@
     overflow-y: auto;
     white-space: pre-wrap;
   }
+  /* one small "Copy to clipboard" button above the top right corner of every terminal window */
+  .term-bar { display: flex; align-items: center; margin: 0.25rem 0 0; }
+  .term-bar .copy-log-btn { margin-left: auto; }
+  .copy-log-btn {
+    font-size: 0.7rem; line-height: 1.2; padding: 0.15rem 0.55rem;
+    background: #1c1c1c; color: #bbb; border: 1px solid #444; border-radius: 4px; cursor: pointer;
+  }
+  .copy-log-btn:hover { background: #2a2a2a; color: #fff; }
+  .copy-log-btn.copied { color: #7fdc7f; border-color: #3c7a3c; }
+  .copy-log-btn.copy-failed { color: #ff9a8a; border-color: #8a3c3c; }
   #mb-log:empty::before { content: "No actions yet."; color: #666; }
   .waiting-bar-track {
     background: #262626;
@@ -2098,6 +2219,17 @@
   @media (max-width: 767px) {
     #cc-pifinder-service-notice-banner, #cc-cold-profile-notice-banner { padding: 0.5rem 0.8rem; }
   }
+  /* Clock strip (the mount's clock differs from the Pi's): same colours as the notices above. */
+  #cc-clock-mount-banner {
+    background: #2a2214; color: #e0a030; border-top: 1px solid #e0a030;
+    padding: 0.5rem 1.5rem; font-size: 0.9rem; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  }
+  .cc-clock-msg { flex: 1 1 320px; min-width: 0; }
+  .cc-clock-msg small { display: block; color: #c9a45e; font-size: 0.8rem; margin-top: 2px; }
+  .cc-clock-cmp { display: grid; grid-template-columns: auto auto; gap: 2px 14px; justify-content: start; margin-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+  .cc-clock-cmp span:nth-child(odd) { color: #c9a45e; }
+  @media (max-width: 767px) { #cc-clock-mount-banner { padding: 0.5rem 0.8rem; } }
   /* Same flush-strip pattern as the other header banners - replaces a
      native confirm()/alert() pair for the "Restart Control Center" action
      (see gui_installer/status_page.html's restartControlCenter()) per
@@ -2343,6 +2475,7 @@
     <button onclick="document.getElementById('last-run-banner').style.display='none';">Dismiss</button>
   </div>
   <pre id="last-run-banner-log"></pre>
+  <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('last-run-banner-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
 </div>
 <div id="cc-readonly-banner" style="display:none;">
   <span id="cc-readonly-banner-text">Control Center open elsewhere - this tab is read-only.</span>
@@ -2355,6 +2488,14 @@
 <div id="cc-pifinder-service-notice-banner" style="display:none;">
   <span id="cc-pifinder-service-notice-text"></span>
   <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
+</div>
+<div id="cc-clock-mount-banner" style="display:none;">
+  <div class="cc-clock-msg"><span id="cc-clock-mount-text"></span>
+    <div class="cc-clock-cmp"><span>Pi clock</span><span id="cc-clock-mount-pi"></span><span>Mount clock</span><span id="cc-clock-mount-mount"></span></div>
+    <small id="cc-clock-mount-error" style="display:none;"></small>
+  </div>
+  <button class="ql-small-btn" id="cc-clock-mount-fix" onclick="refreshMountTime()">Set mount time now</button>
+  <button class="ql-small-btn" onclick="dismissClockBanner('mount_clock')">Dismiss</button>
 </div>
 <div id="cc-cold-profile-notice-banner" style="display:none;">
   <span id="cc-cold-profile-notice-text"></span>
@@ -2400,7 +2541,7 @@
       <div id="pifinder-glance-row">
         <div id="pifinder-screen-wrap">
           <div id="pifinder-screen-inner">
-            <img id="pifinder-screen" src="/pifinder_welcome_blue.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)">
+            <img id="pifinder-screen" src="/pifinder_welcome_blue.png" alt="PiFinder screen" title="PiFinder OLED screen (live once running)" onload="pifinderScreenFit(this)">
             <div id="pifinder-screen-waiting"><span id="pifinder-screen-waiting-text">Waiting for<br>PiFinder&hellip;</span></div>
           </div>
           <a class="help-link pifinder-screen-help" href="https://pifinder.readthedocs.io/en/release/user_guide.html" target="_blank" rel="noopener" title="PiFinder User Guide">i</a>
@@ -2645,6 +2786,15 @@
             <div class="mb-arrow" id="mb-arrow-right">&sdot;&sdot;&sdot;</div>
             <div class="mb-grp">
             <div class="mb-node" id="mb-node-mount" title="Mount">
+              <!-- Mount state, symbol only: green play = tracking (blinks while slewing), amber pause = stopped, red square =
+                   parked, grey ? = the mount does not say. Set by updateMountStateBadge(). -->
+              <svg id="mb-mount-state" viewBox="0 0 20 20" role="img" aria-label="" style="display:none;">
+                <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <path class="ms-tracking" d="M7 5.5L15 10L7 14.5Z" fill="currentColor"/>
+                <g class="ms-stopped" fill="currentColor"><rect x="6.5" y="5.5" width="2.6" height="9"/><rect x="10.9" y="5.5" width="2.6" height="9"/></g>
+                <rect class="ms-parked" x="6" y="6" width="8" height="8" rx="1" fill="currentColor"/>
+                <text class="ms-unknown" x="10" y="14" text-anchor="middle" font-size="12" fill="currentColor">?</text>
+              </svg>
               <div class="orientation-icon-row">
                 <svg class="mb-icon" id="mb-icon-mount" viewBox="0 0 24 24" aria-hidden="true">
                   <g transform="rotate(-25 11 14) translate(11 14) scale(1.25) translate(-11 -14)">
@@ -2665,15 +2815,21 @@
              profile (Dobsonian), where the diagram is hidden. -->
         <div id="mb-sky-col">
         <!-- Sky Position Panel (docs/concepts/sky_position_panel.md): where the mount, PiFinder and
-             the Goto/Held targets are in the sky. Display only; hidden until there is data. Own block below
+             the Target and the Hold position are. Display only; hidden until there is data. Own block below
            the Mount Bridge status (not inside #mb-diagram), so it stays visible for a PiFinder-only
            profile (Dobsonian) where the diagram is hidden. -->
         <div id="sky-panel" style="display:none;">
-          <div id="sky-panel-inner">
-            <svg id="sky-panel-svg" viewBox="0 14 240 224" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
-          </div>
+          <div id="sky-pic">
+          <span id="sky-time" style="display:none;" title="The moment this picture is computed for (the Pi's clock). If KStars on another computer shows the mount somewhere else, compare its clock with this time - see the (i) help."></span>
+          <svg id="sky-panel-svg" viewBox="14 16 212 216" role="img" aria-label="Sky: mount and PiFinder positions"></svg>
           <a class="help-link" href="/help.html#sky-panel" target="_blank" rel="noopener" title="What is this picture?">i</a>
+          </div>
         </div>
+        <!-- One card for every state under the picture: the headline (plus "Don't touch the mount" while it moves), the four-step band, one line, one reason, and the
+             buttons Why? / Last run / Details. It reads the caption, the status line and the long explanation below (kept as data sinks,
+             never shown) and the Bridge's positioning status. -->
+        <div id="sky-card"></div>
+        <div id="sky-target-line" style="display:none;" title="Last GoTo: what was last asked for, by whom. Shown in the card's Details."></div>
         <div id="mb-caption-status-row">
           <div id="mb-mode-caption-row">
             <span id="mb-mode-caption-dot-text"><span class="status-dot dot-white" id="mb-mode-caption-dot"></span><span id="mb-mode-caption">Not coupled yet</span></span>
@@ -2723,19 +2879,18 @@
         <div class="group-label">Quick Actions</div>
         <div class="mb-qa-groups">
           <div class="mb-qa-group" id="mb-sync-group">
-            <div class="mb-qa-group-label">Sync positions (once)</div>
+            <div class="mb-sync-head"><span class="mb-qa-group-label">Sync positions (once)</span><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
             <div id="mb-sync-actions-row">
           <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand."><span class="mb-sync-dir">PiFinder &rarr; mount</span>Sync mount from PiFinder</button>
           <button id="mb-sync-pifinder-btn" data-mb-action="sync-pifinder-from-mount" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncPiFinderFromMount()" disabled title="One-shot: tells PiFinder where the mount points - the mount is trusted, PiFinder is corrected. Use it after you centred a star in the scope and PiFinder doesn't agree. On a real PiFinder this is PiFinder's own Align (like picking the star on the device), real plate-solving keeps running; it needs a current plate solve and the mount inside PiFinder's field of view. In Full Simulation it injects the mount's position instead. Needs a connected mount."><span class="mb-sync-dir">mount &rarr; PiFinder</span>Sync PiFinder from mount</button>
             </div>
-            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-unconfirmed"></span><span class="mb-sync-msg">No sync since page load</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
-            <div class="mb-qa-group-label">Held target<a class="help-link" href="/help.html#held-target" target="_blank" rel="noopener" title="What is the held target? The target the Mount Bridge currently remembers: the most recent deliberate Goto or push-to, from PiFinder or from the mount. Click for the details." onclick="event.stopPropagation()">i</a></div>
+            <div class="mb-qa-group-label">Push-To<a class="help-link" href="/help.html#push-to" target="_blank" rel="noopener" title="Push-To (blue cross in the sky picture): the object PiFinder points you to, where the Mount Bridge keeps the scope - and what these three buttons act on. Click for the details." onclick="event.stopPropagation()">i</a></div>
             <div class="mb-row" id="mb-big-actions-row">
-          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the held target to PiFinder itself, correcting its own belief about &quot;what am I pushed-to&quot; - unlike Goto Held Target below, this leaves the mount untouched. Closes the gap where a later Mount Bridge restart would otherwise re-read PiFinder's still-wrong target as its recovery baseline and slew the mount right back to it. Needs an active Coupling mode.">Align to Held Target</button>
-          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the held target - NOT PiFinder's current position (unlike Sync mount from PiFinder above). Use this after a physical disturbance (bumped mount, friction-clutch slip, overbalance) where PiFinder's own live solve also reflects the disturbance, not what you actually meant to point at. Needs an active Coupling mode.">Goto Held Target</button>
-          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="Immediately correct the mount's own position belief (Sync to PiFinder's current position) THEN go to the held target - the same automatic recovery the driver would otherwise only run after a 45s unconfirmed-reposition timeout. Verified: does not touch PiFinder's own PushTo target/counter. Works regardless of Coupling mode.">Revert to Held Target Now</button>
+          <button id="mb-align-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerAlignHeld()" disabled title="One-shot: sends the Push-To to PiFinder again, so that PiFinder shows it. The mount is left alone. Needs an active Coupling mode.">Send Push-To to PiFinder</button>
+          <button id="mb-goto-held-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerGotoHeld()" disabled title="One-shot: sends the mount back to the Push-To - NOT to PiFinder's current position (unlike Sync mount from PiFinder above). Use it after a bump or a slipped clutch, where PiFinder's own solve shows the disturbed position. Needs an active Coupling mode.">Goto Push-To</button>
+          <button id="mb-reposition-revert-btn" data-mb-action="reposition-revert" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerRepositionRevert()" title="First corrects the mount's own position belief (Sync to PiFinder's current position), then goes to the Push-To. Works in every Coupling mode.">Revert to Push-To</button>
           <button id="mb-abort-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerAbortMount()" disabled title="Emergency stop: immediately aborts any mount motion AND sets Coupling to Off, so nothing re-triggers another correction afterward. Works even if PiFinder's own side is unavailable. Needs an active Coupling mode - nothing to stop otherwise.">Stop movement</button>
             </div>
           </div>
@@ -2748,6 +2903,58 @@
           <span id="mb-threshold-manual-sep"></span>
           <button id="mb-decouple-btn" onclick="onDecoupleClick()" disabled title="Decouple - sets Coupling back to Off. PiFinder and mount stop syncing automatically until you pick a preset again. No dedicated preset button for this (Off is the driver's own default/neutral state). Disabled while already Off - nothing to decouple.">Decouple</button>
           <div id="mb-autoconnect-status" class="mb-hint" style="display:none;margin:0;"></div>
+          <div class="mb-qa-group mb-mpa-tile" id="mb-mpa-tile">
+            <div class="mb-qa-group-label mb-mpa-head" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')" title="Automatic alignment on several bright stars"><span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span><span id="mb-multialign-chevron" class="mb-mpa-chevron">&#9660; show</span></div>
+          <div id="mb-multialign-details" style="display:none;">
+            <!-- Follows this project's documented status-row convention
+               (Readme_ControlCenter.md "Design Principles" #1/#2, re-read
+               2026-08-10 after direct feedback that this row was missing it
+               entirely): <dot> Label: status, white/green/yellow/red. Adapted
+               for a discrete multi-step action rather than a component health
+               check - yellow means "running" here (there's no ongoing
+               degraded-but-working state for a one-shot sequence like there is
+               for e.g. hardware presence), green always carries a real
+               completion message (what was actually done), not just "Ok". -->
+            <div class="hw-row" id="mb-multialign-status-row" title="Status of the last (or currently running) Multi-Point Alignment sequence.">
+              <span class="status-dot dot-white" id="mb-multialign-dot"></span>Multi-Point Alignment: <span id="mb-multialign-status-text">not run yet</span>
+            </div>
+            <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
+              <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
+              <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+              <button id="mb-multialign-save-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerOnStepAlignSave()" style="display:none;" disabled title="Keeps the alignment model on the OnStep controller beyond a power-off. OnStep does not confirm it.">Save to OnStep</button>
+            </div>
+            <!-- #191/#217: candidate-selection settings already existed as INDI
+                 properties (AlignConfigNP) since the catalog-driven selection
+                 landed, but had no GUI control at all - direct feedback,
+                 2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
+                 debounced-input pattern as the Threshold field above. -->
+            <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
+              <span class="mb-row-label">Search radius:</span>
+              <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+              <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
+              <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
+              <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
+              <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
+            </div>
+            <!-- Preferred-direction hard filter (#191) - added 2026-08-10, direct
+                 feedback from the first real-sky test: "vom Zenith aus wandert
+                 der PiFinder sonst gerne mal in eine Region, die z.B. nicht
+                 geeignet ist" (a real local obstruction in one azimuth
+                 quadrant, not modeled by min_altitude alone). Hard filter, not
+                 a soft preference, per explicit confirmation - too few
+                 candidates in the chosen quadrant fails the sequence outright
+                 (see PiFinder's own /api/nearby_bright_stars contract) rather
+                 than silently falling back to another direction. -->
+            <div class="mb-row" id="mb-align-direction-row" title="Preferred direction (#191) - a HARD filter: only candidates in that 90° azimuth quadrant (N=315-45°, E=45-135°, S=135-225°, W=225-315°) are considered. Too few candidates there fails Start outright rather than silently using another direction. Any = previous, direction-agnostic behavior.">
+              <span class="mb-row-label">Direction:</span>
+              <button class="ql-small-btn" id="mb-align-dir-any-btn" onclick="setAlignDirection('ANY')">Any</button>
+              <button class="ql-small-btn" id="mb-align-dir-n-btn" onclick="setAlignDirection('N')">N</button>
+              <button class="ql-small-btn" id="mb-align-dir-e-btn" onclick="setAlignDirection('E')">E</button>
+              <button class="ql-small-btn" id="mb-align-dir-s-btn" onclick="setAlignDirection('S')">S</button>
+              <button class="ql-small-btn" id="mb-align-dir-w-btn" onclick="setAlignDirection('W')">W</button>
+            </div>
+          </div>
+          </div>
         </div>
         <!-- 2026-09-07, direct feedback: the four action buttons above go
              quietly disabled with no visible reason otherwise - several
@@ -2756,7 +2963,6 @@
              of which the user watching greyed-out buttons can be expected to
              guess. See updateActionButtonsCouplingGate(). -->
         <div id="mb-quick-actions-hint" class="mb-hint" style="display:none;margin:0.4rem 0 0;">Coupling is Off - pick a mode below to enable these actions.</div>
-
       </div>
       <div class="mb-group-box">
         <div class="mb-row" id="mb-coupling-row" title="Choose how PiFinder and the mount stay in sync. Requires Ekos itself to be connected in KStars - see Ekos status inside Setup checklist &amp; diagnostics below if it isn't. If setup isn't finished yet, this starts Autoconnect: it does what it can on its own and asks for the things it can't (which driver is your mount, and connecting Ekos itself).">
@@ -2769,7 +2975,7 @@
               </div>
             </div>
             <div class="mb-coupling-group">
-              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the currently held target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
+              <div class="group-label mb-coupling-label"><span>Coupling Goto</span><a class="help-link" href="/help.html#coupling-goto" target="_blank" rel="noopener" title="Help">i</a><span id="mb-target-source-badge" class="mb-target-source-badge" style="display:none;" title="Which side the current target most recently came from - read-only, updates automatically.">Following: <span id="mb-target-source-value">–</span></span></div>
               <div class="mb-coupling-group-buttons">
                 <button id="wm-preset-goto-btn" class="mb-coupling-btn" onclick="onCouplingPresetClick('goto_forward')" disabled title="Holds whichever target was most recently, deliberately set - a PiFinder push-to (its own menu, or KStars' Goto on 'PiFinder LX200'), a mount-side GoTo (KStars on the mount, SkySafari, the mount's own app/hand controller), or a manual correction. No need to pick a side - it reacts to either automatically (#178).">GoTo</button>
               </div>
@@ -2777,7 +2983,6 @@
           </div>
         </div>
       </div>
-      <div class="hgroup-divider"></div>
       </div>
 
       <!-- Deliberately OUTSIDE #mb-operate-rows and the collapsible
@@ -2791,6 +2996,7 @@
            above - no per-item explanatory subtext needed, the grouping
            itself already says that (see basic-memory bm/00017's "no
            label that only narrates that something works as designed"). -->
+      <div class="mb-group-box" id="mb-settings-box">
       <div class="group-label" id="mb-settings-label">Settings</div>
 
       <!-- Role: the always-visible summary row (#mb-role-line, unchanged
@@ -2858,11 +3064,28 @@
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-real-dot"></span>Real Hardware</div>
             <div class="mode-tile-sub" id="mode-tile-real-sub">&hellip;</div>
           </div>
-          <div class="mode-tile" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
+          <div class="mode-tile" id="mode-tile-gsc" onclick="toggleGscSim()" title="Real hardware + GSC simulation: a star field rendered from the GSC catalogue replaces the camera picture, PiFinder's real solver (Cedar / tetra3) solves it, the mount is any INDI mount. Test the whole chain without a night sky. Click to start or stop.">
+            <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-gsc-dot"></span>Real Hardware + GSC Simulation</div>
+            <div class="mode-tile-sub" id="mode-tile-gsc-sub">&hellip;</div>
+          </div>
+        </div>
+        <div id="gsc-sim-panel" class="gsc-sim-info" style="display:none;">
+          <div id="gsc-sim-chips" class="gsc-sim-line"></div>
+          <div id="gsc-sim-pending" class="gsc-sim-line gsc-sim-pending-text"></div>
+          <div id="gsc-sim-landing-running" class="gsc-sim-note"></div>
+          <div class="gsc-sim-note">The camera picture is replaced by the simulated sky. The old PiFinder Simulator device is left out of this mode.</div>
+        </div>
+        <div id="gsc-sim-idle" class="gsc-sim-idle">
+          <span>No simulated sky. Click &quot;Real Hardware + GSC Simulation&quot; to test without a night sky.</span>
+          <label class="gsc-sim-landing">Landing error of a GoTo: <select id="gsc-sim-landing"></select></label>
+        </div>
+        <div class="mode-tiles-minor-label">Other test modes</div>
+        <div class="mode-tiles mode-tiles-minor">
+          <div class="mode-tile mode-tile-minor" id="mode-tile-sim" onclick="toggleTruthInjector()" title="Synthetic Solve - continuously feeds PiFinder a simulated position from Telescope Simulator (see Simulation and testing below). Click to toggle; the exact same action as its Toggle button.">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-sim-dot"></span><span id="mode-tile-sim-name-text">Full Simulation (INDI/Mount Bridge)</span></div>
             <div class="mode-tile-sub" id="mode-tile-sim-sub">&hellip;</div>
           </div>
-          <div class="mode-tile" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
+          <div class="mode-tile mode-tile-minor" id="mode-tile-fake" onclick="toggleMode()" title="Whole device Fake Mode - a completely separate headless PiFinder instance with everything simulated. Click to toggle; the exact same action as its Switch Mode button below (asks for confirmation).">
             <div class="mode-tile-name"><span class="status-dot dot-white" id="mode-tile-fake-dot"></span>PiFinder-only Fake Mode (legacy)</div>
             <div class="mode-tile-sub" id="mode-tile-fake-sub">&hellip;</div>
           </div>
@@ -2893,137 +3116,80 @@
         <div id="wm-no-profile-hint" class="mb-hint" style="display:none;">No profile of your own found - create one in Web Manager or the StellarMate App first (not "Simulators", that's the read-only default).</div>
       </div>
 
-      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
-        <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-        <span id="mb-details-chevron">&#9660; show</span>
-      </div>
-      <div id="mb-details" style="display:none;">
-        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>INDI Web Manager<span id="wm-config-badge" class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
+        <div class="collapsible-toggle collapsible-toggle-plain" onclick="toggleCollapsibleSection('mb-details', 'mb-details-chevron')">
+          <span>Setup checklist &amp; diagnostics<a class="help-link" href="/help.html#mount-bridge" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
+          <span id="mb-details-chevron">&#9660; show</span>
+        </div>
+        <div id="mb-details" style="display:none;">
+          <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7.25" r="1" fill="currentColor"/><circle cx="7" cy="16.25" r="1" fill="currentColor"/></svg>INDI Web Manager<span id="wm-config-badge" class="mb-group-badge mb-group-badge-config" title="Profile/driver/mount selections - persist across reboots and stay done regardless of whether anything is actually connected right now. See &quot;Live now&quot; below for the current connection state.">Configured</span></div>
 
-        <div class="mb-row mb-step-row mb-step-row-key" style="display:none;" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
-          <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
-        </div>
-        <div id="wm-profile-health-row" class="mb-row mb-step-row" style="display:none;" title="Whether this device's own active profile is clean (no stray drivers left behind) and its PiFinder devices are actually connected right now - not tied to any particular role. Direct request (2026-09-16): each CC should be able to tell on its own whether its profile actually works, after a real case where a profile had picked up unrelated drivers unnoticed.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label">Profile health:</span></span>
-          <span id="wm-profile-health-text" class="mb-step-widget"></span>
-        </div>
-        <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
-          <span id="wm-kstars-link-text" class="mb-step-widget"></span>
-          <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
-        </div>
+          <div class="mb-row mb-step-row mb-step-row-key" style="display:none;" title="Pick a profile you created yourself - not the read-only default 'Simulators'. Create one in Web Manager or the StellarMate App first if none exists yet.">
+            <span class="mb-row-lead"><svg class="mb-step-key-star" width="13" height="13" viewBox="0 0 24 24" fill="#e0a030" stroke="#e0a030" stroke-width="1"><path d="M12 2l2.9 6.5L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-0.8z"/></svg><span class="mb-row-label mb-step-label mb-step-key" id="wm-step1-label">1. Profile:</span><a class="help-link" href="/help.html#step1-profile" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-server-btn" class="ql-small-btn" onclick="toggleWmServer()" disabled>&hellip;</button>
+          </div>
+          <div id="wm-profile-health-row" class="mb-row mb-step-row" style="display:none;" title="Whether this device's own active profile is clean (no stray drivers left behind) and its PiFinder devices are actually connected right now - not tied to any particular role. Direct request (2026-09-16): each CC should be able to tell on its own whether its profile actually works, after a real case where a profile had picked up unrelated drivers unnoticed.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label">Profile health:</span></span>
+            <span id="wm-profile-health-text" class="mb-step-widget"></span>
+          </div>
+          <div id="wm-kstars-link-row" class="mb-row mb-step-row" style="display:none;">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step2-label">2. KStars Link:</span><a class="help-link" href="/help.html#step2-kstars" target="_blank" rel="noopener" title="Help">i</a></span>
+            <span id="wm-kstars-link-text" class="mb-step-widget"></span>
+            <button id="wm-kstars-recheck-btn" class="ql-small-btn" onclick="checkKstarsLink()">Recheck</button>
+          </div>
 
-        <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
-          <button id="wm-lx200-remote-edit-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button>
-          <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
-        </div>
-        <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
-             Bridge, no mount here) - wrapper for the same reason as
-             #mb-operate-rows above. -->
-        <div id="mb-steps-4-6">
-        <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount (INDI WM Profile):</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
-          <span id="wm-mount-profile-tag"></span>
-          <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
-          <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
-          <button id="wm-optical-train-sync-btn" class="ql-small-btn" onclick="syncOpticalTrainsToMount()" disabled title="Ekos optical trains (Mount/Guide via/etc.) keep whichever device they last had - switching the mount driver does not update them on its own. This finds every optical-train field currently set to &quot;Telescope Simulator&quot; and switches it to the mount selected above (docs/concepts/optical_train_device_sync.md).">Sync optical trains to this mount</button>
-        </div>
-        <div id="wm-optical-train-sync-status" class="mb-hint" style="display:none;"></div>
-        <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
-        <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
+          <div class="mb-row mb-step-row" title="Add or remove the PiFinder drivers for this profile.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step3-label">3. Drivers:</span><a class="help-link" href="/help.html#step3-drivers" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-lx200-btn" class="ql-small-btn" onclick="toggleWmDriver('lx200', 'wm-lx200-btn')" disabled>PiFinder LX200: &hellip;</button>
+            <button id="wm-lx200-remote-edit-btn" class="ql-small-btn" style="display:none;" onclick="showCtrlRemoteInputPrompt()">Change address</button>
+            <button id="wm-bridge-btn" class="ql-small-btn" onclick="toggleWmDriver('bridge', 'wm-bridge-btn')" disabled>Mount Bridge: &hellip;</button>
+          </div>
+          <!-- Steps 4-6 are meaningless in the "PiFinder host" role (no Mount
+               Bridge, no mount here) - wrapper for the same reason as
+               #mb-operate-rows above. -->
+          <div id="mb-steps-4-6">
+          <div class="mb-row mb-step-row" title="Pick which loaded driver is your mount, then link it to PiFinder.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label mb-step-key" id="wm-step4-label">4. Mount (INDI WM Profile):</span><a class="help-link" href="/help.html#step4-mount" target="_blank" rel="noopener" title="Help">i</a></span>
+            <span id="wm-mount-profile-tag"></span>
+            <select id="wm-mount-select" class="mb-step-widget" disabled onchange="refreshWmActiveButton()"><option>&hellip;</option></select>
+            <button id="wm-set-active-btn" class="ql-small-btn" onclick="setWmActiveDevices()" disabled>Link telescope mount</button>
+            <button id="wm-optical-train-sync-btn" class="ql-small-btn" onclick="syncOpticalTrainsToMount()" disabled title="Ekos optical trains (Mount/Guide via/etc.) keep whichever device they last had - switching the mount driver does not update them on its own. This finds every optical-train field currently set to &quot;Telescope Simulator&quot; and switches it to the mount selected above (docs/concepts/optical_train_device_sync.md).">Sync optical trains to this mount</button>
+          </div>
+          <div id="wm-optical-train-sync-status" class="mb-hint" style="display:none;"></div>
+          <div id="wm-no-mount-hint" class="mb-hint" style="display:none;">No mount driver in this profile yet - add one via Web Manager or the StellarMate App.</div>
+          <div id="mb-bridge-settings" class="mb-hint" style="display:none;" title="Mount Bridge's own BRIDGE_SETTINGS (which indiserver it thinks it's talking to) and ACTIVE_DEVICES (which two devices it's actually bridging) - a sanity check without needing the INDI Control Panel."></div>
 
-        <!-- Steps 1-4 above are all configuration facts (profile/driver/
-             mount-name selections) - they persist across reboots and stay
-             green regardless of whether anything is actually connected
-             right now. Only 5-6 below read live state (Ekos's own D-Bus
-             indiStatus, real CONNECTION properties) - found live (2026-08-05,
-             #133-adjacent): right after a cold reboot, before Setup was ever
-             clicked, 1-4 already showed done while nothing was connected,
-             easy to misread as "everything's fine". Badges make the
-             config-vs-live distinction explicit instead of six visually
-             identical checkmarks. -->
-        <div class="mb-checklist-divider"></div>
-        <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
+          <!-- Steps 1-4 above are all configuration facts (profile/driver/
+               mount-name selections) - they persist across reboots and stay
+               green regardless of whether anything is actually connected
+               right now. Only 5-6 below read live state (Ekos's own D-Bus
+               indiStatus, real CONNECTION properties) - found live (2026-08-05,
+               #133-adjacent): right after a cold reboot, before Setup was ever
+               clicked, 1-4 already showed done while nothing was connected,
+               easy to misread as "everything's fine". Badges make the
+               config-vs-live distinction explicit instead of six visually
+               identical checkmarks. -->
+          <div class="mb-checklist-divider"></div>
+          <div class="group-label"><svg class="group-label-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Ekos / KStars<span class="mb-group-badge mb-group-badge-live" title="Reflects the current connection right now - can turn red again after a disconnect or reboot, unlike 1-4 above.">Live now</span></div>
 
-        <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos (EKOS Profile):</span></span>
-          <span id="wm-ekos-profile-tag"></span>
-          <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
-        </div>
-        <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
-          <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
-          <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
-          <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
-          <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
-          <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
-        </div>
-        </div>
+          <div id="mb-ekos-status-row" class="mb-row mb-step-row" style="display:none;" title="A Coupling command only matters if it reaches the same Ekos session you're actually observing through.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step5-label">5. Ekos (EKOS Profile):</span></span>
+            <span id="wm-ekos-profile-tag"></span>
+            <span id="mb-ekos-status" class="mb-step-widget mb-hint"></span>
+          </div>
+          <div class="mb-row mb-step-row" title="Connect each device. Restarts the profile automatically if a driver hasn't loaded yet.">
+            <span class="mb-row-lead"><span class="mb-row-label mb-step-label" id="wm-step6-label">6. Connect:</span><a class="help-link" href="/help.html#step6-connect" target="_blank" rel="noopener" title="Help">i</a></span>
+            <button id="wm-connect-all-btn" class="ql-small-btn" onclick="connectAllAvailable()" disabled title="Connects every device below that's currently ready to connect.">Connect all (available)</button>
+            <button id="wm-connect-lx200-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder LX200', 'wm-connect-lx200-btn')" disabled>Connect PiFinder LX200</button>
+            <button id="wm-connect-bridge-btn" class="ql-small-btn" onclick="connectWmDevice('PiFinder Mount Bridge', 'wm-connect-bridge-btn')" disabled>Connect Bridge</button>
+            <button id="wm-connect-mount-btn" class="ql-small-btn" onclick="connectWmSelectedMount()" disabled>Connect Mount</button>
+          </div>
+          </div>
 
-        <div id="mb-log" title="What this tile has been doing, in order."></div>
-      </div>
-
-      <!-- #191/#217: own collapsible section, not squeezed into
-           #mb-operate-rows above (direct feedback, 2026-08-10: pushed the
-           Threshold field down, and this is a distinct enough feature to
-           deserve its own "wie gewohnt" collapsible like Setup checklist
-           above). Positioned below Setup checklist & diagnostics (#266,
-           2026-09-05): checklist is the prerequisite/foundational step,
-           this is a subsequent, more advanced action. -->
-      <div class="collapsible-toggle" onclick="toggleCollapsibleSection('mb-multialign-details', 'mb-multialign-chevron')">
-        <span>Multi-Point Alignment<a class="help-link" href="/help.html#multi-point-alignment" target="_blank" rel="noopener" title="Help" onclick="event.stopPropagation()">i</a></span>
-        <span id="mb-multialign-chevron">&#9660; show</span>
-      </div>
-      <div id="mb-multialign-details" style="display:none;">
-        <!-- Follows this project's documented status-row convention
-           (Readme_ControlCenter.md "Design Principles" #1/#2, re-read
-           2026-08-10 after direct feedback that this row was missing it
-           entirely): <dot> Label: status, white/green/yellow/red. Adapted
-           for a discrete multi-step action rather than a component health
-           check - yellow means "running" here (there's no ongoing
-           degraded-but-working state for a one-shot sequence like there is
-           for e.g. hardware presence), green always carries a real
-           completion message (what was actually done), not just "Ok". -->
-        <div class="hw-row" id="mb-multialign-status-row" title="Status of the last (or currently running) Multi-Point Alignment sequence.">
-          <span class="status-dot dot-white" id="mb-multialign-dot"></span>Multi-Point Alignment: <span id="mb-multialign-status-text">not run yet</span>
-        </div>
-        <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
-          <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
-          <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
-        </div>
-        <!-- #191/#217: candidate-selection settings already existed as INDI
-             properties (AlignConfigNP) since the catalog-driven selection
-             landed, but had no GUI control at all - direct feedback,
-             2026-08-10 ("kein Bug, aber warum kein GUI dafür"). Same
-             debounced-input pattern as the Threshold field above. -->
-        <div class="mb-row" id="mb-align-config-row" title="Candidate point selection for Multi-Point Alignment (#191) - applies on the next Start, not retroactively to a running sequence.">
-          <span class="mb-row-label">Search radius:</span>
-          <input type="number" id="mb-align-radius-input" class="pf-num-input" value="60" min="5" max="180" step="5" style="width:4em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-          <span class="mb-row-label" style="margin-left:0.6rem;">Points:</span>
-          <input type="number" id="mb-align-count-input" class="pf-num-input" value="4" min="1" max="10" step="1" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()">
-          <span class="mb-row-label" style="margin-left:0.6rem;">Min altitude:</span>
-          <input type="number" id="mb-align-min-altitude-input" class="pf-num-input" value="20" min="0" max="80" step="5" style="width:3em;" onchange="applyAlignConfigChange()" oninput="scheduleAlignConfigChange()"> deg
-        </div>
-        <!-- Preferred-direction hard filter (#191) - added 2026-08-10, direct
-             feedback from the first real-sky test: "vom Zenith aus wandert
-             der PiFinder sonst gerne mal in eine Region, die z.B. nicht
-             geeignet ist" (a real local obstruction in one azimuth
-             quadrant, not modeled by min_altitude alone). Hard filter, not
-             a soft preference, per explicit confirmation - too few
-             candidates in the chosen quadrant fails the sequence outright
-             (see PiFinder's own /api/nearby_bright_stars contract) rather
-             than silently falling back to another direction. -->
-        <div class="mb-row" id="mb-align-direction-row" title="Preferred direction (#191) - a HARD filter: only candidates in that 90° azimuth quadrant (N=315-45°, E=45-135°, S=135-225°, W=225-315°) are considered. Too few candidates there fails Start outright rather than silently using another direction. Any = previous, direction-agnostic behavior.">
-          <span class="mb-row-label">Direction:</span>
-          <button class="ql-small-btn" id="mb-align-dir-any-btn" onclick="setAlignDirection('ANY')">Any</button>
-          <button class="ql-small-btn" id="mb-align-dir-n-btn" onclick="setAlignDirection('N')">N</button>
-          <button class="ql-small-btn" id="mb-align-dir-e-btn" onclick="setAlignDirection('E')">E</button>
-          <button class="ql-small-btn" id="mb-align-dir-s-btn" onclick="setAlignDirection('S')">S</button>
-          <button class="ql-small-btn" id="mb-align-dir-w-btn" onclick="setAlignDirection('W')">W</button>
+          <div id="mb-log" title="What this tile has been doing, in order."></div>
+          <div class="term-bar"><button type="button" class="copy-log-btn" onclick="copyTerminal('mb-log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
         </div>
       </div>
+
       </div>
     </div>
     <div id="mode-tile">
@@ -3214,30 +3380,7 @@ sudo systemctl start pifinder</pre>
     <ul id="phase-checklist" style="display:none;"></ul>
 
     <div id="install-groups">
-      <div class="group-label">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
-      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
-      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
-        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
-        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
-      </div>
-      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
-           became real buttons); onDeviceTypeClick() shows the matching block. -->
-      <div id="devtype-info" class="devtype-info">
-        <div id="devtype-info-full">
-          <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
-          <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
-          <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
-        </div>
-        <div id="devtype-info-indi_only" style="display:none;">
-          <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
-          <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
-          <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
-        </div>
-      </div>
-
-      <div class="hgroup-divider"></div>
-
-      <div class="group-label">Branch</div>
+      <div class="group-label">Branch<a class="help-link" href="/help.html#install-branch" target="_blank" rel="noopener" title="Which branch of this project's own scripts and patches (not PiFinder itself) is used the moment you click the action below: main (stable), dev (beta) or any other. Click for the details.">i</a></div>
       <div id="branch-picker-row">
         <select id="branch-select" onchange="onBranchSelectChange(true)">
           <option value="main">main (stable)</option>
@@ -3249,7 +3392,26 @@ sudo systemctl start pifinder</pre>
         <span id="branch-current-hint" style="display:none;"></span>
       </div>
 
-      <div class="hgroup-divider"></div>
+      <div class="group-label" style="margin-top:0.9rem;">What is this device?<a class="help-link" href="/help.html#indi-only-mode" target="_blank" rel="noopener" title="Help">i</a></div>
+      <p id="devtype-intro">To choose the correct installation variant, select the hardware setup of this device:</p>
+      <div id="devtype-seg" class="devtype-seg" role="group" aria-label="Hardware setup of this device">
+        <button type="button" class="devtype-seg-opt devtype-seg-active" id="devtype-opt-full" aria-pressed="true" onclick="onDeviceTypeClick('full')">StellarMate + PiFinder</button>
+        <button type="button" class="devtype-seg-opt" id="devtype-opt-indi_only" aria-pressed="false" onclick="onDeviceTypeClick('indi_only')">StellarMate + Control host only</button>
+      </div>
+      <!-- Explanation of the selected setup only (same wording and colours as before the buttons
+           became real buttons); onDeviceTypeClick() shows the matching block. -->
+      <div id="devtype-info" class="devtype-info" style="margin-bottom:0.7rem;">
+        <div id="devtype-info-full">
+          <div class="devtype-seg-sub">A Raspberry Pi with both StellarMate and PiFinder hardware, running standalone.</div>
+          <div class="devtype-seg-hw">&#9888; This combined role needs a capable Raspberry Pi. Recommended: Pi 5 + NVMe + 8 GB RAM. A Pi 4 (8 GB, NVMe) also works, just closer to the edge. Either way, stable 5A power delivery matters.</div>
+          <div class="devtype-seg-dev">For development and testing: this installation also works in a X86 UTM/VM. Cedar can not be used, but there exists the PiFinder Simulator instead of a real camera/solver.</div>
+        </div>
+        <div id="devtype-info-indi_only" style="display:none;">
+          <div class="devtype-seg-sub">No PiFinder hardware <em>used</em> on this device - it couples to a PiFinder running elsewhere via network (both devices must be in the same network). This machine is the StellarMate and PFSM Control Host; the PFSM Control Center also runs here. Installs and configures the <code>PiFinder LX200</code>, <code>PiFinder Mount Bridge</code> and <code>PiFinder Simulator</code> INDI drivers - the Simulator lets you test the coupling without a real PiFinder present.</div>
+          <div class="devtype-seg-hw">&#9888; The remote PiFinder needs the PiFinder LX200/Mount Bridge INDI drivers built, and a safety patch applied to its own <code>pos_server.py</code> (prevents a fake position being sent when unsolved) - not yet a ready-made script, see <a href="https://github.com/apos/PiFinder_Stellarmate/issues/401" target="_blank" rel="noopener">issue #401</a>.</div>
+          <div class="devtype-seg-hw">&#9888; A powerful machine for astrophotography tasks - a strong StellarMateOS on Pi 5 (NVMe, 8 GB min.), or an x86 StellarMateX.</div>
+        </div>
+      </div>
 
       <div id="choices" style="display:none;"></div>
 
@@ -3273,7 +3435,7 @@ sudo systemctl start pifinder</pre>
     </div>
     <div id="log-wrap">
       <pre id="log" class="log-placeholder">Terminal output will appear here once you start an installation or update.</pre>
-      <button id="log-expand-btn" class="ql-small-btn" style="display:none;margin-top:0.5rem;" onclick="toggleLogExpanded()"></button>
+      <div class="term-bar"><button id="log-expand-btn" class="ql-small-btn" style="display:none;" onclick="toggleLogExpanded()"></button><button type="button" class="copy-log-btn" onclick="copyTerminal('log', this)" title="Copy the whole text of this terminal to the clipboard">Copy to clipboard</button></div>
     </div>
     </div>
     </div>
@@ -4367,7 +4529,7 @@ function updatePiFinderHorizonStatus(altitudeDeg, belowHorizon) {
 // put the most fundamental blocker first as a reading-order convenience
 // only.
 function collectActiveShowstoppers() {
-  const items = [];
+  const items = bridgeProblemCards(_mbBlind, _mbQuestion);
   // Mount warnings (issue #583). The mount is parked: it ignores Sync and Goto.
   if (_mountParked) {
     items.push({
@@ -4396,7 +4558,17 @@ function collectActiveShowstoppers() {
   // easily be above the horizon even while the mount reports being below
   // it (that's the whole disagreement) - if so, this Sync succeeds and
   // corrects the mount's belief without any physical motion.
-  if (_mountBelowHorizon && _mountAltitudeDeg !== null) {
+  // Both below: the normal end of a session (the telescope has tracked down, PiFinder carries on with its motion sensor), or a
+  // start-up position. Nothing is broken; one calm card instead of two alarms.
+  if (_mountBelowHorizon && _pifinderBelowHorizon && _mountAltitudeDeg !== null && !isPiFinderClientRole()) {
+    items.push({
+      id: 'both-below-horizon',
+      category: 'mount-bridge',
+      title: 'Telescope and PiFinder are below the horizon',
+      text: 'Normal at the end of a session or right after the start: without stars PiFinder carries on with its motion sensor. The next plate solve comes when the telescope points at the sky again.',
+      buttons: [{ label: 'Goto Home Position', onclick: 'triggerGotoHome()', action: 'goto-home' }],
+    });
+  } else if (_mountBelowHorizon && _mountAltitudeDeg !== null) {
     items.push({
       id: 'horizon',
       category: 'mount-bridge',
@@ -4419,7 +4591,7 @@ function collectActiveShowstoppers() {
   // PIFINDER_HORIZON_STATUS can go IPS_ALERT completely independent of
   // whether there's also a mount mismatch - this card no longer depends
   // on that unrelated condition to ever appear.
-  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null) {
+  if (_pifinderBelowHorizon && _pifinderAltitudeDeg !== null && (!_mountBelowHorizon || isPiFinderClientRole())) {
     // A "PiFinder Client" has no mount at all on this device (that's the
     // role's whole point - it exists purely to be coupled BY a remote
     // Control host) - "Sync mount from PiFinder"/"Sync PiFinder from mount" are
@@ -4433,8 +4605,8 @@ function collectActiveShowstoppers() {
       category: 'pifinder',
       title: "PiFinder's own position is below the horizon",
       text: clientRole
-        ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. Wait for a fresh solve once PiFinder is back above the horizon.`
-        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. "Sync mount from PiFinder" would be refused from here. Sync PiFinder from mount instead if the mount itself is pointed correctly, or wait for a fresh solve once PiFinder is back above the horizon.`,
+        ? `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. That cannot be a plate solve; the next solve comes when PiFinder sees the sky again.`
+        : `${Math.abs(_pifinderAltitudeDeg).toFixed(0)}° below horizon. That cannot be a plate solve: it is a start-up or old position, or the motion sensor carrying on. "Sync PiFinder from mount" sets it to where the mount points.`,
       buttons: clientRole ? [] : [
         { label: 'Sync PiFinder from mount', onclick: 'triggerSyncPiFinderFromMount()', action: 'sync-pifinder-from-mount' },
       ],
@@ -4445,13 +4617,18 @@ function collectActiveShowstoppers() {
     items.push({
       id: 'no-solve',
       category: 'pifinder',
-      title: 'No solve active - neither real nor synthetic',
-      text: "No position to sync from. Turn on Synthetic Solve, or wait for a real camera solve.",
-      buttons: [{
-        label: 'Turn on Synthetic Solve', onclick: 'toggleTruthInjector()',
-        disabled: !pifinderScreenUrl,
-        title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on.",
-      }],
+      title: 'No solve active',
+      text: "PiFinder has no position to sync from. Wait for a real camera solve, or start a simulation: the GSC simulation tests the real solver and the whole chain, the other two skip the solver.",
+      buttons: [
+        { label: 'Start GSC simulation', onclick: 'toggleGscSim()',
+          disabled: !pifinderScreenUrl || (gscSimLast && gscSimLast.available === false),
+          title: !pifinderScreenUrl ? "PiFinder isn't confirmed reachable yet - wait for it to come up before starting this."
+            : (gscSimLast && gscSimLast.available === false ? gscSimLast.reason : null) },
+        { label: 'Synthetic solve (Full Simulation)', onclick: 'toggleTruthInjector()', secondary: true,
+          disabled: !pifinderScreenUrl,
+          title: pifinderScreenUrl ? null : "PiFinder isn't confirmed reachable yet - wait for it to come up before turning this on." },
+        { label: 'Fake mode (legacy)', onclick: 'toggleMode()', secondary: true },
+      ],
     });
   }
   // Live drift overrides the frozen startup snapshot (see
@@ -4670,11 +4847,11 @@ function renderShowstopperGroup(wrapId, items) {
   wrap.innerHTML = items.map((item) => {
     const buttonsHtml = item.buttons.length
       ? `<div class="mb-drift-banner-actions">${item.buttons.map((b) =>
-          `<button${b.action ? ` data-mb-action="${b.action}"` : ''}${b.disabled ? ' disabled' : ''}${b.title ? ` title="${b.title}"` : ''} class="mb-drift-banner-btn mb-drift-banner-btn-primary" onclick="${b.onclick}">${b.label}</button>`
+          `<button${b.action ? ` data-mb-action="${b.action}"` : ''}${b.disabled ? ' disabled' : ''}${b.title ? ` title="${b.title}"` : ''} class="mb-drift-banner-btn ${b.secondary ? 'mb-drift-banner-btn-secondary' : 'mb-drift-banner-btn-primary'}" onclick="${b.onclick}">${b.label}</button>`
         ).join('')}</div>`
       : '';
     const extraHtml = item.extraHtml || '';
-    return `<div class="showstopper-card" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${extraHtml}${buttonsHtml}</div></div>`;
+    return `<div class="showstopper-card${item.tone === 'bad' ? ' showstopper-bad' : ''}" data-showstopper="${item.id}">${warnIconSvg}<div class="mb-drift-banner-body"><div class="mb-drift-banner-title">${item.title}</div><div class="mb-drift-banner-text">${item.text}</div>${extraHtml}${buttonsHtml}</div></div>`;
   }).join('');
 }
 
@@ -4977,6 +5154,120 @@ function applyFakeModeTileState(dotClass, subText) {
 // is currently on. Clicking it (toggleRealHardware() below) turns off
 // whichever of those two is on; recomputed here from the two tiles it
 // depends on whenever either changes.
+// ---- GSC simulation tile (begin) ----
+// "Real Hardware + GSC Simulation" (gui_installer/gsc_sim.py, #344): what the mode tile and its panel show for one
+// /api/gsc_sim_status value. Pure, so it is tested under node (test_tools/gsc_tile_test.js).
+function gscSimTileModel(s) {
+  const off = { on: false, pending: false, locked: false, dot: 'dot-white', chips: [], landing: '', note: '' };
+  if (!s) return Object.assign({}, off, { sub: 'checking\u2026' });
+  if (!s.available) return Object.assign({}, off, { locked: true, sub: s.reason || 'not available on this device' });
+  const state = s.state || (s.running ? 'starting' : 'off');
+  const label = ((s.landings || []).find((l) => l.id === s.landing) || {}).label;
+  const landing = label ? 'Landing error of a GoTo: ' + label : '';
+  // The tile is ON only when the simulation really works (the server decides, see gsc_sim.simulation_state()); between off and on it
+  // says what is going on instead of claiming "on" with a contradicting line below it.
+  switch (state) {
+    case 'on':
+      return { on: true, pending: false, locked: false, dot: 'dot-green', sub: 'running, solving the simulated sky', landing: landing, note: '',
+        chips: [{ text: 'Sky renderer running', ok: true }, { text: 'Test Mode on', ok: true }, { text: 'Solving: CAM', ok: true },
+                { text: 'Following: ' + (s.device || 'mount'), ok: true }] };
+    case 'starting':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'starting, waiting for the first solve', landing: landing,
+        note: 'Waiting for PiFinder to solve the first simulated picture.' });
+    case 'restoring':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'restoring Test Mode', landing: landing,
+        note: 'PiFinder was restarted, so Test Mode went off. It is being switched on again.' });
+    case 'waiting':
+      return Object.assign({}, off, { pending: true, dot: 'dot-yellow', sub: 'waiting for PiFinder', landing: landing,
+        note: 'PiFinder is not answering (restarting?). The simulation carries on when it is back.' });
+    default:
+      return Object.assign({}, off, { sub: 'a simulated sky from the GSC catalogue, solved by the real solver' });
+  }
+}
+// ---- GSC simulation tile (end) ----
+
+let gscSimLast = null;
+let gscSimBusy = false;
+function applyGscSim(s) {
+  gscSimLast = s;
+  const m = gscSimTileModel(s);
+  const tile = document.getElementById('mode-tile-gsc');
+  if (!tile) return;
+  setHwDot(document.getElementById('mode-tile-gsc-dot'), 'status-dot ' + m.dot);
+  document.getElementById('mode-tile-gsc-sub').textContent = m.sub;
+  tile.classList.toggle('tile-on', m.on);
+  tile.classList.toggle('tile-pending', m.pending);
+  tile.classList.toggle('mode-tile-locked', m.locked);
+  const panel = document.getElementById('gsc-sim-panel');
+  const idle = document.getElementById('gsc-sim-idle');
+  panel.style.display = m.on || m.pending ? '' : 'none';
+  idle.style.display = m.on || m.pending || m.locked ? 'none' : '';
+  document.getElementById('gsc-sim-pending').textContent = m.note;
+  const chips = document.getElementById('gsc-sim-chips');
+  while (chips.firstChild) chips.removeChild(chips.firstChild);
+  m.chips.forEach((c) => {
+    const e = document.createElement('span'); e.className = 'gsc-sim-check' + (c.ok ? '' : ' gsc-wait'); e.textContent = (c.ok ? '\u2713 ' : '\u2026 ') + c.text; chips.appendChild(e);
+  });
+  document.getElementById('gsc-sim-landing-running').textContent = m.landing;
+  const select = document.getElementById('gsc-sim-landing');
+  if (s && s.landings && select.options.length === 0) {
+    s.landings.forEach((l) => { const o = document.createElement('option'); o.value = l.id; o.textContent = l.label; select.appendChild(o); });
+    select.value = 'typical';
+  }
+  updateRealHardwareTile();
+}
+async function refreshGscSim() {
+  if (gscSimBusy) return;
+  if (typeof ccIsHost !== 'undefined' && !ccIsHost) return;
+  try {
+    const resp = await fetch('/api/gsc_sim_status', { cache: 'no-store' });
+    applyGscSim(await resp.json());
+  } catch (e) { /* best effort: the next poll tries again */ }
+}
+async function toggleGscSim() {
+  if (gscSimBusy) return;
+  const running = gscSimLast && gscSimLast.running;
+  if (running) { await stopGscSim(); return; }   // on or on its way: a click switches it off
+  if (!pifinderScreenUrl) {
+    await ccNoticeBanner("PiFinder isn't confirmed reachable yet - wait for it to come up, then try again.");
+    return;
+  }
+  gscSimBusy = true;
+  setHwDot(document.getElementById('mode-tile-gsc-dot'), 'status-dot dot-yellow dot-unconfirmed');
+  document.getElementById('mode-tile-gsc-sub').textContent = 'starting\u2026';
+  try {
+    const landing = document.getElementById('gsc-sim-landing').value || 'typical';
+    const resp = await fetch('/api/gsc_sim_start?landing=' + encodeURIComponent(landing), { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) await ccNoticeBanner('The simulation did not start: ' + (data.error || 'unknown error'));
+    else if (data.warnings && data.warnings.length) await ccNoticeBanner(data.warnings.join(' '));
+    applyGscSim(data);
+  } catch (e) {
+    await ccNoticeBanner('The simulation did not start: ' + e);
+  } finally {
+    gscSimBusy = false;
+    refreshGscSim();
+  }
+}
+async function stopGscSim() {
+  if (gscSimBusy) return;
+  gscSimBusy = true;
+  document.getElementById('mode-tile-gsc-sub').textContent = 'stopping\u2026';
+  try {
+    const resp = await fetch('/api/gsc_sim_stop', { method: 'POST' });
+    const data = await resp.json();
+    if (data.warnings && data.warnings.length) await ccNoticeBanner(data.warnings.join(' '));
+    applyGscSim(data);
+  } catch (e) {
+    await ccNoticeBanner('The simulation did not stop cleanly: ' + e);
+  } finally {
+    gscSimBusy = false;
+    refreshGscSim();
+  }
+}
+setInterval(refreshGscSim, 4000);
+setTimeout(refreshGscSim, 800);
+
 function updateRealHardwareTile() {
   const tile = document.getElementById('mode-tile-real');
   const dotEl = document.getElementById('mode-tile-real-dot');
@@ -4984,7 +5275,11 @@ function updateRealHardwareTile() {
   if (!tile) return;
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  const active = !simOn && !fakeOn;
+  const gscTile = document.getElementById('mode-tile-gsc');
+  const gscOn = gscTile?.classList.contains('tile-on') || gscTile?.classList.contains('tile-pending');
+  // The GSC simulation runs ON the real hardware (its real solver and drivers); only its camera picture is simulated. The
+  // plain Real Hardware tile is still the "nothing simulated" state, so it is off while the sky is simulated.
+  const active = !simOn && !fakeOn && !gscOn;
   tile.classList.toggle('tile-on', active);
   setHwDot(dotEl, 'status-dot ' + (active ? 'dot-green' : 'dot-white'));
   subEl.textContent = active ? 'current mode' : 'inactive while a simulation mode is on';
@@ -5026,6 +5321,10 @@ function updateModeSummaryLine() {
     // and "actually fully set up" are different questions (2026-09-07,
     // direct feedback).
     dotClass = wmSimAllReady ? 'dot-green' : 'dot-yellow';
+  } else if (document.getElementById('mode-tile-gsc')?.classList.contains('tile-on') || document.getElementById('mode-tile-gsc')?.classList.contains('tile-pending')) {
+    nameEl = 'Real Hardware + GSC Simulation';
+    subText = document.getElementById('mode-tile-gsc-sub')?.textContent || '';
+    dotClass = document.getElementById('mode-tile-gsc-dot')?.className.includes('dot-green') ? 'dot-green' : 'dot-yellow';
   } else if (document.getElementById('mode-tile-fake')?.classList.contains('tile-on')) {
     nameEl = 'PiFinder-only Fake Mode (legacy)';
     subText = document.getElementById('mode-tile-fake-sub')?.textContent || '';
@@ -5184,7 +5483,10 @@ const TRUTH_INJECTOR_POLL_INTERVAL_MS = 1000;
 async function toggleRealHardware() {
   const simOn = document.getElementById('mode-tile-sim')?.classList.contains('tile-on');
   const fakeOn = document.getElementById('mode-tile-fake')?.classList.contains('tile-on');
-  if (simOn) {
+  const gscOn = document.getElementById('mode-tile-gsc')?.classList.contains('tile-on') || document.getElementById('mode-tile-gsc')?.classList.contains('tile-pending');
+  if (gscOn) {
+    await stopGscSim();
+  } else if (simOn) {
     await toggleTruthInjector();
   } else if (fakeOn) {
     await toggleMode();
@@ -6442,6 +6744,119 @@ async function pollPifinderServiceNotice() {
 }
 setInterval(pollPifinderServiceNotice, 10000);
 
+// ---- Clock warnings (begin) ----
+// The Sky is computed from the Pi's clock; the line under it shows that moment so it can be compared with the
+// clock of a KStars on another computer (its clock is not readable over INDI). The yellow strip covers what can be
+// seen: the mount's clock differing from the Pi's by more than 10 minutes. A Pi that is not NTP-synchronised is only
+// noted in grey on that line: in the field (no internet, time from the phone or GPS) that is normal, not a fault.
+function clockFormatParts(ms, tz) {
+  const opts = (o) => { try { return new Intl.DateTimeFormat('en-GB', Object.assign({ timeZone: tz || undefined }, o)); }
+    catch (e) { return new Intl.DateTimeFormat('en-GB', o); } };
+  const d = new Date(ms);
+  return {
+    time: opts({ hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(d).replace(/^[^,]*,\s*/, ''),
+    clock: opts({ hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(d).replace(/^[^,]*,\s*/, ''),
+    day: opts({ day: 'numeric', month: 'short' }).format(d),
+  };
+}
+function clockSkewText(sec) {
+  const a = Math.abs(sec), min = Math.round(a / 60);
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 48) return h + ' h' + (m ? ' ' + m + ' min' : '');
+  return Math.round(h / 24) + ' days';
+}
+// What the line under the Sky says; null while there is no reading yet.
+function clockSkyTimeModel(st, nowMs, offsetMs) {
+  if (!st || !st.pi_time_utc) return null;
+  const p = clockFormatParts(nowMs + offsetMs, st.timezone);
+  let tail = null, warn = false;
+  if (st.mount_clock_warn) { tail = 'mount clock differs'; warn = true; }
+  else if (st.pi_clock_warn) tail = 'Pi clock not NTP-synced';
+  return { prefix: 'Sky for', time: p.time, day: p.day, tail, warn };
+}
+function clockBannerModel(st, dismissed) {
+  const out = { mount: false, text: '', piClock: '', mountClock: '' };
+  if (!st) return out;
+  out.mount = !!st.mount_clock_warn && !dismissed.mount_clock;
+  if (out.mount) {
+    const behind = st.mount_skew_sec > 0;
+    out.text = "The mount's clock is " + clockSkewText(st.mount_skew_sec) + (behind ? ' behind' : ' ahead of') +
+      " the Pi's clock. The mount may point wrongly, because it works out its sky position from its clock.";
+    const piMs = Date.parse(st.pi_time_utc);
+    out.piClock = clockFormatParts(piMs, st.timezone).clock;
+    out.mountClock = clockFormatParts(Date.parse(st.mount_time_utc), st.timezone).clock;
+  }
+  return out;
+}
+// ---- Clock warnings (end) ----
+let _clockStatus = null, _clockOffsetMs = 0;
+const _clockDismissed = {};
+function renderSkyTime() {
+  const el = document.getElementById('sky-time');
+  if (!el) return;
+  const m = clockSkyTimeModel(_clockStatus, Date.now(), _clockOffsetMs);
+  if (!m) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = m.warn ? 'sky-time-warn' : '';
+  el.textContent = '';
+  if (m.warn) { const dot = document.createElement('span'); dot.className = 'sky-time-dot'; el.appendChild(dot); }
+  const a = document.createElement('span'); a.className = 'sky-time-prefix'; a.textContent = m.prefix; el.appendChild(a);
+  const b = document.createElement('b'); b.textContent = m.time; el.appendChild(b);
+  const c = document.createElement('span'); c.textContent = m.tail || m.day; el.appendChild(c);
+}
+function applyClockStatus(st) {
+  _clockStatus = st;
+  if (st && st.pi_time_utc) _clockOffsetMs = Date.parse(st.pi_time_utc) - Date.now();
+  // a streak that ended comes back as a new notice
+  if (st && !st.mount_clock_warn) delete _clockDismissed.mount_clock;
+  const m = clockBannerModel(st, _clockDismissed);
+  const moB = document.getElementById('cc-clock-mount-banner');
+  if (moB) {
+    moB.style.display = m.mount ? 'flex' : 'none';
+    if (m.mount) {
+      document.getElementById('cc-clock-mount-text').textContent = m.text;
+      document.getElementById('cc-clock-mount-pi').textContent = m.piClock;
+      document.getElementById('cc-clock-mount-mount').textContent = m.mountClock;
+    }
+  }
+  renderSkyTime();
+}
+async function pollClockStatus() {
+  try {
+    const resp = await fetch('/api/clock_status', { cache: 'no-store' });
+    applyClockStatus(await resp.json());
+  } catch (e) {
+    // transient: keep what is shown, the next tick retries
+  }
+}
+function dismissClockBanner(kind) {
+  _clockDismissed[kind] = true;
+  applyClockStatus(_clockStatus);
+}
+async function refreshMountTime() {
+  const btn = document.getElementById('cc-clock-mount-fix');
+  const err = document.getElementById('cc-clock-mount-error');
+  if (btn) btn.disabled = true;
+  if (err) err.style.display = 'none';
+  try {
+    const resp = await fetch('/api/mount_time_refresh', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success && err) {
+      err.textContent = 'Could not set the mount time: ' + (data.error || 'unknown error') +
+        ' (it needs the KStars that runs on this Pi).';
+      err.style.display = '';
+    }
+  } catch (e) {
+    if (err) { err.textContent = 'Could not set the mount time: no answer from the Control Center.'; err.style.display = ''; }
+  }
+  if (btn) btn.disabled = false;
+  setTimeout(pollClockStatus, 3000);
+}
+pollClockStatus();
+setInterval(pollClockStatus, 30000);
+setInterval(renderSkyTime, 10000);
+
 async function dismissPifinderServiceNotice() {
   applyPifinderServiceNotice(null);  // optimistic - the notice is about a past action, no need to wait on the round-trip
   try {
@@ -6941,6 +7356,28 @@ async function pollLog() {
 // same probe also doubles as the "is PiFinder actually reachable yet" signal
 // for the post-success access-links box below.
 let pifinderScreenUrl = null;
+// ---- OLED mirror size (begin) ----
+// PiFinder serves its screen in the display's real resolution: 128 x 128 (Rev 3), 176 x 176 (Rev 4, 1.91" OLED,
+// about 62 % more viewing area), 320 x 240 (ST7789 LCD, started by hand). The box follows the picture:
+// 128 stays at 1.5x (192 px, hard pixels, as before); anything larger gets its longest side at 244 px (Rev 4: 176 -> 244,
+// the 27 % longer sides of the bigger display), smoothed, and keeps its aspect ratio (4:3 is not squashed).
+function pfScreenBox(w, h) {
+  if (!(w > 0) || !(h > 0)) return null;
+  const longest = Math.max(w, h);
+  if (longest <= 128) return { w: Math.round(w * 1.5), h: Math.round(h * 1.5), smooth: false };
+  const f = 244 / longest;
+  return { w: Math.round(w * f), h: Math.round(h * f), smooth: true };
+}
+function pifinderScreenFit(img) {
+  const box = pfScreenBox(img.naturalWidth, img.naturalHeight);
+  if (!box) return;
+  const wpx = box.w + 'px', hpx = box.h + 'px', rend = box.smooth ? 'auto' : 'pixelated';
+  // same values on every 1 s poll: leave the element alone
+  if (img.style.width !== wpx) img.style.width = wpx;
+  if (img.style.height !== hpx) img.style.height = hpx;
+  if (img.style.imageRendering !== rend) img.style.imageRendering = rend;
+}
+// ---- OLED mirror size (end) ----
 // Set by showCtrlRemoteInputPrompt() (the two "Change address" buttons - status
 // line + drivers row) - makes the existing 'ctrl-remote-missing' showstopper
 // card (collectActiveShowstoppers()) reappear on demand for an ALREADY-configured
@@ -6973,7 +7410,7 @@ function piFinderProbeUrls() {
   // setup" stuck on "not available yet" and the OLED mirror frozen, even
   // though the fake instance was reachable the whole time, just on a port
   // this probe never looked at.
-  return [`http://${host}/image`, `http://${host}:8080/image`, `http://${host}:8081/image`];
+  return [`http://${host}:8080/image`, `http://${host}/image`, `http://${host}:8081/image`];
 }
 
 function tryPiFinderScreenUrls(urls, index) {
@@ -7544,6 +7981,46 @@ function updateLogExpandButton() {
     : `Show all (${lineCount} lines)`;
 }
 
+// ---- terminal copy (begin) ----
+// The text a terminal window shows, all of it (not only what is scrolled into view). The grey placeholder sentence is not output.
+function terminalText(el) {
+  if (!el || (el.classList && el.classList.contains('log-placeholder'))) return '';
+  return (el.innerText !== undefined ? el.innerText : el.textContent || '').replace(/\s+$/, '');
+}
+// The page is served over plain http on the LAN, where navigator.clipboard does not exist: fall back to a hidden textarea.
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(() => true, () => copyTextFallback(text));
+  }
+  return Promise.resolve(copyTextFallback(text));
+}
+function copyTextFallback(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+function copyTerminal(id, btn) {
+  const text = terminalText(document.getElementById(id));
+  const label = btn.dataset.label || (btn.dataset.label = btn.textContent);
+  const show = (cls, msg) => {
+    btn.classList.remove('copied', 'copy-failed');
+    if (cls) btn.classList.add(cls);
+    btn.textContent = msg;
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.classList.remove('copied', 'copy-failed'); btn.textContent = label; }, 1600);
+  };
+  if (!text) { show('copy-failed', 'Nothing to copy yet'); return; }
+  copyTextToClipboard(text).then((ok) => show(ok ? 'copied' : 'copy-failed', ok ? 'Copied \u2713' : 'Copy failed'));
+}
+// ---- terminal copy (end) ----
+
 function toggleLogExpanded() {
   document.getElementById('log').classList.toggle('log-expanded');
   updateLogExpandButton();
@@ -7717,7 +8194,10 @@ function updateBridgeSettingsInfo(data) {
   el.style.display = '';
   const pifinderName = data.active_pifinder || '(none)';
   const mountName = data.active_mount || '(none)';
-  if (data.settings_correct) {
+  if (_mbBlind) {
+    el.className = 'mb-hint';
+    el.textContent = `⚠ Settings are right, but the Mount Bridge does not read ${_mbBlind}.`;
+  } else if (data.settings_correct) {
     el.className = 'mb-hint mb-hint-ok';
     el.textContent = `✓ Settings: ${data.settings_host}:${data.settings_port}, linked to ${pifinderName} / ${mountName}.`;
   } else {
@@ -7837,6 +8317,15 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   }
   decoupleBtnEl.disabled = false;
 
+  if (_mbBlind) {
+    setMbArrow('mb-arrow-left', 'off');
+    setMbArrow('mb-arrow-right', 'off');
+    setMbCaption('dot-red', `Bridge does not read ${_mbBlind}`,
+      `The Mount Bridge is connected but gets nothing from ${_mbBlind}: it checks and moves nothing. See the red card.`);
+    document.getElementById('mount-bridge-text').textContent = `not reading ${_mbBlind}`;
+    return true;
+  }
+
   // #372, docs/concepts/mount_bridge_external_hold.md §4: takes priority
   // over the normal per-mode caption below - the driver stays passive
   // regardless of which Coupling mode is selected while held, so showing
@@ -7920,7 +8409,7 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
       busy
         ? `Correcting the mount now - drift ${formatDrift(driftArcmin)} exceeds ${threshold}'`
         : unverified
-        ? "PiFinder hasn't produced a fresh solve recently - can't confirm the mount is still on the held target"
+        ? "PiFinder hasn't produced a fresh solve recently - can't confirm the mount is still on the target"
         : exceeded
         ? `Drift ${formatDrift(driftArcmin)} exceeds ${threshold}' - waiting on a fresh PiFinder solve (or drift is too large to auto-sync) before correcting (the Solve badge above can still show green here - it has no age limit of its own, see its tooltip)`
         : `Holding target - drift ${driftArcmin !== null ? formatDrift(driftArcmin) : '0.0\''} within ${threshold}'`
@@ -7932,7 +8421,33 @@ function applyMbDriftAndMode(couplingMode, correctionAction, driftArcmin, driftS
   return true;
 }
 
+// The mount's state as one word, from /api/mount_bridge_status: null hides the symbol (no linked, connected mount).
+function mountStateOf(data) {
+  if (!data.active_mount || data.mount_connected !== true) return null;
+  const ms = data.mount_silence;
+  if (!ms || ms.unknown || ms.silent) return 'unknown';
+  if (ms.parked === true) return 'parked';
+  if (ms.coord_state === 'Busy') return 'slewing';
+  if (ms.tracking === true) return 'tracking';
+  if (ms.tracking === false) return 'stopped';
+  return 'unknown';
+}
+const MOUNT_STATE_TITLES = { tracking: 'Mount is tracking', slewing: 'Mount is slewing', stopped: 'Mount is stopped (not tracking)',
+  parked: 'Mount is parked', unknown: 'Mount state unknown' };
+function updateMountStateBadge(data) {
+  const badge = document.getElementById('mb-mount-state');
+  const state = mountStateOf(data);
+  badge.style.display = state ? '' : 'none';
+  if (!state) return;
+  badge.setAttribute('class', state);
+  badge.setAttribute('aria-label', MOUNT_STATE_TITLES[state]);
+  let title = badge.querySelector('title');
+  if (!title) { title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); badge.prepend(title); }
+  title.textContent = MOUNT_STATE_TITLES[state];
+}
+
 function updateMbDiagram(data) {
+  updateMountStateBadge(data);
   document.getElementById('mb-node-mount-name').textContent = data.active_mount || 'Mount';
   setMbNodeDot('mb-icon-lx200', data.pifinder_connected);
   setMbNodeDot('mb-icon-bridge', data.bridge_connected);
@@ -8519,6 +9034,7 @@ function setMbStatusInapplicable(text) {
   setMbStatusUnconfirmed(false);
   document.getElementById('mount-bridge-dot').className = 'status-dot dot-white';
   document.getElementById('mount-bridge-text').textContent = text;
+  document.getElementById('mb-mount-state').style.display = 'none';
   updateWmCouplingGate();
   refreshWmActiveButton();
   refreshConnectButtons();
@@ -8737,15 +9253,59 @@ function updateMountRejectWarning(active, message) {
 // triggerMultiAlignStart()), and this function reasserts the real state
 // the moment the flag clears and the next poll lands.
 let multiAlignActionInFlight = false;
-function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames) {
+// ---- OnStep alignment (begin) ----
+// With an OnStep the Bridge can read, Start runs a real OnStep alignment (pure function, test_tools/onstep_align_ui_test.js).
+// onstep: /api/mount_bridge_drift "onstep_align" or null; running: a run of the Bridge is under way; points: the Points field.
+function onStepAlignView(onstep, running, points) {
+  const view = { startLabel: 'Start', confirm: null, saveShown: false, saveEnabled: false, waiting: null, unit: 'point' };
+  if (!onstep) return view;
+  view.unit = 'star';
+  view.saveShown = true;
+  view.saveEnabled = !running && !onstep.aligning;
+  if (onstep.aligning) {
+    view.startLabel = 'Continue';
+    if (!running) view.waiting = `OnStep waits for star ${onstep.star} of ${onstep.stars}: Continue goes on with it. Until then the Bridge leaves the mount alone.`;
+  } else {
+    const n = Math.min(Math.max(1, points || 1), onstep.max_stars || 9);
+    view.confirm = `This starts an alignment on OnStep with ${n} star${n === 1 ? '' : 's'}.\n\nIs the mount in its home position? OnStep takes the present position as home, and its old alignment model is replaced.`;
+  }
+  return view;
+}
+// ---- OnStep alignment (end) ----
+let _onStepAlign = null;
+async function triggerOnStepAlignSave() {
+  const btn = document.getElementById('mb-multialign-save-btn');
+  btn.disabled = true;
+  setMbActionStatus('⏳ Saving the alignment model on OnStep…');
+  try {
+    const d = await (await fetch('/api/mount_bridge_align_save', { method: 'POST' })).json();
+    if (!d.success) throw new Error(d.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog()
+  }
+  pollMbLog();
+  clearMbActionStatus();
+}
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames, onstep) {
   const startBtn = document.getElementById('mb-multialign-start-btn');
   const stopBtn = document.getElementById('mb-multialign-stop-btn');
   const dotEl = document.getElementById('mb-multialign-dot');
   const textEl = document.getElementById('mb-multialign-status-text');
   const running = alignState === 'Busy';
+  _onStepAlign = onstep || null;
+  const view = onStepAlignView(_onStepAlign, running, parseInt(document.getElementById('mb-align-count-input').value, 10));
+  const saveBtn = document.getElementById('mb-multialign-save-btn');
+  saveBtn.style.display = view.saveShown ? '' : 'none';
+  saveBtn.disabled = !view.saveEnabled;
   if (multiAlignActionInFlight) return;
+  startBtn.textContent = view.startLabel;
   startBtn.disabled = running;
   stopBtn.disabled = !running;
+  if (view.waiting) {
+    setHwDot(dotEl, 'status-dot dot-yellow');
+    textEl.textContent = view.waiting;
+    return;
+  }
   if (!pointCount) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'not run yet';
@@ -8757,10 +9317,14 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   const syncedNamesSuffix = syncedNames ? ` (${syncedNames})` : '';
   if (running) {
     setHwDot(dotEl, 'status-dot dot-yellow');
-    textEl.textContent = `running - point ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`;
+    textEl.textContent = pointIndex
+      ? `running - ${view.unit} ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`
+      : 'starting the alignment on OnStep…';
   } else if (alignState === 'Ok') {
     setHwDot(dotEl, 'status-dot dot-green');
-    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
+    textEl.textContent = view.unit === 'star'
+      ? `completed - OnStep took ${pointSynced}/${pointCount} star(s)${syncedNamesSuffix}. Save to OnStep keeps the model.`
+      : `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
   } else if (alignState === 'Alert') {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = pointSynced > 0
@@ -8780,6 +9344,7 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
 const SKY_C = { ring: '#444444', ring2: '#333333', disc: '#1a1a1a', fg: '#dddddd', muted: '#888888',
   blue: '#7ec8ff', green: '#4caf50', yellow: '#f5a623', red: '#e53935', redSoft: '#ff8a80' };
 const SKY_CX = 120, SKY_CY = 124, SKY_R = 90;
+const SKY_SYMBOL_SCALE = 1;   // the picture is drawn at its full size again, the symbols are not enlarged
 const SKY_FOV_DEG = 13.7;        // PiFinder's field with the standard 16 mm lens
 const SKY_AGREE_DEG = 7;         // within about the field's half width: "they agree"
 function skyRad(d) { return d * Math.PI / 180; }
@@ -8806,7 +9371,251 @@ function skyMountStyle(state) {
   if (state === 'parked') return { color: SKY_C.red, word: 'parked' };
   if (state === 'not tracking') return { color: SKY_C.yellow, word: 'stopped' };
   if (state === 'tracking') return { color: SKY_C.green, word: 'tracking' };
+  if (state === 'slewing') return { color: SKY_C.green, word: 'slewing' };
   return { color: SKY_C.blue, word: null };
+}
+// A distance in words: degrees from 60' on, arcminutes below (the same rule as PiFinder's title bar).
+function skyDistance(arcmin) { return arcmin >= 60 ? Math.round(arcmin / 60) + '\u00b0' : arcmin.toFixed(1) + '\u2032'; }
+// The Bridge's positioning status (POSITIONING_STATUS / POSITIONING_PHASE) as what the line under the picture says.
+// null: nothing to say (no status, an older driver, or idle). Wording agreed with the owner (docs/concepts/
+// mount_bridge_target_transparency.md section 12): "Don't touch the mount" from the start of the slew until the arrival is verified.
+function skyPositioningModel(p) {
+  if (!p || !p.phase || p.phase === 'IDLE') return null;
+  const arc = (v) => v.toFixed(1) + '\u2032';
+  const m = { handsOff: !!p.hands_off, tone: p.hands_off ? 'off' : 'free', step: 3, head: '', sub: '', why: '', running: null };
+  switch (p.phase) {
+    case 'SLEWING':
+      m.step = 0; m.head = 'Mount slewing to the target';
+      m.sub = p.to_go_deg >= 0.5 ? Math.round(p.to_go_deg) + '\u00b0 to go' : 'arriving';
+      m.why = 'The Bridge is moving the mount.'; break;
+    case 'VERIFYING':
+      m.step = 1; m.head = 'Verifying arrival';
+      m.sub = p.attempt > 0 ? 'attempt ' + p.attempt + ' of ' + p.attempts_max + ' \u00b7 checking the new position' : 'checking where the scope landed';
+      m.why = p.solve_age_sec !== null && p.solve_age_sec > 5
+        ? 'No fresh PiFinder solve for ' + Math.round(p.solve_age_sec) + ' s: this is the solve, not your alignment.'
+        : 'Waiting for the mount to settle and for a fresh PiFinder solve.'; break;
+    case 'REFINING':
+      m.step = 2; m.head = 'Fine-adjusting';
+      m.sub = 'attempt ' + p.attempt + ' of ' + p.attempts_max + ' \u00b7 ' + arc(p.residual_arcmin) + ' to the target';
+      m.why = 'The last landing was ' + arc(p.residual_arcmin) + ' off. The Bridge corrects it.'; break;
+    case 'ON_TARGET':
+      m.head = 'On target'; m.sub = arc(p.residual_arcmin) + ' \u00b7 you can fine-centre now'; break;
+    case 'GAVE_UP':
+      m.tone = 'warn'; m.head = 'Mount and PiFinder differ by ' + skyDistance(p.residual_arcmin);
+      m.sub = 'you can steer by hand';
+      m.why = p.attempt > 0 ? 'Still apart after ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') + '. The mount or its alignment limits this, not the Bridge.'
+        : 'Too far apart for an automatic correction.'; break;
+    case 'OFF_TARGET':
+      m.tone = 'warn'; m.head = 'Not on the target: ' + skyDistance(p.residual_arcmin) + ' away';
+      m.sub = 'you can steer by hand'; m.why = 'Mount and PiFinder agree, but not at the position of the GoTo. The Bridge has stopped trying: check the mount\u2019s alignment model, then send a new GoTo.'; break;
+    case 'HOLDING':
+      m.head = 'Holding Push-To'; break;
+    case 'WAITING':
+      m.head = 'Waiting for the next GoTo'; m.sub = skyDistance(p.residual_arcmin) + ' from the Push-To';
+      m.why = 'The Bridge moves nothing until the next GoTo, for example after a Multi-Point Alignment.'; break;
+    case 'ALIGNING':
+      m.step = 0; m.head = 'Aligning';
+      if (p.hands_off) {
+        m.sub = p.point || 'Multi-Point Alignment';
+        m.why = 'The Bridge moves the mount from point to point and syncs it at each one.';
+      } else {   // an alignment on the OnStep controller: the Bridge only waits
+        m.sub = 'on the OnStep controller';
+        m.why = 'An alignment is running on the OnStep controller. The Bridge neither moves nor syncs the mount until it ends.';
+      }
+      break;
+    case 'CHECK_SCOPE':
+      m.tone = 'warn'; m.head = 'Check the mount: ' + skyDistance(p.residual_arcmin) + ' apart';
+      m.sub = 'answer the yellow card';
+      m.why = 'Mount and PiFinder suddenly differ although the mount did not move. Nothing moves until you decide.'; break;
+    default:
+      return null;
+  }
+  if (m.handsOff) m.running = 'Running for ' + Math.round(p.elapsed_sec) + ' s';
+  return m;
+}
+// The Bridge stopped answering while it was moving the mount (hands off): say so instead of letting the line vanish. The Control
+// Center restarts an unresponsive Bridge on its own (#385) and the restarted Bridge has forgotten the move, so the state is
+// unknown: the mount may still be moving or may not have reached the target. Shown for a minute and a half, then it goes.
+// The whole run as a growing trail: Slewing > Verifying > Fine-adjusting 1 > Verifying > On target. The Bridge goes through the phases
+// more than once (a refine means another slew and another check), so a bar of four steps would jump back; the trail only grows until
+// the run is over. The current step is amber, finished ones green, the goal ("On target") is shown faintly at the end while it runs.
+const SKY_TRAIL_LABEL = { SLEWING: 'Slewing', VERIFYING: 'Verifying', REFINING: 'Fine-adjusting', ON_TARGET: 'On target', GAVE_UP: 'Gave up', OFF_TARGET: 'Off target' };
+const SKY_END_PHASES = ['ON_TARGET', 'GAVE_UP', 'OFF_TARGET'];
+function skyPositioningTrailUpdate(trail, p) {
+  if (!p || !p.phase || p.phase === 'IDLE' || !SKY_TRAIL_LABEL[p.phase]) return trail || [];
+  let t = (trail || []).slice();
+  const last = t[t.length - 1];
+  const ended = last && SKY_END_PHASES.includes(last.phase);
+  if (p.hands_off) {
+    if (ended) t = [];                       // a new run begins
+    const tail = t[t.length - 1];
+    if (!tail || tail.phase !== p.phase || (p.phase === 'REFINING' && tail.attempt !== p.attempt)) t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
+  } else if (SKY_END_PHASES.includes(p.phase) && (!last || last.phase !== p.phase)) {
+    t.push({ phase: p.phase, attempt: p.attempt, at: Date.now() });
+  }
+  return t;
+}
+// What to draw for a trail: [{text, state: 'done' | 'now' | 'warn' | 'later'}]; null when there is no run to show.
+function skyPositioningTrailItems(trail, handsOff) {
+  if (!trail || !trail.length) return null;
+  const items = trail.map((s, i) => {
+    const text = SKY_TRAIL_LABEL[s.phase] + (s.phase === 'REFINING' ? ' ' + s.attempt : '');
+    const lastOne = i === trail.length - 1;
+    return { text: text, state: s.phase === 'GAVE_UP' || s.phase === 'OFF_TARGET' ? 'warn' : (lastOne && handsOff ? 'now' : 'done') };
+  });
+  if (handsOff) items.push({ text: SKY_TRAIL_LABEL.ON_TARGET, state: 'later' });
+  return items;
+}
+// ---- the card's rows (variant C) ----
+const SKY_BAND_STEP = { SLEWING: 0, VERIFYING: 1, REFINING: 2, ON_TARGET: 3, HOLDING: 3, GAVE_UP: 2, OFF_TARGET: 3 };
+const SKY_BAND_LABEL = ['slewing', 'verifying', 'refining', 'on target'];
+// The four-step band: how far this run has come. It never goes backwards (a refine means another slew and another check, the detailed
+// order is in the run list below it); segments are 'done', 'now', 'warn' (the run gave up) or 'later'.
+function skyPositioningBand(trail, p, m) {
+  if (m && m.interrupted) return [0, 1, 2, 3].map((i) => (i < (m.step || 0) ? 'done' : i === (m.step || 0) ? 'warn' : 'later'));
+  const phase = p && p.phase;
+  if (phase === 'CHECK_SCOPE') return ['later', 'later', 'later', 'warn'];
+  if (phase === 'GAVE_UP' || phase === 'OFF_TARGET') return ['done', 'done', 'done', 'warn'];
+  if (phase === 'ON_TARGET') return ['done', 'done', 'done', 'done'];
+  if (phase === 'HOLDING' || phase === 'WAITING') return ['later', 'later', 'later', 'later'];   // no run: nothing was driven to a target
+  let reached = SKY_BAND_STEP[phase] || 0;
+  (trail || []).forEach((t) => { reached = Math.max(reached, SKY_BAND_STEP[t.phase] || 0); });
+  return [0, 1, 2, 3].map((i) => (i < reached ? 'done' : i === reached ? 'now' : 'later'));
+}
+// [left, right] of the line under the band.
+function skyPositioningNow(p, m) {
+  if (m.interrupted) return ['Interrupted', 'state unknown'];
+  const attempt = p.attempt > 0 ? 'attempt ' + p.attempt + ' of ' + p.attempts_max : '';
+  switch (p.phase) {
+    case 'SLEWING': return ['Step 1 of 4: slewing', m.sub];
+    case 'VERIFYING': return ['Step 2 of 4: verifying', attempt];
+    case 'REFINING': return ['Step 3 of 4: refining', attempt];
+    case 'ON_TARGET': return ['On target', p.residual_arcmin >= 0 ? p.residual_arcmin.toFixed(1) + '\u2032 off' : ''];
+    case 'GAVE_UP': return ['Gave up', p.attempt > 0 ? p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
+    case 'OFF_TARGET': return ['Off target', ''];
+    case 'ALIGNING': return ['Aligning', m.sub];
+    case 'CHECK_SCOPE': return ['Check the mount', ''];
+    case 'HOLDING': return ['Holding Push-To', ''];   // no verdict about "on target": e.g. after a movement by hand
+    case 'WAITING': return ['Waiting for the next GoTo', ''];
+    default: return ['On target', attempt ? 'done in ' + p.attempt + ' attempt' + (p.attempt === 1 ? '' : 's') : ''];
+  }
+}
+// The one line of facts; the longer explanation (m.why) is its tooltip.
+function skyPositioningFacts(p, m) {
+  const arc = (v) => v.toFixed(1) + '\u2032';
+  if (m.interrupted) return ['positioning interrupted ' + m.sub.replace(/\D+/g, ' ').trim() + ' s ago', 'the mount may still be moving'];
+  switch (p.phase) {
+    case 'SLEWING': return ['the Bridge is moving the mount'];
+    case 'VERIFYING': return [p.solve_age_sec !== null && p.solve_age_sec > 5 ? 'no fresh solve for ' + Math.round(p.solve_age_sec) + ' s' : 'waiting for a fresh solve'];
+    case 'REFINING': return [arc(p.residual_arcmin) + ' off the target', 'correcting'];
+    case 'ON_TARGET': return [arc(p.residual_arcmin) + ' from the target', 'you can fine-centre now'];
+    case 'GAVE_UP': return [skyDistance(p.residual_arcmin) + ' apart', 'you can steer by hand'];
+    case 'OFF_TARGET': return [skyDistance(p.residual_arcmin) + ' from the GoTo target', 'you can steer by hand'];
+    case 'ALIGNING': return [p.hands_off ? 'the Bridge is moving the mount' : 'the Bridge leaves the mount alone'];
+    case 'CHECK_SCOPE': return [skyDistance(p.residual_arcmin) + ' apart', 'nothing moves until you answer'];
+    case 'WAITING': return [skyDistance(p.residual_arcmin) + ' from the Push-To', 'the Bridge moves nothing'];
+    default: return [];
+  }
+}
+// The run so far: [{text, state, detail}] from the trail ('later' goal left out), the time each step took in detail; null without a run.
+function skyPositioningHistory(trail, handsOff, nowMs) {
+  const items = skyPositioningTrailItems(trail, handsOff);
+  if (!items) return null;
+  const rows = items.filter((it) => it.state !== 'later');
+  return rows.map((it, i) => {
+    const t0 = trail[i] && trail[i].at;
+    const t1 = i + 1 < trail.length ? trail[i + 1].at : (it.state === 'now' ? nowMs : null);
+    let detail = '';
+    if (it.state === 'now') detail = 'now';
+    else if (typeof t0 === 'number' && typeof t1 === 'number') detail = Math.max(1, Math.round((t1 - t0) / 1000)) + ' s';
+    return { text: it.text, state: it.state, detail: detail };
+  });
+}
+// What the old status line said under the picture ("goto forward (drift 1.2')"), now the last part of the card's facts row:
+// ctx = {mode, action, drift, threshold}; every part optional.
+function skyCouplingFacts(ctx, holding) {
+  const out = [];
+  const c = ctx || {};
+  if (holding && typeof c.drift === 'number' && isFinite(c.drift)) {
+    const thr = typeof c.threshold === 'number' && isFinite(c.threshold) && c.threshold > 0 ? c.threshold : null;
+    out.push(c.drift.toFixed(1) + '\u2032 drift' + (thr === null ? '' : c.drift <= thr ? ', within ' + thr + '\u2032' : ', over ' + thr + '\u2032'));
+  }
+  const goto = /goto/i.test(c.action || '');
+  const label = { MODE_GOTO_FORWARD: 'Goto forward', MODE_AUTO_CORRECT: goto ? 'Auto-correct (Goto)' : 'Auto-correct (Sync)', MODE_VERIFY_ALERT: 'Verify/Alert only', MODE_OFF: 'Coupling off' }[c.mode];
+  if (label) out.push(label);
+  return out;
+}
+// The card under the picture, one model for every state (the mockup "one block, three states"). Inputs: the positioning model m (null when
+// the Bridge has no run to report), the raw status p, the run's trail, ctx {running, mode, action, drift, threshold} and fb, the texts the
+// older status lines wrote: {caption, captionDot, status, details}. Returns {tone: free|warn|bad|idle, head, badge, band[4], line,
+// lineWarn, why}; the long explanation (fb.details) is not in it, it sits behind the "Why?" button.
+// The card belongs to the Mount Bridge: a profile with a local PiFinder and no Bridge ('host': PiFinder host or Client) has none.
+function skyCardWanted(role) { return role !== 'host'; }
+function skyCardModel(m, p, trail, ctx, fb) {
+  const c = ctx || {}, f = fb || {}, pp = p || {};
+  const caption = (f.caption || '').trim();
+  const captionTone = /dot-red/.test(f.captionDot || '') ? 'bad' : /dot-yellow/.test(f.captionDot || '') ? 'warn' : 'free';
+  const out = { tone: 'idle', head: '', badge: '', band: ['later', 'later', 'later', 'later'], line: '', lineWarn: false, why: '' };
+  const attention = () => {
+    // what the older status line carried as small marks: the mount refused a command, or the status is not confirmed (stale poll)
+    if (f.reject) { out.tone = 'bad'; out.why = 'The mount did not carry out a command'; }
+    else if (m && f.status && /dot-(yellow|red)/.test(f.statusDot || '') && !out.why) { out.tone = /dot-red/.test(f.statusDot) ? 'bad' : (out.tone === 'bad' ? 'bad' : 'warn'); out.why = f.status; }
+    else if (f.unconfirmed) { if (out.tone === 'free' || out.tone === 'idle') out.tone = 'warn'; out.why = out.why || 'Status not confirmed yet'; }
+    return out;
+  };
+  if (!m) {
+    out.head = caption || 'Not coupled';
+    out.tone = captionTone === 'free' ? 'idle' : captionTone;
+    out.badge = c.running === false ? 'Bridge off' : c.mode === 'MODE_OFF' ? 'Coupling off' : '';
+    out.line = f.status && f.status !== 'not running' && f.status !== 'checking\u2026' ? f.status : c.running === false || f.status === 'not running' ? 'The Bridge is not running' : '';
+    out.why = c.running === false ? 'Start it under Setup checklist' : '';
+    return attention();
+  }
+  const holding = pp.phase === 'HOLDING';
+  const thr = typeof c.threshold === 'number' && isFinite(c.threshold) && c.threshold > 0 ? c.threshold : null;
+  const high = holding && thr !== null && typeof c.drift === 'number' && c.drift > thr;
+  out.tone = m.interrupted || m.tone === 'warn' || m.tone === 'off' || high || captionTone !== 'free' ? (captionTone === 'bad' ? 'bad' : 'warn') : 'free';
+  out.head = high ? 'Holding, drift is high' : m.head;
+  out.badge = m.interrupted ? 'State unknown' : m.handsOff ? 'Don\u2019t touch the mount' : '';
+  out.band = skyPositioningBand(trail, pp, m);
+  const now = skyPositioningNow(pp, m);
+  const facts = skyPositioningFacts(pp, m).concat(m.interrupted ? [] : skyCouplingFacts(c, holding));
+  if (m.handsOff || m.interrupted || pp.phase === 'ALIGNING' || pp.phase === 'SLEWING' || pp.phase === 'VERIFYING' || pp.phase === 'REFINING') {
+    out.line = now.filter(Boolean).join(' \u00b7 ');        // step and attempt
+    out.why = facts.join(' \u00b7 ');                          // the numbers
+  } else {
+    out.line = [now[0]].concat(facts).filter(Boolean).join(' \u00b7 ');   // On target \u00b7 0.6\u2032 drift, within 2\u2032 \u00b7 Goto forward
+    out.lineWarn = high;
+    out.why = high ? (pp.reason || 'Not corrected yet')   // the Bridge's own reason, never a guess made here
+      : captionTone !== 'free' && caption ? caption
+      : holding ? 'Position verified by a fresh solve' : '';
+  }
+  return attention();
+}
+const SKY_POSITIONING_INTERRUPTED_SEC = 90;
+function skyPositioningInterrupted(last, secondsAgo) {
+  if (!last || !last.handsOff || secondsAgo > SKY_POSITIONING_INTERRUPTED_SEC) return null;
+  return { handsOff: false, interrupted: true, tone: 'warn', step: last.step, head: 'Bridge stopped answering',
+    sub: 'positioning interrupted ' + Math.round(secondsAgo) + ' s ago',
+    why: 'The mount may still be moving, or not on the target. The Control Center restarts the Bridge on its own.', running: null };
+}
+const SKY_HOLD_APART_DEG = 1;     // the last GoTo gets its own marker only when it is farther than this from the Push-To
+function skyFmtOffset(arcmin) {
+  return arcmin < 60 ? arcmin.toFixed(1) + '\u2032' : (arcmin / 60).toFixed(1) + '\u00b0';
+}
+// The sentence under the picture: where PiFinder is relative to the last GoTo. Information only, never a warning.
+// null: no GoTo known (or an older driver without TARGET_STATUS).
+function skyTargetLine(sky) {
+  const t = sky && sky.target;
+  if (!t || typeof t.offset_arcmin !== 'number') return null;
+  let s = 'Last GoTo' + (t.source ? ' (set on ' + t.source + ')' : '') + ': ' +
+    (t.offset_arcmin < 0.5 ? 'PiFinder is on it' : 'PiFinder is ' + skyFmtOffset(t.offset_arcmin) + ' from it');
+  if (t.fresh === false) s += ' (last value, no fresh solve)';
+  if (sky.hold_used !== false && sky.goto && sky.held) {
+    const apart = skySep(sky.goto, sky.held);
+    if (apart > SKY_HOLD_APART_DEG) s += ' \u00b7 Push-To ' + skyFmtOffset(apart * 60) + ' from it';
+  }
+  return s;
 }
 // What to draw for one /api/mount_bridge_drift "sky" value. null: nothing to show at all.
 function skyBuildModel(sky) {
@@ -8825,8 +9634,11 @@ function skyBuildModel(sky) {
   const pf = add('pifinder', sky.pifinder,
     'PiFinder' + (sky.pifinder && sky.pifinder.alt < 0 ? ' ' + skyAlt(sky.pifinder) : ''),
     sky.pifinder && sky.pifinder.alt < 0 ? SKY_C.redSoft : SKY_C.fg);
-  add('goto', sky.goto, 'Goto', SKY_C.fg);
-  add('held', sky.held, 'Held', SKY_C.blue);
+  // Push-To (the cross): what PiFinder points to and where the Bridge keeps the scope; only in the modes that keep it.
+  // Last GoTo (the ring): what was last asked for. Drawn only when it is clearly somewhere else - or when there is no cross.
+  const pushTo = sky.hold_used !== false ? sky.held : null;
+  if (!pushTo || !sky.goto || skySep(sky.goto, pushTo) > SKY_HOLD_APART_DEG) add('goto', sky.goto, 'Last GoTo', SKY_C.fg);
+  if (pushTo) add('held', pushTo, 'Push-To', SKY_C.blue);
   let line = null;
   if (mount && pf) {
     const below = mount.p.below || pf.p.below;
@@ -8846,7 +9658,7 @@ function skyBuildModel(sky) {
   if (!sky.pifinder) notes.push('PiFinder: no position');
   if (sky.mount_configured && !sky.mount) notes.push('Mount: no position');
   skyPlaceNames(markers, notes);
-  return { unknown: false, markers: markers, line: line, notes: notes };
+  return { unknown: false, markers: markers, line: line, notes: notes, targetLine: skyTargetLine(sky) };
 }
 // Half the size of what a marker draws (dot, diamond with PiFinder's field square, rings,
 // cross), so a name never lands on a symbol - its own or another one.
@@ -8893,7 +9705,8 @@ function skyPlaceNames(markers, notes) {
         const x0 = c[2] === 'end' ? c[0] - w : c[2] === 'middle' ? c[0] - w / 2 : c[0];
         const b = { x0: x0, x1: x0 + w, y0: c[1] - 10, y1: c[1] + 3 };
         let score = ring * 3 + i * 0.1;
-        if (b.x0 < 2 || b.x1 > 238 || b.y0 < 16 || b.y1 > 236) score += 5000;
+        // inside what the picture shows (its viewBox is 14 16 212 216): a name outside it is cut off
+        if (b.x0 < 15 || b.x1 > 225 || b.y0 < 17 || b.y1 > 231) score += 5000;
         obstacles.forEach((o) => { score += skyOverlapArea(b, o) * 10; });
         if (!best || score < best.score) best = { score: score, c: c, b: b };
       });
@@ -8946,19 +9759,114 @@ function drawSkyPanel(svg, model) {
     skyEl('rect', { x: pf.p.x - f / 2, y: pf.p.y - f / 2, width: f, height: f, fill: 'none', stroke: C.fg, 'stroke-width': 1, opacity: 0.8 }, g(pf));
   }
   if (held) {
-    const e = g(held);
-    skyEl('line', { x1: held.p.x - 6, y1: held.p.y, x2: held.p.x + 6, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 }, e);
-    skyEl('line', { x1: held.p.x, y1: held.p.y - 6, x2: held.p.x, y2: held.p.y + 6, stroke: C.blue, 'stroke-width': 1.6 }, e);
+    const e = g(held), k = SKY_SYMBOL_SCALE;
+    skyEl('line', { x1: held.p.x - 6 * k, y1: held.p.y, x2: held.p.x + 6 * k, y2: held.p.y, stroke: C.blue, 'stroke-width': 1.6 * k }, e);
+    skyEl('line', { x1: held.p.x, y1: held.p.y - 6 * k, x2: held.p.x, y2: held.p.y + 6 * k, stroke: C.blue, 'stroke-width': 1.6 * k }, e);
   }
-  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 }, g(go));
-  if (pf) skyEl('rect', { x: pf.p.x - 4.5, y: pf.p.y - 4.5, width: 9, height: 9, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
-    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': pf.p.below ? 2 : 1.5 }, g(pf));
+  const K = SKY_SYMBOL_SCALE;   // the picture is drawn small: its symbols are drawn big
+  if (go) skyEl('circle', { cx: go.p.x, cy: go.p.y, r: 6.5 * K, fill: 'none', stroke: C.fg, 'stroke-width': 1.6 * K }, g(go));
+  if (pf) skyEl('rect', { x: pf.p.x - 4.5 * K, y: pf.p.y - 4.5 * K, width: 9 * K, height: 9 * K, transform: 'rotate(45 ' + pf.p.x + ' ' + pf.p.y + ')',
+    fill: pf.p.below ? C.disc : C.fg, stroke: pf.p.below ? C.red : C.disc, 'stroke-width': (pf.p.below ? 2 : 1.5) * K }, g(pf));
   // Drawn last: with both on (nearly) the same spot the dot stays visible on top of the diamond.
-  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 }, g(mount));
+  if (mount) skyEl('circle', { cx: mount.p.x, cy: mount.p.y, r: 5 * K, fill: mount.color, stroke: C.disc, 'stroke-width': 1.5 * K }, g(mount));
   model.notes.forEach((t, i) => skyEl('text', { x: SKY_CX, y: SKY_CY + 62 + i * 13, 'text-anchor': 'middle', fill: C.muted, 'font-size': 11.5, 'font-weight': 700,
     stroke: C.disc, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' }, svg, t));
   model.markers.forEach((m) => skyEl('text', { x: m.label.x, y: m.label.y, 'text-anchor': m.label.anchor, fill: m.color, 'font-size': 12,
     'font-weight': 700, stroke: C.disc, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round', opacity: m.stale ? 0.5 : 1 }, svg, m.name));
+}
+let _posLast = null;  // {m, at}: the last hands-off model and when it was seen
+let _posTrail = [];   // the phases of the current run, see skyPositioningTrailUpdate()
+let _skyCard = { p: null, ctx: null, m: null, targetLine: null };   // what the card last got; renderSkyCard() draws it
+let _skyCardOpen = null;   // which panel under the card the user opened: 'why' | 'run' | 'details' | null (one at a time)
+function skyPosEl(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+function applyPositioning(p, ctx) {
+  _posTrail = skyPositioningTrailUpdate(_posTrail, p);
+  let m = skyPositioningModel(p);
+  if (m) _posLast = m.handsOff ? { m: m, at: Date.now() } : null;
+  else if (_posLast) m = skyPositioningInterrupted(_posLast.m, (Date.now() - _posLast.at) / 1000);
+  if (!m) _posLast = null;
+  _skyCard.p = p; _skyCard.ctx = ctx || null; _skyCard.m = m;
+  renderSkyCard();
+}
+// The texts the older status lines wrote (caption under the picture, the status line, the long explanation). They stay in the page as
+// data sinks, nothing shows them any more; the card reads them. A MutationObserver redraws the card when one of them changes.
+function skyCardFallbackTexts() {
+  const t = (id) => { const e = document.getElementById(id); return e ? (e.textContent || '').trim() : ''; };
+  const dot = document.getElementById('mb-mode-caption-dot');
+  const shown = (id) => { const e = document.getElementById(id); return !!e && e.style.display !== 'none'; };
+  const sdot = document.getElementById('mount-bridge-dot');
+  return { caption: t('mb-mode-caption'), captionDot: dot ? dot.className : '', status: t('mount-bridge-text'), statusDot: sdot ? sdot.className : '', details: t('mb-mode-details'),
+    reject: shown('mb-reject-warning-toggle') ? (t('mb-reject-warning-text') || 'Mount refused the last Goto/Sync.') : '', unconfirmed: shown('mount-bridge-unconfirmed') };
+}
+function renderSkyCard() {
+  const box = document.getElementById('sky-card');
+  if (!box) return;
+  // Without a Mount Bridge in the profile (PiFinder alone, e.g. on a Dobsonian) the card would only talk about a missing Bridge: the
+  // sky picture stays, the card goes.
+  box.style.display = skyCardWanted(deriveProfileRole()) ? '' : 'none';
+  if (!skyCardWanted(deriveProfileRole())) {
+    const col0 = document.getElementById('mb-sky-col');
+    if (col0) col0.classList.add('sky-card-on');
+    return;
+  }
+  const fb = skyCardFallbackTexts();
+  const m = skyCardModel(_skyCard.m, _skyCard.p, _posTrail, _skyCard.ctx, fb);
+  const col = document.getElementById('mb-sky-col');
+  if (col) col.classList.toggle('sky-card-on', !!m);   // the card owns the state: the caption line under it would say the same
+  const hist = _skyCard.m ? skyPositioningHistory(_posTrail, _skyCard.m.handsOff, Date.now()) : null;
+  while (box.firstChild) box.removeChild(box.firstChild);
+  box.className = 'card-' + m.tone;
+  const head = skyPosEl('div', 'sc-head');
+  head.appendChild(skyPosEl('span', 'sc-dot'));
+  head.appendChild(skyPosEl('span', 'sc-title', m.head));
+  if (m.badge) head.appendChild(skyPosEl('span', 'sc-badge', m.badge));
+  box.appendChild(head);
+  const band = skyPosEl('div', 'sc-band');
+  m.band.forEach((st) => band.appendChild(skyPosEl('div', 'sc-seg' + (st === 'done' ? ' d' : st === 'now' ? ' n' : st === 'warn' ? ' w' : ''))));
+  box.appendChild(band);
+  const line = skyPosEl('div', 'sc-line' + (m.lineWarn ? ' warn' : ''), m.line);
+  line.title = m.line;
+  box.appendChild(line);
+  const why = skyPosEl('div', 'sc-why', m.why);
+  why.title = m.why;
+  box.appendChild(why);
+  // the three ways to look closer; one panel open at a time
+  const acts = skyPosEl('div', 'sc-acts');
+  const items = [];
+  if (fb.details || fb.reject) items.push(['why', 'Why?']);
+  if (hist && hist.length) items.push(['run', _skyCard.m.handsOff ? 'Run so far' : 'Last run']);
+  items.push(['details', 'Details']);
+  if (_skyCardOpen && !items.some((it) => it[0] === _skyCardOpen)) _skyCardOpen = null;
+  items.forEach((it) => {
+    const b = skyPosEl('button', 'sc-act' + (_skyCardOpen === it[0] ? ' open' : ''), it[1] + (_skyCardOpen === it[0] ? ' \u25b4' : ' \u25be'));
+    b.type = 'button';
+    b.addEventListener('click', () => { _skyCardOpen = _skyCardOpen === it[0] ? null : it[0]; renderSkyCard(); });
+    acts.appendChild(b);
+  });
+  box.appendChild(acts);
+  if (_skyCardOpen) {
+    const panel = skyPosEl('div', 'sc-panel');
+    if (_skyCardOpen === 'why') [fb.reject, fb.details].filter(Boolean).forEach((t) => panel.appendChild(skyPosEl('p', 'sc-text', t)));
+    else if (_skyCardOpen === 'run') {
+      const ol = skyPosEl('ol');
+      (hist || []).forEach((r) => { const li = skyPosEl('li'); li.appendChild(skyPosEl('span', '', r.text)); li.appendChild(skyPosEl('span', '', r.detail)); ol.appendChild(li); });
+      panel.appendChild(ol);
+    } else {
+      const c = _skyCard.ctx || {};
+      const kv = (k, v) => { const r = skyPosEl('div', 'sc-kv'); r.appendChild(skyPosEl('span', '', k)); r.appendChild(skyPosEl('span', '', v)); panel.appendChild(r); };
+      kv('Last GoTo', _skyCard.targetLine || 'none known');
+      const cf = skyCouplingFacts(c, false);
+      kv('Coupling', (cf[0] || 'unknown') + (c.threshold > 0 ? ' \u00b7 threshold ' + c.threshold + '\u2032' : ''));
+      const clk = document.getElementById('sky-time');
+      if (clk && clk.textContent) kv('Sky for', Array.from(clk.children).map((e) => (e.textContent || '').trim()).filter(Boolean).join(' \u00b7 '));   // time and date are two spans: keep a separator between them
+    }
+    box.appendChild(panel);
+  }
 }
 let _skyLastOk = 0;
 function applySkyPanel(sky) {
@@ -8971,6 +9879,8 @@ function applySkyPanel(sky) {
   tile.style.opacity = '';
   _skyLastOk = Date.now();
   drawSkyPanel(svg, model);
+  _skyCard.targetLine = model.targetLine || null;
+  renderSkyCard();
   svg.setAttribute('aria-label', model.unknown ? 'Sky: observer location unknown'
     : 'Sky: ' + model.markers.map((m) => m.name).join(', '));
 }
@@ -8984,21 +9894,35 @@ setInterval(() => {
 }, 2000);
 // ---- Sky Position Panel (end) ----
 
+// A slow answer is not "Not coupled": indiserver sometimes needs more than the 2 s the server waits (found 2026-11-26: the Bridge itself
+// answers a getProperties in 0.1 ms and sends every 2 s, indiserver in between is what is late). One missed poll after a good one is
+// ignored; only MB_DRIFT_MISSES_BEFORE_OFF in a row turn the card and the badges to "not running". A page that never saw the Bridge
+// (another profile, no Bridge) shows it at once.
+const MB_DRIFT_MISSES_BEFORE_OFF = 3;
+let _mbDriftMisses = 0, _mbDriftSeenRunning = false;
 async function refreshMbDrift() {
   if (mbDriftPollInFlight || mbActionInFlight) return;
   mbDriftPollInFlight = true;
   try {
     const resp = await fetch('/api/mount_bridge_drift', { cache: 'no-store' });
     const data = await resp.json();
+    if (data.running) { _mbDriftMisses = 0; _mbDriftSeenRunning = true; }
+    else if (_mbDriftSeenRunning && ++_mbDriftMisses < MB_DRIFT_MISSES_BEFORE_OFF) return;   // keep what the page shows
+    applyBridgeProblems(data);
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
-      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names, data.onstep_align);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
       updatePiFinderHorizonStatus(data.pifinder_altitude_deg, data.pifinder_below_horizon);
       applySkyPanel(data.sky);
+      if (data.positioning && data.positioning.phase === 'ALIGNING' && data.align_point_index) {
+        data.positioning.point = `point ${data.align_point_index} of ${data.align_point_count}` +
+          (data.align_current_name ? ` (${data.align_current_name})` : '');
+      }
+      applyPositioning(data.positioning, { running: true, mode: data.coupling_mode, action: data.correction_action, drift: data.drift_arcmin, threshold: parseFloat(readThresholdInputRaw()) });
     } else {
       // Found live (2026-09-13), direct feedback: "die Meldung 'Reseed
       // from mount' darf im Client Mode nicht auftauchen" - none of these
@@ -9015,6 +9939,7 @@ async function refreshMbDrift() {
       updatePiFinderHorizonStatus(null, false);
       updateMountRejectWarning(false, null);
       applySkyPanel(data.sky);  // no Mount Bridge: the server computes it from PiFinder LX200 alone
+      applyPositioning(null, { running: false });
     }
   } catch (e) {
     // best-effort - a miss here just means the number doesn't tick this cycle
@@ -9206,8 +10131,7 @@ async function triggerSyncToPiFinderVisible() {
       'The sync command was accepted, but the mount did not report PiFinder\'s position afterwards (' + (verify.device || 'mount') +
       '). The mount may be parked, or its driver connected but not answering (e.g. after the network dropped); a yellow card appears if so.');
   } else {
-    setSyncFeedback('ok', 'Mount synced to PiFinder',
-      verify && verify.verified === true ? 'the mount reports PiFinder\'s position' : 'sent (not verified)', '');
+    await confirmSync('Mount synced to PiFinder');
     // 2026-09-09, direct feedback ("ICH WILL NICHT Re-seeden, sondern
     // synch from PiFinder. Ist meine Entscheidung!"): the sim-mismatch
     // card itself offers both buttons as equally valid fixes ("Re-seed...
@@ -9221,7 +10145,7 @@ async function triggerSyncToPiFinderVisible() {
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
 }
 
-// ---- "Sync positions (once)": one fixed-height feedback line (#mb-sync-feedback) ----
+// ---- "Sync positions (once)": one fixed-height feedback line (#mb-sync-feedback) in the heading ----
 // Never inserted or removed, only its content changes, so a result can't move
 // anything else on the page; the last action stays with its time until the
 // next one replaces it (direct feedback, 2026-11-24).
@@ -9235,7 +10159,7 @@ function setSyncFeedback(kind, lead, rest, tooltip) {
   _syncFeedbackIdle = kind === 'idle' || kind === 'feed';
   el.classList.remove('mb-sync-ok', 'mb-sync-warn', 'mb-sync-work');
   if (kind === 'ok' || kind === 'warn' || kind === 'work') el.classList.add('mb-sync-' + kind);
-  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : 'dot-unconfirmed';
+  const dotClass = (kind === 'ok' || kind === 'feed') ? 'dot-green' : kind === 'warn' ? 'dot-yellow' : kind === 'idle' ? 'dot-idle' : 'dot-unconfirmed';
   el.textContent = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot ' + dotClass;
@@ -9264,9 +10188,123 @@ function refreshSyncIdleText(syntheticSolveRunning) {
     setSyncFeedback('feed', 'Synthetic Solve is feeding PiFinder', 'no manual sync needed',
       'Full Simulation: Synthetic Solve continuously gives PiFinder the simulated mount\'s position. Sync buttons still work for a one-off correction.');
   } else {
-    setSyncFeedback('idle', 'No sync since page load', '');
+    setSyncFeedback('idle', 'No manual sync yet', '');
   }
 }
+
+// ---- Sync confirmation (begin) ----
+// A sync is only done when the positions really agree - what the sky picture shows, a few seconds after the command was accepted.
+// Until then the line stays on "working" with the seconds and the distance, so nobody takes silence for failure (direct feedback,
+// 2026-11-27: the message went away, the sky still showed PiFinder far off, and much later the sync turned out to have worked).
+const SYNC_CONFIRM_TIMEOUT_S = 60;
+const SYNC_CONFIRM_HITS = 2;   // two readings in a row: a single one may still be the old position's
+function syncConfirmStep(apartArcmin, limitArcmin, hits, secs) {
+  const agree = typeof apartArcmin === 'number' && isFinite(apartArcmin) && apartArcmin <= limitArcmin;
+  const n = agree ? hits + 1 : 0;
+  return { hits: n, state: n >= SYNC_CONFIRM_HITS ? 'ok' : secs >= SYNC_CONFIRM_TIMEOUT_S ? 'fail' : 'wait' };
+}
+function syncApartText(a) {
+  if (typeof a !== 'number' || !isFinite(a)) return 'no position yet';
+  return (a >= 60 ? Math.round(a / 60) + '\u00b0' : a.toFixed(1) + '\u2032') + ' apart';
+}
+// ---- Sync confirmation (end) ----
+// Distance between PiFinder and the mount as the sky picture has it (both current), else the Bridge's drift; null if unknown.
+function syncApartArcmin(data) {
+  const sky = data && data.sky;
+  if (sky && sky.mount && sky.pifinder && !sky.pifinder.stale && !sky.mount.stale) return skySep(sky.mount, sky.pifinder) * 60;
+  return data && data.running && typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null;
+}
+async function confirmSync(lead, failHint, injected) {
+  const threshold = parseFloat(readThresholdInputRaw());
+  const limit = Math.max(isFinite(threshold) ? threshold : 5, 5);
+  const start = Date.now();
+  let hits = 0, apart = null;
+  for (;;) {
+    const secs = Math.round((Date.now() - start) / 1000);
+    try {
+      const data = await (await fetch('/api/mount_bridge_drift', { cache: 'no-store' })).json();
+      if (data.sky) applySkyPanel(data.sky);
+      // A set (not camera-solved) position shows only in what PiFinder reports, not in the Bridge's camera-based picture.
+      apart = injected ? (await (await fetch('/api/pifinder_mount_apart', { cache: 'no-store' })).json()).apart_arcmin
+        : syncApartArcmin(data);
+    } catch (e) {
+      apart = null;
+    }
+    const step = syncConfirmStep(apart, limit, hits, secs);
+    hits = step.hits;
+    if (step.state === 'ok') {
+      setSyncFeedback('ok', lead + ': confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart));
+      return true;
+    }
+    if (step.state === 'fail') {
+      setSyncFeedback('warn', lead + ': NOT confirmed after ' + secs + ' s', 'PiFinder and mount ' + syncApartText(apart) + '. ' + (failHint || 'Retry.'));
+      return false;
+    }
+    setSyncFeedback('work', 'Sent, waiting for the confirmation \u2026 ' + secs + ' s', syncApartText(apart));
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+// ---- Bridge problems (begin) ----
+// Two things the user must not miss: a Mount Bridge that is connected but reads nothing (shown red - green connections lied for
+// 11 minutes on 2026-11-27), and its question after a sudden disagreement without any mount movement (a yellow card; nothing
+// moves until it is answered).
+var _mbBlind = null;      // names of the devices the Bridge does not read, or null
+var _mbQuestion = null;   // {driftArcmin} while the question is open
+function bridgeProblems(data) {
+  const on = data && data.running;
+  return {
+    blind: on && data.binding_state === 'Alert' ? (data.binding_missing || 'its devices') : null,
+    question: on && data.reposition_question ? { driftArcmin: typeof data.drift_arcmin === 'number' ? data.drift_arcmin : null } : null,
+  };
+}
+function bridgeProblemCards(blind, question) {
+  const items = [];
+  if (blind) {
+    items.push({
+      id: 'bridge-blind', category: 'mount-bridge', tone: 'bad',
+      title: `Mount Bridge does not read ${blind}`,
+      text: `It is connected, but gets nothing from ${blind}: it checks nothing and moves nothing. <b>What to do:</b> make sure ${blind} is running and connected (Ekos or the StellarMate app), then reconnect the Mount Bridge. If that does not help, stop and start the profile.`,
+      buttons: [{ label: 'Reconnect Mount Bridge', onclick: 'reconnectBridge()', action: 'reconnect-bridge' }],
+    });
+  }
+  if (question) {
+    const d = question.driftArcmin;
+    const apart = d === null ? '' : ' by ' + (d >= 60 ? Math.round(d / 60) + '\u00b0' : d.toFixed(1) + '\u2032');
+    items.push({
+      id: 'reposition-question', category: 'mount-bridge',
+      title: `Mount and PiFinder suddenly differ${apart}`,
+      text: 'The mount reported no movement. Either the telescope was moved by hand with a clutch open, or it was bumped or snagged. The Mount Bridge moves nothing until you decide. <b>What to do:</b> look at the telescope and cables, tighten the clutches. Moved it on purpose: adopt the new position (the mount is synced to it, nothing moves). Not on purpose: send the mount back to the Push-To (it slews).',
+      buttons: [
+        { label: 'Adopt this position', onclick: 'triggerRepositionAdopt()', action: 'reposition-adopt' },
+        { label: 'Revert to Push-To (mount slews)', onclick: 'triggerRepositionRevert()', action: 'reposition-revert-card', secondary: true },
+      ],
+    });
+  }
+  return items;
+}
+// ---- Bridge problems (end) ----
+function applyBridgeProblems(data) {
+  const now = bridgeProblems(data);
+  const key = (b, q) => `${b}|${q ? Math.round((q.driftArcmin || 0) * 10) : 'none'}`;
+  if (key(now.blind, now.question) === key(_mbBlind, _mbQuestion)) return;
+  const blindChanged = now.blind !== _mbBlind;
+  _mbBlind = now.blind;
+  _mbQuestion = now.question;
+  renderNoSolveBanner();
+  if (blindChanged) updateProfileRoleLine();
+}
+async function postBridgeAnswer(path, what) {
+  setSyncFeedback('work', what + ' \u2026', '');
+  try {
+    const d = await (await fetch(path, { method: 'POST' })).json();
+    setSyncFeedback(d.success ? 'ok' : 'warn', d.success ? what + ': sent' : what + ' failed', d.success ? '' : (d.error || ''));
+  } catch (e) {
+    setSyncFeedback('warn', what + ' failed', String(e));
+  }
+}
+function triggerRepositionAdopt() { return postBridgeAnswer('/api/mount_bridge_reposition_adopt', 'Adopt this position'); }
+function reconnectBridge() { return postBridgeAnswer('/api/mount_bridge_reconnect', 'Reconnect Mount Bridge'); }
 
 // ---- mount warnings (issue #583): yellow cards, never automatic ----
 // State from the status poll: the server flags a mount whose reported position
@@ -9364,6 +10402,9 @@ async function triggerSyncPiFinderFromMount() {
   btns.forEach((b) => { b.dataset.busy = '1'; b.disabled = true; if (!b.classList.contains('mb-sync-btn')) b.textContent = 'syncing…'; });
   setSyncFeedback('work', 'Syncing PiFinder to mount …', simulation ? '' : 'up to 2 s');
   let ok = false;
+  let done = 'PiFinder synced to mount';   // the lead of the confirmation line, see confirmSync()
+  let doneHint = null;
+  let doneInjected = false;
   try {
     if (simulation) {
       await reseedFakeSolve();
@@ -9372,25 +10413,35 @@ async function triggerSyncPiFinderFromMount() {
         setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
       } else {
         ok = true;
-        setSyncFeedback('ok', 'PiFinder seeded from mount', 'simulation', 'Full Simulation: the mount\'s position was injected into the simulated PiFinder.');
+        done = 'PiFinder seeded from mount (simulation)';
       }
     } else {
       const resp = await fetch(`/api/pifinder_align_from_mount?port=${port}&host=${encodeURIComponent(host)}`, { method: 'POST' });
       const d = await resp.json();
       if (d.success === true) {
         ok = true;
-        setSyncFeedback('ok', 'PiFinder aligned to mount', `RA ${fmtRaHms(d.mount_ra_deg)}, Dec ${fmtDecDms(d.mount_dec_deg)}`);
+        done = d.method === 'simulation_recentred' ? 'Sky simulation moved to the mount' : 'PiFinder aligned to mount';
       } else {
         const fov = typeof d.fov_deg === 'number' ? d.fov_deg : null;
         const sep = typeof d.separation_deg === 'number' ? d.separation_deg : null;
-        if (d.reason === 'no_solve') {
-          setSyncFeedback('warn', 'Not aligned', 'PiFinder has no current solve. Point it at stars, then retry.',
-            'PiFinder has no plate solve from the last few seconds. The Align needs one. Point the camera at stars and try again.');
-        } else if (d.reason === 'outside_fov') {
-          const edge = fov !== null ? (fov / 2).toFixed(1) : '?';
-          setSyncFeedback('warn', 'Not aligned',
-            sep !== null ? `mount is ${sep.toFixed(1)}° off PiFinder's centre; its field reaches ${edge}°` : 'the mount is outside PiFinder\'s field of view',
-            `The position the mount points at is ${sep !== null ? sep.toFixed(1) + '°' : 'too far'} from the centre of PiFinder's image, which reaches about ${edge}° (field ${fov !== null ? fov.toFixed(1) : '?'}° wide). PiFinder can only align on something it sees. Adjust the PiFinder bracket until the star you centred in the scope shows on PiFinder's screen, then retry.`);
+        if (d.reason === 'no_solve' || d.reason === 'outside_fov') {
+          // outside_fov: PiFinder cannot align on something it does not see, but the user asked for "PiFinder where the mount
+          // points": its position is set all the same, and the confirmation below says whether the camera agrees.
+          // No plate solve (the scope sits in its home position, the camera sees no stars, or it is daylight): the mount knows where it
+          // points, so its position is injected into PiFinder as the starting point (the same one-shot as "Re-seed from mount"; it
+          // releases itself again, so the real camera solves as soon as there are stars). A real solve replaces it. Found 2026-11-26:
+          // "Sync PiFinder from mount" was exactly what was wanted at home position and it refused for lack of a solve.
+          await reseedFakeSolve();
+          const st = (document.getElementById('fake-solve-advanced-status') || {}).textContent || '';
+          if (/^could not/i.test(st)) {
+            setSyncFeedback('warn', 'Not synced', st.replace(/^could not re-seed\s*/i, '').replace(/^\(|\)$/g, '') || 'failed');
+          } else {
+            ok = true;
+            done = 'PiFinder set to the mount\'s position (injected, not a camera solve)';
+            doneInjected = true;
+            // below the horizon no camera can disagree
+            if (d.reason === 'outside_fov' && !_pifinderBelowHorizon) doneHint = 'The camera sees another part of the sky: check that the scope points where the mount says, or use Sync mount from PiFinder.';
+          }
         } else if (d.reason === 'timeout') {
           setSyncFeedback('warn', 'Not aligned', 'the solver gave no alignment pixel within 2 s. Retry.');
         } else if (d.reason === 'fake_solve_active') {
@@ -9411,6 +10462,7 @@ async function triggerSyncPiFinderFromMount() {
     _simStartupMismatch = false;
     _simMismatchAcknowledged = true;
     renderNoSolveBanner();
+    await confirmSync(done, doneHint, doneInjected);
   }
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
   updateSeedControlsEnabled();
@@ -9468,7 +10520,7 @@ async function triggerManualSync() {
 
 async function triggerGotoHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending mount to held target…');
+  setMbActionStatus('⏳ Sending mount to the Push-To…');
   const btn = document.getElementById('mb-goto-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -9502,7 +10554,7 @@ async function triggerRepositionRevert() {
   btn.dataset.busy = '1';
   btn.disabled = true;
   btn.textContent = 'reverting…';
-  setMbActionStatus('⏳ Reverting to held target…');
+  setMbActionStatus('⏳ Reverting to the Push-To…');
   try {
     const resp = await fetch('/api/mount_bridge_reposition_revert', { method: 'POST' });
     const data = await resp.json();
@@ -9520,7 +10572,7 @@ async function triggerRepositionRevert() {
 
 async function triggerAlignHeld() {
   mbActionInFlight = true;
-  setMbActionStatus('⏳ Sending held target to PiFinder…');
+  setMbActionStatus('⏳ Sending the Push-To to PiFinder…');
   const btn = document.getElementById('mb-align-held-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -9577,6 +10629,8 @@ async function triggerAbortMount() {
 const MULTIALIGN_START_SETTLE_MS = 4500;
 
 async function triggerMultiAlignStart() {
+  const ask = onStepAlignView(_onStepAlign, false, parseInt(document.getElementById('mb-align-count-input').value, 10)).confirm;
+  if (ask && !window.confirm(ask)) return;
   multiAlignActionInFlight = true;
   setMbActionStatus('⏳ Starting Multi-Point Alignment…');
   const btn = document.getElementById('mb-multialign-start-btn');
@@ -10982,7 +12036,9 @@ function updateProfileRoleLine() {
   }
   el.textContent = '';
   const dotEl = document.createElement('span');
-  dotEl.className = 'status-dot ' + (ok ? 'dot-green' : 'dot-white');
+  const blind = _mbBlind && role !== 'client';   // a Bridge that reads nothing: never green, whatever else is connected
+  if (blind) detail = `Mount Bridge does not read ${_mbBlind}`;
+  dotEl.className = 'status-dot ' + (blind ? 'dot-red' : ok ? 'dot-green' : 'dot-white');
   el.appendChild(dotEl);
   const nameEl = document.createElement('span');
   nameEl.className = 'role-name';
