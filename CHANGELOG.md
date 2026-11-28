@@ -7,6 +7,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- Mount Bridge, OnStep over USB/serial: an alignment running on the controller is detected through the INDI driver, so the Bridge
+  no longer syncs during it (OnStep counted that Sync as a centred star). It also no longer syncs when the coupling is switched on
+  during an alignment, and Multi-Point Alignment is refused meanwhile. New `test_tools/onstep_usb_alignment_test.py`.
 - Control Center: a coupling switched off anywhere (for example in KStars' INDI panel) stays off; before, the self-healing switched it
   on again after some seconds.
 - Mount Bridge: switching the coupling to Off stops a slew the Bridge started itself (GoTo from PiFinder, refining, Goto Push-To);

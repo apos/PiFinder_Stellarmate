@@ -82,6 +82,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // The INDI OnStep driver's own alignment switches ("AlignStars", "NewAlignStar", "NewAlignStar2"). False: the mount's
         // driver has none.
         bool hasOnStepAlignment() const;
+        // The controller's alignment as the INDI OnStep driver publishes it ("Align Process") - the only view of it when the
+        // mount is connected over USB. True: the driver reports one; `star` is the star it waits for, `stars` how many it
+        // has (star = stars + 1: finished; 0 0: none).
+        bool getOnStepAlignStatus(int &star, int &stars) const;
         bool startOnStepAlignment(int stars);
         bool saveOnStepAlignment();
 
@@ -270,6 +274,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountAlignWriteSP = nullptr;
         bool pressSwitch(INDI::PropertyViewSwitch *property, const char *element);
         INDI::PropertyViewText *m_mountAddressTP = nullptr;
+        void noteOnStepAlignStatus(INDI::Property property);
+        mutable std::mutex m_alignStatusMutex;
+        bool m_alignStatusKnown = false;
+        int m_alignStatusStar = 0, m_alignStatusStars = 0;
         INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
         INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;
         // Guarded by m_mountEventMutex: every GoTo seen through INDI lately, and the newest one read from the controller.
