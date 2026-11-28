@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- Mount Bridge: an uncertain plate solve is not used - it moves and syncs nothing, and the log says why. Limit: a false-positive
+  probability of 1e-8 (INDI property `SOLVE_CERTAINTY`, 0 takes every solve). On the simulated sky a wrong solve at 7e-06 was
+  taken before (#697). Chosen from simulated data; not yet checked under a real sky.
+- Multi-Point Alignment: on a mount that fits a model through its points (Telescope Simulator) a point counts when the mount's
+  set of alignment points grew, not only when it reports the synced position (#702).
+- New `test_tools/solve_trust_model_alignment_test.py`.
+
+### Removed
+
+- `src_pifinder/python/requirements.txt`, an unused old copy: the setup installs from PiFinder's own file. It raised all of the
+  repository's dependency security alerts.
+
+### Fixed
+
+- Control Center: the PiFinder and StellarMate Discord links are the ones named in CONTRIBUTING.md.
+
 ## [3.1.0] - 2026-11-28
 **Not stable yet** - read [Status of 3.1.0](https://github.com/apos/PiFinder_Stellarmate/blob/v3.1.0/README.md#status-of-310-not-stable-yet) before installing.
 
