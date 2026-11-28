@@ -4,20 +4,18 @@
 
 ![PiFinder mounted on a telescope under the night sky](docs/images/readme/PiFinder.jpg)
 
-> ### 🚀 **Release note — v3.1.0**
+> ### 🚀 **Release note — v3.2.0**
 >
-> The Mount Bridge keeps its hands off where it should. **Still not stable** and not tested under the real sky - please read
-> [Status of 3.1.0](#status-of-310-not-stable-yet) first.
+> Fewer wrong moves from wrong data. **Still not stable** and not tested under the real sky - please read
+> [Status of 3.2.0](#status-of-320-not-stable-yet) first.
 >
-> * **Park is park**: a mount that parks or goes home is left alone - no Sync, nothing taken over, no movement until the next GoTo.
-> * **OnStep over USB**: a GoTo from the hand controller is followed; during an alignment nothing is synced.
-> * New setting **"Mount has its own alignment"**: the Bridge then never syncs that mount by itself.
-> * **Coupling Off** stays off and stops a slew the Bridge started itself.
-> * **Time and location check**: KStars, mount, PiFinder and Pi side by side, with one button to set the mount from KStars.
+> * **Uncertain plate solves are not used**: the Mount Bridge neither moves nor syncs on them (adjustable, "Solve certainty").
+> * **Multi-Point Alignment** also counts a point that a mount with its own model took in.
+> * Housekeeping: an unused file that raised all security alerts is gone; Discord links updated.
 >
-> New in 3.0.0: GoTo from anywhere ends on the object, OnStep Multi-Point Alignment, the simulated sky. Control Center port
-> **8777** (see [Ports](#ports)). All changes: [CHANGELOG.md](CHANGELOG.md). Contributing and bug reports:
-> [CONTRIBUTING.md](CONTRIBUTING.md).
+> New in 3.1.0: park is park, OnStep over USB, mounts with their own alignment, time and location check. New in 3.0.0: GoTo
+> from anywhere ends on the object, OnStep Multi-Point Alignment, the simulated sky. Control Center port **8777** (see
+> [Ports](#ports)). All changes: [CHANGELOG.md](CHANGELOG.md). Contributing and bug reports: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Summary
 
@@ -60,7 +58,7 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 >
 > * Pinned to **PiFinder 2.6.4** on **StellarMate OS 2.4.0** (Arch Linux) via `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — a fixed release tag, not the upstream `release` branch's moving
->   HEAD. With PFSM 3.1.0 tested on a Pi 5 so far; Pi 4 and x86 are pending —
+>   HEAD. With PFSM 3.2.0 tested on a Pi 5 so far; Pi 4 and x86 are pending —
 >   [Version Compatibility](#version-compatibility) has the details.
 > * **Pi 5 keyboard ⚠️** — a Geekworm X1203 UPS shield shares GPIO 16 with keypad column 0 (keys
 >   7/4/1/LEFT), disabling that column. Hardware conflict between the two add-on boards, only with
@@ -74,9 +72,9 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 
 ---
 
-## Status of 3.1.0: not stable yet
+## Status of 3.2.0: not stable yet
 
-3.1.0 is a release for people who want to help testing. It has **not been tested under the real sky**.
+3.2.0 is a release for people who want to help testing. It has **not been tested under the real sky**.
 
 | Area | State |
 |---|---|
@@ -87,8 +85,8 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 | Real mount | GoTo following, refining and the OnStep alignment seen only with a simulated sky; a physical hand controller was not tried separately (it sends the same network commands) |
 | OnStep over **USB/serial** | a GoTo from the controller is followed to where the slew ends (seen with a stand-in driver; the signals it relies on were measured on a real OnStep). Multi-Point Alignment sends plain Syncs |
 | Camera and sky | no camera or sky test with the pinned PiFinder 2.6.4 |
-| Simulated sky | single star fields cannot be solved or are solved wrongly ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); the Mount Bridge then gives up or asks and moves nothing (seen on the Telescope Simulator) |
-| Multi-Point Alignment without OnStep | a point counts only when the mount reports the synced position; the Telescope Simulator in the simulated sky fits a model and often shows points as not counted ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
+| Simulated sky | single star fields cannot be solved or are solved wrongly ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); the Mount Bridge does not use an uncertain solve and moves nothing |
+| Uncertain plate solves | the limit of the Mount Bridge (false-positive probability 1e-8) comes from simulated data. Under a real sky with few stars it may refuse a correct solve: lower "Solve certainty" in the INDI panel then (0 takes every solve) |
 | **SMOS updates** | an update can remove everything outside `/home`: run the post-update step (Control Center card or `bin/restore_after_smos_update.sh`). On devices that boot from NVMe/USB with renamed partitions (to keep an SD emergency system) an update can leave the device unbootable if the boot fix does not run before the reboot ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), the automatic fix has not been seen on real hardware); details in [SMOS Updates](#smos-updates) |
 | Pi 5 keypad | disabled column with a Geekworm X1203 UPS shield (see above) |
 | Newer PiFinder versions | PiFinder 3.x (beta) is not supported; PFSM installs the pinned version |
@@ -101,7 +99,7 @@ Everything else that is open: [issues](https://github.com/apos/PiFinder_Stellarm
 
 ## Table of Contents
 
-1. [Status of 3.1.0](#status-of-310-not-stable-yet)
+1. [Status of 3.2.0](#status-of-320-not-stable-yet)
 2. [Quick Start](#quick-start)
 3. [Key Features & Changes](#key-features--changes)
 4. [Hardware Requirements](#hardware-requirements)
@@ -501,7 +499,7 @@ project has been tested against. Other docs in this repo link here rather than r
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (dev / simulator) |
 |---|---|---|---|---|
-| 2.6.4 | 2.4.0 | — (3.x not tested yet) | ✅ PFSM 3.1.0 with the simulated sky and the INDI simulators, automated regression run, a real OnStep driven indoors; no camera or sky test; keypad column lost with the UPS shield (see above) | — (3.0.0 not tested yet) |
+| 2.6.4 | 2.4.0 | — (3.x not tested yet) | ✅ PFSM 3.2.0 with the simulated sky and the INDI simulators, automated regression run, a real OnStep driven indoors; no camera or sky test; keypad column lost with the UPS shield (see above) | — (3.0.0 not tested yet) |
 | 2.6.3 | 2.4.0 | ✅ tested — real 2.3.0 → 2.4.0 update, restore, reboot from NVMe (see the NVMe note in "SMOS Updates"); camera hardware test pending | ⚠️ not verified on 2.4.0 (unreachable since the update) | ✅ tested — real 2.3.0 → 2.4.0 update and restore, Control Center, Mount Bridge vs. the PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ fully tested | ✅ fully tested | ✅ tested — install, Control Center, Mount Bridge vs. the PiFinder Simulator (no real plate-solving; see [Readme_UTM_dev_X86.md](Readme_UTM_dev_X86.md)) |
 | 2.6.0 | 2.2.1 | ✅ fully tested | ✅ GPS/Web UI/OLED confirmed, ⚠️ keyboard partially unusable with a Geekworm X1203 UPS attached (GPIO 16 conflict, see banner above) — camera adapter cable pending | — |
