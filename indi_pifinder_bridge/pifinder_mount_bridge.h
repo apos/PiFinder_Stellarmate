@@ -823,6 +823,13 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // "new target" event that may never come.
         enum class CorrectState { IDLE, SLEWING, SETTLING };
         CorrectState m_correctState = CorrectState::IDLE;
+
+        // #231: "Coupling off" stops a slew the Bridge started itself - and only that one. Epoch of its last GoTo to the
+        // mount while that may still be running, 0 otherwise (arrived, or somebody else's GoTo / stop / buttons took over).
+        double m_ownGotoEpoch = 0.0;
+        // A mount shows a new GoTo as moving within this time.
+        static constexpr double OWN_GOTO_START_SEC = 5.0;
+        bool ownGotoRunning() const;
         double m_correctTargetRA = std::nan("");
         double m_correctTargetDec = std::nan("");
         int m_correctSettleTicksRemaining = 0;

@@ -97,7 +97,6 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 | Simulierter Himmel | einzelne Sternfelder werden nicht oder falsch gelöst ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); die Mount Bridge gibt dann auf oder fragt nach und bewegt nichts (am Telescope Simulator gesehen) |
 | Multi-Point Alignment ohne OnStep | ein Punkt zählt nur, wenn die Montierung die synchronisierte Position meldet; der Telescope Simulator im simulierten Himmel rechnet ein Modell und zeigt Punkte oft als nicht gezählt ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
 | **SMOS-Updates** | ein Update kann alles außerhalb von `/home` entfernen: danach den Post-Update-Schritt ausführen (Karte im Control Center oder `bin/restore_after_smos_update.sh`). Auf Geräten, die von NVMe/USB mit umbenannten Partitionen booten (damit eine SD-Notfallkarte parallel möglich ist), kann ein Update das Gerät unbootbar machen, wenn der Boot-Fix nicht vor dem Neustart läuft ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), der automatische Fix wurde auf echter Hardware noch nicht gesehen); Details unter [SMOS-Updates](#smos-updates) |
-| Kopplung ausschalten | stoppt einen laufenden Slew nicht: **Stop movement** benutzen ([#231](https://github.com/apos/PiFinder_Stellarmate/issues/231)) |
 | Pi-5-Tastatur | eine Spalte fällt mit einem Geekworm-X1203-UPS aus (siehe oben) |
 | Neuere PiFinder-Versionen | PiFinder 3.x (Beta) wird nicht unterstützt; PFSM installiert die gepinnte Version |
 | Dokumentation | noch keine HowTo- oder Video-Anleitung |
@@ -447,7 +446,8 @@ abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bew
 zeigt das Control Center eine gelbe Karte mit der Frage; bis zur Antwort bewegt sich nichts.
 
 **Stopp**: Nach einem Abort in KStars/Ekos bewegt die Bridge das Mount erst wieder beim nächsten GoTo. "Stop movement" im
-Control Center schaltet zusätzlich die Kopplung aus.
+Control Center schaltet zusätzlich die Kopplung aus. Das Ausschalten der Kopplung stoppt eine Fahrt, die die Bridge selbst gestartet hat;
+ein GoTo von anderer Stelle läuft weiter.
 
 **Alignment in Ekos** (Plate-Solve, Polar Alignment, Mount-Modell; auch GO): Die Bridge pausiert, solange Ekos aufnimmt, löst
 oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.

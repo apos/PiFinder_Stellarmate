@@ -2274,6 +2274,8 @@ void PiFinderMountBridge::TimerHit()
     // top-level drift readout (the value everything else reacts to) was still exposed to.
     double piRA, piDec, mountRA, mountDec;
     updateMountMotionTracker();
+    if (!ownGotoRunning())
+        m_ownGotoEpoch = 0.0; // arrived: a later movement is not this GoTo any more
     double piSolveEpoch = 0.0; // exposure end of the frame piRA/piDec came from (#659)
     const bool havePiFinderPosition = fetchFreshPiFinderPosition(SolveFreshnessMaxAgeN[0].value, SettingsT[PIFINDER_HTTP_HOST].text, piRA, piDec, &piSolveEpoch);
     const bool havePositions = havePiFinderPosition && m_client->getMountRADE(mountRA, mountDec);
@@ -2954,7 +2956,20 @@ bool PiFinderMountBridge::sendMountCoordsSafe(double ra, double dec, const char 
                    ra, dec, coordSetName, altitude, HORIZON_SAFETY_MARGIN_DEG);
         return false;
     }
-    return m_client->sendMountCoords(ra, dec, coordSetName);
+    const bool sent = m_client->sendMountCoords(ra, dec, coordSetName);
+    if (sent && strcmp(coordSetName, "SYNC") != 0)
+        m_ownGotoEpoch = nowEpochSeconds();
+    return sent;
+}
+
+bool PiFinderMountBridge::ownGotoRunning() const
+{
+    if (m_ownGotoEpoch <= 0.0)
+        return false;
+    const double now = nowEpochSeconds();
+    // The motion tracker covers mounts that move without ever reporting Busy.
+    return now - m_ownGotoEpoch < OWN_GOTO_START_SEC || m_client->isMountSlewing() ||
+           now - m_lastMountMotionEpoch < OWN_GOTO_START_SEC;
 }
 
 bool PiFinderMountBridge::syncMountToPiFinderPosition()
@@ -3175,6 +3190,7 @@ void PiFinderMountBridge::handleMountClientEvents()
     const auto event = m_client->consumeMountEvent(ra, dec);
     if (event == PiFinderBridgeClient::MountEvent::NONE)
         return;
+    m_ownGotoEpoch = 0.0; // somebody else's GoTo, stop or direction buttons: what moves now is no longer the Bridge's
 
     // Only the couplings that bring the scope to a target react. A hold (guiding) and an alignment run are left alone.
     const bool gotoForward = BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON;
@@ -4479,7 +4495,19 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             m_client->consumePiFinderTargetPending();
             {
                 double ignoredRA, ignoredDec;
-                m_client->consumeMountEvent(ignoredRA, ignoredDec);
+                if (m_client->consumeMountEvent(ignoredRA, ignoredDec) != PiFinderBridgeClient::MountEvent::NONE)
+                    m_ownGotoEpoch = 0.0; // somebody else took over just now (the Control Center's Stop sends its own abort)
+            }
+            // #231: "Off" also ends what the Bridge itself set in motion. A GoTo somebody else sent runs on, and a
+            // Multi-Point Alignment has its own Stop.
+            if (BridgeModeS[MODE_OFF].s == ISS_ON && (m_alignState == AlignState::IDLE || m_alignState == AlignState::DONE) &&
+                ownGotoRunning())
+            {
+                if (m_client->abortMount())
+                    LOG_WARN("Coupling off while the Mount Bridge's own GoTo was still running - stop sent to the mount.");
+                else
+                    LOG_ERROR("Coupling off while the Mount Bridge's own GoTo was still running - the mount could not be stopped.");
+                m_ownGotoEpoch = 0.0;
             }
             m_foreignGotoSettling = false;
             m_externalMoveWasSync = false;

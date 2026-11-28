@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Fixed
+
+- Mount Bridge: switching the coupling to Off stops a slew the Bridge started itself (GoTo from PiFinder, refining, Goto Push-To);
+  before, the mount drove on (#231). A GoTo from another source and a Multi-Point Alignment are not touched. New
+  `test_tools/bridge_off_stops_slew_test.py`.
+
 ### Changed
 
 - Live tests: a star field the simulated camera cannot solve or solves wrongly (#697) is left for the next one in every GoTo of the
