@@ -101,6 +101,7 @@ def main(argv=None):
     threshold = t.numbers(t.BRIDGE, "DRIFT_THRESHOLD")
     threshold = next(iter(threshold.values()))
     config = t.read(t.BRIDGE, "ALIGN_CONFIG")["elements"]
+    t.restore_on_stop()
     t.indi_client.set_number(t.BRIDGE, "ALIGN_CONFIG", {**config, "POINT_COUNT": 2})
     results = []
     check = lambda name, ok, text: results.append(t.check(name, ok, text))
