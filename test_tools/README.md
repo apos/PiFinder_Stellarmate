@@ -37,6 +37,7 @@ mount (`align_sync_test`, `keypad_gpio_matrix_test`, `pifinder_pushto_stress_tes
 | `mount_model_check.py --move`, `ekos_align_probe.py` | does the mount arrive; what Ekos does during an alignment |
 | `onstep_watch.py`, `bridge_props.py`, `bridge_messages.py`, `bridge_stall_catcher.py` | watching a running system |
 | `fake_onstep_indi_driver.py` | the stand-in OnStep INDI driver used by the OnStep tests |
+| `onstep_mount_type_check.py` | what a (patched) OnStep driver build reports as mount type |
 
 Writing a new test: it sets up its own preconditions, restores what it changed, keeps its raw output, and refuses to run where it
 could move real hardware it was not written for.
