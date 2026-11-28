@@ -2003,6 +2003,7 @@
      Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
   #mb-multialign-details .mb-row { margin-top: 0.65rem; }
   #mb-multialign-stop-btn { margin-left: 0.7rem; }   /* Start and Stop apart: no slip of the finger from one to the other */
+  #mb-multialign-save-btn { margin-left: 0.7rem; }
   #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
   #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
   #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */
@@ -2919,6 +2920,7 @@
             <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
               <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
               <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+              <button id="mb-multialign-save-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerOnStepAlignSave()" style="display:none;" disabled title="Keeps the alignment model on the OnStep controller beyond a power-off. OnStep does not confirm it.">Save to OnStep</button>
             </div>
             <!-- #191/#217: candidate-selection settings already existed as INDI
                  properties (AlignConfigNP) since the catalog-driven selection
@@ -9250,15 +9252,59 @@ function updateMountRejectWarning(active, message) {
 // triggerMultiAlignStart()), and this function reasserts the real state
 // the moment the flag clears and the next poll lands.
 let multiAlignActionInFlight = false;
-function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames) {
+// ---- OnStep alignment (begin) ----
+// With an OnStep the Bridge can read, Start runs a real OnStep alignment (pure function, test_tools/onstep_align_ui_test.js).
+// onstep: /api/mount_bridge_drift "onstep_align" or null; running: a run of the Bridge is under way; points: the Points field.
+function onStepAlignView(onstep, running, points) {
+  const view = { startLabel: 'Start', confirm: null, saveShown: false, saveEnabled: false, waiting: null, unit: 'point' };
+  if (!onstep) return view;
+  view.unit = 'star';
+  view.saveShown = true;
+  view.saveEnabled = !running && !onstep.aligning;
+  if (onstep.aligning) {
+    view.startLabel = 'Continue';
+    if (!running) view.waiting = `OnStep waits for star ${onstep.star} of ${onstep.stars}: Continue goes on with it. Until then the Bridge leaves the mount alone.`;
+  } else {
+    const n = Math.min(Math.max(1, points || 1), onstep.max_stars || 9);
+    view.confirm = `This starts an alignment on OnStep with ${n} star${n === 1 ? '' : 's'}.\n\nIs the mount in its home position? OnStep takes the present position as home, and its old alignment model is replaced.`;
+  }
+  return view;
+}
+// ---- OnStep alignment (end) ----
+let _onStepAlign = null;
+async function triggerOnStepAlignSave() {
+  const btn = document.getElementById('mb-multialign-save-btn');
+  btn.disabled = true;
+  setMbActionStatus('⏳ Saving the alignment model on OnStep…');
+  try {
+    const d = await (await fetch('/api/mount_bridge_align_save', { method: 'POST' })).json();
+    if (!d.success) throw new Error(d.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog()
+  }
+  pollMbLog();
+  clearMbActionStatus();
+}
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames, onstep) {
   const startBtn = document.getElementById('mb-multialign-start-btn');
   const stopBtn = document.getElementById('mb-multialign-stop-btn');
   const dotEl = document.getElementById('mb-multialign-dot');
   const textEl = document.getElementById('mb-multialign-status-text');
   const running = alignState === 'Busy';
+  _onStepAlign = onstep || null;
+  const view = onStepAlignView(_onStepAlign, running, parseInt(document.getElementById('mb-align-count-input').value, 10));
+  const saveBtn = document.getElementById('mb-multialign-save-btn');
+  saveBtn.style.display = view.saveShown ? '' : 'none';
+  saveBtn.disabled = !view.saveEnabled;
   if (multiAlignActionInFlight) return;
+  startBtn.textContent = view.startLabel;
   startBtn.disabled = running;
   stopBtn.disabled = !running;
+  if (view.waiting) {
+    setHwDot(dotEl, 'status-dot dot-yellow');
+    textEl.textContent = view.waiting;
+    return;
+  }
   if (!pointCount) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'not run yet';
@@ -9270,10 +9316,14 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   const syncedNamesSuffix = syncedNames ? ` (${syncedNames})` : '';
   if (running) {
     setHwDot(dotEl, 'status-dot dot-yellow');
-    textEl.textContent = `running - point ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`;
+    textEl.textContent = pointIndex
+      ? `running - ${view.unit} ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`
+      : 'starting the alignment on OnStep…';
   } else if (alignState === 'Ok') {
     setHwDot(dotEl, 'status-dot dot-green');
-    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
+    textEl.textContent = view.unit === 'star'
+      ? `completed - OnStep took ${pointSynced}/${pointCount} star(s)${syncedNamesSuffix}. Save to OnStep keeps the model.`
+      : `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
   } else if (alignState === 'Alert') {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = pointSynced > 0
@@ -9861,7 +9911,7 @@ async function refreshMbDrift() {
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
-      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names, data.onstep_align);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
@@ -10578,6 +10628,8 @@ async function triggerAbortMount() {
 const MULTIALIGN_START_SETTLE_MS = 4500;
 
 async function triggerMultiAlignStart() {
+  const ask = onStepAlignView(_onStepAlign, false, parseInt(document.getElementById('mb-align-count-input').value, 10)).confirm;
+  if (ask && !window.confirm(ask)) return;
   multiAlignActionInFlight = true;
   setMbActionStatus('⏳ Starting Multi-Point Alignment…');
   const btn = document.getElementById('mb-multialign-start-btn');

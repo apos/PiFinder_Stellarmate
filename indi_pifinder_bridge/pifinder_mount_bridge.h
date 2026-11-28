@@ -345,7 +345,24 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         IText AlignProgressT[2];
         enum { ALIGN_CURRENT_NAME, ALIGN_SYNCED_NAMES };
 
-        enum class AlignState { IDLE, SLEWING, SETTLING, CONFIRMING, DONE };
+        enum class AlignState { IDLE, STARTING, SLEWING, SETTLING, CONFIRMING, DONE };
+        // With an OnStep whose controller the Bridge can read, a run is a real OnStep alignment: STARTING until the
+        // controller waits for the first star, every Sync is then one of its stars, counted only when the controller counts
+        // it, and a star that fails is replaced by a further candidate.
+        bool m_alignOnStep = false;
+        int m_alignStarsWanted = 0, m_alignStarBefore = 0;
+        unsigned m_alignReadingAtSync = 0;
+        double m_alignStartSent = 0.0;
+        static constexpr double ONSTEP_START_WINDOW_SEC = 20.0;
+        static constexpr double ONSTEP_STAR_WINDOW_SEC = 10.0;
+        static constexpr int ONSTEP_SPARE_CANDIDATES = 4;
+        void countAlignPoint();
+        void endAlignmentRun(bool complete);
+        // ALIGN_SAVE: keep the controller's model beyond a power-off. ONSTEP_ALIGNMENT: what the controller reports.
+        ISwitchVectorProperty AlignSaveSP;
+        ISwitch AlignSaveS[1];
+        INumberVectorProperty OnStepAlignNP;
+        INumber OnStepAlignN[3];
         // CONFIRMING: the Sync of this point was sent, the mount has to report it before the point counts.
         double m_alignSyncRA = 0.0, m_alignSyncDec = 0.0, m_alignSyncSent = 0.0;
         static constexpr double SYNC_TAKEN_ARCMIN = 3.0; // a tracking mount drifts well under this while it is checked
@@ -384,7 +401,7 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         // failure or a zero-candidate response - callers must not start a
         // sequence with stale/empty m_alignPoints left over from a
         // previous attempt.
-        bool fetchAlignmentCandidates();
+        bool fetchAlignmentCandidates(int count);
 
         void handleMultiPointAlignment();
         // #313: Sync the mount to a confirmed PiFinder Align, independent of

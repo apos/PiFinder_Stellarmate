@@ -932,6 +932,15 @@ bool PiFinderMountBridge::initProperties()
     IUFillNumberVector(&AlignProgressNP, AlignProgressN, 3, getDeviceName(), "ALIGN_PROGRESS",
                        "Alignment progress", "Main Control", IP_RO, 60, IPS_IDLE);
 
+    IUFillSwitch(&AlignSaveS[0], "SAVE", "Save to OnStep", ISS_OFF);
+    IUFillSwitchVector(&AlignSaveSP, AlignSaveS, 1, getDeviceName(), "ALIGN_SAVE", "OnStep alignment model", "Main Control",
+                       IP_RW, ISR_ATMOST1, 60, IPS_IDLE);
+    IUFillNumber(&OnStepAlignN[0], "MAX_STARS", "Most stars the controller takes", "%.0f", 0, 99, 0, 0);
+    IUFillNumber(&OnStepAlignN[1], "STAR", "Star it waits for", "%.0f", 0, 99, 0, 0);
+    IUFillNumber(&OnStepAlignN[2], "STARS", "Stars of the alignment", "%.0f", 0, 99, 0, 0);
+    IUFillNumberVector(&OnStepAlignNP, OnStepAlignN, 3, getDeviceName(), "ONSTEP_ALIGNMENT", "OnStep alignment", "Main Control",
+                       IP_RO, 60, IPS_IDLE);
+
     IUFillText(&AlignProgressT[ALIGN_CURRENT_NAME], "CURRENT_NAME", "Current point's star name", "");
     IUFillText(&AlignProgressT[ALIGN_SYNCED_NAMES], "SYNCED_NAMES", "Synced star names (this sequence)", "");
     IUFillTextVector(&AlignProgressTP, AlignProgressT, 2, getDeviceName(), "ALIGN_PROGRESS_NAMES",
@@ -1139,6 +1148,8 @@ bool PiFinderMountBridge::updateProperties()
         defineProperty(&ExternalHoldSeenNP);
         defineProperty(&BindingTP);
         defineProperty(&OnStepWatchTP);
+        defineProperty(&AlignSaveSP);
+        defineProperty(&OnStepAlignNP);
         defineProperty(&TargetSourceSP);
         defineProperty(&TargetSourceAgeNP);
         defineProperty(&CorrectionAgeNP);
@@ -1235,6 +1246,8 @@ bool PiFinderMountBridge::updateProperties()
         deleteProperty(ExternalHoldSeenNP.name);
         deleteProperty(BindingTP.name);
         deleteProperty(OnStepWatchTP.name);
+        deleteProperty(AlignSaveSP.name);
+        deleteProperty(OnStepAlignNP.name);
         deleteProperty(TargetSourceSP.name);
         deleteProperty(TargetSourceAgeNP.name);
         deleteProperty(CorrectionAgeNP.name);
@@ -3053,6 +3066,22 @@ void PiFinderMountBridge::handleOnStepController()
         IDSetText(&OnStepWatchTP, nullptr);
     }
 
+    {
+        int maxStars = 0, current = 0, last = 0;
+        unsigned reading = 0;
+        const bool connected = m_onstep.progress(maxStars, current, last, reading);
+        const IPState alignState = !connected ? IPS_IDLE : (current > 0 && last > 0 && current <= last) ? IPS_BUSY : IPS_OK;
+        if (OnStepAlignNP.s != alignState || OnStepAlignN[0].value != maxStars || OnStepAlignN[1].value != current ||
+            OnStepAlignN[2].value != last)
+        {
+            OnStepAlignN[0].value = maxStars;
+            OnStepAlignN[1].value = current;
+            OnStepAlignN[2].value = last;
+            OnStepAlignNP.s = alignState;
+            IDSetNumber(&OnStepAlignNP, nullptr);
+        }
+    }
+
     int star = 0, stars = 0;
     const bool aligning = m_onstep.aligning(star, stars);
     if (aligning != m_onstepAligning)
@@ -4048,7 +4077,8 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     LOGF_INFO("Multi-Point Alignment: slewing to point %zu/%zu (RA %.4fh, DEC %.4f deg).",
               index + 1, m_alignPoints.size(), ra, dec);
     m_alignState = AlignState::SLEWING;
-    AlignProgressN[ALIGN_POINT_INDEX].value = static_cast<double>(index + 1);
+    // In an OnStep alignment the number counts stars, not candidates tried.
+    AlignProgressN[ALIGN_POINT_INDEX].value = static_cast<double>(m_alignOnStep ? m_alignSyncedCount + 1 : index + 1);
     AlignProgressNP.s = IPS_BUSY;
     IDSetNumber(&AlignProgressNP, nullptr);
     const std::string &name = (index < m_alignPointNames.size()) ? m_alignPointNames[index] : std::string();
@@ -4058,10 +4088,9 @@ bool PiFinderMountBridge::gotoAlignPoint(size_t index)
     return true;
 }
 
-bool PiFinderMountBridge::fetchAlignmentCandidates()
+bool PiFinderMountBridge::fetchAlignmentCandidates(int count)
 {
     const double radius = AlignConfigN[ALIGN_RADIUS].value;
-    const int count = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
     const double minAltitude = AlignConfigN[ALIGN_MIN_ALTITUDE].value;
     // nullptr for ALIGN_DIR_ANY (index 0) - matches
     // httpGetNearbyBrightStars()'s own "no direction param sent" contract.
@@ -4106,25 +4135,68 @@ void PiFinderMountBridge::startMultiPointAlignment()
         IDSetSwitch(&MultiPointAlignSP, nullptr);
         return;
     }
-    if (!fetchAlignmentCandidates())
+    // OnStep builds a pointing model only inside an alignment of its own: there each Sync is one of its stars. Plain Syncs
+    // outside one just move the mount's position.
+    int maxStars = 0, star = 0, stars = 0;
+    unsigned reading = 0;
+    const bool onStepMount = m_client->hasOnStepAlignment();
+    m_alignOnStep = onStepMount && m_onstep.progress(maxStars, star, stars, reading) && maxStars > 0;
+    if (onStepMount && !m_alignOnStep)
+        LOG_WARN("Multi-Point Alignment: the Bridge cannot read the OnStep controller (that needs the mount connected over the "
+                 "network) - plain Syncs only, OnStep builds no model from them.");
+    const bool resume = m_alignOnStep && star > 0 && stars > 0 && star <= stars;
+    int wanted = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
+    if (resume)
+        wanted = stars;
+    else if (m_alignOnStep && wanted > maxStars)
     {
-        // fetchAlignmentCandidates() already logged why.
+        LOGF_WARN("Multi-Point Alignment: this OnStep takes at most %d stars.", maxStars);
+        wanted = maxStars;
+    }
+    const int candidates = !m_alignOnStep ? wanted : (resume ? stars - star + 1 : wanted) + ONSTEP_SPARE_CANDIDATES;
+    if (!fetchAlignmentCandidates(candidates))
+    {
         MultiPointAlignSP.s = IPS_ALERT;
         IDSetSwitch(&MultiPointAlignSP, nullptr);
         return;
     }
 
-    LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (single solve per point, "
-              "Sync only - see #191).",
-              m_alignPoints.size());
+    if (resume)
+        LOGF_INFO("Multi-Point Alignment: continuing the alignment that is running on the OnStep controller at star %d of %d.",
+                  star, stars);
+    else if (m_alignOnStep)
+        LOGF_INFO("Multi-Point Alignment: starting an OnStep alignment with %d star(s). OnStep takes the mount's present position "
+                  "as its home position and replaces its alignment model.", wanted);
+    else
+        LOGF_INFO("Multi-Point Alignment: starting a %zu-point sequence (single solve per point, "
+                  "Sync only - see #191).",
+                  m_alignPoints.size());
+    m_alignStarsWanted = wanted;
     m_alignPointIndex = 0;
-    m_alignSyncedCount = 0;
+    m_alignSyncedCount = resume ? static_cast<size_t>(star - 1) : 0;
     m_alignSyncedNamesList.clear();
-    AlignProgressN[ALIGN_POINT_COUNT].value = static_cast<double>(m_alignPoints.size());
-    AlignProgressN[ALIGN_POINT_SYNCED].value = 0;
+    AlignProgressN[ALIGN_POINT_INDEX].value = 0;
+    AlignProgressN[ALIGN_POINT_COUNT].value = m_alignOnStep ? wanted : static_cast<double>(m_alignPoints.size());
+    AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
     IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], "");
     m_client->beginOwnRun(); // its stars are no Target anybody asked for
-    if (gotoAlignPoint(m_alignPointIndex))
+    bool started;
+    if (m_alignOnStep && !resume)
+    {
+        started = m_client->startOnStepAlignment(wanted);
+        if (started)
+        {
+            m_alignStartSent = nowEpochSeconds();
+            m_alignState = AlignState::STARTING;
+            AlignProgressNP.s = IPS_BUSY;
+            IDSetNumber(&AlignProgressNP, nullptr);
+        }
+        else
+            LOG_ERROR("Multi-Point Alignment: could not start the alignment through the OnStep driver.");
+    }
+    else
+        started = gotoAlignPoint(m_alignPointIndex);
+    if (started)
     {
         MultiPointAlignSP.s = IPS_BUSY;
     }
@@ -4146,6 +4218,9 @@ void PiFinderMountBridge::stopMultiPointAlignment(const char *reason)
 
     LOGF_WARN("Multi-Point Alignment: stopped (%s) after %zu/%zu points (%zu verified/synced).", reason,
               m_alignPointIndex, m_alignPoints.size(), m_alignSyncedCount);
+    if (m_alignOnStep)
+        LOG_WARN("Multi-Point Alignment: OnStep keeps waiting for the remaining stars. Start continues it; until it is complete "
+                 "the Bridge does nothing else with the mount.");
     m_alignState = AlignState::IDLE;
     // Reuses the existing panic-button path (#179) rather than a bespoke
     // stop mechanism - matches UC4 in the concept doc exactly.
@@ -4168,6 +4243,25 @@ void PiFinderMountBridge::handleMultiPointAlignment()
         case AlignState::IDLE:
         case AlignState::DONE:
             return;
+
+        case AlignState::STARTING:
+        {
+            int maxStars = 0, star = 0, stars = 0;
+            unsigned reading = 0;
+            if (m_onstep.progress(maxStars, star, stars, reading) && star == 1 && stars == m_alignStarsWanted)
+            {
+                LOGF_INFO("Multi-Point Alignment: OnStep waits for the first of %d star(s).", stars);
+                if (!gotoAlignPoint(m_alignPointIndex))
+                    endAlignmentRun(false);
+            }
+            else if (nowEpochSeconds() - m_alignStartSent >= ONSTEP_START_WINDOW_SEC)
+            {
+                LOG_ERROR("Multi-Point Alignment: OnStep did not start the alignment - check the controller (time, date and "
+                          "location set? not parked?).");
+                endAlignmentRun(false);
+            }
+            break;
+        }
 
         case AlignState::SLEWING:
         {
@@ -4209,6 +4303,22 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 break;
             }
 
+            if (m_alignOnStep)
+            {
+                int maxStars = 0, star = 0, stars = 0;
+                unsigned reading = 0;
+                if (!m_onstep.progress(maxStars, star, stars, reading))
+                    break; // the controller is not answering right now: try again with the next solve
+                if (star <= 0 || stars <= 0 || star > stars)
+                {
+                    LOG_ERROR("Multi-Point Alignment: OnStep no longer waits for a star - the alignment was ended or finished "
+                              "elsewhere.");
+                    endAlignmentRun(false);
+                    break;
+                }
+                m_alignStarBefore = star;
+                m_alignReadingAtSync = reading;
+            }
             if (sendMountCoordsSafe(piRA, piDec, "SYNC"))
             {
                 m_alignSyncRA = piRA;
@@ -4227,6 +4337,34 @@ void PiFinderMountBridge::handleMultiPointAlignment()
         {
             // A command that was sent is not a Sync that was taken (found 2026-11-27: the Telescope Simulator ignored one,
             // the run still reported the point as synced).
+            const double waited = nowEpochSeconds() - m_alignSyncSent;
+            if (m_alignOnStep)
+            {
+                // The controller counts its stars itself - from the second star on its reported position does not even change.
+                int maxStars = 0, star = 0, stars = 0;
+                unsigned reading = 0;
+                const bool newer = m_onstep.progress(maxStars, star, stars, reading) && reading >= m_alignReadingAtSync + 2;
+                if (newer && star > m_alignStarBefore)
+                {
+                    LOGF_INFO("Multi-Point Alignment: OnStep took star %d of %d (RA %.4fh, DEC %.4f deg, fresh PiFinder solve).",
+                              m_alignStarBefore, stars, m_alignSyncRA, m_alignSyncDec);
+                    m_alignSyncedCount = static_cast<size_t>(star - 2); // countAlignPoint() adds this one
+                    countAlignPoint();
+                    advanceAlignPoint();
+                }
+                else if (newer && stars <= 0)
+                {
+                    LOG_ERROR("Multi-Point Alignment: OnStep refused the star and ended the alignment - start it again.");
+                    endAlignmentRun(false);
+                }
+                else if (waited >= ONSTEP_STAR_WINDOW_SEC)
+                {
+                    LOGF_WARN("Multi-Point Alignment: OnStep did not count star %d - not counted, trying another one.",
+                              m_alignStarBefore);
+                    advanceAlignPoint();
+                }
+                break;
+            }
             double mountRA, mountDec;
             const bool readable = m_client->getMountRADE(mountRA, mountDec);
             const double off = readable ? angularSeparationArcmin(mountRA, mountDec, m_alignSyncRA, m_alignSyncDec) : -1.0;
@@ -4235,23 +4373,10 @@ void PiFinderMountBridge::handleMultiPointAlignment()
                 LOGF_INFO("Multi-Point Alignment: point %zu/%zu verified - synced mount to RA %.4fh, "
                           "DEC %.4f deg (fresh PiFinder solve), the mount reports it.",
                           m_alignPointIndex + 1, m_alignPoints.size(), m_alignSyncRA, m_alignSyncDec);
-                ++m_alignSyncedCount;
-                AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
-                IDSetNumber(&AlignProgressNP, nullptr);
-                const std::string &syncedName = (m_alignPointIndex < m_alignPointNames.size())
-                                                     ? m_alignPointNames[m_alignPointIndex]
-                                                     : std::string();
-                if (!syncedName.empty())
-                {
-                    if (!m_alignSyncedNamesList.empty())
-                        m_alignSyncedNamesList += ", ";
-                    m_alignSyncedNamesList += syncedName;
-                    IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], m_alignSyncedNamesList.c_str());
-                    IDSetText(&AlignProgressTP, nullptr);
-                }
+                countAlignPoint();
                 advanceAlignPoint();
             }
-            else if (nowEpochSeconds() - m_alignSyncSent >= SYNC_TAKEN_WINDOW_SEC)
+            else if (waited >= SYNC_TAKEN_WINDOW_SEC)
             {
                 LOGF_WARN("Multi-Point Alignment: the mount did not take the Sync of point %zu/%zu (%s) - not counted.",
                           m_alignPointIndex + 1, m_alignPoints.size(),
@@ -4264,38 +4389,59 @@ void PiFinderMountBridge::handleMultiPointAlignment()
     }
 }
 
+void PiFinderMountBridge::countAlignPoint()
+{
+    ++m_alignSyncedCount;
+    AlignProgressN[ALIGN_POINT_SYNCED].value = static_cast<double>(m_alignSyncedCount);
+    IDSetNumber(&AlignProgressNP, nullptr);
+    const std::string &name = (m_alignPointIndex < m_alignPointNames.size()) ? m_alignPointNames[m_alignPointIndex] : std::string();
+    if (!name.empty())
+    {
+        if (!m_alignSyncedNamesList.empty())
+            m_alignSyncedNamesList += ", ";
+        m_alignSyncedNamesList += name;
+        IUSaveText(&AlignProgressT[ALIGN_SYNCED_NAMES], m_alignSyncedNamesList.c_str());
+        IDSetText(&AlignProgressTP, nullptr);
+    }
+}
+
+void PiFinderMountBridge::endAlignmentRun(bool complete)
+{
+    // Found via #217's GUI-facing follow-up: a run where every single point got skipped (no fresh PiFinder solve ever
+    // arrived) still reported IPS_OK - 0 verified points is a failure, and so is an OnStep alignment left unfinished.
+    const IPState result = complete && m_alignSyncedCount > 0 ? IPS_OK : IPS_ALERT;
+    m_alignState = AlignState::DONE;
+    m_client->endOwnRun();
+    keepOffAfterAlignment();
+    MultiPointAlignSP.s = result;
+    IDSetSwitch(&MultiPointAlignSP, nullptr);
+    AlignProgressNP.s = result;
+    IDSetNumber(&AlignProgressNP, nullptr);
+    AlignProgressTP.s = result;
+    IDSetText(&AlignProgressTP, nullptr);
+}
+
 void PiFinderMountBridge::advanceAlignPoint()
 {
     ++m_alignPointIndex;
-    if (m_alignPointIndex >= m_alignPoints.size())
+    const bool allStars = m_alignOnStep && m_alignSyncedCount >= static_cast<size_t>(m_alignStarsWanted);
+    if (allStars || m_alignPointIndex >= m_alignPoints.size())
     {
-        LOGF_INFO("Multi-Point Alignment: sequence complete (%zu/%zu point(s) verified/synced).",
-                  m_alignSyncedCount, m_alignPoints.size());
-        m_alignState = AlignState::DONE;
-        // Found via #217's GUI-facing follow-up: a run where every single
-        // point got skipped (no fresh PiFinder solve ever arrived) still
-        // reported IPS_OK ("sequence complete") before this fix - identical
-        // to a real success at a glance. 0 verified points is a failure to
-        // report as one, not a completed alignment.
-        MultiPointAlignSP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
-        IDSetSwitch(&MultiPointAlignSP, nullptr);
-        AlignProgressNP.s = (m_alignSyncedCount > 0) ? IPS_OK : IPS_ALERT;
-        IDSetNumber(&AlignProgressNP, nullptr);
-        AlignProgressTP.s = AlignProgressNP.s;
-        IDSetText(&AlignProgressTP, nullptr);
-        m_client->endOwnRun();
-        keepOffAfterAlignment();
+        if (allStars)
+            LOGF_INFO("Multi-Point Alignment: OnStep alignment complete (%d star(s)). \"Save to OnStep\" keeps the model beyond "
+                      "a power-off.", m_alignStarsWanted);
+        else if (m_alignOnStep)
+            LOGF_WARN("Multi-Point Alignment: only %zu of %d star(s) and no candidate left. OnStep keeps waiting - Start "
+                      "continues it.", m_alignSyncedCount, m_alignStarsWanted);
+        else
+            LOGF_INFO("Multi-Point Alignment: sequence complete (%zu/%zu point(s) verified/synced).",
+                      m_alignSyncedCount, m_alignPoints.size());
+        endAlignmentRun(allStars || !m_alignOnStep);
         return;
     }
 
     if (!gotoAlignPoint(m_alignPointIndex))
-    {
-        m_alignState = AlignState::IDLE;
-        m_client->endOwnRun();
-        keepOffAfterAlignment();
-        MultiPointAlignSP.s = IPS_ALERT;
-        IDSetSwitch(&MultiPointAlignSP, nullptr);
-    }
+        endAlignmentRun(false);
 }
 
 bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
@@ -4617,6 +4763,30 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
 
             IUResetSwitch(&MultiPointAlignSP);
             IDSetSwitch(&MultiPointAlignSP, nullptr);
+            return true;
+        }
+
+        if (strcmp(name, AlignSaveSP.name) == 0)
+        {
+            IUResetSwitch(&AlignSaveSP);
+            int maxStars = 0, star = 0, stars = 0;
+            unsigned reading = 0;
+            const bool connected = m_onstep.progress(maxStars, star, stars, reading);
+            const bool running = (m_alignState != AlignState::IDLE && m_alignState != AlignState::DONE) ||
+                                 (star > 0 && stars > 0 && star <= stars);
+            if (connected && !running && m_client->saveOnStepAlignment())
+            {
+                LOG_INFO("Save to OnStep: sent (the controller does not confirm it).");
+                AlignSaveSP.s = IPS_OK;
+            }
+            else
+            {
+                LOGF_WARN("Save to OnStep refused: %s.", !connected ? "the Bridge cannot read an OnStep controller"
+                                                         : running  ? "an alignment is still running"
+                                                                    : "the OnStep driver does not offer it");
+                AlignSaveSP.s = IPS_ALERT;
+            }
+            IDSetSwitch(&AlignSaveSP, nullptr);
             return true;
         }
 

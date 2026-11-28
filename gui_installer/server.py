@@ -7542,6 +7542,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_align_save":
+            _mb_log("saving the alignment model on OnStep...")
+            try:
+                indi_client.trigger_onstep_align_save()
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  sent - see the Mount Bridge's log (OnStep does not confirm it).")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_multialign_stop":
             # #217: verified live against Telescope Simulator that this
             # correctly aborts an in-progress sequence at the INDI level

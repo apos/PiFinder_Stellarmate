@@ -184,6 +184,16 @@ bool OnStepWatcher::aligning(int &star, int &stars) const
     return m_star > 0 && m_stars > 0 && m_star <= m_stars;
 }
 
+bool OnStepWatcher::progress(int &maxStars, int &star, int &stars, unsigned &reading) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    maxStars = m_maxStars;
+    star = m_star;
+    stars = m_stars;
+    reading = m_readings;
+    return m_port != 0;
+}
+
 int OnStepWatcher::port() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -234,7 +244,7 @@ bool OnStepWatcher::ask(int fd, const char *command, std::string &reply) const
     return false;
 }
 
-bool OnStepWatcher::read(int fd, OnStepSample &s, int &star, int &stars) const
+bool OnStepWatcher::read(int fd, OnStepSample &s, int &maxStars, int &star, int &stars) const
 {
     std::string status, targetRA, targetDec, ra, dec, align;
     // The status first: a GoTo that starts between two answers then shows its new target with the next sample at the latest.
@@ -251,8 +261,11 @@ bool OnStepWatcher::read(int fd, OnStepSample &s, int &star, int &stars) const
         !parseDegrees(dec, s.dec))
         return false;
     // :A?# is "mno": most stars possible, the current one, the last one; 0 0 when none is running.
-    star = align.size() == 3 ? align[1] - '0' : 0;
-    stars = align.size() == 3 ? align[2] - '0' : 0;
+    if (align.size() != 3)
+        return false;
+    maxStars = align[0] - '0';
+    star = align[1] - '0';
+    stars = align[2] - '0';
     return true;
 }
 
@@ -268,11 +281,11 @@ void OnStepWatcher::run(std::string host, std::vector<int> ports)
                 continue;
             OnStepGotoDetector detector;
             OnStepSample s;
-            int star = 0, stars = 0, failures = 0;
+            int maxStars = 0, star = 0, stars = 0, failures = 0;
             // A port somebody else holds accepts the connection but never answers: the first reading decides.
             while (!m_stop && failures < 3)
             {
-                if (!read(fd, s, star, stars))
+                if (!read(fd, s, maxStars, star, stars))
                 {
                     if (!answered)
                         break;
@@ -287,8 +300,10 @@ void OnStepWatcher::run(std::string host, std::vector<int> ports)
                     std::lock_guard<std::mutex> lock(m_mutex);
                     m_port = ports[i];
                     m_unreachable = false;
+                    m_maxStars = maxStars;
                     m_star = star;
                     m_stars = stars;
+                    ++m_readings;
                     if (isGoto)
                     {
                         m_haveGoto = true;
