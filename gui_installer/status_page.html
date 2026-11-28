@@ -2225,10 +2225,23 @@
     padding: 0.5rem 1.5rem; font-size: 0.9rem; align-items: center; gap: 0.8rem; flex-wrap: wrap;
   }
   .cc-clock-msg { flex: 1 1 320px; min-width: 0; }
-  .cc-clock-msg small { display: block; color: #c9a45e; font-size: 0.8rem; margin-top: 2px; }
-  .cc-clock-cmp { display: grid; grid-template-columns: auto auto; gap: 2px 14px; justify-content: start; margin-top: 6px;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
-  .cc-clock-cmp span:nth-child(odd) { color: #c9a45e; }
+  .cc-clock-msg ul { margin: 4px 0 0; padding-left: 1.2rem; }
+  .cc-clock-tablewrap { overflow-x: auto; margin-top: 6px; }
+  #cc-clock-table { border-collapse: collapse; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+  #cc-clock-table th, #cc-clock-table td { text-align: left; padding: 1px 14px 1px 0; white-space: nowrap; font-weight: 400; vertical-align: top; }
+  #cc-clock-table th { color: #c9a45e; }
+  #cc-clock-table td.wrong { color: #ff7b6b; font-weight: 700; }
+  #cc-clock-table small { display: block; color: #c9a45e; font-size: 0.75rem; }
+  #cc-clock-steps { margin-top: 6px; font-size: 0.85rem; }
+  #cc-clock-steps .failed { color: #ff7b6b; }
+  .cc-clock-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  @media (max-width: 767px) {   /* phone: one block per source, nothing hidden behind a sideways scroll */
+    #cc-clock-table, #cc-clock-table tbody, #cc-clock-table tr, #cc-clock-table td { display: block; }
+    #cc-clock-table tr:first-child { display: none; }
+    #cc-clock-table tr { margin-top: 6px; }
+    #cc-clock-table td { white-space: normal; padding: 0; }
+    #cc-clock-table td[data-label]::before { content: attr(data-label) ": "; color: #c9a45e; font-weight: 400; }
+  }
   @media (max-width: 767px) { #cc-clock-mount-banner { padding: 0.5rem 0.8rem; } }
   /* Same flush-strip pattern as the other header banners - replaces a
      native confirm()/alert() pair for the "Restart Control Center" action
@@ -2490,12 +2503,16 @@
   <button class="ql-small-btn" onclick="dismissPifinderServiceNotice()">Dismiss</button>
 </div>
 <div id="cc-clock-mount-banner" style="display:none;">
-  <div class="cc-clock-msg"><span id="cc-clock-mount-text"></span>
-    <div class="cc-clock-cmp"><span>Pi clock</span><span id="cc-clock-mount-pi"></span><span>Mount clock</span><span id="cc-clock-mount-mount"></span></div>
-    <small id="cc-clock-mount-error" style="display:none;"></small>
+  <div class="cc-clock-msg"><b id="cc-clock-head"></b>
+    <ul id="cc-clock-problems"></ul>
+    <div class="cc-clock-tablewrap"><table id="cc-clock-table"></table></div>
+    <div id="cc-clock-steps" aria-live="polite"></div>
   </div>
-  <button class="ql-small-btn" id="cc-clock-mount-fix" onclick="refreshMountTime()">Set mount time now</button>
-  <button class="ql-small-btn" onclick="dismissClockBanner('mount_clock')">Dismiss</button>
+  <div class="cc-clock-buttons">
+    <button class="ql-small-btn" id="cc-clock-fix" onclick="setMountFromKStars()">Set mount from KStars</button>
+    <button class="ql-small-btn" id="cc-clock-recheck" onclick="recheckClocks()" style="display:none;">Recheck</button>
+    <button class="ql-small-btn" onclick="dismissClockNotice()">Dismiss</button>
+  </div>
 </div>
 <div id="cc-cold-profile-notice-banner" style="display:none;">
   <span id="cc-cold-profile-notice-text"></span>
@@ -6759,39 +6776,53 @@ function clockFormatParts(ms, tz) {
     day: opts({ day: 'numeric', month: 'short' }).format(d),
   };
 }
-function clockSkewText(sec) {
-  const a = Math.abs(sec), min = Math.round(a / 60);
-  if (min < 60) return min + ' min';
-  const h = Math.floor(min / 60), m = min % 60;
-  if (h < 48) return h + ' h' + (m ? ' ' + m + ' min' : '');
-  return Math.round(h / 24) + ' days';
-}
 // What the line under the Sky says; null while there is no reading yet.
 function clockSkyTimeModel(st, nowMs, offsetMs) {
   if (!st || !st.pi_time_utc) return null;
   const p = clockFormatParts(nowMs + offsetMs, st.timezone);
   let tail = null, warn = false;
-  if (st.mount_clock_warn) { tail = 'mount clock differs'; warn = true; }
+  if (st.mount_warn) { tail = 'mount time or location differs'; warn = true; }
   else if (st.pi_clock_warn) tail = 'Pi clock not NTP-synced';
   return { prefix: 'Sky for', time: p.time, day: p.day, tail, warn };
 }
-function clockBannerModel(st, dismissed) {
-  const out = { mount: false, text: '', piClock: '', mountClock: '' };
-  if (!st) return out;
-  out.mount = !!st.mount_clock_warn && !dismissed.mount_clock;
-  if (out.mount) {
-    const behind = st.mount_skew_sec > 0;
-    out.text = "The mount's clock is " + clockSkewText(st.mount_skew_sec) + (behind ? ' behind' : ' ahead of') +
-      " the Pi's clock. The mount may point wrongly, because it works out its sky position from its clock.";
-    const piMs = Date.parse(st.pi_time_utc);
-    out.piClock = clockFormatParts(piMs, st.timezone).clock;
-    out.mountClock = clockFormatParts(Date.parse(st.mount_time_utc), st.timezone).clock;
-  }
+function clockOffsetText(h) {
+  if (h === null || h === undefined) return '-';
+  const a = Math.round(Math.abs(h) * 60);
+  return 'UTC' + (h < 0 ? '-' : '+') + Math.floor(a / 60) + ':' + String(a % 60).padStart(2, '0');
+}
+function clockPlaceText(p) {
+  if (!p) return '-';
+  return Math.abs(p[0]).toFixed(3) + '\u00b0 ' + (p[0] < 0 ? 'S' : 'N') + ', ' + Math.abs(p[1]).toFixed(3) + '\u00b0 ' + (p[1] < 0 ? 'W' : 'E');
+}
+// The notice about time and location. ui = {open, dismissed}: once open it stays until Dismiss, also after everything agrees.
+function clockNoticeUpdate(ui, st) {
+  if (!st) return ui;
+  if (st.mismatch && !ui.dismissed) ui.open = true;
+  if (!st.mismatch && !(st.current || []).length) ui.dismissed = false;   // a later, new difference is a new notice
+  return ui;
+}
+function clockNoticeDismiss(ui, st) {
+  ui.open = false;
+  ui.dismissed = !!(st && (st.current || []).length);
+  return ui;
+}
+function clockNoticeModel(st, ui) {
+  const out = { show: !!ui.open, head: '', problems: [], rows: [], canFix: false };
+  if (!out.show || !st) return out;
+  out.problems = st.current || [];
+  out.head = out.problems.length ? 'Time or location do not match. The mount may point wrongly.' : 'Time and location agree now.';
+  out.canFix = !!st.can_set_mount;
+  out.rows = (st.rows || []).map(r => ({
+    source: r.source, note: r.note || '', wrong: r.wrong || [],
+    time: r.time_utc ? clockFormatParts(Date.parse(r.time_utc), st.timezone).day + ', ' +
+      clockFormatParts(Date.parse(r.time_utc), st.timezone).clock : '-',
+    offset: clockOffsetText(r.offset), place: clockPlaceText(r.location),
+  }));
   return out;
 }
 // ---- Clock warnings (end) ----
 let _clockStatus = null, _clockOffsetMs = 0;
-const _clockDismissed = {};
+const _clockUi = { open: false, dismissed: false };
 function renderSkyTime() {
   const el = document.getElementById('sky-time');
   if (!el) return;
@@ -6808,19 +6839,38 @@ function renderSkyTime() {
 function applyClockStatus(st) {
   _clockStatus = st;
   if (st && st.pi_time_utc) _clockOffsetMs = Date.parse(st.pi_time_utc) - Date.now();
-  // a streak that ended comes back as a new notice
-  if (st && !st.mount_clock_warn) delete _clockDismissed.mount_clock;
-  const m = clockBannerModel(st, _clockDismissed);
-  const moB = document.getElementById('cc-clock-mount-banner');
-  if (moB) {
-    moB.style.display = m.mount ? 'flex' : 'none';
-    if (m.mount) {
-      document.getElementById('cc-clock-mount-text').textContent = m.text;
-      document.getElementById('cc-clock-mount-pi').textContent = m.piClock;
-      document.getElementById('cc-clock-mount-mount').textContent = m.mountClock;
-    }
-  }
+  clockNoticeUpdate(_clockUi, st);
+  renderClockNotice();
   renderSkyTime();
+}
+function renderClockNotice() {
+  const box = document.getElementById('cc-clock-mount-banner');
+  if (!box) return;
+  const m = clockNoticeModel(_clockStatus, _clockUi);
+  box.style.display = m.show ? 'flex' : 'none';
+  if (!m.show) return;
+  document.getElementById('cc-clock-head').textContent = m.head;
+  const list = document.getElementById('cc-clock-problems');
+  list.textContent = '';
+  m.problems.forEach(text => { const li = document.createElement('li'); li.textContent = text; list.appendChild(li); });
+  const table = document.getElementById('cc-clock-table');
+  table.textContent = '';
+  const line = (cells, tag) => {
+    const tr = document.createElement('tr');
+    cells.forEach(c => { const el = document.createElement(tag); el.textContent = c.text; if (c.wrong) el.className = 'wrong';
+      if (c.label) el.setAttribute('data-label', c.label);
+      if (c.note) { const small = document.createElement('small'); small.textContent = c.note; el.appendChild(small); } tr.appendChild(el); });
+    table.appendChild(tr);
+  };
+  line(['Source', 'Time', 'UTC offset', 'Location'].map(text => ({ text })), 'th');
+  m.rows.forEach(r => line([
+    { text: r.source }, { text: r.time, wrong: r.wrong.includes('time'), note: r.note, label: 'Time' },
+    { text: r.offset, wrong: r.wrong.includes('offset'), label: 'UTC offset' },
+    { text: r.place, wrong: r.wrong.includes('location'), label: 'Location' },
+  ], 'td'));
+  const fix = document.getElementById('cc-clock-fix');
+  if (!fix.dataset.busy) fix.disabled = !m.canFix;
+  fix.title = m.canFix ? 'Writes KStars\u2019 location and the time to the mount' : 'Needs a connected mount and the KStars on this Pi, running on real time';
 }
 async function pollClockStatus() {
   try {
@@ -6830,28 +6880,57 @@ async function pollClockStatus() {
     // transient: keep what is shown, the next tick retries
   }
 }
-function dismissClockBanner(kind) {
-  _clockDismissed[kind] = true;
-  applyClockStatus(_clockStatus);
+function clockSteps(lines) {
+  const box = document.getElementById('cc-clock-steps');
+  if (!box) return;
+  box.textContent = '';
+  lines.forEach(l => { const div = document.createElement('div'); div.textContent = l.text; if (l.failed) div.className = 'failed'; box.appendChild(div); });
 }
-async function refreshMountTime() {
-  const btn = document.getElementById('cc-clock-mount-fix');
-  const err = document.getElementById('cc-clock-mount-error');
-  if (btn) btn.disabled = true;
-  if (err) err.style.display = 'none';
+function dismissClockNotice() {
+  clockNoticeDismiss(_clockUi, _clockStatus);
+  clockSteps([]);
+  document.getElementById('cc-clock-recheck').style.display = 'none';
+  renderClockNotice();
+}
+async function setMountFromKStars() {
+  const btn = document.getElementById('cc-clock-fix');
+  btn.disabled = true; btn.dataset.busy = '1';
+  const started = Date.now();
+  const waiting = () => clockSteps([{ text: 'Setting the mount from KStars: reading KStars, sending location and time, waiting for the mount\u2019s confirmation \u2026 ' +
+    Math.round((Date.now() - started) / 1000) + ' s' }]);
+  waiting();
+  const timer = setInterval(waiting, 1000);
+  let lines;
   try {
-    const resp = await fetch('/api/mount_time_refresh', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.success && err) {
-      err.textContent = 'Could not set the mount time: ' + (data.error || 'unknown error') +
-        ' (it needs the KStars that runs on this Pi).';
-      err.style.display = '';
-    }
+    const data = await (await fetch('/api/clock_fix', { method: 'POST' })).json();
+    lines = (data.steps || []).map(s => ({ text: (s.ok ? '\u2713 ' : '\u2717 ') + s.text, failed: !s.ok }));
+    lines.push(data.success ? { text: 'Done: the mount confirms location and time.' }
+      : { text: 'Not finished: the mount was not set completely, see above.', failed: true });
   } catch (e) {
-    if (err) { err.textContent = 'Could not set the mount time: no answer from the Control Center.'; err.style.display = ''; }
+    lines = [{ text: 'Not finished: no answer from the Control Center.', failed: true }];
   }
-  if (btn) btn.disabled = false;
-  setTimeout(pollClockStatus, 3000);
+  clearInterval(timer);
+  clockSteps(lines);
+  delete btn.dataset.busy; btn.disabled = false;
+  document.getElementById('cc-clock-recheck').style.display = '';
+  pollClockStatus();
+}
+async function recheckClocks() {
+  const btn = document.getElementById('cc-clock-recheck');
+  btn.disabled = true;
+  const old = Array.from(document.getElementById('cc-clock-steps').children).map(d => ({ text: d.textContent, failed: d.className === 'failed' }))
+    .filter(l => !l.text.startsWith('Recheck'));
+  clockSteps(old.concat({ text: 'Recheck: reading all sources \u2026' }));
+  try {
+    const st = await (await fetch('/api/clock_status?recheck=1', { cache: 'no-store' })).json();
+    applyClockStatus(st);
+    const n = (st.current || []).length;
+    clockSteps(old.concat({ text: 'Recheck ' + clockFormatParts(Date.parse(st.pi_time_utc), st.timezone).clock + ': ' +
+      (n ? n + (n === 1 ? ' difference left.' : ' differences left.') : 'everything agrees.'), failed: n > 0 }));
+  } catch (e) {
+    clockSteps(old.concat({ text: 'Recheck: no answer from the Control Center.', failed: true }));
+  }
+  btn.disabled = false;
 }
 pollClockStatus();
 setInterval(pollClockStatus, 30000);

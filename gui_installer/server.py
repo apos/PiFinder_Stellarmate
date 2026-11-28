@@ -1247,53 +1247,6 @@ def _ekos_qdbus(*args):
     )
 
 
-def _kstars_refresh_mount_time_via_dbus() -> tuple:
-    """Forces KStars to push a fresh TIME_UTC snoop to whichever mount is
-    currently linked - using KStars' own already-correct (NTP-synced via
-    the OS, confirmed live 2026-09-18: system time, KStars' own displayed
-    clock, and a connected phone all agreed) system time. No EkosLive/phone
-    connection needed for this.
-
-    WHY this is needed at all (basic-memory pifinder-stellarmate/00166):
-    a mount driver's TIME_UTC is only ever snooped once, at connect time -
-    never re-pushed afterward - so it silently goes stale in any
-    sufficiently long session, even though KStars' own clock stays correct
-    the whole time.
-
-    WHY this specific D-Bus call (live-confirmed 2026-09-18, not the more
-    obvious-looking one): KStars' own "Set Time to Now" action
-    (time_to_now) is DISABLED via D-Bus whenever the realtime clock is
-    already running - the normal/default state - so triggering it there is
-    a silent no-op. Toggling "Run clock in realtime" (clock_realtime) off
-    and back on, however, does push a fresh TIME_UTC to connected devices
-    as an observed side effect. Two trigger() calls always return a
-    checkable QAction to its starting state regardless of what that was,
-    so this is a momentary pulse, not a lasting mode change - reads nothing
-    first, doesn't need to.
-
-    Returns (ok: bool, error: str | None)."""
-    env = dict(os.environ)
-    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
-
-    def _qdbus(*args):
-        return subprocess.run(
-            ["qdbus6", "org.kde.kstars", "/kstars/MainWindow_1/actions/clock_realtime", *args],
-            env=env, capture_output=True, text=True, timeout=5,
-        )
-
-    try:
-        r1 = _qdbus("org.qtproject.Qt.QAction.trigger")
-        if r1.returncode != 0:
-            return False, f"first clock_realtime trigger failed: {r1.stderr.strip()}"
-        time.sleep(1.0)
-        r2 = _qdbus("org.qtproject.Qt.QAction.trigger")
-        if r2.returncode != 0:
-            return False, f"second clock_realtime trigger failed: {r2.stderr.strip()}"
-    except subprocess.TimeoutExpired:
-        return False, "qdbus6 call timed out"
-    return True, None
-
-
 def _ekos_guide_status():
     """Ekos::GuideState as an int, or None if the Guide module isn't up /
     Ekos isn't running / the call fails - callers must treat None as "don't
@@ -3049,20 +3002,6 @@ _mb_readiness_follow_mount_gave_up_target = None
 # occurrence, and how long it lasted), just without the per-tick repeats.
 _mb_readiness_query_was_slow = False
 
-# Direct feedback (2026-09-18, basic-memory pifinder-stellarmate/00166/00169):
-# a mount driver's TIME_UTC is only ever snooped from KStars once, at
-# connect time - never re-pushed afterward - so it's a frozen snapshot that
-# falls further and further behind the real (always-correct, NTP-synced)
-# system time as a session goes on. NOT "drift" in the Mount Bridge's usual
-# sense (a value that keeps changing and needs re-measuring) - the value
-# itself never moves at all; it's reality that moves on without it. 10
-# minutes: frequent enough that a multi-hour observing/testing session
-# never falls far behind, well above the couple of seconds a genuine
-# refresh takes, so this doesn't fire on every tick once it's stale (the
-# check IS its own rate limit - right after a successful refresh, the age
-# is ~0 again, so it naturally won't re-fire for another full interval).
-_MOUNT_TIME_STALE_THRESHOLD_SEC = 600.0
-
 # Debounce for the profile-bookkeeping check below - found live 2026-09-12:
 # the driver can be fully running/connected/linked while the Web Manager's
 # own PERSISTED profile record no longer lists "PiFinder Mount Bridge" as a
@@ -3597,39 +3536,178 @@ def _mount_bridge_readiness_self_heal(status: dict) -> None:
         _mb_readiness_follow_mount_gave_up_target = None
 
 
-def _refresh_stale_mount_time_if_needed(status: dict) -> None:
-    """Checks the currently-linked mount's own TIME_UTC against real system
-    time and, if it's fallen more than _MOUNT_TIME_STALE_THRESHOLD_SEC
-    behind, pulses KStars' realtime-clock toggle to force a fresh push - see
-    _kstars_refresh_mount_time_via_dbus()'s own docstring for why that
-    specific D-Bus call, not the more obvious-looking "Set Time to Now".
-    Read-only unless genuinely stale; a missing mount/property/unparseable
-    timestamp is treated as "nothing to check yet", not an error - this
-    only matters once something is actually linked."""
-    active_mount = status.get("active_mount") if status else None
-    if not active_mount:
-        return
+_CLOCK_ONSTEP_CACHE_SEC = 300.0   # a controller's network port is not for constant knocking
+_clock_onstep_cache = (None, 0.0, None)  # (address, read at (monotonic), (clock minus Pi in seconds, location) or None)
+_clock_lock = threading.Lock()
+
+
+def _clock_onstep_address(props: dict):
+    """(host, driver port) of an OnStep the mount driver reaches over the network, else None."""
+    if "lx200_OnStep" not in str(props.get("DRIVER_INFO", {}).get("elements", {}).get("DRIVER_EXEC", "")):
+        return None
+    if props.get("CONNECTION_MODE", {}).get("elements", {}).get("CONNECTION_TCP") != "On":
+        return None
+    address = props.get("DEVICE_ADDRESS", {}).get("elements", {})
     try:
-        props = indi_client.get_properties(device=active_mount, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
-        utc_str = props.get(active_mount, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
-        if not utc_str:
-            return
-        mount_time = datetime.datetime.fromisoformat(utc_str)
-        if mount_time.tzinfo is None:
-            mount_time = mount_time.replace(tzinfo=datetime.timezone.utc)
-        age_sec = (datetime.datetime.now(datetime.timezone.utc) - mount_time).total_seconds()
-    except (indi_client.INDIClientError, ValueError, KeyError):
-        return
-    if age_sec <= _MOUNT_TIME_STALE_THRESHOLD_SEC:
-        return
-    ok, err = _kstars_refresh_mount_time_via_dbus()
-    if ok:
-        _mb_log(
-            f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old - "
-            "pulsed KStars' realtime clock to push a fresh one (next tick confirms)."
-        )
-    else:
-        _mb_log(f"Mount time refresh: '{active_mount}'s TIME_UTC was {age_sec:.0f}s old, but the refresh attempt failed: {err}")
+        return (address["ADDRESS"], int(address["PORT"])) if address.get("ADDRESS") else None
+    except (KeyError, ValueError):
+        return None
+
+
+def _clock_onstep_read(address, fresh: bool):
+    """The controller's own clock and site, cached. The cache keeps the difference to the Pi's clock, not the time itself."""
+    global _clock_onstep_cache
+    key, read_at, value = _clock_onstep_cache
+    if fresh or key != address or time.monotonic() - read_at > _CLOCK_ONSTEP_CACHE_SEC:
+        reading = clock_status.read_onstep(*address)
+        value = None
+        if reading:
+            value = ((reading["utc"] - datetime.datetime.now(datetime.timezone.utc)).total_seconds(), reading["location"])
+        _clock_onstep_cache = (address, time.monotonic(), value)
+    if value is None:
+        return None
+    return {"utc": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=value[0]), "location": value[1]}
+
+
+_CLOCK_PROPERTIES = {"DRIVER_INFO", "TIME_UTC", "GEOGRAPHIC_COORD", "EQUATORIAL_EOD_COORD"}
+
+
+def _clock_mount_properties():
+    """(mount name, its INDI properties) or (None, {}). A tracking mount never falls silent, so the read ends as soon as the
+    needed properties are there; only an OnStep is read completely (its address and alignment state)."""
+    try:
+        name = indi_client.active_mount_name()
+        if not name:
+            return None, {}
+        def read(**kwargs):
+            return indi_client.get_properties(device=name, timeout=indi_client.TIMEOUT_BACKGROUND_POLL, **kwargs).get(name, {})
+        props = read(stop_after=_CLOCK_PROPERTIES)
+        if "lx200_OnStep" in str(props.get("DRIVER_INFO", {}).get("elements", {}).get("DRIVER_EXEC", "")):
+            props = read()
+        return name, props
+    except indi_client.INDIClientError:
+        return None, {}
+
+
+def _clock_mount_inputs(fresh: bool):
+    name, props = _clock_mount_properties()
+    if not name or not props:
+        return None
+    clock = props.get("TIME_UTC", {}).get("elements", {})
+    place = props.get("GEOGRAPHIC_COORD", {}).get("elements", {})
+    value = clock_status.parse_utc(clock.get("UTC"))
+    clock_status.observations.observe(name, value, datetime.datetime.now(datetime.timezone.utc), time.monotonic())
+    address = _clock_onstep_address(props)
+    return {"device": name, "time_utc": value, "offset": clock_status.number(clock.get("OFFSET")),
+            "location": clock_status.location(place.get("LAT"), place.get("LONG")),
+            "seen_utc": clock_status.observations.seen_at(name, value),
+            "real": _clock_onstep_read(address, fresh) if address else None}
+
+
+def _clock_pifinder_inputs():
+    try:
+        settings = indi_client.get_properties(device="PiFinder Mount Bridge", timeout=indi_client.TIMEOUT_BACKGROUND_POLL,
+                                              stop_after={"BRIDGE_SETTINGS"})
+        host = settings.get("PiFinder Mount Bridge", {}).get("BRIDGE_SETTINGS", {}).get("elements", {}).get(
+            "PIFINDER_HTTP_HOST") or "127.0.0.1"
+    except indi_client.INDIClientError:
+        host = "127.0.0.1"
+    if host == "localhost":
+        host = "127.0.0.1"
+    status = _pifinder_status_snapshot(ports=("8080", "80"), host=host)
+    if not status:
+        return None
+    place = status.get("location") or {}
+    return {"location": clock_status.location(place.get("lat"), place.get("lon")) if place.get("lock") else None,
+            "utc": clock_status.parse_utc((status.get("datetime") or {}).get("utc"))}
+
+
+def _clock_check(recheck: bool) -> dict:
+    inputs = {"mount": _clock_mount_inputs(recheck), "pifinder": _clock_pifinder_inputs(), "kstars": clock_status.read_kstars(),
+              "ntp": clock_status.ntp_synchronized(), "pi_offset": clock_status.pi_offset_hours()}
+    inputs["now"] = datetime.datetime.now(datetime.timezone.utc)
+    with _clock_lock:  # the HTTP server is threaded; the debounce state is shared
+        result = clock_status.evaluate(inputs, time.monotonic(), immediately=recheck)
+    result["timezone"] = clock_status.timezone_name()
+    return result
+
+
+def _clock_fix_mount() -> dict:
+    """KStars' location and time to the mount, step by step, each step verified. Nothing is sent when a precondition fails."""
+    steps = []
+
+    def step(ok, text):
+        steps.append({"ok": bool(ok), "text": text})
+        return ok
+
+    def done():
+        return {"success": bool(steps) and all(s["ok"] for s in steps), "steps": steps}
+
+    kstars = clock_status.read_kstars()
+    if not step(kstars and kstars.get("location"), "KStars on this Pi gives its location" if kstars and kstars.get("location")
+                else "KStars on this Pi does not answer - nothing was sent"):
+        return done()
+    if kstars.get("realtime") is False:
+        step(False, "KStars runs a simulated time. Switch it to real time first - nothing was sent")
+        return done()
+    name, props = _clock_mount_properties()
+    if not step(name and props, "mount: %s" % name if name and props else "no mount answers - nothing was sent"):
+        return done()
+    if props.get("EQUATORIAL_EOD_COORD", {}).get("state") == "Busy":
+        step(False, "the mount is slewing - nothing was sent")
+        return done()
+    align = props.get("Align Process", {}).get("elements", {})
+    if str(align.get("6", "0")).isdigit() and str(align.get("7", "0")).isdigit() and 0 < int(align.get("6", 0)) <= int(align.get("7", 0)):
+        step(False, "an alignment is running on the controller - nothing was sent")
+        return done()
+    latitude, longitude = kstars["location"]
+    elevation = kstars.get("elevation") or clock_status.number(
+        props.get("GEOGRAPHIC_COORD", {}).get("elements", {}).get("ELEV")) or 0.0
+    offset = kstars["offset"] if kstars.get("offset") is not None else clock_status.pi_offset_hours()
+    sent = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    try:
+        indi_client.set_number(name, "GEOGRAPHIC_COORD", {"LAT": latitude, "LONG": longitude % 360.0, "ELEV": elevation})
+        indi_client.set_text(name, "TIME_UTC", {"UTC": sent.strftime("%Y-%m-%dT%H:%M:%S"), "OFFSET": "%.2f" % offset})
+    except indi_client.INDIClientError as e:
+        step(False, "could not send to the mount: %s" % e)
+        return done()
+    step(True, "sent: %.4f, %.4f and %s UTC (offset %+.2f h)" % (latitude, longitude, sent.strftime("%H:%M:%S"), offset))
+    time.sleep(4)
+    name, props = _clock_mount_properties()
+    place = props.get("GEOGRAPHIC_COORD", {})
+    got = clock_status.location(place.get("elements", {}).get("LAT"), place.get("elements", {}).get("LONG"))
+    step(got and place.get("state") != "Alert" and clock_status.distance_km(got, (latitude, longitude)) <= 1.0,
+         "the mount reports the new location" if got and place.get("state") != "Alert" and
+         clock_status.distance_km(got, (latitude, longitude)) <= 1.0 else "the mount does not report the new location")
+    clock = props.get("TIME_UTC", {})
+    value = clock_status.parse_utc(clock.get("elements", {}).get("UTC"))
+    taken = bool(value and clock.get("state") != "Alert" and abs((value - sent).total_seconds()) <= 30)
+    step(taken, "the mount driver took the time" if taken else "the mount driver did not take the time")
+    if taken:
+        clock_status.observations.set_now(name, value, datetime.datetime.now(datetime.timezone.utc), time.monotonic())
+    address = _clock_onstep_address(props)
+    if address:
+        real = _clock_onstep_read(address, True)
+        if not real:
+            step(False, "the controller's own clock could not be read back")
+        else:
+            seconds = (real["utc"] - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            step(abs(seconds) <= clock_status.REAL_CLOCK_THRESHOLD_SEC,
+                 "the controller's own clock differs by %.0f s from the Pi's" % abs(seconds))
+            if real.get("location"):
+                km = clock_status.distance_km(real["location"], (latitude, longitude))
+                step(km <= clock_status.ONSTEP_LOCATION_THRESHOLD_KM, "the controller's stored site is %.1f km from KStars'" % km)
+    return done()
+
+
+def _clock_observer(interval=20):
+    """Looks at the mount's TIME_UTC often enough to see when it is set (see clock_status.TimeObservations)."""
+    while True:
+        name, props = _clock_mount_properties()
+        if name and props:
+            value = clock_status.parse_utc(props.get("TIME_UTC", {}).get("elements", {}).get("UTC"))
+            clock_status.observations.observe(name, value, datetime.datetime.now(datetime.timezone.utc), time.monotonic())
+        time.sleep(interval)
 
 
 def _gsc_sim_restore_watchdog(interval=15):
@@ -3736,11 +3814,6 @@ def _mount_bridge_readiness_watchdog(interval=5):
             _autostart_cold_profile()
         except Exception as e:  # same reasoning - must never kill this thread
             _mb_log(f"Cold Web Manager profile auto-start raised unexpectedly: {e}")
-        if status is not None:
-            try:
-                _refresh_stale_mount_time_if_needed(status)
-            except Exception as e:  # same reasoning - must never kill this thread
-                _mb_log(f"Mount time freshness check raised unexpectedly: {e}")
         # See _sim_mismatch_ever_resolved's own comment - same <10' threshold
         # as the frontend's own liveDriftConfirmsRelated (PR #395), just
         # persisted permanently instead of only for the current page/process.
@@ -5443,21 +5516,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/clock_status":
-            # Polled every 30 s by the page: the time stamp under the Sky and the yellow clock
-            # strip. See clock_status.py for what can and cannot be seen (a KStars on another
-            # computer keeps its own clock that no INDI property exposes).
-            mount_name = None
-            mount_time = None
-            try:
-                mount_name = indi_client.active_mount_name()
-                if mount_name:
-                    props = indi_client.get_properties(device=mount_name, timeout=indi_client.TIMEOUT_BACKGROUND_POLL)
-                    mount_time = props.get(mount_name, {}).get("TIME_UTC", {}).get("elements", {}).get("UTC")
-            except indi_client.INDIClientError:
-                pass  # no INDI answer: no mount reading, the Pi's own clock is still checked
-            result = clock_status.status(mount_time)
-            result["mount_device"] = mount_name
-            self._send_json(result)
+            # Polled every 30 s by the page: the time stamp under the Sky and the time-and-location notice. See
+            # clock_status.py for what can and cannot be seen. ?recheck=1: the user asked - read everything anew, no debounce.
+            recheck = parse_qs(parsed.query).get("recheck", ["0"])[0] == "1"
+            self._send_json(_clock_check(recheck))
             return
 
         if parsed.path == "/api/gsc_sim_status":
@@ -7407,12 +7469,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True, **check})
             return
 
-        if parsed.path == "/api/mount_time_refresh":
-            # The "Set mount time now" button of the clock strip: the same KStars pulse the
-            # watchdog uses, so the mount driver gets the Pi's (NTP-synced) time pushed again.
-            ok, err = _kstars_refresh_mount_time_via_dbus()
-            _mb_log("Mount time refresh (user request): pushed." if ok else f"Mount time refresh (user request) failed: {err}")
-            self._send_json({"success": ok, "error": err}, status=200 if ok else 502)
+        if parsed.path == "/api/clock_fix":
+            # User-triggered only: write KStars' location and time to the mount and verify that it took them.
+            result = _clock_fix_mount()
+            for step in result["steps"]:
+                _mb_log("Mount time and location from KStars: %s %s" % ("ok -" if step["ok"] else "FAILED -", step["text"]))
+            self._send_json(result)
             return
 
         if parsed.path == "/api/mount_unpark":
@@ -7784,6 +7846,7 @@ def main():
                 "(clears any Injected Solve flag left stuck on from before this restart, if there was one)."
             )
     threading.Thread(target=_mount_bridge_readiness_watchdog, daemon=True).start()
+    threading.Thread(target=_clock_observer, daemon=True).start()
     threading.Thread(target=_gsc_sim_restore_watchdog, daemon=True).start()
     # #372 (simplified) - independent of the readiness watchdog above; see
     # _guiding_hold_watchdog()'s own docstring.
