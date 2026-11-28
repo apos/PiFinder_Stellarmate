@@ -5,8 +5,20 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-28
+**Not stable yet** - read [Status of 3.1.0](https://github.com/apos/PiFinder_Stellarmate/blob/v3.1.0/README.md#status-of-310-not-stable-yet) before installing.
+
 ### Added
 
+- Control Center: the "Update is running" strip at the top has a button **Show Install or Update** that scrolls there and opens
+  the terminal.
+- Mount Bridge, **park is park**: a mount that parks or goes home (any client or the hand controller) is not synced, its
+  position is not taken over, and nothing is moved until the next GoTo; no automatic Sync while it is parked or at home.
+- Mount Bridge, OnStep over USB/serial: a GoTo started on the hand controller is followed. The INDI driver does not pass on its
+  target, so the place where the slew ends is verified and refined.
+- Mount Bridge and Control Center: setting **"Mount has its own alignment"**, saved per mount. The Bridge then never syncs that
+  mount by itself; GoTos you ask for are refined as before, a difference is offered as a Sync (`MOUNT_OWN_ALIGNMENT`,
+  `MOUNT_SYNC_OFFER`). New `test_tools/park_home_controller_goto_test.py`.
 - CONTRIBUTING.md: where to ask (StellarMate and PiFinder Discord), how to report an issue and which conventions an issue must
   follow, with a bug report form. The Control Center documentation names today's mode tiles.
 - Control Center, "Install or Update": the terminal stands right of the checklist and takes no room until there is output or a
@@ -18,6 +30,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- After a reboot PiFinder could take port 80 before StellarMate's web server had started: that web page (nginx) stayed away and
+  the simulated sky solved nothing, because PiFinder is expected on port 8080. `pifinder.service` now starts after
+  `nginx.service`.
 - OnStep mount type fix (#227, `bin/build_indi_onstep_fix.sh`, optional): follows the installed INDI version instead of the pinned
   2.2.2 and reads the source list from that version; `--build-only`. Checked with 2.2.5: still needed for fork and alt-az
   controllers. New `test_tools/onstep_mount_type_check.py`.

@@ -1007,6 +1007,31 @@ class PiFinderMountBridge : public INDI::DefaultDevice
         ITextVectorProperty OnStepWatchTP;
         IText OnStepWatchT[1];
         void handleOnStepController();
+        // A GoTo of the hand controller on a line the Bridge cannot read (USB): the INDI OnStep driver reports the slew, not its
+        // target - where it ends is the target (docs/concepts/onstep_driver_controller_goto.md, way A).
+        static constexpr double CONTROLLER_SLEW_QUIET_SEC = 2.0;
+        void followUnreadControllerSlew();
+
+        // "Park is park" (owner, 2026-11-28): a mount that parks or goes home - from any client or the hand controller - is not
+        // synced, its position is nobody's target, and nothing is moved until the next GoTo.
+        bool mountResting() const;
+        void handleParkAndHome();
+        unsigned m_parkOrHomeStartsSeen = 0;
+
+        // A mount with an alignment of its own that the Bridge cannot see running (owner, 2026-11-28): set per mount, the Bridge
+        // never syncs it on its own - GoTos somebody asks for are verified and refined as usual. A difference left standing is
+        // offered as a Sync (MOUNT_SYNC_OFFER; "Sync mount from PiFinder").
+        ISwitchVectorProperty OwnAlignmentSP;
+        ISwitch OwnAlignmentS[2];
+        enum { OWN_ALIGNMENT_ON, OWN_ALIGNMENT_OFF };
+        ITextVectorProperty OwnAlignmentMountsTP;
+        IText OwnAlignmentMountsT[1];
+        INumberVectorProperty SyncOfferNP;
+        INumber SyncOfferN[1];
+        std::vector<std::string> ownAlignmentMounts() const;
+        bool ownAlignment() const;
+        void publishOwnAlignment();
+        void publishSyncOffer(bool havePositions, double drift);
 
         // Where the mount was when a hold began, and whether a GoTo was sent while held: an alignment that moved the mount
         // without any command (turned by hand controller) is one the Bridge keeps off after, too.

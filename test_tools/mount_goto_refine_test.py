@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import signal
 import socket
 import sys
 import time
@@ -371,6 +372,12 @@ def scenario_question(threshold):
 SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold, "held": scenario_held, "question": scenario_question}
 
 
+def restore_on_stop():
+    """A run that is stopped (timeout, Ctrl-C, kill) must still put the settings back: turn SIGTERM into an exception, so that the
+    `finally` blocks run."""
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--move", action="store_true", help="required: this moves the mount")
@@ -384,10 +391,16 @@ def main(argv=None):
     if read(BRIDGE, "BRIDGE_MODE").get("elements", {}).get("MODE_GOTO_FORWARD") != "On":
         sys.exit("refused: switch the Mount Bridge to the GoTo coupling first")
     threshold = numbers(BRIDGE, "DRIFT_THRESHOLD")["THRESHOLD_ARCMIN"]
+    if threshold < 1:
+        sys.exit("refused: the drift threshold is %.2f' - probably left over from an interrupted run, set it back first" % threshold)
+    restore_on_stop()
     failed = 0
-    for name in args.only.split(","):
-        print("== %s" % name, flush=True)
-        failed += not SCENARIOS[name](threshold)
+    try:
+        for name in args.only.split(","):
+            print("== %s" % name, flush=True)
+            failed += not SCENARIOS[name](threshold)
+    finally:
+        indi_client.set_number(BRIDGE, "DRIFT_THRESHOLD", {"THRESHOLD_ARCMIN": threshold})
     return 1 if failed else 0
 
 

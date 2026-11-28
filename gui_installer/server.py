@@ -7306,6 +7306,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
             return
 
+        if parsed.path == "/api/mount_bridge_own_alignment":
+            on = parse_qs(parsed.query).get("on", [""])[0]
+            if on not in ("0", "1"):
+                self._send_json({"success": False, "error": "on must be 0 or 1"}, status=400)
+                return
+            _mb_log("setting 'mount has its own alignment' to %s..." % ("on" if on == "1" else "off"))
+            try:
+                indi_client.set_mount_own_alignment(on == "1")
+            except indi_client.INDIClientError as e:
+                _mb_log(f"  failed: {e}")
+                self._send_json({"success": False, "error": str(e)}, status=502)
+                return
+            _mb_log("  done.")
+            self._send_json({"success": True})
+            return
+
         if parsed.path == "/api/mount_bridge_threshold":
             # Standalone threshold push, separate from /api/mount_bridge_coupling
             # above - added because the threshold input field previously only
