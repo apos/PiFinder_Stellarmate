@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+### Changed
+
+- Live tests: a star field the simulated camera cannot solve or solves wrongly (#697) is left for the next one in every GoTo of the
+  tests that choose their own target; each such case and an incomplete simulator alignment (#702) appears as a `note` in
+  `summary.txt`. New `test_tools/field_problem_test.py`.
+- README: both limits of the simulated environment are named under "Status of 3.0.0".
+
 ## [3.0.0] - 2026-11-28
 
 > A large step in how PiFinder and the mount work together: GoTo from anywhere ends on the object, one name for the target

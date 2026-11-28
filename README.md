@@ -86,6 +86,8 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 | Real mount | GoTo following, refining and the OnStep alignment seen only with a simulated sky; a physical hand controller was not tried separately (it sends the same network commands) |
 | OnStep over **USB/serial** | GoTos started on the controller and its alignment are not detected |
 | Camera and sky | no camera or sky test with the pinned PiFinder 2.6.4 |
+| Simulated sky | single star fields cannot be solved or are solved wrongly ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); the Mount Bridge then gives up or asks and moves nothing (seen on the Telescope Simulator) |
+| Multi-Point Alignment without OnStep | a point counts only when the mount reports the synced position; the Telescope Simulator in the simulated sky fits a model and often shows points as not counted ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
 | **SMOS updates** | an update can remove everything outside `/home`: run the post-update step (Control Center card or `bin/restore_after_smos_update.sh`). On devices that boot from NVMe/USB with renamed partitions (to keep an SD emergency system) an update can leave the device unbootable if the boot fix does not run before the reboot ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), the automatic fix has not been seen on real hardware); details in [SMOS Updates](#smos-updates) |
 | Switching coupling off | does not stop a slew that is already running: use **Stop movement** ([#231](https://github.com/apos/PiFinder_Stellarmate/issues/231)) |
 | Pi 5 keypad | disabled column with a Geekworm X1203 UPS shield (see above) |
