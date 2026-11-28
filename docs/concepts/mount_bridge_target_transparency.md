@@ -110,7 +110,7 @@ acceptable: a GoTo from the hand controller must behave exactly like one from KS
 controller's target (`:Gr#`/`:Gd#`, `getObjectRA/DEC` in libindi's `lx200driver.h`); neither the driver nor the Bridge
 calls it today.
 
-Fix direction: the PFSM-patched INDI OnStep driver (`diffs/indi_lx200_OnStep_v2.2.2.diff`) also polls `:Gr#`/`:Gd#`
+Fix direction: the PFSM-patched INDI OnStep driver (`diffs/indi_lx200_OnStep.diff`) also polls `:Gr#`/`:Gd#`
 and updates `TARGET_EOD_COORD` when the controller's target changes. The Bridge already reads that property
 (`m_mountTargetNP`, `m_lastMountTargetTime`), so no second channel is needed and KStars, the Control Center and every
 other INDI client see the same target. Cautions:

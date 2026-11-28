@@ -13,6 +13,9 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Fixed
 
+- OnStep mount type fix (#227, `bin/build_indi_onstep_fix.sh`, optional): follows the installed INDI version instead of the pinned
+  2.2.2 and reads the source list from that version; `--build-only`. Checked with 2.2.5: still needed for fork and alt-az
+  controllers. New `test_tools/onstep_mount_type_check.py`.
 - Control Center: the "mount's clock is hours behind" notice was a false alarm (INDI keeps the time last set on the mount, it does
   not run on). The automatic "correction" built on it is removed: it switched KStars' real-time clock off and on again every few
   seconds.

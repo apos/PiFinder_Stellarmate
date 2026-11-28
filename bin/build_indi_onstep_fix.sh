@@ -7,27 +7,33 @@ set -euo pipefail
 # raw numeric OnStep web-interface mount-select value ("1 GEM, 2 EQ Fork, or
 # 3 Alt/Azm") on this firmware, but the upstream driver's switch statement
 # only recognizes letter codes (A/K/k/E) and silently defaults anything else
-# - including '3' - to GEM. See diffs/indi_lx200_OnStep_v2.2.2.diff and
+# - including '3' - to GEM. See diffs/indi_lx200_OnStep.diff and
 # indi_onstep_fix/CMakeLists.txt for details.
 #
 # This binary is owned by the system "libindi" package, so a plain package
 # reinstall/upgrade will overwrite it with the stock (bugged) version again
 # - rerun this script afterwards to reapply the fix.
 
+# Usage: bin/build_indi_onstep_fix.sh [--clean-build | --build-only]
+# Checked against INDI 2.2.5 (2026-11-28): the diff applies unchanged and the stock driver still reports every mount type of a
+# controller answering :GXEM# with 1/2/3 as GEM. A GEM ("1") is therefore right without this fix.
+
 source "$(dirname "$0")/functions.sh"
 
-INDI_VERSION="v2.2.2"          # must match the installed libindi package version
 FIX_DIR="${pifinder_stellarmate_dir}/indi_onstep_fix"
-SRC_CACHE_DIR="${FIX_DIR}/build/indi-src"
-BUILD_DIR="${FIX_DIR}/build/out"
-DIFF_FILE="${pifinder_stellarmate_dir}/diffs/indi_lx200_OnStep_v2.2.2.diff"
+DIFF_FILE="${pifinder_stellarmate_dir}/diffs/indi_lx200_OnStep.diff"
 BACKUP_SUFFIX="orig-backup-$(date +%Y-%m-%d)"
 
+# The sources must match the installed libindi (an SMOS update may bring a newer one). INDI_VERSION=vX.Y.Z overrides.
 installed_version="$(pacman -Q libindi 2>/dev/null | awk '{print $2}' | cut -d- -f1)"
-if [[ -n "${installed_version}" && "${installed_version}" != "${INDI_VERSION#v}" ]]; then
-    echo "WARNING: installed libindi is ${installed_version}, this fix is pinned to ${INDI_VERSION}."
-    echo "         Proceeding anyway, but verify the fix still applies/builds cleanly."
+INDI_VERSION="${INDI_VERSION:-${installed_version:+v${installed_version}}}"
+if [[ -z "${INDI_VERSION}" ]]; then
+    echo "ERROR: the installed libindi version cannot be told (pacman); pass INDI_VERSION=vX.Y.Z."
+    exit 1
 fi
+echo "-> INDI ${INDI_VERSION} (installed libindi: ${installed_version:-unknown})"
+SRC_CACHE_DIR="${FIX_DIR}/build/indi-src-${INDI_VERSION}"
+BUILD_DIR="${FIX_DIR}/build/out-${INDI_VERSION}"
 
 if [[ "${1:-}" == "--clean-build" ]]; then
     echo "-> Removing existing source cache and build directory..."
@@ -58,6 +64,11 @@ cmake -S "${FIX_DIR}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release -DINDI_SRC_DI
 
 echo "-> Building..."
 cmake --build "${BUILD_DIR}"
+
+if [[ "${1:-}" == "--build-only" ]]; then
+    echo "-> Built: ${BUILD_DIR}/indi_lx200generic (not installed)."
+    exit 0
+fi
 
 echo "-> Stopping INDI server (if running) to avoid 'Text file busy'..."
 active_profile="$(curl -s http://localhost:8624/api/server/status 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0].get("active_profile",""))' 2>/dev/null || true)"
