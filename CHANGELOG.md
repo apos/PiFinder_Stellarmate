@@ -7,6 +7,8 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Control Center: the "Update is running" strip at the top has a button **Show Install or Update** that scrolls there and opens
+  the terminal.
 - Mount Bridge, **park is park**: a mount that parks or goes home (any client or the hand controller) is not synced, its
   position is not taken over, and nothing is moved until the next GoTo; no automatic Sync while it is parked or at home.
 - Mount Bridge, OnStep over USB/serial: a GoTo started on the hand controller is followed. The INDI driver does not pass on its

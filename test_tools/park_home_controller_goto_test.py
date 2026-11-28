@@ -26,7 +26,8 @@ from mount_model_check import lst_hours  # noqa: E402
 
 PORT, WEB = 7696, 7691
 BRIDGE, MOUNT, PIFINDER = usb.BRIDGE, usb.MOUNT, usb.PIFINDER
-FREE, PARKING, PARKED, HOMING, HOME = "nNp/Eo060", "nI/Eo060", "nNP/Eo060", "nph/Eo060", "nNpH/Eo060"
+# ":GU#" answers; HOMING and HOME as measured on a real OnStep 10.14a (2026-11-28).
+FREE, PARKING, PARKED, HOMING, HOME = "nNp/Eo060", "nI/Eo060", "nNP/Eo060", "npha/EW060", "nNpHa/Eo060"
 
 
 def main(argv):

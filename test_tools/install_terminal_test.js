@@ -27,5 +27,24 @@ for (const part of ['<span>Terminal</span>', 'id="log-chevron"', 'id="log"', 'id
   ok(inside.includes(part), 'the terminal block holds ' + part);
 }
 ok(html.split('id="log"').length === 2, 'there is one install terminal');
+// The "is running" banner's button.
+const c = html.indexOf('// ---- show install run (begin) ----');
+const d = html.indexOf('// ---- show install run (end) ----');
+ok(c > 0 && d > c, 'the show function is there');
+const banner = html.slice(html.indexOf('<div id="cc-update-running-banner"'), html.indexOf('<div id="last-run-banner"'));
+ok(banner.includes('onclick="showInstallRun()"') && banner.includes('Show Install or Update'), 'the running banner has the button');
+function page(tile, log, tileTop, scrolled) {
+  const els = { 'install-tile-body': { style: { display: tile } }, 'log-wrap': { style: { display: log } }, 'cc-header-sticky': { offsetHeight: 100 },
+    'install-tile': { getBoundingClientRect: () => ({ top: tileTop }) } };
+  const did = [];
+  const run = new Function('document', 'window', 'toggleTileBody', 'toggleCollapsibleSection', html.slice(c, d) + '\nshowInstallRun();');
+  run({ getElementById: (id) => els[id] }, { scrollY: scrolled, scrollTo: (o) => did.push('scroll ' + o.top) },
+    (id) => did.push('open ' + id), (id) => did.push('open ' + id));
+  return did.join(', ');
+}
+ok(page('', '', 700, 50) === 'scroll 642', 'open tile: only scrolls, just below the header');
+ok(page('none', 'none', 700, 0) === 'open install-tile-body, open log-wrap, scroll 592', 'folded away: opens the tile and the terminal first');
+ok(page('', '', 20, 0) === 'scroll 0', 'never scrolls above the top');
+
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all ok');

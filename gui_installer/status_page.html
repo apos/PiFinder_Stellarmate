@@ -2407,6 +2407,18 @@
     border-radius: 50%;
     animation: mb-spin 0.8s linear infinite;
   }
+  #cc-update-running-banner button {
+    margin-left: auto;
+    flex-shrink: 0;
+    background: #2c4a6e;
+    color: #fff;
+    border: 1px solid #46699a;
+    border-radius: 4px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #cc-update-running-banner button:hover { filter: brightness(1.15); }
   /* Full-page lock shown while the Control Center restarts itself after a
      successful setup run (see enterCcRestartingState() below) - covers and
      visually disables the whole page rather than individually disabling
@@ -2484,6 +2496,7 @@
 <div id="cc-update-running-banner" style="display:none;">
   <span class="cc-run-spinner"></span>
   <span id="cc-update-running-text"></span>
+  <button type="button" id="cc-update-running-show" onclick="showInstallRun()" title="Scrolls to &quot;Install or Update&quot; and opens its terminal">Show Install or Update &darr;</button>
 </div>
 <div id="last-run-banner" style="display:none;">
   <div id="last-run-banner-header">
@@ -3711,7 +3724,7 @@ function setPolling(running, action) {
   if (!banner) return;
   if (running) {
     document.getElementById('cc-update-running-text').textContent =
-      (RUN_ACTION_LABELS[action] || 'An install/update') + ' is running - see Terminal below for live output.';
+      (RUN_ACTION_LABELS[action] || 'An install/update') + ' is running.';
     banner.style.display = 'flex';
   } else {
     banner.style.display = 'none';
@@ -8141,6 +8154,20 @@ new MutationObserver(() => { showInstallTerminal(); updateLogExpandButton(); }).
   document.getElementById('log'), { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] }
 );
 showInstallTerminal();
+
+// ---- show install run (begin) ----
+// The button of the "... is running" banner: opens the tile and its terminal if they are folded away and scrolls there, so that
+// the tile's top is just below the sticky header.
+function showInstallRun() {
+  if (document.getElementById('install-tile-body').style.display === 'none') {
+    toggleTileBody('install-tile-body', 'install-tile-chevron');
+  }
+  if (document.getElementById('log-wrap').style.display === 'none') toggleCollapsibleSection('log-wrap', 'log-chevron');
+  const header = document.getElementById('cc-header-sticky').offsetHeight;
+  const top = document.getElementById('install-tile').getBoundingClientRect().top + window.scrollY - header - 8;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+// ---- show install run (end) ----
 
 // Whole-tile collapse for Mount Bridge / PiFinder Mode, Test and Power /
 // Install or Update (not the PiFinder tile - that one stays always-visible).
