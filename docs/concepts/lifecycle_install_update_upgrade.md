@@ -77,7 +77,8 @@ run.
 Each diff is applied only if three conditions match: the PiFinder version, the Pi model (`P4`, `P5`) and the OS
 (`should_apply_patch`; `general` means "any"). A new PiFinder release therefore needs, in this order: the pin bumped,
 the diffs checked against the new files (a failing hunk is reported, not hidden), the matrix updated after a real test
-on the devices. The procedure **is** written down: `CONTRIBUTING.md` ("Branch model") defines an `alpha` integration branch for exactly this, with the
+on the devices. The procedure **is** written down in `CONTRIBUTING.md` ("Branch model": a short-lived branch from `dev`; the earlier `alpha`
+branch was removed with 3.0.0), with the
 acceptance test (patches apply, both INDI drivers build, a full `bin/simulate_fresh_install.sh --mode=fresh` plus the setup plus a
 cold-boot reboot pass cleanly, see `Readme_UTM_dev_X86.md`). What is *not* written down is the last step of the order above: updating the
 README matrix after the device tests, and the clean-up of stale pins.

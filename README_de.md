@@ -4,21 +4,21 @@
 
 ![PiFinder am Teleskop unter Sternenhimmel](docs/images/readme/PiFinder.jpg)
 
-> ### 🚀 **Release-Hinweis — v2.0.0**
+> ### 🚀 **Release-Hinweis — v3.0.0**
 >
-> v2.0 erscheint bewusst früh, **bevor alles unter echtem Himmel getestet werden konnte**:
+> Ein großer Schritt im Zusammenspiel von PiFinder und Montierung. **Noch nicht stabil** und nicht unter echtem Himmel getestet -
+> bitte zuerst [Stand von 3.0.0](#stand-von-300-noch-nicht-stabil) lesen.
 >
-> * Unter dem Himmel getestet im **PiFinder-Host-Modus**.
-> * Der **Control-Host-Modus** ist grundlegend getestet, aber noch nicht durchgehend zuverlässig.
-> * Kernfunktionen laufen: **GoTo** funktioniert nahtlos aus SMOS/KStars/PiFinder, und
->   **Multi-Point-Alignment** ist möglich.
-> * Eine grundlegende HowTo-/Bedienungsanleitung bzw. ein Video-Guide ist **noch nicht verfügbar**.
+> * **GoTo von überall** (PiFinder, KStars, StellarMate-App, OnStep-Handsteuerung über das Netzwerk) endet auf dem Objekt; die
+>   Bridge prüft per Plate-Solve und justiert nach.
+> * Ein Name für das angepeilte Ziel: **Push-To**. Die Karte unter dem Himmelsbild sagt, was passiert und warum.
+> * Die Bridge pausiert bei Guiding und Alignment; **Multi-Point-Alignment** baut ein echtes OnStep-Modell.
+> * **Simulierter Himmel**: der echte Solver auf einem GSC-Sternfeld, damit sich das Meiste ohne klare Nacht entwickeln und testen
+>   lässt.
+> * Die seit Langem bestehenden Aussetzer der Mount Bridge ([#385](https://github.com/apos/PiFinder_Stellarmate/issues/385)) sind
+>   behoben.
 >
-> **Port-Änderung ([#481](https://github.com/apos/PiFinder_Stellarmate/issues/481)):** v2.0.0/2.0.1
-> boten das Control Center auf Port **8765** an, der mit dem nativen MCP-Server (und dem KI-Assistenten
-> „Stella") in KStars/Ekos kollidiert. Es lauscht jetzt auf Port **8777** — Lesezeichen anpassen. Auf
-> einem Gerät mit 2.0.x den **MCP-Server von Ekos nicht aktivieren**. Weitere offene Punkte stehen im
-> [GitHub-Projekt](https://github.com/users/apos/projects/15).
+> Das Control Center lauscht auf Port **8777** (siehe [Ports](#ports)). Alle Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
 ## Zusammenfassung
 
@@ -65,7 +65,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 >
 > * Gepinnt auf **PiFinder 2.6.4** auf **StellarMate OS 2.4.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
->   `release`-Branches. Vollständig getestet auf Pi 4, Pi 5 und dem x86-Dev-/Simulator-Host —
+>   `release`-Branches. Mit PFSM 3.0.0 bisher auf einem Pi 5 getestet; Pi 4 und x86 stehen aus —
 >   [Versionskompatibilität](#versionskompatibilität) hat die Details.
 > * **Pi 5 Tastatur ⚠️** — ein Geekworm-X1203-UPS-Shield belegt GPIO 16 gemeinsam mit Tastatur-
 >   Spalte 0 (Tasten 7/4/1/LEFT), die Spalte fällt aus. Hardware-Konflikt zwischen den zwei
@@ -81,19 +81,45 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 
 ---
 
+## Stand von 3.0.0: noch nicht stabil
+
+3.0.0 ist ein Release für alle, die beim Testen helfen möchten. Es wurde **noch nicht unter echtem Himmel getestet**.
+
+| Bereich | Stand |
+|---|---|
+| Bisher getestet | Raspberry Pi 5 mit simuliertem Himmel ("Real Hardware + GSC Simulation") und den INDI-Simulatoren; ein echter OnStep-Controller drinnen mit simuliertem PiFinder-Himmel; automatischer Regressionslauf (`test_tools/run_regression.sh`) |
+| Raspberry Pi 4, x86 (UTM) | Installation und Update mit 3.0.0 noch nicht getestet. Auf x86 braucht der simulierte Himmel PiFinders eingebaute Sternerkennung; der Patch dafür ist neu und auf x86 ungetestet |
+| Standard-PiFinder (eigene SD-Karte) als **PiFinder Client** | nicht getestet |
+| Kombination **Control Host / Client** | grundsätzlich lauffähig, nicht ausführlich getestet |
+| Echtes Mount | GoTo-Verfolgung, Nachjustieren und OnStep-Alignment nur mit simuliertem Himmel gesehen; eine physische Handsteuerung nicht gesondert probiert (sie sendet dieselben Netzwerk-Befehle) |
+| OnStep über **USB/seriell** | GoTos vom Controller und sein Alignment werden nicht erkannt |
+| Kamera und Himmel | kein Kamera- oder Himmelstest mit dem gepinnten PiFinder 2.6.4 |
+| **SMOS-Updates** | ein Update kann alles außerhalb von `/home` entfernen: danach den Post-Update-Schritt ausführen (Karte im Control Center oder `bin/restore_after_smos_update.sh`). Auf Geräten, die von NVMe/USB mit umbenannten Partitionen booten (damit eine SD-Notfallkarte parallel möglich ist), kann ein Update das Gerät unbootbar machen, wenn der Boot-Fix nicht vor dem Neustart läuft ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), der automatische Fix wurde auf echter Hardware noch nicht gesehen); Details unter [SMOS-Updates](#smos-updates) |
+| Kopplung ausschalten | stoppt einen laufenden Slew nicht: **Stop movement** benutzen ([#231](https://github.com/apos/PiFinder_Stellarmate/issues/231)) |
+| Pi-5-Tastatur | eine Spalte fällt mit einem Geekworm-X1203-UPS aus (siehe oben) |
+| Neuere PiFinder-Versionen | PiFinder 3.x (Beta) wird nicht unterstützt; PFSM installiert die gepinnte Version |
+| Dokumentation | noch keine HowTo- oder Video-Anleitung |
+
+Alles weitere Offene: [Issues](https://github.com/apos/PiFinder_Stellarmate/issues) und das
+[GitHub-Projekt](https://github.com/users/apos/projects/15).
+
+---
+
 ## Inhaltsverzeichnis
 
-1. [Schnellstart](#schnellstart)
-2. [Hauptfunktionen & Änderungen](#hauptfunktionen--änderungen)
-3. [Hardware-Anforderungen](#hardware-anforderungen)
-4. [Installation](#installation)
-5. [Nach der Installation: PiFinders "PFSM"-Seite](#nach-der-installation-pifinders-pfsm-seite)
-6. [Der INDI-Treiber](#der-indi-treiber)
-7. [SMOS-Updates](#smos-updates)
-8. [Versionskompatibilität](#versionskompatibilität)
-9. [Roadmap](#roadmap)
-10. [Deinstallation](#deinstallation)
-11. [Siehe auch](#siehe-auch)
+1. [Stand von 3.0.0](#stand-von-300-noch-nicht-stabil)
+2. [Schnellstart](#schnellstart)
+3. [Hauptfunktionen & Änderungen](#hauptfunktionen--änderungen)
+4. [Hardware-Anforderungen](#hardware-anforderungen)
+5. [Installation](#installation)
+6. [Nach der Installation: PiFinders "PFSM"-Seite](#nach-der-installation-pifinders-pfsm-seite)
+7. [Ports](#ports)
+8. [Der INDI-Treiber](#der-indi-treiber)
+9. [SMOS-Updates](#smos-updates)
+10. [Versionskompatibilität](#versionskompatibilität)
+11. [Roadmap](#roadmap)
+12. [Deinstallation](#deinstallation)
+13. [Siehe auch](#siehe-auch)
 
 ---
 
@@ -357,6 +383,26 @@ Neuinstallation, einem Update oder einem Reboot gedacht.
 <sub>Web-Manager-Einrichtungsschritt (ausgeklappt): StellarMate-Web-Manager-Profil mit laufenden PiFinder-LX200- und PiFinder-Mount-Bridge-Treibern</sub>
 </p>
 
+## Ports
+
+| Port | Wer | Was |
+|---|---|---|
+| 80 | StellarMate (nginx) | leitet alles an EkosLive auf Port 3000 weiter |
+| 8080 | PiFinder | Webseite und Schnittstelle; weicht auf 8080 aus, weil 80 belegt ist |
+| 8624 | StellarMate | INDI Web Manager: Profil starten und stoppen |
+| 7624 | StellarMate | indiserver mit allen Treibern |
+| 4030 | PiFinder | Position und GoTo, auch für den LX200-Treiber dieses Projekts |
+| 8777 | PFSM | Control Center |
+
+- Ein PiFinder auf **seinem eigenen** Betriebssystem liefert seine Webseite auf Port 80. Die PFSM-Treiber fragen deshalb zuerst
+  8080 und nehmen 80 nur, wenn auf 8080 niemand antwortet.
+- Port **8765** gehört KStars/Ekos (MCP-Server). Das Control Center nutzte ihn bis v2.0.1.
+- Profile mit gemischten Treiberquellen starten einen zweiten indiserver (beobachtet auf Port 20001) für die PFSM-Treiber.
+- Ein **OnStep**-Controller im Netz bedient je Kommando-Port nur einen Teilnehmer: Der INDI-Treiber nutzt seinen eingestellten
+  Port (meist 9999), die Mount Bridge liest über einen anderen (9998, 9997 oder 9996).
+
+---
+
 ## Der INDI-Treiber
 
 `pifinder_stellarmate_setup.sh` baut und installiert beide INDI-Treiber für dich (stoppt zuerst
@@ -459,7 +505,7 @@ das zu wiederholen.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (Dev / Simulator) |
 |---|---|---|---|---|
-| 2.6.4 | 2.4.0 | — | ✅ getestet — Update 2.6.3 → 2.6.4 mit dem Setup-Skript (Patches greifen, python/tetra3-Link neu angelegt, Dienste laufen, PiFinder-API, LX200-Treiber und Mount Bridge verbunden); noch kein Kamera- oder Himmelstest; Tastatur-GPIO-Fehler wie bisher (UPS-Shield, siehe oben) | — |
+| 2.6.4 | 2.4.0 | — (3.0.0 noch nicht getestet) | ✅ PFSM 3.0.0 mit simuliertem Himmel und den INDI-Simulatoren, automatischer Regressionslauf, ein echter OnStep drinnen; kein Kamera- oder Himmelstest; Tastaturspalte mit UPS-Shield ausgefallen (siehe oben) | — (3.0.0 noch nicht getestet) |
 | 2.6.3 | 2.4.0 | ✅ getestet — echtes Update 2.3.0 → 2.4.0, Restore, Reboot von NVMe (siehe NVMe-Hinweis unter "SMOS-Updates"); Kamera-Hardwaretest steht aus | ⚠️ unter 2.4.0 nicht verifiziert (seit dem Update nicht erreichbar) | ✅ getestet — echtes Update 2.3.0 → 2.4.0 und Restore, Control Center, Mount Bridge gegen den PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ vollständig getestet | ✅ vollständig getestet | ✅ getestet — Installation, Control Center, Mount Bridge gegen den PiFinder Simulator (kein echtes Plate-Solving; siehe [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)) |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend | — |
@@ -473,42 +519,26 @@ Getrackte, priorisierte Arbeit — Issues, Testfälle, nächste Schritte — lie
 ([Roadmap-Ansicht](https://github.com/users/apos/projects/15/views/4)). Ausgelieferte Änderungen
 stehen im **[CHANGELOG.md](CHANGELOG.md)**. Die Richtung:
 
-**Version 2.x — konsolidieren, was da ist**
+**3.0.x — stabil machen**
 
-- Den aktuellen Funktionsumfang durchgehend unter echtem Himmel härten und testen (Mount-Bridge-
-  Coupling, Full Simulation, das Control Center) — v2.0.0 hat das meiste davon ausgeliefert (siehe
-  `CHANGELOG.md`), im Feld getestet ist bisher aber nur der PiFinder-Host-Modus; der Control-Host-
-  Modus muss noch durchgehend zuverlässig werden.
-- Eine grundlegende HowTo-/Bedienungsanleitung und ein Video-Guide.
-- Ausgewählte Änderungen zurück ins Upstream-Projekt [PiFinder](https://github.com/brickbots/PiFinder)
-  spielen (welche PRs — noch zu entscheiden) — Prozess und Kandidatenliste:
+- Test auf Raspberry Pi 4, auf x86 (UTM), auf einer Standard-PiFinder-SD-Karte als Client und in der Kombination Control Host / Client.
+- Kamera- und Himmelstests; Läufe mit echtem Mount über eine ganze Nacht.
+- SMOS-Updates: den automatischen Boot-Fix und das Restore auf echter Hardware nachweisen ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561)).
+- Eine grundlegende HowTo-Anleitung und ein Video-Guide.
+
+**Später — integrieren**
+
+- Tiefere StellarMate-Integration, in Abstimmung mit dem SMOS-Projekt —
+  [Issue #35](https://github.com/apos/PiFinder_Stellarmate/issues/35),
+  [Issue #36](https://github.com/apos/PiFinder_Stellarmate/issues/36).
+- Die wesentlichen Aktionen direkt in der PiFinder-App-Oberfläche —
+  [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md) §7
+  ([Issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
+- Ein natives **Ekos-Modul** für PiFinder — [`docs/concepts/ekos_pifinder_module.md`](docs/concepts/ekos_pifinder_module.md)
+  ([Issue #370](https://github.com/apos/PiFinder_Stellarmate/issues/370)).
+- Ausgewählte Änderungen zurück zu [PiFinder](https://github.com/brickbots/PiFinder):
   [`docs/upstream_pr_templates.md`](docs/upstream_pr_templates.md),
   [`docs/upstream_patch_inventory.md`](docs/upstream_patch_inventory.md).
-- Guiding-Watcher — die Mount-Bridge-Kopplung pausieren, solange Guiding/Dithering läuft. Erster
-  Schritt **mit v2.0.0 ausgeliefert** (ein Control-Center-Watchdog + eine `Mount Bridge
-  EXTERNAL_HOLD`-Switch); Lost-Star-/Dithering-Erkennung steht noch aus. Konzept:
-  [`docs/concepts/mount_bridge_external_hold.md`](docs/concepts/mount_bridge_external_hold.md)
-  ([Issue #372](https://github.com/apos/PiFinder_Stellarmate/issues/372); Hintergrund in
-  [`session_start_position_reconciliation.md`](docs/concepts/session_start_position_reconciliation.md) §6 /
-  [#324](https://github.com/apos/PiFinder_Stellarmate/issues/324)).
-
-**Version 3.x — integrieren**
-
-- Tiefere StellarMate-Integration, in Zusammenarbeit mit dem SMOS-Projekt —
-  [Issue #35](https://github.com/apos/PiFinder_Stellarmate/issues/35) (Anforderungsanalyse),
-  [Issue #36](https://github.com/apos/PiFinder_Stellarmate/issues/36) (Vision).
-- Die wesentlichen Aktionen direkt in der PiFinder-App-Oberfläche anbieten statt nur eines Links aufs
-  Control Center — vor allem die Quick Actions, den Coupling-Modus, das INDI-Setup, Multi-Point
-  Alignment und Test Hardware. Konzept:
-  [`docs/concepts/mount_bridge_web_integration.md`](docs/concepts/mount_bridge_web_integration.md)
-  §7 ([Issue #43](https://github.com/apos/PiFinder_Stellarmate/issues/43)).
-- Ein natives **Ekos-Modul** für PiFinder — dieselben Controls als vollwertiger KStars-Tab, in
-  Abstimmung mit dem KStars-Maintainer. Konzept:
-  [`docs/concepts/ekos_pifinder_module.md`](docs/concepts/ekos_pifinder_module.md)
-  ([Issue #370](https://github.com/apos/PiFinder_Stellarmate/issues/370)).
-- Ein „echter" Simulator — Plate-Solving gegen den GSC-Katalog statt einer injizierten Position.
-  Konzept: [`docs/concepts/pifinder_realmode_sky_simulation.md`](docs/concepts/pifinder_realmode_sky_simulation.md)
-  ([Issue #344](https://github.com/apos/PiFinder_Stellarmate/issues/344)).
 
 ## Deinstallation
 

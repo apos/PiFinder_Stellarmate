@@ -334,6 +334,12 @@ if should_apply_patch "2.3.0|2.5.1|2.6.0|2.6.1|2.6.3|2.6.4" "general" "general";
         sed -i '/from tetra3 import main/a from tetra3 import cedar_detect_client' "$solver_py"
     fi
 
+    # x86 (#234): only ARM builds of cedar-detect-server are bundled. Starting one there raises "Exec format error" and stops the
+    # solver; without a matching program PiFinder uses tetra3's own star finder instead. Nothing changes on ARM.
+    if grep -q 'for candidate in candidates:  # any executable cedar binary' "$solver_py"; then
+        sed -i '/for candidate in candidates:  # any executable cedar binary/{n;s|if os.access(candidate, os.X_OK):|if os.access(candidate, os.X_OK) and (machine in ("aarch64", "arm64") or not candidate.name.endswith(("aarch64", "arm64"))):|}' "$solver_py"
+    fi
+
 
 else
     echo "⏩ Skipping patch for solver.py: ❌ incompatible version/pi/os"
