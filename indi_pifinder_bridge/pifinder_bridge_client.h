@@ -82,8 +82,23 @@ class PiFinderBridgeClient : public INDI::BaseClient
         // The INDI OnStep driver's own alignment switches ("AlignStars", "NewAlignStar", "NewAlignStar2"). False: the mount's
         // driver has none.
         bool hasOnStepAlignment() const;
+        // The controller's alignment as the INDI OnStep driver publishes it ("Align Process") - the only view of it when the
+        // mount is connected over USB. True: the driver reports one; `star` is the star it waits for, `stars` how many it
+        // has (star = stars + 1: finished; 0 0: none).
+        bool getOnStepAlignStatus(int &star, int &stars) const;
         bool startOnStepAlignment(int stars);
         bool saveOnStepAlignment();
+
+        // The mount is parking, parked, going home or at home - by the standard TELESCOPE_PARK / TELESCOPE_HOME properties or by
+        // the status the INDI OnStep driver publishes (it also shows what the hand controller started). "Park is park": nothing
+        // there is anybody's target. parkOrHomeStarts() counts the movements into park / home, so a short one is not missed.
+        enum class Rest { NONE, PARKING, PARKED, HOMING, HOME };
+        Rest mountRest() const;
+        unsigned parkOrHomeStarts() const;
+        // A slew the mount reported (position Busy) that has been over for `quietSec`; consumed on read. `commanded`: it came
+        // through INDI (a GoTo, the direction buttons or a stop) or was a way into park / home.
+        bool takeFinishedSlew(double quietSec, bool &commanded);
+        bool isOnStepStatusKnown() const;
 
         // The mount's network address, when it is an OnStep connected over TCP (the driver's own connection settings).
         bool getOnStepAddress(std::string &host, int &driverPort) const;
@@ -270,6 +285,26 @@ class PiFinderBridgeClient : public INDI::BaseClient
         INDI::PropertyViewSwitch *m_mountAlignWriteSP = nullptr;
         bool pressSwitch(INDI::PropertyViewSwitch *property, const char *element);
         INDI::PropertyViewText *m_mountAddressTP = nullptr;
+        void noteOnStepAlignStatus(INDI::Property property);
+        mutable std::mutex m_alignStatusMutex;
+        bool m_alignStatusKnown = false;
+        int m_alignStatusStar = 0, m_alignStatusStars = 0;
+        // Guarded by m_restMutex: park / home as the mount reports it, and the slews seen in the position's state.
+        void noteMountRest(INDI::Property property);
+        void noteMountMotionState(INDI::Property property);
+        void noteIndiMovement(); // a command through INDI that moves or stops the mount
+        void restChanged(Rest before, bool firstSight); // m_restMutex held
+        Rest restLocked() const;       // m_restMutex held
+        mutable std::mutex m_restMutex;
+        bool m_parking = false, m_parked = false, m_homing = false;
+        Rest m_onstepRest = Rest::NONE;
+        bool m_onstepStatusKnown = false;
+        unsigned m_parkOrHomeStarts = 0;
+        long m_lastParkOrHomeTime = 0, m_lastIndiMovementTime = 0;
+        long m_slewStart = 0, m_slewEnd = 0;
+        bool m_slewing = false;
+        static constexpr long SLEW_COMMAND_MARGIN_SEC = 4; // a command and the Busy state it causes arrive this close together
+
         INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
         INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;
         // Guarded by m_mountEventMutex: every GoTo seen through INDI lately, and the newest one read from the controller.

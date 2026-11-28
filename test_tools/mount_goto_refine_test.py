@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import signal
 import socket
 import sys
 import time
@@ -118,13 +119,30 @@ def targets():
     return [((lst - 1.0) % 24, 45.0), ((lst + 1.0) % 24, 30.0), ((lst - 2.0) % 24, 60.0), ((lst + 0.5) % 24, 20.0)]
 
 
-def solve_age():
-    """Seconds since PiFinder's last plate solve (None: PiFinder does not answer)."""
+def solution():
+    """PiFinder's last solve as its web API reports it (None: PiFinder does not answer)."""
     try:
         with urllib.request.urlopen("http://127.0.0.1:8080/api/status", timeout=5) as reply:
-            return time.time() - float(json.load(reply)["solution"]["last_solve_success"])
-    except (OSError, KeyError, TypeError, ValueError):
+            return json.load(reply)["solution"]
+    except (OSError, KeyError, ValueError):
         return None
+
+
+def field_problem(ra, dec):
+    """Why a GoTo that did not end "on target" is the simulated camera's fault and no verdict about the Bridge (#697): the mount
+    stands on the target, but PiFinder cannot solve the star field there, or solves it wrongly. None: no such excuse."""
+    s = solution()
+    m = mount_position()
+    if s is None or separation_deg(*m, ra, dec) * 60 > 10:
+        return None
+    age = time.time() - float(s.get("last_solve_success") or 0)
+    if age > 20:
+        return "PiFinder cannot solve this field (last solve %.0f s ago)" % age
+    if s.get("solve_source") == "CAM" and s.get("RA") is not None:
+        wrong = separation_deg(s["RA"] / 15.0, s["Dec"], *m)   # J2000 against JNow: under a degree
+        if wrong > 3:
+            return "PiFinder solves this field wrongly (%.0f deg off, %s matches)" % (wrong, s.get("Matches"))
+    return None
 
 
 def check(name, ok, text):
@@ -133,16 +151,22 @@ def check(name, ok, text):
 
 
 def scenario_goto(threshold, name="goto", target=None):
-    ra, dec = target or targets()[0]
-    run = Run()
-    send_coords(MOUNT, "SLEW", ra, dec)
-    run.watch(150, lambda: phase() == "ON_TARGET" and len(run.phases) > 1)
-    off = pifinder_off_target_arcmin(ra, dec)
-    refined = "REFINING" in run.phases
-    source = read(BRIDGE, "TARGET_SOURCE").get("elements", {}).get("TARGET_SOURCE_MOUNT")
-    return check(name, phase() == "ON_TARGET" and off is not None and off <= threshold and not run.asked and source == "On",
-                 "phase %s, PiFinder %s' from the target (limit %.0f'), refined %s, asked %s, source mount %s" %
-                 (phase(), "?" if off is None else "%.1f" % off, threshold, refined, run.asked, source))
+    candidates = [target] if target else targets()
+    for number, (ra, dec) in enumerate(candidates, 1):
+        run = Run()
+        send_coords(MOUNT, "SLEW", ra, dec)
+        run.watch(150, lambda: phase() == "ON_TARGET" and len(run.phases) > 1)
+        off = pifinder_off_target_arcmin(ra, dec)
+        refined = "REFINING" in run.phases
+        source = read(BRIDGE, "TARGET_SOURCE").get("elements", {}).get("TARGET_SOURCE_MOUNT")
+        ok = phase() == "ON_TARGET" and off is not None and off <= threshold and not run.asked and source == "On"
+        problem = None if ok else field_problem(ra, dec)
+        if problem and number < len(candidates):
+            print("note %s: RA %.2f h Dec %.0f: %s - trying another field (#697)" % (name, ra, dec, problem), flush=True)
+            continue
+        return check(name, ok, "phase %s, PiFinder %s' from the target (limit %.0f'), refined %s, asked %s, source mount %s%s" %
+                     (phase(), "?" if off is None else "%.1f" % off, threshold, refined, run.asked, source,
+                      " - %s (#697)" % problem if problem else ""))
 
 
 def scenario_short(threshold):
@@ -348,6 +372,12 @@ def scenario_question(threshold):
 SCENARIOS = {"goto": scenario_goto, "short": scenario_short, "hand": scenario_hand, "stop": scenario_stop, "pifinder": scenario_pifinder, "bounded": scenario_bounded, "hold": scenario_hold, "held": scenario_held, "question": scenario_question}
 
 
+def restore_on_stop():
+    """A run that is stopped (timeout, Ctrl-C, kill) must still put the settings back: turn SIGTERM into an exception, so that the
+    `finally` blocks run."""
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--move", action="store_true", help="required: this moves the mount")
@@ -361,10 +391,16 @@ def main(argv=None):
     if read(BRIDGE, "BRIDGE_MODE").get("elements", {}).get("MODE_GOTO_FORWARD") != "On":
         sys.exit("refused: switch the Mount Bridge to the GoTo coupling first")
     threshold = numbers(BRIDGE, "DRIFT_THRESHOLD")["THRESHOLD_ARCMIN"]
+    if threshold < 1:
+        sys.exit("refused: the drift threshold is %.2f' - probably left over from an interrupted run, set it back first" % threshold)
+    restore_on_stop()
     failed = 0
-    for name in args.only.split(","):
-        print("== %s" % name, flush=True)
-        failed += not SCENARIOS[name](threshold)
+    try:
+        for name in args.only.split(","):
+            print("== %s" % name, flush=True)
+            failed += not SCENARIOS[name](threshold)
+    finally:
+        indi_client.set_number(BRIDGE, "DRIFT_THRESHOLD", {"THRESHOLD_ARCMIN": threshold})
     return 1 if failed else 0
 
 

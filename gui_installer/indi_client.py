@@ -689,6 +689,10 @@ def mount_bridge_drift(
         "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
         # what an OnStep controller the Bridge reads says about its alignment (None: no such controller)
         "onstep_align": _onstep_align(device_props),
+        # "Mount has its own alignment" (never synced automatically): the setting of the watched mount (None: older Bridge) and,
+        # while a difference stands that the Bridge leaves alone, that difference in arc minutes (None: nothing to offer).
+        "own_alignment": _own_alignment(device_props),
+        "sync_offer_arcmin": _sync_offer(device_props),
         "external_hold": external_hold,
         "external_hold_reason": external_hold_reason,
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
@@ -843,6 +847,28 @@ def _onstep_align(device_props: dict):
     except (KeyError, TypeError, ValueError):
         return None
     return {"max_stars": max_stars, "star": star, "stars": stars, "aligning": 0 < star <= stars}
+
+
+def _own_alignment(device_props: dict):
+    el = device_props.get("MOUNT_OWN_ALIGNMENT", {}).get("elements", {})
+    return el.get("OWN_ALIGNMENT_ON") == "On" if el else None
+
+
+def _sync_offer(device_props: dict):
+    prop = device_props.get("MOUNT_SYNC_OFFER", {})
+    if prop.get("state") != "Alert":
+        return None
+    try:
+        return float(prop.get("elements", {})["DRIFT_ARCMIN"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def set_mount_own_alignment(on: bool, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = DEFAULT_TIMEOUT) -> None:
+    """Whether the watched mount keeps its own alignment: the Mount Bridge then never syncs it on its own (saved per mount by
+    the driver). Raises INDIClientError with a Bridge build that has no such setting."""
+    set_switch("PiFinder Mount Bridge", "MOUNT_OWN_ALIGNMENT", "OWN_ALIGNMENT_ON" if on else "OWN_ALIGNMENT_OFF",
+               host, port, timeout)
 
 
 def _positioning_status(device_props: dict):

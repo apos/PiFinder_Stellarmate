@@ -26,5 +26,12 @@ ok(qc.text.includes('moves nothing until you decide') && qc.text.includes('What 
 ok(qc.buttons.length === 2 && /Adopt/.test(qc.buttons[0].label) && /slews/.test(qc.buttons[1].label), 'question: both answers, the moving one says so');
 ok(T.bridgeProblems({ running: false, binding_state: 'Alert', reposition_question: true }).blind === null, 'no Bridge: nothing to report');
 
+const o = T.bridgeProblems({ ...base, sync_offer_arcmin: 29.9 });
+const oc = T.bridgeProblemCards(o.blind, o.question, o.syncOffer);
+ok(oc.length === 1 && oc[0].title.includes('29.9') && oc[0].buttons.length === 1 && /Sync mount from PiFinder/.test(oc[0].buttons[0].label), 'own alignment: the difference is offered as a Sync');
+ok(oc[0].text.includes('does not sync it by itself') && oc[0].text.includes('nothing moves'), 'own alignment: says why, and that a Sync moves nothing');
+ok(T.bridgeProblems(base).syncOffer === null && T.bridgeProblems({ ...base, sync_offer_arcmin: null }).syncOffer === null, 'no offer, no card');
+ok(T.bridgeProblemCards(null, { driftArcmin: 5 }, 29.9).length === 1, 'an open question comes first: one card');
+
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all bridge problem tests passed');

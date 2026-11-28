@@ -50,6 +50,16 @@ class ParseTest(unittest.TestCase):
         self.assertAlmostEqual(vectors[0][3]["DEC"], -10.5)
 
 
+class UsablePositionTest(unittest.TestCase):
+    def test_only_real_numbers_are_a_position(self):
+        self.assertTrue(f.usable_position({"RA": 21.0, "DEC": 55.5}))
+        vectors, _ = f.parse_number_vectors('<setNumberVector device="M" name="EQUATORIAL_EOD_COORD" state="Idle">'
+                                            '<oneNumber name="RA">21</oneNumber><oneNumber name="DEC">nan</oneNumber>'
+                                            '</setNumberVector>')
+        self.assertFalse(f.usable_position(vectors[0][3]))
+        self.assertFalse(f.usable_position({"RA": 1.0}))
+
+
 class SeparationTest(unittest.TestCase):
     def test_one_degree(self):
         self.assertAlmostEqual(f.angular_sep_deg(10, 0, 11, 0), 1.0, places=6)

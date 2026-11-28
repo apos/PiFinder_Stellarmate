@@ -77,6 +77,17 @@ def goto(ra, dec):
     return run.watch(150, lambda: t.phase() == "ON_TARGET" and len(run.phases) > 1)
 
 
+def goto_usable(candidates, step):
+    """A GoTo to the first of the targets whose star field PiFinder can use (#697): (arrived, ra, dec)."""
+    for ra, dec in candidates:
+        ok = goto(ra, dec)
+        problem = None if ok else t.field_problem(ra, dec)
+        if not problem:
+            break
+        print("note %s: RA %.2f h Dec %.0f: %s - trying another field (#697)" % (step, ra, dec, problem), flush=True)
+    return ok, ra, dec
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--move", action="store_true")
@@ -90,12 +101,13 @@ def main(argv=None):
     threshold = t.numbers(t.BRIDGE, "DRIFT_THRESHOLD")
     threshold = next(iter(threshold.values()))
     config = t.read(t.BRIDGE, "ALIGN_CONFIG")["elements"]
+    t.restore_on_stop()
     t.indi_client.set_number(t.BRIDGE, "ALIGN_CONFIG", {**config, "POINT_COUNT": 2})
     results = []
     check = lambda name, ok, text: results.append(t.check(name, ok, text))
     try:
-        ra, dec = t.targets()[0]
-        check("1 goto", goto(ra, dec) and separation_deg(*target(), ra, dec) < AWAY, "on target, Target set")
+        ok, ra, dec = goto_usable(t.targets(), "1")
+        check("1 goto", ok and separation_deg(*target(), ra, dec) < AWAY, "on target, Target set")
         target0, hold0 = target(), hold()
 
         points = lambda: next(iter(t.numbers(t.MOUNT, "ALIGNMENT_POINTSET_SIZE").values()))
@@ -108,6 +120,9 @@ def main(argv=None):
         # the run's own verdict is checked against its count; both numbers are shown.
         check("2 counted syncs", 0 <= synced <= 2 and (synced > 0) == (state == "Ok"),
               "counted %d of 2 as reported by the mount, the simulator added %d model point(s), state %s" % (synced, taken, state))
+        if synced < min(taken, 2):
+            print("note 2: only %d of %d synced positions reported by the mount - the simulator's alignment model fits its points "
+                  "(#702)" % (synced, min(taken, 2)), flush=True)
         moved_target = max(separation_deg(*x, *target0) for x in seen) * 60
         check("2 alignment", state in ("Ok", "Alert") and "ALIGNING" in phases and moved_target < 1
               and separation_deg(*hold(), *hold0) < AWAY,
@@ -152,15 +167,7 @@ def main(argv=None):
         check("6 stopped", not [s for s in slews if s > 3] and moved_target < 1 and not run.asked,
               "slewing after the stop at %s, last GoTo moved %.1f', Push-To moved %.1f', phase %s" %
               (slews or "never", moved_target, separation_deg(*hold(), *hold1) * 60, t.phase()))
-        # PiFinder cannot solve every simulated star field (found 2026-11-28, RA 6.67 h Dec +30): that is no verdict about the
-        # Bridge, so such a field is left for the next one - and said.
-        for ra, dec in t.targets()[1:]:
-            ok = goto(ra, dec)
-            age = t.solve_age()
-            if ok or (age is not None and age < 20):
-                break
-            print("   PiFinder cannot solve the field at RA %.2f h Dec %.0f (last solve %s s ago): trying another one" %
-                  (ra, dec, "?" if age is None else int(age)), flush=True)
+        ok, ra, dec = goto_usable(t.targets()[1:], "6")
         off = separation_deg(*t.mount_position(), ra, dec) * 60
         check("6 next goto", ok and off <= 2 * threshold and separation_deg(*target(), ra, dec) < AWAY
               and separation_deg(*hold(), ra, dec) < 1,   # ORIGINAL_TARGET is J2000: some 20' of precession away

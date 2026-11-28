@@ -5,6 +5,58 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-28
+**Not stable yet** - read [Status of 3.1.0](https://github.com/apos/PiFinder_Stellarmate/blob/v3.1.0/README.md#status-of-310-not-stable-yet) before installing.
+
+### Added
+
+- Control Center: the "Update is running" strip at the top has a button **Show Install or Update** that scrolls there and opens
+  the terminal.
+- Mount Bridge, **park is park**: a mount that parks or goes home (any client or the hand controller) is not synced, its
+  position is not taken over, and nothing is moved until the next GoTo; no automatic Sync while it is parked or at home.
+- Mount Bridge, OnStep over USB/serial: a GoTo started on the hand controller is followed. The INDI driver does not pass on its
+  target, so the place where the slew ends is verified and refined.
+- Mount Bridge and Control Center: setting **"Mount has its own alignment"**, saved per mount. The Bridge then never syncs that
+  mount by itself; GoTos you ask for are refined as before, a difference is offered as a Sync (`MOUNT_OWN_ALIGNMENT`,
+  `MOUNT_SYNC_OFFER`). New `test_tools/park_home_controller_goto_test.py`.
+- CONTRIBUTING.md: where to ask (StellarMate and PiFinder Discord), how to report an issue and which conventions an issue must
+  follow, with a bug report form. The Control Center documentation names today's mode tiles.
+- Control Center, "Install or Update": the terminal stands right of the checklist and takes no room until there is output or a
+  message.
+- Control Center, time and location check: KStars (reference), mount, PiFinder and Pi side by side (time, UTC offset, location); an
+  OnStep on the network is asked for its own clock and site; on a Control host the PiFinder client's computer (clock, time zone,
+  location of its KStars) is checked as well. The name of a differing source is marked at the start of its line. **Set mount from KStars** with a result for every step, **Recheck**,
+  and a notice that stays until **Dismiss**.
+
+### Fixed
+
+- After a reboot PiFinder could take port 80 before StellarMate's web server had started: that web page (nginx) stayed away and
+  the simulated sky solved nothing, because PiFinder is expected on port 8080. `pifinder.service` now starts after
+  `nginx.service`.
+- OnStep mount type fix (#227, `bin/build_indi_onstep_fix.sh`, optional): follows the installed INDI version instead of the pinned
+  2.2.2 and reads the source list from that version; `--build-only`. Checked with 2.2.5: still needed for fork and alt-az
+  controllers. New `test_tools/onstep_mount_type_check.py`.
+- Time and location check: after writing to the mount it says whether the mount still reports a position and how far it moved.
+  The simulated sky no longer stops when a mount reports "nan" (seen from the Telescope Simulator's alignment calculation).
+- Control Center: the "mount's clock is hours behind" notice was a false alarm (INDI keeps the time last set on the mount, it does
+  not run on). The automatic "correction" built on it is removed: it switched KStars' real-time clock off and on again every few
+  seconds.
+- Mount Bridge, OnStep over USB/serial: an alignment running on the controller is detected through the INDI driver, so the Bridge
+  no longer syncs during it (OnStep counted that Sync as a centred star). It also no longer syncs when the coupling is switched on
+  during an alignment, and Multi-Point Alignment is refused meanwhile. New `test_tools/onstep_usb_alignment_test.py`.
+- Control Center: a coupling switched off anywhere (for example in KStars' INDI panel) stays off; before, the self-healing switched it
+  on again after some seconds.
+- Mount Bridge: switching the coupling to Off stops a slew the Bridge started itself (GoTo from PiFinder, refining, Goto Push-To);
+  before, the mount drove on (#231). A GoTo from another source and a Multi-Point Alignment are not touched. New
+  `test_tools/bridge_off_stops_slew_test.py`.
+
+### Changed
+
+- Live tests: a star field the simulated camera cannot solve or solves wrongly (#697) is left for the next one in every GoTo of the
+  tests that choose their own target; each such case and an incomplete simulator alignment (#702) appears as a `note` in
+  `summary.txt`. New `test_tools/field_problem_test.py`.
+- README: both limits of the simulated environment are named under "Status of 3.0.0".
+
 ## [3.0.0] - 2026-11-28
 
 > A large step in how PiFinder and the mount work together: GoTo from anywhere ends on the object, one name for the target

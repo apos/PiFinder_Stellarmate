@@ -1,4 +1,4 @@
-// Runs the clock-warning functions of gui_installer/status_page.html (between "Clock warnings (begin)" and "(end)")
+// Runs the clock-and-location functions of gui_installer/status_page.html (between "Clock warnings (begin)" and "(end)")
 // under node, no browser:   node test_tools/clock_warning_test.js
 const fs = require('fs');
 const path = require('path');
@@ -6,7 +6,8 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'gui_installer', 'status
 const a = html.indexOf('// ---- Clock warnings (begin) ----');
 const b = html.indexOf('// ---- Clock warnings (end) ----');
 if (a < 0 || b < 0) { console.error('markers not found'); process.exit(2); }
-const T = new Function(html.slice(a, b) + '\nreturn { clockFormatParts, clockSkewText, clockSkyTimeModel, clockBannerModel };')();
+const T = new Function(html.slice(a, b) +
+  '\nreturn { clockFormatParts, clockSkyTimeModel, clockOffsetText, clockPlaceText, clockNoticeUpdate, clockNoticeDismiss, clockNoticeModel };')();
 
 let failed = 0;
 function ok(cond, msg) { if (!cond) { failed++; console.error('FAIL: ' + msg); } else console.log('ok:   ' + msg); }
@@ -20,39 +21,59 @@ eq(p.clock, '21:58:27 CET', 'clock with seconds');
 eq(p.day, '25 Nov', 'day and month');
 ok(T.clockFormatParts(ms, 'Not/AZone').time.length > 0, 'an unknown timezone name falls back to the browser zone');
 
-eq(T.clockSkewText(10 * 3600 + 24 * 60), '10 h 24 min', 'hours and minutes');
-eq(T.clockSkewText(-45 * 60), '45 min', 'minutes only, sign ignored');
-eq(T.clockSkewText(3 * 86400), '3 days', 'days');
+eq(T.clockOffsetText(1), 'UTC+1:00', 'offset east');
+eq(T.clockOffsetText(-3.5), 'UTC-3:30', 'offset west with half an hour');
+eq(T.clockOffsetText(null), '-', 'no offset');
+eq(T.clockPlaceText([49.4776, 8.4508]), '49.478° N, 8.451° E', 'a place');
+eq(T.clockPlaceText([-33.9, -70.5]), '33.900° S, 70.500° W', 'south west');
+eq(T.clockPlaceText(null), '-', 'no place');
 
-const base = { pi_time_utc: '2026-11-25T20:58:27+00:00', timezone: 'Europe/Berlin', mount_clock_warn: false, pi_clock_warn: false,
-  mount_skew_sec: 100, mount_time_utc: '2026-11-25T20:56:47+00:00' };
+const agree = { pi_time_utc: '2026-11-25T20:58:27+00:00', timezone: 'Europe/Berlin', mismatch: false, mount_warn: false,
+  pi_clock_warn: false, current: [], can_set_mount: true, rows: [
+    { source: 'KStars (reference)', time_utc: '2026-11-25T20:58:27+00:00', offset: 1, location: [49.4776, 8.4508], note: '', wrong: [] },
+    { source: 'Mount (LX200 OnStep)', time_utc: null, offset: null, location: null, note: 'no time reported', wrong: [] }] };
+const differ = Object.assign({}, agree, { mismatch: true, mount_warn: true,
+  current: ["The mount's location (INDI) is 16 km from KStars' location."] });
+const pending = Object.assign({}, differ, { mismatch: false });   // wrong, but not yet long enough
+
 eq(T.clockSkyTimeModel(null, ms, 0), null, 'no reading yet: no line');
-let m = T.clockSkyTimeModel(base, ms, 0);
-ok(m && !m.warn && m.time === '21:58 CET' && m.tail === null, 'all clocks agree: grey line, no tail');
-m = T.clockSkyTimeModel(Object.assign({}, base, { mount_clock_warn: true }), ms, 0);
-ok(m.warn && m.tail === 'mount clock differs', 'mount clock differs: warn with that tail');
-m = T.clockSkyTimeModel(Object.assign({}, base, { pi_clock_warn: true }), ms, 0);
+let m = T.clockSkyTimeModel(agree, ms, 0);
+ok(m && !m.warn && m.time === '21:58 CET' && m.tail === null, 'all agree: grey line, no tail');
+m = T.clockSkyTimeModel(differ, ms, 0);
+ok(m.warn && m.tail === 'mount time or location differs', 'mount differs: warn with that tail');
+m = T.clockSkyTimeModel(Object.assign({}, agree, { pi_clock_warn: true }), ms, 0);
 ok(!m.warn && m.tail === 'Pi clock not NTP-synced', 'Pi not NTP-synced: grey note, no warning');
-// the line follows the Pi's clock, not the browser's: a browser 2 h behind still shows the Pi time
-m = T.clockSkyTimeModel(base, ms - 2 * 3600 * 1000, 2 * 3600 * 1000);
+m = T.clockSkyTimeModel(agree, ms - 2 * 3600 * 1000, 2 * 3600 * 1000);
 eq(m.time, '21:58 CET', 'browser clock offset is corrected by the server offset');
 
-const mountOff = Object.assign({}, base, { mount_clock_warn: true, mount_skew_sec: 10 * 3600 + 24 * 60, mount_time_utc: '2026-11-25T10:34:27+00:00' });
-let bn = T.clockBannerModel(mountOff, {});
-ok(bn.mount, 'mount strip');
-ok(bn.text.indexOf('10 h 24 min behind') > 0, 'text names the size and direction: ' + bn.text.slice(0, 60));
-eq(bn.piClock, '21:58:27 CET', 'Pi clock shown');
-eq(bn.mountClock, '11:34:27 CET', 'mount clock shown');
-bn = T.clockBannerModel(Object.assign({}, mountOff, { mount_skew_sec: -3700 }), {});
-ok(bn.text.indexOf('1 h 2 min ahead of') > 0, 'a mount ahead of the Pi says ahead');
-bn = T.clockBannerModel(mountOff, { mount_clock: true });
-ok(!bn.mount, 'a dismissed strip stays hidden');
-bn = T.clockBannerModel(Object.assign({}, base, { pi_clock_warn: true }), {});
-ok(!bn.mount && bn.pi === undefined, 'Pi not NTP-synced: no strip at all');
-bn = T.clockBannerModel(base, {});
-ok(!bn.mount, 'no strip when everything agrees');
-bn = T.clockBannerModel(null, {});
-ok(!bn.mount, 'no reading: no strip');
+const ui = { open: false, dismissed: false };
+T.clockNoticeUpdate(ui, agree);
+ok(!T.clockNoticeModel(agree, ui).show, 'no notice while everything agrees');
+T.clockNoticeUpdate(ui, pending);
+ok(!ui.open, 'a difference that has not lasted opens nothing');
+T.clockNoticeUpdate(ui, differ);
+let n = T.clockNoticeModel(differ, ui);
+ok(n.show && n.problems.length === 1 && n.canFix && /do not match/.test(n.head), 'the notice opens with the problem and the fix');
+eq(n.rows[0].time, '25 Nov, 21:58:27 CET', 'row time in the Pi timezone');
+eq(n.rows[1].time, '-', 'a row without time');
+ok(/mount may point wrongly/.test(T.clockNoticeModel(Object.assign({}, differ, { rows: [{ source: 'Mount (M)', wrong: ['location'] }] }), ui).head),
+  'a wrong mount line: the head says the mount may point wrongly');
+ok(!/mount may point/.test(T.clockNoticeModel(Object.assign({}, differ, { rows: [{ source: "PiFinder's computer (x)", wrong: ['time'] }] }), ui).head),
+  'only the other computer differs: nothing is claimed about the mount');
+T.clockNoticeUpdate(ui, agree);
+n = T.clockNoticeModel(agree, ui);
+ok(n.show && /agree now/.test(n.head) && n.problems.length === 0, 'it stays open when everything agrees, and says so');
+T.clockNoticeDismiss(ui, agree);
+ok(!T.clockNoticeModel(agree, ui).show, 'only Dismiss closes it');
+T.clockNoticeUpdate(ui, differ);
+ok(ui.open, 'a new difference after that opens it again');
+T.clockNoticeDismiss(ui, differ);
+T.clockNoticeUpdate(ui, differ);
+ok(!ui.open, 'dismissed with the difference still there: stays closed');
+T.clockNoticeUpdate(ui, agree);
+T.clockNoticeUpdate(ui, differ);
+ok(ui.open, 'gone and back again: a new notice');
+ok(!T.clockNoticeModel(null, { open: true }).head, 'no reading: no content');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('all ok');

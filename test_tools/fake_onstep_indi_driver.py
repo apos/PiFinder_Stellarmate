@@ -4,7 +4,14 @@
 indiserver starts it like any driver. Its connection settings say "OnStep over TCP at 127.0.0.1, port 9999"; a GoTo or Sync sent
 to it is answered like the real driver does (new target on a GoTo). The alignment switches and a Sync are passed to a stand-in
 controller on 127.0.0.1:9999 (:An# :CM# :AW#), as the real driver does; without one listening nothing else happens.
+
+FAKE_ONSTEP_CONNECTION=serial in the environment: it says it is connected over USB. A test can play the controller's side with
+the text property TEST_CONTROL: STAR / STARS set what "Align Process" reports (the real driver reads :A?# and publishes it
+there), RA / DEC move the mount without any command (hand controller) - the position stays Busy while BUSY is "1", as the
+real driver reports a GoTo or a way home of the controller, but not its direction buttons -, FLAGS sets what "OnStep Status"
+reports (":GU#": p unparked, I parking, P parked, h on the way home, H at home).
 """
+import os
 import socket
 import sys
 import xml.etree.ElementTree as ET
@@ -44,21 +51,30 @@ def to_controller(command):
 
 align_stars = {str(n): "On" if n == 3 else "Off" for n in range(1, 10)}
 position = {"RA": 1.0, "DEC": 10.0}
+target = dict(position)  # changes with a GoTo only, as the real driver's
 on_coord = {"TRACK": "Off", "SLEW": "On", "SYNC": "Off"}
+serial = os.environ.get("FAKE_ONSTEP_CONNECTION") == "serial"
+align_status = {str(n): "Not Updated" for n in range(8)}
+align_status.update({"5": "9", "6": "0", "7": "0"})
+status = {":GU# return": "nNp/Eo060"}
+slewing = False
 
 
 def define():
     vector("Switch", "CONNECTION", {"CONNECT": "On", "DISCONNECT": "Off"})
     vector("Text", "DRIVER_INFO", {"DRIVER_NAME": DEVICE, "DRIVER_EXEC": "indi_lx200_OnStep", "DRIVER_VERSION": "1.0",
                                    "DRIVER_INTERFACE": "5"})
-    vector("Switch", "CONNECTION_MODE", {"CONNECTION_SERIAL": "Off", "CONNECTION_TCP": "On"})
+    vector("Switch", "CONNECTION_MODE", {"CONNECTION_SERIAL": "On" if serial else "Off", "CONNECTION_TCP": "Off" if serial else "On"})
     vector("Text", "DEVICE_ADDRESS", {"ADDRESS": "127.0.0.1", "PORT": "9999"})
     vector("Switch", "ON_COORD_SET", on_coord)
     vector("Number", "EQUATORIAL_EOD_COORD", position)
-    vector("Number", "TARGET_EOD_COORD", position, state="Idle")
+    vector("Number", "TARGET_EOD_COORD", target, state="Idle")
     vector("Switch", "AlignStars", align_stars)
     vector("Switch", "NewAlignStar", {"0": "Off", "1": "Off"})
     vector("Switch", "NewAlignStar2", {"0": "Off"})
+    vector("Text", "Align Process", align_status)
+    vector("Text", "OnStep Status", status)
+    vector("Text", "TEST_CONTROL", {"STAR": "0", "STARS": "0", "RA": "", "DEC": "", "BUSY": "", "FLAGS": ""})
 
 
 buf = ""
@@ -73,6 +89,19 @@ for line in sys.stdin:
         if item.tag == "getProperties":
             if item.get("device") in (None, DEVICE):
                 define()
+        elif item.get("device") == DEVICE and item.get("name") == "TEST_CONTROL":
+            wanted = {e.get("name"): (e.text or "").strip() for e in item}
+            if wanted.get("STAR") and wanted.get("STARS"):
+                align_status.update({"6": wanted["STAR"], "7": wanted["STARS"]})
+                vector("Text", "Align Process", align_status, verb="set")
+            if wanted.get("BUSY"):
+                slewing = wanted["BUSY"] == "1"
+            if wanted.get("FLAGS"):
+                status[":GU# return"] = wanted["FLAGS"]
+                vector("Text", "OnStep Status", status, verb="set")
+            if wanted.get("RA") and wanted.get("DEC"):
+                position.update({"RA": float(wanted["RA"]), "DEC": float(wanted["DEC"])})
+                vector("Number", "EQUATORIAL_EOD_COORD", position, state="Busy" if slewing else "Ok", verb="set")
         elif item.get("device") == DEVICE and item.get("name") == "ON_COORD_SET":
             chosen = [e.get("name") for e in item if (e.text or "").strip() == "On"]
             if chosen:
@@ -92,7 +121,8 @@ for line in sys.stdin:
         elif item.get("device") == DEVICE and item.get("name") == "EQUATORIAL_EOD_COORD":
             position.update({e.get("name"): float(e.text) for e in item})
             if on_coord["SYNC"] != "On":
-                vector("Number", "TARGET_EOD_COORD", position, state="Idle", verb="set")
+                target.update(position)
+                vector("Number", "TARGET_EOD_COORD", target, state="Idle", verb="set")
             else:
                 to_controller(":CM#")
             vector("Number", "EQUATORIAL_EOD_COORD", position, verb="set")

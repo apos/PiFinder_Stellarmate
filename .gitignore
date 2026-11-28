@@ -8,6 +8,7 @@
 /indi_pifinder/build/
 /indi_pifinder_bridge/build/
 /indi_pifinder_simulator/build/
+/indi_onstep_fix/build/
 /.gui_setup.log
 /.gui_setup.result
 /.setup_warnings

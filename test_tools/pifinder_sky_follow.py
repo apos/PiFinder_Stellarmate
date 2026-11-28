@@ -123,6 +123,12 @@ def altitude_deg(ra_hours, dec_deg, lat_deg, lon_deg, now=None):
 MANUAL_SETTLE_SEC = 1.5  # after the last motion switch goes off, positions that were already on their way still count as motion
 
 
+def usable_position(values) -> bool:
+    """Both coordinates are real numbers. The Telescope Simulator's alignment calculation can give "nan" (2026-11-28, two
+    ordinary sync points); rendering that stopped the follower, and it was restarted into the same value again and again."""
+    return all(math.isfinite(values.get(key, math.nan)) for key in ("RA", "DEC"))
+
+
 def parse_number_vectors(buffer: str):
     """([(device, name, state, {element: float})], rest_of_buffer) for the complete number vectors in the text."""
     found = []
@@ -211,7 +217,7 @@ class MountWatcher(threading.Thread):
                     if device == self.device and name == "GEOGRAPHIC_COORD" and "LAT" in values and "LONG" in values:
                         if values["LAT"] or values["LONG"]:
                             self.location = (values["LAT"], values["LONG"])
-                    if device == self.device and name == "EQUATORIAL_EOD_COORD" and "RA" in values and "DEC" in values:
+                    if device == self.device and name == "EQUATORIAL_EOD_COORD" and usable_position(values):
                         self.on_update(values["RA"], values["DEC"], state)
         except OSError as exc:
             self.error = str(exc)

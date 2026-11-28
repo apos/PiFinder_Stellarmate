@@ -4,21 +4,21 @@
 
 ![PiFinder am Teleskop unter Sternenhimmel](docs/images/readme/PiFinder.jpg)
 
-> ### 🚀 **Release-Hinweis — v3.0.0**
+> ### 🚀 **Release-Hinweis — v3.1.0**
 >
-> Ein großer Schritt im Zusammenspiel von PiFinder und Montierung. **Noch nicht stabil** und nicht unter echtem Himmel getestet -
-> bitte zuerst [Stand von 3.0.0](#stand-von-300-noch-nicht-stabil) lesen.
+> Die Mount Bridge lässt die Finger davon, wo sie das soll. **Noch nicht stabil** und nicht unter echtem Himmel getestet -
+> bitte zuerst [Stand von 3.1.0](#stand-von-310-noch-nicht-stabil) lesen.
 >
-> * **GoTo von überall** (PiFinder, KStars, StellarMate-App, OnStep-Handsteuerung über das Netzwerk) endet auf dem Objekt; die
->   Bridge prüft per Plate-Solve und justiert nach.
-> * Ein Name für das angepeilte Ziel: **Push-To**. Die Karte unter dem Himmelsbild sagt, was passiert und warum.
-> * Die Bridge pausiert bei Guiding und Alignment; **Multi-Point-Alignment** baut ein echtes OnStep-Modell.
-> * **Simulierter Himmel**: der echte Solver auf einem GSC-Sternfeld, damit sich das Meiste ohne klare Nacht entwickeln und testen
->   lässt.
-> * Die seit Langem bestehenden Aussetzer der Mount Bridge ([#385](https://github.com/apos/PiFinder_Stellarmate/issues/385)) sind
->   behoben.
+> * **Park ist Park**: Ein Mount, das parkt oder in die Home-Position fährt, bleibt unangetastet - kein Sync, nichts wird
+>   übernommen, keine Bewegung bis zum nächsten GoTo.
+> * **OnStep über USB**: Ein GoTo von der Handsteuerung wird verfolgt; während eines Alignments wird nichts gesynct.
+> * Neue Einstellung **"Mount has its own alignment"**: Die Bridge synct dieses Mount dann nie von sich aus.
+> * **Kopplung aus** bleibt aus und stoppt eine Fahrt, die die Bridge selbst gestartet hat.
+> * **Zeit- und Standortprüfung**: KStars, Mount, PiFinder und Pi nebeneinander, mit einem Knopf "Mount aus KStars setzen".
 >
-> Das Control Center lauscht auf Port **8777** (siehe [Ports](#ports)). Alle Änderungen: [CHANGELOG.md](CHANGELOG.md).
+> Neu in 3.0.0: GoTo von überall endet auf dem Objekt, OnStep-Multi-Point-Alignment, der simulierte Himmel. Control-Center-Port
+> **8777** (siehe [Ports](#ports)). Alle Änderungen: [CHANGELOG.md](CHANGELOG.md). Mitmachen und Fehler melden:
+> [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Zusammenfassung
 
@@ -65,7 +65,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 >
 > * Gepinnt auf **PiFinder 2.6.4** auf **StellarMate OS 2.4.0** (Arch Linux) über `version.txt` /
 >   `pifinder_stellarmate_setup.sh` — ein fester Release-Tag, nicht der bewegliche HEAD des upstream
->   `release`-Branches. Mit PFSM 3.0.0 bisher auf einem Pi 5 getestet; Pi 4 und x86 stehen aus —
+>   `release`-Branches. Mit PFSM 3.1.0 bisher auf einem Pi 5 getestet; Pi 4 und x86 stehen aus —
 >   [Versionskompatibilität](#versionskompatibilität) hat die Details.
 > * **Pi 5 Tastatur ⚠️** — ein Geekworm-X1203-UPS-Shield belegt GPIO 16 gemeinsam mit Tastatur-
 >   Spalte 0 (Tasten 7/4/1/LEFT), die Spalte fällt aus. Hardware-Konflikt zwischen den zwei
@@ -81,21 +81,22 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 
 ---
 
-## Stand von 3.0.0: noch nicht stabil
+## Stand von 3.1.0: noch nicht stabil
 
-3.0.0 ist ein Release für alle, die beim Testen helfen möchten. Es wurde **noch nicht unter echtem Himmel getestet**.
+3.1.0 ist ein Release für alle, die beim Testen helfen möchten. Es wurde **noch nicht unter echtem Himmel getestet**.
 
 | Bereich | Stand |
 |---|---|
 | Bisher getestet | Raspberry Pi 5 mit simuliertem Himmel ("Real Hardware + GSC Simulation") und den INDI-Simulatoren; ein echter OnStep-Controller drinnen mit simuliertem PiFinder-Himmel; automatischer Regressionslauf (`test_tools/run_regression.sh`) |
-| Raspberry Pi 4, x86 (UTM) | Installation und Update mit 3.0.0 noch nicht getestet. Auf x86 braucht der simulierte Himmel PiFinders eingebaute Sternerkennung; der Patch dafür ist neu und auf x86 ungetestet |
+| Raspberry Pi 4, x86 (UTM) | Installation und Update mit 3.x noch nicht getestet. Auf x86 braucht der simulierte Himmel PiFinders eingebaute Sternerkennung; der Patch dafür ist neu und auf x86 ungetestet |
 | Standard-PiFinder (eigene SD-Karte) als **PiFinder Client** | nicht getestet |
 | Kombination **Control Host / Client** | grundsätzlich lauffähig, nicht ausführlich getestet |
 | Echtes Mount | GoTo-Verfolgung, Nachjustieren und OnStep-Alignment nur mit simuliertem Himmel gesehen; eine physische Handsteuerung nicht gesondert probiert (sie sendet dieselben Netzwerk-Befehle) |
-| OnStep über **USB/seriell** | GoTos vom Controller und sein Alignment werden nicht erkannt |
+| OnStep über **USB/seriell** | ein GoTo vom Controller wird bis zum Endpunkt der Fahrt verfolgt (mit einem Ersatztreiber gesehen; die zugrunde liegenden Signale sind an einem echten OnStep gemessen). Das Multi-Point Alignment sendet nur Syncs |
 | Kamera und Himmel | kein Kamera- oder Himmelstest mit dem gepinnten PiFinder 2.6.4 |
+| Simulierter Himmel | einzelne Sternfelder werden nicht oder falsch gelöst ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); die Mount Bridge gibt dann auf oder fragt nach und bewegt nichts (am Telescope Simulator gesehen) |
+| Multi-Point Alignment ohne OnStep | ein Punkt zählt nur, wenn die Montierung die synchronisierte Position meldet; der Telescope Simulator im simulierten Himmel rechnet ein Modell und zeigt Punkte oft als nicht gezählt ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
 | **SMOS-Updates** | ein Update kann alles außerhalb von `/home` entfernen: danach den Post-Update-Schritt ausführen (Karte im Control Center oder `bin/restore_after_smos_update.sh`). Auf Geräten, die von NVMe/USB mit umbenannten Partitionen booten (damit eine SD-Notfallkarte parallel möglich ist), kann ein Update das Gerät unbootbar machen, wenn der Boot-Fix nicht vor dem Neustart läuft ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), der automatische Fix wurde auf echter Hardware noch nicht gesehen); Details unter [SMOS-Updates](#smos-updates) |
-| Kopplung ausschalten | stoppt einen laufenden Slew nicht: **Stop movement** benutzen ([#231](https://github.com/apos/PiFinder_Stellarmate/issues/231)) |
 | Pi-5-Tastatur | eine Spalte fällt mit einem Geekworm-X1203-UPS aus (siehe oben) |
 | Neuere PiFinder-Versionen | PiFinder 3.x (Beta) wird nicht unterstützt; PFSM installiert die gepinnte Version |
 | Dokumentation | noch keine HowTo- oder Video-Anleitung |
@@ -107,7 +108,7 @@ Alles weitere Offene: [Issues](https://github.com/apos/PiFinder_Stellarmate/issu
 
 ## Inhaltsverzeichnis
 
-1. [Stand von 3.0.0](#stand-von-300-noch-nicht-stabil)
+1. [Stand von 3.1.0](#stand-von-310-noch-nicht-stabil)
 2. [Schnellstart](#schnellstart)
 3. [Hauptfunktionen & Änderungen](#hauptfunktionen--änderungen)
 4. [Hardware-Anforderungen](#hardware-anforderungen)
@@ -435,7 +436,7 @@ der Fahrt wartet die Bridge auf einen Plate-Solve von PiFinder. Sieht PiFinder d
 | KStars: Objekt rechtsklicken → **PiFinder LX200** → Goto | ja |
 | KStars / Ekos: Goto auf dem Mount, StellarMate-App **SLEW**, jeder andere INDI-Client | ja |
 | StellarMate-App: **GO** | ja. Zusätzlich macht Ekos eine Aufnahme durch die **Teleskopkamera** und löst sie, s. unten "Alignment in Ekos" |
-| OnStep-Handsteuerung, OnStep-App oder SkySafari direkt am OnStep-Controller | ja, wenn das Mount **über das Netzwerk** verbunden ist: Die Bridge liest das Ziel des Controllers über einen zweiten Netzwerk-Port, nur lesend ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)). Über USB/seriell nicht: Übernommen wird die Stelle, die PiFinder nach der Fahrt sieht |
+| OnStep-Handsteuerung, OnStep-App oder SkySafari direkt am OnStep-Controller | ja, wenn das Mount **über das Netzwerk** verbunden ist: Die Bridge liest das Ziel des Controllers über einen zweiten Netzwerk-Port, nur lesend ([#658](https://github.com/apos/PiFinder_Stellarmate/issues/658)). Über **USB/seriell** ebenfalls ja; der Treiber gibt das Ziel des Controllers nicht weiter, deshalb gilt die Stelle, an der die Fahrt endet, als Objekt |
 
 **Wird das Objekt nach 3 Versuchen nicht erreicht,** hört die Bridge auf, zeigt `OFF TARGET` und bewegt bis zum nächsten GoTo
 nichts mehr. Dann das Ausrichtungsmodell des Mounts prüfen.
@@ -444,8 +445,16 @@ nichts mehr. Dann das Ausrichtungsmodell des Mounts prüfen.
 abgeglichen; die Bridge zieht nicht zurück. Hat sich das Mount selbst nicht bewegt (Klemmung offen, Teleskop angestoßen),
 zeigt das Control Center eine gelbe Karte mit der Frage; bis zur Antwort bewegt sich nichts.
 
+**Park und Home - Park ist Park**: Parkt das Mount oder fährt es in die Home-Position (Control Center, KStars, App oder
+Handsteuerung), synct die Bridge es nicht, übernimmt die Position nicht und bewegt bis zum nächsten GoTo nichts.
+
+**Mount mit eigenem Alignment** (an der Handsteuerung eingerichtet): im Control Center "Mount has its own alignment" ankreuzen.
+Die Bridge synct dieses Mount dann nie von sich aus; verlangte GoTos werden weiter geprüft und nachjustiert, eine Abweichung
+wird als Sync angeboten.
+
 **Stopp**: Nach einem Abort in KStars/Ekos bewegt die Bridge das Mount erst wieder beim nächsten GoTo. "Stop movement" im
-Control Center schaltet zusätzlich die Kopplung aus.
+Control Center schaltet zusätzlich die Kopplung aus. Das Ausschalten der Kopplung stoppt eine Fahrt, die die Bridge selbst gestartet hat;
+ein GoTo von anderer Stelle läuft weiter.
 
 **Alignment in Ekos** (Plate-Solve, Polar Alignment, Mount-Modell; auch GO): Die Bridge pausiert, solange Ekos aufnimmt, löst
 oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.
@@ -456,9 +465,8 @@ oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.
 | Nothing, gelöst | unverändert | bewegt nichts bis zum nächsten GoTo |
 | Solve fehlgeschlagen, Mount weder gesynct noch gedreht | unverändert | führt ein laufendes GoTo zu Ende |
 
-Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App, Mount über das Netzwerk verbunden) pausiert die
-Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell wird es
-nicht erkannt.
+Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App) pausiert die
+Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell sieht die Bridge das Alignment über den INDI-OnStep-Treiber ("Align Process").
 
 **Multi-Point-Alignment mit einem OnStep** (Control Center, Mount über das Netzwerk verbunden) ist ein echtes OnStep-Alignment:
 Mount in die Home-Position stellen, Start drücken, die Sterne liefern PiFinders Plate-Solves; **Save to OnStep** speichert das
@@ -505,7 +513,7 @@ das zu wiederholen.
 
 | PiFinder | SMOS | Pi 4 | Pi 5 | UTM x86 (Dev / Simulator) |
 |---|---|---|---|---|
-| 2.6.4 | 2.4.0 | — (3.0.0 noch nicht getestet) | ✅ PFSM 3.0.0 mit simuliertem Himmel und den INDI-Simulatoren, automatischer Regressionslauf, ein echter OnStep drinnen; kein Kamera- oder Himmelstest; Tastaturspalte mit UPS-Shield ausgefallen (siehe oben) | — (3.0.0 noch nicht getestet) |
+| 2.6.4 | 2.4.0 | — (3.x noch nicht getestet) | ✅ PFSM 3.1.0 mit simuliertem Himmel und den INDI-Simulatoren, automatischer Regressionslauf, ein echter OnStep drinnen; kein Kamera- oder Himmelstest; Tastaturspalte mit UPS-Shield ausgefallen (siehe oben) | — (3.0.0 noch nicht getestet) |
 | 2.6.3 | 2.4.0 | ✅ getestet — echtes Update 2.3.0 → 2.4.0, Restore, Reboot von NVMe (siehe NVMe-Hinweis unter "SMOS-Updates"); Kamera-Hardwaretest steht aus | ⚠️ unter 2.4.0 nicht verifiziert (seit dem Update nicht erreichbar) | ✅ getestet — echtes Update 2.3.0 → 2.4.0 und Restore, Control Center, Mount Bridge gegen den PiFinder Simulator |
 | 2.6.3 | 2.3.0 | ✅ vollständig getestet | ✅ vollständig getestet | ✅ getestet — Installation, Control Center, Mount Bridge gegen den PiFinder Simulator (kein echtes Plate-Solving; siehe [Readme_UTM_dev_X86_de.md](Readme_UTM_dev_X86_de.md)) |
 | 2.6.0 | 2.2.1 | ✅ vollständig getestet | ✅ GPS/Web-UI/OLED bestätigt, ⚠️ Tastatur mit angeschlossenem Geekworm-X1203-UPS teilweise unbrauchbar (GPIO-16-Konflikt, siehe Banner oben) — Kamera-Adapterkabel ausstehend | — |
@@ -579,7 +587,7 @@ heraus ausgeführt werden kann, das er gerade deinstalliert.
 *   **[Readme_design_decisions_de.md](Readme_design_decisions_de.md)** — Zusammenfassung der wichtigsten Design-Entscheidungen. ([English version](Readme_design_decisions.md))
 *   **[CHANGELOG.md](CHANGELOG.md)** — Versionshistorie · **[GitHub-Projekt](https://github.com/users/apos/projects/15)** — getrackte Roadmap.
 *   **[bin/README_compile_indi.md](bin/README_compile_indi.md)** — kurze Build-Referenz für den PiFinder-LX200-Treiber.
-*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — Submodul-Einrichtung nach dem Klonen, Ausführen der Shell-Skript-Testsuite (Englisch).
+*   **[CONTRIBUTING.md](CONTRIBUTING.md)** — wohin mit Fragen (Discord), wie man ein Issue meldet (Konventionen), Entwickeln und Testen (Englisch).
 
 ---
 
