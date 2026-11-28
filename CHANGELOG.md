@@ -5,18 +5,26 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ## [Unreleased]
 
-> Merged from `alpha/sim-refine` (49 commits): the "Real Hardware + GSC Simulation" mode, the Bridge's target and positioning transparency (Control Center and PiFinder's screen), arrival checks of the Mount Bridge,
-> and the redesigned sky area of the Control Center. No breaking changes.
+## [3.0.0] - 2026-11-28
+
+> A large step in how PiFinder and the mount work together: GoTo from anywhere ends on the object, one name for the target
+> (Push-To), the Bridge pauses during guiding and alignments, OnStep hand controller and alignment support, a simulated sky, and the
+> fix for the Mount Bridge's long-standing drop-outs (#385). **Not stable yet**, not tested under the real sky - see "Status of
+> 3.0.0" in the README. Version 3 because of the size of the change; nothing an existing installation relies on was removed apart
+> from the three-branch model (`alpha`).
 >
-> **Checked:** all JS tests in `test_tools/` (`sky_panel_test.js`, `gsc_tile_test.js`, `clock_warning_test.js`, ...), `gsc_sim_test.py` (34), `pifinder_sky_follow_test.py` (35), `pifinder_sky_renderer_test.py` (8),
-> `pfsm_bridge_status_test.py` (14), `target_status_test.py` (11), `patch_drift_check_test.py` (4), `compat_check_test.py` (14); live on the Pi 5 with the GSC simulation and a real OnStep: Target/Positioning display, hand-controller GoTo
-> (adopted as the new target), clutch slip (asks, then reverts), the GSC mode tile in all states.
+> **Checked** on a Raspberry Pi 5: `test_tools/run_regression.sh all --move` (page, Python and shell tests; the Mount Bridge
+> against stand-ins; GoTo and alignment runs on the Telescope Simulator with the simulated sky); a real OnStep 10.14a indoors
+> (controller GoTos, a three-star OnStep alignment, refining, with a stand-in PiFinder sky).
 >
-> **Not yet seen live:** an unattended long run (#385 is open: the Bridge stays silent for 15-60 s about every 5 minutes, not root-caused; the Control Center now restarts it only after 60 s of silence), Multi-Point Alignment on the new
-> sky card, a hand-controller GoTo with tracking on from start to end after the last layout changes, and a Mount Bridge GoTo with the real mount through the whole run.
+> **Not checked:** the real sky and camera, Raspberry Pi 4 and x86 installation, a standard PiFinder as client, the Control
+> Host / Client combination.
 
 ### Added
 
+- Regression run `test_tools/run_regression.sh` (offline, driver and live-simulation groups, raw logs kept) and `test_tools/README.md`.
+- README: the ports on a StellarMate device, and what is not stable yet.
+- x86: PiFinder's solver uses its own star finder instead of stopping on the bundled ARM `cedar-detect-server` (#234; untested on x86).
 - Multi-Point Alignment with an OnStep connected over the network runs a real OnStep alignment (home question, stars counted by the controller, replacement stars, Continue after Stop, **Save to OnStep**). Before, it only sent Syncs, from which OnStep builds no model.
 - Mount Bridge, OnStep over the network (#658): GoTos started on the hand controller, the OnStep app or SkySafari are followed (the controller's target is read on a second network port, read only), and an alignment running on the controller pauses the Bridge.
 - A short FAQ (`docs/FAQ.md`, German `FAQ_de.md`), starting with: PFSM keeps running while the phone's screen is locked.
@@ -46,10 +54,13 @@ All notable changes to this project are documented in this file. Format loosely 
 - Control Center: in a profile without a Mount Bridge (PiFinder alone, e.g. on a Dobsonian) the card under the sky picture is hidden.
 - The drivers ask PiFinder on port 8080 first, then 80 (on StellarMate port 80 is nginx in front of EkosLive).
 - Plain wording: "Mount and PiFinder differ by 103°" (was "Still 6157′ off after 0 attempts"), "you can steer by hand", "No manual sync yet" with a grey dot.
-- "Held target" is now just "Target": the buttons Align to / Goto / Revert to Target, the help page, and the Bridge driver's labels and log texts (property names unchanged).
 - Wording of the positioning status, which was not understood: PiFinder's title bar says "MOUNT MOVING" (was "HANDS OFF") and "MOUNT OFF 103°" (was "Hand OK 6157'"; distance between mount and PiFinder, bright on black); the Control Center card shows "Don't touch the mount" only while the mount is moved (no "Hands free" badge).
 - Control Center restarts an unresponsive Mount Bridge only after 60 s of silence instead of 15 s (#385), and says so when the Bridge stops answering during a move.
 - Drift and altitude badges have one fixed width, so the diagram does not move when the number or the label changes.
+
+### Removed
+
+- The `alpha` branch of the branch model: development happens on `dev` (and short-lived branches from it), releases on `main`.
 
 ### Fixed
 
@@ -66,7 +77,7 @@ All notable changes to this project are documented in this file. Format loosely 
 - Mount Bridge: "Adopt this position" syncs the mount to it; before, the same question came back at once.
 - Control Center: restarting the Mount Bridge uses the FIFO of the INDI server it runs on (profiles that mix driver sources run two).
 - Mount Bridge: a mount that started after the Bridge connected, or was selected later, is read again without restarting the driver (#662).
-- Mount Bridge: "Goto to Target" is verified and refined; before, the Bridge took its own slew for somebody else's and kept the landing position.
+- Mount Bridge: "Goto Push-To" is verified and refined; before, the Bridge took its own slew for somebody else's and kept the landing position.
 - Sky picture: a slewing mount is labelled "slewing", not "stopped".
 - Sky simulation: after a reboot the simulated sky could start tens of degrees off, because the start-up position changes of the mount were taken for Syncs.
 - Mount Bridge: an unreachable target no longer leads to endless re-slewing; after 3 attempts nothing moves until the next GoTo.

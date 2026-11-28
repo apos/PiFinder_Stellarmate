@@ -152,8 +152,15 @@ def main(argv=None):
         check("6 stopped", not [s for s in slews if s > 3] and moved_target < 1 and not run.asked,
               "slewing after the stop at %s, last GoTo moved %.1f', Push-To moved %.1f', phase %s" %
               (slews or "never", moved_target, separation_deg(*hold(), *hold1) * 60, t.phase()))
-        ra, dec = t.targets()[1]
-        ok = goto(ra, dec)
+        # PiFinder cannot solve every simulated star field (found 2026-11-28, RA 6.67 h Dec +30): that is no verdict about the
+        # Bridge, so such a field is left for the next one - and said.
+        for ra, dec in t.targets()[1:]:
+            ok = goto(ra, dec)
+            age = t.solve_age()
+            if ok or (age is not None and age < 20):
+                break
+            print("   PiFinder cannot solve the field at RA %.2f h Dec %.0f (last solve %s s ago): trying another one" %
+                  (ra, dec, "?" if age is None else int(age)), flush=True)
         off = separation_deg(*t.mount_position(), ra, dec) * 60
         check("6 next goto", ok and off <= 2 * threshold and separation_deg(*target(), ra, dec) < AWAY
               and separation_deg(*hold(), ra, dec) < 1,   # ORIGINAL_TARGET is J2000: some 20' of precession away

@@ -22,11 +22,13 @@ Exit 0 = every scenario passed.
 (Alignment runs in Ekos are recorded with ekos_align_probe.py.)
 """
 import argparse
+import json
 import math
 import os
 import socket
 import sys
 import time
+import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gui_installer"))
 import gsc_sim  # noqa: E402
@@ -72,9 +74,12 @@ def pifinder_off_target_arcmin(ra, dec):
 
 
 def send_coords(device, kind, ra, dec):
-    indi_client.set_switch(device, "ON_COORD_SET", kind)
-    message = ('<newNumberVector device="%s" name="EQUATORIAL_EOD_COORD"><oneNumber name="RA">%.6f</oneNumber>'
-               '<oneNumber name="DEC">%.6f</oneNumber></newNumberVector>\n') % (device, ra, dec)
+    """GoTo/Sync: the switch and the coordinates over ONE connection - two connections give no guaranteed order, and a switch
+    left on SYNC (the Bridge leaves it there after its own Sync) would turn a GoTo into a Sync."""
+    message = ('<newSwitchVector device="%s" name="ON_COORD_SET"><oneSwitch name="%s">On</oneSwitch></newSwitchVector>\n'
+               % (device, kind))
+    message += ('<newNumberVector device="%s" name="EQUATORIAL_EOD_COORD"><oneNumber name="RA">%.6f</oneNumber>'
+                '<oneNumber name="DEC">%.6f</oneNumber></newNumberVector>\n') % (device, ra, dec)
     with socket.create_connection(("127.0.0.1", 7624), timeout=5) as sock:
         sock.sendall(message.encode())
         time.sleep(1)
@@ -111,6 +116,15 @@ def targets():
     geo = numbers(MOUNT, "GEOGRAPHIC_COORD")
     lst = lst_hours(geo.get("LONG", 0))
     return [((lst - 1.0) % 24, 45.0), ((lst + 1.0) % 24, 30.0), ((lst - 2.0) % 24, 60.0), ((lst + 0.5) % 24, 20.0)]
+
+
+def solve_age():
+    """Seconds since PiFinder's last plate solve (None: PiFinder does not answer)."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8080/api/status", timeout=5) as reply:
+            return time.time() - float(json.load(reply)["solution"]["last_solve_success"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
 
 
 def check(name, ok, text):
