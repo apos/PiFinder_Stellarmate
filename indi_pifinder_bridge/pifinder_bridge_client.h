@@ -79,6 +79,12 @@ class PiFinderBridgeClient : public INDI::BaseClient
         enum class TargetOrigin { MOUNT, PIFINDER, CONTROLLER };
         bool getLastGotoTarget(double &ra, double &dec, TargetOrigin *source = nullptr, long *setTime = nullptr) const;
 
+        // The INDI OnStep driver's own alignment switches ("AlignStars", "NewAlignStar", "NewAlignStar2"). False: the mount's
+        // driver has none.
+        bool hasOnStepAlignment() const;
+        bool startOnStepAlignment(int stars);
+        bool saveOnStepAlignment();
+
         // The mount's network address, when it is an OnStep connected over TCP (the driver's own connection settings).
         bool getOnStepAddress(std::string &host, int &driverPort) const;
         // True when this GoTo (JNow) was seen through INDI within `maxAgeSec`: sent by this Bridge or by another client.
@@ -259,6 +265,10 @@ class PiFinderBridgeClient : public INDI::BaseClient
         void releaseKeptTarget(bool fromMount, double ra, double dec);
         bool getReportedGotoTarget(double &ra, double &dec, TargetOrigin *source, long *setTime) const;
 
+        INDI::PropertyViewSwitch *m_mountAlignStarsSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountAlignSP = nullptr;
+        INDI::PropertyViewSwitch *m_mountAlignWriteSP = nullptr;
+        bool pressSwitch(INDI::PropertyViewSwitch *property, const char *element);
         INDI::PropertyViewText *m_mountAddressTP = nullptr;
         INDI::PropertyViewText *m_mountDriverInfoTP = nullptr;
         INDI::PropertyViewSwitch *m_mountConnectionModeSP = nullptr;

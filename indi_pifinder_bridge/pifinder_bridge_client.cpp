@@ -55,6 +55,7 @@ void PiFinderBridgeClient::forgetProperties()
     m_mountAddressTP = nullptr;
     m_mountDriverInfoTP = nullptr;
     m_mountConnectionModeSP = nullptr;
+    m_mountAlignStarsSP = m_mountAlignSP = m_mountAlignWriteSP = nullptr;
     {
         std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
         m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
@@ -201,6 +202,12 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountDriverInfoTP = property.getText();
     else if (fromMount && property.isNameMatch("CONNECTION_MODE"))
         m_mountConnectionModeSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("AlignStars"))
+        m_mountAlignStarsSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("NewAlignStar"))
+        m_mountAlignSP = property.getSwitch();
+    else if (fromMount && property.isNameMatch("NewAlignStar2"))
+        m_mountAlignWriteSP = property.getSwitch();
     else if (fromPiFinder && property.isNameMatch("GEOGRAPHIC_COORD"))
         m_piFinderGeoNP = property.getNumber();
     else if (fromPiFinder && property.isNameMatch("EQUATORIAL_EOD_COORD"))
@@ -258,6 +265,35 @@ void PiFinderBridgeClient::noteControllerGoto(double ra, double dec)
         m_controllerTargetTime = static_cast<long>(time(nullptr));
     }
     noteMountEvent(MountEvent::GOTO, ra, dec);
+}
+
+bool PiFinderBridgeClient::hasOnStepAlignment() const
+{
+    return m_mountAlignStarsSP != nullptr && m_mountAlignSP != nullptr && m_mountAlignWriteSP != nullptr;
+}
+
+bool PiFinderBridgeClient::pressSwitch(INDI::PropertyViewSwitch *property, const char *element)
+{
+    auto widget = property != nullptr ? property->findWidgetByName(element) : nullptr;
+    if (widget == nullptr)
+        return false;
+    property->reset();
+    widget->setState(ISS_ON);
+    sendNewSwitch(property);
+    return true;
+}
+
+bool PiFinderBridgeClient::startOnStepAlignment(int stars)
+{
+    if (!hasOnStepAlignment() || !pressSwitch(m_mountAlignStarsSP, std::to_string(stars).c_str()))
+        return false;
+    m_lastMountCommandTime = static_cast<long>(time(nullptr)); // the position changes now, and it is our doing
+    return pressSwitch(m_mountAlignSP, "0");                   // "Start Align"
+}
+
+bool PiFinderBridgeClient::saveOnStepAlignment()
+{
+    return pressSwitch(m_mountAlignWriteSP, "0");
 }
 
 bool PiFinderBridgeClient::getOnStepAddress(std::string &host, int &driverPort) const
@@ -443,6 +479,12 @@ void PiFinderBridgeClient::removeProperty(INDI::Property property)
         m_mountDriverInfoTP = nullptr;
     else if (property.getSwitch() == m_mountConnectionModeSP)
         m_mountConnectionModeSP = nullptr;
+    else if (property.getSwitch() == m_mountAlignStarsSP)
+        m_mountAlignStarsSP = nullptr;
+    else if (property.getSwitch() == m_mountAlignSP)
+        m_mountAlignSP = nullptr;
+    else if (property.getSwitch() == m_mountAlignWriteSP)
+        m_mountAlignWriteSP = nullptr;
     else if (property.getSwitch() == m_mountOnCoordSetSP)
         m_mountOnCoordSetSP = nullptr;
     else if (property.getSwitch() == m_mountParkSP)

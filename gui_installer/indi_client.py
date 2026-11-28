@@ -687,6 +687,8 @@ def mount_bridge_drift(
         "align_point_synced": _int_or_none(align_progress.get("POINT_SYNCED")),
         "align_current_name": align_progress_names.get("CURRENT_NAME") or None,
         "align_synced_names": align_progress_names.get("SYNCED_NAMES") or None,
+        # what an OnStep controller the Bridge reads says about its alignment (None: no such controller)
+        "onstep_align": _onstep_align(device_props),
         "external_hold": external_hold,
         "external_hold_reason": external_hold_reason,
         "align_radius": float(align_config_elements["RADIUS_DEG"]) if align_config_elements.get("RADIUS_DEG") not in (None, "") else None,
@@ -827,6 +829,20 @@ def _mount_motion_state_cached(device: str, host: str, port: int, timeout: float
         state = None
     _MOUNT_MOTION_CACHE[device] = (_now(), state)
     return state
+
+
+def _onstep_align(device_props: dict):
+    """The alignment of an OnStep controller the Mount Bridge reads (ONSTEP_ALIGNMENT): {"max_stars", "star", "stars",
+    "aligning" (it waits for a star)}; None while there is no such controller (another mount, USB, not answering)."""
+    prop = device_props.get("ONSTEP_ALIGNMENT", {})
+    if prop.get("state") not in ("Ok", "Busy"):
+        return None
+    el = prop.get("elements", {})
+    try:
+        max_stars, star, stars = (int(float(el[k])) for k in ("MAX_STARS", "STAR", "STARS"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {"max_stars": max_stars, "star": star, "stars": stars, "aligning": 0 < star <= stars}
 
 
 def _positioning_status(device_props: dict):
@@ -2034,6 +2050,16 @@ def trigger_multipoint_align_start(
     wait for arrival, wait for a fresh PiFinder solve, Sync). Independent of
     Coupling mode - works whether Coupling is Off or any other preset."""
     set_switch("PiFinder Mount Bridge", "MULTI_POINT_ALIGN", "ALIGN_START", host, port, timeout)
+
+
+def trigger_onstep_align_save(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Keeps the OnStep controller's alignment model beyond a power-off (the Mount Bridge's ALIGN_SAVE, which presses the INDI
+    OnStep driver's "Write Align to NVRAM/Flash")."""
+    set_switch("PiFinder Mount Bridge", "ALIGN_SAVE", "SAVE", host, port, timeout)
 
 
 def trigger_multipoint_align_stop(

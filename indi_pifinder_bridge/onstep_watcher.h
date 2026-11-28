@@ -60,6 +60,10 @@ class OnStepWatcher
         bool takeGoto(double minAgeSec, double &ra, double &dec);
         // An alignment is running on the controller: star `star` of `stars`. False when none, or nothing is known.
         bool aligning(int &star, int &stars) const;
+        // The controller's alignment as last read: the most stars it takes, the star it waits for and how many the alignment
+        // has (star = stars + 1: finished; 0 0: none). `reading` counts the readings, so a caller can wait for a newer one.
+        // False while not connected.
+        bool progress(int &maxStars, int &star, int &stars, unsigned &reading) const;
         // The port in use, 0 while not connected.
         int port() const;
         bool following() const { return m_thread.joinable(); }
@@ -70,7 +74,7 @@ class OnStepWatcher
     private:
         void run(std::string host, std::vector<int> ports);
         bool ask(int fd, const char *command, std::string &reply) const;
-        bool read(int fd, OnStepSample &s, int &star, int &stars) const;
+        bool read(int fd, OnStepSample &s, int &maxStars, int &star, int &stars) const;
         bool pause(double seconds); // false: stop was asked for
 
         static constexpr double POLL_SEC = 1.0;   // the controller drops a client that is silent for 10 s
@@ -84,5 +88,6 @@ class OnStepWatcher
         std::atomic<bool> m_stop { false };
         bool m_haveGoto = false, m_unreachable = false;
         double m_gotoRA = 0.0, m_gotoDec = 0.0, m_gotoTime = 0.0;
-        int m_port = 0, m_star = 0, m_stars = 0;
+        int m_port = 0, m_star = 0, m_stars = 0, m_maxStars = 0;
+        unsigned m_readings = 0;
 };

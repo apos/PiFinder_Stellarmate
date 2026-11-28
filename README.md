@@ -404,6 +404,9 @@ or slews. Afterwards it moves nothing until the next GoTo.
 An alignment running on the OnStep controller (hand controller or app, mount connected over the network) pauses the Bridge
 too: it neither moves nor syncs the mount (OnStep would count a Sync as an alignment star). Over USB/serial it is not detected.
 
+**Multi-Point Alignment with an OnStep** (Control Center, mount connected over the network) is a real OnStep alignment: put the
+mount into its home position, press Start, and PiFinder's plate solves deliver the stars; **Save to OnStep** keeps the model.
+
 ## SMOS Updates
 
 Stellarmate OS uses BTRFS snapshot resets to apply updates. This wipes the root partition, which removes all manually installed packages and configuration (pacman repos, systemd services, swap, etc.). The `/home` partition survives intact.
@@ -522,6 +525,7 @@ repo it's uninstalling.
 
 ## See Also
 
+*   **[FAQ](docs/FAQ.md)** — short answers, for example whether PFSM keeps running while the phone's screen is locked. ([Deutsche Version](docs/FAQ_de.md))
 *   **[Readme_ControlCenter.md](Readme_ControlCenter.md)** — full Control Center documentation: architecture, design principles, feature walkthrough, Mount Bridge & Sync workflows, API reference. ([Deutsche Version](Readme_ControlCenter_de.md))
 *   **[Readme_PiFinder_LX200.md](Readme_PiFinder_LX200.md)** — the INDI layer: illustrated step-by-step setup (Web Manager equipment profile, INDI Control Panel, KStars/Ekos, SkySafari), LX200 command/property reference, code and deployment strategy. ([Deutsche Version](Readme_PiFinder_LX200_de.md))
 *   **[Readme_KeyboardBridge.md](Readme_KeyboardBridge.md)** — the numpad-as-keypad bridge: architecture, key mapping, self-healing design. ([Deutsche Version](Readme_KeyboardBridge_de.md))

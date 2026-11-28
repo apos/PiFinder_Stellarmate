@@ -1013,20 +1013,19 @@
   .mb-sync-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; }
   .mb-sync-dir { font-size: 0.72rem; font-weight: 600; color: #6cc46f; letter-spacing: 0.02em; }
   .mb-sync-btn:disabled .mb-sync-dir { color: #666; }
+  /* The result of the last Sync stands in the group's heading line, to the right of the title (direct feedback, 2026-11-28:
+     as a box of its own under the buttons it hung in the air). Its height is fixed (two lines), so a result moves nothing. */
+  .mb-sync-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.1rem 0.8rem; }
   #mb-sync-feedback {
-    height: 3.6rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.6rem;
-    border: 1px solid #2a2a2a; border-radius: 6px; background: #161616; color: #999;
-    font-size: 0.78rem; line-height: 1.25; overflow: hidden;
+    flex: 1 1 8rem; min-width: 0; height: 2.1rem; display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem;
+    color: #999; font-size: 0.76rem; line-height: 1.3; overflow: hidden;
   }
-  #mb-sync-feedback .mb-sync-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+  #mb-sync-feedback .mb-sync-msg { flex: 0 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #mb-sync-feedback .mb-sync-when { flex: none; color: #888; font-variant-numeric: tabular-nums; }
-  #mb-sync-feedback.mb-sync-ok { border-color: #3c7a3f; color: #ddd; }
-  #mb-sync-feedback.mb-sync-warn { border-color: #a8832e; color: #ddd; }
-  #mb-sync-feedback.mb-sync-work { border-color: #3d6fb5; color: #ddd; }
+  #mb-sync-feedback.mb-sync-ok { color: #ddd; }
+  #mb-sync-feedback.mb-sync-warn { color: #f0c060; }
+  #mb-sync-feedback.mb-sync-work { color: #9cc3f5; }
   #mb-sync-feedback b { font-weight: 600; }
-  /* feedback line row */
-  #mb-sync-feedback-row { display: flex; align-items: center; gap: 0.5rem; }
-  #mb-sync-feedback-row #mb-sync-feedback { flex: 1 1 auto; min-width: 0; }
   /* Deliberately loud/red, unlike every other small button here - this is
      a panic button (#179), it needs to read as different at a glance, not
      blend in with the rest of the row. */
@@ -2003,7 +2002,9 @@
   /* Rows with room between them, and the first field / button of both setting rows in one line (direct feedback, 2026-11-27).
      Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
   #mb-multialign-details .mb-row { margin-top: 0.65rem; }
-  #mb-multialign-stop-btn { margin-left: 0.7rem; }   /* Start and Stop apart: no slip of the finger from one to the other */
+  /* Start and Stop apart (no slip of the finger from one to the other); a button that wraps starts at the left edge. */
+  #mb-multialign-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; }
+  #mb-multialign-row .mb-big-action-btn { flex: 0 0 auto; }
   #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
   #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
   #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */
@@ -2878,12 +2879,11 @@
         <div class="group-label">Quick Actions</div>
         <div class="mb-qa-groups">
           <div class="mb-qa-group" id="mb-sync-group">
-            <div class="mb-qa-group-label">Sync positions (once)</div>
+            <div class="mb-sync-head"><span class="mb-qa-group-label">Sync positions (once)</span><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
             <div id="mb-sync-actions-row">
           <button id="mb-manual-sync-btn" data-mb-action="sync-to-visible" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncToPiFinderVisible()" title="One-shot: syncs the mount to whatever PiFinder currently shows as its position - no freshness check, same as a manual Sync in KStars' own INDI panel. Useful after moving the mount by hand."><span class="mb-sync-dir">PiFinder &rarr; mount</span>Sync mount from PiFinder</button>
           <button id="mb-sync-pifinder-btn" data-mb-action="sync-pifinder-from-mount" class="mb-big-action-btn mb-big-sync-btn mb-sync-btn" onclick="triggerSyncPiFinderFromMount()" disabled title="One-shot: tells PiFinder where the mount points - the mount is trusted, PiFinder is corrected. Use it after you centred a star in the scope and PiFinder doesn't agree. On a real PiFinder this is PiFinder's own Align (like picking the star on the device), real plate-solving keeps running; it needs a current plate solve and the mount inside PiFinder's field of view. In Full Simulation it injects the mount's position instead. Needs a connected mount."><span class="mb-sync-dir">mount &rarr; PiFinder</span>Sync PiFinder from mount</button>
             </div>
-            <div id="mb-sync-feedback-row"><div id="mb-sync-feedback" role="status" aria-live="polite"><span class="status-dot dot-idle"></span><span class="mb-sync-msg">No manual sync yet</span><span class="mb-sync-when"></span></div></div>
           </div>
           <div class="mb-qa-group mb-qa-group-wide">
             <div class="mb-qa-group-label">Push-To<a class="help-link" href="/help.html#push-to" target="_blank" rel="noopener" title="Push-To (blue cross in the sky picture): the object PiFinder points you to, where the Mount Bridge keeps the scope - and what these three buttons act on. Click for the details." onclick="event.stopPropagation()">i</a></div>
@@ -2921,6 +2921,7 @@
             <div class="mb-row" id="mb-multialign-row" title="Automatic Multi-Point Alignment (#191): fetches N bright-star candidates from PiFinder's own catalog, slews to each in turn, waits for a fresh PiFinder solve, and syncs the mount there. Independent of Coupling mode.">
               <button id="mb-multialign-start-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerMultiAlignStart()">Start</button>
               <button id="mb-multialign-stop-btn" class="mb-big-action-btn mb-abort-btn" onclick="triggerMultiAlignStop()" disabled title="Aborts the running alignment sequence and stops the mount immediately (same underlying stop as the emergency Stop movement button above).">Stop alignment</button>
+              <button id="mb-multialign-save-btn" class="mb-big-action-btn mb-big-sync-btn" onclick="triggerOnStepAlignSave()" style="display:none;" disabled title="Keeps the alignment model on the OnStep controller beyond a power-off. OnStep does not confirm it.">Save to OnStep</button>
             </div>
             <!-- #191/#217: candidate-selection settings already existed as INDI
                  properties (AlignConfigNP) since the catalog-driven selection
@@ -9252,15 +9253,59 @@ function updateMountRejectWarning(active, message) {
 // triggerMultiAlignStart()), and this function reasserts the real state
 // the moment the flag clears and the next poll lands.
 let multiAlignActionInFlight = false;
-function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames) {
+// ---- OnStep alignment (begin) ----
+// With an OnStep the Bridge can read, Start runs a real OnStep alignment (pure function, test_tools/onstep_align_ui_test.js).
+// onstep: /api/mount_bridge_drift "onstep_align" or null; running: a run of the Bridge is under way; points: the Points field.
+function onStepAlignView(onstep, running, points) {
+  const view = { startLabel: 'Start', confirm: null, saveShown: false, saveEnabled: false, waiting: null, unit: 'point' };
+  if (!onstep) return view;
+  view.unit = 'star';
+  view.saveShown = true;
+  view.saveEnabled = !running && !onstep.aligning;
+  if (onstep.aligning) {
+    view.startLabel = 'Continue';
+    if (!running) view.waiting = `OnStep waits for star ${onstep.star} of ${onstep.stars}: Continue goes on with it. Until then the Bridge leaves the mount alone.`;
+  } else {
+    const n = Math.min(Math.max(1, points || 1), onstep.max_stars || 9);
+    view.confirm = `This starts an alignment on OnStep with ${n} star${n === 1 ? '' : 's'}.\n\nIs the mount in its home position? OnStep takes the present position as home, and its old alignment model is replaced.`;
+  }
+  return view;
+}
+// ---- OnStep alignment (end) ----
+let _onStepAlign = null;
+async function triggerOnStepAlignSave() {
+  const btn = document.getElementById('mb-multialign-save-btn');
+  btn.disabled = true;
+  setMbActionStatus('⏳ Saving the alignment model on OnStep…');
+  try {
+    const d = await (await fetch('/api/mount_bridge_align_save', { method: 'POST' })).json();
+    if (!d.success) throw new Error(d.error || 'failed');
+  } catch (e) {
+    // fall through - errors show up via pollMbLog()
+  }
+  pollMbLog();
+  clearMbActionStatus();
+}
+function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynced, currentName, syncedNames, onstep) {
   const startBtn = document.getElementById('mb-multialign-start-btn');
   const stopBtn = document.getElementById('mb-multialign-stop-btn');
   const dotEl = document.getElementById('mb-multialign-dot');
   const textEl = document.getElementById('mb-multialign-status-text');
   const running = alignState === 'Busy';
+  _onStepAlign = onstep || null;
+  const view = onStepAlignView(_onStepAlign, running, parseInt(document.getElementById('mb-align-count-input').value, 10));
+  const saveBtn = document.getElementById('mb-multialign-save-btn');
+  saveBtn.style.display = view.saveShown ? '' : 'none';
+  saveBtn.disabled = !view.saveEnabled;
   if (multiAlignActionInFlight) return;
+  startBtn.textContent = view.startLabel;
   startBtn.disabled = running;
   stopBtn.disabled = !running;
+  if (view.waiting) {
+    setHwDot(dotEl, 'status-dot dot-yellow');
+    textEl.textContent = view.waiting;
+    return;
+  }
   if (!pointCount) {
     setHwDot(dotEl, 'status-dot dot-white');
     textEl.textContent = 'not run yet';
@@ -9272,10 +9317,14 @@ function updateMultiAlignProgress(alignState, pointIndex, pointCount, pointSynce
   const syncedNamesSuffix = syncedNames ? ` (${syncedNames})` : '';
   if (running) {
     setHwDot(dotEl, 'status-dot dot-yellow');
-    textEl.textContent = `running - point ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`;
+    textEl.textContent = pointIndex
+      ? `running - ${view.unit} ${pointIndex}/${pointCount}${currentNameSuffix} (${pointSynced} verified so far)…`
+      : 'starting the alignment on OnStep…';
   } else if (alignState === 'Ok') {
     setHwDot(dotEl, 'status-dot dot-green');
-    textEl.textContent = `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
+    textEl.textContent = view.unit === 'star'
+      ? `completed - OnStep took ${pointSynced}/${pointCount} star(s)${syncedNamesSuffix}. Save to OnStep keeps the model.`
+      : `completed - ${pointSynced}/${pointCount} point(s) verified and synced${syncedNamesSuffix}.`;
   } else if (alignState === 'Alert') {
     setHwDot(dotEl, 'status-dot dot-red');
     textEl.textContent = pointSynced > 0
@@ -9863,7 +9912,7 @@ async function refreshMbDrift() {
     if (data.running) {
       applyMbDriftAndMode(data.coupling_mode, data.correction_action, data.drift_arcmin, data.drift_state, data.external_hold, data.external_hold_reason);
       updateMountRejectWarning(data.mount_reject_active, data.mount_reject_message);
-      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names);
+      updateMultiAlignProgress(data.align_state, data.align_point_index, data.align_point_count, data.align_point_synced, data.align_current_name, data.align_synced_names, data.onstep_align);
       syncAlignConfigInputsFromDriver(data.align_radius, data.align_count, data.align_min_altitude);
       syncAlignDirectionButtons(data.align_direction);
       updateMountHorizonStatus(data.mount_altitude_deg, data.mount_below_horizon);
@@ -10096,7 +10145,7 @@ async function triggerSyncToPiFinderVisible() {
   btns.forEach((b, i) => { b.innerHTML = originals[i]; b.disabled = false; delete b.dataset.busy; });
 }
 
-// ---- "Sync positions (once)": one fixed-height feedback line (#mb-sync-feedback) ----
+// ---- "Sync positions (once)": one fixed-height feedback line (#mb-sync-feedback) in the heading ----
 // Never inserted or removed, only its content changes, so a result can't move
 // anything else on the page; the last action stays with its time until the
 // next one replaces it (direct feedback, 2026-11-24).
@@ -10580,6 +10629,8 @@ async function triggerAbortMount() {
 const MULTIALIGN_START_SETTLE_MS = 4500;
 
 async function triggerMultiAlignStart() {
+  const ask = onStepAlignView(_onStepAlign, false, parseInt(document.getElementById('mb-align-count-input').value, 10)).confirm;
+  if (ask && !window.confirm(ask)) return;
   multiAlignActionInFlight = true;
   setMbActionStatus('⏳ Starting Multi-Point Alignment…');
   const btn = document.getElementById('mb-multialign-start-btn');

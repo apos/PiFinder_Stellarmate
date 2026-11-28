@@ -414,6 +414,10 @@ Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App, Mount übe
 Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell wird es
 nicht erkannt.
 
+**Multi-Point-Alignment mit einem OnStep** (Control Center, Mount über das Netzwerk verbunden) ist ein echtes OnStep-Alignment:
+Mount in die Home-Position stellen, Start drücken, die Sterne liefern PiFinders Plate-Solves; **Save to OnStep** speichert das
+Modell.
+
 ## SMOS-Updates
 
 Stellarmate OS nutzt BTRFS-Snapshot-Resets zur Anwendung von Updates. Das setzt die Root-Partition zurück, wodurch alle manuell installierten Pakete und Konfigurationen (Pacman-Repos, systemd-Dienste, Swap usw.) entfernt werden. Die `/home`-Partition bleibt dabei unversehrt.
@@ -535,6 +539,7 @@ heraus ausgeführt werden kann, das er gerade deinstalliert.
 
 ## Siehe auch
 
+*   **[FAQ](docs/FAQ_de.md)** — kurze Antworten, zum Beispiel ob PFSM bei gesperrtem Handy-Display weiterläuft. ([English version](docs/FAQ.md))
 *   **[Readme_ControlCenter_de.md](Readme_ControlCenter_de.md)** — vollständige Control-Center-Dokumentation: Architektur, Designprinzipien, Feature-Übersicht, Mount-Bridge- & Sync-Workflows, API-Referenz. ([English version](Readme_ControlCenter.md))
 *   **[Readme_PiFinder_LX200_de.md](Readme_PiFinder_LX200_de.md)** — die INDI-Schicht: bebilderte Schritt-für-Schritt-Einrichtung (Equipment-Profil im Web Manager, INDI Control Panel, KStars/Ekos, SkySafari), LX200-Kommando-/Property-Referenz, Code- und Deployment-Strategie. ([English version](Readme_PiFinder_LX200.md))
 *   **[Readme_KeyboardBridge_de.md](Readme_KeyboardBridge_de.md)** — die Numpad-als-Tastatur-Bridge: Architektur, Tastenbelegung, Selbstheilungs-Design. ([English version](Readme_KeyboardBridge.md))
