@@ -20,6 +20,19 @@ a full `bin/simulate_fresh_install.sh --mode=fresh`, `pifinder_stellarmate_setup
 [test_tools/README.md](test_tools/README.md). Run it (at least the offline group) before every pull request, and `all --move`
 before a release.
 
+## Issue labels for the code concerned
+
+An issue that concerns code outside this project says whose, with one or more of:
+
+| Label | Concerns |
+|---|---|
+| `PiFinder` | PiFinder's own code, including this project's patches to it |
+| `INDI` | upstream INDI code: libindi, indiserver, upstream drivers |
+| `OnStep` | OnStep code: the controller's behaviour or the INDI OnStep driver |
+| `SMOS` | StellarMate OS code: OS updates, StellarMate app, its web services |
+
+There is no label for this project's own code: that is almost every issue. Several labels on one issue are fine.
+
 ## After cloning: initialize submodules
 
 This repo vendors some dev/test tooling as git submodules (e.g. `bin/tests/vendor/bats-core`)
