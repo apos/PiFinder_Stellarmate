@@ -89,7 +89,6 @@ astrophotography, EAA, and full equipment control. The setup script automates th
 | Simulated sky | single star fields cannot be solved or are solved wrongly ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); the Mount Bridge then gives up or asks and moves nothing (seen on the Telescope Simulator) |
 | Multi-Point Alignment without OnStep | a point counts only when the mount reports the synced position; the Telescope Simulator in the simulated sky fits a model and often shows points as not counted ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
 | **SMOS updates** | an update can remove everything outside `/home`: run the post-update step (Control Center card or `bin/restore_after_smos_update.sh`). On devices that boot from NVMe/USB with renamed partitions (to keep an SD emergency system) an update can leave the device unbootable if the boot fix does not run before the reboot ([#561](https://github.com/apos/PiFinder_Stellarmate/issues/561), the automatic fix has not been seen on real hardware); details in [SMOS Updates](#smos-updates) |
-| Switching coupling off | does not stop a slew that is already running: use **Stop movement** ([#231](https://github.com/apos/PiFinder_Stellarmate/issues/231)) |
 | Pi 5 keypad | disabled column with a Geekworm X1203 UPS shield (see above) |
 | Newer PiFinder versions | PiFinder 3.x (beta) is not supported; PFSM installs the pinned version |
 | Documentation | no HowTo or video guide yet |
@@ -436,7 +435,8 @@ the Bridge does not pull back. If the mount did not move itself (clutch open, sc
 card with the question; nothing moves until it is answered.
 
 **Stop**: after an Abort in KStars/Ekos the Bridge does not move the mount again until the next GoTo. "Stop movement" in the
-Control Center also switches the coupling off.
+Control Center also switches the coupling off. Switching the coupling off stops a slew the Bridge started itself; a GoTo from elsewhere
+runs on.
 
 **Alignment in Ekos** (plate solve, polar alignment, mount model; also GO): the Bridge pauses while Ekos takes images, solves
 or slews. Afterwards it moves nothing until the next GoTo.
