@@ -2002,8 +2002,9 @@
   /* Rows with room between them, and the first field / button of both setting rows in one line (direct feedback, 2026-11-27).
      Inside a quick-action group .mb-row has no margin of its own, hence the id selectors. */
   #mb-multialign-details .mb-row { margin-top: 0.65rem; }
-  #mb-multialign-stop-btn { margin-left: 0.7rem; }   /* Start and Stop apart: no slip of the finger from one to the other */
-  #mb-multialign-save-btn { margin-left: 0.7rem; }
+  /* Start and Stop apart (no slip of the finger from one to the other); a button that wraps starts at the left edge. */
+  #mb-multialign-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; }
+  #mb-multialign-row .mb-big-action-btn { flex: 0 0 auto; }
   #mb-align-config-row, #mb-align-direction-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.4rem; }
   #mb-align-config-row > .mb-row-label:first-child, #mb-align-direction-row > .mb-row-label { flex: none; width: 7.5em; margin-right: 0; }
   #mb-align-direction-row .ql-small-btn { margin-left: 0; }   /* the row's gap spaces them: "Any" starts under the radius field */

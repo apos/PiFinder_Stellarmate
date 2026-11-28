@@ -193,6 +193,12 @@ Two things flagged as genuinely unresolved, not just left as vague future work:
 > model at the first star, a refused star aborts the whole alignment, `:A?#` reports progress. The INDI driver offers this as
 > `AlignStars`, `NewAlignStar` (start / issue) and `NewAlignStar2` (write); its Sync sends `:CM#`.
 > **Check after each Sync (2026-11-28):** a point counts only when the mount reports the synced position.
+>
+> **Built (2026-11-28, owner's decision): with an OnStep the Bridge can read, a run is a real OnStep alignment.** Start through
+> the INDI driver (`AlignStars`, `NewAlignStar`), one `:CM#` per solved star through the driver's Sync, counted by `:A?#`
+> (from the second star on the reported position does not change, so the position check cannot be used), up to four spare
+> candidates, Continue when the controller already waits, `ALIGN_SAVE` presses the driver's write switch. USB/serial: plain
+> Syncs with a warning. Tests: `test_tools/mpa_onstep_test.py` (stand-ins), `test_tools/onstep_align_ui_test.js`.
 
 ## 5. ADR: Sync-only for a first OnStep-scoped implementation, revisit Align primitive if generalized
 

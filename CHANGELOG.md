@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. Format loosely 
 
 ### Added
 
+- Multi-Point Alignment with an OnStep connected over the network runs a real OnStep alignment (home question, stars counted by the controller, replacement stars, Continue after Stop, **Save to OnStep**). Before, it only sent Syncs, from which OnStep builds no model.
 - Mount Bridge, OnStep over the network (#658): GoTos started on the hand controller, the OnStep app or SkySafari are followed (the controller's target is read on a second network port, read only), and an alignment running on the controller pauses the Bridge.
 - A short FAQ (`docs/FAQ.md`, German `FAQ_de.md`), starting with: PFSM keeps running while the phone's screen is locked.
 - Control Center: a yellow card for the Mount Bridge's question after a sudden disagreement without mount movement (what happened, what to do, two buttons; PiFinder shows CHECK MOUNT), and a red card and red status when the Bridge does not read its mount or PiFinder (`BRIDGE_BINDING`).

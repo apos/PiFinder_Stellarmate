@@ -3090,7 +3090,7 @@ void PiFinderMountBridge::handleOnStepController()
         if (aligning)
             LOGF_INFO("An alignment is running on the OnStep controller (star %d of %d) - the Mount Bridge neither moves nor "
                       "syncs the mount until it ends.", star, stars);
-        else
+        else if (m_alignState == AlignState::IDLE || m_alignState == AlignState::DONE) // a run of our own ends it itself
             keepOffAfterAlignment();
     }
 

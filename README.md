@@ -404,6 +404,9 @@ or slews. Afterwards it moves nothing until the next GoTo.
 An alignment running on the OnStep controller (hand controller or app, mount connected over the network) pauses the Bridge
 too: it neither moves nor syncs the mount (OnStep would count a Sync as an alignment star). Over USB/serial it is not detected.
 
+**Multi-Point Alignment with an OnStep** (Control Center, mount connected over the network) is a real OnStep alignment: put the
+mount into its home position, press Start, and PiFinder's plate solves deliver the stars; **Save to OnStep** keeps the model.
+
 ## SMOS Updates
 
 Stellarmate OS uses BTRFS snapshot resets to apply updates. This wipes the root partition, which removes all manually installed packages and configuration (pacman repos, systemd services, swap, etc.). The `/home` partition survives intact.
