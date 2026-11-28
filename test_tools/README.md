@@ -22,7 +22,11 @@ mount (`align_sync_test`, `keypad_gpio_matrix_test`, `pifinder_pushto_stress_tes
 
 - The live tests start from a freshly started sky simulation: after several alignment runs the Telescope Simulator's mount model
   distorts, and resetting the model alone while the simulation runs shifts the simulated sky.
-- PiFinder cannot solve every simulated star field; the tests then take another field and say so.
+- PiFinder cannot solve every simulated star field and solves single ones wrongly (#697). When the mount stands on the target and
+  the fault is the camera's, the live tests take another field.
+- The simulator's alignment model fits its points: Multi-Point Alignment may count fewer points than were synced (#702).
+- Whatever a test had to work around is a line starting with `note` in its log and in `summary.txt`. Read them: a passed run with
+  notes is not the same as a clean one.
 - On x86 PiFinder has no matching `cedar-detect-server` and uses its own star finder (patched since 3.0.0, untested there).
 
 ## Not part of the run

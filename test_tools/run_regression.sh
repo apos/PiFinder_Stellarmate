@@ -37,6 +37,11 @@ run() { # name, timeout seconds, command...
         [ "$code" -eq 124 ] && RESULTS+=("FAIL  $name (> $limit s)  $LOGS/$name.log") || RESULTS+=("FAIL  $name (exit $code)  $LOGS/$name.log")
     fi
     echo "${RESULTS[-1]}"
+    local note # a test says with "note ..." what it had to work around: that belongs into the summary, passed or not
+    while IFS= read -r note; do
+        RESULTS+=("      $note")
+        echo "      $note"
+    done < <(grep '^note ' "$LOGS/$name.log")
 }
 
 offline() {
@@ -49,7 +54,7 @@ offline() {
     # Only tests that need no hardware, no pifinder.service and no running INDI server. Never run test_tools/*_test.py as a whole:
     # some of the others press GPIO keys, restart PiFinder or move a mount.
     for f in alignment_hold bridge_binding bridge_restart_fifo clock_status cold_profile_autostart compat_check driver_port_order \
-        driver_stdout driver_watch gsc_sim lx200_reconnect mount_silence patch_drift_check pfsm_bridge_status pifinder_sky_follow \
+        driver_stdout driver_watch field_problem gsc_sim lx200_reconnect mount_silence patch_drift_check pfsm_bridge_status pifinder_sky_follow \
         pifinder_sky_renderer sky_math solver_arch_patch target_status; do
         run "${f}_test" 300 "$PY" "test_tools/${f}_test.py"
     done
