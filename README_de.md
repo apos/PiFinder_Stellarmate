@@ -92,7 +92,7 @@ lebt in [Readme_design_decisions_de.md](Readme_design_decisions_de.md).)
 | Standard-PiFinder (eigene SD-Karte) als **PiFinder Client** | nicht getestet |
 | Kombination **Control Host / Client** | grundsätzlich lauffähig, nicht ausführlich getestet |
 | Echtes Mount | GoTo-Verfolgung, Nachjustieren und OnStep-Alignment nur mit simuliertem Himmel gesehen; eine physische Handsteuerung nicht gesondert probiert (sie sendet dieselben Netzwerk-Befehle) |
-| OnStep über **USB/seriell** | GoTos vom Controller und sein Alignment werden nicht erkannt |
+| OnStep über **USB/seriell** | GoTos vom Controller werden nicht bis aufs Objekt verfolgt (die Landeposition wird übernommen), und das Multi-Point Alignment sendet nur Syncs. Ein am Controller laufendes Alignment wird erkannt |
 | Kamera und Himmel | kein Kamera- oder Himmelstest mit dem gepinnten PiFinder 2.6.4 |
 | Simulierter Himmel | einzelne Sternfelder werden nicht oder falsch gelöst ([#697](https://github.com/apos/PiFinder_Stellarmate/issues/697)); die Mount Bridge gibt dann auf oder fragt nach und bewegt nichts (am Telescope Simulator gesehen) |
 | Multi-Point Alignment ohne OnStep | ein Punkt zählt nur, wenn die Montierung die synchronisierte Position meldet; der Telescope Simulator im simulierten Himmel rechnet ein Modell und zeigt Punkte oft als nicht gezählt ([#702](https://github.com/apos/PiFinder_Stellarmate/issues/702)) |
@@ -458,9 +458,8 @@ oder fährt. Danach bewegt sie bis zum nächsten GoTo nichts.
 | Nothing, gelöst | unverändert | bewegt nichts bis zum nächsten GoTo |
 | Solve fehlgeschlagen, Mount weder gesynct noch gedreht | unverändert | führt ein laufendes GoTo zu Ende |
 
-Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App, Mount über das Netzwerk verbunden) pausiert die
-Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell wird es
-nicht erkannt.
+Auch ein Alignment auf dem OnStep-Controller (Handsteuerung oder App) pausiert die
+Bridge: Sie bewegt und synct das Mount nicht (OnStep würde einen Sync als Alignment-Stern zählen). Über USB/seriell sieht die Bridge das Alignment über den INDI-OnStep-Treiber ("Align Process").
 
 **Multi-Point-Alignment mit einem OnStep** (Control Center, Mount über das Netzwerk verbunden) ist ein echtes OnStep-Alignment:
 Mount in die Home-Position stellen, Start drücken, die Sterne liefern PiFinders Plate-Solves; **Save to OnStep** speichert das

@@ -3098,7 +3098,11 @@ void PiFinderMountBridge::handleOnStepController()
     }
 
     int star = 0, stars = 0;
-    const bool aligning = m_onstep.aligning(star, stars);
+    bool aligning = m_onstep.aligning(star, stars);
+    // Not reading the controller (USB/serial, or its network ports do not answer): the INDI OnStep driver asks it itself and
+    // publishes the same numbers. Without this a Sync of the Bridge would be counted as the star the user has not centred yet.
+    if (!aligning && m_onstep.port() == 0)
+        aligning = m_client->getOnStepAlignStatus(star, stars) && star > 0 && stars > 0 && star <= stars;
     if (aligning != m_onstepAligning)
     {
         m_onstepAligning = aligning;
@@ -4160,6 +4164,14 @@ void PiFinderMountBridge::startMultiPointAlignment()
     if (onStepMount && !m_alignOnStep)
         LOG_WARN("Multi-Point Alignment: the Bridge cannot read the OnStep controller (that needs the mount connected over the "
                  "network) - plain Syncs only, OnStep builds no model from them.");
+    if (onStepMount && !m_alignOnStep && m_onstepAligning)
+    {
+        LOG_ERROR("Multi-Point Alignment: an alignment is running on the OnStep controller - finish or abort it there first. "
+                  "Every Sync now would count as one of its stars.");
+        MultiPointAlignSP.s = IPS_ALERT;
+        IDSetSwitch(&MultiPointAlignSP, nullptr);
+        return;
+    }
     const bool resume = m_alignOnStep && star > 0 && stars > 0 && star <= stars;
     int wanted = static_cast<int>(AlignConfigN[ALIGN_COUNT].value);
     if (resume)
@@ -4528,7 +4540,7 @@ bool PiFinderMountBridge::ISNewSwitch(const char *dev, const char *name, ISState
             // would have synced the mount to a meaningless reference -
             // skipping when not fresh is deliberate, not a gap to "fix" by
             // relaxing this check.
-            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON)
+            if (BridgeModeS[MODE_GOTO_FORWARD].s == ISS_ON && !m_onstepAligning)
             {
                 // 2026-09-01, docs/concepts/mount_bridge_reposition_detection.md §9: atomic
                 // HTTP-backed read instead of getPiFinderRADE()+isPiFinderSolveFresh() separately.

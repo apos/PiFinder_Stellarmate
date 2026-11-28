@@ -57,6 +57,10 @@ void PiFinderBridgeClient::forgetProperties()
     m_mountConnectionModeSP = nullptr;
     m_mountAlignStarsSP = m_mountAlignSP = m_mountAlignWriteSP = nullptr;
     {
+        std::lock_guard<std::mutex> lock(m_alignStatusMutex);
+        m_alignStatusKnown = false;
+    }
+    {
         std::lock_guard<std::mutex> lock(m_piFinderTargetMutex);
         m_piFinderTargetPending = false;   // whatever target is on the PiFinder device now is the baseline, not a new push-to
     }
@@ -198,6 +202,8 @@ void PiFinderBridgeClient::newProperty(INDI::Property property)
         m_mountTargetNP = property.getNumber();
     else if (fromMount && property.isNameMatch("DEVICE_ADDRESS"))
         m_mountAddressTP = property.getText();
+    else if (fromMount && property.isNameMatch("Align Process"))
+        noteOnStepAlignStatus(property);
     else if (fromMount && property.isNameMatch("DRIVER_INFO"))
         m_mountDriverInfoTP = property.getText();
     else if (fromMount && property.isNameMatch("CONNECTION_MODE"))
@@ -265,6 +271,34 @@ void PiFinderBridgeClient::noteControllerGoto(double ra, double dec)
         m_controllerTargetTime = static_cast<long>(time(nullptr));
     }
     noteMountEvent(MountEvent::GOTO, ra, dec);
+}
+
+void PiFinderBridgeClient::noteOnStepAlignStatus(INDI::Property property)
+{
+    auto status = property.getText();
+    auto current = status->findWidgetByName("6");
+    auto total = status->findWidgetByName("7");
+    // "Not Updated" until the driver has read the controller; ":" stands for the tenth value (9 stars finished).
+    auto number = [](const char *text, int &value) {
+        if (text == nullptr || text[0] < '0' || text[0] > ':' || text[1] != '\0')
+            return false;
+        value = text[0] - '0';
+        return true;
+    };
+    int star = 0, stars = 0;
+    const bool known = current != nullptr && total != nullptr && number(current->getText(), star) && number(total->getText(), stars);
+    std::lock_guard<std::mutex> lock(m_alignStatusMutex);
+    m_alignStatusKnown = known;
+    m_alignStatusStar = star;
+    m_alignStatusStars = stars;
+}
+
+bool PiFinderBridgeClient::getOnStepAlignStatus(int &star, int &stars) const
+{
+    std::lock_guard<std::mutex> lock(m_alignStatusMutex);
+    star = m_alignStatusStar;
+    stars = m_alignStatusStars;
+    return m_alignStatusKnown;
 }
 
 bool PiFinderBridgeClient::hasOnStepAlignment() const
@@ -406,6 +440,10 @@ void PiFinderBridgeClient::updateProperty(INDI::Property property)
         releaseKeptTarget(true, property.getNumber()->at(0)->getValue(), property.getNumber()->at(1)->getValue());
         noteMountTarget(property);
     }
+    else if (fromMount && property.isNameMatch("Align Process"))
+    {
+        noteOnStepAlignStatus(property);
+    }
     else if (fromMount && property.isNameMatch("TELESCOPE_ABORT_MOTION"))
     {
         if (!justBound())
@@ -461,6 +499,12 @@ void PiFinderBridgeClient::newMessage(INDI::BaseDevice baseDevice, int messageID
 
 void PiFinderBridgeClient::removeProperty(INDI::Property property)
 {
+    if (m_mountName == property.getDeviceName() && property.isNameMatch("Align Process"))
+    {
+        std::lock_guard<std::mutex> lock(m_alignStatusMutex);
+        m_alignStatusKnown = false; // the mount driver disconnected: no statement about its controller any more
+        return;
+    }
     if (property.getNumber() == m_piFinderEqNP)
         m_piFinderEqNP = nullptr;
     else if (property.getNumber() == m_piFinderTargetNP)
